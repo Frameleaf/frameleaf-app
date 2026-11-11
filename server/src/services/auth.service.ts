@@ -17,7 +17,7 @@ import {
   MOBILE_REDIRECT,
   SALT_ROUNDS,
 } from 'src/constants.js';
-import { AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
+import { AuthSession, AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import {
   AuthDto,
   AuthOAuthApp,
@@ -38,6 +38,7 @@ import {
   PinCodeSetupDto,
   SessionUnlockDto,
   SignUpDto,
+  StepUpDto,
   TwoFactorCodeDto,
   TwoFactorPasswordDto,
   TwoFactorProofDto,
@@ -67,6 +68,7 @@ import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { SignInSecurityService } from 'src/services/sign-in-security.service.js';
 import { isGranted } from 'src/utils/access.js';
 import { DecimalSize } from 'src/utils/bytes.js';
+import { CONFIRMATION_REQUIRED, sessionIsConfirmedRecently, signInIsRecent } from 'src/utils/confirmed-recently.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { mailSealKey, openMailSecret, sealMailSecret } from 'src/utils/frameleaf-mail.js';
 import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
@@ -88,8 +90,9 @@ import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 import { checkSecret } from 'src/utils/secret-attempts.js';
-import { createSession, withCapabilities } from 'src/utils/session.js';
+import { VERIFICATION_CAPABILITY, createSession, withCapabilities } from 'src/utils/session.js';
 import { requireSharedLinkUnlocked } from 'src/utils/shared-link.js';
+import { DEFAULT_SIGN_IN_REQUIREMENT, evaluateSession } from 'src/utils/sign-in-policy.js';
 import {
   type ServerMac,
   TWO_FACTOR_CHALLENGE_SECONDS,
@@ -103,6 +106,12 @@ import {
   signToken,
   verifyToken,
 } from 'src/utils/two-factor.js';
+import {
+  VERIFICATION_TRANSACTION_SECONDS,
+  type VerificationMethod,
+  twoFactorSetupRequired,
+  verificationRequired,
+} from 'src/utils/verification-required.js';
 import { allowedOrigins, requestHosts, websocketOriginAllowed } from 'src/utils/websocket-origin.js';
 
 const UUID_PATTERN = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
@@ -199,6 +208,12 @@ const frameleafSignInRequired = () =>
     statusCode: 403,
     code: FRAMELEAF_SIGN_IN_REQUIRED,
   });
+
+/** The state a `verification_required` transaction stands for (signed, 10 minutes). */
+type VerificationTransaction = { k: 'session'; sid: string; sub: string; exp: number };
+
+/** Routes a person needs to set up their authenticator, open to a session that must set it up first. */
+const SETUP_ROUTES = /\/auth\/(two-factor|status|logout)/;
 
 const FRAMELEAF_CALLBACK = /frameleaf-auth:\/+oauth-callback/;
 
@@ -309,10 +324,15 @@ export class AuthService extends BaseService {
       return { user, password: user.password };
     });
     const twoFactor = await this.userRepository.getTwoFactor(user.id);
+    if (isRemoteVia(details.via) && !(await this.isLegacyClient(details)) && !twoFactor?.enabledAt) {
+      // away from home a capable client's password counts only together with the authenticator
+      this.logger.warn(`Refused a password sign-in without two-step over remote access (${details.via})`);
+      throw frameleafSignInRequired();
+    }
     if (twoFactor?.enabledAt && !(await this.isTrustedBrowser(user.id, password, twoFactor.enabledAt, trustToken))) {
       // FL-793: a client that can't show the code step gets a clear refusal, never an empty session
       // (403, not 401: today's apps read 401 as a wrong password)
-      if (!dto.twoFactor) {
+      if (!dto.twoFactor && !dto.steps) {
         throw new ForbiddenException({
           message: TWO_FACTOR_REQUIRED_MESSAGE,
           error: 'Forbidden',
@@ -326,16 +346,117 @@ export class AuthService extends BaseService {
         exp: epochSeconds(new Date()) + TWO_FACTOR_CHALLENGE_SECONDS,
       };
       // FL-793: no session yet, until the code step
+      const twoFactorToken = await signToken(this.twoFactorMac('challenge'), challenge, password);
       return {
         ...mapLoginResponse(user, ''),
         twoFactorRequired: true,
-        twoFactorToken: await signToken(this.twoFactorMac('challenge'), challenge, password),
+        twoFactorToken,
+        // Contract B: the same two-factor token is the transaction
+        ...(dto.steps && {
+          status: 'next' as const,
+          transaction: twoFactorToken,
+          methods: ['totp', 'recovery_code' as const],
+        }),
       };
     }
 
     // the 30-day trusted-browser cookie counts as password plus authenticator (spec: Verified)
     const methods = twoFactor?.enabledAt ? ['pwd', 'totp'] : ['pwd'];
-    return this.createLoginResponse(user, details, { passwordHash: password }, 'password', methods);
+    const response = await this.createLoginResponse(user, details, { passwordHash: password }, 'password', methods);
+    return dto.steps ? { ...response, status: 'done' as const } : response;
+  }
+
+  /**
+   * Unified sign-in: proof of the local password and/or authenticator for a Frameleaf sign-in that needs it
+   * (first link by email match; a local authenticator after a Basic Frameleaf sign-in). Wrong answers count
+   * against the usual sign-in limits (401). Returns the methods proved, as `amr` names, and the password hash
+   * that was checked (so a session can be fenced against a password change).
+   */
+  async verifyLocalProof(
+    user: { id: string; name: string; email: string },
+    proof: { password?: string; code?: string; recoveryCode?: string },
+    details: LoginDetails,
+    need: { password: boolean; authenticator: boolean },
+  ): Promise<{ methods: string[]; passwordHash?: string }> {
+    if (need.authenticator) {
+      requireOneSecondFactor(proof);
+    }
+    const now = new Date();
+    const proved: string[] = [];
+    let passwordHash: string | undefined;
+    const twoFactor = await this.userRepository.getTwoFactor(user.id);
+    const ok = await this.signInSecurity.attempt('two-factor', user.id, details, async (backoff) => {
+      proved.length = 0;
+      if (need.password) {
+        const { password } = await this.userRepository.getForChangePassword(user.id);
+        if (!password || !proof.password || !(await this.cryptoRepository.compareBcrypt(proof.password, password))) {
+          await this.signInSecurity.failed(backoff, user as never);
+          return false;
+        }
+        proved.push('pwd');
+        passwordHash = password;
+      }
+      if (need.authenticator) {
+        if (!twoFactor?.enabledAt || !(await this.checkSecondFactor(user.id, twoFactor.secret, proof, now))) {
+          await this.signInSecurity.failed(backoff, user as never);
+          return false;
+        }
+        proved.push(proof.recoveryCode ? 'recovery_code' : 'totp');
+      }
+      await this.signInSecurity.succeeded(backoff);
+      return true;
+    });
+    if (!ok) {
+      throw new UnauthorizedException(
+        need.authenticator && !need.password
+          ? proof.code
+            ? TWO_FACTOR_WRONG_CODE
+            : TWO_FACTOR_WRONG_RECOVERY_CODE
+          : 'That didn’t work. Check your password and your authenticator code and try again.',
+      );
+    }
+    return { methods: proved, passwordHash };
+  }
+
+  /**
+   * Unified sign-in "confirmed recently" for the actions that had no check before (restore from a backup,
+   * removing a person): a recent Frameleaf or passkey sign-in, or the password (and authenticator code) typed
+   * now. A session that is legacy keeps today's rights until "Apply to older apps too".
+   */
+  async requireConfirmedRecently(
+    auth: AuthDto,
+    proof: { password?: string; code?: string; recoveryCode?: string } | undefined,
+    details: LoginDetails,
+  ): Promise<void> {
+    const signIn = auth.session?.signIn;
+    const { signInPolicy } = await this.getConfig({ withCache: true });
+    // an older session (no record, or one marked legacy) and an API key keep today's rights until "Apply to older
+    // apps too"; after that an API key confirms with the password typed for the action, like any older client
+    if ((!auth.session || !signIn || signIn.legacy) && !signInPolicy.applyToOlderApps) {
+      return;
+    }
+    if (
+      auth.session &&
+      (await sessionIsConfirmedRecently(auth.session, (id) => this.frameleafAccountRepository.getSession(id)))
+    ) {
+      return;
+    }
+    const enrolled = !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt;
+    if (proof?.password === undefined || (enrolled && !proof.code && !proof.recoveryCode)) {
+      throw new ForbiddenException({
+        message: 'Confirm it’s you: sign in again, or enter your password',
+        error: 'Forbidden',
+        statusCode: 403,
+        code: CONFIRMATION_REQUIRED,
+      });
+    }
+    await this.verifyLocalProof(auth.user, proof, details, { password: true, authenticator: enrolled });
+  }
+
+  /** Unified sign-in rollout: a client that does not declare `verification` keeps today's rights. */
+  private async isLegacyClient(details: LoginDetails) {
+    const { signInPolicy } = await this.getConfig({ withCache: true });
+    return !details.capabilities?.includes(VERIFICATION_CAPABILITY) && !signInPolicy.applyToOlderApps;
   }
 
   private async requirePasswordLogin(details: LoginDetails) {
@@ -398,13 +519,14 @@ export class AuthService extends BaseService {
       throw new UnauthorizedException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
     }
 
-    const response = await this.createLoginResponse(
+    const created = await this.createLoginResponse(
       user,
       details,
       { passwordHash: password },
       'two-factor',
       dto.recoveryCode ? ['pwd', 'recovery_code'] : ['pwd', 'totp'],
     );
+    const response = dto.steps ? { ...created, status: 'done' as const } : created;
     const trust: TwoFactorTrust = {
       sub: user.id,
       en: twoFactor.enabledAt.getTime(),
@@ -416,7 +538,7 @@ export class AuthService extends BaseService {
 
   /** FL-793: start setting up two-step sign-in; the new key is confirmed with `enableTwoFactor`. */
   async setupTwoFactor(auth: AuthDto, dto: TwoFactorPasswordDto): Promise<TwoFactorSetupResponseDto> {
-    await this.requireAccountPassword(auth.user.id, dto.password);
+    await this.requireAccountPassword(auth.user.id, dto.password, auth.session);
     const secret = newTotpSecret();
     const sealed = sealMailSecret(await this.twoFactorSealKey(), `two-factor:${auth.user.id}`, secret);
     if (!(await this.userRepository.setPendingTwoFactor(auth.user.id, sealed))) {
@@ -463,7 +585,7 @@ export class AuthService extends BaseService {
 
   /** FL-793: turn two-step sign-in off with the password and a code (or a recovery code). */
   async disableTwoFactor(auth: AuthDto, dto: TwoFactorProofDto): Promise<void> {
-    await this.requireTwoFactorProof(auth.user.id, dto);
+    await this.requireTwoFactorProof(auth.user.id, dto, auth.session);
     await this.userRepository.deleteTwoFactor(auth.user.id);
     await this.recordTwoFactorChange(auth, 'disabled');
   }
@@ -473,7 +595,7 @@ export class AuthService extends BaseService {
    * when it is gone). Returns the new phone's key; the old phone keeps working until it is confirmed.
    */
   async startTwoFactorMove(auth: AuthDto, dto: TwoFactorProofDto): Promise<TwoFactorSetupResponseDto> {
-    await this.requireTwoFactorProof(auth.user.id, dto);
+    await this.requireTwoFactorProof(auth.user.id, dto, auth.session);
     const secret = newTotpSecret();
     const sealed = sealMailSecret(await this.twoFactorSealKey(), `two-factor:${auth.user.id}`, secret);
     if (!(await this.userRepository.setPendingTwoFactorMove(auth.user.id, sealed))) {
@@ -512,8 +634,8 @@ export class AuthService extends BaseService {
   }
 
   /** The password, two-step sign-in on, and exactly one right second factor (a recovery code is spent). */
-  private async requireTwoFactorProof(userId: string, dto: TwoFactorProofDto) {
-    await this.requireAccountPassword(userId, dto.password);
+  private async requireTwoFactorProof(userId: string, dto: TwoFactorProofDto, session?: AuthSession) {
+    await this.requireAccountPassword(userId, dto.password, session);
     const row = await this.userRepository.getTwoFactor(userId);
     if (!row?.enabledAt) {
       throw new BadRequestException('Two-step sign-in is not on');
@@ -526,7 +648,7 @@ export class AuthService extends BaseService {
 
   /** FL-793: replace every recovery code with ten new ones, shown once. */
   async regenerateRecoveryCodes(auth: AuthDto, dto: TwoFactorPasswordDto): Promise<TwoFactorRecoveryCodesResponseDto> {
-    await this.requireAccountPassword(auth.user.id, dto.password);
+    await this.requireAccountPassword(auth.user.id, dto.password, auth.session);
     const row = await this.userRepository.getTwoFactor(auth.user.id);
     if (!row?.enabledAt) {
       throw new BadRequestException('Two-step sign-in is not on');
@@ -539,7 +661,32 @@ export class AuthService extends BaseService {
     return { recoveryCodes };
   }
 
-  private async requireAccountPassword(userId: string, password: string) {
+  /**
+   * "Confirmed recently" for a two-step change: the password typed for the action, or (with none sent) a
+   * Frameleaf or passkey sign-in from the last 10 minutes (`signInIsRecent`).
+   */
+  private async requireAccountPassword(userId: string, password: string | undefined, session?: AuthSession) {
+    if (password === undefined) {
+      if (await sessionIsConfirmedRecently(session, (id) => this.frameleafAccountRepository.getSession(id))) {
+        return;
+      }
+      // an account with no password here (it signs in with the administrator's own provider) has nothing to type:
+      // a sign-in from the last 10 minutes is its confirmation, so it can still set up Two-Step Verification
+      // (a local sign-in only: a Frameleaf one counts above, and only while its tag is live)
+      const local = session?.signIn?.source === 'local' ? session.signIn : undefined;
+      if (
+        signInIsRecent(local ? { ...local, source: 'frameleaf' } : undefined) &&
+        !(await this.userRepository.getForChangePassword(userId)).password
+      ) {
+        return;
+      }
+      throw new ForbiddenException({
+        message: 'Confirm it’s you: sign in again, or enter your password',
+        error: 'Forbidden',
+        statusCode: 403,
+        code: CONFIRMATION_REQUIRED,
+      });
+    }
     const user = await this.userRepository.getForChangePassword(userId);
     if (!user.password) {
       throw new BadRequestException('Two-step sign-in protects signing in with a password; this account has none');
@@ -576,7 +723,7 @@ export class AuthService extends BaseService {
   }
 
   /** HMACs for two-step sign-in tokens, under the server's own key file (never in the database). */
-  private twoFactorMac(purpose: 'challenge' | 'trust'): ServerMac {
+  private twoFactorMac(purpose: 'challenge' | 'trust' | 'verification'): ServerMac {
     const directory = identityDirectory(this.configRepository);
     return (value) => this.cryptoRepository.serverKeyedHash(directory, `two-factor-${purpose}`, value);
   }
@@ -718,7 +865,10 @@ export class AuthService extends BaseService {
     // accepted. Recorded first: an exchange that tags its session after the lookup below sees this
     // record and ends that session. When it cannot be recorded the sessions still end, and the logout
     // then fails so Frameleaf Cloud delivers it again.
-    const seconds = FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS + 2 * FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS;
+    // unified sign-in: also for as long as a pending step-up (`verification_required`) can still be completed
+    const seconds =
+      Math.max(FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS, VERIFICATION_TRANSACTION_SECONDS) +
+      2 * FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS;
     let revocationError: unknown;
     try {
       await this.frameleafAccountRepository.revokeSignIns(
@@ -1004,8 +1154,8 @@ export class AuthService extends BaseService {
       throw new ForbiddenException('Connected apps can’t use this');
     }
 
-    if (isRemoteVia(metadata.via) && !metadata.remoteSignInExempt) {
-      await this.requireRemoteSignIn(authDto, metadata.via, uri);
+    if (!metadata.remoteSignInExempt) {
+      await this.applySessionPolicy(authDto, { via: metadata.via, adminRoute: !!adminRoute, uri });
     }
 
     if (!authDto.user.isAdmin && adminRoute) {
@@ -1056,9 +1206,7 @@ export class AuthService extends BaseService {
     if (oauthApp?.resource !== resource) {
       throw new UnauthorizedException();
     }
-    if (isRemoteVia(via)) {
-      await this.requireRemoteSignIn(auth, via, MCP_PATH);
-    }
+    await this.applySessionPolicy(auth, { via, adminRoute: false, uri: MCP_PATH });
     return this.applyHiddenContent({ ...auth, oauthApp });
   }
 
@@ -1080,44 +1228,140 @@ export class AuthService extends BaseService {
   }
 
   /**
-   * FL-161 (instance contract "Via-header contract"): a request arriving through remote access
-   * (`relay` or `wan`) must come from a Frameleaf sign-in. A public shared link passes; a session
-   * passes when a Frameleaf sign-in or a passkey created it (`session_sign_in`), or when an
-   * administrator allowed password sign-in over remote access; an API key passes only when its
-   * owner's account here is linked to a Frameleaf account. Everything else is refused with 403
-   * `frameleaf_sign_in_required`. Requests from the home network never reach this check.
+   * FL-161 (instance contract "Via-header contract") and unified sign-in (spec 2026-11-11): the one place a
+   * request's sign-in is judged. A public shared link passes. A session is judged by `evaluateSession` against
+   * how it was made (`session_sign_in`): away from home it must come from Frameleaf or a passkey (or an
+   * allowed password with the authenticator), administrator routes need a Verified sign-in, and a person's
+   * local authenticator is never skipped after a Basic Frameleaf sign-in. An API key passes away from home
+   * only when its owner's account here is linked to a Frameleaf account. Refusals are 403
+   * `frameleaf_sign_in_required` or `verification_required`; at home sessions are judged only by the rules
+   * that apply there.
    */
-  private async requireRemoteSignIn(auth: AuthDto, via: FrameleafVia, uri: string): Promise<void> {
+  private async applySessionPolicy(
+    auth: AuthDto,
+    { via, adminRoute, uri }: { via: FrameleafVia | null | undefined; adminRoute: boolean; uri: string },
+  ): Promise<void> {
+    const away = isRemoteVia(via);
     if (auth.sharedLink) {
       return;
     }
-    if (auth.session) {
-      // FL-836: a passkey sign-in is accepted away from home like a Frameleaf one (owner, 2026-11-07)
-      const signIn = await this.sessionRepository.getSignIn(auth.session.id);
-      // a Frameleaf sign-in counts only while its live tag exists (unlinking removes the tag and keeps the session)
-      if (
-        (!signIn || signIn.source === 'frameleaf') &&
-        (await this.frameleafAccountRepository.getSession(auth.session.id))
-      ) {
-        return;
+    if (!auth.session) {
+      if (away && !(auth.apiKey && (await this.frameleafAccountRepository.getLinkByUser(auth.user.id)))) {
+        this.logger.warn(`Denied remote access (${via}) without a Frameleaf sign-in: ${uri}`);
+        throw frameleafSignInRequired();
       }
-      // a session with no record (made outside createSession) is judged as before, by its passkey link
-      if (
-        signIn
-          ? signIn.source === 'local' && signIn.methods.includes('passkey')
-          : await this.passkeyRepository.isPasskeySession(auth.session.id)
-      ) {
-        return;
-      }
-      const config = await this.getConfig({ withCache: true });
-      if (config.frameleafCloud.remoteAccess.allowPasswordOverRelay) {
-        return;
-      }
-    } else if (auth.apiKey && (await this.frameleafAccountRepository.getLinkByUser(auth.user.id))) {
       return;
     }
-    this.logger.warn(`Denied remote access (${via}) without a Frameleaf sign-in: ${uri}`);
-    throw frameleafSignInRequired();
+    const { frameleafCloud, signInPolicy } = await this.getConfig({ withCache: true });
+    const sessionId = auth.session.id;
+    let tagged: boolean | undefined;
+    const hasTag = async () => (tagged ??= !!(await this.frameleafAccountRepository.getSession(sessionId)));
+    let record = auth.session.signIn ?? undefined;
+    if (!record) {
+      // a session with no record (made outside createSession) is an older session: at home it keeps today's
+      // rights unless "Apply to older apps too" is on; otherwise it is judged by its Frameleaf tag or passkey link
+      if (!away && !signInPolicy.applyToOlderApps) {
+        return;
+      }
+      const frameleaf = await hasTag();
+      const passkey = !frameleaf && (await this.passkeyRepository.isPasskeySession(sessionId));
+      record = {
+        source: frameleaf ? 'frameleaf' : 'local',
+        methods: passkey ? ['passkey'] : [],
+        level: passkey ? 'verified' : 'basic',
+        legacy: true,
+      };
+    }
+    // a Frameleaf sign-in counts away from home only while its live tag exists (unlinking removes the tag and keeps
+    // the session); without it nothing Cloud vouched for counts, and it is not a password sign-in either
+    const frameleafTagged = !away || record.source !== 'frameleaf' || (await hasTag());
+    // the authenticator matters only for a Basic sign-in from Frameleaf, or when everyone needs two steps:
+    // look it up only then
+    const hasAuthenticator =
+      record.level === 'basic' && (record.source === 'frameleaf' || signInPolicy.require === 'everyone')
+        ? !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt
+        : false;
+    const decision = evaluateSession({
+      away,
+      isAdmin: auth.user.isAdmin,
+      adminRoute,
+      record,
+      requirement: signInPolicy.require ?? DEFAULT_SIGN_IN_REQUIREMENT,
+      applyToOlderApps: !!signInPolicy.applyToOlderApps,
+      allowPasswordOverRelay: frameleafCloud.remoteAccess.allowPasswordOverRelay,
+      hasAuthenticator,
+      frameleafTagged,
+    });
+    if (decision.ok) {
+      return;
+    }
+    if (decision.code === 'frameleaf_sign_in_required') {
+      this.logger.warn(`Denied remote access (${via}) without a Frameleaf sign-in: ${uri}`);
+      throw frameleafSignInRequired();
+    }
+    if (decision.code === 'two_factor_setup_required') {
+      if (SETUP_ROUTES.test(uri)) {
+        return;
+      }
+      throw twoFactorSetupRequired();
+    }
+    throw await this.sessionVerificationRequired(auth, record?.source === 'frameleaf');
+  }
+
+  /** The `verification_required` answer for a session: Cloud's step-up, or the local authenticator code. */
+  private async sessionVerificationRequired(auth: AuthDto, viaFrameleaf: boolean) {
+    const twoFactor = await this.userRepository.getTwoFactor(auth.user.id);
+    const methods: VerificationMethod[] = [];
+    if (viaFrameleaf) methods.push('frameleaf');
+    if (twoFactor?.enabledAt) methods.push('totp', 'recovery_code');
+    const payload: VerificationTransaction = {
+      k: 'session',
+      sid: auth.session!.id,
+      sub: auth.user.id,
+      exp: epochSeconds(new Date()) + VERIFICATION_TRANSACTION_SECONDS,
+    };
+    return verificationRequired(methods, await signToken(this.twoFactorMac('verification'), payload, auth.session!.id));
+  }
+
+  /**
+   * `POST auth/step-up`: answer a `verification_required` with the local authenticator (a code or a recovery
+   * code). The session then counts as Verified. Cloud's own step-up is answered with a new exchange token
+   * instead (`POST oauth/frameleaf/exchange`).
+   */
+  async stepUp(auth: AuthDto, dto: StepUpDto, loginDetails: LoginDetails): Promise<void> {
+    if (!auth.session) {
+      throw new BadRequestException('This endpoint can only be used with a session token');
+    }
+    requireOneSecondFactor(dto);
+    const now = new Date();
+    const transaction = await verifyToken<VerificationTransaction>(
+      this.twoFactorMac('verification'),
+      dto.transaction,
+      auth.session.id,
+      now,
+    );
+    const twoFactor = await this.userRepository.getTwoFactor(auth.user.id);
+    if (
+      transaction?.k !== 'session' ||
+      transaction.sid !== auth.session.id ||
+      transaction.sub !== auth.user.id ||
+      !twoFactor?.enabledAt
+    ) {
+      throw new UnauthorizedException(TWO_FACTOR_EXPIRED);
+    }
+    const user = await this.userRepository.get(auth.user.id, {});
+    const verified = await this.signInSecurity.attempt('two-factor', auth.user.id, loginDetails, async (backoff) => {
+      if (!(await this.checkSecondFactor(auth.user.id, twoFactor.secret, dto, now))) {
+        await this.signInSecurity.failed(backoff, user);
+        return false;
+      }
+      await this.signInSecurity.succeeded(backoff);
+      return true;
+    });
+    if (!verified) {
+      throw new UnauthorizedException(dto.code ? TWO_FACTOR_WRONG_CODE : TWO_FACTOR_WRONG_RECOVERY_CODE);
+    }
+    await this.sessionRepository.raiseSignIn(auth.session.id, dto.recoveryCode ? 'recovery_code' : 'totp');
   }
 
   /**
@@ -1249,6 +1493,9 @@ export class AuthService extends BaseService {
       this.resolveRedirectUri(oauth, dto.redirectUri),
       dto.state,
       dto.codeChallenge,
+      // unified sign-in: a fresh authentication at the provider (max_age=0), which must then send auth_time; this is
+      // how an account with no password here confirms it is them (for example to set up Two-Step Verification)
+      dto.reauthenticate ? { maxAge: 0 } : {},
     );
   }
 
@@ -1274,6 +1521,7 @@ export class AuthService extends BaseService {
       profile,
       sid: oauthSid,
       idToken: oauthBearerToken,
+      idClaims,
     } = await this.oauthRepository.getProfileAndOAuthSid(oauth, url, expectedState, codeVerifier);
     const normalizedEmail = profile.email ? profile.email.trim().toLowerCase() : undefined;
     const { autoRegister, defaultStorageQuota, storageLabelClaim, storageQuotaClaim, roleClaim } = oauth;
@@ -1360,7 +1608,18 @@ export class AuthService extends BaseService {
       await this.syncProfilePicture(user, profile.picture);
     }
 
-    return this.createLoginResponse(user, loginDetails, { sid: oauthSid, bearerToken: oauthBearerToken }, 'oauth', []);
+    // when the person last authenticated at the provider (its verified `auth_time`); without one it is unknown and
+    // never counts as recent: an existing provider session can sign in here with no fresh authentication
+    const providerAuthTime =
+      typeof idClaims?.auth_time === 'number' ? new Date(idClaims.auth_time * 1000) : new Date(0);
+    return this.createLoginResponse(
+      user,
+      loginDetails,
+      { sid: oauthSid, bearerToken: oauthBearerToken },
+      'oauth',
+      [],
+      providerAuthTime,
+    );
   }
 
   private async syncProfilePicture(user: UserAdmin, url: string) {
@@ -1631,6 +1890,7 @@ export class AuthService extends BaseService {
         session: {
           id: session.id,
           hasElevatedPermission,
+          signIn: session.signIn as AuthSession['signIn'],
         },
       };
     }
@@ -1693,12 +1953,13 @@ export class AuthService extends BaseService {
     identity: { sid?: string; bearerToken?: string; passwordHash?: string },
     method: SignInMethod,
     methods: string[],
+    authTime?: Date,
   ) {
     const { session, response } = await createSession(
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
       user,
       loginDetails,
-      { methods, source: 'local' },
+      { methods, source: 'local', authTime },
       identity,
       identity.passwordHash,
     );

@@ -99,9 +99,11 @@ export const startFrameleaf = async (
   location: Location,
   bounce?: { returnTo: string; nonce: string },
   isCurrent?: () => boolean,
+  verified?: boolean,
 ) => {
   const redirectUri = purpose === 'link' ? `${location.origin}/link` : location.href.split('?', 1)[0];
-  const { url } = await startFrameleafSignIn({ oAuthConfigDto: { redirectUri } });
+  // "Use your Frameleaf passkey": Frameleaf asks for a passkey or two steps before it returns
+  const { url } = await startFrameleafSignIn({ oAuthConfigDto: { redirectUri, ...(verified && { verified }) } });
   if (isCurrent && !isCurrent()) {
     return;
   }
@@ -124,6 +126,8 @@ export const startFrameleaf = async (
 export const RETURN_PARAM = 'frameleafReturn';
 export const NONCE_PARAM = 'frameleafNonce';
 export const REMEMBER_PARAM = 'frameleafRemember';
+/** "Use your Frameleaf passkey" chosen on the home address: ask Frameleaf for Verified on the public one too. */
+export const VERIFIED_PARAM = 'frameleafVerified';
 export const HANDOFF_FRAGMENT = 'frameleafHandoff';
 const NONCE_KEY = 'frameleaf.auth.handoffNonce';
 const NONCE = /^[\w-]{16,64}$/;
@@ -141,13 +145,16 @@ const session = () => {
  * A nonce kept in this tab goes along and must come back with the code, so a code someone else made
  * for their own account can never sign this browser in (login CSRF).
  */
-export const bounceUrl = (signInOrigin: string, location: Location, rememberMe: boolean) => {
+export const bounceUrl = (signInOrigin: string, location: Location, rememberMe: boolean, verified = false) => {
   const nonce = crypto.randomUUID();
   session()?.setItem(NONCE_KEY, nonce);
   const url = new URL('/auth/login', signInOrigin);
   url.searchParams.set(RETURN_PARAM, location.origin);
   url.searchParams.set(NONCE_PARAM, nonce);
   url.searchParams.set(REMEMBER_PARAM, rememberMe ? '1' : '0');
+  if (verified) {
+    url.searchParams.set(VERIFIED_PARAM, '1');
+  }
   return url.href;
 };
 

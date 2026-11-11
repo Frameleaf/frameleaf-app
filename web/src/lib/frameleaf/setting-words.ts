@@ -138,6 +138,9 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'trash.days': { label: 'frameleaf_deleted_keep_photos', values: count('frameleaf_deleted_days') },
   'trash.enabled': { label: 'trash' },
   'user.deleteDelay': { label: 'frameleaf_deleted_keep_account', values: count('frameleaf_deleted_days') },
+  // Your server › Who can sign in › Require a passkey or two-step (unified sign-in)
+  'signInPolicy.require': { label: 'frameleaf_signin_require_who' },
+  'signInPolicy.applyToOlderApps': { label: 'frameleaf_signin_require_older_apps' },
   // Storage & originals › Folder layout
   'storageTemplate.enabled': { label: 'frameleaf_layout_sort' },
   // FL-1333: a retired switch the server ignores (every copy is checked); the promise is said on Folder layout only

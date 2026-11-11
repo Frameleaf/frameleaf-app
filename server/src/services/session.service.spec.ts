@@ -1,5 +1,6 @@
 import { generateKeyPair } from '@frameleaf/locked-crypto';
-import { JobStatus } from 'src/enum.js';
+import { UnauthorizedException } from '@nestjs/common';
+import { DatabaseLock, JobStatus } from 'src/enum.js';
 import { SessionService } from 'src/services/session.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -66,6 +67,98 @@ describe('SessionService', () => {
       expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'other-session' });
       expect(lockedKeys.has(auth.user.id)).toBe(false);
       lockedKeys.clear();
+    });
+  });
+
+  describe('create', () => {
+    it('gives a child session exactly the sign-in record of the session that made it', async () => {
+      const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
+      const record = {
+        methods: ['passkey'],
+        level: 'verified' as const,
+        source: 'local' as const,
+        legacy: false,
+        authTime: new Date('2026-11-11T10:00:00Z'),
+      };
+      mocks.session.getSignIn.mockResolvedValue(record);
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await sut.create(auth, {});
+
+      expect(mocks.session.getSignIn).toHaveBeenCalledWith(auth.session!.id);
+      expect(mocks.session.create).toHaveBeenCalledWith(
+        expect.objectContaining({ parentId: auth.session!.id }),
+        undefined,
+        record,
+      );
+      expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
+    });
+
+    it('makes a child of a session with no record an older session too, which the policy and confirmation judge', async () => {
+      const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
+      mocks.session.getSignIn.mockResolvedValue(undefined);
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+
+      await sut.create(auth, {});
+
+      // no record: AuthService treats it as an older session (legacy until "Apply to older apps too")
+      expect(mocks.session.create).toHaveBeenCalledWith(expect.anything(), undefined, undefined);
+      expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
+    });
+
+    it('ends the child and refuses when unlinking won the race (the link is gone)', async () => {
+      const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
+      mocks.session.getSignIn.mockResolvedValue({
+        methods: ['email_code'],
+        level: 'basic',
+        source: 'frameleaf',
+        legacy: false,
+        authTime: new Date(),
+      });
+      mocks.session.create.mockResolvedValue(SessionFactory.create());
+      mocks.frameleafAccount.getSession.mockResolvedValue({ sessionId: 'parent-session', sub: 'fl-sub' } as never);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue(undefined);
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+      mocks.session.create.mockResolvedValue({ ...SessionFactory.create(), id: 'child-session' });
+      mocks.session.delete.mockResolvedValue();
+
+      await expect(sut.create(auth, {})).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.FrameleafLinkAuthority, expect.any(Function));
+      expect(mocks.frameleafAccount.tagSession).not.toHaveBeenCalled();
+      expect(mocks.session.delete).toHaveBeenCalledWith('child-session');
+    });
+
+    it('gives a child of a Frameleaf session the same Frameleaf tag', async () => {
+      const auth = AuthFactory.from().session({ id: 'parent-session' }).build();
+      const authTime = new Date('2026-11-11T10:00:00Z');
+      mocks.session.getSignIn.mockResolvedValue({
+        methods: ['email_code'],
+        level: 'basic',
+        source: 'frameleaf',
+        legacy: false,
+        authTime,
+      });
+      mocks.session.create.mockResolvedValue({ ...SessionFactory.create(), id: 'child-session' });
+      mocks.frameleafAccount.getSession.mockResolvedValue({
+        sessionId: 'parent-session',
+        userId: auth.user.id,
+        sid: 'fl-sid',
+        sub: 'fl-sub',
+        authTime,
+      } as never);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: 'fl-sub' } as never);
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+
+      await sut.create(auth, {});
+
+      expect(mocks.frameleafAccount.tagSession).toHaveBeenCalledWith({
+        sessionId: 'child-session',
+        userId: auth.user.id,
+        sid: 'fl-sid',
+        sub: 'fl-sub',
+        authTime,
+      });
     });
   });
 

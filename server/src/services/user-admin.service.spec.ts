@@ -1131,6 +1131,43 @@ describe(UserAdminService.name, () => {
     });
   });
 
+  describe('resetSignIn (unified sign-in)', () => {
+    it('emails a password link, removes passkeys and the authenticator, and signs the person out', async () => {
+      const user = UserFactory.create();
+      mocks.user.get.mockResolvedValue(user);
+      mocks.systemMetadata.get.mockResolvedValue({
+        notifications: { smtp: { enabled: true } },
+        server: { externalDomain: 'https://photos.example.test' },
+      } as never);
+      mocks.user.setPasswordLink.mockResolvedValue({ id: user.id });
+      mocks.crypto.randomBytes.mockReturnValue(Buffer.from('b'.repeat(32)));
+      mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+      mocks.passkey.deleteAll.mockResolvedValue({ count: 1, sessionIds: [] });
+      mocks.user.deleteTwoFactor.mockResolvedValue(true);
+
+      await sut.resetSignIn(authStub.admin, user.id);
+
+      expect(mocks.passkey.deleteAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.user.deleteTwoFactor).toHaveBeenCalledWith(user.id);
+      // the old password stops working: only the emailed link sets a new one
+      expect(mocks.user.update).toHaveBeenCalledWith(user.id, { password: '' });
+      expect(mocks.event.emit).toHaveBeenCalledWith('AuthChangePassword', {
+        userId: user.id,
+        invalidateSessions: true,
+      });
+    });
+
+    it('removes nothing when email is not set up, so nobody is left with no way back in', async () => {
+      const user = UserFactory.create();
+      mocks.user.get.mockResolvedValue(user);
+      mocks.systemMetadata.get.mockResolvedValue({ notifications: { smtp: { enabled: false } } } as never);
+
+      await expect(sut.resetSignIn(authStub.admin, user.id)).rejects.toThrow('Email is not set up');
+      expect(mocks.passkey.deleteAll).not.toHaveBeenCalled();
+      expect(mocks.user.deleteTwoFactor).not.toHaveBeenCalled();
+    });
+  });
+
   describe('removePasskeys (FL-836)', () => {
     it('removes every passkey, signs out their sessions and records it in both histories', async () => {
       const user = UserFactory.create();

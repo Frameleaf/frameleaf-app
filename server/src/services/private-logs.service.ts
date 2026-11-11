@@ -7,6 +7,7 @@ import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.r
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { sessionIsConfirmedRecently } from 'src/utils/confirmed-recently.js';
 import { privateLogStore } from 'src/utils/private-log-runtime.js';
 
 @Injectable()
@@ -23,16 +24,12 @@ export class PrivateLogsService {
     if (!auth.user.isAdmin || !auth.session || auth.sharedLink || auth.apiKey) {
       throw new ForbiddenException('Server logs require an administrator session');
     }
-    if (via === 'relay' || via === 'wan') {
-      const session = await this.accounts.getSession(auth.session.id);
-      const now = Date.now();
-      if (
-        !session?.authTime ||
-        session.userId !== auth.user.id ||
-        session.authTime.getTime() > now ||
-        now - session.authTime.getTime() > 15 * 60_000
-      )
-        throw new ForbiddenException('Sign in again to read server logs remotely');
+    if (
+      (via === 'relay' || via === 'wan') &&
+      !(await sessionIsConfirmedRecently(auth.session, (id) => this.accounts.getSession(id)))
+    ) {
+      // confirmed recently: a Frameleaf sign-in or a local passkey from the last 10 minutes
+      throw new ForbiddenException('Sign in again to read server logs remotely');
     }
   }
 

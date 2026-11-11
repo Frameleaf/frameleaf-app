@@ -8,6 +8,7 @@ import { serverVersion } from 'src/constants.js';
 import { SystemConfigController } from 'src/controllers/system-config.controller.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
+import { defaults } from 'src/dtos/config.dto.js';
 import { DatabaseLock, Permission, SystemMetadataKey } from 'src/enum.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
@@ -444,6 +445,11 @@ describe('effective configuration transaction authority', () => {
         real: [CryptoRepository, SessionRepository, UserRepository, ApiKeyRepository, SharedLinkRepository],
         mock: [LoggingRepository],
       }).sut;
+      // the sign-in rule reads the server's settings on every session request; this spec owns the settings
+      // epoch, so the guard sees the defaults without touching it
+      vi.spyOn(authService as unknown as { getConfig: () => Promise<unknown> }, 'getConfig').mockResolvedValue(
+        defaults,
+      );
       http = await controllerSetup(SystemConfigController, [
         { provide: SystemConfigService, useValue: f.sut },
         { provide: StorageTemplateService, useValue: {} },

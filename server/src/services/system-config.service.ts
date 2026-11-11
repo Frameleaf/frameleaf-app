@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -47,6 +48,7 @@ import {
   MachineLearningHardwareResponse,
   defaultMachineLearningHardware,
 } from 'src/repositories/machine-learning.repository.js';
+import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { cloudDescriptionDestination } from 'src/utils/cloud-description-batch.js';
 import { ConfigHistoryKind, credentialHistoryTitle, readConfigHistory } from 'src/utils/config-history.js';
@@ -152,6 +154,9 @@ const copyCredentials = (target: AdminConfigDto, source: AdminConfigDto) => {
 
 @Injectable()
 export class SystemConfigService extends BaseService {
+  @Inject(PasskeyRepository)
+  private passkeyRepository!: PasskeyRepository;
+
   @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.SystemConfig })
   async onBootstrap() {
     await initializeEffectiveConfig(this.configRepos);
@@ -443,6 +448,36 @@ export class SystemConfigService extends BaseService {
   }
 
   /**
+   * Unified sign-in: the strictest "Require a passkey or two-step" setting, everyone everywhere, can only
+   * be chosen by an account that meets it without Frameleaf Cloud (a local authenticator or a local passkey),
+   * so choosing it never locks the person choosing it out. `reset-sign-in-policy` on the CLI undoes it.
+   */
+  private async requireOwnerCanMeetPolicy(incoming: AdminConfigDto, auth?: AuthDto) {
+    if (!auth || incoming.signInPolicy?.require !== 'everyone') {
+      return;
+    }
+    const current = await this.getConfig({ withCache: false });
+    if (current.signInPolicy.require === 'everyone') {
+      return;
+    }
+    // password sign-in must stay on: a local authenticator or passkey is no way back in without it
+    if (!incoming.passwordLogin?.enabled) {
+      throw new BadRequestException(
+        'Everyone, everywhere needs password sign-in on, so you can still sign in to this server without Frameleaf.',
+      );
+    }
+    // a local authenticator is a way in only together with a local password; a local passkey is one by itself
+    const authenticator =
+      !!(await this.userRepository.getTwoFactor(auth.user.id))?.enabledAt &&
+      !!(await this.userRepository.getForChangePassword(auth.user.id)).password;
+    if (!authenticator && (await this.passkeyRepository.countByUser(auth.user.id)) === 0) {
+      throw new BadRequestException(
+        'Add a passkey, or a password with Two-Step Verification, to your own account here first, so you can still sign in to this server without Frameleaf.',
+      );
+    }
+  }
+
+  /**
    * One settings save (FL-66). The transaction boundary is the configuration itself.
    *
    * 1. The save is prepared and validated against the saved settings. Validators may reach the
@@ -466,6 +501,7 @@ export class SystemConfigService extends BaseService {
 
     const incoming = cloneDeep(toPlainObject(dto));
     delete incoming.metrics;
+    await this.requireOwnerCanMeetPolicy(incoming, auth);
     let prepared = await this.prepareAdminConfig(cloneDeep(incoming), expectedRevision);
 
     const { oldConfig, newConfig } = await this.databaseRepository.withLock(
@@ -539,6 +575,11 @@ export class SystemConfigService extends BaseService {
 
     // Older admin clients omit these fields. A settings save keeps the stored choice.
     dto.connectedApps.allowMcp ??= oldConfig.connectedApps.allowMcp;
+    // an older settings client omits the sign-in policy (or one of its fields): keep the stored choice
+    dto.signInPolicy = {
+      require: dto.signInPolicy?.require ?? oldConfig.signInPolicy.require,
+      applyToOlderApps: dto.signInPolicy?.applyToOlderApps ?? oldConfig.signInPolicy.applyToOlderApps,
+    };
     dto.metadata.faces.write ??= oldConfig.metadata.faces.write;
 
     // FL-165: remote access itself (the switch, connection, port, published address and custom

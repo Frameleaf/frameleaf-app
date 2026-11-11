@@ -856,6 +856,27 @@ describe(TimelineService.name, () => {
       );
     });
 
+    it('pages the photos with pageSize, and counts them from those pages (FL-1452)', async () => {
+      const pages = [
+        { timeBucket: '2000-01-01', count: 500, page: 0, after: null },
+        { timeBucket: '2000-01-01', count: 200, page: 1, after: '00000000-0000-4000-8000-000000000001' },
+        { timeBucket: '1970-01-01', count: 3, page: 0, after: null },
+      ];
+      mocks.asset.getTimeBuckets.mockResolvedValue(pages);
+
+      await expect(sut.getDatesToCheck(authStub.admin, { pageSize: 500 })).resolves.toEqual({
+        count: 703,
+        years: [1970, 2000],
+        timeBuckets: ['2000-01-01', '1970-01-01'],
+        pages,
+      });
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        expect.not.objectContaining({ pageSize: expect.anything() }),
+        authStub.admin,
+        { pageSize: 500 },
+      );
+    });
+
     it('keeps the buckets’ own checks: another user’s Locked timeline is refused', async () => {
       await expect(
         sut.getDatesToCheck(

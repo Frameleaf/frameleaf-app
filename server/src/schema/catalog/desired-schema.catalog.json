@@ -46196,705 +46196,6 @@
       "synchronize": true
     },
     {
-      "name": "asset_exif",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_exif",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "make",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "model",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "exifImageWidth",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "exifImageHeight",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "fileSizeInByte",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "orientation",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "dateTimeOriginal",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "modifyDate",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "lensModel",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "fNumber",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "focalLength",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "iso",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "latitude",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "longitude",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "city",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "state",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "country",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "description",
-          "tableName": "asset_exif",
-          "nullable": false,
-          "isArray": false,
-          "default": "''::text",
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "fps",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "exposureTime",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "livePhotoCID",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "timeZone",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "projectionType",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "profileDescription",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "colorspace",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "bitsPerSample",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "autoStackId",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "rating",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "tags",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "asset_exif",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "asset_exif",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "lockedProperties",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "imageEncoding",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "gpsAccuracyM",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "altitude",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "shutterCount",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "focalLengthIn35mm",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "exposureCompensation",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "exposureProgram",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "meteringMode",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "flash",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "whiteBalance",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "sceneCaptureType",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "focusDistance",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "lensMake",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "lensSerialNumber",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "serialNumber",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "software",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "artist",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "copyright",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "imageDirection",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "gpsSpeed",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "mediaKinds",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "estimatedDateTimeOriginal",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_exif_updateId_idx",
-          "definition": "CREATE INDEX \"asset_exif_updateId_idx\" ON public.asset_exif USING btree (\"updateId\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_city_idx",
-          "definition": "CREATE INDEX asset_exif_city_idx ON public.asset_exif USING btree (city)",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "city"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "idx_asset_exif_description_trigram",
-          "definition": "CREATE INDEX idx_asset_exif_description_trigram ON public.asset_exif USING gin (f_unaccent(description) gin_trgm_ops)",
-          "tableName": "asset_exif",
-          "expression": "f_unaccent(description)",
-          "using": "gin",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "IDX_asset_exif_gist_earthcoord",
-          "definition": "CREATE INDEX \"IDX_asset_exif_gist_earthcoord\" ON public.asset_exif USING gist (ll_to_earth_public(latitude, longitude))",
-          "tableName": "asset_exif",
-          "expression": "ll_to_earth_public(latitude, longitude)",
-          "using": "gist",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_rating_order_idx",
-          "definition": "CREATE INDEX asset_exif_rating_order_idx ON public.asset_exif USING btree (COALESCE(rating, 0) DESC, \"assetId\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "assetId"
-          ],
-          "expression": "COALESCE(rating, 0)",
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_mediaKinds_idx",
-          "definition": "CREATE INDEX \"asset_exif_mediaKinds_idx\" ON public.asset_exif USING gin (\"mediaKinds\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "mediaKinds"
-          ],
-          "using": "gin",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_livePhotoCID_idx",
-          "definition": "CREATE INDEX \"asset_exif_livePhotoCID_idx\" ON public.asset_exif USING btree (\"livePhotoCID\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "livePhotoCID"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_autoStackId_idx",
-          "definition": "CREATE INDEX \"asset_exif_autoStackId_idx\" ON public.asset_exif USING btree (\"autoStackId\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "autoStackId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "asset_exif_landmark_match_insert",
-          "definition": "CREATE TRIGGER asset_exif_landmark_match_insert AFTER INSERT ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION asset_exif_landmark_match()",
-          "tableName": "asset_exif",
-          "functionName": "asset_exif_landmark_match",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "insert"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "asset_exif_landmark_match_update",
-          "definition": "CREATE TRIGGER asset_exif_landmark_match_update AFTER UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION asset_exif_landmark_match()",
-          "tableName": "asset_exif",
-          "functionName": "asset_exif_landmark_match",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "asset_exif_photo_location_invalidate",
-          "definition": "CREATE TRIGGER asset_exif_photo_location_invalidate AFTER UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION photo_location_invalidate()",
-          "tableName": "asset_exif",
-          "functionName": "photo_location_invalidate",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "asset_exif_updatedAt",
-          "definition": "CREATE TRIGGER \"asset_exif_updatedAt\" BEFORE UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "asset_exif",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_exif_pkey",
-          "definition": "PRIMARY KEY (\"assetId\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "assetId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_exif_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "album_cleanup_snapshot",
       "columns": [
         {
@@ -52350,6 +51651,852 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_exif",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_exif",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "make",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "model",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "exifImageWidth",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "exifImageHeight",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "fileSizeInByte",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "orientation",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "dateTimeOriginal",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "modifyDate",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lensModel",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "fNumber",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "focalLength",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "iso",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "latitude",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "longitude",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "city",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "state",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "country",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "description",
+          "tableName": "asset_exif",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::text",
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "fps",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "exposureTime",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "livePhotoCID",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "timeZone",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "projectionType",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "profileDescription",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "colorspace",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "bitsPerSample",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "autoStackId",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "rating",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "tags",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "asset_exif",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "asset_exif",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lockedProperties",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "imageEncoding",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "gpsAccuracyM",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "altitude",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "shutterCount",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "focalLengthIn35mm",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "exposureCompensation",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "exposureProgram",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "meteringMode",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "flash",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "whiteBalance",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "sceneCaptureType",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "focusDistance",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lensMake",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lensSerialNumber",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "serialNumber",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "software",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "artist",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "copyright",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "imageDirection",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "gpsSpeed",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "mediaKinds",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "estimatedDateTimeOriginal",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "offsetTimeOriginal",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "offsetTime",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_exif_updateId_idx",
+          "definition": "CREATE INDEX \"asset_exif_updateId_idx\" ON public.asset_exif USING btree (\"updateId\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_city_idx",
+          "definition": "CREATE INDEX asset_exif_city_idx ON public.asset_exif USING btree (city)",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "city"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "idx_asset_exif_description_trigram",
+          "definition": "CREATE INDEX idx_asset_exif_description_trigram ON public.asset_exif USING gin (f_unaccent(description) gin_trgm_ops)",
+          "tableName": "asset_exif",
+          "expression": "f_unaccent(description)",
+          "using": "gin",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "IDX_asset_exif_gist_earthcoord",
+          "definition": "CREATE INDEX \"IDX_asset_exif_gist_earthcoord\" ON public.asset_exif USING gist (ll_to_earth_public(latitude, longitude))",
+          "tableName": "asset_exif",
+          "expression": "ll_to_earth_public(latitude, longitude)",
+          "using": "gist",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_rating_order_idx",
+          "definition": "CREATE INDEX asset_exif_rating_order_idx ON public.asset_exif USING btree (COALESCE(rating, 0) DESC, \"assetId\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "assetId"
+          ],
+          "expression": "COALESCE(rating, 0)",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_mediaKinds_idx",
+          "definition": "CREATE INDEX \"asset_exif_mediaKinds_idx\" ON public.asset_exif USING gin (\"mediaKinds\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "mediaKinds"
+          ],
+          "using": "gin",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_livePhotoCID_idx",
+          "definition": "CREATE INDEX \"asset_exif_livePhotoCID_idx\" ON public.asset_exif USING btree (\"livePhotoCID\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "livePhotoCID"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_autoStackId_idx",
+          "definition": "CREATE INDEX \"asset_exif_autoStackId_idx\" ON public.asset_exif USING btree (\"autoStackId\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "autoStackId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "asset_exif_landmark_match_insert",
+          "definition": "CREATE TRIGGER asset_exif_landmark_match_insert AFTER INSERT ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION asset_exif_landmark_match()",
+          "tableName": "asset_exif",
+          "functionName": "asset_exif_landmark_match",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "asset_exif_landmark_match_update",
+          "definition": "CREATE TRIGGER asset_exif_landmark_match_update AFTER UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION asset_exif_landmark_match()",
+          "tableName": "asset_exif",
+          "functionName": "asset_exif_landmark_match",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "asset_exif_photo_location_invalidate",
+          "definition": "CREATE TRIGGER asset_exif_photo_location_invalidate AFTER UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION photo_location_invalidate()",
+          "tableName": "asset_exif",
+          "functionName": "photo_location_invalidate",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "asset_exif_updatedAt",
+          "definition": "CREATE TRIGGER \"asset_exif_updatedAt\" BEFORE UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "asset_exif",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_exif_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_exif_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_date_finding",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_date_finding",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "cause",
+          "tableName": "asset_date_finding",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "currentDate",
+          "tableName": "asset_date_finding",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "currentZone",
+          "tableName": "asset_date_finding",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "proposedDate",
+          "tableName": "asset_date_finding",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "proposedZone",
+          "tableName": "asset_date_finding",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "real",
+          "primary": false,
+          "name": "confidence",
+          "tableName": "asset_date_finding",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 24,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "groupKey",
+          "tableName": "asset_date_finding",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_date_finding",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "dismissedAt",
+          "tableName": "asset_date_finding",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_date_finding_pkey",
+          "definition": "PRIMARY KEY (\"assetId\", cause)",
+          "tableName": "asset_date_finding",
+          "columnNames": [
+            "assetId",
+            "cause"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_date_finding_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_date_finding",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
           "synchronize": true
         }
       ],

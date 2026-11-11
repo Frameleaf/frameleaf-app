@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -10,7 +10,15 @@ import {
   SessionUpdateDto,
   mapSession,
 } from 'src/dtos/session.dto.js';
-import { AccountEventAction, FrameleafWorker, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import {
+  AccountEventAction,
+  DatabaseLock,
+  FrameleafWorker,
+  JobName,
+  JobStatus,
+  Permission,
+  QueueName,
+} from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 
@@ -51,14 +59,44 @@ export class SessionService extends BaseService {
 
     const token = this.cryptoRepository.randomBytesAsText(32);
     const hashed = this.cryptoRepository.hashSha256(token);
-    const session = await this.sessionRepository.create({
-      parentId: auth.session.id,
-      userId: auth.user.id,
-      expiresAt: dto.duration ? DateTime.now().plus({ seconds: dto.duration }).toJSDate() : null,
-      deviceType: dto.deviceType,
-      deviceOS: dto.deviceOS,
-      token: hashed,
-    });
+    // unified sign-in: a child session is exactly as strong, and as old, as the session that made it
+    const parent = await this.sessionRepository.getSignIn(auth.session.id);
+    const session = await this.sessionRepository.create(
+      {
+        parentId: auth.session.id,
+        userId: auth.user.id,
+        expiresAt: dto.duration ? DateTime.now().plus({ seconds: dto.duration }).toJSDate() : null,
+        deviceType: dto.deviceType,
+        deviceOS: dto.deviceOS,
+        token: hashed,
+      },
+      undefined,
+      parent ?? undefined,
+    );
+    // ...and stays a Frameleaf sign-in where its parent is one: the same tag (sid, sub, auth time), so a
+    // back-channel logout, unlinking or access removal ends both
+    // Under the link authority lock unlinking also holds: the child is tagged only while the parent's tag and the
+    // account's link both still exist, so an unlink either finds the child's tag or leaves the child untagged.
+    if (parent?.source === 'frameleaf') {
+      const parentId = auth.session.id;
+      await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+        const tag = await this.frameleafAccountRepository.getSession(parentId);
+        const link = tag ? await this.frameleafAccountRepository.getLinkByUser(tag.userId) : undefined;
+        if (tag && link?.sub === tag.sub) {
+          await this.frameleafAccountRepository.tagSession({
+            sessionId: session.id,
+            userId: tag.userId,
+            sid: tag.sid,
+            sub: tag.sub,
+            authTime: tag.authTime,
+          });
+          return;
+        }
+        // unlinking (or a logout) won: it ends a Frameleaf session's other sessions, so this one ends too
+        await this.sessionRepository.delete(session.id);
+        throw new UnauthorizedException('This Frameleaf sign-in ended. Sign in again.');
+      });
+    }
 
     return { ...mapSession(session), token };
   }
