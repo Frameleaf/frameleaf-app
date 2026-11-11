@@ -14,6 +14,8 @@
     alt=""
     width={size}
     height={size}
+    style:width="{size}px"
+    style:height="{size}px"
     loading="lazy"
     onerror={() => (broken = true)}
   />
@@ -25,7 +27,12 @@
 
 <style>
   .cr-avatar {
+    /* Always the square asked for: never squeezed or stretched by the row it sits in. */
     flex: none;
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: none;
+    aspect-ratio: 1;
     border-radius: 50%;
     object-fit: cover;
     background: var(--fl-raised);

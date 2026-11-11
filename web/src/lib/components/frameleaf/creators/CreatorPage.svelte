@@ -96,6 +96,12 @@
   const site = $derived(platformName(platform, creator.provider) || $t('frameleaf_creators_platform_website'));
   const standing = $derived(creatorState(creator));
   const status = $derived(creatorStatus(creator, $locale));
+  /** "@maraellis · 6 saved · Timber framing…" */
+  const meta = $derived(
+    [creator.handle, $t('frameleaf_creators_saved_count', { values: { count: creator.savedCount } }), creator.about]
+      .filter(Boolean)
+      .join(' · '),
+  );
   const current = $derived(creatorSection(platform, section));
   const request = $derived(sectionRequest(platform, current));
   const layout = $derived(request.layout);
@@ -362,11 +368,7 @@
     <span class="cr-avatar-wrap"><CreatorAvatar {creator} size={72} /></span>
     <div class="cr-channel-name">
       <h1>{creator.name} <PlatformMark {platform} provider={creator.provider} size={18} /></h1>
-      <p>
-        {#if creator.handle}{creator.handle} ·
-        {/if}{$t('frameleaf_creators_saved_count', { values: { count: creator.savedCount } })}{#if creator.about}
-          · {creator.about}{/if}
-      </p>
+      <p>{meta}</p>
       <p class="cr-status {standing}">
         <Icon icon={STATE_ICONS[standing]} size="16" aria-hidden={true} />
         {$t(status.key, { values: status.values })}

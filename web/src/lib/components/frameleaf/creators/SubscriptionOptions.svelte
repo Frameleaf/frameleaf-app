@@ -44,11 +44,14 @@
       : list;
   });
 
+  /** The folder shown as chosen; one that is not on offer reads as "No folder". */
+  const chosen = $derived(folders.some((folder) => folder.id === folderId) ? (folderId ?? '') : '');
+
   const chooseFolder = (event: Event & { currentTarget: HTMLSelectElement }) => {
     const value = event.currentTarget.value;
     if (value === NEW_FOLDER) {
       // Boards' own New collection dialog; the new folder joins this list once it is made.
-      event.currentTarget.value = folderId ?? '';
+      event.currentTarget.value = chosen;
       boardsCollectionUi.newCollection(null);
       return;
     }
@@ -111,10 +114,10 @@
     </label>
     <label>
       <span>{$t('frameleaf_creators_folder')}</span>
-      <select value={folderId ?? ''} onchange={chooseFolder}>
-        <option value="">{$t('frameleaf_creators_no_folder')}</option>
+      <select onchange={chooseFolder}>
+        <option value="" selected={!chosen}>{$t('frameleaf_creators_no_folder')}</option>
         {#each folders as folder (folder.id)}
-          <option value={folder.id}>{folder.name}</option>
+          <option value={folder.id} selected={folder.id === chosen}>{folder.name}</option>
         {/each}
         <option value={NEW_FOLDER}>{$t('frameleaf_creators_new_folder')}</option>
       </select>

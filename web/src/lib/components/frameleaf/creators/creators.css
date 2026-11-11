@@ -289,7 +289,7 @@
   font-size: var(--fl-font-small);
 }
 .fl-creators .cr-options legend em {
-  color: var(--fl-warning-text, var(--fl-warning));
+  color: var(--fl-warning);
   font-style: normal;
 }
 .fl-creators :is(.cr-switch, .cr-radio) {
@@ -604,7 +604,7 @@
   font-style: normal;
 }
 .fl-creators .cr-card.attention small:first-of-type {
-  color: var(--fl-warning-text, var(--fl-warning));
+  color: var(--fl-warning);
 }
 .fl-creators .cr-videos {
   display: grid;
@@ -667,6 +667,7 @@
 }
 .fl-creators .cr-post {
   display: flex;
+  align-items: flex-start;
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--fl-border);
@@ -792,7 +793,7 @@
   color: var(--fl-accent);
 }
 .fl-creators .cr-channel-name p.cr-status.attention {
-  color: var(--fl-warning-text, var(--fl-warning));
+  color: var(--fl-warning);
 }
 .fl-creators .cr-channel-actions {
   flex: none;
@@ -955,7 +956,7 @@
   color: var(--fl-muted);
 }
 .fl-creators .cr-danger {
-  color: var(--fl-danger-text, var(--fl-danger));
+  color: var(--fl-danger);
 }
 
 /* subscriptions list */
@@ -990,7 +991,7 @@
   overflow-wrap: anywhere;
 }
 .fl-creators .cr-manage tr.attention td:nth-child(2) {
-  color: var(--fl-warning-text, var(--fl-warning));
+  color: var(--fl-warning);
 }
 
 /* downloads tray */
@@ -1080,7 +1081,7 @@
   font-weight: 500;
 }
 .fl-creators .cr-tray li.attention small {
-  color: var(--fl-warning-text, var(--fl-warning));
+  color: var(--fl-warning);
 }
 .fl-creators .cr-bar {
   display: block;
