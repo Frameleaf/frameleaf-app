@@ -2304,14 +2304,22 @@ export class AssetRepository {
       .where('entityId', '=', asUuid(id))
       .where('pathType', 'in', [...ASSET_MOVE_PATH_TYPES] as AssetMovePathType[])
       .execute();
-    const restorationPaths = restorations
-      .flatMap((restoration) => [
+    // FL-1427: the site's cover kept beside a saved video; its source row goes with the asset too
+    const posters = await tx
+      .selectFrom('asset_source')
+      .select('posterPath')
+      .where('assetId', '=', asUuid(id))
+      .where('posterPath', 'is not', null)
+      .execute();
+    const restorationPaths = [
+      ...restorations.flatMap((restoration) => [
         restoration.previewBeforePath,
         restoration.previewAfterPath,
         restoration.resultPath,
         restoration.resultPreviewPath,
-      ])
-      .filter((path): path is string => !!path);
+      ]),
+      ...posters.map(({ posterPath }) => posterPath),
+    ].filter((path): path is string => !!path);
     return {
       ...row,
       files,

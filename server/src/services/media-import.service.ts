@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rename, rm } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
@@ -426,6 +426,10 @@ export class MediaImportService {
     for (const kind of ['avatar', 'banner'] as const) {
       const url = creator?.[`${kind}Url`];
       if (!creator || !url || creator[`${kind}Path`]) continue;
+      // A picture that changed type would otherwise leave the old file beside the new one.
+      const folder = this.pictures(row.ownerId, creator.id);
+      for (const old of await readdir(folder).catch(() => []))
+        if (old.startsWith(`${kind}.`)) await rm(join(folder, old), { force: true });
       const path = await this.keepPicture(row, creator.provider, url, this.pictures(row.ownerId, creator.id), kind);
       if (path) await this.repository.setCreatorImage(creator.id, kind, url, path);
     }

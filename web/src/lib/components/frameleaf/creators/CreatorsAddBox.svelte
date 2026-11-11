@@ -87,6 +87,7 @@
   let interval = $state<MediaInterval>(60);
   let folderId = $state<string | null>(null);
   let followToo = $state(false);
+  let collectionId = $state('');
   let selected = $state<string[]>([]);
   let controller: AbortController | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -103,6 +104,8 @@
   const name = $derived(operation?.creator || addressLabel(text));
   const items = $derived(operation?.items ?? []);
   const reachValue = $derived(buildReach(reach, since));
+  // The Library files items under their creator; when it found none, a collection has to be chosen.
+  const needsCollection = $derived(ready && !operation?.creatorId);
   const hasVideo = $derived(
     items.length > 0
       ? items.some(({ kind }) => kind === MediaItemKind.Video)
@@ -176,6 +179,7 @@
       reach = undefined;
       since = '';
       followToo = false;
+      collectionId = '';
       selected = [];
       saves = defaultSaves(next);
       if (address && action) {
@@ -228,7 +232,7 @@
       return;
     }
     const itemIds = (platform === 'other' ? [...selected] : items.map(({ id }) => id)).sort();
-    if (itemIds.length === 0 || (followToo && !reachValue)) {
+    if (itemIds.length === 0 || (followToo && !reachValue) || (needsCollection && !collectionId)) {
       return;
     }
     busy = true;
@@ -236,8 +240,13 @@
     const signal = new AbortController();
     controller = signal;
     try {
-      // No collection is named: the Library files the items under their creator.
-      const draft = { inspectionId: operation.id, itemIds, quality: hasVideo ? quality : undefined };
+      // With a creator no collection is named: the Library files the items under them.
+      const draft = {
+        inspectionId: operation.id,
+        itemIds,
+        quality: hasVideo ? quality : undefined,
+        ...(needsCollection && { albumId: collectionId }),
+      };
       const started = await createMediaImport({
         mediaImportCreateDto: { ...draft, idempotencyKey: mediaReceiptKey(receipts, draft) },
       });
@@ -299,6 +308,23 @@
       {/each}
     </div>
   </fieldset>
+{/snippet}
+
+{#snippet collectionChoice()}
+  {#if needsCollection}
+    <div class="cr-options">
+      <label>
+        <span>{$t('frameleaf_creators_collection')}</span>
+        <select bind:value={collectionId} disabled={busy}>
+          <option value="" disabled>{$t('frameleaf_creators_collection_choose')}</option>
+          {#each creatorsStore.folders as folder (folder.id)}
+            <option value={folder.id}>{folder.albumName}</option>
+          {/each}
+        </select>
+        <small>{$t('frameleaf_creators_collection_hint')}</small>
+      </label>
+    </div>
+  {/if}
 {/snippet}
 
 <div class="cr-add">
@@ -366,12 +392,17 @@
         </ul>
         {#if hasVideo}<div class="cr-options">{@render qualityChoice()}</div>{/if}
       {/if}
+      {@render collectionChoice()}
       {#if error}<InlineError compact message={$t(error)} />{/if}
       <footer>
         <small
           >{$t('frameleaf_creators_saved_under', { values: { name: operation?.creator || addressLabel(text) } })}</small
         >
-        <Button variant="primary" disabled={!ready || busy || selected.length === 0} onclick={() => void download()}>
+        <Button
+          variant="primary"
+          disabled={!ready || busy || selected.length === 0 || (needsCollection && !collectionId)}
+          onclick={() => void download()}
+        >
           <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />{$t('frameleaf_creators_download')}
         </Button>
       </footer>
@@ -479,13 +510,15 @@
             {/each}
           </ul>
         </fieldset>
-        <label class="cr-switch">
-          <input type="checkbox" role="switch" bind:checked={followToo} disabled={busy} />
-          <span>
-            {$t('frameleaf_creators_follow_too', { values: { name } })}
-            <small>{$t('frameleaf_creators_follow_too_hint')}</small>
-          </span>
-        </label>
+        {#if !needsCollection}
+          <label class="cr-switch">
+            <input type="checkbox" role="switch" bind:checked={followToo} disabled={busy} />
+            <span>
+              {$t('frameleaf_creators_follow_too', { values: { name } })}
+              <small>{$t('frameleaf_creators_follow_too_hint')}</small>
+            </span>
+          </label>
+        {/if}
       </div>
       {#if followToo}
         <SubscriptionOptions
@@ -499,6 +532,7 @@
           disabled={busy}
         />
       {/if}
+      {@render collectionChoice()}
       {#if error}<InlineError compact message={$t(error)} />{/if}
       <footer>
         <small>
@@ -508,7 +542,11 @@
         </small>
         <Button
           variant="primary"
-          disabled={!ready || busy || items.length === 0 || (followToo && !reachValue)}
+          disabled={!ready ||
+            busy ||
+            items.length === 0 ||
+            (followToo && !reachValue) ||
+            (needsCollection && !collectionId)}
           onclick={() => void download()}
         >
           <Icon icon={mdiDownloadOutline} size="18" aria-hidden={true} />{$t('frameleaf_creators_download')}

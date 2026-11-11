@@ -1,4 +1,10 @@
-import { MediaInspectionKind, MediaQuality, MediaReachMode, type MediaSubscriptionResponseDto } from '@frameleaf/sdk';
+import {
+  MediaInspectionKind,
+  MediaQuality,
+  MediaReachMode,
+  type AlbumResponseDto,
+  type MediaSubscriptionResponseDto,
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
@@ -140,5 +146,25 @@ describe('CreatorsAddBox', () => {
     mount('not an address');
     expect(screen.getByRole('status')).toHaveTextContent('That doesn’t look like a page your Library can save from.');
     expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
+  });
+
+  it('asks for a collection when the Library found no creator, and sends it', async () => {
+    sdkMock.inspectMedia.mockResolvedValue(
+      inspectionFixture({ kind: MediaInspectionKind.Item, creator: null, creatorId: null }),
+    );
+    creatorsStore.albums = [
+      { id: 'album-1', albumName: 'Saved', albumUsers: [{ user: { id: '' } }] },
+    ] as unknown as AlbumResponseDto[];
+    mount(video);
+    await screen.findByText('Raising the frame');
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    const download = screen.getByRole('button', { name: 'Download' });
+    expect(download).toBeDisabled();
+
+    await fireEvent.change(screen.getByRole('combobox', { name: /Save into/ }), { target: { value: 'album-1' } });
+    expect(download).toBeEnabled();
+    await fireEvent.click(download);
+    await waitFor(() => expect(sdkMock.createMediaImport).toHaveBeenCalled());
+    expect(sdkMock.createMediaImport.mock.calls[0][0].mediaImportCreateDto).toMatchObject({ albumId: 'album-1' });
   });
 });

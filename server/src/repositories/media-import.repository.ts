@@ -1216,6 +1216,24 @@ export class MediaImportRepository {
         throw new BadRequestException('Inspect a supported creator feed before subscribing');
       if (dto.parentId) await this.privateParent(tx, auth.user.id, dto.parentId);
       const creator = (await this.upsertCreator(tx, auth.user.id, info))!;
+      // Following a creator again changes the subscription they have; a second one would check the site
+      // twice and outlive Unfollow. The creator upsert above serialises two such requests. How far back
+      // is left alone here: it changes on their page, where looking again from the start is handled.
+      const followed = await tx
+        .selectFrom('media_subscription')
+        .select('id')
+        .where('ownerId', '=', auth.user.id)
+        .where('mediaCreatorId', '=', creator.id)
+        .where('status', '!=', 'unsubscribed')
+        .orderBy('createdAt', 'desc')
+        .executeTakeFirst();
+      if (followed)
+        return tx
+          .updateTable('media_subscription')
+          .set({ saves: dto.saves, quality: dto.quality, intervalMinutes: dto.intervalMinutes })
+          .where('id', '=', followed.id)
+          .returningAll()
+          .executeTakeFirstOrThrow();
       // A creator added by an earlier single download keeps the collection they already have.
       const kept = creator.albumId;
       const albumId = await this.creatorAlbum(tx, creator, dto.parentId);

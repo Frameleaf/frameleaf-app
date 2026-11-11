@@ -156,7 +156,9 @@
       if (version !== generation) {
         return;
       }
-      items = next === 1 ? result.items : [...items, ...result.items];
+      // Paging is by offset: items arriving or leaving meanwhile shift the next page, so repeats are dropped.
+      const shown = new Set(items.map(({ assetId }) => assetId));
+      items = next === 1 ? result.items : [...items, ...result.items.filter(({ assetId }) => !shown.has(assetId))];
       page = result.page;
       hasNextPage = result.hasNextPage;
     } catch {

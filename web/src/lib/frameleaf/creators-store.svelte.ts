@@ -234,14 +234,22 @@ export const awaitMediaInspection = (first: MediaImportResponseDto, signal: Abor
     return Promise.resolve(first);
   }
   return new Promise<MediaImportResponseDto>((resolve, reject) => {
+    let failures = 0;
     const stop = pollMediaImport(
       first.id,
       (value) => {
+        failures = 0;
         if (!mediaImportActive(value.state)) {
           resolve(value);
         }
       },
-      () => {},
+      () => {
+        // The poll retries on its own; a reading that keeps failing is given up rather than shown forever.
+        if (++failures >= 5) {
+          stop();
+          reject(new Error('The Library stopped answering'));
+        }
+      },
     );
     signal.addEventListener(
       'abort',

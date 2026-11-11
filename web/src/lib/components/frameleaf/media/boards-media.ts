@@ -39,7 +39,10 @@ export const pollMediaImport = (id: string, onUpdate: (value: MediaImportRespons
     } catch {
       if (!controller.signal.aborted) {
         onError();
-        timer = setTimeout(() => void refresh(), 3000);
+        // The caller may stop the poll from `onError`.
+        if (!controller.signal.aborted) {
+          timer = setTimeout(() => void refresh(), 3000);
+        }
       }
     }
   };

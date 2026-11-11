@@ -174,7 +174,7 @@ export const followable = (operation: MediaOperationView | null) =>
   !!(operation.creatorId ?? operation.creator);
 /** Your Library can file what it found under a creator; otherwise a collection has to be chosen. */
 export const hasCreator = (operation: MediaOperationView | null) =>
-  !!operation?.creator || !!operation?.creatorId;
+  !!operation?.creatorId;
 
 /** Whether a video is being saved: what the Library found, or the platform's usual until it has. */
 export const savesVideo = (
