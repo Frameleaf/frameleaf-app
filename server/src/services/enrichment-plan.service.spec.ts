@@ -7,6 +7,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   MlAdmissionRefusal,
+  MlDestinationKind,
   MlWorkload,
   QueueName,
 } from 'src/enum.js';
@@ -233,6 +234,38 @@ describe(EnrichmentPlanService.name, () => {
 
       await expect(sut.preview(authStub.admin, { assetIds })).rejects.toThrow(BadRequestException);
       expect(enrichment.previewDescription).not.toHaveBeenCalled();
+    });
+
+    it.each([MlDestinationKind.Lan, MlDestinationKind.FrameleafCloud])(
+      'refuses %s before a local-only preview request',
+      async (kind) => {
+        const assetIds = [newUuid()];
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
+        mocks.mlDestination.getById.mockResolvedValue({ ...mlDestinationStub.local, kind });
+        await expect(
+          sut.preview(authStub.admin, {
+            assetIds,
+            destinationId: mlDestinationStub.local.id,
+            localOnly: true,
+          }),
+        ).rejects.toThrow('requires this Library server');
+        expect(enrichment.previewDescription).not.toHaveBeenCalled();
+      },
+    );
+
+    it('passes a local-only, single-model requirement through to final admission', async () => {
+      const assetIds = [newUuid()];
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
+      mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.local);
+      enrichment.previewDescription.mockResolvedValue({ status: 'skipped', reasonKey: 'not-eligible' });
+      await sut.preview(authStub.admin, { assetIds, destinationId: mlDestinationStub.local.id, localOnly: true });
+      expect(enrichment.previewDescription).toHaveBeenCalledWith(assetIds[0], {
+        destinationId: mlDestinationStub.local.id,
+        localOnly: true,
+        imageDescription: expect.objectContaining({ fallbackModelName: '' }),
+      });
+      expect(enrichment.describeAsset).not.toHaveBeenCalled();
+      expect(operations.create).not.toHaveBeenCalled();
     });
 
     it('runs each sample through the draft on the named destination and writes nothing', async () => {

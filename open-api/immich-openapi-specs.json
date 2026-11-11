@@ -97752,6 +97752,10 @@
           "fallbackModelName": {
             "type": "string"
           },
+          "localOnly": {
+            "description": "Require this Library server at final admission; refuse LAN and cloud",
+            "type": "boolean"
+          },
           "modelName": {
             "description": "Draft model; the saved one when omitted",
             "minLength": 1,

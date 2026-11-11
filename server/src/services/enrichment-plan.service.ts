@@ -246,18 +246,23 @@ export class EnrichmentPlanService {
 
     const { machineLearning } = await this.config();
     const destinationId = dto.destinationId ?? (await this.routedDestinationId(MlWorkload.Enrichment));
-    const destination = await this.requireDestination(destinationId, MlWorkload.Enrichment);
+    const destination = await this.requireDestination(destinationId, MlWorkload.Enrichment, dto.localOnly === true);
 
     const draft: SystemConfig['machineLearning']['imageDescription'] = {
       ...machineLearning.imageDescription,
       ...(dto.modelName && { modelName: dto.modelName }),
       ...(dto.fallbackModelName !== undefined && { fallbackModelName: dto.fallbackModelName }),
+      ...(dto.localOnly && { fallbackModelName: '' }),
       ...(dto.prompt && { prompt: dto.prompt }),
     };
 
     const samples: EnrichmentPreviewResponseDto['samples'] = [];
     for (const assetId of assetIds) {
-      const preview = await this.enrichment.previewDescription(assetId, { imageDescription: draft, destinationId });
+      const preview = await this.enrichment.previewDescription(assetId, {
+        imageDescription: draft,
+        destinationId,
+        ...(dto.localOnly && { localOnly: true }),
+      });
       switch (preview.status) {
         case 'success': {
           samples.push({
@@ -895,10 +900,17 @@ export class EnrichmentPlanService {
    * The destination must exist, be enabled, allow the workload and, for cloud, carry consent.
    * Only a passing state (unhealthy, not started) is tolerated at submit.
    */
-  private async requireDestination(destinationId: string, workload: MlWorkload): Promise<MlDestinationRow> {
+  private async requireDestination(
+    destinationId: string,
+    workload: MlWorkload,
+    localOnly = false,
+  ): Promise<MlDestinationRow> {
     const destination = await this.mlDestinations.getById(destinationId);
     if (!destination) {
       throw new BadRequestException('That processing destination does not exist');
+    }
+    if (localOnly && destination.kind !== MlDestinationKind.Local) {
+      throw new BadRequestException('A local description preview requires this Library server');
     }
     const verdict = this.admission(
       destination,
