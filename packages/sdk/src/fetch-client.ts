@@ -9492,6 +9492,8 @@ export type EnrichmentPreviewRequestDto = {
     /** Destination to run on; the routed one when omitted */
     destinationId?: string;
     fallbackModelName?: string;
+    /** Require this Library server at final admission; refuse LAN and cloud */
+    localOnly?: boolean;
     /** Draft model; the saved one when omitted */
     modelName?: string;
     /** Draft prompt; the saved one when omitted */
