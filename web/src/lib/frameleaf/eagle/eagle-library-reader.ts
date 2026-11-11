@@ -1,4 +1,5 @@
 import {
+  eagleFileName,
   eagleLibraryFingerprint,
   parseEagleItem,
   parseEagleLibraryMetadata,
@@ -94,28 +95,41 @@ export async function readEagleLibrary(
       return unreadableEagleItem(id);
     }
     const item = parseEagleItem(json, id);
-    const file = findItemFile(item, files);
-    return file ? { ...item, file } : item;
+    const fileName = findEagleItemFile(item, files.keys());
+    return fileName ? { ...item, ext: originalExtension(fileName), file: files.get(fileName) } : item;
   });
 
   const fingerprint = eagleLibraryFingerprint(metadata, library.folders, folders.length);
   return { name, ...library, items, fingerprint };
 }
 
-/** The item's own file: `<name>.<ext>`, or the one other file of that type beside its metadata. */
-function findItemFile(item: EagleItem, files: Map<string, File>): File | undefined {
-  const exact = files.get(`${item.name}.${item.ext}`);
-  if (exact) {
+/** Resolve copied originals by name before falling back to an unambiguous file of the declared type. */
+function findEagleItemFile(item: Pick<EagleItem, 'name' | 'ext'>, fileNames: Iterable<string>) {
+  const fold = (name: string) => name.normalize('NFC').toLowerCase();
+  const name = fold(item.name);
+  const candidates = [...fileNames].filter((fileName) => {
+    const folded = fold(fileName);
+    const ext = originalExtension(folded);
+    return (
+      ext &&
+      folded !== 'metadata.json' &&
+      !folded.startsWith('._') &&
+      !folded.endsWith('_thumbnail.png') &&
+      (item.ext ? ext === item.ext : !folded.startsWith('.') && ext !== 'xmp')
+    );
+  });
+  const exact = eagleFileName(item);
+  if (candidates.includes(exact)) {
     return exact;
   }
-  const candidates = [...files].filter(
-    ([fileName]) =>
-      fileName !== 'metadata.json' &&
-      !fileName.endsWith('_thumbnail.png') &&
-      fileName.toLowerCase().endsWith(`.${item.ext}`),
-  );
-  return candidates.length === 1 ? candidates[0][1] : undefined;
+  const named = candidates.filter((fileName) => {
+    const folded = fold(fileName);
+    return folded === name || folded.slice(0, folded.lastIndexOf('.')) === name;
+  });
+  return named.length === 1 ? named[0] : candidates.length === 1 ? candidates[0] : undefined;
 }
+
+const originalExtension = (fileName: string) => /\.([a-z\d][a-z\d-]*)$/i.exec(fileName)?.[1].toLowerCase() ?? '';
 
 /** Files from `<input webkitdirectory>`: their paths start with the chosen folder's name. */
 export function entriesFromFileList(files: Iterable<File>): { name: string; entries: LibraryEntry[] } {
