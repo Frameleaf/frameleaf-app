@@ -79,6 +79,8 @@
     storage = [],
     disabled = false,
     started,
+    backupRoot = '',
+    goTo = () => {},
   } = $props<{
     api: (path: string, body?: unknown) => Promise<any>;
     /** Where Manager's own folders are, when folders are chosen by browsing (dashboard.folderSetup). */
@@ -89,6 +91,9 @@
     storage?: { path: string; uses?: string[]; lowOnSpace?: boolean | null; measurable?: boolean }[];
     disabled?: boolean;
     started: (id: string) => void;
+    /** FL-1476: where backups go, and a way to the pages that change the other things kept on this server. */
+    backupRoot?: string;
+    goTo?: (page: string) => void;
   }>();
 
   let usage = $state<Usage | null>(null),
@@ -115,6 +120,32 @@
     }
   }
   onMount(load);
+  // FL-1476: the extra folders added on Containers, shown so Storage lists everything Frameleaf can reach.
+  let extraFolders = $state<{ container: string; source: string; target: string; readOnly: boolean }[]>([]);
+  onMount(async () => {
+    const answer = await api('container-settings').catch(() => null);
+    const names: Record<string, string> = { 'frameleaf-server': 'Frameleaf server', 'frameleaf-machine-learning': 'Machine learning', database: 'Database' };
+    extraFolders = Object.entries(answer?.services ?? {}).flatMap(([id, o]: [string, any]) =>
+      (o?.mounts ?? []).map((m: { source: string; target: string; readOnly: boolean }) => ({ container: names[id] ?? id, ...m })),
+    );
+  });
+  const within = (path: string, root: string) => path === root || path.startsWith(root.endsWith('/') ? root : `${root}/`);
+  /** Each drive with how full it is and which parts of the library are on it. */
+  const driveRows = $derived.by(() => {
+    if (!usage?.drives?.length) return [];
+    const parts = [
+      { name: 'Photos and videos', path: usage.media.path, bytes: usage.media.bytes },
+      { name: 'Thumbnails', path: usage.thumbnails.path ?? usage.media.path, bytes: usage.thumbnails.bytes },
+      { name: 'Database', path: usage.database.path, bytes: usage.database.bytes },
+      ...(backupRoot ? [{ name: 'Backups', path: backupRoot, bytes: null }] : []),
+    ];
+    const owner = (path: string) => [...usage!.drives!].sort((a, b) => b.path.length - a.path.length).find((d) => within(path, d.path));
+    return usage.drives.map((drive) => {
+      const total = storage.find((s: any) => within(s.path, drive.path) && s.totalBytes)?.totalBytes as number | undefined;
+      const used = total && drive.freeBytes !== null ? total - drive.freeBytes : null;
+      return { drive, total, share: total && used !== null ? Math.round((used / total) * 100) : null, parts: parts.filter((p) => p.path && owner(p.path) === drive) };
+    });
+  });
 
   const drives = $derived(usage?.drives ?? []);
   /** "86 GB", "1.8 TB" as the prototype shows them; a library under 1 GB in plain units rather than "0 GB". */
@@ -236,6 +267,21 @@
 {#if loadError && !usage}
   <div class="notice warning" role="alert"><Icon name="warning" /><div class="grow"><strong>{loadError}</strong></div><button class="button quiet" onclick={load}>Try again</button></div>
 {:else if usage}
+  {#if driveRows.length}
+    <section class="sp-drives" aria-labelledby="sp-drives-title">
+      <h2 id="sp-drives-title">Drives</h2>
+      {#each driveRows as row (row.drive.path)}
+        <div class="sp-drive-row">
+          <div class="sp-drive-head">
+            <strong><Icon name={row.drive.speed === 'fast' ? 'bolt' : 'harddisk'} />{row.drive.label}</strong>
+            <span>{row.drive.freeBytes !== null ? `${gigabytes(row.drive.freeBytes)} free` : 'Free space unknown'}{row.total ? ` of ${gigabytes(row.total)}` : ''}</span>
+          </div>
+          {#if row.share !== null}<span class="sp-meter" aria-label="{row.share}% used"><span style="width: {row.share}%" class:warn={row.share >= 90}></span></span>{/if}
+          <p>{row.parts.length ? row.parts.map((p) => (p.bytes ? `${p.name} ${gigabytes(p.bytes)}` : p.name)).join(' · ') : 'Nothing of Frameleaf’s is here yet.'}</p>
+        </div>
+      {/each}
+    </section>
+  {/if}
   <ul class="sp-places" aria-label="Where your library keeps its data">
     {#snippet mediaActions()}<button type="button" class="button quiet" {disabled} onclick={() => choose('media')}>Move…</button>{/snippet}
     {@render place('images', 'Photos and videos', usage.media.path, used(usage.media.bytes), '', false, null, mediaActions)}
@@ -259,6 +305,19 @@
       {@render place('image-outline', 'Thumbnails', usage.media.path, used(usage.thumbnails.bytes, ', with your photos and videos'), '', false, thumbsAdvice, thumbsActions)}
     {/if}
   </ul>
+  <section class="sp-also" aria-labelledby="sp-also-title">
+    <h2 id="sp-also-title">Also on this server</h2>
+    {#if backupRoot}
+      <div class="sp-also-row"><Icon name="shield" /><div><strong>Backups</strong><p>{backupRoot}</p>{@render hint(backupRoot)}<p>Recovery points of the database. Your photos aren’t copied here.</p></div><button type="button" class="button quiet" onclick={() => goTo('backups')}>Backups</button></div>
+    {/if}
+    <div class="sp-also-row"><Icon name="cpu" /><div><strong>Downloaded models</strong><p>Docker volume “model-cache”</p><p>Faces and smart search download these once and keep them between updates.</p></div></div>
+    <div class="sp-also-row"><Icon name="folder" /><div>
+      <strong>Extra folders</strong>
+      {#if extraFolders.length}
+        {#each extraFolders as folder (folder.container + folder.source)}<p>{folder.source} → {folder.target}{folder.readOnly ? ' · read-only' : ''} · {folder.container}</p>{/each}
+      {:else}<p>None. Add folders Frameleaf can read, such as an old archive or a camera-card folder, on Containers.</p>{/if}
+    </div><button type="button" class="button quiet" onclick={() => goTo('containers')}>Containers</button></div>
+  </section>
 {/if}
 
 {#if picking && folders}
@@ -311,24 +370,30 @@
 {/if}
 
 <style>
+  .sp-drives, .sp-also { display: grid; max-width: 820px; margin: 0 0 16px; border-radius: 12px; background: var(--panel); font-size: 14px; line-height: 1.5; }
+  .sp-also { margin: 16px 0 0; }
+  .sp-drives h2, .sp-also h2 { padding: 18px 20px 6px; font-size: 16px; }
+  .sp-drive-row { display: grid; gap: 6px; padding: 14px 20px; border-top: 1px solid var(--border); }
+  .sp-drive-row:first-of-type { border-top: 0; }
+  .sp-drive-head { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between; align-items: center; }
+  .sp-drive-head strong { display: inline-flex; gap: 8px; align-items: center; font-weight: 500; }
+  .sp-drive-head strong :global(svg) { width: 16px; height: 16px; color: var(--muted); }
+  .sp-drive-head span, .sp-drive-row p, .sp-also-row p { color: var(--muted); font-size: 13px; }
+  .sp-meter { display: block; height: 6px; border-radius: 6px; background: var(--raised); overflow: hidden; }
+  .sp-meter > span { display: block; height: 100%; background: var(--accent); }
+  .sp-meter > span.warn { background: var(--amber); }
+  .sp-also-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 14px 20px; border-top: 1px solid var(--border); }
+  .sp-also-row:first-of-type { border-top: 0; }
+  .sp-also-row > :global(svg) { width: 18px; height: 18px; margin-top: 2px; color: var(--muted); }
+  .sp-also-row strong { font-weight: 500; }
+  .sp-also-row p { overflow-wrap: anywhere; }
+  @media (max-width: 720px) {
+    .sp-also-row { grid-template-columns: 20px minmax(0, 1fr); }
+    .sp-also-row > .button { grid-column: 2; justify-self: start; }
+  }
   /* FL-1323: Manager's Storage page, measured from the prototype (frameleaf-prototype manager-setup.css .mgs-issue,
      .mgs-drive, .mgs-suggest, .mgs-move; accounts-libraries.css .resource-dialog; first-run-setup.css .frs-facts). */
   /* The prototype's heading (first-run-setup.css .frs-head), as FL-1317 gives the setup screens. */
-  .sp-heading {
-    margin-bottom: 34px;
-  }
-  .sp-heading h1 {
-    font-size: 28px;
-    font-weight: 600;
-    line-height: 1.15;
-    letter-spacing: -0.8px;
-    text-wrap: balance;
-  }
-  .sp-heading p {
-    margin-top: 20px;
-    font-size: 14px;
-    line-height: 1.5;
-  }
   .sp-places {
     font-size: 14px;
     line-height: 1.5;
