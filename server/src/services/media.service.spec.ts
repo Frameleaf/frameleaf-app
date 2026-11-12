@@ -5745,6 +5745,40 @@ describe(MediaService.name, () => {
       sut.videoInterfaces = { dri: ['renderD128'], mali: true };
     });
 
+    it('never converts a partner copy with a live source: it takes the source video instead (FL-1487)', async () => {
+      const sourceId = newUuid();
+      mocks.partnerOrigin.getLiveSourceId.mockResolvedValue(sourceId);
+      mocks.partnerOrigin.shareGeneratedFiles.mockResolvedValue(['/encoded/copy-own.mp4']);
+
+      expect(await sut.handleVideoConversion({ id: 'video-id' })).toEqual(JobStatus.Skipped);
+
+      expect(mocks.partnerOrigin.getLiveSourceId).toHaveBeenCalledWith('video-id');
+      expect(mocks.partnerOrigin.shareGeneratedFiles).toHaveBeenCalledExactlyOnceWith(sourceId, [
+        AssetFileType.EncodedVideo,
+      ]);
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.FileDelete,
+        data: { files: ['/encoded/copy-own.mp4'] },
+      });
+      // decided for this file and policy, so the overnight check does not queue the copy again
+      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledExactlyOnceWith({
+        assetId: 'video-id',
+        transcodeSkippedFor: expect.stringContaining(`${asset.checksum.toString('hex')}:`),
+      });
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('hands a freshly converted video to the partner copies made before it (FL-1487)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.All } });
+
+      expect(await sut.handleVideoConversion({ id: 'video-id' })).toEqual(JobStatus.Success);
+
+      expect(mocks.media.transcode).toHaveBeenCalled();
+      expect(mocks.partnerOrigin.shareGeneratedFiles).toHaveBeenCalledExactlyOnceWith('video-id', [
+        AssetFileType.EncodedVideo,
+      ]);
+    });
+
     describe('Log video (FL-1285)', () => {
       const lut = '/tmp/frameleaf-color-luts/frameleaf-log-v1-s-log3-s-gamut3-cine-tv-33.cube';
       const sonyLog = () => {
