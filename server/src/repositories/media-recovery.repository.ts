@@ -16,6 +16,7 @@ import {
   PhysicalFileType,
   UserMetadataKey,
 } from 'src/enum.js';
+import { recordLedgerAdded } from 'src/repositories/asset-ledger.repository.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { guardAudit, guardAuditAuthority, publishAudit } from 'src/repositories/icloud-audit.repository.js';
 import {
@@ -717,6 +718,7 @@ export class MediaRecoveryRepository {
                 status: AssetStatus.Active,
               })
               .execute();
+            await recordLedgerAdded(trx, [assetId], 'import', 'owner');
             if ((audit ? audit.private : input.sourceHidden) || inherited) {
               await trx
                 .insertInto('asset_lock')

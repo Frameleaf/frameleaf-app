@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { randomBytes } from 'node:crypto';
 import { parse } from 'node:path';
 import { AssetStatus, ChecksumAlgorithm } from 'src/enum.js';
+import { recordLedgerMerged, recordLedgerUnmerged } from 'src/repositories/asset-ledger.repository.js';
 import { countPathReferences, lockChecksum, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
@@ -186,6 +187,8 @@ export class IdenticalFilesRepository {
     kept: { id: string; path: string };
     content: IdenticalFilesContent;
     unchanged: () => Promise<boolean>;
+    /** FL-921: who started the run, for the nothing-lost ledger. */
+    by?: string | null;
   }): Promise<string | null> {
     return this.db.transaction().execute(async (trx) => {
       await lockChecksum(trx, input.content.sha256);
@@ -221,6 +224,7 @@ export class IdenticalFilesRepository {
         VALUES (${input.runId}::uuid, 'link', ${input.assetId}::uuid, ${input.keptAssetId}::uuid, ${input.ownPath},
           ${input.content.sha256}, ${input.content.sizeInBytes}::bigint)
         RETURNING id`.execute(trx);
+      await recordLedgerMerged(trx, input.assetId, input.by ?? null);
       return rows[0].id;
     });
   }
@@ -500,6 +504,13 @@ export class IdenticalFilesRepository {
   }
 
   async markUndone(id: string) {
-    await sql`UPDATE public.identical_file_change SET "undoneAt" = now() WHERE id = ${id}::uuid`.execute(this.db);
+    await this.db.transaction().execute(async (trx) => {
+      const { rows } = await sql<{ assetId: string }>`UPDATE public.identical_file_change SET "undoneAt" = now()
+        WHERE id = ${id}::uuid RETURNING "assetId"`.execute(trx);
+      // FL-921: the photo has its own file again
+      for (const { assetId } of rows) {
+        await recordLedgerUnmerged(trx, assetId);
+      }
+    });
   }
 }

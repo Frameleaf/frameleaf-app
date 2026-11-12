@@ -149,6 +149,17 @@ const AttentionFileProblemsSchema = z
   })
   .meta({ id: 'AttentionFileProblemsDto' });
 
+const AttentionUnexplainedOriginalsSchema = z
+  .object({
+    count: z.int().min(0).describe('Originals that are gone with no record of a removal, across every account'),
+    since: z
+      .string()
+      .meta({ format: 'date-time' })
+      .nullable()
+      .describe('When the first of them was found missing, or null when there are none'),
+  })
+  .meta({ id: 'AttentionUnexplainedOriginalsDto' });
+
 const AttentionResponseSchema = z
   .object({
     checkedAt: z.string().meta({ format: 'date-time' }).describe('When the checks were made'),
@@ -162,6 +173,9 @@ const AttentionResponseSchema = z
     ),
     processingFailures: AttentionProcessingFailuresSchema.describe(
       'FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check.',
+    ),
+    unexplainedOriginals: AttentionUnexplainedOriginalsSchema.describe(
+      'FL-921: originals the nothing-lost ledger cannot account for. Only a count: no file is named. They add no item and change no check.',
     ),
   })
   .meta({ id: 'AttentionResponseDto' });

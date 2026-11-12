@@ -15,6 +15,7 @@ import { ArchiveOperationService } from 'src/services/archive-operation.service.
 import { AssetAnnotationService } from 'src/services/asset-annotation.service.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
+import { AssetLedgerService } from 'src/services/asset-ledger.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetPaletteService } from 'src/services/asset-palette.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
@@ -383,6 +384,7 @@ export const services = [
   AlbumDateHealService,
   AlbumCleanupService,
   DateDoctorService,
+  AssetLedgerService,
   AlbumMergeService,
   SharedSpaceService,
   SmartAlbumService,

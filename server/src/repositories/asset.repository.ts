@@ -47,6 +47,13 @@ import {
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
+import {
+  type AssetLedgerAddedVia,
+  type AssetLedgerReason,
+  recordLedgerAccountRemoved,
+  recordLedgerAdded,
+  recordLedgerRemoved,
+} from 'src/repositories/asset-ledger.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -949,6 +956,9 @@ export class AssetRepository {
   /**
    * Creates an asset. With `lock` (FL-34, an upload into the Locked view) its lock record is written
    * in the same transaction, so the asset is never listed unlocked, not even for a moment.
+   *
+   * FL-921: its nothing-lost ledger row is written in that transaction too. Unless `addedVia` says
+   * otherwise, an asset of a library came from a scan and any other was uploaded by its owner.
    */
   async create(
     asset: Insertable<AssetTable>,
@@ -957,12 +967,15 @@ export class AssetRepository {
       lockedBy: string | null;
     },
     kysely?: Transaction<DB>,
+    addedVia?: AssetLedgerAddedVia,
   ) {
     const execute = async (tx: Kysely<DB>) => {
       const result = await tx.insertInto('asset').values(asset).returningAll().executeTakeFirstOrThrow();
       if (lock) {
         await this.lockIn(tx, [result.id], lock.reason, lock.lockedBy);
       }
+      const via = addedVia ?? (result.libraryId ? 'library-scan' : 'upload');
+      await recordLedgerAdded(tx, [result.id], via, via === 'upload' ? 'owner' : null);
       return result;
     };
     return kysely ? execute(kysely) : this.inTransaction(execute);
@@ -973,8 +986,11 @@ export class AssetRepository {
       return [];
     }
     return this.inTransaction(async (tx) => {
-      const ids = await tx.insertInto('asset').values(assets).returning('id').execute();
-      return ids.map(({ id }) => id);
+      const rows = await tx.insertInto('asset').values(assets).returning('id').execute();
+      const ids = rows.map(({ id }) => id);
+      // FL-921: one statement for the whole batch; this is the library scan's insert
+      await recordLedgerAdded(tx, ids, 'library-scan');
+      return ids;
     });
   }
   /**
@@ -1604,6 +1620,8 @@ export class AssetRepository {
         .where((eb) => eb.or([eb('ownerId', '=', asUuid(ownerId)), eb('primaryAssetId', '=', anyUuid(ids))]))
         .execute();
       await tx.deleteFrom('asset').where('ownerId', '=', ownerId).execute();
+      // FL-921: one statement for the whole account
+      await recordLedgerAccountRemoved(tx, ownerId);
       return assets.map(
         ({
           id,
@@ -2026,12 +2044,14 @@ export class AssetRepository {
       id: string;
     },
     release?: AssetFileRelease,
+    /** FL-921: who removed it and why, for the nothing-lost ledger, when the caller knows. */
+    ledger?: { by?: string | null; reason?: AssetLedgerReason },
   ): Promise<RemovedAsset | undefined> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.db
           .transaction()
-          .execute((tx) => this.removeOnce(tx, asset.id, release, attempt < REMOVE_ATTEMPTS));
+          .execute((tx) => this.removeOnce(tx, asset.id, release, attempt < REMOVE_ATTEMPTS, ledger));
       } catch (error) {
         if (!(error instanceof RemovalLocksChanged) || attempt >= REMOVE_ATTEMPTS) {
           throw error;
@@ -2044,6 +2064,7 @@ export class AssetRepository {
     id: string,
     release: AssetFileRelease | undefined,
     restartOnChange: boolean,
+    ledger?: { by?: string | null; reason?: AssetLedgerReason },
   ): Promise<RemovedAsset | undefined> {
     const lockedPaths = new Set<string>();
     const lockPaths = async (paths: string[]) => {
@@ -2104,6 +2125,8 @@ export class AssetRepository {
       .where('pathType', 'in', [...ASSET_MOVE_PATH_TYPES] as AssetMovePathType[])
       .execute();
     await tx.deleteFrom('asset').where('id', '=', asUuid(id)).execute();
+    // FL-921: the row and its ledger entry change together, so a removal is never read as a loss
+    await recordLedgerRemoved(tx, id, ledger);
     // the version and develop paths are the ones actually deleted, not the ones read beforehand
     const removed: RemovedAsset = {
       originalPath: lockedAsset.originalPath,

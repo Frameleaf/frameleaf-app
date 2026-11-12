@@ -586,6 +586,7 @@ export class IdenticalFilesService {
       kept: kept.file,
       content,
       unchanged: async () => (await fileIdentity(this.storageRepository, kept.file.path))?.key === kept.identity,
+      by: state.requestedBy,
     });
     if (!changeId) {
       this.addProblem(state, 'changed', { assetId: member.id });
@@ -884,22 +885,27 @@ export class IdenticalFilesService {
       return;
     }
 
-    const asset = await this.assetRepository.create({
-      ownerId: owner.id,
-      libraryId: null,
-      checksum: checked.sha256,
-      checksumAlgorithm: ChecksumAlgorithm.sha256File,
-      originalPath: path,
-      fileCreatedAt: stat.mtime,
-      fileModifiedAt: stat.mtime,
-      localDateTime: stat.mtime,
-      type,
-      isFavorite: false,
-      duration: null,
-      visibility: AssetVisibility.Timeline,
-      livePhotoVideoId: null,
-      originalFileName,
-    });
+    const asset = await this.assetRepository.create(
+      {
+        ownerId: owner.id,
+        libraryId: null,
+        checksum: checked.sha256,
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        originalPath: path,
+        fileCreatedAt: stat.mtime,
+        fileModifiedAt: stat.mtime,
+        localDateTime: stat.mtime,
+        type,
+        isFavorite: false,
+        duration: null,
+        visibility: AssetVisibility.Timeline,
+        livePhotoVideoId: null,
+        originalFileName,
+      },
+      undefined,
+      undefined,
+      'recovered',
+    );
     await this.assetRepository.upsertExif({
       exif: { assetId: asset.id, fileSizeInByte: content.sizeInBytes },
       lockedPropertiesBehavior: 'override',
@@ -935,6 +941,7 @@ export class IdenticalFilesService {
           kept: file,
           content,
           unchanged: async () => (await fileIdentity(this.storageRepository, file.path))?.key === identity,
+          by: state.requestedBy,
         });
         if (changeId) {
           shared = true;

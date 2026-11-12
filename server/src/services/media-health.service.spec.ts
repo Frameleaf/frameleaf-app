@@ -1984,6 +1984,9 @@ describe(MediaHealthService.name, () => {
           checksumAlgorithm: ChecksumAlgorithm.sha256File,
           fileCreatedAt: new Date('2026-09-04T00:00:00Z'),
         }),
+        undefined,
+        undefined,
+        'recovered',
       );
       expect(mocks.forkSchema.recordAssetChecksums).toHaveBeenCalledWith(
         expect.objectContaining({ assetId: 'restored-asset', sha1, sha256, source: 'recovery' }),
@@ -2070,6 +2073,9 @@ describe(MediaHealthService.name, () => {
       expect(mocks.storage.stat).toHaveBeenCalledTimes(3);
       expect(mocks.asset.create).toHaveBeenCalledWith(
         expect.objectContaining({ originalPath: '/data/upload/user-1/ab/cd/in-flight.mp4' }),
+        undefined,
+        undefined,
+        'recovered',
       );
     });
 
