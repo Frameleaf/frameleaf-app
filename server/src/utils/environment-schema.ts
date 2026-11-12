@@ -115,6 +115,8 @@ export const EnvSchema = z
     FRAMELEAF_STUDIO_WORKER: stringBool.optional(),
     /** FL-408: the private volume the bundled worker's enrolment is written to (shared, read only, with ML). */
     FRAMELEAF_STUDIO_WORKER_TRUST_DIR: absolutePath,
+    /** The machine-learning container's group, when its FRAMELEAF_ML_GID is not the default 10001. */
+    FRAMELEAF_ML_GID: z.coerce.number().int().min(0).optional(),
     FRAMELEAF_TRUSTED_PROXIES: trustedProxiesSchema,
     FRAMELEAF_WORKERS_INCLUDE: z.string().optional(),
     FRAMELEAF_WORKERS_EXCLUDE: z.string().optional(),

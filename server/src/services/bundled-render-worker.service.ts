@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, chown, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { OnEvent } from 'src/decorators.js';
 import { FrameleafWorker, MediaOperationDestination, RenderWorkerAuditEvent, RenderWorkerStatus } from 'src/enum.js';
@@ -85,7 +85,11 @@ export class BundledRenderWorkerService extends BaseService {
     }
 
     try {
-      await this.writeTrust(studioWorker.trustDir, { version: 1, workerId: worker.id, enrolmentSecret });
+      await this.writeTrust(studioWorker.trustDir, studioWorker.gid, {
+        version: 1,
+        workerId: worker.id,
+        enrolmentSecret,
+      });
     } catch (error) {
       this.logger.warn(
         `Bundled Studio worker enrolment could not be written to ${studioWorker.trustDir} (${error}); ` +
@@ -96,13 +100,25 @@ export class BundledRenderWorkerService extends BaseService {
     return 'enrolled';
   }
 
-  /** Write atomically, owner-only: the machine-learning container reads it as the same user. */
-  private async writeTrust(directory: string, trust: { version: 1; workerId: string; enrolmentSecret: string }) {
+  /**
+   * Write atomically, never world-readable. A server running as root shares the file with the machine-learning
+   * container's unprivileged user by group (machine-learning/scripts/entrypoint.sh drops to it), which could not
+   * read a root-only file and waited for its enrolment forever. Any other server user is the reader's own user.
+   */
+  private async writeTrust(
+    directory: string,
+    gid: number,
+    trust: { version: 1; workerId: string; enrolmentSecret: string },
+  ) {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const target = join(directory, BUNDLED_RENDER_WORKER_TRUST_FILE);
     const partial = `${target}.${process.pid}.partial`;
     try {
       await writeFile(partial, `${JSON.stringify(trust)}\n`, { mode: 0o600, flag: 'w' });
+      if (process.getuid?.() === 0) {
+        await chown(partial, -1, gid);
+        await chmod(partial, 0o640);
+      }
       await rename(partial, target);
     } finally {
       await rm(partial, { force: true });
