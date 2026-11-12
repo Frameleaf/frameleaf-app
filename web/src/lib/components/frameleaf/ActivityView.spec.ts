@@ -4,6 +4,7 @@ import {
   MediaOperationStatus,
   StudioRenderStage,
   QueueName,
+  State4,
   type MediaOperationDto,
   type QueueRunDto,
 } from '@frameleaf/sdk';
@@ -467,6 +468,8 @@ describe('Frameleaf Activity page', () => {
     expect(screen.queryByRole('button', { name: 'Back to library' })).not.toBeInTheDocument();
     // Nobody who may not pause the server's work is offered it.
     expect(screen.queryByRole('button', { name: 'Pause all' })).not.toBeInTheDocument();
+    // FL-1457 (N8): nor the footnote about background jobs, which reads as a leftover on an empty page.
+    expect(screen.queryByText(en.frameleaf_activity_footnote)).not.toBeInTheDocument();
   });
 
   it('keeps the filters, and says so in the same pattern, when only the chosen filter is empty', async () => {
@@ -492,6 +495,35 @@ describe('Frameleaf Activity page', () => {
     ...overrides,
   });
   const idle = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
+
+  // FL-1457: a feature waiting for another step needs a look: the banner and the Failed chip count it, and that
+  // filter shows its row under Needs a look.
+  it('counts blocked work as needing a look, and lists it under the Failed filter', async () => {
+    sdkMock.getRunningJobs.mockResolvedValue({
+      operations: [],
+      memoryExports: [],
+      canManageQueues: true,
+      canReadJobRuns: true,
+      queues: [queue(QueueName.FaceDetection, { state: State4.Blocked, waiting: 5, total: 5 })],
+      durableRuns: [],
+    });
+    try {
+      const view = await mount([]);
+      expect(await screen.findByRole('heading', { name: '1 thing needs a look' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: /Working through/ })).not.toBeInTheDocument();
+      expect(
+        within(screen.getByRole('group', { name: 'Filter jobs' })).getByRole('button', { name: /Failed/ }),
+      ).toHaveTextContent('1');
+      view.unmount();
+
+      render(ActivityView, { props: { filter: 'failed' } });
+      const section = await screen.findByRole('region', { name: /Needs a look/ });
+      expect(within(section).getByText('Faces & identity')).toBeInTheDocument();
+      expect(screen.queryByTestId('frameleaf-empty-state')).not.toBeInTheDocument();
+    } finally {
+      runningJobsSession.summary = idle;
+    }
+  });
 
   it('shows busy server work by feature, never by the server’s own names (FL-1388)', async () => {
     sdkMock.getRunningJobs.mockResolvedValue({
@@ -821,8 +853,14 @@ describe('Frameleaf Activity page', () => {
       }),
     ]);
 
-    const section = await screen.findByRole('region', { name: /Needs a look/ });
-    const card = within(section).getByRole('article', { name: 'The scan of “Family archive” was interrupted' });
+    // FL-1457 (prototype `ScanInterrupted`): a card of its own, the page's width above the status line, not one of
+    // the cards under "Needs a look".
+    const card = await screen.findByRole('article', { name: 'The scan of “Family archive” was interrupted' });
+    expect(card.closest('section')).toBeNull();
+    expect(screen.queryByRole('region', { name: /Needs a look/ })).not.toBeInTheDocument();
+    const status = screen.getByRole('region', { name: 'How the work is going' });
+    expect(card.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(card).getByRole('heading', { level: 2 })).toBeInTheDocument();
     expect(card).toHaveTextContent('The server restarted while it was reading the folder. Nothing was lost');
     // Not the old row: "Failed", the raw message in the main line and only a dismiss button.
     expect(within(card).queryByText('Failed')).not.toBeInTheDocument();

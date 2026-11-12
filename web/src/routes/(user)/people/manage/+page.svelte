@@ -4,6 +4,7 @@
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import ManagePersonCard from '$lib/components/frameleaf/people/ManagePersonCard.svelte';
   import { filterPeopleByName, isUnnamedPerson, sortPeopleForManage } from '$lib/frameleaf/people';
@@ -12,7 +13,16 @@
   import { handleError } from '$lib/utils/handle-error';
   import { getAllPeople, updatePeople, type PersonResponseDto } from '@frameleaf/sdk';
   import { Icon, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
-  import { mdiArrowLeft, mdiCheck, mdiEyeOffOutline, mdiEyeOutline, mdiAccountOffOutline, mdiRestore } from '@mdi/js';
+  import {
+    mdiAccountOffOutline,
+    mdiAccountOutline,
+    mdiAccountSearchOutline,
+    mdiArrowLeft,
+    mdiCheck,
+    mdiEyeOffOutline,
+    mdiEyeOutline,
+    mdiRestore,
+  } from '@mdi/js';
   import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import { SvelteMap } from 'svelte/reactivity';
@@ -345,9 +355,13 @@
             {/snippet}
           </PeopleInfiniteScroll>
         </div>
-        {#if rows.length === 0}<p class="pm-empty" role="status">
-            {$t(search.trim() ? 'frameleaf_people_no_match' : 'frameleaf_people_none_to_manage')}
-          </p>{/if}
+        {#if rows.length === 0}
+          <!-- FL-1457 (FL-1412 M13): the one empty-page pattern. -->
+          <EmptyState
+            icon={search.trim() ? mdiAccountSearchOutline : mdiAccountOutline}
+            message={$t(search.trim() ? 'frameleaf_people_no_match' : 'frameleaf_people_none_to_manage')}
+          />
+        {/if}
         {#if pageFailed}
           <div role="alert">
             <p>{$t('errors.failed_to_load_people')}</p>
@@ -464,7 +478,6 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
-  .pm-empty,
   .pm-dialog-hint {
     color: var(--fl-muted);
   }

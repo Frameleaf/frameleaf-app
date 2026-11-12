@@ -34,6 +34,12 @@
   let { title, heading, message, actionLabel, icon = mdiShieldLockOutline }: Props = $props();
 
   let unlocking = $state(false);
+  /**
+   * FL-1457 (FL-1391 B1, LibraryView `tabsInToolbar`): with 960px the tab sits at the start of the toolbar row, where its
+   * tooltip says what it is for, and the hint row is gone; a narrower page keeps the hint beside it.
+   */
+  let width = $state(0);
+  const tabsInToolbar = $derived(width >= 960);
   // As LibraryView's root: the page area has no themed ancestor to inherit a theme from.
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
@@ -54,13 +60,15 @@
   };
 </script>
 
-<div class="frameleaf fl-locked-gate" data-theme={appTheme} data-testid="library-locked-gate">
+<div class="frameleaf fl-locked-gate" data-theme={appTheme} data-testid="library-locked-gate" bind:clientWidth={width}>
   <!-- LibraryView's header: the large title, then a hairline, then the layout row (Timeline only). -->
   <header class="fl-locked-gate-header">
     <h1>{title}</h1>
   </header>
-  <div class="fl-locked-gate-layouts">
-    <p class="fl-locked-gate-hint">{$t(LAYOUT_HINTS.timeline)}</p>
+  <div class="fl-locked-gate-layouts" class:in-toolbar={tabsInToolbar}>
+    {#if !tabsInToolbar}
+      <p class="fl-locked-gate-hint">{$t(LAYOUT_HINTS.timeline)}</p>
+    {/if}
     <LibraryLayoutSwitch session={librarySession} layouts={['timeline']} />
   </div>
   <div class="fl-locked-gate-card fl-reveal">
@@ -119,6 +127,9 @@
   }
   .fl-locked-gate-layouts > :global(.fl-layouts) {
     margin-inline-start: auto;
+  }
+  .fl-locked-gate-layouts.in-toolbar > :global(.fl-layouts) {
+    margin-inline-start: 0;
   }
   /* Template `.locked-library-empty`: 96px under the header (50px on phones). */
   .fl-locked-gate-card {

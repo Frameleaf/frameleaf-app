@@ -86,7 +86,9 @@
     gap: var(--fl-space-2);
     padding: var(--fl-empty-padding, 56px var(--fl-space-6));
     color: var(--fl-muted);
-    font: var(--fl-type-body);
+    /* FL-1457 (prototype messy-1110.css `.fl-empty p`): 13px text, 1.5 line height. */
+    font: var(--fl-type-callout);
+    line-height: 1.5;
     text-align: center;
   }
   @media (max-width: 767px) {
@@ -120,8 +122,8 @@
   }
   h2 {
     margin: 0;
-    font: var(--fl-type-headline);
-    letter-spacing: var(--fl-tracking-headline);
+    /* FL-1457 (prototype `.fl-empty h2`): a 15px semibold title. */
+    font: 600 15px / 1.3 var(--fl-family-ui);
     color: var(--fl-text);
     /* A title can quote what was typed ("No folders match …"). */
     overflow-wrap: anywhere;
