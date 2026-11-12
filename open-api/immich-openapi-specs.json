@@ -63932,6 +63932,74 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/takeout/roots/{rootId}/folders": {
+      "get": {
+        "description": "For choosing a server folder to import. Folders are read as they are; the ZIP and .tgz Takeout archives in them are read too.",
+        "operationId": "getTakeoutFolders",
+        "parameters": [
+          {
+            "name": "path",
+            "required": false,
+            "in": "query",
+            "description": "The folder inside the location, relative to it; empty for the location itself",
+            "schema": {
+              "maxLength": 4096,
+              "default": "",
+              "type": "string"
+            }
+          },
+          {
+            "name": "rootId",
+            "required": true,
+            "in": "path",
+            "description": "The permitted import location, as listed",
+            "schema": {
+              "pattern": "^\\d{1,4}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutFoldersResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the folders inside a permitted import location",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/takeout/{id}": {
       "delete": {
         "description": "Removes the import and its staged copies. Everything it brought into the library stays there.",
@@ -165043,6 +165111,97 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "TakeoutFolderContentsDto": {
+        "properties": {
+          "bytes": {
+            "description": "Size of those archives in bytes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "tgz": {
+            "description": ".tgz and .tar.gz archives directly inside it",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unpacked": {
+            "description": "It is, or directly holds, an unpacked Takeout or Google Photos folder",
+            "type": "boolean"
+          },
+          "zip": {
+            "description": "ZIP archives directly inside it",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "tgz",
+          "unpacked",
+          "zip"
+        ],
+        "type": "object"
+      },
+      "TakeoutFolderDto": {
+        "properties": {
+          "bytes": {
+            "description": "Size of those archives in bytes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "name": {
+            "description": "The folder’s name",
+            "type": "string"
+          },
+          "tgz": {
+            "description": ".tgz and .tar.gz archives directly inside it",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unpacked": {
+            "description": "It is, or directly holds, an unpacked Takeout or Google Photos folder",
+            "type": "boolean"
+          },
+          "zip": {
+            "description": "ZIP archives directly inside it",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes",
+          "name",
+          "tgz",
+          "unpacked",
+          "zip"
+        ],
+        "type": "object"
+      },
+      "TakeoutFoldersResponseDto": {
+        "properties": {
+          "folders": {
+            "description": "The folders directly inside it, with what each holds",
+            "items": {
+              "$ref": "#/components/schemas/TakeoutFolderDto"
+            },
+            "type": "array"
+          },
+          "here": {
+            "$ref": "#/components/schemas/TakeoutFolderContentsDto",
+            "description": "What the folder itself holds"
+          }
+        },
+        "required": [
+          "folders",
+          "here"
         ],
         "type": "object"
       },

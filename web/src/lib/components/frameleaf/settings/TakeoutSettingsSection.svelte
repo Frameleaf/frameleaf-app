@@ -14,6 +14,11 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Steps from '$lib/components/frameleaf/settings/kit/Steps.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import TakeoutFolderChooser, {
+    describeTakeoutFolder,
+    holdsTakeoutExport,
+    type ChosenTakeoutFolder,
+  } from '$lib/components/frameleaf/settings/TakeoutFolderChooser.svelte';
   import TakeoutWizard from '$lib/components/frameleaf/TakeoutWizard.svelte';
   import { takeoutProgress, takeoutStateKey, takeoutView } from '$lib/frameleaf/takeout';
   import { Route } from '$lib/route';
@@ -29,7 +34,8 @@
     type TakeoutResponseDto,
     type TakeoutRootDto,
   } from '@frameleaf/sdk';
-  import { mdiAlertCircleOutline, mdiGoogle, mdiSync, mdiTrayArrowDown } from '@mdi/js';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiAlertCircleOutline, mdiChevronRight, mdiGoogle, mdiSync, mdiTrayArrowDown } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -195,26 +201,32 @@
   /* Advanced: an export already on this server ----------------------- */
 
   let roots = $state<TakeoutRootDto[] | undefined>();
-  let rootId = $state('');
-  let folder = $state('');
+  let choosing = $state(false);
+  let chosen = $state<ChosenTakeoutFolder>();
+  const chosenParts = $derived(
+    chosen ? [roots?.find((root) => root.id === chosen!.rootId)?.path ?? '', ...chosen.parts] : [],
+  );
+  const chosenReady = $derived(!!chosen && holdsTakeoutExport(chosen.contents));
   let folderBusy = $state(false);
   let folderFailed = $state(false);
   onMount(() => {
     if (showRoots) {
       void getTakeoutRoots()
-        .then((result) => {
-          roots = result.roots;
-          rootId = result.roots[0]?.id ?? '';
-        })
+        .then((result) => (roots = result.roots))
         .catch(() => (roots = []));
     }
   });
   const importFolder = async () => {
+    if (!chosen) {
+      return;
+    }
     folderBusy = true;
     folderFailed = false;
     try {
       const name = $t('frameleaf_takeout_default_name', { values: { date: dateOf(new Date().toISOString()) } });
-      const created = await createTakeoutImport({ takeoutCreateDto: { name, rootId, directory: folder.trim() } });
+      const created = await createTakeoutImport({
+        takeoutCreateDto: { name, rootId: chosen.rootId, directory: chosen.parts.join('/') },
+      });
       await scanTakeoutImport({ id: created.id });
       openImport(created.id);
     } catch {
@@ -354,30 +366,50 @@
           <p class="hint">{$t('frameleaf_takeout_settings_roots_none')}</p>
         {:else}
           <p class="hint">{$t('frameleaf_takeout_folder_help')}</p>
-          <Row label={$t('frameleaf_takeout_root_label')}>
-            <select class="field" aria-label={$t('frameleaf_takeout_root_label')} bind:value={rootId}>
-              {#each roots as root (root.id)}
-                <option value={root.id}>{root.path}</option>
-              {/each}
-            </select>
-          </Row>
-          <Row label={$t('frameleaf_takeout_folder_label')}>
-            <input
-              class="field"
-              aria-label={$t('frameleaf_takeout_folder_label')}
-              bind:value={folder}
-              maxlength="4096"
-              placeholder="Takeout"
-            />
-            <Button variant="primary" disabled={folderBusy || !rootId} onclick={() => void importFolder()}>
-              {$t('frameleaf_takeout_import_folder')}
-            </Button>
+          <Row
+            label={$t('frameleaf_takeout_folder_label')}
+            help={chosen
+              ? chosenReady
+                ? $t('frameleaf_takeout_folder_ready', {
+                    values: { what: describeTakeoutFolder(chosen.contents, $t, $locale) },
+                  })
+                : $t('frameleaf_takeout_folder_not_found')
+              : $t('frameleaf_takeout_folder_row_help')}
+          >
+            <div class="chosen">
+              {#if chosen}
+                <span class="path" aria-label={chosenParts.join(', ')}>
+                  {#each chosenParts as part, index (index)}
+                    {#if index > 0}<Icon icon={mdiChevronRight} size="14" aria-hidden={true} />{/if}
+                    <b>{part}</b>
+                  {/each}
+                </span>
+              {/if}
+              <Button onclick={() => (choosing = true)}>
+                {chosen ? $t('change') : $t('frameleaf_takeout_folder_choose')}
+              </Button>
+              {#if chosenReady}
+                <Button variant="primary" disabled={folderBusy} onclick={() => void importFolder()}>
+                  {$t('frameleaf_takeout_import_folder')}
+                </Button>
+              {/if}
+            </div>
           </Row>
           {#if folderFailed}
             <InlineError compact message={$t('frameleaf_takeout_error_generic')} />
           {/if}
         {/if}
       </Advanced>
+      {#if choosing && roots}
+        <TakeoutFolderChooser
+          {roots}
+          onClose={() => (choosing = false)}
+          onChoose={(folder) => {
+            chosen = folder;
+            choosing = false;
+          }}
+        />
+      {/if}
     {/if}
   </Section>
 </KitPage>
@@ -415,14 +447,25 @@
     font-size: var(--fl-font-small);
     line-height: 1.5;
   }
-  .field {
-    width: 300px;
-    max-width: 100%;
-    min-height: var(--fl-control-height);
-    padding: 0 var(--fl-space-3);
+  .chosen {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    align-items: center;
+    justify-content: flex-end;
+  }
+  .path {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    color: var(--fl-muted);
+  }
+  .path b {
+    padding: 4px 10px;
     color: var(--fl-text);
-    font: inherit;
-    background: var(--fl-raised);
+    font-weight: 600;
+    background: var(--fl-panel);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
   }

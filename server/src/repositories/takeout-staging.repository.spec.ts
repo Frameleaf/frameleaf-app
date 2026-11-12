@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, mkdtemp, open, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
@@ -6,6 +7,7 @@ import { join } from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
 import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
 import type { TakeoutZipEntry } from 'src/utils/takeout-zip.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
 import { tryPromise } from 'src/utils/promise.js';
 
@@ -167,6 +169,77 @@ describe(TakeoutStagingRepository.name, () => {
     await expect(walk.next()).rejects.toThrow('The selected folder changed');
   });
 
+  it('reads a .tgz in a server folder in place, with long names, links refused and unread entries skipped', async () => {
+    const selected = join(directory, 'selected'),
+      tree = join(directory, 'tree');
+    const album = `Takeout/Google Photos/${'A very long album name '.repeat(6).trim()}`;
+    const photo = randomBytes(300 * 1024);
+    await mkdir(join(tree, album), { recursive: true });
+    await mkdir(selected);
+    await writeFile(join(tree, album, 'skipped.jpg'), randomBytes(5000));
+    await writeFile(join(tree, album, 'IMG_1.jpg'), photo);
+    await symlink('/etc/passwd', join(tree, album, 'link.jpg'));
+    const archivePath = join(selected, 'takeout-001.tgz');
+    // macOS tar would add AppleDouble `._` entries for extended attributes.
+    execFileSync('tar', ['-czf', archivePath, '-C', tree, 'Takeout'], {
+      env: { ...process.env, COPYFILE_DISABLE: '1' },
+    });
+
+    const [file] = await Array.fromAsync(sut.walk(selected, signal()));
+    const seen: Array<{ name: string; refused?: string }> = [];
+    for await (const entry of sut.readFolderTar(selected, file)) {
+      seen.push({ name: entry.name.replace(/\/$/u, ''), refused: entry.refused });
+      if (entry.name === `${album}/IMG_1.jpg`) {
+        const destination = join(directory, 'staged');
+        const digest = await sut.stageTarEntry(entry, destination, signal());
+        expect(digest).toMatchObject({ size: photo.length, checksum: hash(photo) });
+        expect(await readFile(destination)).toEqual(photo);
+      }
+    }
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        { name: `${album}/IMG_1.jpg`, refused: undefined },
+        { name: `${album}/skipped.jpg`, refused: undefined },
+        { name: `${album}/link.jpg`, refused: 'link' },
+      ]),
+    );
+  });
+
+  it('refuses a damaged .tgz as a damaged archive', async () => {
+    const selected = join(directory, 'selected');
+    await mkdir(selected);
+    await writeFile(join(selected, 'broken.tgz'), randomBytes(4096));
+    const [file] = await Array.fromAsync(sut.walk(selected, signal()));
+    await expect(Array.fromAsync(sut.readFolderTar(selected, file))).rejects.toThrow('damaged');
+  });
+
+  it('lists what a permitted location and each folder in it hold, without leaving it', async () => {
+    vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(join(directory, 'library'));
+    await mkdir(join(directory, 'library'));
+    await mkdir(join(directory, 'Exports'));
+    await writeFile(join(directory, 'Exports', 'takeout-001.zip'), 'zip');
+    await writeFile(join(directory, 'Exports', 'takeout-002.tgz'), 'tgz!');
+    await mkdir(join(directory, 'Unpacked', 'Takeout'), { recursive: true });
+    await mkdir(join(directory, 'Google Photos'));
+    await mkdir(join(directory, '.hidden'));
+    await writeFile(join(directory, 'takeout-003.tar.gz'), 'tar.gz');
+    await writeFile(join(directory, 'notes.txt'), 'text');
+    await symlink(tmpdir(), join(directory, 'linked'));
+
+    const empty = { zip: 0, tgz: 0, bytes: 0, unpacked: false };
+    await expect(sut.listFolder(directory, '')).resolves.toEqual({
+      here: { zip: 0, tgz: 1, bytes: 6, unpacked: true },
+      folders: [
+        { name: 'Exports', zip: 1, tgz: 1, bytes: 7, unpacked: false },
+        { name: 'Google Photos', ...empty, unpacked: true },
+        { name: 'library', ...empty },
+        { name: 'Unpacked', ...empty, unpacked: true },
+      ],
+    });
+    await expect(sut.listFolder(directory, '..')).rejects.toThrow('inside the permitted import location');
+    await expect(sut.listFolder(directory, 'linked')).rejects.toThrow();
+  });
+
   it.each(['store', 'deflate'] as const)('extracts valid %s bytes and preserves both digests', async (compression) => {
     const data = Buffer.from('photo bytes');
     const compressed = compression === 'store' ? data : deflateRawSync(data);
@@ -176,12 +249,9 @@ describe(TakeoutStagingRepository.name, () => {
       path = join(directory, 'archive');
     await writeFile(path, bytes);
     const destination = join(directory, 'entry');
+    const archive = await sut.openArchive(path);
     const digest = await sut.stageArchiveEntry(
-      path,
-      {
-        size: bytes.length,
-        read: (position, length) => tryPromise(() => bytes.subarray(position, position + length)),
-      },
+      archive,
       {
         name: 'photo.jpg',
         compression,
@@ -195,6 +265,7 @@ describe(TakeoutStagingRepository.name, () => {
       destination,
       signal(),
     );
+    await archive.close();
     expect(digest).toEqual({
       size: data.length,
       checksum: hash(data),
@@ -213,14 +284,17 @@ describe(TakeoutStagingRepository.name, () => {
       path = join(directory, 'archive');
     await writeFile(path, bytes);
     const controller = new AbortController();
-    if (failure === 'abort') {
-      const original = await vi.importActual<typeof import('node:fs')>('node:fs');
-      vi.mocked(createReadStream).mockImplementationOnce((path, options) => {
-        const raw = original.createReadStream(path, options);
+    const archive = await sut.openArchive(path);
+    const streams: ReturnType<typeof archive.handle.createReadStream>[] = [];
+    const openStream = archive.handle.createReadStream.bind(archive.handle);
+    vi.spyOn(archive.handle, 'createReadStream').mockImplementation((options) => {
+      const raw = openStream(options);
+      if (failure === 'abort') {
         raw.once('data', () => controller.abort());
-        return raw;
-      });
-    }
+      }
+      streams.push(raw);
+      return raw;
+    });
     const entry: TakeoutZipEntry = {
       name: 'photo.jpg',
       compression: 'deflate',
@@ -232,20 +306,10 @@ describe(TakeoutStagingRepository.name, () => {
       modifiedAt: new Date(0),
     };
     const destination = join(directory, 'entry');
-    await expect(
-      sut.stageArchiveEntry(
-        path,
-        {
-          size: bytes.length,
-          read: (position, length) => tryPromise(() => bytes.subarray(position, position + length)),
-        },
-        entry,
-        destination,
-        controller.signal,
-      ),
-    ).rejects.toThrow();
-    const raw = vi.mocked(createReadStream).mock.results.at(-1)!.value;
+    await expect(sut.stageArchiveEntry(archive, entry, destination, controller.signal)).rejects.toThrow();
+    const raw = streams.at(-1)!;
     await vi.waitFor(() => expect(raw.destroyed).toBe(true), { timeout: 200 });
+    await archive.close();
     await expect(readFile(destination)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(readFile(destination + '.part')).rejects.toMatchObject({ code: 'ENOENT' });
   });

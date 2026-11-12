@@ -19712,6 +19712,34 @@ export type TakeoutRootDto = {
 export type TakeoutRootsResponseDto = {
     roots: TakeoutRootDto[];
 };
+export type TakeoutFolderDto = {
+    /** Size of those archives in bytes */
+    bytes: number;
+    /** The folder’s name */
+    name: string;
+    /** .tgz and .tar.gz archives directly inside it */
+    tgz: number;
+    /** It is, or directly holds, an unpacked Takeout or Google Photos folder */
+    unpacked: boolean;
+    /** ZIP archives directly inside it */
+    zip: number;
+};
+export type TakeoutFolderContentsDto = {
+    /** Size of those archives in bytes */
+    bytes: number;
+    /** .tgz and .tar.gz archives directly inside it */
+    tgz: number;
+    /** It is, or directly holds, an unpacked Takeout or Google Photos folder */
+    unpacked: boolean;
+    /** ZIP archives directly inside it */
+    zip: number;
+};
+export type TakeoutFoldersResponseDto = {
+    /** The folders directly inside it, with what each holds */
+    folders: TakeoutFolderDto[];
+    /** What the folder itself holds */
+    here: TakeoutFolderContentsDto;
+};
 export type TakeoutArchiveCreateDto = {
     /** The archive’s file name */
     name: string;
@@ -38559,6 +38587,22 @@ export function getTakeoutRoots(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: TakeoutRootsResponseDto;
     }>("/takeout/roots", {
+        ...opts
+    }));
+}
+/**
+ * List the folders inside a permitted import location
+ */
+export function getTakeoutFolders({ path, rootId }: {
+    path?: string;
+    rootId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutFoldersResponseDto;
+    }>(`/takeout/roots/${encodeURIComponent(rootId)}/folders${QS.query(QS.explode({
+        path
+    }))}`, {
         ...opts
     }));
 }

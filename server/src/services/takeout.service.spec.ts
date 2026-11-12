@@ -108,6 +108,11 @@ const emptyCounts = {
   rejected: 0,
 };
 
+const folderListing = {
+  here: { zip: 0, tgz: 0, bytes: 0, unpacked: false },
+  folders: [{ name: 'Takeout', zip: 2, tgz: 0, bytes: 10, unpacked: false }],
+};
+
 describe(TakeoutService.name, () => {
   let sut: TakeoutService;
   let row: TakeoutImport;
@@ -180,6 +185,7 @@ describe(TakeoutService.name, () => {
       prepare: vi.fn().mockResolvedValue('/data/takeout/user/import'),
       freeBytes: vi.fn().mockResolvedValue(10 * 1024 ** 4),
       resolveDirectory: vi.fn().mockResolvedValue('/imports/Takeout'),
+      listFolder: vi.fn().mockResolvedValue(folderListing),
       remove: vi.fn(),
       removeImport: vi.fn(),
       removeOwner: vi.fn(),
@@ -317,6 +323,28 @@ describe(TakeoutService.name, () => {
         sut.create(authStub.admin, { name: 'Import', rootId: '0', directory: '../etc' }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(repository.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('folders', () => {
+    it('lists a folder inside a configured root for an administrator', async () => {
+      await expect(sut.folders(authStub.admin, '0', 'Exports')).resolves.toEqual(folderListing);
+      expect(staging.listFolder).toHaveBeenCalledWith('/imports', 'Exports');
+    });
+
+    it('refuses everyone else, an API key and an unknown root', async () => {
+      const apiKey = { ...authStub.admin, apiKey: { id: 'key', permissions: [] } } as unknown as AuthDto;
+      await expect(sut.folders(authStub.user1, '0', '')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.folders(apiKey, '0', '')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.folders(authStub.admin, '7', '')).rejects.toBeInstanceOf(BadRequestException);
+      expect(staging.listFolder).not.toHaveBeenCalled();
+    });
+
+    it('reports a folder outside the root as a bad request', async () => {
+      staging.listFolder.mockRejectedValue(
+        new TakeoutStagingError('Choose a folder inside the permitted import location'),
+      );
+      await expect(sut.folders(authStub.admin, '0', '..')).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
