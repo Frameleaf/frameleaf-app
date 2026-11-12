@@ -86,6 +86,8 @@ describe('direct peer and actual native resource publication', () => {
         AssetRepository,
         SharedLinkRepository,
         UserRepository,
+        ApiKeyRepository,
+        SessionRepository,
         StorageRepository,
       ],
       mock: [EventRepository, LoggingRepository, JobRepository],

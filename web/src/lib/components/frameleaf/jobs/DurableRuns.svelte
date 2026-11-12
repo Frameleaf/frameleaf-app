@@ -20,6 +20,7 @@
   import type RunFailuresSheet from '$lib/components/frameleaf/jobs/RunFailuresSheet.svelte';
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import type { ActivityFilter } from '$lib/frameleaf/activity';
+  import { uploadRunTitle } from '$lib/frameleaf/arrivals';
   import { isRunSettled, matchesRunFilter, runTitleKey, settledItems } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
@@ -82,11 +83,12 @@
   const TASK_LIST = commandCenterUrl('processing', 'queues');
   const ownQueue = (run: DurableJobRun) => jobQueue(run.kind as Parameters<typeof jobQueue>[0]);
   const title = (run: DurableJobRun) =>
-    run.nightly
+    uploadRunTitle(run, $t) ??
+    (run.nightly
       ? $t('frameleaf_job_runs_kind_nightly')
       : run.kind === 'library_scan' && run.libraryName
         ? $t('frameleaf_job_runs_kind_library_scan_named', { values: { name: run.libraryName } })
-        : $t(runTitleKey(run.kind, ownQueue(run)?.key, 'frameleaf_job_runs_server_work'));
+        : $t(runTitleKey(run.kind, ownQueue(run)?.key, 'frameleaf_job_runs_server_work')));
   /** Photos when the work is one per photo, tasks otherwise. */
   const photos = (run: DurableJobRun) => run.countsPhotos !== false;
   /** FL-1430: a night whose photos couldn't be counted once each counts its tasks. */

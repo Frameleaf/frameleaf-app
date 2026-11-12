@@ -170,7 +170,7 @@ export async function prepareLibraryImportWork(
             managerSetup: { ...manager, preparedAt: null, startedAt: null },
           }),
         };
-        await sql`insert into job_run(id,kind,selection) values (${runId}::uuid,${LIBRARY_IMPORT_DERIVED_RUN_KIND},${JSON.stringify(retained)}::text::jsonb)`.execute(
+        await sql`insert into job_run(id,kind,selection,origin) values (${runId}::uuid,${LIBRARY_IMPORT_DERIVED_RUN_KIND},${JSON.stringify(retained)}::text::jsonb,'import')`.execute(
           tx,
         );
       }

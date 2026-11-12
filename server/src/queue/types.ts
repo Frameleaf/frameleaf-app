@@ -105,3 +105,11 @@ export type QueueWorkerMessage =
   | { type: 'capacity'; value: number }
   | { type: 'stop' };
 export const toJobItem = (claim: QueueClaim) => ({ name: claim.name, data: claim.data }) as JobItem;
+
+/**
+ * FL-1459: what brought a run's photos in (`job_run.origin`). A plain string in the API, never an enum, so more can
+ * come without breaking strict clients.
+ */
+export type RunOrigin = 'phone' | 'computer' | 'client' | 'link' | 'library' | 'import';
+/** The run uploads from one device or app share (`JobRepository.queueUpload`). */
+export const UPLOAD_RUN_KIND = 'upload';

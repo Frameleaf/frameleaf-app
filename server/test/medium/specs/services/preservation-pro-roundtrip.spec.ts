@@ -8,6 +8,7 @@ import { AlbumKind, LibraryScope, UserMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BookmarkRepository } from 'src/repositories/bookmark.repository.js';
@@ -24,6 +25,7 @@ import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -77,6 +79,8 @@ it('round-trips Design originals, nested memberships, tag paths and sources thro
         AssetRepository,
         SharedLinkRepository,
         UserRepository,
+        ApiKeyRepository,
+        SessionRepository,
         StorageRepository,
         CryptoRepository,
         TagRepository,

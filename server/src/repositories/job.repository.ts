@@ -49,6 +49,8 @@ import {
   QueueIntent,
   QueueOptions,
   type RunHolds,
+  type RunOrigin,
+  UPLOAD_RUN_KIND,
   toJobItem,
 } from 'src/queue/types.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -952,10 +954,55 @@ export class JobRepository {
     });
   }
 
-  /** A library scan's run (its operation id) exists before its first batch; idempotent. */
+  /**
+   * FL-1459: an upload's work joins the run of the device or app it came from, so Activity can say "1,240 photos from
+   * Pixel 8". One run per burst: it takes uploads while its work goes on or finished less than 15 minutes ago, and
+   * for 12 hours at most. Uploads from one device arrive side by side; the lock gives them one run.
+   */
+  async queueUpload(
+    item: JobItem,
+    origin: { ownerId: string; origin: RunOrigin; label: string | null; count: number },
+  ) {
+    if (queueExecution.getStore() || runAdmission.getStore()) {
+      return this.queue(item);
+    }
+    await this.store.db.transaction().execute(async (tx) => {
+      await sql`select pg_advisory_xact_lock(-1459, hashtext(${`${origin.ownerId}/${origin.origin}/${origin.label ?? ''}`}))`.execute(
+        tx,
+      );
+      const {
+        rows: [open],
+      } = await sql<{ id: string }>`select id from job_run where "ownerId" = ${origin.ownerId}::uuid
+        and origin = ${origin.origin} and kind = ${UPLOAD_RUN_KIND} and label is not distinct from ${origin.label}
+        and "createdAt" > now() - interval '12 hours'
+        and ("finishedAt" is null or "finishedAt" > now() - interval '15 minutes')
+        order by "createdAt" desc limit 1`.execute(tx);
+      const runId = open?.id ?? randomUUID();
+      if (!open) {
+        await sql`insert into job_run(id, kind, selection, "enumerationDone", "ownerId", origin, label, "itemCount")
+          values (${runId}::uuid, ${UPLOAD_RUN_KIND}, ${JSON.stringify(withNight({}))}::text::jsonb, true,
+            ${origin.ownerId}::uuid, ${origin.origin}, ${origin.label}, 0)`.execute(tx);
+      }
+      // The photo is the root of all its work, as a scanned photo is: the run counts photos
+      const intent = runSubmission.run(runId, () => this.intent(item));
+      const inserted = await this.store.enqueue([{ ...intent, rootItemKey: (item.data as { id: string }).id }], tx);
+      // A retried ingestion queues the same photo again: only new work counts it, so a run never counts it twice
+      if (inserted > 0 && origin.count > 0) {
+        await sql`update job_run set "itemCount" = coalesce("itemCount", 0) + ${origin.count}
+          where id = ${runId}::uuid`.execute(tx);
+      } else if (inserted === 0 && !open) {
+        await sql`delete from job_run r where r.id = ${runId}::uuid
+          and not exists (select 1 from job where "runId" = r.id)`.execute(tx);
+      }
+    });
+  }
+
+  /** A library scan's run (its operation id) exists before its first batch; idempotent. FL-1459: it names its owner. */
   private async openLibraryScanRun(tx: Transaction<DB>, identity: LibrarySourceIdentity) {
-    await sql`insert into job_run(id, kind, selection, "enumerationDone") values (${identity.operationId}::uuid,
-      ${MediaOperationKind.LibraryScan}, ${JSON.stringify(withNight({ libraryId: identity.libraryId }))}::text::jsonb, false)
+    await sql`insert into job_run(id, kind, selection, "enumerationDone", origin, "ownerId", "itemCount")
+      values (${identity.operationId}::uuid, ${MediaOperationKind.LibraryScan},
+        ${JSON.stringify(withNight({ libraryId: identity.libraryId }))}::text::jsonb, false, 'library',
+        (select "ownerId" from library where id = ${identity.libraryId}::uuid), 0)
       on conflict do nothing`.execute(tx);
   }
 
@@ -1013,6 +1060,10 @@ export class JobRepository {
         parentId: undefined,
       }));
       await this.store.enqueue(intents, tx, identity.operationId);
+      if (assetIds.length > 0) {
+        await sql`update job_run set "itemCount" = coalesce("itemCount", 0) + ${assetIds.length}
+          where id = ${identity.operationId}::uuid`.execute(tx);
+      }
       if (close && value) await this.store.finishEnumeration(identity.operationId, tx);
       return value;
     });

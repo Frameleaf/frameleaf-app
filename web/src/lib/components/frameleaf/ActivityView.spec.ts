@@ -496,6 +496,74 @@ describe('Frameleaf Activity page', () => {
   });
   const idle = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
 
+  it('shows what came in, with a switch to By feature (FL-1459)', async () => {
+    localStorage.removeItem('frameleaf.activity.workView');
+    const step = (name: QueueName, patch: Record<string, number>) => ({
+      queue: name,
+      total: 0,
+      completed: 0,
+      failed: 0,
+      needsAttention: 0,
+      cancelled: 0,
+      active: 0,
+      retrying: 0,
+      delayed: 0,
+      paused: 0,
+      waiting: 0,
+      blocked: 0,
+      ...patch,
+    });
+    sdkMock.getRunningJobs.mockResolvedValue({
+      operations: [],
+      memoryExports: [],
+      canManageQueues: true,
+      canReadJobRuns: true,
+      queues: [
+        queue(QueueName.ThumbnailGeneration, { active: 4, waiting: 120, processed: 1116, total: 1240 }),
+        queue(QueueName.Ocr, { state: State4.Blocked, waiting: 5, total: 5 }),
+      ],
+      durableRuns: [
+        durableRun({
+          id: 'upload-1',
+          kind: 'upload',
+          state: 'running',
+          reasons: [],
+          origin: 'phone',
+          label: 'Pixel 8',
+          ownerId: 'someone-else',
+          ownerName: 'Taylor',
+          itemCount: 1240,
+          steps: [
+            step(QueueName.ThumbnailGeneration, { total: 1240, completed: 1116, active: 4, waiting: 120 }),
+            step(QueueName.SmartSearch, { total: 1240, waiting: 1240 }),
+          ],
+        }),
+      ],
+    });
+    try {
+      await mount([]);
+
+      const section = await screen.findByRole('region', { name: 'In progress' });
+      expect(within(section).getByRole('button', { name: 'By what came in' })).toHaveAttribute('aria-pressed', 'true');
+      expect(within(section).getByText('1,240 photos from Pixel 8')).toBeInTheDocument();
+      expect(within(section).getByText(/^Taylor · Uploaded /)).toBeInTheDocument();
+      const steps = within(section).getByRole('list', { name: '1,240 photos from Pixel 8, step by step' });
+      expect(within(steps).getByText('1,116 of 1,240')).toBeInTheDocument();
+      expect(within(steps).getByText('Up next')).toBeInTheDocument();
+      // A feature waiting on another step still shows, under Needs a look, while In progress shows what came in
+      const needsLook = screen.getByRole('region', { name: /Needs a look/ });
+      expect(within(needsLook).getByText('Text, documents & receipts')).toBeInTheDocument();
+
+      await fireEvent.click(within(section).getByRole('button', { name: 'By feature' }));
+      expect(await within(section).findByText('Ready to browse')).toBeInTheDocument();
+      expect(within(section).queryByText('1,240 photos from Pixel 8')).not.toBeInTheDocument();
+      expect(localStorage.getItem('frameleaf.activity.workView')).toBe('feature');
+    } finally {
+      localStorage.removeItem('frameleaf.activity.workView');
+      runningJobsSession.summary = idle;
+    }
+  });
+
   // FL-1457: a feature waiting for another step needs a look: the banner and the Failed chip count it, and that
   // filter shows its row under Needs a look.
   it('counts blocked work as needing a look, and lists it under the Failed filter', async () => {

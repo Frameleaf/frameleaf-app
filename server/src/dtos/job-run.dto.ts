@@ -186,6 +186,20 @@ export const JobRunResponseSchema = counts
       .describe(
         'With foldNightly, on the night card: false when its photos could not be counted once each (too many, or their tasks are pruned); its numbers are then tasks (stageTotals)',
       ),
+    origin: z
+      .string()
+      .optional()
+      .describe(
+        'What brought its photos in: phone, computer, client (an app or API key), link (a shared link), library (a folder scan) or import. More may come; absent for other work and runs from before',
+      ),
+    ownerId: z.uuid().optional().describe('Whose photos came in'),
+    ownerName: z.string().optional().describe('The name of the account whose photos came in'),
+    label: z.string().optional().describe("The phone's, computer's or app's own name, when it gave one"),
+    itemCount: z.int().min(0).optional().describe('Photos and videos that came in with it'),
+    steps: z
+      .array(counts.extend({ queue: QueueNameSchema }).meta({ id: 'JobRunStepDto' }))
+      .optional()
+      .describe('With an origin, while it runs: its tasks counted by queue (tasks, not photos: faces count each face)'),
   })
   .extend(progress.shape)
   .meta({ id: 'JobRunResponseDto' });
@@ -329,4 +343,10 @@ export const mapJobRun = (row: RunRead): JobRunResponseDto => ({
   ...(row.leftOverStreak && { leftOverStreak: row.leftOverStreak }),
   ...(row.libraryName && { libraryName: row.libraryName }),
   ...(row.countedOnce !== undefined && { countedOnce: row.countedOnce }),
+  ...(row.origin && { origin: row.origin }),
+  ...(row.ownerId && { ownerId: row.ownerId }),
+  ...(row.ownerName && { ownerName: row.ownerName }),
+  ...(row.label && { label: row.label }),
+  ...(row.itemCount !== undefined && { itemCount: row.itemCount }),
+  ...(row.steps && { steps: row.steps.map((step) => ({ ...step, queue: step.queue as QueueName })) }),
 });

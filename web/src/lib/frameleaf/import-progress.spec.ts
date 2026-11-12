@@ -138,3 +138,28 @@ describe('importProgress (FL-1409)', () => {
     expect(importProgress(summary({ durableRuns: [scanRun()] }), NOW)).toBeNull();
   });
 });
+
+describe('importProgress names uploads (FL-1459)', () => {
+  it("names a large upload by its phone's name", () => {
+    const upload = scanRun({ id: 'upload-1', kind: 'upload', origin: 'phone', label: 'Pixel 8', itemCount: 1240 });
+    expect(importProgress(summary({ queues: [thumbnails()], durableRuns: [upload] }), NOW)).toMatchObject({
+      upload: { name: 'Pixel 8' },
+    });
+  });
+
+  it('names no device when two large uploads share the counts', () => {
+    const one = scanRun({ id: 'upload-1', kind: 'upload', origin: 'phone', label: 'Pixel 8', itemCount: 1240 });
+    const two = scanRun({ id: 'upload-2', kind: 'upload', origin: 'phone', label: 'iPad', itemCount: 900 });
+    const line = importProgress(summary({ queues: [thumbnails()], durableRuns: [one, two] }), NOW);
+    expect(line?.upload).toBeUndefined();
+    expect(line?.ready).toBeDefined();
+  });
+
+  it('names no device when a small upload from another one shares the counts', () => {
+    const large = scanRun({ id: 'upload-1', kind: 'upload', origin: 'phone', label: 'Pixel 8', itemCount: 1000 });
+    const small = scanRun({ id: 'upload-2', kind: 'upload', origin: 'computer', label: 'Chrome', itemCount: 100 });
+    expect(
+      importProgress(summary({ queues: [thumbnails()], durableRuns: [large, small] }), NOW)?.upload,
+    ).toBeUndefined();
+  });
+});
