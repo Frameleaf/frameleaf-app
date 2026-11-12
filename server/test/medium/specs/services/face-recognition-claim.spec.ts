@@ -69,13 +69,15 @@ describe('face recognition inside a queue claim', () => {
       faces.push(assetFace.id);
     }
 
-    const queue = QueueName.FacialRecognition;
+    // Each run has its own queues, and follow-up work has a queue of its own, so the claim below is this run's face.
+    const queue = `face-recognition-${randomUUID()}` as QueueName;
+    const followups = `face-followups-${randomUUID()}` as QueueName;
     const store = new SqlQueueStore(db);
     const worker = randomUUID();
-    await store.initialize([queue], worker);
+    await store.initialize([queue, followups], worker);
     const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
     for (const name of [JobName.FacialRecognition, JobName.PersonGenerateThumbnail, JobName.PartnerPropagate]) {
-      jobs['handlers'][name] = { queueName: queue } as never;
+      jobs['handlers'][name] = { queueName: name === JobName.FacialRecognition ? queue : followups } as never;
     }
     const mock = ctx.getMock(JobRepository);
     mock.queue.mockImplementation((item) => jobs.queue(item));
@@ -85,6 +87,7 @@ describe('face recognition inside a queue claim', () => {
     const data = { id: faces[0], deferred: false };
     await jobs.createRun('faces', {}, () => jobs.queue({ name: JobName.FacialRecognition, data }));
     const [claim] = await store.claim(queue, worker);
+    expect(claim).toMatchObject({ name: JobName.FacialRecognition, data });
     const context: QueueExecution = {
       claim,
       signal: new AbortController().signal,
