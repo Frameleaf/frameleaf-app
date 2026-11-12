@@ -432,6 +432,20 @@ describe('People library with nobody found', () => {
     await waitFor(() => expect(container.querySelectorAll('.pl-card')).toHaveLength(1));
   });
 
+  // FL-1457 (FL-1419 leftover): a read that ran out of time is given up quietly, and the next turn asks again.
+  it('asks again on the next turn after a read that timed out, and shows what that one finds', async () => {
+    work([], false);
+    const ada = peopleListItemFactory.build({ id: 'ada', name: 'Ada', isHidden: false });
+    sdkMock.getAllPeople
+      .mockRejectedValueOnce(new DOMException('The operation timed out.', 'TimeoutError'))
+      .mockResolvedValue({ people: [ada], total: 1, hidden: 0, hasNextPage: false });
+    const { container } = render(PeoplePage, { data: nobody(true) });
+
+    await waitFor(() => expect(container.querySelectorAll('.pl-card')).toHaveLength(1));
+    expect(sdkMock.getAllPeople.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('does not re-read a page that is not waiting', async () => {
     render(PeoplePage, { data: nobody(false) });
 

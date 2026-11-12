@@ -72,12 +72,15 @@
     mdiCogOutline,
     mdiDeleteForeverOutline,
     mdiDeleteRestore,
+    mdiFullscreen,
+    mdiFullscreenExit,
     mdiImageAlbum,
     mdiImageBrokenVariant,
     mdiMovieOpenOutline,
     mdiPause,
     mdiPlayCircleOutline,
   } from '@mdi/js';
+  import { MediaQuery } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -90,6 +93,9 @@
     canNavigateCollection?: boolean;
     /** The caller supplied a real list of neighbours for a filmstrip. */
     canShowFilmstrip?: boolean;
+    /** FL-1457 (N1): the viewer has no footer on this phone, so Full screen is the menu's last item. */
+    onToggleFullscreen?: () => void;
+    fullscreen?: boolean;
   };
 
   let {
@@ -100,7 +106,12 @@
     onAction,
     canNavigateCollection = false,
     canShowFilmstrip = false,
+    onToggleFullscreen,
+    fullscreen = false,
   }: Props = $props();
+
+  // The footer that holds Full screen is hidden at the viewer's phone width only (AssetViewer `phoneOneBar`).
+  const phone = new MediaQuery('max-width: 700px');
 
   const sharedLink = getSharedLink();
   const { slideshowState } = slideshowStore;
@@ -475,6 +486,18 @@
     <MenuOption icon={mdiCogOutline} text={label('slideshow-settings')} onClick={openSlideshowSettings} />
   {/if}
 {/each}
+
+<!-- FL-1457 (N1, prototype MediaViewer.jsx): the Viewer group, always the last one, ends with Full screen on a phone. -->
+{#if onToggleFullscreen && phone.current}
+  {#if groups.at(-1)?.id !== 'viewer'}
+    <ViewerMenuGroupLabel text={$t('frameleaf_viewer_group_viewer')} divided={groups.length > 0} />
+  {/if}
+  <MenuOption
+    icon={fullscreen ? mdiFullscreenExit : mdiFullscreen}
+    text={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
+    onClick={onToggleFullscreen}
+  />
+{/if}
 
 {#if isImageAsset(asset) && !asset.duration}
   <ViewerMenuGroupLabel text={$t('frameleaf_image_display')} divided />

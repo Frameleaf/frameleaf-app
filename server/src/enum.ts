@@ -2410,6 +2410,9 @@ export enum JobName {
   AlbumSuggestionOutfit = 'AlbumSuggestionOutfit',
   AlbumCleanupScan = 'AlbumCleanupScan',
   AlbumCleanupApply = 'AlbumCleanupApply',
+  // FL-912: the Date & Time Doctor, one scan per owner
+  DateDoctorScan = 'DateDoctorScan',
+  DateDoctorScanQueueAll = 'DateDoctorScanQueueAll',
   MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',
@@ -2550,6 +2553,8 @@ export const JobNameSchema = z
     JobName.AlbumSuggestionOutfit,
     JobName.AlbumCleanupScan,
     JobName.AlbumCleanupApply,
+    JobName.DateDoctorScan,
+    JobName.DateDoctorScanQueueAll,
     JobName.LockedSeal,
     JobName.LockedUnseal,
     JobName.LockedRewrap,

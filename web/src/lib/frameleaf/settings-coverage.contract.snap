@@ -924,6 +924,9 @@
     "type": "string",
     "format": "uri"
   },
+  "metadata.dateFromFileName": {
+    "type": "boolean"
+  },
   "metadata.faces.import": {
     "type": "boolean"
   },

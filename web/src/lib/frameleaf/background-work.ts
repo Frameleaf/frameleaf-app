@@ -386,6 +386,14 @@ export const leftOverRuns = (summary: DurableRunningJobs | null | undefined): Du
 /** What Activity's first line says, most urgent first (prototype `summaryFor`). */
 export type ActivityWorkStatus = 'paused' | 'attention' | 'working' | 'unread' | 'tonight' | 'jobs' | 'idle';
 
+/**
+ * FL-1457 (prototype work-v3.mjs `summaryFor`: "Office PC isn't answering, so 2 exports wait"): features whose work
+ * can't go on by itself (blocked, waiting for another step) need a look, so they are not counted as working. A
+ * feature whose status the server could not read is not known to be stuck: that reads as "unread".
+ */
+export const stuckWorkRows = (rows: readonly WorkFeatureRow[]) =>
+  rows.filter((row) => row.state === 'stuck' && row.statusKey !== 'frameleaf_activity_bg_unreadable');
+
 export const activityWorkStatus = ({
   rows,
   needsLook,
@@ -401,7 +409,7 @@ export const activityWorkStatus = ({
   if (busy.length > 0 && busy.every((row) => row.state === 'paused')) {
     return 'paused';
   }
-  if (needsLook > 0) {
+  if (needsLook > 0 || stuckWorkRows(rows).length > 0) {
     return 'attention';
   }
   const moving = busy.filter((row) => row.state !== 'paused' && row.state !== 'tonight');

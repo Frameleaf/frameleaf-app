@@ -421,3 +421,13 @@ describe('visibility shortcuts cover everyone', () => {
     expect(view.container.querySelector('.pm-pending')?.textContent).toBe('frameleaf_people_will_be_hidden');
   });
 });
+
+// FL-1457 (FL-1412 M13): with nobody to manage, the page says so in the one empty-page pattern.
+it('says there is nobody to manage in the empty-page pattern', () => {
+  vi.stubGlobal('IntersectionObserver', getIntersectionObserverMock());
+  const { getByTestId } = render(ManagePeoplePageTestWrapper, { data: getData([]) });
+
+  const empty = getByTestId('frameleaf-empty-state');
+  expect(empty).toHaveTextContent('frameleaf_people_none_to_manage');
+  expect(empty.firstElementChild).toHaveClass('icon', 'framed');
+});

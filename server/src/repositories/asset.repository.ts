@@ -615,6 +615,11 @@ export class AssetRepository {
                   estimatedDateTimeOriginal: eb.ref('excluded.estimatedDateTimeOriginal'),
                   modifyDate: ref('modifyDate'),
                   timeZone: ref('timeZone'),
+                  // FL-912: the file's own offsets, only from a write that read them (metadata extraction)
+                  ...('offsetTime' in exif && {
+                    offsetTimeOriginal: eb.ref('excluded.offsetTimeOriginal'),
+                    offsetTime: eb.ref('excluded.offsetTime'),
+                  }),
                   latitude: ref('latitude'),
                   longitude: ref('longitude'),
                   gpsAccuracyM:

@@ -22,6 +22,7 @@ import { handleError } from '$lib/utils/handle-error';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import { personFactory } from '@test-data/factories/person-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
+import { moments } from '@test-data/mocks/video-moments.svelte';
 import SearchPage from './+page.svelte';
 
 const flags = $state({ search: true, smartSearch: false, askSearch: true, assistant: false });
@@ -58,7 +59,9 @@ vi.mock('$lib/components/frameleaf/ResultsView.svelte', async () => ({
   default: (await import('@test-data/frameleaf/SearchResults.svelte')).default,
 }));
 vi.mock('$lib/components/frameleaf/ResultsAssetViewer.svelte', () => ({ default: () => {} }));
-vi.mock('$lib/components/frameleaf/VideoMomentResults.svelte', () => ({ default: () => {} }));
+vi.mock('$lib/components/frameleaf/VideoMomentResults.svelte', async () => ({
+  default: (await import('@test-data/mocks/VideoMomentResults.mock.svelte')).default,
+}));
 vi.mock('$lib/components/frameleaf/SearchEntry.svelte', () => ({ default: () => {} }));
 vi.mock(
   '$lib/components/layouts/UserPageLayout.svelte',
@@ -97,6 +100,7 @@ beforeEach(() => {
   flags.assistant = false;
   state.url = new URL('http://localhost/search');
   vi.mocked(searchAssets).mockResolvedValue(result([]));
+  moments.found = 0;
 });
 
 it('discards old metadata results/cursors after browser-history query replacement', async () => {
@@ -272,7 +276,9 @@ describe('a search by meaning the server cannot answer (FL-1403)', () => {
     expect(await screen.findByText(en.frameleaf_library_empty_filtered_title)).toBeInTheDocument();
     // FL-1412 (M13): the one empty-page pattern, and clearing is its one action.
     const empty = screen.getByTestId('frameleaf-empty-state');
-    expect(empty).toHaveTextContent(en.frameleaf_library_empty_filtered_message);
+    // FL-1457: words and no filters ask for fewer words, never for filters the page does not have.
+    expect(empty).toHaveTextContent(en.frameleaf_search_empty_fewer_words);
+    expect(empty).not.toHaveTextContent('clear the filters');
     expect(within(empty).getAllByRole('button')).toHaveLength(1);
     expect(within(empty).getByRole('button', { name: en.frameleaf_library_empty_filtered_clear })).toHaveClass(
       'primary',
@@ -285,6 +291,29 @@ describe('a search by meaning the server cannot answer (FL-1403)', () => {
     expect(sent).not.toHaveProperty('query');
     expect(sent.filter?.or).toContainEqual({ originalFileName: { like: 'zzzzqqq' } });
     expect(screen.getByTestId('search-by-text-notice')).toHaveTextContent(en.frameleaf_search_by_text_notice);
+  });
+
+  // FL-1457 (N4): the text fallback's words are a chip, so the Filter badge's 1 is explained; removing it clears them.
+  it('shows the fallback as an All text chip that clears the words', async () => {
+    flags.smartSearch = false;
+    meaningSearch('lake');
+    vi.mocked(searchAssets).mockResolvedValue(result(['named']));
+    render(SearchPage);
+
+    const chip = await screen.findByText('All text: lake');
+    expect(chip.closest('#search-chips')).not.toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove All text: lake' }));
+    expect(navigation.goto).toHaveBeenLastCalledWith(Route.photos());
+  });
+
+  it('shows no All text chip while search by meaning answers', async () => {
+    flags.smartSearch = true;
+    meaningSearch('lake');
+    vi.mocked(searchSmart).mockResolvedValue(result(['ranked']));
+    render(SearchPage);
+
+    await screen.findByText('ranked');
+    expect(screen.queryByText('All text: lake')).toBeNull();
   });
 
   it('matches by text and says so when the server refuses it', async () => {
@@ -668,4 +697,91 @@ it('keeps a legacy tag chip readable when one tag lookup is denied', async () =>
   await waitFor(() => expect(chips).toHaveTextContent(`${en.tags}: Trips/Rockies, ${en.tags}`));
   expect(getTagById).toHaveBeenCalledTimes(2);
   expect(handleError).not.toHaveBeenCalled();
+});
+
+// FL-1457 (prototype EmptyState.jsx "Search, no matches"): the empty line names only what the page has.
+it('asks for fewer words or clearing the filters when a word search has filters', async () => {
+  addMessages('dev', en);
+  const query = emptyDiscoveryQuery();
+  query.text = 'lake';
+  query.filter = { city: { eq: 'Banff' } };
+  state.url = new URL(discoveryUrl(query), 'http://localhost');
+  render(SearchPage);
+
+  expect(await screen.findByTestId('frameleaf-empty-state')).toHaveTextContent(
+    en.frameleaf_search_empty_fewer_words_or_filters,
+  );
+});
+
+it('keeps the Library’s words for a search of filters alone', async () => {
+  addMessages('dev', en);
+  setQuery({ city: 'Banff' });
+  render(SearchPage);
+
+  expect(await screen.findByTestId('frameleaf-empty-state')).toHaveTextContent(
+    en.frameleaf_library_empty_filtered_message,
+  );
+});
+
+// FL-1391 B1 on the search page (FL-1457): with room, the layout tabs sit in the results toolbar, not on a row.
+describe('the layout tabs on the search page (FL-1457)', () => {
+  const widthOf = (width: number) =>
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('search-page') ? width : 0;
+    });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('puts them in the toolbar when the results area is 960px or wider', async () => {
+    addMessages('dev', en);
+    widthOf(1200);
+    setQuery({ city: 'Banff' });
+    vi.mocked(searchAssets).mockResolvedValue(result(['a']));
+    render(SearchPage);
+
+    await screen.findByText('a');
+    const tabs = screen.getByTestId('frameleaf-layout-switch');
+    expect(screen.getByTestId('frameleaf-results-toolbar')).toContainElement(tabs);
+    expect(document.querySelector('.search-layouts')).toBeNull();
+    expect(screen.queryByText(en.frameleaf_library_layout_browse_hint)).toBeNull();
+  });
+
+  it('keeps them on their own row, with the hint, when it is narrower', async () => {
+    addMessages('dev', en);
+    widthOf(700);
+    setQuery({ city: 'Banff' });
+    vi.mocked(searchAssets).mockResolvedValue(result(['a']));
+    render(SearchPage);
+
+    await screen.findByText('a');
+    const tabs = screen.getByTestId('frameleaf-layout-switch');
+    expect(screen.getByTestId('frameleaf-results-toolbar')).not.toContainElement(tabs);
+    expect(tabs.closest('.search-layouts')).not.toBeNull();
+  });
+});
+
+// FL-1457 (N2): a search that found moments in videos and no photo keeps the strip, with one quiet line under it.
+it('points at the videos above instead of the empty page when only moments matched', async () => {
+  addMessages('dev', en);
+  moments.found = 1;
+  setQuery({ query: 'campfire song' });
+  render(SearchPage);
+
+  expect(await screen.findByText('No photos match “campfire song”. The video above mentions it.')).toBeInTheDocument();
+  expect(screen.queryByTestId('frameleaf-empty-state')).toBeNull();
+});
+
+// FL-1457: photos answered with nothing while moments in videos are still asked: the page waits before it calls the
+// search empty, and says so once the moments answer with none.
+it('waits for the moments before showing the empty page', async () => {
+  addMessages('dev', en);
+  moments.found = undefined;
+  setQuery({ query: 'campfire song' });
+  render(SearchPage);
+
+  await vi.waitFor(() => expect(searchAssets).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(screen.queryByTestId('frameleaf-empty-state')).toBeNull();
+
+  moments.found = 0;
+  expect(await screen.findByTestId('frameleaf-empty-state')).toBeInTheDocument();
 });
