@@ -1,10 +1,20 @@
+import { ConflictException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { access, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AssetType, AssetVisibility, ChecksumAlgorithm, PhysicalFileType } from 'src/enum.js';
+import {
+  AssetType,
+  AssetVisibility,
+  ChecksumAlgorithm,
+  IntegrityReport,
+  MediaHealthCategory,
+  MediaHealthSeverity,
+  MediaHealthStatus,
+  PhysicalFileType,
+} from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
@@ -332,6 +342,78 @@ describe(PhysicalFileTrashRepository.name, () => {
         expect.objectContaining({ id: second.result.entry.id }),
       );
       await expect(sut.getById(second.result.entry.id)).resolves.toBeUndefined();
+    });
+
+    it('keeps a copy whose photo elsewhere has lost its file, and deletes it once that is settled', async () => {
+      const { ctx, sut, files } = setup();
+      const { checksum, result } = await trashOne(ctx, sut, files);
+      if (result.status !== 'trashed') {
+        throw new Error('not trashed');
+      }
+      // another person's photo of the same bytes, whose shared file is now missing
+      const { user: other } = await ctx.newUser();
+      const linked = await newAssetWithSize(ctx, other.id, { checksum });
+      await defaultDatabase
+        .insertInto('integrity_report')
+        .values({ type: IntegrityReport.MissingFile, path: linked.originalPath, assetId: linked.id })
+        .execute();
+      const unlink = vi.fn().mockResolvedValue(undefined);
+
+      await expect(sut.purge(result.entry.id, unlink)).rejects.toBeInstanceOf(ConflictException);
+      expect(unlink).not.toHaveBeenCalled();
+      await expect(sut.getById(result.entry.id)).resolves.toBeDefined();
+
+      await defaultDatabase.deleteFrom('integrity_report').where('assetId', '=', linked.id).execute();
+      await expect(sut.purge(result.entry.id, unlink)).resolves.toMatchObject({ id: result.entry.id });
+      expect(unlink).toHaveBeenCalledOnce();
+    });
+
+    it('keeps a copy whose SHA-256 matches a photo Library care finds damaged', async () => {
+      const { ctx, sut, files } = setup();
+      const { checksum, result } = await trashOne(ctx, sut, files);
+      if (result.status !== 'trashed') {
+        throw new Error('not trashed');
+      }
+      // an older photo recorded by SHA-1, whose SHA-256 the identical-files scan saved
+      const { user: other } = await ctx.newUser();
+      const linked = await newAssetWithSize(ctx, other.id, {
+        checksum: randomBytes(20),
+        checksumAlgorithm: ChecksumAlgorithm.sha1File,
+      });
+      await defaultDatabase
+        .insertInto('asset_checksum')
+        .values({
+          assetId: linked.id,
+          sha1: linked.checksum,
+          sha256: checksum,
+          sizeInBytes: 1000,
+          linkCount: 1,
+          verifiedPaths: [linked.originalPath],
+        })
+        .execute();
+      const health = {
+        assetId: linked.id,
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+        severity: MediaHealthSeverity.Critical,
+        originalPath: linked.originalPath,
+        originalFileName: 'IMG_1.jpg',
+        evidence: {},
+        resolution: {},
+        checkedAt: new Date(),
+      };
+      await defaultDatabase.insertInto('asset_health').values(health).execute();
+      const unlink = vi.fn().mockResolvedValue(undefined);
+
+      await expect(sut.purge(result.entry.id, unlink)).rejects.toBeInstanceOf(ConflictException);
+      expect(unlink).not.toHaveBeenCalled();
+
+      await defaultDatabase
+        .updateTable('asset_health')
+        .set({ resolvedAt: new Date() })
+        .where('assetId', '=', linked.id)
+        .execute();
+      await expect(sut.purge(result.entry.id, unlink)).resolves.toMatchObject({ id: result.entry.id });
     });
   });
 
