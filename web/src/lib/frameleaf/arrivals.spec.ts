@@ -85,6 +85,6 @@ describe('arrivals (FL-1459)', () => {
     expect(uploadRunTitle(upload({ origin: 'import', label: 'Google Photos', itemCount: 180 }), $t)).toBe(
       'frameleaf_activity_arrival_from:{"count":180,"name":"Google Photos"}',
     );
-    expect(uploadRunTitle(upload({ kind: 'library_scan', origin: 'library', label: null }), $t)).toBeNull();
+    expect(uploadRunTitle(upload({ kind: 'library_scan', origin: 'library', label: undefined }), $t)).toBeNull();
   });
 });
