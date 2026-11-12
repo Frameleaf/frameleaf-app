@@ -138,6 +138,25 @@ export class StorageCore {
     );
   }
 
+  /**
+   * FL-1477: every server's own folder for exports copied in to import (`<media>/imports`). It sits
+   * beside the library and is never crawled into it; Google Photos and Eagle imports may always read it.
+   */
+  static getImportsFolder() {
+    return join(StorageCore.getMediaLocation(), 'imports');
+  }
+
+  /**
+   * The folders administrators may import from: the built-in Imports folder (id `imports`), then
+   * `FRAMELEAF_IMPORT_ROOTS` numbered by position, so ids stored with earlier imports stay the same.
+   */
+  static getImportRoots(configured: readonly string[]) {
+    return [
+      { id: 'imports', path: StorageCore.getImportsFolder(), builtIn: true },
+      ...configured.map((root, index) => ({ id: String(index), path: root, builtIn: false })),
+    ];
+  }
+
   static setMediaLocation(location: string) {
     mediaLocation = location;
   }

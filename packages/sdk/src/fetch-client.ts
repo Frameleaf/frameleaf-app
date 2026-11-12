@@ -9549,14 +9549,14 @@ export type EagleImportCreateDto = {
     insideAlbumId?: string;
     /** The `.library` folder, relative to the allowed import folder */
     path: string;
-    /** Which allowed import folder, as the list numbers them */
+    /** Which allowed import folder: `imports` for the built-in one, otherwise its position in the list */
     rootId: string;
     targetMode: EagleImportTargetMode;
 };
 export type EagleLibraryCheckDto = {
     /** The `.library` folder, relative to the allowed import folder */
     path: string;
-    /** Which allowed import folder, as the list numbers them */
+    /** Which allowed import folder: `imports` for the built-in one, otherwise its position in the list */
     rootId: string;
 };
 export type EagleFolderDto = {
@@ -9615,7 +9615,7 @@ export type EagleLibraryLocationDto = {
     name: string;
     /** The `.library` folder, relative to the allowed import folder */
     path: string;
-    /** Which allowed import folder, as the list numbers them */
+    /** Which allowed import folder: `imports` for the built-in one, otherwise its position in the list */
     rootId: string;
 };
 export type EagleLibrariesResponseDto = {
@@ -19709,8 +19709,13 @@ export type TakeoutCreateDto = {
     rootId?: string;
 };
 export type TakeoutRootDto = {
+    /** The Imports folder every server has, beside the library */
+    builtIn: boolean;
+    /** Where the built-in Imports folder is on the computer, when Manager says so */
+    hostPath: string | null;
+    /** `imports` for the built-in Imports folder, otherwise its position */
     id: string;
-    /** The directory the administrator permitted */
+    /** The directory imports may read, as the server sees it */
     path: string;
 };
 export type TakeoutRootsResponseDto = {
@@ -40566,6 +40571,7 @@ export enum EnvironmentKeys {
     FrameleafHost = "FRAMELEAF_HOST",
     FrameleafIgnoreMountCheckErrors = "FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS",
     FrameleafImportRoots = "FRAMELEAF_IMPORT_ROOTS",
+    FrameleafImportsHostPath = "FRAMELEAF_IMPORTS_HOST_PATH",
     FrameleafLogLevel = "FRAMELEAF_LOG_LEVEL",
     FrameleafLogFormat = "FRAMELEAF_LOG_FORMAT",
     FrameleafMediaLocation = "FRAMELEAF_MEDIA_LOCATION",

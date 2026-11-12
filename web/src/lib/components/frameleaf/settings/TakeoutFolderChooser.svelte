@@ -39,8 +39,8 @@
   /**
    * Browse the folders this server may import from and choose one, after the prototype's
    * `FolderChooser` (`settings-v2/library/parts.jsx`). Nothing is typed: the top level is the
-   * permitted import locations, and each folder says what it holds (ZIP or .tgz archives, or an
-   * unpacked export), as the server read it.
+   * built-in Imports folder and any other permitted location (FL-1477), and each folder says what it
+   * holds (ZIP or .tgz archives, or an unpacked export), as the server read it.
    */
   let {
     roots,
@@ -79,7 +79,9 @@
 
   const describe = (contents: TakeoutFolderContentsDto) => describeTakeoutFolder(contents, $t, $locale);
 
-  const crumbs = $derived(root ? [root.path, ...trail] : []);
+  /** The built-in Imports folder (FL-1477) goes by its name; an operator's folder by its path. */
+  const rootName = (item: TakeoutRootDto) => (item.builtIn ? $t('frameleaf_takeout_imports_name') : item.path);
+  const crumbs = $derived(root ? [rootName(root), ...trail] : []);
   const goTo = (depth: number) => {
     if (depth === 0) {
       rootId = undefined;
@@ -111,7 +113,10 @@
         <li>
           <button type="button" onclick={() => (rootId = item.id)}>
             <span class="icon"><Icon icon={mdiHarddisk} size="20" aria-hidden={true} /></span>
-            <span><strong>{item.path}</strong></span>
+            <span>
+              <strong>{rootName(item)}</strong>
+              {#if item.builtIn}<small>{$t('frameleaf_takeout_imports_built_in')}</small>{/if}
+            </span>
             <Icon icon={mdiChevronRight} aria-hidden={true} />
           </button>
         </li>
@@ -143,7 +148,7 @@
       <Skeleton variant="text" lines={3} />
     </div>
   {/if}
-  <p class="hint">{$t('frameleaf_takeout_folder_only_allowed')}</p>
+  <p class="hint">{$t('frameleaf_takeout_folder_only_allowed_imports')}</p>
 
   {#snippet actions()}
     <span class="count">

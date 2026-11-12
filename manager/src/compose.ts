@@ -11,6 +11,7 @@ import { command, environment, type Container } from './docker.js';
 import { folderDetail } from './host-paths.js';
 import { UNRAID_ICON, containerName } from './dockerman.js';
 import { managerPlatform } from './server-check.js';
+import { importsFolder } from './mounts.js';
 
 export type Acceleration = 'cpu' | 'cuda' | 'rocm' | 'openvino';
 /** Match hwaccel.transcoding.yml; video acceleration does not require an ML variant or AMD's KFD. */
@@ -460,6 +461,8 @@ export async function renderCompose(
     FRAMELEAF_MANAGER_TOKEN_FILE: '/run/frameleaf/manager-token',
     FRAMELEAF_MANAGER_URL: process.env.MANAGER_ORIGIN ?? '',
   };
+  const imports = importsFolder(installation.mounts);
+  if (imports) environment.FRAMELEAF_IMPORTS_HOST_PATH = imports;
   if (installation.origin === 'restored_library' && installation.importInstallation) {
     if (!/^[a-f0-9]{12}$/.test(installation.importInstallation)) throw new Refusal('invalid_restore_import_identity');
     environment.FRAMELEAF_MANAGER_IMPORT_INSTALLATION = installation.importInstallation;

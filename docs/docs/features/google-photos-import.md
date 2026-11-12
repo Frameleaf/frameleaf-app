@@ -16,7 +16,7 @@ Each archive is uploaded in parts. If the upload stops (the browser closed, the 
 
 An archive is refused when your storage quota or the server's free space could not hold it.
 
-Administrators can import from a folder on the server instead of uploading, under **Advanced: import from a folder on this server**, but only from a folder inside one of the locations the server operator permitted with `FRAMELEAF_IMPORT_ROOTS`. Folders are read without following links, and never from the library's own storage.
+Administrators can import from a folder on the server instead of uploading: choose **Choose folder…** in the start dialog, or under **Advanced: import from a folder on this server**. Every server has a built-in **Imports** folder, `imports` inside Frameleaf's storage folder (beside the library, and never added to it on its own). Copy the export's ZIP or .tgz files, or the unpacked export, into it and choose it. Frameleaf Manager shows where it is on the computer; other drives or shares can be added in Manager or permitted with `FRAMELEAF_IMPORT_ROOTS`. Put every part of one export in the same folder, since a photo's details can be in a different part than the photo. Folders are read without following links, and never from the rest of the library's own storage.
 
 ## Check
 

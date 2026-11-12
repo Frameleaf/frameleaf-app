@@ -105,6 +105,8 @@ describe('FL-653 Eagle import from a server folder', () => {
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), 'eagle-import-'));
     libraryPath = await writeLibrary(root);
+    // The built-in Imports folder (FL-1477) is listed too; here it does not exist, so it holds no library.
+    StorageCore.setMediaLocation(path.join(root, 'no-media'));
     repository = {
       findResumable: vitest.fn().mockResolvedValue(undefined),
       create: vitest.fn((input) => Promise.resolve({ ...row(), ...input })),
@@ -171,7 +173,7 @@ describe('FL-653 Eagle import from a server folder', () => {
       new Unavailable(),
       staging as unknown as TakeoutStagingRepository,
     );
-    await expect(unavailable.listLibraries(admin)).resolves.toEqual({ available: false, roots: 1, libraries: [] });
+    await expect(unavailable.listLibraries(admin)).resolves.toEqual({ available: false, roots: 2, libraries: [] });
     await expect(
       unavailable.check(admin, { rootId: '0', path: 'Design/Studio References.library' }),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
@@ -192,7 +194,7 @@ describe('FL-653 Eagle import from a server folder', () => {
     it('lists the libraries in the permitted import folders', async () => {
       await expect(service.listLibraries(admin)).resolves.toEqual({
         available: true,
-        roots: 1,
+        roots: 2,
         libraries: [
           {
             rootId: '0',

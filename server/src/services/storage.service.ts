@@ -111,6 +111,8 @@ export class StorageService extends BaseService {
         }
 
         this.logger.log('Successfully verified system mount folder checks');
+        // FL-1477: the built-in Imports folder exists from the first start, ready to copy an export into.
+        this.storageRepository.mkdirSync(StorageCore.getImportsFolder());
       } catch (error) {
         const envData = this.configRepository.getEnv();
         if (envData.storage.ignoreMountCheckErrors) {

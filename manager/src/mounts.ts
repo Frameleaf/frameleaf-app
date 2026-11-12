@@ -34,6 +34,15 @@ export function thumbnailFolder(mounts: Mount[]): string | null {
   return library?.type === 'bind' && library.target === LIBRARY_TARGET ? join(library.source, 'thumbs') : null;
 }
 
+/**
+ * FL-1477: the server's built-in Imports folder on the host, `imports` inside the library folder. The server
+ * shows it to administrators so they know where to copy an export; null when the library is not a bind.
+ */
+export function importsFolder(mounts: Mount[]): string | null {
+  const library = mounts[0];
+  return library?.type === 'bind' && library.target === LIBRARY_TARGET ? join(library.source, 'imports') : null;
+}
+
 /** Refuses a mounts list that breaks the model above. */
 export function assertMounts(mounts: Mount[]): void {
   const thumbnails = mounts.filter(isThumbnailMount);

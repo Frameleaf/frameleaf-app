@@ -11,8 +11,8 @@ import { stringToBool } from 'src/validation.js';
 
 const rootId = z
   .string()
-  .regex(/^\d{1,4}$/)
-  .describe('Which allowed import folder, as the list numbers them');
+  .regex(/^(?:\d{1,4}|imports)$/)
+  .describe('Which allowed import folder: `imports` for the built-in one, otherwise its position in the list');
 const libraryPath = z
   .string()
   .min(1)

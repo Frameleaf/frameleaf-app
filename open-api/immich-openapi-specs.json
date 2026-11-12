@@ -63954,7 +63954,7 @@
             "in": "path",
             "description": "The permitted import location, as listed",
             "schema": {
-              "pattern": "^\\d{1,4}$",
+              "pattern": "^(?:\\d{1,4}|imports)$",
               "type": "string"
             }
           }
@@ -88637,6 +88637,7 @@
                     "FRAMELEAF_HOST",
                     "FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS",
                     "FRAMELEAF_IMPORT_ROOTS",
+                    "FRAMELEAF_IMPORTS_HOST_PATH",
                     "FRAMELEAF_LOG_LEVEL",
                     "FRAMELEAF_LOG_FORMAT",
                     "FRAMELEAF_MEDIA_LOCATION",
@@ -89120,6 +89121,7 @@
                         "FRAMELEAF_HOST",
                         "FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS",
                         "FRAMELEAF_IMPORT_ROOTS",
+                        "FRAMELEAF_IMPORTS_HOST_PATH",
                         "FRAMELEAF_LOG_LEVEL",
                         "FRAMELEAF_LOG_FORMAT",
                         "FRAMELEAF_MEDIA_LOCATION",
@@ -99894,8 +99896,8 @@
             "type": "string"
           },
           "rootId": {
-            "description": "Which allowed import folder, as the list numbers them",
-            "pattern": "^\\d{1,4}$",
+            "description": "Which allowed import folder: `imports` for the built-in one, otherwise its position in the list",
+            "pattern": "^(?:\\d{1,4}|imports)$",
             "type": "string"
           },
           "targetMode": {
@@ -100252,8 +100254,8 @@
             "type": "string"
           },
           "rootId": {
-            "description": "Which allowed import folder, as the list numbers them",
-            "pattern": "^\\d{1,4}$",
+            "description": "Which allowed import folder: `imports` for the built-in one, otherwise its position in the list",
+            "pattern": "^(?:\\d{1,4}|imports)$",
             "type": "string"
           }
         },
@@ -100276,8 +100278,8 @@
             "type": "string"
           },
           "rootId": {
-            "description": "Which allowed import folder, as the list numbers them",
-            "pattern": "^\\d{1,4}$",
+            "description": "Which allowed import folder: `imports` for the built-in one, otherwise its position in the list",
+            "pattern": "^(?:\\d{1,4}|imports)$",
             "type": "string"
           }
         },
@@ -166051,15 +166053,27 @@
       },
       "TakeoutRootDto": {
         "properties": {
+          "builtIn": {
+            "description": "The Imports folder every server has, beside the library",
+            "type": "boolean"
+          },
+          "hostPath": {
+            "description": "Where the built-in Imports folder is on the computer, when Manager says so",
+            "nullable": true,
+            "type": "string"
+          },
           "id": {
+            "description": "`imports` for the built-in Imports folder, otherwise its position",
             "type": "string"
           },
           "path": {
-            "description": "The directory the administrator permitted",
+            "description": "The directory imports may read, as the server sees it",
             "type": "string"
           }
         },
         "required": [
+          "builtIn",
+          "hostPath",
           "id",
           "path"
         ],

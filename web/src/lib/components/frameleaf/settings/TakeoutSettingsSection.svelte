@@ -23,8 +23,10 @@
   import { takeoutProgress, takeoutStateKey, takeoutView } from '$lib/frameleaf/takeout';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
+  import { copyToClipboard } from '$lib/utils';
   import {
     createTakeoutImport,
+    getManagerAccess,
     getTakeoutImport,
     getTakeoutRoots,
     listTakeoutImports,
@@ -35,7 +37,14 @@
     type TakeoutRootDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAlertCircleOutline, mdiChevronRight, mdiGoogle, mdiSync, mdiTrayArrowDown } from '@mdi/js';
+  import {
+    mdiAlertCircleOutline,
+    mdiChevronRight,
+    mdiContentCopy,
+    mdiGoogle,
+    mdiSync,
+    mdiTrayArrowDown,
+  } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -53,7 +62,8 @@
    * each time; nothing about an import lives in the browser.
    *
    * With `showRoots` (administrators) the Advanced folder import is offered. The folders are the
-   * operator's `FRAMELEAF_IMPORT_ROOTS`, read from the server, never typed here.
+   * server's built-in Imports folder and the operator's `FRAMELEAF_IMPORT_ROOTS` (FL-1477), read from
+   * the server, never typed here. The start dialog offers the same chooser for an export already copied in.
    */
   let { showRoots = false }: { showRoots?: boolean } = $props();
 
@@ -203,9 +213,15 @@
   let roots = $state<TakeoutRootDto[] | undefined>();
   let choosing = $state(false);
   let chosen = $state<ChosenTakeoutFolder>();
+  const rootName = (root: TakeoutRootDto | undefined) =>
+    root?.builtIn ? $t('frameleaf_takeout_imports_name') : (root?.path ?? '');
   const chosenParts = $derived(
-    chosen ? [roots?.find((root) => root.id === chosen!.rootId)?.path ?? '', ...chosen.parts] : [],
+    chosen ? [rootName(roots?.find((root) => root.id === chosen!.rootId)), ...chosen.parts] : [],
   );
+  const importsRoot = $derived(roots?.find((root) => root.builtIn));
+  const otherRoots = $derived(roots?.filter((root) => !root.builtIn) ?? []);
+  let rootsFailed = $state(false);
+  let managerUrl = $state<string | null>(null);
   const chosenReady = $derived(!!chosen && holdsTakeoutExport(chosen.contents));
   let folderBusy = $state(false);
   let folderFailed = $state(false);
@@ -213,7 +229,10 @@
     if (showRoots) {
       void getTakeoutRoots()
         .then((result) => (roots = result.roots))
-        .catch(() => (roots = []));
+        .catch(() => (rootsFailed = true));
+      void getManagerAccess()
+        ?.then((value) => (managerUrl = value.url))
+        .catch(() => {});
     }
   });
   const importFolder = async () => {
@@ -357,15 +376,30 @@
 
     {#if showRoots}
       <Advanced summary={$t('frameleaf_takeout_page_advanced')}>
-        {#if roots === undefined}
+        {#if rootsFailed}
+          <InlineError compact message={$t('frameleaf_takeout_error_generic')} />
+        {:else if roots === undefined}
           <div role="status" aria-busy="true">
             <span class="sr-only">{$t('loading')}</span>
             <Skeleton variant="text" lines={2} />
           </div>
-        {:else if roots.length === 0}
-          <p class="hint">{$t('frameleaf_takeout_settings_roots_none')}</p>
         {:else}
-          <p class="hint">{$t('frameleaf_takeout_folder_help')}</p>
+          <p class="hint">{$t('frameleaf_takeout_imports_help')}</p>
+          {#if importsRoot}
+            <Row label={$t('frameleaf_takeout_imports_label')} help={$t('frameleaf_takeout_imports_row_help')}>
+              <div class="chosen">
+                {#if importsRoot.hostPath}
+                  <span class="host">{importsRoot.hostPath}</span>
+                  <Button onclick={() => void copyToClipboard(importsRoot.hostPath)}>
+                    <Icon icon={mdiContentCopy} size="16" aria-hidden={true} />
+                    {$t('frameleaf_takeout_imports_copy')}
+                  </Button>
+                {:else}
+                  <span class="host">{$t('frameleaf_takeout_imports_where')}</span>
+                {/if}
+              </div>
+            </Row>
+          {/if}
           <Row
             label={$t('frameleaf_takeout_folder_label')}
             help={chosen
@@ -398,6 +432,22 @@
           {#if folderFailed}
             <InlineError compact message={$t('frameleaf_takeout_error_generic')} />
           {/if}
+          <Row
+            label={$t('frameleaf_takeout_other_folders_label')}
+            help={otherRoots.length > 0
+              ? $t('frameleaf_takeout_other_folders_some', {
+                  values: { folders: otherRoots.map((root) => root.path).join(', ') },
+                })
+              : managerUrl
+                ? $t('frameleaf_takeout_other_folders_help')
+                : $t('frameleaf_takeout_other_folders_no_manager')}
+          >
+            {#if managerUrl}
+              <a class="fl-control button" href={`${managerUrl}/#services`} target="_blank" rel="noopener noreferrer"
+                >{$t('frameleaf_takeout_other_folders_add')}</a
+              >
+            {/if}
+          </Row>
         {/if}
       </Advanced>
       {#if choosing && roots}
@@ -424,7 +474,16 @@
   {#if loaded && loaded.key === key}
     <!-- Another import, or none, unmounts the wizard until the server has answered for it, so each
          wizard starts from the server's state, never the last one's. -->
-    <TakeoutWizard current={loaded.current} onClose={close} />
+    <TakeoutWizard
+      current={loaded.current}
+      onClose={close}
+      onChooseFolder={roots && roots.length > 0
+        ? () => {
+            close();
+            choosing = true;
+          }
+        : undefined}
+    />
   {:else if failed}
     <InlineError message={$t('frameleaf_takeout_error_generic')} />
   {:else}
@@ -453,6 +512,12 @@
     gap: var(--fl-space-2);
     align-items: center;
     justify-content: flex-end;
+  }
+  .host {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
   }
   .path {
     display: inline-flex;

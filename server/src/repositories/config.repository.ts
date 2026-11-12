@@ -117,6 +117,8 @@ export interface EnvData {
     mediaLocation?: string;
     /** Directories administrators may select Google Photos imports from (FL-65). */
     importRoots: string[];
+    /** FL-1477: where the built-in Imports folder is on the host, for display only (Manager sets it). */
+    importsHostPath: string | null;
     /** Library Care recovery locations (FL-69). Searched and read only; never linked in place. */
     recoveryRoots?: RecoveryRootConfig[];
   };
@@ -363,6 +365,7 @@ const getEnv = (): EnvData => {
       ignoreMountCheckErrors: !!dto.FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS,
       mediaLocation: dto.FRAMELEAF_MEDIA_LOCATION,
       importRoots: dto.FRAMELEAF_IMPORT_ROOTS,
+      importsHostPath: dto.FRAMELEAF_IMPORTS_HOST_PATH?.trim() || null,
       recoveryRoots: parseRecoveryRoots(dto.FRAMELEAF_RECOVERY_ROOTS),
     },
 

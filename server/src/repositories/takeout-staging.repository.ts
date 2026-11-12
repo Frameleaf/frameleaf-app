@@ -92,7 +92,7 @@ const digesting = (declared: number, onProgress?: (bytes: number) => void) => {
  * Staged copies live under `<media>/takeout/<owner>/<import>/` with opaque generated names: an
  * archive as `<source id>.zip`, each extracted or copied file as its file id. No name from an
  * archive or a selected directory is ever used as a destination path. A server directory can only be
- * read when it lies under one of the roots the administrator configured (`FRAMELEAF_IMPORT_ROOTS`), and
+ * read when it lies under the built-in Imports folder or a root the operator configured (`FRAMELEAF_IMPORT_ROOTS`), and
  * it is walked without following links.
  */
 @Injectable()
@@ -146,6 +146,11 @@ export class TakeoutStagingRepository {
    */
   async resolveDirectory(root: string, relative: string): Promise<string> {
     const resolved = await this.resolveInsideRoot(root, relative);
+    // The built-in Imports folder lies in the media location on purpose and is never crawled into the library.
+    const imports = await realpath(StorageCore.getImportsFolder()).catch(() => {});
+    if (imports && (resolved === imports || resolved.startsWith(imports + path.sep))) {
+      return resolved;
+    }
     const storage = await realpath(StorageCore.getMediaLocation());
     if (resolved === storage || storage.startsWith(resolved + path.sep) || resolved.startsWith(storage + path.sep)) {
       throw new TakeoutStagingError('Choose a folder outside the library’s own storage');
