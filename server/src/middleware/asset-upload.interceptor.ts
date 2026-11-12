@@ -5,7 +5,7 @@ import { AssetMediaResponseDto, AssetMediaStatus } from 'src/dtos/asset-media-re
 import { RequestHeader } from 'src/enum.js';
 import { AuthenticatedRequest } from 'src/middleware/auth.guard.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
-import { fromMaybeArray } from 'src/utils/request.js';
+import { fromChecksum, fromMaybeArray } from 'src/utils/request.js';
 
 @Injectable()
 export class AssetUploadInterceptor implements NestInterceptor {
@@ -20,6 +20,10 @@ export class AssetUploadInterceptor implements NestInterceptor {
     if (response) {
       res.status(200);
       return of({ status: AssetMediaStatus.DUPLICATE, id: response.id });
+    }
+    // FL-813: an item the account deleted and asked not to have uploaded again is refused before its bytes are read
+    if (checksum) {
+      await this.service.refuseDeletedByOwner(req.user, [fromChecksum(checksum)]);
     }
 
     return next.handle();

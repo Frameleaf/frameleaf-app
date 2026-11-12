@@ -70426,6 +70426,133 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/users/me/upload-skips": {
+      "get": {
+        "description": "While \"do not upload what I deleted again\" is on (preferences backup.skipDeleted), the photos and videos you permanently deleted since then, by checksum, latest first. A phone or app that uploads one of them is refused with 409 deleted_by_owner. Items deleted while Locked are listed only for an unlocked session.",
+        "operationId": "getUploadSkips",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "description": "Items to pass over, latest deletion first",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadSkipListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List what I deleted that is not uploaded again",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/upload-skips/allow": {
+      "post": {
+        "description": "Takes items off the list by checksum, so the next upload of each is accepted and it appears in the library as usual. Deleting it again later puts it back on the list. Checksums that are not on the list are ignored.",
+        "operationId": "allowUploadSkips",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadSkipAllowDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadSkipAllowResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Allow items I deleted to be uploaded again",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "userPreference.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/profile-image": {
       "delete": {
         "description": "Delete the profile image of the current user.",
@@ -81338,6 +81465,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "deletedByOwner": {
+            "description": "True when the account permanently deleted this item and asked for deleted items not to be uploaded again: an upload would be refused with 409 deleted_by_owner. Sent with action reject and no reason",
+            "type": "boolean"
+          },
           "id": {
             "description": "Client-side identifier echoed from the request to match results to inputs",
             "type": "string"
@@ -86942,6 +87073,25 @@
         ],
         "type": "object"
       },
+      "BackupPreferencesResponse": {
+        "properties": {
+          "skipDeleted": {
+            "$ref": "#/components/schemas/BackupSkipDeletedResponse"
+          }
+        },
+        "required": [
+          "skipDeleted"
+        ],
+        "type": "object"
+      },
+      "BackupPreferencesUpdate": {
+        "properties": {
+          "skipDeleted": {
+            "$ref": "#/components/schemas/BackupSkipDeletedUpdate"
+          }
+        },
+        "type": "object"
+      },
       "BackupRestoreVerificationRecordDto": {
         "properties": {
           "metadata": {
@@ -87110,6 +87260,34 @@
           "cloud"
         ],
         "type": "string"
+      },
+      "BackupSkipDeletedResponse": {
+        "properties": {
+          "enabled": {
+            "description": "Whether photos and videos you permanently delete are refused when uploaded again",
+            "type": "boolean"
+          },
+          "since": {
+            "description": "When it was turned on; only items deleted from then on are refused (null while off)",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "since"
+        ],
+        "type": "object"
+      },
+      "BackupSkipDeletedUpdate": {
+        "properties": {
+          "enabled": {
+            "description": "Whether photos and videos you permanently delete from now on are refused when a phone or app uploads them again",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
       },
       "BestPhotoAssetResponseDto": {
         "properties": {
@@ -169193,6 +169371,107 @@
         ],
         "type": "object"
       },
+      "UploadSkipAllowDto": {
+        "properties": {
+          "checksums": {
+            "description": "Items from the list to allow again, by checksum",
+            "items": {
+              "pattern": "^(?:[\\da-f]{40}|[\\da-f]{64})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "checksums"
+        ],
+        "type": "object"
+      },
+      "UploadSkipAllowResponseDto": {
+        "properties": {
+          "allowed": {
+            "description": "How many of them were on the list and may now be uploaded again",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "allowed"
+        ],
+        "type": "object"
+      },
+      "UploadSkipItemDto": {
+        "properties": {
+          "checksum": {
+            "description": "The deleted file, as the hex digest of its bytes (SHA-256; SHA-1 for items stored before it)",
+            "type": "string"
+          },
+          "deletedAt": {
+            "description": "When it was last permanently deleted",
+            "format": "date-time",
+            "type": "string"
+          },
+          "wasLocked": {
+            "description": "Whether it was Locked when it was deleted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "checksum",
+          "deletedAt",
+          "wasLocked"
+        ],
+        "type": "object"
+      },
+      "UploadSkipListDto": {
+        "properties": {
+          "limit": {
+            "default": 50,
+            "description": "Items per page",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Items to pass over, latest deletion first",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "UploadSkipListResponseDto": {
+        "properties": {
+          "enabled": {
+            "description": "Whether deleted items are refused when uploaded again",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "This page of the list, latest deletion first",
+            "items": {
+              "$ref": "#/components/schemas/UploadSkipItemDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "How many items the whole list holds for this session",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
       "UsageByUserDto": {
         "properties": {
           "lastActiveAt": {
@@ -170468,6 +170747,9 @@
           "albums": {
             "$ref": "#/components/schemas/AlbumsResponse"
           },
+          "backup": {
+            "$ref": "#/components/schemas/BackupPreferencesResponse"
+          },
           "cast": {
             "$ref": "#/components/schemas/CastResponse"
           },
@@ -170615,6 +170897,9 @@
           },
           "avatar": {
             "$ref": "#/components/schemas/AvatarUpdate"
+          },
+          "backup": {
+            "$ref": "#/components/schemas/BackupPreferencesUpdate"
           },
           "cast": {
             "$ref": "#/components/schemas/CastUpdate"

@@ -116,6 +116,57 @@ describe(UserController.name, () => {
     });
   });
 
+  describe('upload skips (FL-813)', () => {
+    const checksum = 'ab'.repeat(32);
+
+    it('lists a page with the preference read permission, 50 items unless asked otherwise', async () => {
+      service.getUploadSkips.mockResolvedValue({ enabled: true, items: [], total: 0 });
+
+      const { status, body } = await request(ctx.getHttpServer()).get('/users/me/upload-skips');
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ enabled: true, items: [], total: 0 });
+      expect(service.getUploadSkips).toHaveBeenCalledWith(undefined, { limit: 50, offset: 0 });
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ adminRoute: false, permission: Permission.UserPreferenceRead }),
+        }),
+      );
+
+      await request(ctx.getHttpServer()).get('/users/me/upload-skips?limit=20&offset=40');
+      expect(service.getUploadSkips).toHaveBeenLastCalledWith(undefined, { limit: 20, offset: 40 });
+    });
+
+    it('refuses a page size outside 1 to 500', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/users/me/upload-skips?limit=501');
+      expect(status).toBe(400);
+      expect(service.getUploadSkips).not.toHaveBeenCalled();
+    });
+
+    it('allows items again by checksum with the preference update permission', async () => {
+      service.allowUploadSkips.mockResolvedValue({ allowed: 1 });
+
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/users/me/upload-skips/allow')
+        .send({ checksums: [checksum] });
+
+      expect(status).toBe(200);
+      expect(body).toEqual({ allowed: 1 });
+      expect(service.allowUploadSkips).toHaveBeenCalledWith(undefined, { checksums: [checksum] });
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ adminRoute: false, permission: Permission.UserPreferenceUpdate }),
+        }),
+      );
+    });
+
+    it.each([{ checksums: [] }, { checksums: ['not-a-checksum'] }, {}])('refuses %j', async (dto) => {
+      const { status } = await request(ctx.getHttpServer()).post('/users/me/upload-skips/allow').send(dto);
+      expect(status).toBe(400);
+      expect(service.allowUploadSkips).not.toHaveBeenCalled();
+    });
+  });
+
   describe('GET /users/me/preferences/history (FL-71 CC-10)', () => {
     it("serves the signed-in account's own history with the preference read permission", async () => {
       service.getMyPreferenceHistory.mockResolvedValue({ entries: [] });

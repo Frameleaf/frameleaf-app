@@ -2972,6 +2972,152 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('items the owner deleted are not uploaded again (FL-813)', () => {
+    const sha256 = Buffer.alloc(32, 7);
+    const sha1 = Buffer.alloc(20, 9);
+    const since = '2026-11-01T10:00:00.000Z';
+    const upload = {
+      uuid: 'random-uuid',
+      originalPath: '/data/upload/user-id/ra/nd/random-uuid.jpg',
+      originalName: 'image.jpg',
+      size: 1000,
+      checksum: sha256,
+      legacyChecksum: sha1,
+    };
+    const turnOn = () =>
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { backup: { skipDeleted: { enabled: true, since } } } },
+      ] as never);
+
+    it('is off by default: nothing is looked up and nothing is refused', async () => {
+      mocks.asset.getUploadSkipped.mockResolvedValue([sha256]);
+      await expect(sut.refuseDeletedByOwner(authStub.user1, [sha256, sha1])).resolves.toBeUndefined();
+      expect(mocks.asset.getUploadSkipped).not.toHaveBeenCalled();
+    });
+
+    it('stops as soon as it is turned off, whatever time it was turned on', async () => {
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { backup: { skipDeleted: { enabled: false, since } } } },
+      ] as never);
+      mocks.asset.getUploadSkipped.mockResolvedValue([sha256]);
+      await expect(sut.refuseDeletedByOwner(authStub.user1, [sha256])).resolves.toBeUndefined();
+      expect(mocks.asset.getUploadSkipped).not.toHaveBeenCalled();
+    });
+
+    it('refuses with 409 deleted_by_owner, asking only about the uploader’s own deletions since it was turned on', async () => {
+      turnOn();
+      mocks.asset.getUploadSkipped.mockResolvedValue([sha1]);
+      const refusal = sut.refuseDeletedByOwner(authStub.user1, [sha256, undefined, sha1, null]);
+      await expect(refusal).rejects.toBeInstanceOf(ConflictException);
+      await expect(refusal).rejects.toMatchObject({
+        response: { message: 'deleted_by_owner', code: 'deleted_by_owner' },
+      });
+      expect(mocks.asset.getUploadSkipped).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        [sha256, sha1],
+        new Date(since),
+      );
+    });
+
+    it('lets through what is not on the list (allowed again, never deleted, or another account’s deletion)', async () => {
+      turnOn();
+      mocks.asset.getUploadSkipped.mockResolvedValue([]);
+      await expect(sut.refuseDeletedByOwner(authStub.user1, [sha256, sha1])).resolves.toBeUndefined();
+    });
+
+    it('never applies to a shared link', async () => {
+      turnOn();
+      mocks.asset.getUploadSkipped.mockResolvedValue([sha256]);
+      await expect(sut.refuseDeletedByOwner(authStub.adminSharedLink, [sha256])).resolves.toBeUndefined();
+      expect(mocks.asset.getUploadSkipped).not.toHaveBeenCalled();
+    });
+
+    it('removes a refused multipart file, and keeps an accepted one', async () => {
+      turnOn();
+      mocks.asset.getUploadSkipped.mockResolvedValue([]);
+      await expect(sut.refuseDeletedUpload(authStub.user1, upload)).resolves.toBeUndefined();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+
+      mocks.asset.getUploadSkipped.mockResolvedValue([sha256]);
+      await expect(sut.refuseDeletedUpload(authStub.user1, upload)).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.asset.getUploadSkipped).toHaveBeenLastCalledWith(
+        authStub.user1.user.id,
+        [sha256, sha1],
+        new Date(since),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [upload.originalPath, undefined] },
+      });
+    });
+
+    it('reports it in the bulk check as a reject with deletedByOwner, never a new reason', async () => {
+      turnOn();
+      const kept = Buffer.alloc(32, 1);
+      const fresh = Buffer.alloc(32, 2);
+      mocks.asset.getByChecksums.mockResolvedValue([
+        {
+          id: 'asset-1',
+          checksum: kept,
+          deletedAt: null,
+          status: AssetStatus.Active,
+          originalPath: '/data/upload/asset-1',
+          libraryId: null,
+          isExternal: false,
+        },
+      ]);
+      mocks.asset.getUploadSkipped.mockResolvedValue([sha256]);
+
+      await expect(
+        sut.bulkUploadCheck(authStub.user1, {
+          assets: [
+            { id: 'kept', checksum: kept.toString('hex') },
+            { id: 'deleted', checksum: sha256.toString('hex') },
+            { id: 'fresh', checksum: fresh.toString('hex') },
+          ],
+        }),
+      ).resolves.toEqual({
+        results: [
+          {
+            id: 'kept',
+            action: AssetUploadAction.REJECT,
+            reason: AssetRejectReason.DUPLICATE,
+            assetId: 'asset-1',
+            isTrashed: false,
+          },
+          { id: 'deleted', action: AssetUploadAction.REJECT, deletedByOwner: true },
+          { id: 'fresh', action: AssetUploadAction.ACCEPT },
+        ],
+      });
+      expect(mocks.asset.getUploadSkipped).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        [kept, sha256, fresh],
+        new Date(since),
+      );
+    });
+
+    it('leaves the bulk check as it was while the option is off', async () => {
+      mocks.asset.getUploadSkipped.mockResolvedValue([sha256]);
+      await expect(
+        sut.bulkUploadCheck(authStub.user1, { assets: [{ id: 'deleted', checksum: sha256.toString('hex') }] }),
+      ).resolves.toEqual({ results: [{ id: 'deleted', action: AssetUploadAction.ACCEPT }] });
+      expect(mocks.asset.getUploadSkipped).not.toHaveBeenCalled();
+    });
+
+    it('does not count the row of an upload that failed half-way as the owner’s deletion', async () => {
+      turnOn();
+      mocks.asset.create.mockResolvedValue(AssetFactory.create());
+      mocks.physicalFile.linkUploadedOriginal.mockRejectedValue(new Error('storage went away'));
+
+      await expect(sut.uploadAsset(authStub.user1, createDto, upload)).rejects.toThrow('storage went away');
+
+      expect(mocks.asset.remove).toHaveBeenCalled();
+      expect(mocks.asset.allowUploadSkips).toHaveBeenCalledWith(authStub.user1.user.id, [sha256], new Date(since), {
+        includeLocked: true,
+      });
+    });
+  });
+
   describe('onUploadError', () => {
     it('should queue a job to delete the uploaded file', async () => {
       const request = {
