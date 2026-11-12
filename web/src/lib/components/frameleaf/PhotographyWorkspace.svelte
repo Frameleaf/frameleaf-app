@@ -16,6 +16,7 @@
    * Clients is opt-in (owner, October 28): while it is in the top bar the rail's foot offers
    * "Remove from the top bar", which puts it back under Tools; the page owns that action.
    */
+  import { newRequestKey } from '$lib/frameleaf/request-key';
   import { onDestroy, onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
   import { Icon } from '@frameleaf/ui';
@@ -577,7 +578,7 @@
     event.preventDefault();
     const shoot: Shoot = {
       ...draft,
-      id: crypto.randomUUID(),
+      id: newRequestKey(),
       stage: 'Imported',
       unavailable: false,
       coverAssetId: null,

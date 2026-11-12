@@ -1,5 +1,6 @@
 import { createFrameleafHandoff, startFrameleafSignIn } from '@frameleaf/sdk';
 import { recordOAuthRequest } from '$lib/frameleaf/auth-session-preference';
+import { newRequestKey } from '$lib/frameleaf/request-key';
 
 /**
  * Sign in with Frameleaf (FL-158) in the browser: the provider returns to the same callbacks as the
@@ -146,7 +147,7 @@ const session = () => {
  * for their own account can never sign this browser in (login CSRF).
  */
 export const bounceUrl = (signInOrigin: string, location: Location, rememberMe: boolean, verified = false) => {
-  const nonce = crypto.randomUUID();
+  const nonce = newRequestKey();
   session()?.setItem(NONCE_KEY, nonce);
   const url = new URL('/auth/login', signInOrigin);
   url.searchParams.set(RETURN_PARAM, location.origin);

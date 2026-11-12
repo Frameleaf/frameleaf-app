@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { newRequestKey } from '$lib/frameleaf/request-key';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import RuleChips from '$lib/components/frameleaf/RuleChips.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
@@ -69,7 +70,7 @@
             action: MediaOperationBulkAction.ApplyClassificationRule,
             assetIds: plan.assetIds,
             payload: { classificationRuleId: rule.id },
-            requestId: crypto.randomUUID(),
+            requestId: newRequestKey(),
             submittedTotal: plan.assetIds.length,
             truncated: plan.truncated,
           },

@@ -47,6 +47,7 @@
   import JobsEnrichmentDialog from '$lib/components/frameleaf/jobs/JobsEnrichmentDialog.svelte';
   import QueueGraph from '$lib/components/frameleaf/jobs/QueueGraph.svelte';
   import QueueStorageMigrationDescription from '$lib/components/frameleaf/jobs/QueueStorageMigrationDescription.svelte';
+  import { newRequestKey } from '$lib/frameleaf/request-key';
   import {
     historyFor,
     JOB_HISTORY_SHOWN,
@@ -848,7 +849,8 @@
       const message = await perform(current);
       notice = message ?? $t('frameleaf_jobs_notice_done', { values: { title: current.title } });
       history = recordJobHistory({
-        id: crypto.randomUUID(),
+        // not crypto.randomUUID: it is missing on a server opened over plain http, and the throw read as a failed command
+        id: newRequestKey(),
         at: new Date().toISOString(),
         title: current.title,
         queue: current.command === 'resume-all' || current.command === 'pause-all' ? undefined : current.name,
