@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { ChecksumAlgorithm, IntegrityReport, JobStatus, SystemMetadataKey } from 'src/enum.js';
-import { IntegrityService } from 'src/services/integrity.service.js';
+import { IntegrityService, csvText } from 'src/services/integrity.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const { retainFile } = vi.hoisted(() => ({ retainFile: vi.fn() }));
@@ -14,6 +14,18 @@ vi.mock('src/utils/media-health-roots.js', async (original) => ({
   ...(await original<typeof import('src/utils/media-health-roots.js')>()),
   retainFile,
 }));
+
+describe(csvText.name, () => {
+  it('quotes a cell and keeps a formula-looking name as plain text (CWE-1236)', () => {
+    expect(csvText(null)).toBe('');
+    expect(csvText('beach, "day 1".jpg')).toBe('"beach, ""day 1"".jpg"');
+    expect(csvText('=HYPERLINK("x").jpg')).toBe(`"'=HYPERLINK(""x"").jpg"`);
+    expect(csvText('+1.jpg')).toBe(`"'+1.jpg"`);
+    expect(csvText('-1.jpg')).toBe(`"'-1.jpg"`);
+    expect(csvText('@a.jpg')).toBe(`"'@a.jpg"`);
+    expect(csvText('/upload/a.jpg')).toBe('"/upload/a.jpg"');
+  });
+});
 
 describe(IntegrityService.name, () => {
   let sut: IntegrityService;
