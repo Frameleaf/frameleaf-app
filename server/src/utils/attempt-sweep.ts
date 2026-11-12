@@ -96,7 +96,7 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
           await sql`UPDATE system_metadata SET value=jsonb_set(value,'{seenPass}',to_jsonb(${state.pass.id}::text))
           WHERE key=${ATTEMPT_EVIDENCE_PREFIX + identity.token} AND value->>'jobId'=${identity.jobId}`.execute(tx);
           // A concurrent retention transaction may be deleting this row. SKIP LOCKED is
-          // fail-closed: absence is usable only with compact positive stopped evidence.
+          // fail-closed: a row it skipped is still there for the plain read below.
           const {
             rows: [job],
           } = await sql<{ state: string }>`SELECT state FROM job
@@ -105,6 +105,10 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
           if (!job) {
             const exists = await sql`SELECT 1 FROM job WHERE id=${identity.jobId}::uuid`.execute(tx);
             if (exists.rows.length > 0) return false;
+            // FL-1485 (owner, 2026-11-12): a job that is gone from the database cannot be running here. Retention
+            // deletes a job only once every attempt is proven stopped, so its unreferenced output, old enough
+            // for `unlink`, may go without a proof row. Keeping one per pruned job filled system_metadata.
+            return remove(tx, path, unlink);
           }
           const proof =
             await sql`SELECT 1 FROM system_metadata m WHERE m.key=${ATTEMPT_EVIDENCE_PREFIX + identity.token}

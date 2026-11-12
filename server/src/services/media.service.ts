@@ -522,7 +522,7 @@ export class MediaService extends BaseService {
     const sourceId = await this.partnerOriginRepository.getLiveSourceId(id);
     if (sourceId) {
       this.logger.verbose(`Thumbnail generation skipped for asset ${id}: shares the files of ${sourceId}`);
-      await this.shareThumbnailsWithCopies(sourceId);
+      await this.shareFilesWithCopies(sourceId);
       return JobStatus.Skipped;
     }
 
@@ -565,7 +565,7 @@ export class MediaService extends BaseService {
     }
     if (status === JobStatus.Success) {
       await this.jobRepository.collectFollowups(() => this.queueLockedSeal([asset.id]));
-      await this.shareThumbnailsWithCopies(asset.id);
+      await this.shareFilesWithCopies(asset.id);
     }
     return status;
   }
@@ -604,9 +604,9 @@ export class MediaService extends BaseService {
   }
 
   /** FL-1287: published with the job's own files, so partner copies made before them get them too. */
-  private shareThumbnailsWithCopies(assetId: string) {
+  private shareFilesWithCopies(assetId: string, ...types: [AssetFileType[]?]) {
     return publishJobResult(async () => {
-      const files = await this.partnerOriginRepository.shareGeneratedFiles(assetId);
+      const files = await this.partnerOriginRepository.shareGeneratedFiles(assetId, ...types);
       if (files.length > 0) {
         await this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
       }
@@ -1705,6 +1705,17 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
+    // FL-1487: a partner copy plays its live source's converted video; the source's own job hands it over when
+    // it finishes. The overnight check leaves such a copy out (`selectionForUnfinished`) and picks it up again
+    // once its source is trashed or deleted, so nothing is recorded on the copy here.
+    // ponytail: "Missing" by hand still queues copies whose source needed no conversion; each ends here at once.
+    const sourceId = await this.partnerOriginRepository.getLiveSourceId(id);
+    if (sourceId) {
+      this.logger.verbose(`Video conversion skipped for asset ${id}: shares the files of ${sourceId}`);
+      await this.shareFilesWithCopies(sourceId, [AssetFileType.EncodedVideo]);
+      return JobStatus.Skipped;
+    }
+
     deferJobAdoption(async () => {
       await assertPublicationSource(asset.id, asset.checksum);
       const current = await this.assetJobRepository.getForVideoConversion(asset.id);
@@ -1908,6 +1919,7 @@ export class MediaService extends BaseService {
           },
         ],
       );
+      await this.shareFilesWithCopies(asset.id, [AssetFileType.EncodedVideo]);
       await this.jobRepository.collectFollowups(() => this.queueLockedSeal([asset.id]));
       return JobStatus.Success;
     }
@@ -1924,6 +1936,7 @@ export class MediaService extends BaseService {
     if (pathToDelete) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [pathToDelete] } });
     }
+    await this.shareFilesWithCopies(asset.id, [AssetFileType.EncodedVideo]);
     await this.queueLockedSeal([asset.id]);
 
     return JobStatus.Success;

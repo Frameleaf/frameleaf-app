@@ -67,7 +67,7 @@ describe('attempt output retention and cleanup', () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it('recovers stopped HDR staging after restart while retaining active, unknown and referenced staged outputs', async () => {
+  it('recovers stopped HDR staging after restart while retaining active and referenced staged outputs', async () => {
     const { ctx } = setup();
     const { user } = await ctx.newUser();
     const settled = await claim();
@@ -84,27 +84,27 @@ describe('attempt output retention and cleanup', () => {
       db,
     );
     const unknown = await file({ id: randomUUID(), token: randomUUID() }, '.sharp-pqr678/unknown.jpg');
-    // Retain the positive stopped proof while SQL history is pruned, then restart the scanner.
+    // FL-1485: SQL history is pruned and the proof goes with it; a job that is gone needs none. Restart the scanner.
     await sql`UPDATE job SET "finishedAt"=clock_timestamp()-interval '8 days' WHERE id=${settled.id}::uuid`.execute(db);
     await pruneQueueHistory(db);
     await closeAttemptSweep();
     const restarted = new PhysicalFileRepository(db);
-    expect((await restarted.sweepAttempts([root]))?.deleted).toBe(1);
-    await expect(readFile(orphan)).rejects.toMatchObject({ code: 'ENOENT' });
-    for (const path of [referenced, pinned, recent, inFlight, unknown])
+    expect((await restarted.sweepAttempts([root]))?.deleted).toBe(2);
+    for (const path of [orphan, unknown]) await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    for (const path of [referenced, pinned, recent, inFlight])
       expect(await readFile(path, 'utf8')).toBe('generated fixture');
     expect(
       (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + settled.token}`.execute(db))
         .rows,
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     await db.updateTable('user').set({ profileImagePath: '' }).where('id', '=', user.id).execute();
     await sql`UPDATE buddy_backup_reference SET released=true WHERE path=${pinned}`.execute(db);
     await restarted.sweepAttempts([root]);
     expect((await restarted.sweepAttempts([root]))?.deleted).toBe(2);
-    for (const path of [recent, inFlight, unknown]) expect(await readFile(path, 'utf8')).toBe('generated fixture');
+    for (const path of [recent, inFlight]) expect(await readFile(path, 'utf8')).toBe('generated fixture');
   });
 
-  it('keeps profile references, Buddy pins, active expired claims and unknown history; removes a settled orphan', async () => {
+  it('keeps profile references, Buddy pins and active expired claims; removes a settled orphan and the output of a job that is gone (FL-1485)', async () => {
     const { ctx, files } = setup();
     const { user } = await ctx.newUser();
     const settled = await claim();
@@ -120,7 +120,7 @@ describe('attempt output retention and cleanup', () => {
     );
     const unknown = await file({ id: randomUUID(), token: randomUUID() }, 'unknown.jpeg');
     const result = await files.sweepAttempts([root]);
-    expect(result?.deleted).toBe(1);
+    expect(result?.deleted).toBe(2);
     const { rows: states } = await sql`SELECT jsonb_typeof(value) AS type, value->'roots' AS roots,
       jsonb_typeof(value->'cursor') AS "cursorType", jsonb_typeof(value->'pass') AS "passType",
       jsonb_typeof(value->'owner') AS "ownerType", value->'expires' AS expires FROM system_metadata
@@ -128,9 +128,8 @@ describe('attempt output retention and cleanup', () => {
     expect(states).toEqual([
       { type: 'object', roots: [root], cursorType: 'object', passType: 'object', ownerType: 'null', expires: 0 },
     ]);
-    await expect(readFile(orphan)).rejects.toMatchObject({ code: 'ENOENT' });
-    for (const path of [referenced, pinned, inFlight, unknown])
-      expect(await readFile(path, 'utf8')).toBe('generated fixture');
+    for (const path of [orphan, unknown]) await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    for (const path of [referenced, pinned, inFlight]) expect(await readFile(path, 'utf8')).toBe('generated fixture');
     await db.updateTable('user').set({ profileImagePath: '' }).where('id', '=', user.id).execute();
     await sql`UPDATE buddy_backup_reference SET released=true WHERE path=${pinned}`.execute(db);
     await files.sweepAttempts([root]); // bounded evidence-pruning phase between complete traversals
@@ -204,29 +203,26 @@ describe('attempt output retention and cleanup', () => {
     expect(unlink).not.toHaveBeenCalled();
   });
 
-  it('retains compact proof after SQL history pruning, preserves recent files, then releases proof after a later complete pass', async () => {
+  it('leaves no proof behind when SQL history is pruned, keeps recent files, then removes them once old (FL-1485)', async () => {
     const { files } = setup();
     const settled = await claim();
     const path = await file(settled, 'recent.jpeg');
     await utimes(path, new Date(), new Date());
+    await recordStoppedAttempt(db, settled.id, settled.token);
     await sql`UPDATE job SET "finishedAt"=clock_timestamp()-interval '8 days' WHERE id=${settled.id}::uuid`.execute(db);
     await pruneQueueHistory(db);
     expect((await sql`SELECT id FROM job WHERE id=${settled.id}::uuid`.execute(db)).rows).toHaveLength(0);
-    const evidence = () =>
-      sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + settled.token}`.execute(db);
-    expect((await evidence()).rows).toHaveLength(1);
+    // the proof goes with the job: an output of a job that is gone needs none
+    expect(
+      (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + settled.token}`.execute(db))
+        .rows,
+    ).toHaveLength(0);
     expect((await files.sweepAttempts([root]))?.deleted).toBe(0);
-    await files.sweepAttempts([root]); // first complete pass prunes no seen evidence
-    expect((await evidence()).rows).toHaveLength(1);
+    expect(await readFile(path, 'utf8')).toBe('generated fixture');
+    await files.sweepAttempts([root]); // bounded evidence-pruning phase between complete traversals
     const old = new Date(Date.now() - ATTEMPT_GRACE_MS * 2);
     await utimes(path, old, old);
     expect((await files.sweepAttempts([root]))?.deleted).toBe(1);
-    await files.sweepAttempts([root]); // deletion pass still saw the file
-    expect((await evidence()).rows).toHaveLength(1);
-    // Empty claim directories also keep their proof until their own grace period ends.
-    await utimes(dirname(path), old, old);
-    for (let slice = 0; slice < 8 && (await evidence()).rows.length > 0; slice++) await files.sweepAttempts([root]);
-    expect((await evidence()).rows).toHaveLength(0);
   });
 
   it('releases unseen stopped proof after a complete pass when the application clock is behind PostgreSQL', async () => {
@@ -285,6 +281,8 @@ describe('attempt output retention and cleanup', () => {
     expect((await files.sweepAttempts([root]))?.done).toBe(true);
     const stopped = { id: randomUUID(), token: randomUUID() };
     const path = await file(stopped, 'late.jpeg');
+    // recent, so the sweep leaves it: its job is not in the database, and an old file of such a job goes (FL-1485)
+    await utimes(path, new Date(), new Date());
     await recordStoppedAttempt(db, stopped.id, stopped.token);
     await sql`UPDATE system_metadata SET value=jsonb_set(
       jsonb_set(value #- '{pass,clock}', '{pass,startedAt}',to_jsonb(extract(epoch FROM clock_timestamp())*1000+3600000)),

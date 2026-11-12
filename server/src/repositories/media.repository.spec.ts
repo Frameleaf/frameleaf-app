@@ -785,6 +785,55 @@ describe(MediaRepository.name, () => {
     }
   });
 
+  /*
+   * FL-1489: a Matroska track whose default duration is a negative number stored unsigned. ffprobe
+   * divides it by the 1,000,000 ns timestamp scale and reports 18446744072576 ticks for every
+   * packet, which does not fit asset_keyframe's integer[] and failed the whole metadata statement.
+   * The file is real: ffmpeg writes it, then the 4-byte DefaultDuration is widened to 8 bytes in
+   * the room left by dropping the track's "und" Language element, so no element size changes.
+   */
+  it.skipIf(!hasFfmpeg)('reads a packet duration past the integer range as unstated (FL-1489)', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'wrapped-duration-'));
+    const file = join(folder, 'wrapped.mkv');
+    try {
+      execFileSync(
+        'ffmpeg',
+        ['-v', 'error', '-f', 'lavfi', '-i', 'color=white:size=32x16:rate=25', '-frames:v', '3', '-c:v', 'mpeg4', file],
+        { timeout: 30_000, stdio: 'ignore' },
+      );
+      const language = Buffer.from('22b59c83756e64', 'hex');
+      const original = readFileSync(file);
+      const at = original.indexOf(language);
+      const trimmed = Buffer.concat([original.subarray(0, at), original.subarray(at + language.length)]);
+      const duration = trimmed.indexOf(Buffer.from('23e38384', 'hex'));
+      expect(Math.min(at, duration)).toBeGreaterThan(0);
+      const wrapped = Buffer.alloc(8);
+      wrapped.writeBigInt64BE(-1_133_551_616n);
+      writeFileSync(
+        file,
+        Buffer.concat([
+          trimmed.subarray(0, duration),
+          Buffer.from('23e38388', 'hex'),
+          wrapped,
+          Buffer.from('ec8100', 'hex'), // a Void element fills the rest of the dropped Language
+          trimmed.subarray(duration + 8),
+        ]),
+      );
+      expect(
+        execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'packet=duration', '-of', 'csv=p=0', file])
+          .toString()
+          .split('\n', 1)[0],
+      ).toBe('18446744072576');
+
+      const { videoStreams } = await sut.probe(file);
+      expect(videoStreams[0]).toMatchObject({ codecName: 'mpeg4', timeBase: 1000, width: 32, height: 16 });
+      // no keyframe index to store, so the video and its other metadata are saved without one
+      await expect(sut.probePackets(file, videoStreams[0].index)).resolves.toBeNull();
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   describe.skipIf(!hasFfmpeg)('video clips for another machine (FL-162)', () => {
     const secrets = [
       '+51.5007-000.1246/',
