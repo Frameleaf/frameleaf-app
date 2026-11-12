@@ -620,6 +620,8 @@ export class MediaHealthRepository {
         .where('category', 'in', categories)
         .where('assetId', '=', anyUuid(ids))
         .where('resolvedAt', 'is', null)
+        // a person's dismissal stays theirs to undo
+        .where('dismissedAt', 'is', null)
         .returning(['id', 'assetId'])
         .execute();
       await this.appendSteps(
@@ -1333,15 +1335,23 @@ export class MediaHealthRepository {
       // FL-69: a missing original relinks from `found`; confirmed damage is replaced from `corrupt_confirmed`.
       const category = input.category ?? MediaHealthCategory.Missing;
       const chosen = health?.resolution?.chosenCandidateId === input.candidateId;
-      // FL-1472: the true original replaces a repair only with the very bytes the repair recorded as the original's
+      // FL-1472: the true original replaces a repair only with the very bytes the repair recorded as the original's,
+      // and only while the photo still has the repair's bytes (wherever a move has put the file since)
       const originalChecksum = health?.evidence?.originalChecksum;
+      const originalSha256 = health?.evidence?.originalSha256;
+      const uploaded = new Set([input.sha1.toString('hex'), input.sha256.toString('hex')]);
+      const sidecar = sidecars.rows[0];
+      const recordedSha256 =
+        sidecar && (sidecar.sha1.equals(asset.checksum) || sidecar.sha256.equals(asset.checksum))
+          ? sidecar.sha256
+          : undefined;
       if (
         overRepair &&
         (!health ||
           health.status !== MediaHealthStatus.Resolved ||
           !['repaired', 'part-saved'].includes(health.evidence?.fixState as string) ||
-          typeof originalChecksum !== 'string' ||
-          ![input.sha1.toString('hex'), input.sha256.toString('hex')].includes(originalChecksum))
+          health.evidence?.repairedChecksum !== asset.checksum.toString('hex') ||
+          [originalChecksum, originalSha256].every((value) => typeof value !== 'string' || !uploaded.has(value)))
       ) {
         return false;
       }
@@ -1358,7 +1368,8 @@ export class MediaHealthRepository {
         ) ||
         (health.resolvedAt && !overRepair) ||
         health.dismissedAt ||
-        health.originalPath !== asset.originalPath ||
+        // a repair is found by its bytes: a move since then changed only the photo's path
+        (!overRepair && health.originalPath !== asset.originalPath) ||
         (category === MediaHealthCategory.Missing && health.resolution?.autoRelinkable !== true && !chosen)
       ) {
         return false;
@@ -1532,6 +1543,12 @@ export class MediaHealthRepository {
               !overRepair && {
                 originalChecksum:
                   typeof originalChecksum === 'string' ? originalChecksum : asset.checksum.toString('hex'),
+                // the original's SHA-256 as well, for an upload that only says that (a SHA-1 photo's), and only from
+                // digests that are the recorded original's, never the damaged file's
+                ...(typeof originalSha256 === 'string'
+                  ? { originalSha256 }
+                  : recordedSha256 && { originalSha256: recordedSha256.toString('hex') }),
+                repairedChecksum: checksum.toString('hex'),
               }),
             ...(input.candidatePath && { candidatePath: path.normalize(input.candidatePath) }),
             ...(input.provenance && { provenance: input.provenance }),

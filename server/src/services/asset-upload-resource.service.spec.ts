@@ -113,6 +113,7 @@ describe('resumable asset byte commit boundaries', () => {
         Promise.resolve(undefined),
       ),
       getUploadAssetIdByChecksum: vi.fn(() => Promise.resolve({ id: 'asset' })),
+      canSeeUploadResult: vi.fn(() => Promise.resolve(false)),
     };
     const storage = {
       checkDiskUsage: vi.fn().mockResolvedValue({ available: 1024 }),
@@ -443,6 +444,25 @@ describe('resumable asset byte commit boundaries', () => {
       expect.anything(),
       expect.objectContaining({ originalPath: finalPath }),
     );
+  });
+
+  it('answers with the photo while Library care still has its put-back queued (FL-1472)', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'verified',
+      offset: 4,
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: harness.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+    });
+    harness.media.restoreLostOriginal.mockResolvedValue({ id: 'damaged-asset', visible: true });
+    // the damaged photo does not have these bytes yet, so no checksum lookup finds it
+    harness.media.getUploadAssetIdByChecksum.mockResolvedValue(undefined as never);
+    harness.media.canSeeUploadResult.mockResolvedValue(true);
+    await expect(harness.service.result(auth, harness.row().id)).resolves.toMatchObject({
+      result: { id: 'damaged-asset', status: AssetMediaStatus.CREATED },
+    });
+    expect(harness.media.canSeeUploadResult).toHaveBeenCalledWith(auth, 'damaged-asset');
   });
 
   it('rechecks source authority inside publication after media preparation', async () => {

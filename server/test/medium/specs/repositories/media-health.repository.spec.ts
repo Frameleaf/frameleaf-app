@@ -12,6 +12,7 @@ import {
 } from 'src/enum.js';
 import { recordProcessingFailure } from 'src/queue/processing-failure.js';
 import { SqlQueueStore } from 'src/queue/store.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository, UpsertMediaHealthFinding } from 'src/repositories/media-health.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -643,12 +644,28 @@ describe(MediaHealthRepository.name, () => {
         )
       ).rows[0];
       // the repair is the photo's own SHA-256 file now
-      const from = {
+      const from: { updateId: string; path: string; checksum: Buffer; algorithm?: ChecksumAlgorithm } = {
         updateId: current.updateId,
         path: repairedPath,
         checksum: repairedSha256,
         algorithm: current.checksumAlgorithm,
       };
+      // a storage template move since the repair changed only the photo's path
+      const movedPath = `/data/library/${user.id}/2026/IMG_0001.jpg`;
+      await sql`UPDATE public.asset SET "originalPath" = ${movedPath} WHERE id = ${asset.id}::uuid`.execute(
+        defaultDatabase,
+      );
+      const moved = (
+        await sql<{ updateId: string }>`SELECT "updateId" FROM public.asset WHERE id = ${asset.id}::uuid`.execute(
+          defaultDatabase,
+        )
+      ).rows[0];
+      from.path = movedPath;
+      from.updateId = moved.updateId;
+      // the upload lookup finds the repaired photo by its original's bytes, wherever it is now
+      const assets = new AssetRepository(defaultDatabase);
+      await expect(assets.getRepairedByOriginal(user.id, [originalSha1])).resolves.toBe(asset.id);
+      await expect(assets.getRepairedByOriginal(user.id, [Buffer.alloc(20, 3)])).resolves.toBeUndefined();
       const originalPath = `/data/upload/${user.id}/.library-care/${asset.id}-original.jpg`;
 
       // other bytes never replace the repair
@@ -675,7 +692,7 @@ describe(MediaHealthRepository.name, () => {
           evidence: expect.objectContaining({
             fixState: 'found-again',
             reason: 'original_restored_over_repair',
-            previousPath: repairedPath,
+            previousPath: movedPath,
             // the damaged file stays where the repair kept it
             retainedPath: asset.originalPath,
           }),
@@ -697,8 +714,21 @@ describe(MediaHealthRepository.name, () => {
       assert.isDefined(open);
       assert.isDefined(fixed);
 
-      const [current] = await sut.getAssets([asset.id]);
-      await sut.markResolvedForAssets([MediaHealthCategory.Missing, MediaHealthCategory.Corrupt], [current]);
+      // a person's dismissal of an open problem is theirs to undo, whatever a scan finds
+      const { asset: dismissedAsset } = await ctx.newAsset({ ownerId: user.id });
+      const dismissed = await sut.upsertFinding({
+        ...findingDto(dismissedAsset.id, dismissedAsset.originalPath, null),
+        status: MediaHealthStatus.Dismissed,
+        dismissedAt: new Date(),
+      });
+      assert.isDefined(dismissed);
+      const [current, other] = await sut
+        .getAssets([asset.id, dismissedAsset.id])
+        .then((rows) => [asset.id, dismissedAsset.id].map((id) => rows.find((row) => row.id === id)!));
+      await sut.markResolvedForAssets([MediaHealthCategory.Missing, MediaHealthCategory.Corrupt], [current, other]);
+      await expect(sut.getByIds([dismissed.id])).resolves.toEqual([
+        expect.objectContaining({ status: MediaHealthStatus.Dismissed, resolvedAt: null }),
+      ]);
 
       const [settled, untouched] = await sut
         .getByIds([open.id, fixed.id])

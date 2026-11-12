@@ -859,9 +859,13 @@ describe(AssetMediaService.name, () => {
           id: lost.id,
           status: AssetMediaStatus.CREATED,
         });
+        // moved first into the hidden Library care folder, which no clean-up touches before the job runs
+        const pending = vi.mocked(mocks.storage.rename).mock.calls[0];
+        expect(pending[0]).toBe(upload.originalPath);
+        expect(pending[1]).toMatch(/\/\.library-care\/lost-asset-pending-.+\.jpg$/);
         expect(mocks.job.queue).toHaveBeenCalledWith({
           name: JobName.MediaHealthPutBackUpload,
-          data: { id: lost.id, path: upload.originalPath },
+          data: { id: lost.id, path: pending[1] },
         });
         expect(mocks.physicalFile.restoreLostOriginal).not.toHaveBeenCalled();
         expect(mocks.asset.create).not.toHaveBeenCalled();
@@ -888,9 +892,21 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith(authStub.admin.user.id, [upload.checksum, file1]);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.MediaHealthPutBackUpload,
-        data: { id: 'repaired-asset', path: upload.originalPath },
+        data: { id: 'repaired-asset', path: expect.stringContaining('/.library-care/repaired-asset-pending-') },
       });
       expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('never answers for a hidden repaired photo with another one’s visibility (FL-1472)', async () => {
+      mocks.asset.getByChecksums.mockResolvedValue([]);
+      // unfiltered: the hidden photo; filtered for this session: a different, visible one
+      mocks.asset.getRepairedByOriginal.mockResolvedValueOnce('hidden-asset').mockResolvedValueOnce('other-asset');
+      const auth = { ...authStub.admin, user: { ...authStub.admin.user } };
+      vi.spyOn(sut as any, 'getDuplicateCheckOptions').mockReturnValue({ excludeNsfw: true });
+      await expect(sut.uploadAsset(auth, createDto, upload)).resolves.toEqual({
+        id: '00000000-0000-0000-0000-000000000000',
+        status: AssetMediaStatus.DUPLICATE,
+      });
     });
 
     it('uploads normally when the photo changed before it could be restored', async () => {

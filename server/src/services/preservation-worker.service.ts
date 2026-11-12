@@ -1731,9 +1731,15 @@ export class PreservationWorkerService {
         };
       };
 
-      if (live && !created && (await this.assetMedia.needsOriginal(context.auth, checksums))) {
-        // FL-1472: the library's copy is lost or damaged; the archive's original goes back under it
-        await this.assetMedia.restoreFromCopy(context.auth, dto(), await extract());
+      if (!created && (await this.assetMedia.needsOriginal(context.auth, checksums))) {
+        // FL-1472: the library's copy is lost, damaged or repaired, and the archive's original goes back under it. A
+        // repaired photo no longer has these bytes as its checksum, so the match above may not have found it.
+        const restored = await this.assetMedia.restoreFromCopy(context.auth, dto(), await extract());
+        if (!restored) {
+          // never matched while the library's copy is still lost: the item fails and can be restored again
+          throw new Error('The library copy of this original could not be put back');
+        }
+        assetId ??= restored.id;
       }
 
       if (!assetId) {

@@ -5072,6 +5072,10 @@ describe(MediaHealthService.name, () => {
       beforeEach(async () => {
         upload = join(root, 'uploaded.jpg');
         await writeFile(upload, good);
+        vi.mocked(mocks.physicalFile.deleteUnreferencedPath).mockImplementation(async (_path, unlink) => {
+          await unlink();
+          return {} as never;
+        });
       });
 
       it('puts the upload in the damaged file’s place and keeps the damaged file', async () => {
@@ -5131,6 +5135,7 @@ describe(MediaHealthService.name, () => {
           ...finding(MediaHealthCategory.Corrupt, MediaHealthStatus.Resolved, {
             fixState: 'part-saved',
             originalChecksum: sha1(good).toString('hex'),
+            repairedChecksum: asset.checksum.toString('hex'),
           }),
           resolvedAt: new Date(),
         });
@@ -5163,6 +5168,7 @@ describe(MediaHealthService.name, () => {
           ...finding(MediaHealthCategory.Corrupt, MediaHealthStatus.Resolved, {
             fixState: 'repaired',
             originalChecksum: 'ab'.repeat(20),
+            repairedChecksum: asset.checksum.toString('hex'),
           }),
           resolvedAt: new Date(),
         });
@@ -5173,13 +5179,24 @@ describe(MediaHealthService.name, () => {
         expect(mediaHealthRepository.restoreOriginalOverRepair).not.toHaveBeenCalled();
       });
 
-      it('never removes an upload that became a photo’s original', async () => {
+      it('removes the upload only under its path’s lock, when nothing uses it', async () => {
         await damagedOnDisk(Buffer.from('changed on the drive'));
-        vi.mocked(mediaHealthRepository.isOriginalPathInUse).mockResolvedValue(true);
+        // a relink meanwhile made it a photo's original: the lock's own check keeps it
+        vi.mocked(mocks.physicalFile.deleteUnreferencedPath).mockResolvedValue(false as never);
 
         await sut.handlePutBackUpload({ id: 'asset-1', path: upload });
 
+        expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(upload, expect.any(Function));
         expect(mocks.storage.unlink).not.toHaveBeenCalledWith(upload);
+      });
+
+      it('keeps the upload for the retry when an attempt fails', async () => {
+        await damagedOnDisk(Buffer.from('changed on the drive'));
+        vi.mocked(mocks.storage.stat).mockRejectedValueOnce(new Error('drive went away'));
+
+        await expect(sut.handlePutBackUpload({ id: 'asset-1', path: upload })).rejects.toThrow('drive went away');
+
+        expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
       });
     });
 

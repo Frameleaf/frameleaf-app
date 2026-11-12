@@ -917,6 +917,7 @@ describe(PreservationWorkerService.name, () => {
         { id: existing, deletedAt: null, createdAt: new Date('2020-01-01') },
       ]);
       assetMedia.needsOriginal.mockResolvedValue(true);
+      assetMedia.restoreFromCopy.mockResolvedValue({ id: existing, visible: true, fileUsed: true });
       const item = restoreItemOf();
 
       const outcome = await worker().restoreItem(contextOf(), item);
@@ -930,6 +931,34 @@ describe(PreservationWorkerService.name, () => {
       );
       expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
       expect(repository.updateRestoreItem).toHaveBeenCalledWith(item.id, { assetId: existing, match: 'existing' });
+    });
+
+    it('puts the archived original back in a repaired photo’s place, never as a second photo (FL-1472)', async () => {
+      // a repaired photo has the repair's bytes as its checksum: nothing matches the archive's original
+      repository.findByChecksum.mockResolvedValue([]);
+      const repaired = newUuid();
+      assetMedia.needsOriginal.mockResolvedValue(true);
+      assetMedia.restoreFromCopy.mockResolvedValue({ id: repaired, visible: true, fileUsed: true });
+      const item = restoreItemOf();
+
+      expect(await worker().restoreItem(contextOf(), item)).toBe('matched');
+      expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+      expect(repository.updateRestoreItem).toHaveBeenCalledWith(item.id, { assetId: repaired, match: 'existing' });
+    });
+
+    it('fails, never matches, an item whose photo could not be put back (FL-1472)', async () => {
+      repository.findByChecksum.mockResolvedValue([
+        { id: newUuid(), deletedAt: null, createdAt: new Date('2020-01-01') },
+      ]);
+      assetMedia.needsOriginal.mockResolvedValue(true);
+      assetMedia.restoreFromCopy.mockResolvedValue(undefined);
+      const item = restoreItemOf();
+
+      expect(await worker().restoreItem(contextOf(), item)).toBe('failed');
+      expect(repository.updateRestoreItem).toHaveBeenCalledWith(
+        item.id,
+        expect.objectContaining({ state: 'failed', reasonKey: 'restore_failed' }),
+      );
     });
 
     it('refuses an original the library holds in the trash rather than adding it again', async () => {

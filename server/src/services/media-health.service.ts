@@ -1875,7 +1875,7 @@ export class MediaHealthService {
     if (asked.length === 0) {
       return 'none';
     }
-    let now = false;
+    const syncing: string[] = [];
     if (!(await this.iCloudSyncRepository.ownerUploadsPaused(asset.ownerId))) {
       for (const { connectionId, automatic, due } of asked) {
         if (!automatic || !due) {
@@ -1885,14 +1885,17 @@ export class MediaHealthService {
           trigger: 'manual',
         });
         if (queued.outcome === 'created' || queued.outcome === 'existing') {
-          await this.jobRepository.queue({ name: JobName.ICloudSync, data: { id: connectionId } });
-          now = true;
+          syncing.push(connectionId);
         }
       }
     }
+    // the ask is in the history before a worker is woken, so its answer always comes after it
     await this.mediaHealthRepository.appendSteps(
-      this.stepsOf(finding, [{ step: 'asked-icloud', outcome: 'waiting', facts: { later: !now } }]),
+      this.stepsOf(finding, [{ step: 'asked-icloud', outcome: 'waiting', facts: { later: syncing.length === 0 } }]),
     );
+    for (const id of syncing) {
+      await this.jobRepository.queue({ name: JobName.ICloudSync, data: { id } });
+    }
     return 'none';
   }
 
@@ -2021,14 +2024,15 @@ export class MediaHealthService {
    */
   @OnJob({ name: JobName.MediaHealthPutBackUpload, queue: QueueName.MediaHealth })
   async handlePutBackUpload(job: JobOf<JobName.MediaHealthPutBackUpload>): Promise<JobStatus> {
-    try {
-      return await this.putBackUpload(job);
-    } finally {
-      // never a file the library uses: a relink meanwhile may have made it someone's original
-      if (!(await this.mediaHealthRepository.isOriginalPathInUse(job.path))) {
-        await this.storageRepository.unlink(job.path).catch(() => {});
-      }
-    }
+    // an attempt that throws keeps the upload, for the retry
+    const status = await this.putBackUpload(job);
+    // never a file the library uses: under the path's lock, a relink meanwhile may have made it someone's original
+    await this.physicalFileRepository
+      .deleteUnreferencedPath(job.path, () => this.storageRepository.unlink(job.path))
+      .catch((error: unknown) =>
+        this.logger.warn(`Library care kept the upload ${job.path}: ${getErrorMessage(error)}`),
+      );
+    return status;
   }
 
   private async putBackUpload({ id, path: upload, device }: JobOf<JobName.MediaHealthPutBackUpload>) {
@@ -2052,7 +2056,7 @@ export class MediaHealthService {
         finding.category === MediaHealthCategory.Corrupt &&
         finding.status === MediaHealthStatus.Resolved &&
         !finding.dismissedAt &&
-        finding.originalPath === asset.originalPath &&
+        evidence.repairedChecksum === asset.checksum.toString('hex') &&
         ['repaired', 'part-saved'].includes(evidence.fixState as string) &&
         typeof evidence.originalChecksum === 'string'
       );
@@ -2114,14 +2118,15 @@ export class MediaHealthService {
     upload: string,
     device?: string,
   ): Promise<JobStatus> {
-    const expected = (finding.evidence as Record<string, unknown>).originalChecksum;
+    const { originalChecksum, originalSha256 } = finding.evidence as Record<string, unknown>;
     let digests: FileDigests;
     try {
       digests = await this.cryptoRepository.hashFileDigests(upload);
     } catch {
       return JobStatus.Skipped;
     }
-    if (![digests.sha1.toString('hex'), digests.sha256.toString('hex')].includes(expected as string)) {
+    const uploaded = new Set([digests.sha1.toString('hex'), digests.sha256.toString('hex')]);
+    if ([originalChecksum, originalSha256].every((value) => typeof value !== 'string' || !uploaded.has(value))) {
       return JobStatus.Skipped;
     }
     const destination = await this.publishUpload(asset, finding, upload, digests, 'original');

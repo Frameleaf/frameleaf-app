@@ -67,6 +67,7 @@ import { hasFontSignature } from 'src/utils/font-file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { LIBRARY_CARE_FOLDER } from 'src/utils/media-health-roots.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview.js';
 import {
@@ -247,18 +248,43 @@ export class AssetMediaService extends BaseService {
     }
     await this.queuePutBack(auth, id, file);
     const options = this.getDuplicateCheckOptions(auth);
-    const visible = !options || (await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums, options));
-    return { id, visible: !!visible, fileUsed: true };
+    // this very photo: another repaired photo with the same original never answers for it
+    const visible =
+      !options || (await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums, options)) === id;
+    return { id, visible, fileUsed: true };
   }
 
-  /** FL-1472: Library care's job owns the upload from here, and removes it once it is done with it. */
+  /**
+   * FL-1472: Library care's job owns the upload from here, and removes it once it is done with it. The upload moves
+   * into the owner's hidden Library care folder first, which neither an upload's clean-up nor the search for
+   * untracked files ever touches, so it is there when the job runs.
+   */
   private async queuePutBack(auth: AuthDto, id: string, file: UploadFile) {
+    const pending = path.join(
+      path.dirname(StorageCore.getNestedPath(StorageFolder.Upload, auth.user.id, id)),
+      LIBRARY_CARE_FOLDER,
+      `${id}-pending-${this.cryptoRepository.randomUUID()}${path.extname(file.originalPath).toLowerCase()}`,
+    );
+    this.storageRepository.mkdirSync(path.dirname(pending));
+    await this.storageRepository.rename(file.originalPath, pending);
     const device = await this.uploadingDevice(auth);
     await this.jobRepository.queue({
       name: JobName.MediaHealthPutBackUpload,
-      data: { id, path: file.originalPath, ...(device && { device }) },
+      data: { id, path: pending, ...(device && { device }) },
     });
     this.logger.log(`Upload for asset ${id} queued to take its damaged or repaired file's place`);
+  }
+
+  /**
+   * FL-1472: whether this session may see the photo an upload put its bytes back under. An upload whose put-back is
+   * still queued has no checksum match to prove it by yet. A shared link never sees one, as it never probes.
+   */
+  async canSeeUploadResult(auth: AuthDto, assetId: string): Promise<boolean> {
+    if (auth.sharedLink) {
+      return false;
+    }
+    const options = this.getDuplicateCheckOptions(auth);
+    return options ? this.assetRepository.isVisibleToUploader(auth.user.id, assetId, options) : true;
   }
 
   /**

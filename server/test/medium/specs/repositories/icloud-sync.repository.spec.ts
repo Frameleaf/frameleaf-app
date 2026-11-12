@@ -118,6 +118,14 @@ describe(ICloudSyncRepository.name, () => {
       expect((await repository.claim(connection.id, 1000))?.id).toBe(resource.id);
     });
 
+    it('keeps the ask through the next run’s materialization', async () => {
+      const { resource, photo } = await mappedItem('finalized');
+      await repository.requestRepair(connection.ownerId, photo.id);
+      await repository.startRun(connection);
+      await repository.materialize(connection, 'library', library);
+      expect((await repository.resource(resource.id))!.source.repairRequested).toBe(true);
+    });
+
     it('asks nothing of a photo no iCloud item came from', async () => {
       await mappedItem('finalized');
       const other = await seedCanonicalAsset(db, { ownerId: connection.ownerId });

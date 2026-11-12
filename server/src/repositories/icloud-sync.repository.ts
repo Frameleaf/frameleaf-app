@@ -1066,7 +1066,8 @@ export class ICloudSyncRepository {
             VALUES (${connection.id}::uuid,${connection.ownerId}::uuid,${libraryKey},${library}::jsonb,
               ${resource.sourceAssetId},${resource.recordId},${resource.resourceKey},${resource.role},${resource.fingerprint},${{ ...resource.source, ...(mediaKinds.length > 0 && { mediaKinds }), current: true }}::jsonb,${resource.expectedSize})
             ON CONFLICT ("connectionId","libraryKey","sourceAssetId","resourceKey",fingerprint) WHERE "auditRequestId" IS NULL
-            DO UPDATE SET source = excluded.source || CASE WHEN public.icloud_resource.source ? '_sync' THEN jsonb_build_object('_sync',public.icloud_resource.source->'_sync') ELSE '{}'::jsonb END, "updatedAt" = now()`.execute(
+            DO UPDATE SET source = excluded.source || CASE WHEN public.icloud_resource.source ? '_sync' THEN jsonb_build_object('_sync',public.icloud_resource.source->'_sync') ELSE '{}'::jsonb END
+              || CASE WHEN public.icloud_resource.source ? 'repairRequested' THEN jsonb_build_object('repairRequested',public.icloud_resource.source->'repairRequested') ELSE '{}'::jsonb END, "updatedAt" = now()`.execute(
             db,
           );
         }
