@@ -276,8 +276,26 @@ const VideoMomentSearchHitSchema = z
   })
   .meta({ id: 'VideoMomentSearchHitDto' });
 
+const VideoMomentSearchVideoSchema = z
+  .object({
+    assetId: z.uuidv4(),
+    momentCount: z.int().min(1).describe('How many separate moments match: hits within five seconds are one'),
+    firstMs: z.int().describe('Where the first matching moment starts'),
+    // The earliest matching hit, for its frame.
+    first: VideoMomentSearchHitSchema,
+  })
+  .meta({ id: 'VideoMomentSearchVideoDto' });
+
 const VideoMomentSearchResponseSchema = z
-  .object({ hits: z.array(VideoMomentSearchHitSchema) })
+  .object({
+    hits: z.array(VideoMomentSearchHitSchema),
+    videos: z
+      .array(VideoMomentSearchVideoSchema)
+      .optional()
+      .describe(
+        'FL-1439: one entry per matching video, best first, counted from all of its matching hits; `limit` counts videos here',
+      ),
+  })
   .meta({ id: 'VideoMomentSearchResponseDto' });
 
 const VideoMomentParamSchema = z.object({

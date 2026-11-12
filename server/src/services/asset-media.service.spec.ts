@@ -221,6 +221,7 @@ describe(AssetMediaService.name, () => {
     clearConfigCache();
     ({ sut, mocks } = newTestService(AssetMediaService));
     retainFile.mockReset();
+    mocks.session.getByUserId.mockResolvedValue([]);
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.asset.getByChecksums.mockResolvedValue([]);
     mocks.storage.checkFileExists.mockResolvedValue(true);
@@ -943,7 +944,10 @@ describe(AssetMediaService.name, () => {
             file,
           }),
         );
-        expect(mocks.job.queue.mock.calls.filter(([job]) => job.name === JobName.AssetExtractMetadata)).toHaveLength(1);
+        expect(mocks.job.queueUpload).toHaveBeenCalledExactlyOnceWith(
+          { name: JobName.AssetExtractMetadata, data: { id: 'planned-asset', source: 'upload' } },
+          { ownerId: authStub.user1.user.id, origin: 'computer', label: null, count: 1 },
+        );
       });
 
       it.each([undefined, AssetVisibility.Locked])(
@@ -958,6 +962,38 @@ describe(AssetMediaService.name, () => {
           expect(mocks.asset.unlock).not.toHaveBeenCalled();
         },
       );
+
+      it.each([
+        ['a phone', { id: 'token-id', deviceOS: 'iOS', deviceType: 'iPhone15,2' }, 'phone', 'iPhone15,2'],
+        ['a browser', { id: 'token-id', deviceOS: 'macOS', deviceType: 'Chrome' }, 'computer', 'Chrome'],
+      ])('puts an upload from %s in its device run (FL-1459)', async (_, session, origin, label) => {
+        mocks.session.getByUserId.mockResolvedValue([session] as never);
+        await sut.uploadAsset(authStub.user1, createDto, file, undefined, publish(false));
+        expect(mocks.job.queueUpload).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ name: JobName.AssetExtractMetadata }),
+          {
+            ownerId: authStub.user1.user.id,
+            origin,
+            label,
+            count: 1,
+          },
+        );
+      });
+
+      it('names an app upload by its API key (FL-1459)', async () => {
+        mocks.apiKey.getById.mockResolvedValue({ name: 'Photo importer' } as never);
+        await sut.uploadAsset(
+          { user: authStub.user1.user, apiKey: { id: 'key-1', permissions: [] } },
+          createDto,
+          file,
+          undefined,
+          publish(false),
+        );
+        expect(mocks.job.queueUpload).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ origin: 'client', label: 'Photo importer' }),
+        );
+      });
 
       it('keeps its extracted copy when adoption does not select a shared file', async () => {
         mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({
@@ -1004,7 +1040,7 @@ describe(AssetMediaService.name, () => {
         );
         expect(mocks.event.emit).not.toHaveBeenCalled();
         expect(mocks.asset.remove).not.toHaveBeenCalled();
-        expect(mocks.job.queue.mock.calls.some(([job]) => job.name === JobName.AssetExtractMetadata)).toBe(false);
+        expect(mocks.job.queueUpload).not.toHaveBeenCalled();
       });
 
       it.each(['sidecar', 'live-photo'] as const)(

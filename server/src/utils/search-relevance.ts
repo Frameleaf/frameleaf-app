@@ -38,3 +38,32 @@ export const countCloseMatches = (results: RankedDistances[], unrelated: number 
   const firstLoose = results.findIndex(({ searchDistance }) => searchDistance > limit);
   return firstLoose === -1 ? results.length : firstLoose;
 };
+
+/**
+ * FL-1439: words that name nothing, encoded like a search. However close their nearest frame
+ * gets is how close a frame can be without matching anything, so a frame only counts while it is
+ * closer than every one of them gets. Several, because one nonsense phrase can land oddly near a
+ * picture (SigLIP ViT-B-16-384 on two demo libraries: "zxqv blorf" came within 0.946 and 0.956,
+ * the others 0.97 to 1.0, while real matches sat at 0.90 to 0.93 and words the library does not
+ * show, giraffe or skyscraper, at 0.95 to 1.0).
+ */
+export const NONSENSE_SEARCH_TEXTS = ['zxqv blorf', 'qwpoe vnmz', 'asdf jkl'];
+
+/**
+ * FL-1439: the distance a video frame must stay under to match a search, or undefined when no
+ * frame does. The photo rule (`CLOSE_MATCH_SHARE` of the way from the best frame to an unrelated
+ * one, when the index is big enough to say what unrelated is) and never as far as nonsense gets,
+ * which the photo rule alone cannot tell.
+ */
+export const frameMatchLimit = (
+  best: number | undefined,
+  unrelated: number | null,
+  nonsense: number | null,
+): number | undefined => {
+  if (best === undefined || nonsense === null || !(best < nonsense)) {
+    return undefined;
+  }
+  return unrelated !== null && best < unrelated
+    ? Math.min(nonsense, best + CLOSE_MATCH_SHARE * (unrelated - best))
+    : nonsense;
+};

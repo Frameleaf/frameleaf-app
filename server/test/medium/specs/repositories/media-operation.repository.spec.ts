@@ -1713,6 +1713,28 @@ describe(MediaOperationRepository.name, () => {
       expect(statuses).toEqual(['queued:1', 'failed:1']);
     });
 
+    it('resumes a library scan whose worker vanished once, then reports the second loss (FL-1459)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      // A scan carries on from its recorded phase and cursor, as it does when the server restarts under it.
+      const operation = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.LibraryScan,
+        snapshot: { libraryId: randomUUID() },
+      });
+      const outcomes: string[] = [];
+
+      for (let lost = 0; lost < 2; lost++) {
+        await skipRetryDelay(ctx, operation.id);
+        await claimKind(sut, MediaOperationKind.LibraryScan, `worker-${lost}`);
+        await lapse(ctx, operation.id);
+        await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+        const after = await sut.getForOwner(operation.id, user.id);
+        outcomes.push(`${after!.status}:${after!.autoRetries}:${after!.errorCode}`);
+      }
+
+      expect(outcomes).toEqual(['queued:1:lease_expired', 'failed:1:lease_expired']);
+    });
+
     it('does not count a claim handed back on purpose as a lost one after a restart', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

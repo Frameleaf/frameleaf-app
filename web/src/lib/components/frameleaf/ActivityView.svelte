@@ -6,7 +6,9 @@
   import SpokenWordsActivity from '$lib/components/frameleaf/SpokenWordsActivity.svelte';
   import ActivityLeftOver from '$lib/components/frameleaf/ActivityLeftOver.svelte';
   import ActivityScanStopped from '$lib/components/frameleaf/ActivityScanStopped.svelte';
+  import ActivityWorkArrivals from '$lib/components/frameleaf/ActivityWorkArrivals.svelte';
   import ActivityWorkFeatures from '$lib/components/frameleaf/ActivityWorkFeatures.svelte';
+  import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -31,6 +33,7 @@
     type ActivityItem,
   } from '$lib/frameleaf/activity';
   import { activitySession } from '$lib/frameleaf/activity-session.svelte';
+  import { buildArrivals } from '$lib/frameleaf/arrivals';
   import {
     activityWorkStatus,
     stuckWorkRows,
@@ -176,12 +179,39 @@
   const busyServer = $derived(serverWork.length + cloudWork.length);
   /** FL-1388: the same work as people know it, one row for each feature of Settings › Background work. */
   const features = $derived(buildWorkFeatureRows(serverWork));
+  /** FL-1459: the same work by what came in: an upload from a phone, a folder scan, an import. */
+  const arrivals = $derived(buildArrivals(runningJobsSession.summary));
+  /**
+   * The prototype opens on "By what came in"; with nothing come in, on the features at work. The viewer's own choice
+   * is kept for the next visit.
+   */
+  const WORK_VIEW_KEY = 'frameleaf.activity.workView';
+  type WorkView = 'arrival' | 'feature';
+  const readWorkView = (): WorkView | null => {
+    try {
+      const stored = localStorage.getItem(WORK_VIEW_KEY);
+      return stored === 'arrival' || stored === 'feature' ? stored : null;
+    } catch {
+      return null;
+    }
+  };
+  let chosenView = $state<WorkView | null>(readWorkView());
+  const workView = $derived<WorkView>(chosenView ?? (arrivals.length > 0 ? 'arrival' : 'feature'));
+  const chooseWorkView = (value: string) => {
+    const view: WorkView = value === 'feature' ? 'feature' : 'arrival';
+    chosenView = view;
+    try {
+      localStorage.setItem(WORK_VIEW_KEY, view);
+    } catch {
+      // The choice lasts for this visit only.
+    }
+  };
+
   /**
    * FL-1457: features whose work can't go on by itself need a look. The banner counts them, and so does the Failed
    * chip, whose filter lists them under Needs a look (All shows them under In progress, where their row warns).
    */
   const stuckRows = $derived(stuckWorkRows(features));
-  const stuckShown = $derived(filter === 'failed' ? stuckRows : []);
   /**
    * FL-1409: finished work that left photos over. Recent work says "312 photos need a look" for it, so this page
    * counts it too and never says "Everything is up to date" beside that card. Shown under All and Needs a look.
@@ -194,6 +224,15 @@
   /** In progress shows under All and In progress (the `running` filter). */
   const showProgress = $derived(filter === 'all' || filter === 'running');
   const backgroundCount = $derived(showProgress ? busyServer : 0);
+  /** The server's work shows, by what came in or by feature, whenever there is any. */
+  const showServerWork = $derived(backgroundCount > 0 || (showProgress && arrivals.length > 0));
+  /**
+   * FL-1457: a feature waiting on another step is listed under Needs a look with the Failed filter. FL-1459: under
+   * All the feature rows show it, unless In progress shows what came in; then Needs a look lists it too.
+   */
+  const stuckShown = $derived(
+    filter === 'failed' || (filter === 'all' && showServerWork && workView === 'arrival') ? stuckRows : [],
+  );
   /** A chip counts what its filter shows: background work under All and In progress, and finished lines, not runs. */
   const chipCount = (name: ActivityFilter) =>
     name === 'done'
@@ -229,7 +268,13 @@
    * reads as "Everything is up to date"; nor does a page whose numbers may be old.
    */
   const allQuiet = $derived(
-    filter === 'all' && !settling && status === 'idle' && items.length === 0 && busyServer === 0 && leftOverCount === 0,
+    filter === 'all' &&
+      !settling &&
+      status === 'idle' &&
+      items.length === 0 &&
+      busyServer === 0 &&
+      leftOverCount === 0 &&
+      arrivals.length === 0,
   );
   const banner = $derived.by(() => {
     const left = features.reduce((sum, row) => sum + row.left, 0);
@@ -914,10 +959,25 @@
 
   {#if showProgress && !allQuiet && !(activitySession.loading && items.length === 0)}
     <section class="fla-section" aria-labelledby="{rowIdPrefix}-in-progress">
-      <h2 id="{rowIdPrefix}-in-progress" class="fla-section-title">
-        {$t('frameleaf_activity_section_in_progress')}
-      </h2>
-      {#if backgroundCount > 0}
+      <div class="fla-heading-row">
+        <h2 id="{rowIdPrefix}-in-progress" class="fla-section-title">
+          {$t('frameleaf_activity_section_in_progress')}
+        </h2>
+        {#if showServerWork}
+          <SegmentedControl
+            label={$t('frameleaf_activity_view')}
+            options={[
+              { value: 'arrival', label: $t('frameleaf_activity_view_arrival') },
+              { value: 'feature', label: $t('frameleaf_activity_view_feature') },
+            ]}
+            value={workView}
+            onChange={chooseWorkView}
+          />
+        {/if}
+      </div>
+      {#if showServerWork && workView === 'arrival'}
+        <ActivityWorkArrivals {arrivals} viewerId={authManager.authenticated ? authManager.user.id : null} />
+      {:else if showServerWork}
         <!-- Every feature while any of them is busy, so what is up to date shows beside what is not. -->
         <ActivityWorkFeatures
           rows={serverWork.length > 0 ? features : []}
@@ -945,7 +1005,7 @@
           </div>
         {/if}
       {/each}
-      {#if inProgress.length + backgroundCount === 0}
+      {#if inProgress.length === 0 && !showServerWork}
         <!-- Only administrators see the server's background work here. -->
         <p class="fw3-quiet">
           {$t(isAdmin ? 'frameleaf_activity_work_quiet' : 'frameleaf_activity_empty_help_own')}
@@ -1289,6 +1349,18 @@
   /* The feature list, then the viewer's own jobs by stage. */
   .fla-section > :global(.fw3-features) {
     margin-bottom: var(--fl-space-4);
+  }
+  /* activity.css `.fw3-heading-row`: In progress and its view switch. */
+  .fla-heading-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-3);
+    margin: 0 0 var(--fl-space-3);
+  }
+  .fla-heading-row .fla-section-title {
+    margin: 0;
   }
   .fla-section-title {
     font-size: 15px;

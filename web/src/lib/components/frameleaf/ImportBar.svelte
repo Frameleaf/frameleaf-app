@@ -37,7 +37,9 @@
       ? progress.scan.name
         ? $t('frameleaf_import_bar_title_scan', { values: { name: progress.scan.name } })
         : $t('frameleaf_import_bar_title_scan_unnamed')
-      : $t('frameleaf_import_bar_title'),
+      : progress?.upload?.name
+        ? $t('frameleaf_import_bar_title_upload', { values: { name: progress.upload.name } })
+        : $t('frameleaf_import_bar_title'),
   );
   /** The first-run bar's words for a time left. */
   const timeLeft = (seconds: number) => {

@@ -24,6 +24,11 @@ export interface JobRunTable {
   finishedAt: Timestamp | null;
   /** FL-1215: see `run-summary.ts`. */
   summary: Record<string, unknown> | null;
+  /** FL-1459: what brought the run's photos in (`RunOrigin`), whose they are, its name and how many came. */
+  ownerId: string | null;
+  origin: string | null;
+  label: string | null;
+  itemCount: number | null;
 }
 export interface JobTable {
   id: string;

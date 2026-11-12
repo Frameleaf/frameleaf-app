@@ -1,4 +1,4 @@
-import { countCloseMatches } from 'src/utils/search-relevance.js';
+import { countCloseMatches, frameMatchLimit } from 'src/utils/search-relevance.js';
 
 const looks = (...distances: number[]) =>
   distances.map((distance) => ({ searchDistance: distance, visualDistance: distance }));
@@ -25,5 +25,25 @@ describe(countCloseMatches.name, () => {
     expect(countCloseMatches([], 1)).toBeUndefined();
     expect(countCloseMatches(looks(1, 1.01), 1)).toBeUndefined();
     expect(countCloseMatches(looks(1.02, 1.03), 1)).toBeUndefined();
+  });
+});
+
+describe(frameMatchLimit.name, () => {
+  it('keeps frames in the first part of the way from the best one to an unrelated frame', () => {
+    // best 0.90, unrelated 1.00: up to 0.93, nearer than nonsense (0.95) gets
+    expect(frameMatchLimit(0.9, 1, 0.95)).toBeCloseTo(0.93);
+  });
+
+  it('never keeps a frame as far as nonsense words get', () => {
+    expect(frameMatchLimit(0.9, 1.2, 0.94)).toBe(0.94);
+    // Too few frames to say what unrelated is: only the nonsense line.
+    expect(frameMatchLimit(0.9, null, 0.94)).toBe(0.94);
+  });
+
+  it('matches nothing when the best frame is no nearer than nonsense, or there is no frame', () => {
+    expect(frameMatchLimit(0.95, 1, 0.95)).toBeUndefined();
+    expect(frameMatchLimit(0.97, 1, 0.95)).toBeUndefined();
+    expect(frameMatchLimit(undefined, 1, 0.95)).toBeUndefined();
+    expect(frameMatchLimit(0.9, 1, null)).toBeUndefined();
   });
 });

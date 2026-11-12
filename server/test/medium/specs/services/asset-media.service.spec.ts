@@ -10,6 +10,7 @@ import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
 import { AssetFileType, AssetLockReason, CacheControl, Permission, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -49,6 +50,8 @@ const setup = (db?: Kysely<DB>) => {
       AssetRepository,
       SharedLinkRepository,
       UserRepository,
+      ApiKeyRepository,
+      SessionRepository,
     ],
     mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository, MetadataRepository],
   });

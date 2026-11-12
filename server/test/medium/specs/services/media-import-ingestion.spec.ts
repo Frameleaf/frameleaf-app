@@ -7,6 +7,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetStatus, LibraryScope } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -17,6 +18,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type MediaImportAuthority, MediaImportRepository } from 'src/repositories/media-import.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -53,6 +55,8 @@ it('recovers a committed media publication exactly once with one quota debit and
       AssetRepository,
       SharedLinkRepository,
       UserRepository,
+      ApiKeyRepository,
+      SessionRepository,
       StorageRepository,
     ],
     mock: [EventRepository, LoggingRepository, JobRepository],

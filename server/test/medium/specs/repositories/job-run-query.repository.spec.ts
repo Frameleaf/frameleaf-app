@@ -1,9 +1,11 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
+import { JobName, JobStatus, QueueName } from 'src/enum.js';
 import { listRecentWork, recentFileCheck } from 'src/queue/recent-work.js';
 import { getRun, listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
 import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -881,5 +883,80 @@ describe('Recent work (FL-1349)', () => {
     expect(page[0].earlierRuns).toBeUndefined();
     expect(page[0].leftOverStreak).toBeUndefined();
     expect(page[0]).toMatchObject({ nightly: true });
+  });
+});
+
+describe('what came in (FL-1459)', () => {
+  const jobs = () => {
+    const repository = new JobRepository({} as never, {} as never, {} as never, { setContext: () => {} } as never, db);
+    repository['handlers'][JobName.AssetExtractMetadata] = {
+      jobName: JobName.AssetExtractMetadata,
+      queueName: QueueName.MetadataExtraction,
+      handler: () => Promise.resolve(JobStatus.Success),
+      label: 'synthetic upload',
+    } as never;
+    return repository;
+  };
+  const upload = (repository: JobRepository, ownerId: string, label: string | null, count = 1) =>
+    repository.queueUpload(
+      { name: JobName.AssetExtractMetadata, data: { id: randomUUID(), source: 'upload' } },
+      { ownerId, origin: 'phone', label, count },
+    );
+
+  it("puts one device's uploads, side by side, in one run with its name and count", async () => {
+    const repository = jobs();
+    const ownerId = randomUUID();
+    await Promise.all([1, 2, 3, 4, 5].map(() => upload(repository, ownerId, 'Pixel 8')));
+    await upload(repository, ownerId, 'Pixel 8', 0);
+    await upload(repository, ownerId, 'iPad');
+
+    const runs = await listRuns(db, 25, 0);
+    const pixel = runs.find((row) => row.label === 'Pixel 8')!;
+    expect(runs).toHaveLength(2);
+    expect(pixel).toMatchObject({ kind: 'upload', origin: 'phone', ownerId, itemCount: 5, total: 6 });
+    expect(pixel.steps).toEqual([
+      expect.objectContaining({ queue: QueueName.MetadataExtraction, waiting: 6, total: 6 }),
+    ]);
+    expect(runs.find((row) => row.label === 'iPad')).toMatchObject({ itemCount: 1 });
+  });
+
+  it('counts a photo once when its ingestion is retried', async () => {
+    const repository = jobs();
+    const ownerId = randomUUID();
+    const item = { name: JobName.AssetExtractMetadata, data: { id: randomUUID(), source: 'upload' } } as const;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await repository.queueUpload(item, { ownerId, origin: 'phone', label: 'Pixel 8', count: 1 });
+    }
+    expect((await listRuns(db, 25, 0)).map((row) => row.itemCount)).toEqual([1]);
+  });
+
+  it('counts a step waiting out a dependency as blocked, as the run does', async () => {
+    const repository = jobs();
+    await upload(repository, randomUUID(), 'Pixel 8');
+    await sql`update job set "dependencyReason" = 'source-unavailable'`.execute(db);
+    const [read] = await listRuns(db, 25, 0);
+    expect(read.steps).toEqual([expect.objectContaining({ blocked: 1, waiting: 0 })]);
+    expect(read.stageTotals).toMatchObject({ blocked: 1, waiting: 0 });
+  });
+
+  it('starts a new run once the last one finished a while ago', async () => {
+    const repository = jobs();
+    const ownerId = randomUUID();
+    await upload(repository, ownerId, 'Pixel 8');
+    await sql`update job set state = 'completed', "finishedAt" = now() where name = ${JobName.AssetExtractMetadata}`.execute(
+      db,
+    );
+    await sql`update job_run set "finishedAt" = now() - interval '20 minutes'`.execute(db);
+    await upload(repository, ownerId, 'Pixel 8');
+
+    expect((await listRuns(db, 25, 0)).map((row) => row.itemCount)).toEqual([1, 1]);
+  });
+
+  it('gives a run with no origin none of these fields', async () => {
+    const id = await run();
+    await job(id, 'a', 'Thumbnail');
+    const read = (await getRun(db, id))!;
+    expect(read).not.toHaveProperty('origin');
+    expect(read).not.toHaveProperty('steps');
   });
 });

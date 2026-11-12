@@ -7,7 +7,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
  * FL-930: one Apply of the Date & Time Doctor, which its owner can undo for 30 days. Older batches are removed
- * nightly. Mirrors migration 1794430000000-DateFix.
+ * nightly. Mirrors migration 1794440000000-DateFix.
  */
 @Index({ columns: ['userId', 'createdAt'] })
 @Table('date_fix_batch')

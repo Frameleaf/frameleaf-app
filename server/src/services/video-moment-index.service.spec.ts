@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import type { QueueExecution } from 'src/queue/types.js';
+import type { Mock } from 'vitest';
 import { defaults } from 'src/config.js';
 import {
   AssetStatus,
@@ -9,16 +10,18 @@ import {
   JobName,
   JobStatus,
   MlDestinationKind,
+  VideoMomentMatch,
   VideoMomentSource,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import { VideoMomentIndexService } from 'src/services/video-moment-index.service.js';
+import { VideoMomentIndexService, momentsByVideo } from 'src/services/video-moment-index.service.js';
 import {
   VIDEO_MOMENT_EXTRACTOR_VERSION,
   enrichmentConfigHash,
   identityHash,
   sourceFingerprint,
 } from 'src/utils/enrichment-plan.js';
+import { NONSENSE_SEARCH_TEXTS } from 'src/utils/search-relevance.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
@@ -85,6 +88,7 @@ describe(VideoMomentIndexService.name, () => {
       publishCaptions: vi.fn().mockResolvedValue(frames.length),
       listMoments: vi.fn().mockResolvedValue([]),
       getMoment: vi.fn(),
+      getMoments: vi.fn().mockResolvedValue([]),
       createManualMoment: vi.fn(),
       updateManualMoment: vi.fn(),
       deleteManualMoment: vi.fn(),
@@ -92,6 +96,7 @@ describe(VideoMomentIndexService.name, () => {
       invalidateGenerated: vi.fn().mockResolvedValue(['/thumbs/a.jpeg']),
       searchFrames: vi.fn().mockResolvedValue([]),
       searchMomentText: vi.fn().mockResolvedValue([]),
+      getUnrelatedFrameDistance: vi.fn().mockResolvedValue(null),
     };
     mocks.person.getFaces.mockResolvedValue([]);
 
@@ -535,11 +540,28 @@ describe(VideoMomentIndexService.name, () => {
   });
 
   describe('search', () => {
+    /** Typed, so its implementation may return a promise. */
+    const searchFrames = () =>
+      moments.searchFrames as Mock<(embedding: string, model: string, scope: unknown) => Promise<unknown[]>>;
+    /** Nonsense words encode to this, and get no nearer than 0.6 to any frame. */
+    const NONSENSE = '[0.9]';
+    const frameHits = (hits: { assetId: string; timestampMs: number; distance: number; caption?: string }[]) =>
+      searchFrames().mockImplementation((embedding) =>
+        Promise.resolve(
+          embedding === NONSENSE
+            ? [{ assetId: newUuid(), frameId: newUuid(), momentId: null, timestampMs: 0, distance: 0.6, caption: null }]
+            : hits.map((hit) => ({ frameId: newUuid(), momentId: null, caption: null, ...hit })),
+        ),
+      );
+
+    beforeEach(() => {
+      mocks.machineLearning.encodeText.mockImplementation((_selection, text) =>
+        Promise.resolve(NONSENSE_SEARCH_TEXTS.includes(text) ? NONSENSE : '[0.3]'),
+      );
+    });
+
     it('searches only the caller library and leaves Locked videos out of an ordinary session', async () => {
-      mocks.machineLearning.encodeText.mockResolvedValue('[0.3]');
-      moments.searchFrames.mockResolvedValue([
-        { assetId, frameId: frames[1].id, timestampMs: 20_000, distance: 0.2, caption: null },
-      ]);
+      frameHits([{ assetId, timestampMs: 20_000, distance: 0.2 }]);
 
       const { hits } = await sut.search(authStub.user1, { query: 'waves' });
 
@@ -547,13 +569,13 @@ describe(VideoMomentIndexService.name, () => {
         ownerId,
         lockedOwnerId: undefined,
         privacy: {},
-        limit: 24,
+        limit: 600,
+        onePerVideo: true,
       });
       expect(hits).toEqual([expect.objectContaining({ assetId, timestampMs: 20_000, match: 'visual' })]);
     });
 
     it('passes the session hidden-content filter to both text and visual search', async () => {
-      mocks.machineLearning.encodeText.mockResolvedValue('[0.3]');
       const hiddenContent = {
         userId: ownerId,
         includeNsfw: true,
@@ -577,17 +599,17 @@ describe(VideoMomentIndexService.name, () => {
     });
 
     it('hides a visual hit’s caption made with names that changed since, keeping the hit', async () => {
-      mocks.machineLearning.encodeText.mockResolvedValue('[0.3]');
       const momentId = newUuid();
-      moments.searchFrames.mockResolvedValue([
-        { assetId, frameId: frames[1].id, momentId, timestampMs: 20_000, distance: 0.2, caption: 'Anna laughs' },
+      searchFrames().mockImplementation((embedding) =>
+        Promise.resolve([
+          embedding === NONSENSE
+            ? { assetId, frameId: frames[0].id, momentId: null, timestampMs: 0, distance: 0.6, caption: null }
+            : { assetId, frameId: frames[1].id, momentId, timestampMs: 20_000, distance: 0.2, caption: 'Anna laughs' },
+        ]),
+      );
+      moments.getMoments.mockResolvedValue([
+        { id: momentId, assetId, source: VideoMomentSource.Generated, provenance: { identityHash: 'names-before' } },
       ]);
-      moments.getMoment.mockResolvedValue({
-        id: momentId,
-        assetId,
-        source: VideoMomentSource.Generated,
-        provenance: { identityHash: 'names-before' },
-      });
 
       const { hits } = await sut.search(authStub.user1, { query: 'laughing' });
 
@@ -611,6 +633,174 @@ describe(VideoMomentIndexService.name, () => {
 
       expect(hits).toEqual([expect.objectContaining({ match: 'caption', timestampMs: 5000 })]);
       expect(mocks.machineLearning.encodeText).not.toHaveBeenCalled();
+    });
+
+    it('answers one entry per video, counted from all its matching frames, with the limit in videos', async () => {
+      const busy = newUuid();
+      const quiet = newUuid();
+      const last = newUuid();
+      // The busy video's frames are the nearest; its later ones would have used up a frame limit.
+      frameHits([
+        { assetId: busy, timestampMs: 40_000, distance: 0.1 },
+        { assetId: busy, timestampMs: 12_000, distance: 0.11 },
+        { assetId: busy, timestampMs: 14_000, distance: 0.12 },
+        { assetId: busy, timestampMs: 60_000, distance: 0.13 },
+        { assetId: quiet, timestampMs: 30_000, distance: 0.2 },
+        { assetId: busy, timestampMs: 2000, distance: 0.21 },
+        { assetId: last, timestampMs: 1000, distance: 0.3 },
+      ]);
+
+      const { videos, hits } = await sut.search(authStub.user1, { query: 'waves', limit: 2 });
+
+      expect(videos).toEqual([
+        // 12 s and 14 s are one moment: 2, 12, 40 and 60 s.
+        expect.objectContaining({
+          assetId: busy,
+          momentCount: 4,
+          firstMs: 2000,
+          first: expect.objectContaining({ timestampMs: 2000 }),
+        }),
+        expect.objectContaining({ assetId: quiet, momentCount: 1, firstMs: 30_000 }),
+      ]);
+      expect(hits).toHaveLength(2);
+    });
+
+    it('counts a chosen video from all of its matches, past what the ranking read', async () => {
+      const busy = newUuid();
+      // The ranking saw one frame of the busy video; reading the chosen video again finds three moments.
+      searchFrames().mockImplementation((embedding, _model, scope) =>
+        Promise.resolve(
+          embedding === NONSENSE
+            ? [{ assetId: newUuid(), frameId: newUuid(), momentId: null, timestampMs: 0, distance: 0.6, caption: null }]
+            : (scope as { assetIds?: string[] }).assetIds
+              ? [1000, 20_000, 40_000].map((timestampMs) => ({
+                  assetId: busy,
+                  frameId: newUuid(),
+                  momentId: null,
+                  timestampMs,
+                  distance: 0.2,
+                  caption: null,
+                }))
+              : [
+                  {
+                    assetId: busy,
+                    frameId: newUuid(),
+                    momentId: null,
+                    timestampMs: 20_000,
+                    distance: 0.2,
+                    caption: null,
+                  },
+                ],
+        ),
+      );
+
+      const { videos } = await sut.search(authStub.user1, { query: 'waves' });
+
+      expect(videos).toEqual([expect.objectContaining({ assetId: busy, momentCount: 3, firstMs: 1000 })]);
+      expect(moments.searchFrames).toHaveBeenCalledWith(
+        '[0.3]',
+        expect.any(String),
+        expect.objectContaining({ assetIds: [busy] }),
+      );
+    });
+
+    it('fills a slot left by a video whose only match is a caption gone stale', async () => {
+      // The fixture video, whose owner and people the stale-caption check can read.
+      const staleVideo = assetId;
+      const goodVideo = newUuid();
+      const staleId = newUuid();
+      const row = (videoId: string, momentId: string, source: VideoMomentSource) => ({
+        assetId: videoId,
+        momentId,
+        timestampMs: 5000,
+        source,
+        caption: 'Anna laughs',
+        transcript: null,
+      });
+      moments.searchMomentText.mockResolvedValue([
+        row(staleVideo, staleId, VideoMomentSource.Generated),
+        row(goodVideo, newUuid(), VideoMomentSource.Manual),
+      ]);
+      moments.getMoments.mockResolvedValue([
+        {
+          id: staleId,
+          assetId: staleVideo,
+          source: VideoMomentSource.Generated,
+          provenance: { identityHash: 'names-before' },
+        },
+      ]);
+
+      const { videos } = await sut.search(authStub.user1, { query: 'anna', limit: 1 });
+
+      expect(videos).toEqual([expect.objectContaining({ assetId: goodVideo, momentCount: 1 })]);
+    });
+
+    it('finds no frames for words nothing matches: none nearer than nonsense gets', async () => {
+      frameHits([
+        { assetId, timestampMs: 1000, distance: 0.6 },
+        { assetId, timestampMs: 9000, distance: 0.7 },
+      ]);
+
+      await expect(sut.search(authStub.user1, { query: 'zebra' })).resolves.toEqual({ hits: [], videos: [] });
+    });
+
+    it('leaves out frames past the close-match line, and keeps caption and transcript matches', async () => {
+      const other = newUuid();
+      moments.getUnrelatedFrameDistance.mockResolvedValue(1);
+      // best 0.2, unrelated 1: the line is at 0.44, nearer than nonsense (0.6)
+      frameHits([
+        { assetId, timestampMs: 1000, distance: 0.2 },
+        { assetId: other, timestampMs: 9000, distance: 0.5 },
+      ]);
+      moments.searchMomentText.mockResolvedValue([
+        {
+          assetId: other,
+          momentId: newUuid(),
+          timestampMs: 30_000,
+          source: VideoMomentSource.Manual,
+          caption: null,
+          transcript: 'happy birthday',
+        },
+      ]);
+
+      const { videos } = await sut.search(authStub.user1, { query: 'birthday' });
+
+      expect(videos).toEqual([
+        expect.objectContaining({ assetId: other, momentCount: 1, firstMs: 30_000 }),
+        expect.objectContaining({ assetId, momentCount: 1, firstMs: 1000 }),
+      ]);
+    });
+  });
+
+  describe(momentsByVideo.name, () => {
+    const hit = (videoId: string, timestampMs: number) => ({
+      assetId: videoId,
+      timestampMs,
+      frameId: null,
+      momentId: null,
+      caption: null,
+      match: VideoMomentMatch.Visual,
+      score: 1,
+    });
+
+    it('counts hits within five seconds of the one before as one moment', () => {
+      const hits = [hit('lake', 4000), hit('lake', 8000), hit('lake', 12_000)];
+      expect(momentsByVideo(hits)).toMatchObject([{ assetId: 'lake', momentCount: 1, firstMs: 4000 }]);
+      expect(momentsByVideo([...hits, hit('lake', 30_000)])).toMatchObject([{ momentCount: 2 }]);
+    });
+
+    it('counts every hit, so two hits in the same second never split a moment', () => {
+      // 0, 4.9, 5.4 and 10.4 s are one moment by the five-second rule.
+      const hits = [0, 4900, 5400, 10_400].map((timestampMs) => hit('lake', timestampMs));
+      expect(momentsByVideo(hits)).toMatchObject([{ momentCount: 1 }]);
+    });
+
+    it('keeps the order the hits rank the videos in', () => {
+      expect(momentsByVideo([hit('b', 5000), hit('a', 1000), hit('b', 100)]).map(({ assetId }) => assetId)).toEqual([
+        'b',
+        'a',
+      ]);
+      expect(momentsByVideo([])).toEqual([]);
     });
   });
 
@@ -708,12 +898,9 @@ describe(VideoMomentIndexService.name, () => {
       moments.searchFrames.mockResolvedValue([
         { assetId, frameId: frames[2].id, momentId, timestampMs: 30_000, distance: 0.3, caption: 'Anna laughs' },
       ]);
-      moments.getMoment.mockResolvedValue({
-        id: momentId,
-        assetId,
-        source: VideoMomentSource.Generated,
-        provenance: { identityHash: 'names-before' },
-      });
+      moments.getMoments.mockResolvedValue([
+        { id: momentId, assetId, source: VideoMomentSource.Generated, provenance: { identityHash: 'names-before' } },
+      ]);
 
       const { hits } = await sut.searchSimilar({ ...authStub.user1, hiddenContent }, frameId, {});
 

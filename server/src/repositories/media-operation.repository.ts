@@ -105,6 +105,13 @@ const pausedIfRequested = () =>
 const safeAutomaticReplay = () => sql<boolean>`("kind" = any(${[...SAFE_MEDIA_OPERATION_REPLAY_KINDS]}::text[])
   and "destination" = ${MediaOperationDestination.Local} and "remoteJobId" is null)`;
 
+/**
+ * FL-1459: what the lease sweep retries. A library scan carries on from its recorded phase and cursor, as it does
+ * after a restart (`LibraryScanService.run`), so a crash or power cut gets the same one automatic retry; it stays out
+ * of `safeAutomaticReplay`, which also decides a failure's retry, where a scan's own failure is reported.
+ */
+const sweepReplay = () => sql<boolean>`(${safeAutomaticReplay()} or "kind" = ${MediaOperationKind.LibraryScan})`;
+
 /** Queue-owned operations cannot recover before their execution owner has been fenced. */
 const executionOwnerSettled = () => sql<boolean>`("claimedBy" is distinct from 'job-queue' or not exists (
   select 1 from public.job j where j.state = 'active' and j.data->>'operationId' = media_operation.id::text
@@ -2270,7 +2277,7 @@ export class MediaOperationRepository {
         .where('claimExpiresAt', 'is not', null)
         .where('claimExpiresAt', '<', sql<Date>`now()`)
         .where(executionOwnerSettled())
-        .where(safeAutomaticReplay())
+        .where(sweepReplay())
         .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
         .where('cancelRequestedAt', 'is', null)
         .returning(['id', 'ownerId'])
@@ -2293,7 +2300,7 @@ export class MediaOperationRepository {
         .where('claimExpiresAt', '<', sql<Date>`now()`)
         .where(executionOwnerSettled())
         .where((eb) =>
-          eb.or([eb('autoRetries', '>=', MEDIA_OPERATION_AUTO_RETRIES), sql<boolean>`not ${safeAutomaticReplay()}`]),
+          eb.or([eb('autoRetries', '>=', MEDIA_OPERATION_AUTO_RETRIES), sql<boolean>`not ${sweepReplay()}`]),
         )
         .where('cancelRequestedAt', 'is', null)
         .returning(['id', 'ownerId'])

@@ -17,6 +17,10 @@ import { sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { notLockedOrOwnedBy } from 'src/utils/locked.js';
 
+/** FL-1439: frames sampled for what an unrelated frame scores, and the fewest that say anything. */
+const UNRELATED_FRAME_SAMPLE = 1000;
+const UNRELATED_FRAME_MIN_SAMPLE = 30;
+
 export type VideoMomentIndex = Selectable<VideoMomentIndexTable>;
 export type VideoMomentFrame = Selectable<VideoMomentFrameTable>;
 export type VideoMoment = Selectable<VideoMomentTable>;
@@ -60,6 +64,10 @@ export type VideoMomentSearchScope = {
   limit: number;
   /** A frame never returned: the one a frame-to-moment search started from. */
   excludeFrameId?: string;
+  /** FL-1439: only these videos, to count the chosen ones from all of their matches. */
+  assetIds?: string[];
+  /** FL-1439: text matches only: one per video, so a limit counts videos while they are ranked. */
+  onePerVideo?: boolean;
 };
 
 /**
@@ -549,6 +557,16 @@ export class VideoMomentRepository {
       .executeTakeFirst() as Promise<VideoMoment | undefined>;
   }
 
+  /** FL-1439: several moments in one read. */
+  getMoments(momentIds: string[]): Promise<VideoMoment[]> {
+    if (momentIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.db.selectFrom('video_moment').selectAll().where('id', '=', anyUuid(momentIds)).execute() as Promise<
+      VideoMoment[]
+    >;
+  }
+
   createManualMoment(values: {
     assetId: string;
     timestampMs: number;
@@ -627,38 +645,99 @@ export class VideoMomentRepository {
     const rows = await this.db.transaction().execute(async (trx) => {
       // Like every other vector search, set HNSW search breadth here rather than relying on a database default.
       await sql`set local hnsw.ef_search = 100`.execute(trx);
-      return trx
-        .selectFrom('video_moment_frame_embedding')
-        .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
-        .innerJoin('asset', 'asset.id', 'video_moment_frame.assetId')
-        .leftJoin('video_moment', (join) =>
-          join
-            .onRef('video_moment.frameId', '=', 'video_moment_frame.id')
-            .on('video_moment.source', '=', VideoMomentSource.Generated),
-        )
-        .select([
-          'video_moment_frame.assetId',
-          'video_moment_frame.id as frameId',
-          'video_moment.id as momentId',
-          'video_moment_frame.timestampMs',
-          'video_moment.caption',
-          sql<number>`video_moment_frame_embedding.embedding <=> ${embedding}`.as('distance'),
-        ])
-        .where('video_moment_frame_embedding.modelName', '=', modelName)
-        .where('asset.ownerId', '=', asUuid(scope.ownerId))
-        .where('asset.status', '=', AssetStatus.Active)
-        .where('asset.deletedAt', 'is', null)
-        .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
-        .where(notLockedOrOwnedBy(scope.lockedOwnerId))
-        .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
-        .$if(!!scope.excludeFrameId, (qb) =>
-          qb.where('video_moment_frame_embedding.frameId', '!=', asUuid(scope.excludeFrameId!)),
-        )
-        .orderBy(sql`video_moment_frame_embedding.embedding <=> ${embedding}`)
-        .limit(scope.limit)
-        .execute();
+      // FL-1439: a text search reads every matching frame, more than one HNSW pass returns. The
+      // index holds every library's frames and the owner is filtered after it, so the scan may read
+      // well past the default 20,000 tuples before it has a small library's frames.
+      // ponytail: a fixed budget; a library under 1 in 10 of a huge index can still come back short.
+      await sql`set local hnsw.iterative_scan = strict_order`.execute(trx);
+      await sql`set local hnsw.max_scan_tuples = 200000`.execute(trx);
+      return (
+        trx
+          .selectFrom('video_moment_frame_embedding')
+          .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
+          .innerJoin('asset', 'asset.id', 'video_moment_frame.assetId')
+          .leftJoin('video_moment', (join) =>
+            join
+              .onRef('video_moment.frameId', '=', 'video_moment_frame.id')
+              .on('video_moment.source', '=', VideoMomentSource.Generated),
+          )
+          .select([
+            'video_moment_frame.assetId',
+            'video_moment_frame.id as frameId',
+            'video_moment.id as momentId',
+            'video_moment_frame.timestampMs',
+            'video_moment.caption',
+            sql<number>`video_moment_frame_embedding.embedding <=> ${embedding}`.as('distance'),
+          ])
+          .where('video_moment_frame_embedding.modelName', '=', modelName)
+          .where('asset.ownerId', '=', asUuid(scope.ownerId))
+          .where('asset.status', '=', AssetStatus.Active)
+          .where('asset.deletedAt', 'is', null)
+          .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+          .where(notLockedOrOwnedBy(scope.lockedOwnerId))
+          .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
+          .$if(!!scope.excludeFrameId, (qb) =>
+            qb.where('video_moment_frame_embedding.frameId', '!=', asUuid(scope.excludeFrameId!)),
+          )
+          .$if(!!scope.assetIds, (qb) => qb.where('video_moment_frame.assetId', '=', anyUuid(scope.assetIds!)))
+          // FL-1439: a few named videos are read in full, without the vector index and its scan
+          // budget; they are ranked by distance below.
+          .$if(!scope.assetIds, (qb) => qb.orderBy(sql`video_moment_frame_embedding.embedding <=> ${embedding}`))
+          .limit(scope.limit)
+          .execute()
+      );
     });
-    return rows.map((row) => ({ ...row, distance: Number(row.distance) }));
+    return rows.map((row) => ({ ...row, distance: Number(row.distance) })).toSorted((a, b) => a.distance - b.distance);
+  }
+
+  /**
+   * FL-1439: what an unrelated frame of this library scores for a search, the far end of the
+   * close-match line (`frameMatchLimit`): the 90th percentile over a sample of the frames a search
+   * may return. Null while the index is too small to say.
+   */
+  @GenerateSql({
+    params: [
+      DummyValue.VECTOR,
+      DummyValue.STRING,
+      { ownerId: DummyValue.UUID, lockedOwnerId: DummyValue.UUID, privacy: { excludeNsfw: true }, limit: 1 },
+    ],
+  })
+  async getUnrelatedFrameDistance(
+    embedding: string,
+    modelName: string,
+    scope: VideoMomentSearchScope,
+  ): Promise<number | null> {
+    const { unrelated, count } = await this.db
+      // Materialized, so only the sampled frames' embeddings are read.
+      .with(
+        (cte) => cte('sample').materialized(),
+        (qb) =>
+          qb
+            .selectFrom('video_moment_frame_embedding')
+            .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
+            .innerJoin('asset', 'asset.id', 'video_moment_frame.assetId')
+            .select('video_moment_frame_embedding.embedding')
+            .where('video_moment_frame_embedding.modelName', '=', modelName)
+            .where('asset.ownerId', '=', asUuid(scope.ownerId))
+            .where('asset.status', '=', AssetStatus.Active)
+            .where('asset.deletedAt', 'is', null)
+            .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+            .where(notLockedOrOwnedBy(scope.lockedOwnerId))
+            // the frames a search may return, so hidden ones never move the line
+            .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
+            // Frame ids sort by when they were cut; their hash spreads the sample over the whole library.
+            .orderBy(sql`md5(video_moment_frame_embedding."frameId"::text)`)
+            .limit(UNRELATED_FRAME_SAMPLE),
+      )
+      .selectFrom('sample')
+      .select([
+        sql<number | null>`percentile_cont(0.9) within group (order by sample.embedding <=> ${embedding})`.as(
+          'unrelated',
+        ),
+        (eb) => eb.fn.countAll<number>().as('count'),
+      ])
+      .executeTakeFirstOrThrow();
+    return unrelated === null || Number(count) < UNRELATED_FRAME_MIN_SAMPLE ? null : Number(unrelated);
   }
 
   /** Moments whose caption or typed transcript mentions the text, under the same visibility rules. */
@@ -670,7 +749,7 @@ export class VideoMomentRepository {
   })
   searchMomentText(text: string, scope: VideoMomentSearchScope): Promise<VideoMomentTextHit[]> {
     const pattern = `%${text.replaceAll(/[%_\\]/g, (match) => `\\${match}`)}%`;
-    return this.db
+    const matches = this.db
       .selectFrom('video_moment')
       .innerJoin('asset', 'asset.id', 'video_moment.assetId')
       .select([
@@ -687,9 +766,28 @@ export class VideoMomentRepository {
       .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
       .where(notLockedOrOwnedBy(scope.lockedOwnerId))
       .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
+      .$if(!!scope.assetIds, (qb) => qb.where('video_moment.assetId', '=', anyUuid(scope.assetIds!)))
       .where((eb) =>
         eb.or([eb('video_moment.caption', 'ilike', pattern), eb('video_moment.transcript', 'ilike', pattern)]),
-      )
+      );
+    if (scope.onePerVideo) {
+      // FL-1439: each video's best match, then the videos in the same order as every match.
+      const best = matches
+        .select('video_moment.updatedAt')
+        .distinctOn('video_moment.assetId')
+        .orderBy('video_moment.assetId')
+        .orderBy('video_moment.source', 'desc')
+        .orderBy('video_moment.updatedAt', 'desc')
+        .as('best');
+      return this.db
+        .selectFrom(best)
+        .selectAll()
+        .orderBy('best.source', 'desc')
+        .orderBy('best.updatedAt', 'desc')
+        .limit(scope.limit)
+        .execute() as Promise<VideoMomentTextHit[]>;
+    }
+    return matches
       .orderBy('video_moment.source', 'desc')
       .orderBy('video_moment.updatedAt', 'desc')
       .limit(scope.limit)

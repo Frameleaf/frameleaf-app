@@ -10,6 +10,7 @@ import type { DB } from 'src/schema/index.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -22,6 +23,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -73,6 +75,8 @@ async function setup(bytes: Buffer) {
       AssetRepository,
       SharedLinkRepository,
       UserRepository,
+      ApiKeyRepository,
+      SessionRepository,
       StorageRepository,
     ],
     mock: [EventRepository, LoggingRepository, JobRepository],

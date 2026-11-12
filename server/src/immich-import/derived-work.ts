@@ -151,8 +151,8 @@ export async function transferImportedWork(
           },
         }),
       };
-      await sql`insert into job_run(id, kind, selection) values (${id}::uuid, ${IMPORT_DERIVED_RUN_KIND},
-        ${JSON.stringify(selection)}::text::jsonb)`.execute(tx);
+      await sql`insert into job_run(id, kind, selection, origin) values (${id}::uuid, ${IMPORT_DERIVED_RUN_KIND},
+        ${JSON.stringify(selection)}::text::jsonb, 'import')`.execute(tx);
     }
     if (managed && existing && existing.selection?.managerSetupRequired === undefined)
       await sql`update job_run set selection=selection || '{"managerSetupRequired":true}'::jsonb where id=${id}::uuid`.execute(

@@ -20,6 +20,7 @@ import { UserController } from 'src/controllers/user.controller.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -97,6 +98,8 @@ async function setup() {
       AssetRepository,
       SharedLinkRepository,
       UserRepository,
+      ApiKeyRepository,
+      SessionRepository,
       StorageRepository,
     ],
     mock: [EventRepository, LoggingRepository, JobRepository],

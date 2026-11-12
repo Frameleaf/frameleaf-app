@@ -112,6 +112,14 @@ export type RunRead = RunCounts & {
   libraryName?: string;
   /** FL-1430, a folded night: false when its photos couldn't be counted once each (its numbers are tasks) */
   countedOnce?: boolean;
+  /** FL-1459: what brought its photos in, whose they are, its name and how many came (`job_run`) */
+  origin?: string;
+  ownerId?: string;
+  ownerName?: string;
+  label?: string;
+  itemCount?: number;
+  /** FL-1459, a live run with an origin: its tasks counted by queue */
+  steps?: Array<RunCounts & { queue: string }>;
 };
 export type RunEarlier = { id: string; createdAt: Date; finishedAt: Date | null; total: number; leftOver: number };
 export type RunFailureCauseCount = { cause: RunFailureCause; count: number };
@@ -156,6 +164,12 @@ export type Header = {
   libraryName?: string | null;
   /** FL-1430: a folder scan the server refused because its folder is empty or can't be reached */
   refused?: boolean;
+  /** FL-1459 */
+  origin?: string | null;
+  ownerId?: string | null;
+  ownerName?: string | null;
+  label?: string | null;
+  itemCount?: number | null;
 };
 /** Queue switches and worker liveness, read once for every run on a page. */
 export type Surroundings = { paused: Set<string>; closed: Set<string>; workerAvailable: boolean };
@@ -178,6 +192,8 @@ export type RunAggregate = {
   failureCauses?: RunFailureCauseCount[];
   /** paused queues of unstarted stages */
   pausedQueues: string[];
+  /** the run's tasks by name and state, when counted from its jobs */
+  tasks?: Array<{ name: string; state: string; n: number }>;
 };
 
 const LIVE = new Set(['pending', 'waiting', 'active']);
@@ -437,6 +453,7 @@ export async function aggregateRun(
         }),
       ),
     ].toSorted((a, b) => a.localeCompare(b)),
+    tasks,
   };
 }
 
@@ -586,7 +603,46 @@ export async function toRead(
     pausedQueues: aggregate.pausedQueues,
     ...(unreachableLibraries?.length && { unreachableLibraries }),
     ...(run.libraryName && { libraryName: run.libraryName }),
+    ...(run.origin && {
+      origin: run.origin,
+      ...(run.ownerId && { ownerId: run.ownerId }),
+      ...(run.ownerName && { ownerName: run.ownerName }),
+      ...(run.label && { label: run.label }),
+      ...(run.itemCount !== null && run.itemCount !== undefined && { itemCount: run.itemCount }),
+      ...(!finished && aggregate.tasks && { steps: await runSteps(db, run, aggregate.tasks, around) }),
+    }),
   };
+}
+
+/**
+ * FL-1459: a live run's tasks by queue, for Activity's steps of what came in. Counted as tasks, not photos: Faces
+ * counts a photo's faces. Live tasks are told apart as the run's own stage totals are (paused, saved for tonight).
+ */
+async function runSteps(
+  db: Kysely<any>,
+  run: Header,
+  tasks: NonNullable<RunAggregate['tasks']>,
+  around: Surroundings,
+): Promise<Array<RunCounts & { queue: string }>> {
+  const queueOf = await stageQueues(db, run.id, [...new Set(tasks.map((task) => task.name))]);
+  // Pending tasks waiting out a dependency are blocked, as the run's own stage totals count them (`aggregateRun`)
+  const { rows: deferred } = await sql<{ name: string; n: number }>`select name, count(*)::int n from job
+    where "runId" = ${run.id}::uuid and state = 'pending' and "dependencyReason" is not null group by name`.execute(db);
+  const deferredOf = new Map(deferred.map((row) => [row.name, row.n]));
+  const holds = holdsOf(run.holds);
+  const steps = new Map<string, RunCounts & { queue: string }>();
+  for (const { name, state, n } of tasks) {
+    const queue = queueOf.get(name);
+    if (!queue) continue;
+    const step = steps.get(queue) ?? { queue, ...zero() };
+    const outcome =
+      state === 'pending' || state === 'waiting' ? liveOutcome(name, holds, queueOf, around) : stateOutcome(state);
+    const blocked = state === 'pending' && outcome === 'waiting' ? Math.min(n, deferredOf.get(name) ?? 0) : 0;
+    add(step, 'blocked', blocked);
+    add(step, outcome, n - blocked);
+    steps.set(queue, step);
+  }
+  return steps.values().toArray();
 }
 
 /** The external libraries (three at most) of the first 200 photos whose work waits for its source, from the deferral index. */
@@ -880,10 +936,14 @@ export const causeCounts = (groups: RunFailureGroup[]): RunFailureCauseCount[] =
 export const SUMMARIZED = sql<boolean>`coalesce(r."finishedAt" is not null and r.summary->>'complete' = 'true'
   and (r.summary->>'finishedAt')::timestamptz = r."finishedAt", false)`;
 
+/** FL-1459: a run's origin and its owner's name, for a run `r` joined with its owner `u` (`RUN_OWNER`). */
+export const ORIGIN_COLUMNS = sql`r.origin, r."ownerId", u.name "ownerName", r.label, r."itemCount"`;
+export const RUN_OWNER = sql`left join "user" u on u.id = r."ownerId" and u."deletedAt" is null`;
+
 const headers = (where: ReturnType<typeof sql>, take: number, skip: number, unfinishedFirst = true) => sql<Header>`
   select r.id, r.kind, r."createdAt", r."finishedAt", r."enumerationDone", r.selection->'holds' holds, r.summary,
-    ${SUMMARIZED} summarized
-  from job_run r ${where}
+    ${SUMMARIZED} summarized, ${ORIGIN_COLUMNS}
+  from job_run r ${RUN_OWNER} ${where}
   order by ${unfinishedFirst ? sql`r."finishedAt" is not null,` : sql``} r."createdAt" desc, r.id desc
   limit ${take} offset ${skip}`;
 
