@@ -164,9 +164,15 @@ export class IntegrityRepository {
     });
   }
   create(dto: Insertable<IntegrityReportTable> | Insertable<IntegrityReportTable>[]) {
+    // FL-1488: one statement may not upsert the same (type, path) twice ("ON CONFLICT DO UPDATE command cannot
+    // affect row a second time"), and a batch can repeat a path: two photos sharing one stored file, or a photo
+    // that already has two reports. The last row for a key wins, as it would across two statements.
+    const rows = Array.isArray(dto)
+      ? [...new Map(dto.map((row) => [JSON.stringify([row.type, row.path]), row])).values()]
+      : dto;
     return this.db
       .insertInto('integrity_report')
-      .values(dto)
+      .values(rows)
       .onConflict((oc) =>
         oc.columns(['path', 'type']).doUpdateSet({
           assetId: (eb) => eb.ref('excluded.assetId'),
