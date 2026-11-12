@@ -1,9 +1,16 @@
 import type { Kysely, Transaction } from 'kysely';
 import type { DB } from 'src/schema/index.js';
+import { recordLedgerAdded } from 'src/repositories/asset-ledger.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 
+vi.mock('src/repositories/asset-ledger.repository.js', () => ({
+  recordLedgerAdded: vi.fn().mockResolvedValue(undefined),
+  recordLedgerRemoved: vi.fn().mockResolvedValue(undefined),
+  recordLedgerAccountRemoved: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe('upload asset publication transaction', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.clearAllMocks());
   it('inserts the canonical asset in the resource result transaction', async () => {
     const asset = { id: 'asset', ownerId: 'owner' };
     const query = {
@@ -22,5 +29,7 @@ describe('upload asset publication transaction', () => {
     expect(db.transaction).not.toHaveBeenCalled();
     expect(tx.insertInto).toHaveBeenCalledWith('asset');
     expect(query.values).toHaveBeenCalledWith(asset);
+    // FL-921: the nothing-lost ledger row is written in that same transaction, as the owner's upload
+    expect(recordLedgerAdded).toHaveBeenCalledExactlyOnceWith(tx, ['asset'], 'upload', 'owner');
   });
 });
