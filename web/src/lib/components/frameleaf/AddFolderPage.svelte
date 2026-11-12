@@ -259,15 +259,15 @@
                   <button type="button" class="resource-button" onclick={() => browse(entry.path)}>{entry.name}</button>
                 </li>
               {:else}
-                {#if !managerUrl || !browsing.empty}
+                {#if !managerUrl || !browsing.nothingConnected}
                   <li class="resource-footnote">{$t('frameleaf_libraries_browse_empty')}</li>
                 {/if}
               {/each}
             </ul>
             <!-- FL-1495: with Manager, Frameleaf sees a folder only once it is connected there, so /mnt holds nothing
-                 at all until then. A connected folder of photos with no folders inside keeps the plain line. -->
+                 at all until then. A connected folder with no folders inside, empty or not, keeps the plain line. -->
             {#if managerUrl && browsing.readable}
-              {#if browsing.empty}
+              {#if browsing.nothingConnected}
                 <Notice title={$t('frameleaf_libraries_browse_none_title')}
                   >{$t('frameleaf_libraries_browse_none_body')}
                   {#snippet action()}

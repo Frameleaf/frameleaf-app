@@ -110774,16 +110774,16 @@
             },
             "type": "array"
           },
-          "empty": {
-            "description": "Whether the folder holds nothing at all, files included",
-            "type": "boolean"
-          },
           "folders": {
             "description": "Its folders, sorted by name; hidden, system and NAS folders are left out",
             "items": {
               "$ref": "#/components/schemas/LibraryFolderEntryDto"
             },
             "type": "array"
+          },
+          "nothingConnected": {
+            "description": "Whether nothing is connected here: the folder holds nothing at all and is on the server’s own disk",
+            "type": "boolean"
           },
           "parent": {
             "description": "The folder above it; null at the top",
@@ -110805,8 +110805,8 @@
         },
         "required": [
           "defaultExclusionPatterns",
-          "empty",
           "folders",
+          "nothingConnected",
           "parent",
           "path",
           "readable",

@@ -359,12 +359,13 @@ export class LibraryService extends BaseService {
     }
     const parent = folder === '/' ? null : path.posix.dirname(folder);
     let readable = true;
-    // FL-1495: nothing at all here (not even files) reads as "nothing is connected here yet".
-    let empty = false;
+    // FL-1495: nothing at all here, on the server's own disk: no folder has been connected here yet. A connected
+    // folder is another disk mapped in, so an empty one of those is only empty.
+    let nothingConnected = false;
     let folders: { name: string; path: string }[] = [];
     try {
       const entries = await this.storageRepository.readdirWithTypes(folder);
-      empty = entries.length === 0;
+      nothingConnected = entries.length === 0 && (await this.isOnOwnDisk(folder));
       folders = entries
         .filter((entry) => entry.isDirectory() && isBrowsableFolder(entry.name))
         .map((entry) => ({ name: entry.name, path: path.posix.join(folder, entry.name) }))
@@ -378,9 +379,19 @@ export class LibraryService extends BaseService {
       folders: folders.slice(0, BROWSE_FOLDER_LIMIT),
       truncated: folders.length > BROWSE_FOLDER_LIMIT,
       readable,
-      empty,
+      nothingConnected,
       defaultExclusionPatterns: [...DEFAULT_LIBRARY_EXCLUSION_PATTERNS],
     };
+  }
+
+  /** Whether `folder` is on the same disk as the top of the server's own files, so nothing is mapped in there. */
+  private async isOnOwnDisk(folder: string): Promise<boolean> {
+    try {
+      const [here, top] = await Promise.all([this.storageRepository.stat(folder), this.storageRepository.stat('/')]);
+      return here.dev === top.dev;
+    } catch {
+      return false;
+    }
   }
 
   /**
