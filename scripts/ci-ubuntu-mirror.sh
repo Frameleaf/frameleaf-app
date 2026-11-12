@@ -24,7 +24,7 @@ else
   pattern='mirror\+file:/etc/apt/apt-mirrors\.txt|https?://ports\.ubuntu\.com/ubuntu-ports/?'
 fi
 
-codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+codename=$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release)
 mirror=
 for candidate in "${mirrors[@]}"; do
   if curl -4 -fsS --max-time 15 -o /dev/null "${candidate}dists/${codename}/Release"; then
