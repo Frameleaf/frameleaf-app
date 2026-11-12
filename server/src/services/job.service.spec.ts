@@ -5,7 +5,7 @@ import type { JobItem } from 'src/types.js';
 import { JOBS_NOT_RETRIED } from 'src/constants.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType, FrameleafWorker, JobName, JobStatus, LibraryScope, ManualJobName, QueueName } from 'src/enum.js';
-import { noteJobHandedToCare, queueExecution } from 'src/queue/context.js';
+import { NO_FAILURE_REASON, noteJobHandedToCare, noteJobProblem, queueExecution } from 'src/queue/context.js';
 import { JobService } from 'src/services/job.service.js';
 import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -175,7 +175,7 @@ describe(JobService.name, () => {
           name: JobName.AssetVideoEditGeneration,
           data: { id: asset.id, versionId },
         }),
-      ).rejects.toThrow('Handler returned Failed');
+      ).rejects.toThrow(NO_FAILURE_REASON);
 
       // Clients read AssetEditReadyV2 as a published edit, so a failure never sends it.
       expect(mocks.websocket.clientSend).toHaveBeenCalledExactlyOnceWith('VideoEditVersionFailedV1', asset.ownerId, {
@@ -335,10 +335,22 @@ describe(JobService.name, () => {
         }
       });
 
+      it(`fails ${item.name} with what the handler logged (FL-1482)`, async () => {
+        mocks.job.run.mockImplementation(() => {
+          noteJobProblem('The preview could not be made: the file is empty');
+          return Promise.resolve(JobStatus.Failed);
+        });
+        const execution = { claim: {}, signal: new AbortController().signal } as never;
+
+        await expect(queueExecution.run(execution, () => sut.onJobRun(QueueName.BackgroundTask, item))).rejects.toThrow(
+          'The preview could not be made: the file is empty',
+        );
+      });
+
       it(`should not queue any jobs when ${item.name} fails`, async () => {
         mocks.job.run.mockResolvedValue(JobStatus.Failed);
 
-        await expect(sut.onJobRun(QueueName.BackgroundTask, item)).rejects.toThrow('Handler returned Failed');
+        await expect(sut.onJobRun(QueueName.BackgroundTask, item)).rejects.toThrow(NO_FAILURE_REASON);
 
         expect(mocks.job.queueAll).not.toHaveBeenCalled();
       });

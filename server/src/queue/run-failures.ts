@@ -66,7 +66,13 @@ export async function reviewRunFailures(
     const ids = candidates.flatMap(({ assetId }) => (assetId ? [assetId] : []));
     const samples = ids.length === 0 ? [] : await visibleSamples(db, ids, privacy);
     const messages = new Map(candidates.map(({ assetId, message }) => [assetId, message]));
-    const message = singleMessage(samples.map(({ assetId }) => messages.get(assetId)).find((text) => !!text) ?? null);
+    // FL-1482: work that is no photo's (a backup, a sync, housekeeping) has no sample to speak for it, and nobody's
+    // photo to keep private: its own message is shown. Only when none of the group is a photo's.
+    const message = singleMessage(
+      samples.map(({ assetId }) => messages.get(assetId)).find((text) => !!text) ??
+        (ids.length === 0 ? candidates.find(({ message }) => !!message)?.message : null) ??
+        null,
+    );
     causes.push({ ...group, message, samples });
   }
   return {

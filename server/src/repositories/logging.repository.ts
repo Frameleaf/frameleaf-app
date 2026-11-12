@@ -2,6 +2,7 @@ import { ConsoleLogger, Inject, Injectable, Scope } from '@nestjs/common';
 import { isLogLevelEnabled } from '@nestjs/common/services/utils/is-log-level-enabled.util';
 import { ClsService } from 'nestjs-cls';
 import { LogFormat, LogLevel } from 'src/enum.js';
+import { noteJobProblem } from 'src/queue/context.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { currentLogContext, persistLogMessage, privateRequestId } from 'src/utils/private-log-runtime.js';
 
@@ -157,10 +158,12 @@ export class LoggingRepository {
   }
 
   warn(message: string, ...details: LogDetails) {
+    noteJobProblem(message);
     this.handleMessage(LogLevel.Warn, message, details);
   }
 
   error(message: string | Error, ...details: LogDetails) {
+    noteJobProblem(message);
     this.handleMessage(LogLevel.Error, message, details);
   }
 

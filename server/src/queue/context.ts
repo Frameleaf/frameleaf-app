@@ -20,6 +20,19 @@ export const noteJobHandedToCare = () => {
   }
 };
 export const jobHandedToCare = () => queueExecution.getStore()?.handedToCare === true;
+/**
+ * FL-1482: a handler that returns Failed has usually just logged why. The log line is kept on its own execution and
+ * becomes the job's error, in place of a fixed "Handler returned Failed" that told nobody anything.
+ */
+export const noteJobProblem = (message: string | Error) => {
+  const context = queueExecution.getStore();
+  if (context) {
+    context.lastProblem = (message instanceof Error ? message.message : message).slice(0, 500);
+  }
+};
+export const NO_FAILURE_REASON = 'The task reported a failure and logged no reason';
+export const jobFailureReason = () => queueExecution.getStore()?.lastProblem ?? NO_FAILURE_REASON;
+
 /** Attempt-private outputs are never a canonical media path until a fenced adoption commits. */
 export const jobStagingPath = (root: string, filename: string) => {
   const context = queueExecution.getStore();

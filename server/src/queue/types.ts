@@ -41,6 +41,8 @@ export type QueueIntent = {
   itemKey?: string;
   rootItemKey?: string | null;
   parentId?: string;
+  /** FL-1479: runs ahead of the backlog, as an arrival does (the next step of work that was itself at the front). */
+  front?: boolean;
 };
 export type JobDependencyReason =
   | 'workload-disabled'
@@ -93,6 +95,8 @@ export type QueueExecution = {
   dependencyReason?: JobDependencyReason;
   /** FL-1337: this attempt handed its photo to Library care. It ends with the attempt; no other attempt sees it. */
   handedToCare?: true;
+  /** FL-1482: the last warning or error the handler logged; why it failed, when it returns Failed without throwing. */
+  lastProblem?: string;
 };
 export type QueueDispatch =
   | { type: 'execute'; claim: QueueClaim }

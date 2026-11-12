@@ -331,3 +331,26 @@ it('lets the owner dismiss a running setup: held stages start, the bar and phone
   await service.begin(true);
   expect(await service.progress()).toMatchObject({ active: true, phase: 'rescanning', completedAt: null });
 });
+
+it('starts no file check for a dismissed setup, and lets it settle (FL-1481)', async () => {
+  const owner = randomUUID();
+  await sql`WITH g AS (INSERT INTO cluster_group DEFAULT VALUES RETURNING id)
+    INSERT INTO "user"(id,email,"clusterGroupId") SELECT ${owner}::uuid,'dismissed-owner@example.test',id FROM g`.execute(
+    db,
+  );
+  // The library scans are over and this owner's file check has not started yet.
+  await importRun('immich-import-derived', [], {
+    owners: [owner],
+    healthAfter: new Date(Date.now() - 60_000).toISOString(),
+  });
+  const service = setup({ enabled: true });
+  await service.dismiss();
+  // The file-check starter is absent from this fixture: reaching for it would throw.
+  await expect(service.status()).resolves.toMatchObject({ dismissed: true, setupRequired: false });
+  const { rows } = await sql`SELECT 1 FROM media_operation WHERE "ownerId"=${owner}::uuid`.execute(db);
+  expect(rows).toEqual([]);
+  // The check it never started counts as over, so setup completes once the import's own work is done.
+  const { rows: state } = await sql<{ released: string | null }>`SELECT value->>'checkReleasedAt' AS released
+    FROM system_metadata WHERE key=${setupKey}`.execute(db);
+  expect(state[0].released).toEqual(expect.any(String));
+});

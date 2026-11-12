@@ -51,6 +51,7 @@ export interface JobTable {
   token: string | null;
   workerId: string | null;
   availableAt: Generated<Timestamp>;
+  resumeAt: Timestamp | null;
   createdAt: Generated<Timestamp>;
   startedAt: Timestamp | null;
   finishedAt: Timestamp | null;

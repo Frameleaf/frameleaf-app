@@ -30,7 +30,7 @@ import { ReviewedImportContext } from 'src/library-import/reviewed-inputs.js';
 import { queueAdmission } from 'src/queue/admission.js';
 import { retryLockContention } from 'src/queue/catalogue.js';
 import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/queue/configuration.js';
-import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
+import { NO_FAILURE_REASON, deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
 import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
 import { causeRank } from 'src/queue/run-failure-cause.js';
@@ -386,7 +386,7 @@ export class JobRepository {
         return;
       }
       if (context.outcome === 'failed') {
-        throw new Error('Handler returned Failed');
+        throw new Error(context.lastProblem ?? NO_FAILURE_REASON);
       }
       // FL-1265: completions run side by side; one that loses a deadlock runs again with its adoption's
       // in-memory effects undone.
@@ -724,6 +724,10 @@ export class JobRepository {
   /** FL-721: jobs deferred for a Locked key run now; their owner's key has just been loaded. */
   wakeLockedDeferrals(ids: string[]) {
     return this.store.wakeDeferred(ids, 'locked-key-unavailable');
+  }
+  /** FL-1480: whether work the overnight run that started at `startedAt` queued on this queue is still to be done. */
+  nightHasLiveWork(name: QueueName, startedAt: string): Promise<boolean> {
+    return this.store.nightHasLiveWork(name, startedAt);
   }
   getJobCounts(name: QueueName): Promise<JobCounts> {
     return this.store.counts(name);

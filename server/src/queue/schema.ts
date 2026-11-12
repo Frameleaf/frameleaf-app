@@ -27,7 +27,8 @@ export async function createQueueSchema(db: Kysely<any>) {
       "deadlineMs" integer not null, attempt integer not null default 0, "retryBaseAttempt" integer not null default 0,
       "runId" uuid references job_run(id), "itemKey" text, "rootItemKey" text,
       "parentId" uuid references job(id), token uuid, "workerId" uuid references job_worker(id),
-      "availableAt" timestamptz not null default now(), "createdAt" timestamptz not null default now(),
+      "availableAt" timestamptz not null default now(), "resumeAt" timestamptz,
+      "createdAt" timestamptz not null default now(),
       "startedAt" timestamptz, "finishedAt" timestamptz, "leaseExpiresAt" timestamptz,
       "progressAt" timestamptz, "progressUnits" bigint not null default 0,
       "cancelRequestedAt" timestamptz,
@@ -45,6 +46,8 @@ export async function createQueueSchema(db: Kysely<any>) {
     create index job_run_live on job("runId") where "runId" is not null and state in ('pending','waiting','active');
     -- FL-1265: held jobs wait at availableAt 'infinity', the end of the claim order
     create index job_claim on job(queue, "availableAt", "createdAt", id) where state in ('pending','waiting');
+    -- FL-1479: waiting jobs that go back to the front of the line once their wait is over
+    create index job_resume on job(queue, "availableAt") where "resumeAt" is not null and state in ('pending','waiting');
     create index job_run_progress on job("runId", "rootItemKey", name, state) where "runId" is not null;
     create index job_run_deferred on job("runId", "dependencyReason") where state = 'pending' and "dependencyReason" is not null;
     create index job_cancel_pending on job(queue, "createdAt", id) where state in ('pending','waiting')
