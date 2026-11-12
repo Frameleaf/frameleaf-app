@@ -156,6 +156,7 @@ describe(DateDoctorService.name, () => {
       getScanRows: vi.fn(),
       replaceFindings: vi.fn(),
       getFindings: vi.fn(),
+      isScanning: vi.fn().mockResolvedValue(false),
     };
     const jobs = { queue: vi.fn(), queueAll: vi.fn() };
     const logger = { setContext: vi.fn(), log: vi.fn() };
@@ -219,6 +220,7 @@ describe(DateDoctorService.name, () => {
     ]);
     await expect(sut.getFindings(authStub.admin)).resolves.toEqual({
       total: 4,
+      scanning: false,
       groups: [
         expect.objectContaining({
           camera: 'Nikon D90',
@@ -234,6 +236,14 @@ describe(DateDoctorService.name, () => {
         expect.objectContaining({ camera: 'Brand Series|X', day: '2022-06-30' }),
       ],
     });
+  });
+
+  it("says when a check of the owner's photos is waiting or running (FL-943)", async () => {
+    const { sut, repository } = setup();
+    repository.getFindings.mockResolvedValue([]);
+    repository.isScanning.mockResolvedValue(true);
+    await expect(sut.getFindings(authStub.admin)).resolves.toEqual({ total: 0, scanning: true, groups: [] });
+    expect(repository.isScanning).toHaveBeenCalledWith(authStub.admin.user.id);
   });
 });
 

@@ -437,8 +437,8 @@ describe('an empty album', () => {
 });
 
 // FL-1452: an album with bookmarks or documents is drawn without a timeline; its header still says how
-// many dates to check it holds, and Fix dates opens Change date on them.
-it('gives a mixed album the dates to check count and a Fix dates that opens Change date on them', async () => {
+// many dates to check it holds, and Fix dates opens the Date & Time Doctor's Fix dates on them.
+it('gives a mixed album the dates to check count and a Fix dates that opens on them', async () => {
   const pages = [
     { timeBucket: '2000-01-01', count: 2, page: 0, after: null },
     { timeBucket: '1970-01-01', count: 1, page: 0, after: null },

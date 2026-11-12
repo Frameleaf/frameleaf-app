@@ -117,19 +117,20 @@
 
   /**
    * FL-1452 "Fix dates" where the photos are not a timeline (a mixed album): these photos are selected
-   * and Change date opens on them, as `LibraryView.fixDates` does. They need not be loaded here.
+   * and the Date & Time Doctor's Fix dates opens on them (FL-943), as `LibraryView.fixDates` does. They need not be
+   * loaded here.
    */
   let restoreOnCancel: string[] | null = null;
   export const changeDates = async (ids: string[]) => {
     const before = [...session.selection];
     session.dispatch({ type: 'selection', ids });
     await tick();
-    if (selectionBar?.canPerform('change-date')) {
+    if (selectionBar?.canPerform('fix-dates')) {
       restoreOnCancel = before;
-      selectionBar.performAction('change-date');
+      selectionBar.performAction('fix-dates');
     }
   };
-  /** Change date cancelled from Fix dates: the selection goes back to what it was, as `LibraryView` does. */
+  /** Fix dates cancelled: the selection goes back to what it was, as `LibraryView` does. */
   const onDialogSettled = (_id: BulkActionId, submitted: boolean) => {
     const restore = restoreOnCancel;
     restoreOnCancel = null;

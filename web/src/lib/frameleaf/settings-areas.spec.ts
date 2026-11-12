@@ -314,6 +314,8 @@ describe('Frameleaf settings areas', () => {
         'files',
         // FL-862: Couldn't process, an account page every account has
         'couldnt-process',
+        // FL-943: the Date & Time Doctor, an account page every account has
+        'dates',
         'duplicates',
         'enrichment-care',
         'unused-files',

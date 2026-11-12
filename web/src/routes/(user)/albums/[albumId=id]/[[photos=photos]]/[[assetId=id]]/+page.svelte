@@ -193,6 +193,8 @@
   let collectionLoading = $state(false);
   let collectionExhausted = $state(false);
   let collectionRequest = 0;
+  /** FL-943: a date change re-reads the collection, whose order is by date. */
+  let collectionDatesGeneration = $state(0);
 
   // The collection and every album inside it, at any depth. Flat `albumIds` would mean "in all of these".
   const loadCollectionAssets = async (
@@ -225,6 +227,7 @@
   $effect(() => {
     // Re-runs when the collection's albums change, which is what its photos are made of.
     void collectionAlbums.length;
+    void collectionDatesGeneration;
     const order = album.order;
     const collectionId = albumId;
     const request = ++collectionRequest;
@@ -816,6 +819,11 @@
             {tagOptions}
             onEndReached={loadMoreCollectionAssets}
             onRemoved={handleMutated}
+            onApplied={(action) => {
+              if (action === 'change-date' || action === 'fix-dates') {
+                collectionDatesGeneration++;
+              }
+            }}
             onSelectAll={selectEverythingInCollection}
             onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
           />
@@ -827,7 +835,7 @@
       <LibraryItemsView
         bind:this={itemsView}
         onApplied={(action) => {
-          if (action === 'change-date') {
+          if (action === 'change-date' || action === 'fix-dates') {
             mixedDatesGeneration++;
           }
         }}

@@ -1,5 +1,6 @@
 import {
   addAssetsToAlbum,
+  applyDateFix,
   AssetJobName,
   AssetVisibility,
   createBulkMediaOperation,
@@ -221,6 +222,8 @@ export type BulkGateway = {
   searchAssetStatistics: typeof searchAssetStatistics;
   /** Queues a durable server-side bulk operation (FL-32). */
   createBulkMediaOperation: typeof createBulkMediaOperation;
+  /** FL-943: the Date & Time Doctor's fix (FL-930), one batch its owner can undo for 30 days. */
+  applyDateFix: typeof applyDateFix;
   /** The web client's archive download flow, which already handles splitting and the manager. */
   downloadArchive: (fileName: string, options: { assetIds: string[] }) => Promise<unknown>;
 };
@@ -249,6 +252,7 @@ export const createBulkGateway = (downloadArchive: BulkGateway['downloadArchive'
   searchSmart,
   searchAssetStatistics,
   createBulkMediaOperation,
+  applyDateFix,
   downloadArchive,
 });
 
@@ -681,6 +685,29 @@ export const runBulkAction = async (
             return before !== undefined && before !== (action === 'archive');
           }),
       );
+    }
+    /*
+     * POST /date-doctor/apply (FL-930), once for the whole selection: one fix is one row in the Date & Time
+     * Doctor's Recent fixes, with one Undo. A zone keeps each photo's clock time; a shift moves the moment.
+     */
+    case 'fix-dates': {
+      if (signal?.aborted) {
+        return finish({ outcomes: [], cancelled: true });
+      }
+      const dateDoctorFixDto = payload?.timeZone
+        ? { assetIds: ids, timeZone: payload.timeZone, keepWallTime: true }
+        : { assetIds: ids, shiftMinutes: Number(requirePayload(payload, 'minutes')) };
+      try {
+        // the server leaves a photo as it is when it already has that time or its date changed meanwhile
+        const { skipped: left } = await gateway.applyDateFix({ dateDoctorFixDto });
+        const unchanged = new Set(left);
+        return finish({
+          outcomes: ids.map((id) => (unchanged.has(id) ? skipped(id, 'frameleaf_bulk_reason_date_unchanged') : ok(id))),
+          cancelled: false,
+        });
+      } catch (error) {
+        return finish({ outcomes: ids.map((id) => failed(id, error)), cancelled: false });
+      }
     }
     case 'change-date': {
       const mode = payload?.dateMode ?? 'set';

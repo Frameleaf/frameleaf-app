@@ -63,6 +63,7 @@ const gateway = () =>
     searchSmart: vi.fn(),
     searchAssetStatistics: vi.fn().mockResolvedValue({ total: 0 }),
     createBulkMediaOperation: vi.fn().mockImplementation(() => Promise.resolve({ id: 'job' })),
+    applyDateFix: vi.fn().mockResolvedValue({ batch: { id: 'batch' }, skipped: [] }),
     downloadArchive: vi.fn().mockResolvedValue(undefined),
   }) as unknown as BulkGateway;
 
@@ -214,6 +215,46 @@ describe('bulk actions bind to existing endpoints', () => {
     expect(api.updateAssets).toHaveBeenCalledWith({
       assetBulkUpdateDto: { ids: ['b'], dateTimeOriginal: '2026-07-01T12:00:00+01:00' },
     });
+  });
+
+  it('fixes dates as one Date & Time Doctor fix, a zone keeping the clock time, and reports a fix the server refused (FL-943)', async () => {
+    await runBulkAction('fix-dates', ['a', 'b'], { gateway: api, payload: { timeZone: 'Europe/Paris' } });
+    expect(api.applyDateFix).toHaveBeenCalledWith({
+      dateDoctorFixDto: { assetIds: ['a', 'b'], timeZone: 'Europe/Paris', keepWallTime: true },
+    });
+
+    const result = await runBulkAction('fix-dates', ['a', 'b'], {
+      gateway: api,
+      payload: { dateMode: 'shift', minutes: -420 },
+    });
+    expect(api.applyDateFix).toHaveBeenLastCalledWith({
+      dateDoctorFixDto: { assetIds: ['a', 'b'], shiftMinutes: -420 },
+    });
+    expect(result.succeeded).toEqual(['a', 'b']);
+
+    // a photo the server leaves as it is never shows as fixed
+    vi.mocked(api.applyDateFix).mockResolvedValueOnce({ batch: { id: 'batch' }, skipped: ['b'] } as never);
+    const partly = await runBulkAction('fix-dates', ['a', 'b'], { gateway: api, payload: { timeZone: 'UTC' } });
+    expect(partly.succeeded).toEqual(['a']);
+    expect(partly.skipped).toMatchObject([{ id: 'b', reasonKey: 'frameleaf_bulk_reason_date_unchanged' }]);
+
+    // nothing is sent once the run was cancelled
+    vi.mocked(api.applyDateFix).mockClear();
+    const controller = new AbortController();
+    controller.abort();
+    const cancelled = await runBulkAction('fix-dates', ['a'], {
+      gateway: api,
+      payload: { timeZone: 'UTC' },
+      signal: controller.signal,
+    });
+    expect(cancelled.cancelled).toBe(true);
+    expect(api.applyDateFix).not.toHaveBeenCalled();
+
+    vi.mocked(api.applyDateFix).mockRejectedValueOnce(new Error('Nothing to fix'));
+    const nothing = await runBulkAction('fix-dates', ['a'], { gateway: api, payload: { timeZone: 'UTC' } });
+    expect(nothing.failed).toMatchObject([{ id: 'a', message: 'Nothing to fix' }]);
+    // one fix is one row in Recent fixes: it never goes to the durable runner in pieces
+    expect(shouldRunDurably('fix-dates', DURABLE_BULK_THRESHOLD + 1)).toBe(false);
   });
 
   it('never hands a keep-each-zone change to the server as a durable job', () => {

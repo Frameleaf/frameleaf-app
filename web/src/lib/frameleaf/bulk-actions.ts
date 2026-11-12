@@ -66,6 +66,8 @@ export type BulkActionId =
   /** Undo-only: reverses a tag. It has no descriptor row, so it never appears in the bar. */
   | 'untag'
   | 'change-date'
+  /** FL-943: "Fix dates…", the Date & Time Doctor's preview for a zone or a shift the person chooses (FL-930). */
+  | 'fix-dates'
   | 'change-description'
   | 'change-location'
   | 'archive'
@@ -371,6 +373,14 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       id: 'change-date',
       labelKey: 'frameleaf_bulk_change_date',
       icon: 'mdiCalendarEdit',
+      group: 'organize',
+      dialog: true,
+      available: !readOnly && (live || locked) && has,
+    },
+    {
+      id: 'fix-dates',
+      labelKey: 'frameleaf_bulk_fix_dates',
+      icon: 'mdiCalendarClock',
       group: 'organize',
       dialog: true,
       available: !readOnly && (live || locked) && has,

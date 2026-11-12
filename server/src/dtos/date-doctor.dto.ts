@@ -37,6 +37,7 @@ const DateDoctorGroupSchema = z
 const DateDoctorFindingsResponseSchema = z
   .object({
     total: z.int().min(0).describe('Findings in all groups'),
+    scanning: z.boolean().describe('A check of your photos is waiting or running; the findings update when it ends'),
     groups: z.array(DateDoctorGroupSchema),
   })
   .meta({ id: 'DateDoctorFindingsResponseDto' });

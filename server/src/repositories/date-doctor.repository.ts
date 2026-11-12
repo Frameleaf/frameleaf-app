@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { DateLock } from 'src/schema/tables/date-fix.table.js';
 import type { DateFinding, DateFindingCause, DateScanRow } from 'src/utils/date-doctor.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { JobName, QueueName } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { hasDateToCheck } from 'src/utils/date-sanity.js';
@@ -131,6 +132,24 @@ export class DateDoctorRepository {
           .execute();
       }
     });
+  }
+
+  /**
+   * FL-943: a scan of the owner's photos is waiting or running, so the page says it is checking. Only live scans are
+   * read (`job_live_queue`), never the queue's history.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async isScanning(ownerId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('job')
+      .select('id')
+      .where('queue', '=', QueueName.IntegrityCheck)
+      .where('state', 'in', ['pending', 'waiting', 'active'])
+      .where('name', '=', JobName.DateDoctorScan)
+      .where(sql<string>`data->>'userId'`, '=', ownerId)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
   }
 
   /** The owner's open findings, a shoot (camera and day) together, newest day first. */
