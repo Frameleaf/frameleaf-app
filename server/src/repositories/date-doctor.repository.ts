@@ -268,6 +268,9 @@ export class DateDoctorRepository {
    */
   async applyFixes(ownerId: string, items: DateFixWrite[], asked: DateFixAsked, effects: DateFixEffects) {
     return this.db.transaction().execute(async (tx) => {
+      // the EXIF rows are held from the zone check to the write, so an edit of the zone alone cannot slip in between
+      await sql`select "assetId" from asset_exif where "assetId" = any(${items.map(({ assetId }) => assetId)}::uuid[])
+        order by "assetId" for update`.execute(tx);
       const { rows } = await sql<{
         id: string;
       }>`update asset set "fileCreatedAt" = v."newDate", "localDateTime" = v."newLocalDateTime"

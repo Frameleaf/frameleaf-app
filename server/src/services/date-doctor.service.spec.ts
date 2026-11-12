@@ -494,6 +494,16 @@ describe('DateDoctorService fixes (FL-930)', () => {
     await expect(sut.preview(owner, { assetIds: ['a'], useProposal: true })).resolves.toEqual({ items: [] });
   });
 
+  it('leaves a proposal alone when only the photo’s zone changed after the scan', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getProposals.mockResolvedValue([
+      proposal('a', DateFindingCause.MissingZone, '2022-07-01T08:03:00Z', 'Europe/Paris'),
+    ]);
+    repository.getCurrent.mockResolvedValue([current('a', { timeZone: 'Asia/Tokyo' })]);
+
+    await expect(sut.preview(owner, { assetIds: ['a'], useProposal: true })).resolves.toEqual({ items: [] });
+  });
+
   it('says there is nothing to fix when no photo would change', async () => {
     const { sut, repository } = setup(['a']);
     repository.getCurrent.mockResolvedValue([current('a', { timeZone: 'UTC' })]);

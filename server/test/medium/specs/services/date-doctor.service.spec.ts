@@ -465,6 +465,78 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     ]);
   });
 
+  it('changes nothing when the sidecar or partner-copy work fails in the transaction', async () => {
+    const { ctx, doctor, jobs } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const id = await photo(ctx, user.id);
+    const before = await dateOf(id);
+    jobs.queueAllInTransaction.mockRejectedValueOnce(new Error('queue down'));
+
+    await expect(doctor.apply(auth, { assetIds: [id], shiftMinutes: 30 })).rejects.toThrow('queue down');
+
+    expect(await dateOf(id)).toEqual(before);
+    expect(await db.selectFrom('date_fix_batch').select('id').where('userId', '=', user.id).execute()).toEqual([]);
+    // a retry shifts once, not twice
+    const { batch } = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 30 });
+    expect(batch.count).toBe(1);
+    expect((await dateOf(id)).fileCreatedAt).toEqual(new Date(takenAt.getTime() + 30 * 60_000));
+
+    jobs.queueAllInTransaction.mockRejectedValueOnce(new Error('queue down'));
+    await expect(doctor.undo(auth, batch.id)).rejects.toThrow('queue down');
+    expect((await dateOf(id)).fileCreatedAt).toEqual(new Date(takenAt.getTime() + 30 * 60_000));
+    await expect(doctor.undo(auth, batch.id)).resolves.toEqual(expect.objectContaining({ restored: 1 }));
+  });
+
+  it('a zone-only edit committed while the fix waits wins over the fix', async () => {
+    const { ctx } = fixSetup();
+    const { user } = await ctx.newUser();
+    const id = await photo(ctx, user.id, 'Europe/Paris');
+    const repository = new DateDoctorRepository(db);
+    const [row] = await repository.getCurrent(user.id, [id]);
+
+    // another connection edits only the zone and holds its lock until the fix has started
+    let commitEdit!: () => void;
+    const editHeld = new Promise<void>((resolve) => (commitEdit = resolve));
+    let editLocked!: () => void;
+    const locked = new Promise<void>((resolve) => (editLocked = resolve));
+    const edit = db.transaction().execute(async (tx) => {
+      await tx.updateTable('asset_exif').set({ timeZone: 'Europe/Berlin' }).where('assetId', '=', id).execute();
+      editLocked();
+      await editHeld;
+    });
+    await locked;
+
+    const fix = repository.applyFixes(
+      user.id,
+      [
+        {
+          assetId: id,
+          currentTakenAt: row.takenAt,
+          currentLocalDateTime: row.localDateTime,
+          currentZone: row.timeZone,
+          previousDate: row.dateTimeOriginal,
+          previousZone: row.timeZone,
+          previousTakenAt: row.takenAt,
+          previousLocalDateTime: row.localDateTime,
+          previousLocks: [],
+          newDate: row.takenAt,
+          newZone: 'Asia/Tokyo',
+          newLocalDateTime: new Date(row.takenAt.getTime() + 9 * 3_600_000),
+        },
+      ],
+      { cause: null, shiftMinutes: null, timeZone: 'Asia/Tokyo' },
+      () => Promise.resolve(),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    commitEdit();
+    await edit;
+
+    // the fix waited for the EXIF row, then saw the new zone and left the photo alone
+    await expect(fix).resolves.toBeUndefined();
+    expect(await dateOf(id)).toEqual(expect.objectContaining({ timeZone: 'Europe/Berlin', localDateTime: takenAt }));
+  });
+
   it('a fix the photo no longer carries does not hide its finding', async () => {
     const { ctx, doctor } = fixSetup();
     const { user } = await ctx.newUser();
