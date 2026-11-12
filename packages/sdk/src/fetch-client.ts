@@ -8697,6 +8697,43 @@ export type UserConfigDto = {
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
 };
+export type DateDoctorFixDto = {
+    /** The photos to fix */
+    assetIds: string[];
+    /** With timeZone: keep the clock time shown and read it in the new zone; otherwise the moment stays */
+    keepWallTime?: boolean;
+    /** Move their dates this many minutes (a camera clock that was off) */
+    shiftMinutes?: number;
+    /** The time zone they were taken in (IANA, or UTC+2 for a fixed offset) */
+    timeZone?: string;
+    /** Give each photo the date and zone the Doctor proposes for it; photos without a proposal are left alone */
+    useProposal?: boolean;
+};
+export type DateDoctorBatchDto = {
+    /** The cause of the proposals applied, when they all had one; null for a zone or shift chosen by hand */
+    cause: (DateFindingCause) | null;
+    /** Photos fixed */
+    count: number;
+    /** When the fix was applied */
+    createdAt: string;
+    /** Undo is possible until then */
+    expiresAt: string;
+    /** Batch ID, for undo */
+    id: string;
+    /** After undo: photos put back. A photo dated again since keeps that date */
+    restored?: number;
+    /** The shift chosen, in minutes */
+    shiftMinutes: number | null;
+    /** The time zone chosen */
+    timeZone: string | null;
+    /** When it was undone */
+    undoneAt: string | null;
+};
+export type DateDoctorApplyResponseDto = {
+    batch: DateDoctorBatchDto;
+    /** Photos left as they were: nothing to change, or dated again meanwhile */
+    skipped: string[];
+};
 export type DateDoctorFindingDto = {
     /** Asset ID */
     assetId: string;
@@ -8725,6 +8762,24 @@ export type DateDoctorFindingsResponseDto = {
     groups: DateDoctorGroupDto[];
     /** Findings in all groups */
     total: number;
+};
+export type DateDoctorTimeDto = {
+    /** The moment, ISO 8601 */
+    date: string;
+    /** The clock time shown, YYYY-MM-DDTHH:mm:ss */
+    local: string;
+    /** The time zone; null when the photo has none */
+    zone: string | null;
+};
+export type DateDoctorPreviewItemDto = {
+    after: DateDoctorTimeDto;
+    /** Asset ID */
+    assetId: string;
+    before: DateDoctorTimeDto;
+};
+export type DateDoctorPreviewResponseDto = {
+    /** Each photo that would change, before and after */
+    items: DateDoctorPreviewItemDto[];
 };
 export type DesktopMemberApprovalDto = {
     enabled: boolean;
@@ -29145,6 +29200,46 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Fix dates
+ */
+export function applyDateFix({ dateDoctorFixDto }: {
+    dateDoctorFixDto: DateDoctorFixDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DateDoctorApplyResponseDto;
+    }>("/date-doctor/apply", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: dateDoctorFixDto
+    })));
+}
+/**
+ * Get the date fixes that can be undone
+ */
+export function getDateFixBatches(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DateDoctorBatchDto[];
+    }>("/date-doctor/batches", {
+        ...opts
+    }));
+}
+/**
+ * Undo a date fix
+ */
+export function undoDateFix({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DateDoctorBatchDto;
+    }>(`/date-doctor/batches/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get the Date & Time Doctor findings
  */
 export function getDateDoctorFindings(opts?: Oazapfts.RequestOpts) {
@@ -29154,6 +29249,21 @@ export function getDateDoctorFindings(opts?: Oazapfts.RequestOpts) {
     }>("/date-doctor/findings", {
         ...opts
     }));
+}
+/**
+ * Preview a date fix
+ */
+export function previewDateFix({ dateDoctorFixDto }: {
+    dateDoctorFixDto: DateDoctorFixDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DateDoctorPreviewResponseDto;
+    }>("/date-doctor/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: dateDoctorFixDto
+    })));
 }
 /**
  * Check dates again

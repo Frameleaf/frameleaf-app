@@ -96,8 +96,96 @@ where
         asset_lock."assetId" = "asset"."id"
     )
   )
+  and not exists (
+    select
+      "date_fix_item"."assetId"
+    from
+      "date_fix_item"
+      inner join "date_fix_batch" on "date_fix_batch"."id" = "date_fix_item"."batchId"
+    where
+      "date_fix_item"."assetId" = "asset"."id"
+      and "date_fix_batch"."undoneAt" is null
+      and "date_fix_item"."newDate" = "asset"."fileCreatedAt"
+  )
 order by
   right(asset_date_finding."groupKey", 10) desc,
   "asset_date_finding"."groupKey",
   "asset_date_finding"."currentDate",
   "asset_date_finding"."assetId"
+
+-- DateDoctorRepository.getProposals
+select distinct
+  on ("asset_date_finding"."assetId") "asset_date_finding"."assetId",
+  "asset_date_finding"."cause",
+  "asset_date_finding"."proposedDate",
+  "asset_date_finding"."proposedZone"
+from
+  "asset_date_finding"
+  inner join "asset" on "asset"."id" = "asset_date_finding"."assetId"
+where
+  asset_date_finding."assetId" = any ($1::uuid[])
+  and "asset"."ownerId" = $2
+  and "asset_date_finding"."dismissedAt" is null
+  and "asset_date_finding"."proposedDate" is not null
+order by
+  "asset_date_finding"."assetId",
+  "asset_date_finding"."confidence" desc,
+  "asset_date_finding"."cause"
+
+-- DateDoctorRepository.getCurrent
+select
+  "asset"."id" as "assetId",
+  "asset"."fileCreatedAt" as "takenAt",
+  "asset"."localDateTime",
+  "asset_exif"."dateTimeOriginal",
+  "asset_exif"."timeZone",
+  coalesce(
+    asset_exif."lockedProperties" && array['dateTimeOriginal', 'timeZone']::varchar[],
+    false
+  ) as "locked",
+  "earlier"."previousDate",
+  "earlier"."previousZone",
+  "earlier"."previousTakenAt",
+  "earlier"."previousLocalDateTime",
+  "earlier"."previousLocked"
+from
+  "asset"
+  inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+  left join lateral (
+    select
+      "date_fix_item"."previousDate",
+      "date_fix_item"."previousZone",
+      "date_fix_item"."previousTakenAt",
+      "date_fix_item"."previousLocalDateTime",
+      "date_fix_item"."previousLocked"
+    from
+      "date_fix_item"
+      inner join "date_fix_batch" on "date_fix_batch"."id" = "date_fix_item"."batchId"
+    where
+      "date_fix_item"."assetId" = "asset"."id"
+      and "date_fix_batch"."userId" = "asset"."ownerId"
+      and "date_fix_batch"."undoneAt" is null
+      and "date_fix_item"."newDate" = "asset"."fileCreatedAt"
+      and "date_fix_item"."newLocalDateTime" = "asset"."localDateTime"
+      and date_fix_item."newZone" is not distinct from asset_exif."timeZone"
+    order by
+      "date_fix_batch"."createdAt" desc
+    limit
+      $1
+  ) as "earlier" on true
+where
+  asset.id = any ($2::uuid[])
+  and "asset"."ownerId" = $3
+  and "asset"."deletedAt" is null
+
+-- DateDoctorRepository.getBatches
+select
+  *
+from
+  "date_fix_batch"
+where
+  "userId" = $1
+  and "createdAt" >= $2
+order by
+  "createdAt" desc,
+  "id" desc
