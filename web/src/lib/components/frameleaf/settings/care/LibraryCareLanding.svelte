@@ -49,6 +49,7 @@
     getIntegrityCheckRuns,
     getIntegrityOverview,
     getLocationScanStatus,
+    getTidyUp,
     getQueue,
     getServerStatistics,
     getSummary,
@@ -61,11 +62,13 @@
     type IntegrityCheckRunsResponseDto,
     type IntegrityOverviewResponseDto,
     type LocationScanStatusResponseDto,
+    type TidyUpStatusDto,
     type MediaHealthSummaryResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAutoFix,
+    mdiBroom,
     mdiChevronRight,
     mdiClockOutline,
     mdiContentCopy,
@@ -451,6 +454,32 @@
 
   const open = (key: string) => goto(commandCenterUrl('care', key));
 
+  // FL-1470 Tidy up (prototype `care/landing.jsx`): how many photos wait for review across the kinds turned on.
+  let tidy = $state<TidyUpStatusDto | null>();
+  $effect(() => {
+    if (!authManager.authenticated || authManager.isSharedLink) {
+      return;
+    }
+    let current = true;
+    tidy = undefined;
+    void (async () => {
+      try {
+        const result = await getTidyUp();
+        if (current) {
+          tidy = result;
+        }
+      } catch {
+        if (current) {
+          tidy = null;
+        }
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  });
+  const tidyOn = $derived(!!tidy?.kinds.some((kind) => kind.enabled));
+
   // Identify photo locations (prototype `care/landing.jsx`): one "Place names" row here, with the scan
   // on its own page. The row says where the last scan stands, as the prototype's `scanSummary` does.
   let placeScan = $state<LocationScanStatusResponseDto | null>();
@@ -651,6 +680,26 @@
             label={openLabel('frameleaf_carehome_row_fix')}
             onclick={() => (isAdmin ? open('repair') : goto(memberFiles))}
           >
+            {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+          </Button>
+        {/snippet}
+      </Item>
+      <Item
+        icon={mdiBroom}
+        name={$t('frameleaf_tidy_title')}
+        detail={$t('frameleaf_tidy_row_detail')}
+        tone={tidy && tidy.waiting > 0 ? 'warn' : tidyOn ? 'good' : 'off'}
+        status={tidy
+          ? tidy.waiting > 0
+            ? $t('frameleaf_tidy_to_review', { values: { count: tidy.waiting } })
+            : tidyOn
+              ? $t('frameleaf_tidy_nothing_waiting')
+              : $t('frameleaf_tidy_row_off')
+          : undefined}
+        note={$t('frameleaf_tidy_row_note')}
+      >
+        {#snippet action()}
+          <Button label={openLabel('frameleaf_tidy_title')} onclick={() => open('tidy-up')}>
             {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
           </Button>
         {/snippet}

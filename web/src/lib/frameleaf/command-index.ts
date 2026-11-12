@@ -15,6 +15,7 @@ import {
   mdiBackupRestore,
   mdiBellOutline,
   mdiBookshelf,
+  mdiBroom,
   mdiCalendarClock,
   mdiCellphoneKey,
   mdiClockOutline,
@@ -169,6 +170,13 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
       title: $t('frameleaf_date_doctor_title'),
       icon: mdiCalendarClock,
       href: commandCenterUrl('care', 'dates'),
+    },
+    // FL-1470: Library care's Tidy up, every account's own photos.
+    {
+      id: 'care-tidy-up',
+      title: $t('frameleaf_tidy_title'),
+      icon: mdiBroom,
+      href: commandCenterUrl('care', 'tidy-up'),
     },
   ];
   for (const extra of extras) {
