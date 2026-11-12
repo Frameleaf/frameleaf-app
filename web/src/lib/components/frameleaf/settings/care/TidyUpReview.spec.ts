@@ -83,9 +83,9 @@ describe('Tidy up review (FL-1470)', () => {
     expect(viewer.getByText('Looks like a meme')).toBeInTheDocument();
     expect(await viewer.findByText(/IMG-20260412-WA0007\.jpg/)).toBeInTheDocument();
 
-    await fireEvent.keyDown(globalThis, { key: 'k' });
+    await fireEvent.keyDown(document, { key: 'k' });
     expect(viewer.getByText('2 of 3')).toBeInTheDocument();
-    await fireEvent.keyDown(globalThis, { key: 'Escape' });
+    await fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Large view' })).not.toBeInTheDocument();
 
     // the first meme is now set to Keep
