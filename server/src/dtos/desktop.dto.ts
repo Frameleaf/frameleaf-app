@@ -65,6 +65,13 @@ export class DesktopCapabilitiesDto extends createZodDto(
 
 export class DesktopMemberApprovalDto extends createZodDto(z.strictObject({ enabled: z.boolean() })) {}
 
+/** FL-1484: whether a computer works on everyone's photos at home, not only those of the account signed in on it. */
+export class DesktopHouseholdDto extends createZodDto(
+  z
+    .strictObject({ enabled: z.boolean().describe("Works on everyone's photos at home") })
+    .meta({ id: 'DesktopHouseholdDto' }),
+) {}
+
 /** A fixed, language-independent proof binds enrollment to this server and authenticated account. */
 export const enrollmentMessage = (serverId: string, accountId: string, dto: DesktopEnrollmentDto): string =>
   [

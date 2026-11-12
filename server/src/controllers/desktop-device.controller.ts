@@ -8,6 +8,7 @@ import {
   DesktopCapabilitiesDto,
   DesktopDeviceDto,
   DesktopEnrollmentDto,
+  DesktopHouseholdDto,
   DesktopMemberApprovalDto,
 } from 'src/dtos/desktop.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
@@ -43,6 +44,20 @@ export class DesktopDeviceController {
     @Body() dto: DesktopMemberApprovalDto,
   ): Promise<DesktopMemberApprovalDto> {
     return this.policy.setMemberApproval(auth, id, dto.enabled);
+  }
+
+  @Put('devices/:id/household')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @Endpoint({
+    summary: "Let a computer work on everyone's photos at home, or only on its own account's",
+    history: history(),
+  })
+  setDesktopHousehold(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: DesktopHouseholdDto,
+  ): Promise<DesktopHouseholdDto> {
+    return this.policy.setHousehold(auth, id, dto.enabled);
   }
 
   @Get('capabilities')

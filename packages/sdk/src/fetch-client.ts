@@ -4497,11 +4497,15 @@ export type AssetStatsResponseDto = {
     videos: number;
 };
 export type WorkerDesktopHelperDto = {
+    /** Works on everyone's photos at home, not only its own account's */
+    household?: boolean;
     /** Desktop device ID */
     id: string;
     /** Last check-in, or null */
     lastSeenAt: string | null;
     name: string;
+    /** Name of the account signed in on it */
+    ownerName?: string;
     platform: DesktopPlatform;
     /** Online in the last 90 seconds with a current qualification, so it can take AI work now */
     ready: boolean;
@@ -8842,6 +8846,10 @@ export type DesktopSessionDto = {
     scopes: DesktopWorkerScope[];
     sessionId: string;
     workerToken: string;
+};
+export type DesktopHouseholdDto = {
+    /** Works on everyone's photos at home */
+    enabled: boolean;
 };
 export type DesktopWorkerPayloadDto = {
     payload: string;
@@ -29503,6 +29511,22 @@ export function revokeDesktopDevice({ id }: {
         ...opts,
         method: "DELETE"
     }));
+}
+/**
+ * Let a computer work on everyone's photos at home, or only on its own account's
+ */
+export function setDesktopHousehold({ id, desktopHouseholdDto }: {
+    id: string;
+    desktopHouseholdDto: DesktopHouseholdDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopHouseholdDto;
+    }>(`/desktop/devices/${encodeURIComponent(id)}/household`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: desktopHouseholdDto
+    })));
 }
 /**
  * End this desktop association while retaining its installation identity

@@ -31,6 +31,7 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { assertAssetSource } from 'src/utils/asset-source-authority.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
+import { desktopAuthorityFor } from 'src/utils/desktop-assistance-policy.js';
 import { desktopFaceProfile, faceEntries } from 'src/utils/desktop-face.js';
 import {
   type DesktopMlDisclosure,
@@ -94,7 +95,8 @@ export class DesktopMlService {
       return selection;
     }
     const ownerId = source.ownerId;
-    const account = policy.accounts[ownerId];
+    // FL-1484: the owner's own desktop assistance, else a computer that works on everyone's photos at home
+    const account = desktopAuthorityFor(policy, ownerId);
     if (!account) return selection;
     const revisionId = route.revisionId;
     const assertAuthority = async (tx?: Transaction<DB>) => {

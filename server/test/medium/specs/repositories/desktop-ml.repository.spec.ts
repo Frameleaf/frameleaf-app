@@ -7,7 +7,15 @@ import { join } from 'node:path';
 import type { QueueExecution } from 'src/queue/types.js';
 import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 import { defaults } from 'src/config.js';
-import { AssetType, AssetVisibility, JobName, MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
+import {
+  AssetLockReason,
+  AssetType,
+  AssetVisibility,
+  JobName,
+  MlDestinationKind,
+  MlWorkload,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
@@ -1259,4 +1267,67 @@ it('does not hold a worker row while waiting for disclosure configuration author
   } finally {
     await receiving?.catch(() => {});
   }
+});
+
+describe("a computer that works on everyone's photos (FL-1484)", () => {
+  const household = async (deviceId: string, enabled: boolean) => {
+    const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+    const { user: administrator } = await ctx.newUser({ isAdmin: true });
+    const { session } = await ctx.newSession({ userId: administrator.id });
+    await new DesktopAssistancePolicyService(new SystemMetadataRepository(db)).setHousehold(
+      { user: administrator, session } as never,
+      deviceId,
+      enabled,
+    );
+  };
+
+  it('claims, reads and keeps another account’s work only while it helps everyone', async () => {
+    const own = await setup();
+    const other = await setup();
+    const modelKey = own.request.modelKey;
+    const task = await own.sut.create({ ...other.request, modelKey });
+    try {
+      expect(await own.sut.claim(own.grants[0], [modelKey])).toBeUndefined();
+      expect(await own.sut.hasReadyWorker(other.request.ownerId, modelKey)).toBe(false);
+
+      await household(own.grants[0].deviceId, true);
+      expect(await own.sut.hasReadyWorker(other.request.ownerId, modelKey)).toBe(true);
+      const claimed = await own.sut.claim(own.grants[0], [modelKey]);
+      expect(claimed?.task.id).toBe(task.id);
+      expect(await own.sut.hasLiveAttempt(task.id)).toBe(true);
+      expect(await own.sut.input(own.grants[0], claimed!.attempt.id, () => Promise.resolve())).toEqual(
+        other.request.input,
+      );
+
+      await household(own.grants[0].deviceId, false);
+      expect(await own.sut.hasLiveAttempt(task.id)).toBe(false);
+      expect(await own.sut.input(own.grants[0], claimed!.attempt.id, () => Promise.resolve())).toBeUndefined();
+    } finally {
+      await household(own.grants[0].deviceId, false);
+    }
+  });
+
+  it('never takes another account’s Locked photo', async () => {
+    const own = await setup();
+    const other = await setup();
+    const modelKey = own.request.modelKey;
+    const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+    const { asset } = await ctx.newAsset({ ownerId: other.request.ownerId });
+    await db.insertInto('asset_lock').values({ assetId: asset.id, reason: AssetLockReason.Marked }).execute();
+    const task = await own.sut.create({ ...other.request, modelKey });
+    await brokerDb
+      .updateTable('desktop_ml_task')
+      .set({ disclosure: sql`jsonb_build_object('source', jsonb_build_object('assetId', ${asset.id}::text))` })
+      .where('id', '=', task.id)
+      .execute();
+    try {
+      await household(own.grants[0].deviceId, true);
+      expect(await own.sut.claim(own.grants[0], [modelKey])).toBeUndefined();
+
+      await db.deleteFrom('asset_lock').where('assetId', '=', asset.id).execute();
+      expect((await own.sut.claim(own.grants[0], [modelKey]))?.task.id).toBe(task.id);
+    } finally {
+      await household(own.grants[0].deviceId, false);
+    }
+  });
 });

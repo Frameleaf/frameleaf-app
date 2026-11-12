@@ -10,6 +10,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import {
   type DesktopAssistancePolicyRegistry,
   desktopAssistancePolicySchema,
+  desktopRevisionCurrent,
 } from 'src/utils/desktop-assistance-policy.js';
 import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
 
@@ -54,12 +55,62 @@ export class DesktopAssistancePolicyService {
     });
   }
 
-  private async withAdministrator<T>(
+  /**
+   * FL-1484: whether a computer works on everyone's photos at home, not only those of the account signed in on
+   * it. Any change gives the list a new revision, so work authorized under the old one is refused.
+   */
+  setHousehold(auth: AuthDto, deviceId: string, enabled: boolean) {
+    z.uuid().parse(deviceId);
+    return this.asAdministrator(auth, async (metadata, tx) => {
+      const device = await tx
+        .selectFrom('desktop_device')
+        .select('id')
+        .where('id', '=', deviceId)
+        .where('mode', '=', 'client-worker')
+        .where('revokedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      if (!device) throw new NotFoundException('Computer not found');
+      const policy = await this.registry(metadata);
+      const devices = new Set(policy.household?.devices);
+      if (devices.has(deviceId) === enabled) return { enabled };
+      if (enabled) {
+        if (devices.size >= 64) throw new ConflictException('desktop_household_capacity');
+        devices.add(deviceId);
+      } else {
+        devices.delete(deviceId);
+      }
+      policy.household = { revisionId: randomUUID(), devices: [...devices] };
+      await metadata.set(SystemMetadataKey.FrameleafDesktopAssistance, policy);
+      return { enabled };
+    });
+  }
+
+  private withAdministrator<T>(
     auth: AuthDto,
     ownerId: string,
     run: (metadata: SystemMetadataRepository, tx: Transaction<DB>) => Promise<T>,
   ) {
     z.uuid().parse(ownerId);
+    return this.asAdministrator(auth, async (metadata, tx) => {
+      const target = await tx
+        .selectFrom('user')
+        .select('isAdmin')
+        .where('id', '=', ownerId)
+        .where('deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      if (!target) throw new NotFoundException('User not found');
+      if (target.isAdmin) throw new ConflictException('desktop_member_account_required');
+      return run(metadata, tx);
+    });
+  }
+
+  /** An administrator signed in on a photo session, checked again inside the settings transaction. */
+  private async asAdministrator<T>(
+    auth: AuthDto,
+    run: (metadata: SystemMetadataRepository, tx: Transaction<DB>) => Promise<T>,
+  ) {
     if (!auth.session || auth.apiKey || auth.sharedLink || auth.system || !auth.user.isAdmin)
       throw new ForbiddenException('desktop_administrator_photo_session_required');
     return this.metadata.withConfigTransaction(async (metadata, tx) => {
@@ -77,15 +128,6 @@ export class DesktopAssistancePolicyService {
         .forShare(['actor', 'photo'])
         .executeTakeFirst();
       if (!actor) throw new ForbiddenException('desktop_administrator_photo_session_required');
-      const target = await tx
-        .selectFrom('user')
-        .select('isAdmin')
-        .where('id', '=', ownerId)
-        .where('deletedAt', 'is', null)
-        .forShare()
-        .executeTakeFirst();
-      if (!target) throw new NotFoundException('User not found');
-      if (target.isAdmin) throw new ConflictException('desktop_member_account_required');
       return run(metadata, tx);
     });
   }
@@ -117,7 +159,8 @@ export class DesktopAssistancePolicyService {
   async assertCurrent(ownerId: string, revisionId: string, tx?: Transaction<DB>) {
     if (tx) await lockEffectiveConfig(tx, 'read');
     const policy = await this.registry(tx ? new SystemMetadataRepository(tx) : this.metadata);
-    if (policy.accounts[ownerId]?.revisionId !== revisionId) throw new ConflictException('desktop_pool_policy_changed');
+    if (!desktopRevisionCurrent(policy, ownerId, revisionId))
+      throw new ConflictException('desktop_pool_policy_changed');
   }
 
   private async registry(metadata: SystemMetadataRepository): Promise<DesktopAssistancePolicyRegistry> {
