@@ -151,6 +151,8 @@ export class WorkerInventoryService {
         platform: desktop.platform,
         ready: desktop.ready,
         lastSeenAt: iso(desktop.lastSeenAt),
+        ownerName: desktop.ownerName,
+        household: desktop.household,
       })),
       libraryRoutes: Object.values(MlWorkload)
         .filter((workload) => LIBRARY_ML_WORKLOADS.includes(workload))

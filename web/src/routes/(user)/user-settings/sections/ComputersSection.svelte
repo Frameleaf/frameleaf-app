@@ -15,6 +15,7 @@
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
+  import DesktopHousehold from '$lib/components/frameleaf/computers/DesktopHousehold.svelte';
   import WhereWorkRuns from '$lib/components/frameleaf/computers/WhereWorkRuns.svelte';
   import { WorkRunsDraft } from '$lib/components/frameleaf/computers/work-runs-draft.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -396,6 +397,10 @@
           </Row>
         </Section>
       </div>
+    {/if}
+    {#if (inventory?.desktopHelpers ?? []).length > 0}
+      <!-- FL-1484: whose photos each Frameleaf Desktop helper works on. -->
+      <DesktopHousehold desktops={inventory?.desktopHelpers ?? []} onChanged={refresh} />
     {/if}
     <WhereWorkRuns part="everyday" draft={everydayDraft} onAdd={() => void addComputer()} />
   {:else}

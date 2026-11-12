@@ -26800,6 +26800,73 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/desktop/devices/{id}/household": {
+      "put": {
+        "operationId": "setDesktopHousehold",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopHouseholdDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopHouseholdDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Let a computer work on everyone's photos at home, or only on its own account's",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminUser.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/desktop/devices/{id}/session": {
       "delete": {
         "operationId": "endDesktopSession",
@@ -97243,6 +97310,19 @@
           "account-approved"
         ],
         "type": "string"
+      },
+      "DesktopHouseholdDto": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "description": "Works on everyone's photos at home",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
       },
       "DesktopInputKind": {
         "enum": [
@@ -171473,6 +171553,10 @@
       },
       "WorkerDesktopHelperDto": {
         "properties": {
+          "household": {
+            "description": "Works on everyone's photos at home, not only its own account's",
+            "type": "boolean"
+          },
           "id": {
             "description": "Desktop device ID",
             "type": "string"
@@ -171484,6 +171568,10 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "Name of the account signed in on it",
             "type": "string"
           },
           "platform": {

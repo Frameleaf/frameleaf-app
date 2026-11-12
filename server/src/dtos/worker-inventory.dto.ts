@@ -102,6 +102,9 @@ const WorkerDesktopHelperSchema = z
       .boolean()
       .describe('Online in the last 90 seconds with a current qualification, so it can take AI work now'),
     lastSeenAt: z.string().meta({ format: 'date-time' }).nullable().describe('Last check-in, or null'),
+    // optional in the schema so clients built before FL-1484 keep compiling; always sent
+    ownerName: z.string().optional().describe('Name of the account signed in on it'),
+    household: z.boolean().optional().describe("Works on everyone's photos at home, not only its own account's"),
   })
   .meta({ id: 'WorkerDesktopHelperDto' });
 

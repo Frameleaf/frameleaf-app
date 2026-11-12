@@ -6,6 +6,7 @@ import z from 'zod';
 import {
   type DesktopWorkerGrant,
   type DesktopWorkerTables,
+  desktopHouseholdDevices,
   desktopWorkerAccountAllowed,
   lockDesktopWorker,
   lockDesktopWorkerForAdoption,
@@ -16,6 +17,7 @@ export type { DesktopWorkerGrant } from 'src/repositories/desktop-worker.reposit
 import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
 import { type DesktopQualificationTables } from 'src/schema/tables/desktop-worker-qualification.table.js';
 import { type DesktopMlDisclosure, desktopMlDisclosureSchema } from 'src/utils/desktop-ml-disclosure.js';
+import { lockedAssetIdExists } from 'src/utils/locked.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 export type DesktopMlTables = {
@@ -24,6 +26,10 @@ export type DesktopMlTables = {
 };
 type DesktopMlDatabase = DB & DesktopMlTables & DesktopWorkerTables & DesktopQualificationTables;
 type Task = Selectable<DesktopMlTaskTable>;
+
+/** FL-1484: `OR d.id IN (…)` for the computers that work on everyone's photos; nothing when there are none. */
+const householdMatch = (devices: readonly string[]) =>
+  devices.length > 0 ? sql`OR d.id IN (${sql.join(devices.map((id) => sql`${id}::uuid`))})` : sql``;
 type Attempt = Selectable<DesktopMlAttemptTable>;
 type TaskMetadata = Omit<Task, 'input'>;
 const taskColumns = [
@@ -111,6 +117,8 @@ export class DesktopMlRepository {
       if (!worker) return;
       modelKeys = modelKeys.filter((key) => worker.modelKeys.includes(key));
       if (modelKeys.length === 0) return;
+      // FL-1484: a computer that works on everyone's photos at home
+      const household = (await desktopHouseholdDevices(db)).includes(grant.deviceId);
       const qualifications = await db
         .selectFrom('desktop_worker_qualification')
         .selectAll()
@@ -147,7 +155,7 @@ export class DesktopMlRepository {
           .select(taskColumns)
           .where('id', '=', attempt.taskId)
           .executeTakeFirstOrThrow();
-        if (task.ownerId !== worker.ownerId) return;
+        if (task.ownerId !== worker.ownerId && !household) return;
         const qualification = await this.qualification(db, grant, task, attempt.qualificationId);
         if (!qualification) return;
         return { task, attempt, qualificationExpiresAt: new Date(qualification.expiresAt) };
@@ -156,7 +164,16 @@ export class DesktopMlRepository {
       const task = await db
         .selectFrom('desktop_ml_task')
         .select(taskColumns)
-        .where('ownerId', '=', worker.ownerId)
+        .$if(!household, (query) => query.where('ownerId', '=', worker.ownerId))
+        // FL-1484: another account's Locked photos stay on that account's own computers
+        .$if(household, (query) =>
+          query.where((eb) =>
+            eb.or([
+              eb('ownerId', '=', worker.ownerId),
+              eb.not(lockedAssetIdExists(sql`(desktop_ml_task.disclosure -> 'source' ->> 'assetId')::uuid`)),
+            ]),
+          ),
+        )
         .where((eb) =>
           eb.or(
             qualifications.map((q) =>
@@ -236,6 +253,7 @@ export class DesktopMlRepository {
     authorize: (task: TaskMetadata, tx: Transaction<DB>) => Promise<void>,
   ): Promise<Buffer | undefined> {
     return this.db.transaction().execute(async (db) => {
+      const household = await desktopHouseholdDevices(db);
       const pending = await db
         .selectFrom('desktop_ml_task as task')
         .innerJoin('desktop_ml_attempt as attempt', 'task.attemptId', 'attempt.id')
@@ -245,7 +263,11 @@ export class DesktopMlRepository {
         .where('attempt.deviceId', '=', grant.deviceId)
         .where('attempt.workerSessionId', '=', grant.sessionId)
         .where('attempt.authorizationEpoch', '=', grant.authorizationEpoch)
-        .whereRef('device.userId', '=', 'task.ownerId')
+        .where((eb) =>
+          household.length > 0
+            ? eb.or([eb('device.userId', '=', eb.ref('task.ownerId')), eb('device.id', 'in', household)])
+            : eb('device.userId', '=', eb.ref('task.ownerId')),
+        )
         .whereRef('attempt.generation', '=', 'task.generation')
         .where('attempt.outcome', 'is', null)
         .where('attempt.expiresAt', '>', sql<Date>`clock_timestamp()`)
@@ -355,12 +377,13 @@ export class DesktopMlRepository {
   }
 
   async hasLiveAttempt(id: string): Promise<boolean> {
+    const household = householdMatch(await desktopHouseholdDevices(this.db));
     const { rows } = await sql<{ ownerId: string; isAdmin: boolean }>`
       SELECT u.id AS "ownerId", u."isAdmin" FROM desktop_ml_task t
       JOIN desktop_ml_attempt a ON a.id=t."attemptId" AND a."taskId"=t.id AND a.generation=t.generation
       JOIN desktop_worker_session w ON w.id=a."workerSessionId" AND w."deviceId"=a."deviceId"
       JOIN desktop_device d ON d.id=a."deviceId"
-      JOIN "user" u ON u.id=d."userId" AND u.id=t."ownerId"
+      JOIN "user" u ON u.id=d."userId" AND (u.id=t."ownerId" ${household})
       JOIN session p ON p.id=w."photoSessionId" AND p."userId"=u.id
       JOIN desktop_worker_qualification q ON q.id=a."qualificationId" AND q."sessionId"=w.id
         AND q."deviceId"=d.id AND q."authorizationEpoch"=d."authorizationEpoch"
@@ -378,24 +401,38 @@ export class DesktopMlRepository {
   }
 
   /**
-   * FL-456: one of the owner's approved Frameleaf Desktop helpers is online (seen in the last 90 seconds)
-   * and holds a current qualification for `modelKey`, so a job sent to the helpers now can be taken.
+   * FL-456: one of the owner's approved Frameleaf Desktop helpers, or (FL-1484) a computer that works on
+   * everyone's photos, is online (seen in the last 90 seconds) and holds a current qualification for
+   * `modelKey`, so a job sent to the helpers now can be taken.
    */
-  async hasReadyWorker(ownerId: string, modelKey: string): Promise<boolean> {
-    const { rows } = await sql<{ isAdmin: boolean }>`
-      SELECT u."isAdmin" FROM desktop_device d
+  async hasReadyWorker(ownerId: string, modelKey: string, options: { household?: boolean } = {}): Promise<boolean> {
+    const household = householdMatch(options.household === false ? [] : await desktopHouseholdDevices(this.db));
+    const { rows } = await sql<{ userId: string; isAdmin: boolean }>`
+      SELECT u.id AS "userId", u."isAdmin" FROM desktop_device d
       JOIN "user" u ON u.id=d."userId" AND u."deletedAt" IS NULL
       JOIN desktop_worker_session w ON w."deviceId"=d.id AND w."authorizationEpoch"=d."authorizationEpoch"
       JOIN session p ON p.id=w."photoSessionId" AND p."userId"=u.id
       JOIN desktop_worker_qualification q ON q."sessionId"=w.id AND q."deviceId"=d.id
         AND q."authorizationEpoch"=d."authorizationEpoch" AND q."modelKey"=${modelKey}
-      WHERE d."userId"=${ownerId} AND d.state='preparing' AND d.mode='client-worker' AND d."revokedAt" IS NULL
-        AND w."revokedAt" IS NULL AND w."expiresAt">clock_timestamp()
+      WHERE (d."userId"=${ownerId} ${household}) AND d.state='preparing' AND d.mode='client-worker'
+        AND d."revokedAt" IS NULL AND w."revokedAt" IS NULL AND w."expiresAt">clock_timestamp()
         AND w."lastSeenAt">clock_timestamp()-interval '90 seconds'
         AND w."modelKeys" @> jsonb_build_array(${modelKey}::text) AND q."expiresAt">clock_timestamp()
         AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp())
-      LIMIT 1`.execute(this.db);
-    return !!rows[0] && desktopWorkerAccountAllowed(this.db, ownerId, rows[0].isAdmin);
+      LIMIT 16`.execute(this.db);
+    for (const row of rows) {
+      // the computer's own account must still be allowed to help
+      if (await desktopWorkerAccountAllowed(this.db, row.userId, row.isAdmin)) return true;
+    }
+    return false;
+  }
+
+  /** FL-1484: whether this photo is Locked, which keeps it off another account's computers. */
+  async isLockedAsset(assetId: string): Promise<boolean> {
+    const { rows } = await sql<{
+      locked: boolean;
+    }>`SELECT ${lockedAssetIdExists(sql`${assetId}::uuid`)} AS locked`.execute(this.db);
+    return !!rows[0]?.locked;
   }
 
   result(id: string): Promise<TaskMetadata | undefined> {
@@ -430,7 +467,12 @@ export class DesktopMlRepository {
         .executeTakeFirst();
       if (!attempt?.workerSessionId) throw new Error('desktop_result_authority_lost');
       const worker = await lockDesktopWorkerForAdoption(db, { ...attempt, sessionId: attempt.workerSessionId });
-      if (!worker || worker.ownerId !== expected.ownerId || !worker.modelKeys.includes(expected.modelKey))
+      const household = (await desktopHouseholdDevices(db)).includes(attempt.deviceId);
+      if (
+        !worker ||
+        (worker.ownerId !== expected.ownerId && !household) ||
+        !worker.modelKeys.includes(expected.modelKey)
+      )
         throw new Error('desktop_result_authority_lost');
       const task = await db
         .selectFrom('desktop_ml_task')
@@ -537,7 +579,8 @@ export class DesktopMlRepository {
         .where('deadlineAt', '>', sql<Date>`clock_timestamp()`)
         .forUpdate()
         .executeTakeFirst();
-      if (!task || task.ownerId !== worker.ownerId || !worker.modelKeys.includes(task.modelKey)) return;
+      if (!task || !worker.modelKeys.includes(task.modelKey)) return;
+      if (task.ownerId !== worker.ownerId && !(await desktopHouseholdDevices(db)).includes(grant.deviceId)) return;
       const qualification = await this.qualification(db, grant, task, attempt.qualificationId);
       if (!qualification) return;
       const live = await db

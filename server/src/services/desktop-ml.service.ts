@@ -31,6 +31,7 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { assertAssetSource } from 'src/utils/asset-source-authority.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
+import { desktopAuthorityFor, householdDevices } from 'src/utils/desktop-assistance-policy.js';
 import { desktopFaceProfile, faceEntries } from 'src/utils/desktop-face.js';
 import {
   type DesktopMlDisclosure,
@@ -94,8 +95,15 @@ export class DesktopMlService {
       return selection;
     }
     const ownerId = source.ownerId;
-    const account = policy.accounts[ownerId];
+    // FL-1484: the owner's own desktop assistance, else a computer that works on everyone's photos at home
+    const account = desktopAuthorityFor(policy, ownerId);
     if (!account) return selection;
+    // A household computer never takes another account's Locked photo, so such a photo is not offered to one:
+    // without the owner's own desktop assistance it stays on this server, and readiness counts only their computers.
+    const locked = householdDevices(policy).size > 0 && (await this.repository.isLockedAsset(source.snapshot.assetId));
+    if (locked && !policy.accounts[ownerId]) return selection;
+    const ready = (modelKey: string) =>
+      !options.requireReady || this.repository.hasReadyWorker(ownerId, modelKey, { household: !locked });
     const revisionId = route.revisionId;
     const assertAuthority = async (tx?: Transaction<DB>) => {
       await this.policies!.assertCurrent(ownerId, account.revisionId, tx);
@@ -114,7 +122,7 @@ export class DesktopMlService {
         deferJobUntilDependency('destination-configuration');
         throw error;
       }
-      if (!(await this.ready(options, ownerId, profile.modelKey))) return selection;
+      if (!(await ready(profile.modelKey))) return selection;
       return this.selectImagePool(selection, {
         ownerId,
         profile,
@@ -144,7 +152,7 @@ export class DesktopMlService {
         deferJobUntilDependency('destination-configuration');
         throw error;
       }
-      if (!(await this.ready(options, ownerId, profile.modelKey))) return selection;
+      if (!(await ready(profile.modelKey))) return selection;
       return this.selectOcrPool(selection, {
         ownerId,
         profile,
@@ -170,7 +178,7 @@ export class DesktopMlService {
       deferJobUntilDependency('destination-configuration');
       throw new Error('desktop_pool_index_required');
     }
-    if (!(await this.ready(options, ownerId, selected.binding.space.visualModelKey))) return selection;
+    if (!(await ready(selected.binding.space.visualModelKey))) return selection;
     return this.selectClipPool(selection, {
       ownerId,
       authorityKey: `${account.revisionId}:${revisionId}`,
@@ -190,14 +198,6 @@ export class DesktopMlService {
       },
       assertAuthority,
     });
-  }
-
-  /**
-   * FL-456: when the processing order sends a job to the person's computers, a helper must be ready for
-   * its model now; otherwise the job is handed back for the next place in the order.
-   */
-  private async ready(options: DesktopPoolOptions, ownerId: string, modelKey: string): Promise<boolean> {
-    return !options.requireReady || this.repository.hasReadyWorker(ownerId, modelKey);
   }
 
   selectClipPool(

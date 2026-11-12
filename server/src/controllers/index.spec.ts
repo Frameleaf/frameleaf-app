@@ -119,6 +119,8 @@ const ADMIN_ROUTES = new Set([
   'POST system-metadata/admin-onboarding',
   'POST system-metadata/frameleaf-setup/finish',
   'PUT desktop/accounts/:id/approval',
+  // FL-1484: an administrator lets a computer work on everyone's photos at home
+  'PUT desktop/devices/:id/household',
   'PUT jobs/:name',
   'PUT libraries/:id',
   'PUT queues/:name',

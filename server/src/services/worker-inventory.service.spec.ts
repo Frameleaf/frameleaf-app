@@ -322,15 +322,48 @@ describe(WorkerInventoryService.name, () => {
   it('lists each approved Frameleaf Desktop helper as ready or not answering', async () => {
     const seen = new Date('2026-11-06T10:00:00.000Z');
     mocks.mlDestination.getDesktopHelpers.mockResolvedValue([
-      { id: 'mac', name: 'Studio Mac', platform: 'macos', ready: true, lastSeenAt: seen },
-      { id: 'pc', name: 'Office PC', platform: 'windows', ready: false, lastSeenAt: null },
+      {
+        id: 'mac',
+        name: 'Studio Mac',
+        platform: 'macos',
+        ready: true,
+        lastSeenAt: seen,
+        ownerName: 'Taylor',
+        household: true,
+      },
+      {
+        id: 'pc',
+        name: 'Office PC',
+        platform: 'windows',
+        ready: false,
+        lastSeenAt: null,
+        ownerName: 'Emma',
+        household: false,
+      },
     ]);
 
     const { entries, desktopHelpers } = await sut.getInventory();
 
+    // FL-1484: whose account is signed in on each, and whether it works on everyone's photos
     expect(desktopHelpers).toEqual([
-      { id: 'mac', name: 'Studio Mac', platform: 'macos', ready: true, lastSeenAt: seen.toISOString() },
-      { id: 'pc', name: 'Office PC', platform: 'windows', ready: false, lastSeenAt: null },
+      {
+        id: 'mac',
+        name: 'Studio Mac',
+        platform: 'macos',
+        ready: true,
+        lastSeenAt: seen.toISOString(),
+        ownerName: 'Taylor',
+        household: true,
+      },
+      {
+        id: 'pc',
+        name: 'Office PC',
+        platform: 'windows',
+        ready: false,
+        lastSeenAt: null,
+        ownerName: 'Emma',
+        household: false,
+      },
     ]);
     // apps reading entries see no new kind of source
     expect(entries.some((entry) => entry.id === 'mac' || entry.id === 'pc')).toBe(false);

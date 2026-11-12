@@ -9,7 +9,11 @@ import type {
 import { SystemMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { DesktopWorkerSessionTable } from 'src/schema/tables/desktop-worker-session.table.js';
-import { desktopAccountPermitted, desktopAssistancePolicySchema } from 'src/utils/desktop-assistance-policy.js';
+import {
+  desktopAccountPermitted,
+  desktopAssistancePolicySchema,
+  householdDevices,
+} from 'src/utils/desktop-assistance-policy.js';
 import { EFFECTIVE_CONFIG_LOCK } from 'src/utils/effective-config-lock.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -25,11 +29,22 @@ export type DesktopWorkerSession = Selectable<DesktopWorkerSessionTable>;
 const expires = sql<Date>`clock_timestamp() + interval '1 hour'`;
 const models = z.array(z.string().min(1).max(256)).max(64);
 
-export async function desktopWorkerAccountAllowed(db: QueryExecutorProvider, ownerId: string, isAdmin: boolean) {
+async function readDesktopPolicy(db: QueryExecutorProvider) {
   const { rows } = await sql<{ value: unknown }>`SELECT value FROM system_metadata
     WHERE key=${SystemMetadataKey.FrameleafDesktopAssistance}`.execute(db);
   const parsed = desktopAssistancePolicySchema.safeParse(rows[0]?.value ?? { version: 1, accounts: {} });
-  return parsed.success && desktopAccountPermitted(parsed.data, ownerId, isAdmin);
+  return parsed.success ? parsed.data : undefined;
+}
+
+export async function desktopWorkerAccountAllowed(db: QueryExecutorProvider, ownerId: string, isAdmin: boolean) {
+  const policy = await readDesktopPolicy(db);
+  return !!policy && desktopAccountPermitted(policy, ownerId, isAdmin);
+}
+
+/** FL-1484: the computers that work on everyone's photos at home, read in the caller's transaction. */
+export async function desktopHouseholdDevices(db: QueryExecutorProvider): Promise<string[]> {
+  const policy = await readDesktopPolicy(db);
+  return policy ? [...householdDevices(policy)] : [];
 }
 
 async function lockWorkerAuthority(

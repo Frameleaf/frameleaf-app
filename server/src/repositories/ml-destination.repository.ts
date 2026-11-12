@@ -18,7 +18,11 @@ import {
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
-import { desktopAccountPermitted, desktopAssistancePolicySchema } from 'src/utils/desktop-assistance-policy.js';
+import {
+  desktopAccountPermitted,
+  desktopAssistancePolicySchema,
+  householdDevices,
+} from 'src/utils/desktop-assistance-policy.js';
 import { ML_BUDGET_WINDOW_DAYS } from 'src/utils/ml-destination.js';
 import {
   ML_PROCESSING_ORDER_DEFAULT_SCOPE,
@@ -49,6 +53,10 @@ export type DesktopHelperRow = {
   platform: DesktopEnrollmentDto['platform'];
   ready: boolean;
   lastSeenAt: Date | null;
+  /** FL-1484: whose account is signed in on it */
+  ownerName: string;
+  /** FL-1484: it works on everyone's photos at home */
+  household: boolean;
 };
 export type MlCloudModelChoiceRow = Selectable<MlCloudModelChoiceTable>;
 export type MlWorkloadRouteRow = Selectable<MlWorkloadRouteTable>;
@@ -506,8 +514,8 @@ export class MlDestinationRepository {
     if (!policy.success || Object.keys(policy.data.accounts).length === 0) {
       return [];
     }
-    const { rows } = await sql<DesktopHelperRow & { userId: string; isAdmin: boolean }>`
-      SELECT d.id, d.name, d.platform, d."userId", u."isAdmin", EXISTS (
+    const { rows } = await sql<Omit<DesktopHelperRow, 'household'> & { userId: string; isAdmin: boolean }>`
+      SELECT d.id, d.name, d.platform, d."userId", u."isAdmin", u.name AS "ownerName", EXISTS (
         SELECT 1 FROM desktop_worker_session w
         JOIN session p ON p.id = w."photoSessionId" AND p."userId" = d."userId"
         JOIN desktop_worker_qualification q ON q."sessionId" = w.id AND q."deviceId" = d.id
@@ -523,9 +531,18 @@ export class MlDestinationRepository {
       FROM desktop_device d JOIN "user" u ON u.id = d."userId" AND u."deletedAt" IS NULL
       WHERE d.state = 'preparing' AND d.mode = 'client-worker' AND d."revokedAt" IS NULL
       ORDER BY d.name, d.id`.execute(this.db);
+    const household = householdDevices(policy.data);
     return rows
       .filter((row) => desktopAccountPermitted(policy.data, row.userId, row.isAdmin))
-      .map(({ id, name, platform, ready, lastSeenAt }) => ({ id, name, platform, ready, lastSeenAt }));
+      .map(({ id, name, platform, ready, lastSeenAt, ownerName }) => ({
+        id,
+        name,
+        platform,
+        ready,
+        lastSeenAt,
+        ownerName,
+        household: household.has(id),
+      }));
   }
 
   /**
