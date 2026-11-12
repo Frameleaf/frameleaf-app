@@ -64894,6 +64894,329 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/tidy-up": {
+      "get": {
+        "description": "Each kind of clutter: whether it is looked for, how strictly, whether it archives automatically and how many photos wait for review.",
+        "operationId": "getTidyUp",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TidyUpStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get Tidy up",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/tidy-up/decide": {
+      "post": {
+        "description": "archive moves suggestions to the Archive; keep leaves photos on the timeline (putting back any Tidy up archived) and never suggests them again; undo puts photos you just archived back up for review.",
+        "operationId": "decideTidyUp",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TidyUpDecisionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TidyUpDecisionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Archive, keep or undo Tidy up photos",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/tidy-up/kinds/{kind}": {
+      "put": {
+        "description": "Turn a kind on or off, set how strict it is, or let it archive new photos automatically (off unless asked). Turning a kind on looks through the library and only suggests; turning it off never takes a photo out of the Archive.",
+        "operationId": "updateTidyUpKind",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/TidyUpKind"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TidyUpKindUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TidyUpKindStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change one Tidy up kind",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/tidy-up/suggestions": {
+      "get": {
+        "description": "Photos on the timeline that look like clutter, newest first, each with the kinds that found it.",
+        "operationId": "getTidyUpSuggestions",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Only this kind",
+            "schema": {
+              "$ref": "#/components/schemas/TidyUpKind"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TidyUpPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List Tidy up suggestions",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/tidy-up/tidied-away": {
+      "get": {
+        "description": "Photos Tidy up moved to the Archive and that are still there, newest first, so any can be put back.",
+        "operationId": "getTidiedAway",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Only this kind",
+            "schema": {
+              "$ref": "#/components/schemas/TidyUpKind"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TidyUpPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List photos Tidy up archived",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/timeline/bucket": {
       "get": {
         "description": "Retrieve a string of all asset ids in a given time bucket.",
@@ -149775,6 +150098,10 @@
           "takenAt": {
             "$ref": "#/components/schemas/DateFilter"
           },
+          "technicalScore": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Technical quality from the best-photo check (0 to 1); null when the photo has not been scored"
+          },
           "text": {
             "$ref": "#/components/schemas/LibraryTextFilter"
           },
@@ -149925,6 +150252,10 @@
           },
           "takenAt": {
             "$ref": "#/components/schemas/DateFilter"
+          },
+          "technicalScore": {
+            "$ref": "#/components/schemas/NumberFilterNullable",
+            "description": "Technical quality from the best-photo check (0 to 1); null when the photo has not been scored"
           },
           "text": {
             "$ref": "#/components/schemas/LibraryTextFilter"
@@ -165835,6 +166166,260 @@
           "bottom-left",
           "bottom",
           "bottom-right"
+        ],
+        "type": "string"
+      },
+      "TidyUpDecision": {
+        "description": "archive: move suggestions to the Archive. keep: leave them on the timeline (or put an archived one back) and never suggest them again. undo: take back an archive you just made; the photos wait for review again",
+        "enum": [
+          "archive",
+          "keep",
+          "undo"
+        ],
+        "type": "string"
+      },
+      "TidyUpDecisionDto": {
+        "properties": {
+          "assetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/TidyUpDecision"
+          }
+        },
+        "required": [
+          "assetIds",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "TidyUpDecisionResponseDto": {
+        "properties": {
+          "skipped": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updated": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "skipped",
+          "updated"
+        ],
+        "type": "object"
+      },
+      "TidyUpItemDto": {
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "automatic": {
+            "description": "Archived without asking because Archive automatically was on",
+            "type": "boolean"
+          },
+          "kinds": {
+            "description": "Every kind this photo was found by",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetId",
+          "automatic",
+          "kinds"
+        ],
+        "type": "object"
+      },
+      "TidyUpKind": {
+        "enum": [
+          "memes",
+          "documents",
+          "screenshots",
+          "shop",
+          "chat",
+          "slides",
+          "notes",
+          "accidental"
+        ],
+        "type": "string"
+      },
+      "TidyUpKindParamDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TidyUpKind"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "TidyUpKindStatusDto": {
+        "properties": {
+          "albumId": {
+            "description": "The album inside Tidied away that holds what this kind archived",
+            "nullable": true,
+            "type": "string"
+          },
+          "automatic": {
+            "description": "New photos of this kind go straight to the Archive",
+            "type": "boolean"
+          },
+          "available": {
+            "description": "False when this kind needs Visual search and it is off",
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "memes, documents, screenshots, shop, chat, slides, notes or accidental",
+            "type": "string"
+          },
+          "strictness": {
+            "description": "surer, balanced or more",
+            "type": "string"
+          },
+          "visual": {
+            "description": "Needs Visual search to see what is in each photo",
+            "type": "boolean"
+          },
+          "waiting": {
+            "description": "Photos on the timeline waiting for review",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "albumId",
+          "automatic",
+          "available",
+          "enabled",
+          "kind",
+          "strictness",
+          "visual",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "TidyUpKindUpdateDto": {
+        "properties": {
+          "automatic": {
+            "description": "Archive new photos of this kind without asking. Off unless the person turns it on",
+            "type": "boolean"
+          },
+          "enabled": {
+            "description": "Look for this kind. Turning it off never takes a photo out of the Archive",
+            "type": "boolean"
+          },
+          "strictness": {
+            "$ref": "#/components/schemas/TidyUpStrictness",
+            "description": "How alike a photo must look; defaults to balanced"
+          }
+        },
+        "type": "object"
+      },
+      "TidyUpPageDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TidyUpItemDto"
+            },
+            "type": "array"
+          },
+          "nextPage": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "nextPage",
+          "total"
+        ],
+        "type": "object"
+      },
+      "TidyUpPageQueryDto": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TidyUpKind",
+            "description": "Only this kind"
+          },
+          "page": {
+            "default": 1,
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "TidyUpStatusDto": {
+        "properties": {
+          "collectionId": {
+            "description": "The Tidied away collection, once a kind has been turned on",
+            "nullable": true,
+            "type": "string"
+          },
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/TidyUpKindStatusDto"
+            },
+            "type": "array"
+          },
+          "tidiedAway": {
+            "description": "Photos Tidy up moved to the Archive and still there",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "waiting": {
+            "description": "Photos waiting for review across every kind, each counted once",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "collectionId",
+          "kinds",
+          "tidiedAway",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "TidyUpStrictness": {
+        "enum": [
+          "surer",
+          "balanced",
+          "more"
         ],
         "type": "string"
       },

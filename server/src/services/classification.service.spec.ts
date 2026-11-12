@@ -38,6 +38,7 @@ const ruleOf = (overrides: Partial<ClassificationRuleWithAlbum> = {}): Classific
   tagIds: [newUuid()],
   action: ClassificationRuleAction.Review,
   tagId: null,
+  careKind: null,
   archive: false,
   archiveConsentAt: null,
   createdAt: new Date().toISOString() as never,

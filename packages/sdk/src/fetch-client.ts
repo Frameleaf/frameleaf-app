@@ -8120,6 +8120,8 @@ export type SearchFilterBranch = {
     state?: StringFilterNullable;
     tagIds?: IdsFilter;
     takenAt?: DateFilter;
+    /** Technical quality from the best-photo check (0 to 1); null when the photo has not been scored */
+    technicalScore?: NumberFilterNullable;
     text?: LibraryTextFilter;
     trashedAt?: DateFilterNullable;
     "type"?: EnumFilterAssetType;
@@ -8175,6 +8177,8 @@ export type SearchFilter = {
     state?: StringFilterNullable;
     tagIds?: IdsFilter;
     takenAt?: DateFilter;
+    /** Technical quality from the best-photo check (0 to 1); null when the photo has not been scored */
+    technicalScore?: NumberFilterNullable;
     text?: LibraryTextFilter;
     trashedAt?: DateFilterNullable;
     "type"?: EnumFilterAssetType;
@@ -19829,6 +19833,60 @@ export type TakeoutPairDecisionDto = {
     /** The motion video */
     videoItemId: string;
 };
+export type TidyUpKindStatusDto = {
+    /** The album inside Tidied away that holds what this kind archived */
+    albumId: string | null;
+    /** New photos of this kind go straight to the Archive */
+    automatic: boolean;
+    /** False when this kind needs Visual search and it is off */
+    available: boolean;
+    enabled: boolean;
+    /** memes, documents, screenshots, shop, chat, slides, notes or accidental */
+    kind: string;
+    /** surer, balanced or more */
+    strictness: string;
+    /** Needs Visual search to see what is in each photo */
+    visual: boolean;
+    /** Photos on the timeline waiting for review */
+    waiting: number;
+};
+export type TidyUpStatusDto = {
+    /** The Tidied away collection, once a kind has been turned on */
+    collectionId: string | null;
+    kinds: TidyUpKindStatusDto[];
+    /** Photos Tidy up moved to the Archive and still there */
+    tidiedAway: number;
+    /** Photos waiting for review across every kind, each counted once */
+    waiting: number;
+};
+export type TidyUpDecisionDto = {
+    assetIds: string[];
+    decision: TidyUpDecision;
+};
+export type TidyUpDecisionResponseDto = {
+    skipped: number;
+    updated: number;
+};
+export type TidyUpKindUpdateDto = {
+    /** Archive new photos of this kind without asking. Off unless the person turns it on */
+    automatic?: boolean;
+    /** Look for this kind. Turning it off never takes a photo out of the Archive */
+    enabled?: boolean;
+    /** How alike a photo must look; defaults to balanced */
+    strictness?: TidyUpStrictness;
+};
+export type TidyUpItemDto = {
+    assetId: string;
+    /** Archived without asking because Archive automatically was on */
+    automatic: boolean;
+    /** Every kind this photo was found by */
+    kinds: string[];
+};
+export type TidyUpPageDto = {
+    items: TidyUpItemDto[];
+    nextPage: number | null;
+    total: number;
+};
 export type TimeBucketAssetResponseDto = {
     /** Array of city names extracted from EXIF GPS data */
     city?: (string | null)[];
@@ -22551,6 +22609,15 @@ export type TagSearchDto = {
     search?: string;
     /** At most this many tags */
     take?: number;
+};
+export type TidyUpKindParamDto = {
+    kind: TidyUpKind;
+};
+export type TidyUpPageQueryDto = {
+    /** Only this kind */
+    kind?: TidyUpKind;
+    page?: number;
+    size?: number;
 };
 export type TimeBucketAssetDto = {
     /** Read after this calendar-page asset ID; requires take and cannot be combined with before */
@@ -38782,6 +38849,86 @@ export function scanTakeoutImport({ id }: {
     }));
 }
 /**
+ * Get Tidy up
+ */
+export function getTidyUp(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TidyUpStatusDto;
+    }>("/tidy-up", {
+        ...opts
+    }));
+}
+/**
+ * Archive, keep or undo Tidy up photos
+ */
+export function decideTidyUp({ tidyUpDecisionDto }: {
+    tidyUpDecisionDto: TidyUpDecisionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: TidyUpDecisionResponseDto;
+    }>("/tidy-up/decide", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: tidyUpDecisionDto
+    })));
+}
+/**
+ * Change one Tidy up kind
+ */
+export function updateTidyUpKind({ kind, tidyUpKindUpdateDto }: {
+    kind: TidyUpKind;
+    tidyUpKindUpdateDto: TidyUpKindUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TidyUpKindStatusDto;
+    }>(`/tidy-up/kinds/${encodeURIComponent(kind)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: tidyUpKindUpdateDto
+    })));
+}
+/**
+ * List Tidy up suggestions
+ */
+export function getTidyUpSuggestions({ kind, page, size }: {
+    kind?: TidyUpKind;
+    page?: number;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TidyUpPageDto;
+    }>(`/tidy-up/suggestions${QS.query(QS.explode({
+        kind,
+        page,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * List photos Tidy up archived
+ */
+export function getTidiedAway({ kind, page, size }: {
+    kind?: TidyUpKind;
+    page?: number;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TidyUpPageDto;
+    }>(`/tidy-up/tidied-away${QS.query(QS.explode({
+        kind,
+        page,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Get time bucket
  */
 export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
@@ -44909,6 +45056,26 @@ export enum TakeoutPairState {
     Skipped = "skipped",
     Linked = "linked",
     Failed = "failed"
+}
+export enum TidyUpDecision {
+    Archive = "archive",
+    Keep = "keep",
+    Undo = "undo"
+}
+export enum TidyUpKind {
+    Memes = "memes",
+    Documents = "documents",
+    Screenshots = "screenshots",
+    Shop = "shop",
+    Chat = "chat",
+    Slides = "slides",
+    Notes = "notes",
+    Accidental = "accidental"
+}
+export enum TidyUpStrictness {
+    Surer = "surer",
+    Balanced = "balanced",
+    More = "more"
 }
 export enum TimeBucketDateType {
     Added = "added",
