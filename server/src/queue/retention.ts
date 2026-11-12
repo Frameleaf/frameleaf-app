@@ -4,7 +4,11 @@ import { preserveAttemptEvidence, pruneWorkerStopEvidence } from 'src/utils/atte
 
 const RETENTION_CURSOR = 'frameleaf-queue-retention-cursor';
 
-/** Retain open runs' jobs; bound payload/attempt cleanup independently of media execution. */
+/**
+ * Retain open runs' jobs; bound payload/attempt cleanup independently of media execution.
+ * FL-1485: a completed job is kept for one hour (owner, 2026-11-12), anything else that ended for 30 days. A 900,000
+ * photo library finishes millions of jobs in days, and each kept one costs every index on this table.
+ */
 export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
   return (await pruneQueueHistoryPage(db)).pruned;
 }
@@ -48,7 +52,7 @@ export async function pruneQueueHistoryPage(
     const candidates = through
       ? (
           await sql<{ id: string; finishedAt: string; due: boolean }>`select id, "finishedAt"::text,
-        "finishedAt" < now() - interval '7 days' due from job
+        "finishedAt" < now() - interval '1 hour' due from job
       where state in ('completed','failed','cancelled','blocked') and "latestPending" is null
         and "finishedAt" is not null
         and ("finishedAt",id) <= (${through.throughAt}::timestamptz,${through.throughId}::uuid)
@@ -73,7 +77,7 @@ export async function pruneQueueHistoryPage(
     const { rows } = await sql<{ id: string }>`select j.id from job j
       where j.id = any(${locked.map(({ id }) => id)}::uuid[])
         and j.state in ('completed','failed','cancelled','blocked') and j."latestPending" is null
-        and j."finishedAt" < now() - case when j.state = 'completed' then interval '7 days' else interval '30 days' end
+        and j."finishedAt" < now() - case when j.state = 'completed' then interval '1 hour' else interval '30 days' end
         and not exists(select 1 from job child where child."parentId" = j.id)
         -- FL-1265: a run's jobs are its counts until it finishes and writes its summary
         -- a parked stage can reopen a finished run, which recounts it from its jobs

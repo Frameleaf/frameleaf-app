@@ -522,6 +522,11 @@ describe(JobRepository.name, () => {
       vi.mocked(sut['store'].complete).mock.invocationCallOrder[0],
     );
     expect(notify).toHaveBeenCalledOnce();
+    // FL-1485: repeatable work that completes cleanly writes no proof of its own; its completed attempt is the proof
+    sut['store'].complete = vi.fn().mockResolvedValue(true);
+    await sut['execute']({ ...claim, safeToRetry: true }, abort);
+    expect(sut['store'].complete).toHaveBeenCalledOnce();
+    expect(recordStopped).toHaveBeenCalledTimes(2);
   });
 
   it.each(['committed', 'stale claim', 'rolled back'] as const)(
