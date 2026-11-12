@@ -132,10 +132,42 @@ describe(IntegrityService.name, () => {
       });
 
       await expect(text(sut.getIntegrityReportCsv(IntegrityReport.ChecksumFail))).resolves.toMatchInlineSnapshot(`
-          "id,type,assetId,fileAssetId,path
-          ${id},checksum_mismatch,null,null,"/path/to/file"
+          "id,type,assetId,fileAssetId,originalFileName,path
+          ${id},checksum_mismatch,null,null,,"/path/to/file"
           "
         `);
+    });
+
+    it('names each finding by the file name its photo came with, thumbnails included', async () => {
+      const { sut, ctx } = setup();
+      const {
+        result: { id: ownerId },
+      } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId,
+        originalPath: '/upload/0b/fb/0bfb.jpg',
+        originalFileName: 'beach, "day 1".jpg',
+      });
+      const fileAssetId = randomUUID();
+      await ctx.newAssetFile({
+        id: fileAssetId,
+        assetId: asset.id,
+        type: AssetFileType.Thumbnail,
+        path: '/thumbs/0bfb.webp',
+      });
+      await ctx.get(IntegrityRepository).create([
+        { type: IntegrityReport.MissingFile, path: '/upload/0b/fb/0bfb.jpg', assetId: asset.id },
+        { type: IntegrityReport.MissingFile, path: '/thumbs/0bfb.webp', fileAssetId },
+      ]);
+
+      const rows = (await text(sut.getIntegrityReportCsv(IntegrityReport.MissingFile))).trim().split('\n');
+      expect(rows[0]).toBe('id,type,assetId,fileAssetId,originalFileName,path');
+      expect(rows.slice(1)).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(`,"beach, ""day 1"".jpg","/upload/0b/fb/0bfb.jpg"`),
+          expect.stringContaining(`,${fileAssetId},"beach, ""day 1"".jpg","/thumbs/0bfb.webp"`),
+        ]),
+      );
     });
   });
 

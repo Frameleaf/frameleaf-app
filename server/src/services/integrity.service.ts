@@ -59,6 +59,19 @@ const FINDING_ASSETS_LIMIT = 10_000;
 const CHECKSUM_PROGRESS_EVERY = 100;
 
 /**
+ * One CSV text cell. A file name is chosen by whoever uploaded it, so it can hold a comma, quote or
+ * newline, or start with a character a spreadsheet reads as a formula (`=HYPERLINK(…)`); a leading
+ * `'` keeps such a cell plain text (CWE-1236).
+ */
+export const csvText = (value: string | null) => {
+  if (value === null) {
+    return '';
+  }
+  const text = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${text.replaceAll('"', '""')}"`;
+};
+
+/**
  * Untracked Files:
  *   Files are detected in /data/encoded-video, /data/library, /data/upload
  *     Checked against the asset table
@@ -345,12 +358,10 @@ export class IntegrityService extends BaseService {
 
     // very rudimentary csv serialiser
     async function* generator() {
-      yield 'id,type,assetId,fileAssetId,path\n';
+      yield 'id,type,assetId,fileAssetId,originalFileName,path\n';
 
       for await (const item of items) {
-        // no expectation of particularly bad filenames
-        // but they could potentially have a newline or quote character
-        yield `${item.id},${item.type},${item.assetId},${item.fileAssetId},"${item.path.replaceAll('"', '""')}"\n`;
+        yield `${item.id},${item.type},${item.assetId},${item.fileAssetId},${csvText(item.originalFileName)},${csvText(item.path)}\n`;
       }
     }
 

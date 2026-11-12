@@ -588,12 +588,31 @@ export class IntegrityRepository {
   }
   @GenerateSql({ params: [DummyValue.STRING], stream: true })
   streamIntegrityReports(type: IntegrityReport) {
-    return this.db
-      .selectFrom('integrity_report')
-      .select(['id', 'type', 'path', 'assetId', 'fileAssetId'])
-      .where('type', '=', type)
-      .orderBy('createdAt', 'desc')
-      .stream();
+    return (
+      this.db
+        .selectFrom('integrity_report')
+        // the CSV names each photo by the file name it came with, as the list does; a thumbnail or
+        // other generated file is named by the photo it belongs to
+        .leftJoin('asset_file', 'asset_file.id', 'integrity_report.fileAssetId')
+        .leftJoin('asset', (join) =>
+          join.onRef(
+            'asset.id',
+            '=',
+            sql`coalesce(${sql.ref('integrity_report.assetId')}, ${sql.ref('asset_file.assetId')})`,
+          ),
+        )
+        .select([
+          'integrity_report.id',
+          'integrity_report.type',
+          'integrity_report.path',
+          'integrity_report.assetId',
+          'integrity_report.fileAssetId',
+          'asset.originalFileName',
+        ])
+        .where('integrity_report.type', '=', type)
+        .orderBy('integrity_report.createdAt', 'desc')
+        .stream()
+    );
   }
   @GenerateSql({ params: [DummyValue.STRING], stream: true })
   streamIntegrityReportsWithAssetChecksum(type: IntegrityReport) {

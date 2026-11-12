@@ -980,8 +980,9 @@ describe('/admin/integrity', () => {
       expect(status).toBe(200);
       expect(headers['content-type']).toContain('text/csv');
       expect(headers['content-disposition']).toContain('.csv');
-      expect(text).toContain('id,type,assetId,fileAssetId,path');
-      expect(text).toContain(`untracked_file`);
+      expect(text).toContain('id,type,assetId,fileAssetId,originalFileName,path');
+      // a stray file has no photo, so no original file name
+      expect(text).toContain(`untracked_file,null,null,,`);
       expect(text).toContain(`/data/upload/${admin.userId}/untracked1.png`);
     });
   });
