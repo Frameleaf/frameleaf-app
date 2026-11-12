@@ -212,6 +212,8 @@
 
   let roots = $state<TakeoutRootDto[] | undefined>();
   let choosing = $state(false);
+  /** Opened when a folder is chosen, so the chosen folder and its Import button show (start dialog path too). */
+  let advancedOpen = $state(false);
   let chosen = $state<ChosenTakeoutFolder>();
   const rootName = (root: TakeoutRootDto | undefined) =>
     root?.builtIn ? $t('frameleaf_takeout_imports_name') : (root?.path ?? '');
@@ -375,7 +377,7 @@
     {/if}
 
     {#if showRoots}
-      <Advanced summary={$t('frameleaf_takeout_page_advanced')}>
+      <Advanced summary={$t('frameleaf_takeout_page_advanced')} open={advancedOpen}>
         {#if rootsFailed}
           <InlineError compact message={$t('frameleaf_takeout_error_generic')} />
         {:else if roots === undefined}
@@ -457,6 +459,7 @@
           onChoose={(folder) => {
             chosen = folder;
             choosing = false;
+            advancedOpen = true;
           }}
         />
       {/if}

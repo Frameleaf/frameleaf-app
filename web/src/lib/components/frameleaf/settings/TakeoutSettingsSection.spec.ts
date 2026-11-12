@@ -113,7 +113,18 @@ describe('TakeoutSettingsSection', () => {
     await userEvent.click(within(start).getByRole('button', { name: en.frameleaf_takeout_folder_choose }));
 
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=backup&section=takeout', expect.anything());
-    expect(screen.getByRole('dialog', { name: en.frameleaf_takeout_folder_chooser_title })).toBeInTheDocument();
+    const chooser = screen.getByRole('dialog', { name: en.frameleaf_takeout_folder_chooser_title });
+    await userEvent.click(
+      within(chooser).getByRole('button', {
+        name: `${en.frameleaf_takeout_imports_name} ${en.frameleaf_takeout_imports_built_in}`,
+      }),
+    );
+    await userEvent.click(
+      await within(chooser).findByRole('button', { name: en.frameleaf_takeout_folder_choose_this }),
+    );
+    // the chosen folder shows straight away: Advanced opens instead of staying collapsed
+    expect(screen.getByLabelText(en.frameleaf_takeout_imports_name)).toBeVisible();
+    expect(screen.getByText(en.frameleaf_takeout_page_advanced).closest('details')).toHaveAttribute('open');
   });
 
   it('keeps the start dialog to uploading for everyone else', async () => {

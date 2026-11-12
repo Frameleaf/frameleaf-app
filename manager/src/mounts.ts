@@ -1,5 +1,5 @@
 import { readFile, stat, writeFile, mkdir } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { Refusal, type Mount } from './contracts.js';
 import { filesystemMounts } from './postgres-storage.js';
 
@@ -35,12 +35,16 @@ export function thumbnailFolder(mounts: Mount[]): string | null {
 }
 
 /**
- * FL-1477: the server's built-in Imports folder on the host, `imports` inside the library folder. The server
- * shows it to administrators so they know where to copy an export; null when the library is not a bind.
+ * FL-1477: the server's built-in Imports folder on the host, `imports` inside the server's media location. The
+ * server shows it to administrators so they know where to copy an export. Null when the library is not a bind,
+ * or the media location is outside it, since no host path can then be named.
  */
-export function importsFolder(mounts: Mount[]): string | null {
+export function importsFolder(mounts: Mount[], mediaLocation: string = LIBRARY_TARGET): string | null {
   const library = mounts[0];
-  return library?.type === 'bind' && library.target === LIBRARY_TARGET ? join(library.source, 'imports') : null;
+  if (library?.type !== 'bind' || library.target !== LIBRARY_TARGET) return null;
+  const inside = posix.relative(LIBRARY_TARGET, posix.normalize(mediaLocation));
+  if (inside.startsWith('..') || posix.isAbsolute(inside)) return null;
+  return join(library.source, ...inside.split('/').filter(Boolean), 'imports');
 }
 
 /** Refuses a mounts list that breaks the model above. */

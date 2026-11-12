@@ -461,7 +461,10 @@ export async function renderCompose(
     FRAMELEAF_MANAGER_TOKEN_FILE: '/run/frameleaf/manager-token',
     FRAMELEAF_MANAGER_URL: process.env.MANAGER_ORIGIN ?? '',
   };
-  const imports = importsFolder(installation.mounts);
+  const imports = importsFolder(
+    installation.mounts,
+    environment.FRAMELEAF_MEDIA_LOCATION || environment.IMMICH_MEDIA_LOCATION || undefined,
+  );
   if (imports) environment.FRAMELEAF_IMPORTS_HOST_PATH = imports;
   if (installation.origin === 'restored_library' && installation.importInstallation) {
     if (!/^[a-f0-9]{12}$/.test(installation.importInstallation)) throw new Refusal('invalid_restore_import_identity');
