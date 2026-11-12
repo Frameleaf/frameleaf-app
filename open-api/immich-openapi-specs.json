@@ -96173,6 +96173,7 @@
         "type": "object"
       },
       "DateDoctorFixDto": {
+        "description": "Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes`; `keepWallTime` only with `timeZone`. Any other combination is refused (400).",
         "properties": {
           "assetIds": {
             "description": "The photos to fix",

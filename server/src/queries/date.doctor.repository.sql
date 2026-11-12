@@ -102,10 +102,13 @@ where
     from
       "date_fix_item"
       inner join "date_fix_batch" on "date_fix_batch"."id" = "date_fix_item"."batchId"
+      inner join "asset_exif" on "asset_exif"."assetId" = "date_fix_item"."assetId"
     where
       "date_fix_item"."assetId" = "asset"."id"
       and "date_fix_batch"."undoneAt" is null
       and "date_fix_item"."newDate" = "asset"."fileCreatedAt"
+      and "date_fix_item"."newLocalDateTime" = "asset"."localDateTime"
+      and date_fix_item."newZone" is not distinct from asset_exif."timeZone"
   )
 order by
   right(asset_date_finding."groupKey", 10) desc,
@@ -118,7 +121,9 @@ select distinct
   on ("asset_date_finding"."assetId") "asset_date_finding"."assetId",
   "asset_date_finding"."cause",
   "asset_date_finding"."proposedDate",
-  "asset_date_finding"."proposedZone"
+  "asset_date_finding"."proposedZone",
+  "asset_date_finding"."currentDate",
+  "asset_date_finding"."currentZone"
 from
   "asset_date_finding"
   inner join "asset" on "asset"."id" = "asset_date_finding"."assetId"
@@ -139,15 +144,21 @@ select
   "asset"."localDateTime",
   "asset_exif"."dateTimeOriginal",
   "asset_exif"."timeZone",
-  coalesce(
-    asset_exif."lockedProperties" && array['dateTimeOriginal', 'timeZone']::varchar[],
-    false
-  ) as "locked",
+  array(
+    select
+      property
+    from
+      unnest(coalesce(asset_exif."lockedProperties", '{}')) property
+    where
+      property in ('dateTimeOriginal', 'timeZone')
+    order by
+      property
+  ) as "locks",
   "earlier"."previousDate",
   "earlier"."previousZone",
   "earlier"."previousTakenAt",
   "earlier"."previousLocalDateTime",
-  "earlier"."previousLocked"
+  "earlier"."previousLocks"
 from
   "asset"
   inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
@@ -157,7 +168,7 @@ from
       "date_fix_item"."previousZone",
       "date_fix_item"."previousTakenAt",
       "date_fix_item"."previousLocalDateTime",
-      "date_fix_item"."previousLocked"
+      "date_fix_item"."previousLocks"
     from
       "date_fix_item"
       inner join "date_fix_batch" on "date_fix_batch"."id" = "date_fix_item"."batchId"
@@ -189,3 +200,13 @@ where
 order by
   "createdAt" desc,
   "id" desc
+
+-- DateDoctorRepository.getBatchAssetIds
+select
+  "date_fix_item"."assetId"
+from
+  "date_fix_item"
+  inner join "date_fix_batch" on "date_fix_batch"."id" = "date_fix_item"."batchId"
+where
+  "date_fix_batch"."id" = $1
+  and "date_fix_batch"."userId" = $2

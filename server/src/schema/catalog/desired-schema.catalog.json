@@ -52739,12 +52739,12 @@
           "synchronize": true
         },
         {
-          "type": "boolean",
+          "type": "character varying",
           "primary": false,
-          "name": "previousLocked",
+          "name": "previousLocks",
           "tableName": "date_fix_item",
           "nullable": false,
-          "isArray": false,
+          "isArray": true,
           "synchronize": true
         },
         {
