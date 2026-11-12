@@ -181,8 +181,11 @@ jobs:
       - name: Configure public Docker Hub mirror
         working-directory: .
         run: bash scripts/configure-dockerhub-mirror.sh
+      - name: Pick a reachable Ubuntu mirror (FL-1453, FL-1477)
+        working-directory: .
+        run: bash scripts/ci-ubuntu-mirror.sh
       - name: Build ML runtime with locked fork dependencies
-        run: docker build --build-arg UBUNTU_MIRROR=http://mirrors.edge.kernel.org/ubuntu/ --build-arg DEVICE=${{ matrix.device }} --build-arg CPU_IMAGE="$FRAMELEAF_CI_PYTHON_IMAGE" --build-arg CUDA_IMAGE="$FRAMELEAF_CI_CUDA_IMAGE" --target prod --build-context frameleaf=. -t fork-ml-test machine-learning
+        run: docker build --build-arg UBUNTU_MIRROR="$UBUNTU_MIRROR" --build-arg DEVICE=${{ matrix.device }} --build-arg CPU_IMAGE="$FRAMELEAF_CI_PYTHON_IMAGE" --build-arg CUDA_IMAGE="$FRAMELEAF_CI_CUDA_IMAGE" --target prod --build-context frameleaf=. -t fork-ml-test machine-learning
       - name: Verify runtime imports without downloading models
         run: |
           docker run --rm --entrypoint python fork-ml-test -c 'import onnxruntime; import frameleaf_ml.models.image_description'
