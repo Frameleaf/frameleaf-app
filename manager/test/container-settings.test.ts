@@ -149,3 +149,25 @@ test('the Services card shows stored settings as text and reads them back unchan
     assert.deepEqual(parsed, services[id]);
   }
 });
+
+test('the rendered stack is readable for the Containers page, with passwords only as files', async () => {
+  const { directory, store, operations } = await fixture();
+  try {
+    assert.equal(await operations.renderedStack(), null);
+    operations.reconfigure(ServiceOverrides.parse({ 'frameleaf-server': { environment: { FRAMELEAF_LOG_LEVEL: 'debug' } } }), 'key-stack');
+    assert.equal((await settled(store)).state, 'complete');
+    const stack = (await operations.renderedStack()) as Record<string, any>;
+    const server = stack['frameleaf-server'];
+    assert.equal(server.environment.DB_HOSTNAME, 'database');
+    assert.equal(server.environment.FRAMELEAF_LOG_LEVEL, 'debug');
+    assert.equal(server.shm_size, '2gb');
+    assert.ok(server.volumes.some((v: { target: string }) => v.target === '/data'));
+    assert.equal(stack.database.volumes[0].target, '/var/lib/postgresql');
+    assert.ok(!JSON.stringify(stack).includes('"pw"'));
+    store.set('installation', null);
+    await assert.rejects(operations.renderedStack(), /no_installation/);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

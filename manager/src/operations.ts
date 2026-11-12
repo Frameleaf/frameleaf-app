@@ -2070,6 +2070,16 @@ export class Operations {
     await this.docker.compose(this.directory(), installation.project, kind === 'start' ? 'up' : kind);
     return true;
   }
+  /**
+   * FL-1476: each service exactly as Manager last wrote it to compose.json (image, environment, folders, ports,
+   * limits, devices), so the Containers page can show what Manager sets beside what the administrator added.
+   * Passwords never appear: the stack carries them as files. Null before anything is rendered.
+   */
+  async renderedStack(): Promise<Record<string, unknown> | null> {
+    if (!this.installation()) throw new Refusal('no_installation');
+    const saved = await readFile(join(this.directory(), 'compose.json'), 'utf8').catch(() => null);
+    return saved ? (JSON.parse(saved).services ?? null) : null;
+  }
   /** The advanced container settings the installed stack was last rendered with. */
   containerSettings(): { services: ServiceOverrides } {
     if (!this.installation()) throw new Refusal('no_installation');

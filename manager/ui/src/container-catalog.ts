@@ -336,3 +336,119 @@ export function summary(draft: Draft) {
   if (draft.cpus) parts.push(`${limitText('cpus', draft.cpus)}`);
   return parts.join(' · ');
 }
+
+/** Where a Manager-owned value can be changed instead: another Manager page, or an override on this one. */
+export type ManagedChange = { page: 'storage' | 'updates' | 'settings' } | { override: string } | null;
+export type ManagedRow = { name: string; label: string; value: string; why: string; change: ManagedChange; secretFile?: boolean };
+export type ManagedMount = { target: string; source: string; readOnly: boolean; why: string; change: ManagedChange };
+export type Fact = { label: string; value: string; why: string; change: ManagedChange };
+
+const ENV_WHY: Record<string, [string, ManagedChange?]> = {
+  DB_HOSTNAME: ['How Frameleaf finds its database.'],
+  DB_PORT: ['How Frameleaf finds its database.'],
+  DB_USERNAME: ['The database account Frameleaf uses.'],
+  DB_DATABASE_NAME: ['The database Frameleaf uses.'],
+  DB_PASSWORD_FILE: ['The database password, kept in a file only these containers can read. The password itself is never shown.'],
+  POSTGRES_USER: ['The database account Frameleaf uses.'],
+  POSTGRES_DB: ['The database Frameleaf uses.'],
+  POSTGRES_PASSWORD_FILE: ['The database password, kept in a file only these containers can read. The password itself is never shown.'],
+  POSTGRES_INITDB_ARGS: ['Damage in the database is caught early.'],
+  FRAMELEAF_MANAGER_INSTALLATION: ['Which library this is, so Manager and Frameleaf recognise each other.'],
+  FRAMELEAF_MANAGER_ORIGIN: ['How this library started: new, imported or restored.'],
+  FRAMELEAF_MANAGER_IMPORT_INSTALLATION: ['The library this one was restored from.'],
+  FRAMELEAF_MANAGER_TOKEN_FILE: ['Lets Frameleaf ask Manager for backups, updates and folder moves.'],
+  FRAMELEAF_MANAGER_URL: ['Where Frameleaf reaches Manager.'],
+  FRAMELEAF_MANAGER_ML_ENABLED: ['Whether machine learning was on when the library was set up.'],
+  IMMICH_CONFIG_FILE: ['Frameleaf’s settings, in a file Manager writes.'],
+  IMMICH_MEDIA_LOCATION: ['Where photos and videos are inside the container.', { page: 'storage' }],
+  TZ: ['Chosen at setup.', { override: 'TZ' }],
+  IMMICH_LOG_LEVEL: ['Chosen at setup.', { override: 'FRAMELEAF_LOG_LEVEL' }],
+};
+const ENV_LABEL: Record<string, string> = {
+  DB_HOSTNAME: 'Database address', DB_PORT: 'Database port', DB_USERNAME: 'Database account', DB_DATABASE_NAME: 'Database name',
+  DB_PASSWORD_FILE: 'Database password file', POSTGRES_USER: 'Database account', POSTGRES_DB: 'Database name',
+  POSTGRES_PASSWORD_FILE: 'Database password file', POSTGRES_INITDB_ARGS: 'Database checksums',
+  FRAMELEAF_MANAGER_INSTALLATION: 'Library ID', FRAMELEAF_MANAGER_ORIGIN: 'How the library started',
+  FRAMELEAF_MANAGER_IMPORT_INSTALLATION: 'Restored from', FRAMELEAF_MANAGER_TOKEN_FILE: 'Manager access file',
+  FRAMELEAF_MANAGER_URL: 'Manager address', FRAMELEAF_MANAGER_ML_ENABLED: 'Machine learning at setup',
+  IMMICH_CONFIG_FILE: 'Settings file', IMMICH_MEDIA_LOCATION: 'Photos folder inside the container',
+  TZ: 'Time zone', IMMICH_LOG_LEVEL: 'How much goes in the log',
+};
+const MOUNT_WHY: Record<string, [string, ManagedChange?]> = {
+  '/data': ['Photos and videos.', { page: 'storage' }],
+  '/var/lib/postgresql': ['The database.', { page: 'storage' }],
+  '/cache': ['Downloaded models, kept between updates.'],
+  '/run/frameleaf/manager-token': ['Lets Frameleaf ask Manager for backups, updates and folder moves.'],
+  '/run/frameleaf/database-password': ['The database password file. Read-only.'],
+  '/run/frameleaf/settings.json': ['Frameleaf’s settings file.'],
+  '/run/frameleaf/studio-worker': ['Studio’s helper registration, shared between the server and machine learning.'],
+};
+
+type StackService = {
+  image?: string;
+  container_name?: string;
+  environment?: Record<string, string>;
+  volumes?: { type: string; source: string; target: string; read_only?: boolean }[];
+  ports?: { target: number; published: string; host_ip?: string }[];
+  restart?: string;
+  healthcheck?: { interval?: string };
+  depends_on?: Record<string, unknown>;
+  stop_grace_period?: string;
+  shm_size?: string;
+  command?: string[];
+  devices?: string[];
+  group_add?: string[];
+  deploy?: { resources?: { reservations?: { devices?: { driver: string }[] } } };
+};
+const bytesText = (value: string) => value.replace(/^(\d+)\s*gb$/i, '$1 GB').replace(/^(\d+)\s*mb$/i, '$1 MB');
+
+/**
+ * What Manager itself puts in one container, read from the stack it last wrote (GET container-settings `stack`),
+ * minus what the administrator added. Each value says what it is for and where it can be changed, if anywhere.
+ */
+export function managerView(service: StackService | undefined, mine: Draft, installationMounts: { target: string }[]) {
+  const ownEnv = new Set(effectiveEnvironment(mine).map(([name]) => name));
+  const ownMounts = new Set(mine.mounts.map((m) => m.target));
+  const environment: ManagedRow[] = Object.entries(service?.environment ?? {})
+    .filter(([name]) => !ownEnv.has(name))
+    .map(([name, value]) => {
+      const [why, change] = ENV_WHY[name] ?? ['Set by Manager.'];
+      return { name, label: ENV_LABEL[name] ?? catalogEntry(name)?.label ?? name, value: String(value), why, change: change ?? null, secretFile: /PASSWORD_FILE$/.test(name) };
+    });
+  const mounts: ManagedMount[] = (service?.volumes ?? [])
+    .filter((v) => !ownMounts.has(v.target))
+    .map((v) => {
+      const library = installationMounts.some((m) => m.target === v.target);
+      const [why, change] = MOUNT_WHY[v.target] ?? (library ? ['Part of your library.', { page: 'storage' } as ManagedChange] : ['Set by Manager.']);
+      return { target: v.target, source: v.type === 'volume' ? `Docker volume “${v.source}”` : v.source, readOnly: !!v.read_only, why, change: change ?? null };
+    });
+  const facts: Fact[] = [];
+  if (service?.container_name) facts.push({ label: 'Container name', value: service.container_name, why: 'The name to use with docker logs or docker exec.', change: null });
+  if (service?.image) {
+    const [name, digest] = service.image.split('@');
+    facts.push({ label: 'Image', value: digest ? `${name} @ ${digest.slice(0, 19)}…` : name, why: 'Checked against the signed release. Changes with each update.', change: { page: 'updates' } });
+  }
+  for (const port of service?.ports ?? [])
+    facts.push({ label: 'Address', value: `${port.host_ip ?? '0.0.0.0'}:${port.published} → ${port.target}`, why: 'Where the Frameleaf app answers on this server.', change: { page: 'settings' } });
+  if (service?.restart === 'unless-stopped') facts.push({ label: 'Restarts', value: 'After a crash or reboot', why: 'Unless you stop it here.', change: null });
+  if (service?.depends_on) facts.push({ label: 'Starts after', value: Object.keys(service.depends_on).map((n) => (n === 'database' ? 'the database is ready' : n)).join(', '), why: '', change: null });
+  if (service?.healthcheck?.interval) facts.push({ label: 'Health check', value: `Every ${service.healthcheck.interval.replace(/s$/, ' s')}`, why: 'Services shows Ready when it passes.', change: null });
+  if (service?.stop_grace_period) facts.push({ label: 'Time to stop', value: service.stop_grace_period.replace(/s$/, ' s'), why: 'Running work gets this long to finish when the container stops.', change: null });
+  if (service?.shm_size)
+    facts.push({
+      label: 'Shared memory',
+      value: bytesText(service.shm_size),
+      why: service.command ? 'Sized for this server’s memory.' : 'Locked files are opened in memory, never on disk.',
+      change: null,
+    });
+  if (service?.command?.length)
+    facts.push({
+      label: 'Database tuning',
+      value: service.command.filter((part) => part.includes('=')).join(' · '),
+      why: 'Manager tunes the database for this server’s memory and redoes it after every start.',
+      change: null,
+    });
+  const gpu = service?.deploy?.resources?.reservations?.devices?.length ? 'NVIDIA card' : service?.devices?.length ? service.devices.map((d) => d.split(':')[0]).join(', ') : '';
+  if (gpu) facts.push({ label: 'Graphics card', value: gpu, why: 'Found at setup so machine learning can use it.', change: null });
+  return { environment, mounts, facts };
+}

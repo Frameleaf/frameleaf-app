@@ -18,6 +18,7 @@
     hostOf,
     limitIssues,
     limitText,
+    managerView,
     mountIssue,
     nameStatus,
     suggestTarget,
@@ -27,6 +28,7 @@
     valueIssue,
     type ApiOverride,
     type ContainerId,
+    type ManagedChange,
     type Draft,
     type Purpose,
     type Suggestion,
@@ -39,7 +41,7 @@
     tab = $bindable<ContainerId>('frameleaf-server'),
     disabled = false,
     save,
-    openStorage,
+    openPage,
   } = $props<{
     api: (path: string, body?: unknown) => Promise<any>;
     installation: { ml: boolean; mounts: { source: string; target: string }[]; databasePath: string };
@@ -47,7 +49,7 @@
     tab?: ContainerId;
     disabled?: boolean;
     save: (services: Record<ContainerId, ApiOverride>) => Promise<void>;
-    openStorage: () => void;
+    openPage: (page: 'storage' | 'updates' | 'settings') => void;
   }>();
 
   const empty = (): Record<ContainerId, Draft> => ({
@@ -66,7 +68,9 @@
     dismissed = $state<ContainerId[]>([]),
     query = $state(''),
     customName = $state(''),
-    customValue = $state('');
+    customValue = $state(''),
+    stack = $state<Record<string, any> | null>(null),
+    composeOpen = $state(false);
 
   onMount(async () => {
     const answer = await api('container-settings');
@@ -74,6 +78,7 @@
       Object.fromEntries(CONTAINERS.map((c) => [c.id, fromApi(services[c.id])])) as Record<ContainerId, Draft>;
     saved = read(answer.services);
     draft = read(answer.services);
+    stack = answer.stack ?? null;
     // Settings found on the running containers that Manager didn't write: someone changed them in Docker or Unraid.
     outside = Object.fromEntries(Object.entries(answer.outside ?? {}).map(([id, o]) => [id, fromApi(o as ApiOverride)]));
     loaded = true;
@@ -96,13 +101,18 @@
   const derivedRows = $derived(effectiveEnvironment(current).filter(([name]) => !current.environment.some(([n]) => n === name)));
   const limits = $derived(limitIssues(tab, current, host));
   const found = $derived(outside[tab]);
-  const managedMounts = $derived(
-    tab === 'frameleaf-server'
-      ? installation.mounts.map((m) => [m.target, m.source, 'Photos and videos. Change on the Storage page.'])
-      : tab === 'database'
-        ? [['/var/lib/postgresql', installation.databasePath, 'The database. Change on the Storage page.']]
-        : [['/cache', 'model-cache', 'Downloaded models. Manager keeps them between updates.']],
+  // What Manager itself puts in this container, from the stack it last wrote, minus what you added.
+  const managed = $derived(
+    stack
+      ? managerView(stack[tab], saved[tab], installation.mounts)
+      : { environment: MANAGED_ENVIRONMENT[tab].map(([name, value, why]) => ({ name, label: name, value, why, change: null as ManagedChange })), mounts: [], facts: [] },
   );
+  const PAGE_NAMES = { storage: 'Storage', updates: 'Updates', settings: 'Manager settings' } as const;
+  function change(target: ManagedChange, value: string) {
+    if (!target) return;
+    if ('page' in target) return openPage(target.page);
+    if (!current.environment.some(([n]) => n === target.override)) setEnv([...current.environment, [target.override, value]]);
+  }
   const count = (id: ContainerId) => effectiveEnvironment(draft[id]).length + draft[id].mounts.length + (draft[id].memory ? 1 : 0) + (draft[id].cpus ? 1 : 0);
   const shownWith = (s: Suggestion) => `${s.shown}${catalogEntry(s.name)?.suffix ? ` ${catalogEntry(s.name)!.suffix}` : ''}`;
   const shownValue = (name: string, value: string) => {
@@ -192,6 +202,25 @@
 
     {#if tab === 'frameleaf-machine-learning' && !installation.ml}
       <div class="notice"><Icon name="info" /><div><strong>Machine learning is off</strong><p>Settings here are kept and used when it’s turned on.</p></div></div>
+    {/if}
+
+    {#if managed.facts.length}
+      <section class="card" aria-labelledby="cs-run-title">
+        <div class="card-header spread">
+          <div><h2 id="cs-run-title">How Manager runs it</h2><p class="meta">Set up by Manager for {label}. Shown so you know what’s already there before adding anything.</p></div>
+          <button class="button quiet" onclick={() => (composeOpen = true)}><Icon name="document" />View in compose.json</button>
+        </div>
+        <div class="cs-facts">
+          {#each managed.facts as fact (fact.label)}
+            <div class="cs-fact">
+              <span class="cs-fact-label">{fact.label}</span>
+              <span class="cs-fact-value">{fact.value}</span>
+              {#if fact.why}<small>{fact.why}</small>{/if}
+              {#if fact.change && 'page' in fact.change}<button class="text-button cs-link" onclick={() => change(fact.change, '')}>Change on {PAGE_NAMES[fact.change.page]}</button>{/if}
+            </div>
+          {/each}
+        </div>
+      </section>
     {/if}
 
     {#if open.length}
@@ -286,10 +315,28 @@
         {/each}
         <div class="card-body cs-add"><button class="button quiet" {disabled} onclick={() => (adding = true)}><Icon name="plus" />Add a setting…</button></div>
       {/if}
-      {#if MANAGED_ENVIRONMENT[tab].length}
-        <details class="disclosure">
-          <summary><Icon name="lock" />{MANAGED_ENVIRONMENT[tab].length} set by Manager</summary>
-          <dl class="cs-locked">{#each MANAGED_ENVIRONMENT[tab] as [name, value, why] (name)}<dt><code>{name}</code></dt><dd>{value}{#if why}<small>{why}</small>{/if}</dd>{/each}</dl>
+      {#if managed.environment.length}
+        <details class="cs-managed" open>
+          <summary><Icon name="lock" />Set by Manager · {managed.environment.length}<Icon name="chevron-down" /></summary>
+          {#each managed.environment as row (row.name)}
+            <div class="cs-row cs-locked-row">
+              <div class="cs-name">
+                <strong>{row.label}</strong>
+                <code>{row.name}</code>
+                <p>{row.why}</p>
+              </div>
+              <div class="cs-value"><code class="cs-locked-value">{row.value || '—'}</code></div>
+              <div class="cs-locked-action">
+                {#if row.change && 'override' in row.change}
+                  <button class="button quiet small" onclick={() => change(row.change, row.value)}>Change</button>
+                {:else if row.change && 'page' in row.change}
+                  <button class="button quiet small" onclick={() => change(row.change, '')}>{PAGE_NAMES[row.change.page]}</button>
+                {:else}
+                  <span class="cs-lock" title="Manager needs this to keep the stack working"><Icon name="lock" /></span>
+                {/if}
+              </div>
+            </div>
+          {/each}
         </details>
       {/if}
     </section>
@@ -319,11 +366,28 @@
         <div class="card-body"><p class="meta">No extra folders.</p></div>
       {/each}
       <div class="card-body cs-add"><button class="button quiet" {disabled} onclick={() => (picking = true)}><Icon name="folder" />Add a folder…</button></div>
-      <details class="disclosure">
-        <summary><Icon name="lock" />{managedMounts.length} set by Manager</summary>
-        <dl class="cs-locked">{#each managedMounts as [target, source, why] (target)}<dt><code>{target}</code></dt><dd>{source}<small>{why}</small></dd>{/each}</dl>
-        {#if tab !== 'frameleaf-machine-learning'}<button class="text-button cs-link" onclick={openStorage}>Open Storage</button>{/if}
-      </details>
+{#if managed.mounts.length}
+        <details class="cs-managed" open>
+          <summary><Icon name="lock" />Set by Manager · {managed.mounts.length}<Icon name="chevron-down" /></summary>
+          {#each managed.mounts as m (m.target)}
+            <div class="cs-row cs-locked-row">
+              <div class="cs-name">
+                <strong class="cs-path"><Icon name="folder" />{m.source}</strong>
+                <p>Inside: <code>{m.target}</code>{m.readOnly ? ' · read-only' : ''}</p>
+                <p>{m.why}</p>
+              </div>
+              <div class="cs-value"></div>
+              <div class="cs-locked-action">
+                {#if m.change && 'page' in m.change}
+                  <button class="button quiet small" onclick={() => change(m.change, '')}>{PAGE_NAMES[m.change.page]}</button>
+                {:else}
+                  <span class="cs-lock" title="Manager needs this to keep the stack working"><Icon name="lock" /></span>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </details>
+      {/if}
     </section>
 
     <section class="card" aria-labelledby="cs-limits-title">
@@ -409,6 +473,21 @@
   />
 {/if}
 
+{#if composeOpen}
+  <dialog use:modal class="cs-dialog wide" aria-labelledby="cs-compose-title" oncancel={(e) => { e.preventDefault(); composeOpen = false; }}>
+    <div class="modal-body">
+      <h2 id="cs-compose-title">{label} in compose.json</h2>
+      <button class="button quiet modal-close" aria-label="Close" onclick={() => (composeOpen = false)}><Icon name="close" /></button>
+      <p>Exactly what Manager wrote for this container, your settings included. Passwords are files, never values. Edits made to this file outside Manager are replaced on the next update.</p>
+      <pre class="log cs-compose">{JSON.stringify(stack?.[tab] ?? {}, null, 2)}</pre>
+    </div>
+    <div class="modal-footer">
+      <button class="button quiet" onclick={() => navigator.clipboard?.writeText(JSON.stringify(stack?.[tab] ?? {}, null, 2))}>Copy</button>
+      <button class="button primary" onclick={() => (composeOpen = false)}>Done</button>
+    </div>
+  </dialog>
+{/if}
+
 {#if reviewing}
   <dialog use:modal aria-labelledby="cs-review-title" oncancel={(e) => { e.preventDefault(); reviewing = false; }}>
     <div class="modal-body">
@@ -475,12 +554,32 @@
   .cs-folder .check-row input { margin: 0; }
   .disclosure summary { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); }
   .disclosure summary :global(svg) { width: 15px; height: 15px; }
-  .cs-locked { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: 0 16px; margin-top: 10px; }
-  .cs-locked dt, .cs-locked dd { padding: 10px 0; border-top: 1px solid var(--border); margin: 0; overflow-wrap: anywhere; }
-  .cs-locked dd { color: var(--text); }
-  .cs-locked small { display: block; margin-top: 3px; color: var(--muted); }
   .cs-link { margin-top: 8px; color: var(--accent); }
   .cs-limits { max-width: 480px; }
+  .cs-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; padding: 0 20px 8px; }
+  .cs-fact { display: grid; gap: 2px; align-content: start; padding: 12px 0; border-top: 1px solid var(--border); font-size: 14px; min-width: 0; }
+  .cs-fact-label { font-size: 12px; color: var(--muted); }
+  .cs-fact-value { overflow-wrap: anywhere; }
+  .cs-fact small { color: var(--muted); font-size: 12px; }
+  .cs-fact .cs-link { justify-self: start; margin-top: 2px; font-size: 12px; }
+  .card-header .button :global(svg) { width: 15px; height: 15px; }
+  .card-header .button { display: inline-flex; align-items: center; gap: 8px; }
+  .cs-managed { border-top: 1px solid var(--border); }
+  .cs-managed > summary { display: flex; gap: 8px; align-items: center; padding: 14px 20px; color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer; list-style: none; background: color-mix(in srgb, var(--raised) 35%, var(--panel)); }
+  .cs-managed > summary::-webkit-details-marker { display: none; }
+  .cs-managed > summary :global(svg) { width: 15px; height: 15px; }
+  .cs-managed > summary :global(svg:last-child) { margin-left: auto; transition: transform 150ms; }
+  .cs-managed[open] > summary :global(svg:last-child) { transform: rotate(180deg); }
+  .cs-locked-row { grid-template-columns: minmax(0, 1fr) minmax(180px, 260px) 96px; padding: 10px 20px; background: color-mix(in srgb, var(--raised) 35%, var(--panel)); }
+  .cs-locked-row .cs-name { gap: 1px; }
+  .cs-locked-row .cs-name > p { font-size: 12px; }
+  .cs-locked-row .cs-value { align-self: center; }
+  .cs-locked-row .cs-name > strong { color: var(--muted); }
+  .cs-locked-value { font-size: 13px; color: var(--text) !important; overflow-wrap: anywhere; }
+  .cs-locked-action { display: grid; justify-items: end; }
+  .cs-lock { display: grid; place-items: center; width: 40px; height: 32px; color: var(--muted); }
+  .cs-lock :global(svg) { width: 15px; height: 15px; }
+  .cs-compose { max-height: 50dvh; margin-top: 16px; border-radius: 9px; font-size: 12px; }
   .cs-warnings { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 8px; color: var(--amber); font-size: 13px; }
   .cs-warnings li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; }
   .cs-warnings :global(svg) { width: 16px; height: 16px; }
@@ -517,11 +616,12 @@
   .cs-review li[data-kind='add'] :global(svg) { color: var(--accent); }
   .cs-review li[data-kind='remove'] :global(svg) { color: var(--red); }
   @media (max-width: 720px) {
+    .cs-facts { grid-template-columns: 1fr; padding: 0 16px 8px; }
+    .cs-locked-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .cs-locked-action { justify-items: start; }
     .cs-row { grid-template-columns: minmax(0, 1fr) 40px; padding: 16px; }
     .cs-value { grid-column: 1; grid-row: 2; }
     .cs-custom { grid-template-columns: 1fr; }
     .cs-custom > span { display: none; }
-    .cs-locked { grid-template-columns: 1fr; }
-    .cs-locked dd { border-top: 0; padding-top: 0; }
   }
 </style>
