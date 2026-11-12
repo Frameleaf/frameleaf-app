@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { UpgradeCheckSummarySchema } from 'src/dtos/upgrade-check.dto.js';
 import { QueueNameSchema } from 'src/enum.js';
 
 /**
@@ -162,6 +163,9 @@ const AttentionResponseSchema = z
     ),
     processingFailures: AttentionProcessingFailuresSchema.describe(
       'FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check.',
+    ),
+    upgradeCheck: UpgradeCheckSummarySchema.describe(
+      'FL-954: how the library check after the last upgrade came out. A field of its own: it adds no item and changes no check.',
     ),
   })
   .meta({ id: 'AttentionResponseDto' });
