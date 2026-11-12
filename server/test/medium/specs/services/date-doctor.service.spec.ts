@@ -616,10 +616,10 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     console.log(`FL-930: applied to ${batch.count} photos in ${elapsed} ms`);
     expect(batch.count).toBe(1000);
     expect(elapsed).toBeLessThan(5000);
-    expect(jobs.queueAllInTransaction).toHaveBeenCalledWith(
-      expect.anything(),
-      ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
-    );
+    // UPDATE ... RETURNING gives no row order, so the sidecar jobs can come back in any order
+    const [, queued] = jobs.queueAllInTransaction.mock.calls[0];
+    expect(queued).toHaveLength(1000);
+    expect(queued).toEqual(expect.arrayContaining(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } }))));
   }, 120_000);
 
   it('removes batches older than 30 days each night', async () => {
