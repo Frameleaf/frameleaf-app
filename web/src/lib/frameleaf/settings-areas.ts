@@ -121,13 +121,16 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     // files (prototype `care/files.jsx`) is every account's own list, opened from Things to fix and File checks.
     // FL-862: Couldn't process, every account's own list, opened from Things to fix and the landing page.
     // FL-943: the Date & Time Doctor, every account's own photos, opened from Things to fix.
-    personal: ['repair', 'files', 'couldnt-process', 'dates', 'location-scan'],
+    // FL-1470: Tidy up, every account's own photos, opened from the landing; its review page stays out of the navigation.
+    personal: ['repair', 'files', 'couldnt-process', 'dates', 'tidy-up', 'tidy-up-review', 'location-scan'],
     order: [
       'integrity-checks',
       'repair',
       'files',
       'couldnt-process',
       'dates',
+      'tidy-up',
+      'tidy-up-review',
       'duplicates',
       'enrichment-care',
       'unused-files',
@@ -275,7 +278,7 @@ export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area
  */
 export const NAV_HIDDEN_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({
   processing: ['hardware'],
-  care: ['location-scan', 'couldnt-process', 'dates'],
+  care: ['location-scan', 'couldnt-process', 'dates', 'tidy-up-review'],
 });
 
 /**
@@ -331,6 +334,8 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   files: 'frameleaf_page_files_description',
   'couldnt-process': 'frameleaf_page_couldnt_process_description',
   dates: 'frameleaf_page_date_doctor_description',
+  'tidy-up': 'frameleaf_page_tidy_up_description',
+  'tidy-up-review': 'frameleaf_page_tidy_up_review_description',
   'enrichment-care': 'frameleaf_page_enrichment_description',
   duplicates: 'frameleaf_page_duplicates_description',
   'unused-files': 'frameleaf_page_unused_files_description',
@@ -751,6 +756,8 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     files: 'repairs',
     'couldnt-process': 'repairs',
     dates: 'repairs',
+    'tidy-up': 'repairs',
+    'tidy-up-review': 'repairs',
     duplicates: 'identical_files',
     deduplication: 'identical_files',
     'unused-files': 'identical_files',

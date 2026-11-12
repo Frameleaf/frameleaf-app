@@ -1,5 +1,6 @@
 import {
   mdiArchiveLockOutline,
+  mdiBroom,
   mdiCalendarClock,
   mdiCloudOutline,
   mdiDeleteOutline,
@@ -105,6 +106,19 @@ export const personalSections = (
     title: $t('frameleaf_date_doctor_title'),
     subtitle: $t('frameleaf_cc_section_date_doctor_description'),
     icon: mdiCalendarClock,
+  },
+  // FL-1470: Library care → Tidy up and its review, for every account's own photos.
+  {
+    key: 'tidy-up',
+    title: $t('frameleaf_tidy_title'),
+    subtitle: $t('frameleaf_cc_section_tidy_up_description'),
+    icon: mdiBroom,
+  },
+  {
+    key: 'tidy-up-review',
+    title: $t('frameleaf_tidy_review_title'),
+    subtitle: $t('frameleaf_cc_section_tidy_up_review_description'),
+    icon: mdiBroom,
   },
   // Library care → Identify photo locations, for every account (its own library).
   {
