@@ -59,7 +59,10 @@ describe('arrivals first', () => {
     const second = await createRun('phone');
     await store.enqueue([intent('upload-2', second)]);
 
-    expect(await claimAll()).toEqual(['upload-1', 'upload-2', 'backlog-1', 'backlog-2', 'backlog-3']);
+    const order = await claimAll();
+    // Arrivals first, in the order they came; the backlog was queued in one transaction, so its own order is a tie.
+    expect(order.slice(0, 2)).toEqual(['upload-1', 'upload-2']);
+    expect(order.slice(2).toSorted()).toEqual(['backlog-1', 'backlog-2', 'backlog-3']);
   });
 
   it('keeps a requested delay for arrival work', async () => {
