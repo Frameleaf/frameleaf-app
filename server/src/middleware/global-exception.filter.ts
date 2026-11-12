@@ -39,7 +39,10 @@ export class GlobalExceptionFilter implements ExceptionFilter<Error> {
       .header({
         [RequestHeader.CorrelationId]: this.cls.getId(),
         'Content-Type': 'application/json',
-        ...(status === 429 && 'retryAfter' in body && typeof body.retryAfter === 'number' && body.retryAfter > 0
+        ...((status === 429 || status === 503) &&
+        'retryAfter' in body &&
+        typeof body.retryAfter === 'number' &&
+        body.retryAfter > 0
           ? { 'Retry-After': String(body.retryAfter) }
           : {}),
         'Cache-Control':

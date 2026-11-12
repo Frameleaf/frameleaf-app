@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { parseCookie as parse } from 'cookie';
@@ -59,9 +60,15 @@ import {
   RequestQuery,
   SystemMetadataKey,
 } from 'src/enum.js';
+import {
+  COUNTERS_UNAVAILABLE_RETRY_AFTER,
+  oauthGrantCheck,
+  rateLimitedException,
+} from 'src/middleware/rate-limit.guard.js';
 import { toAccountEventVia, toIpPrefix } from 'src/repositories/account-event.repository.js';
 import { OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { PasskeyRepository } from 'src/repositories/passkey.repository.js';
+import { type RateLimitHit, RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
@@ -185,6 +192,8 @@ export type ValidateRequest = {
     via?: FrameleafVia | null;
     /** FL-161: signing out, which any valid session may do through remote access. */
     remoteSignInExempt?: boolean;
+    /** FL-1421: a thumbnail or preview route, which a connected app's grant counts on its higher media ceiling. */
+    media?: boolean;
   };
 };
 
@@ -288,6 +297,10 @@ export class AuthService extends BaseService {
   /** FL-803: connected apps' access tokens (`Authorization: Bearer fla_…`). */
   @Inject(OAuthAppService)
   private oauthApps!: OAuthAppService;
+
+  /** FL-1421: the per-grant request counters of connected apps. */
+  @Inject(RateLimitRepository)
+  private rateLimits!: RateLimitRepository;
 
   /**
    * `trustToken` is the browser's "Trust this browser" cookie (FL-793). For an account with two-step
@@ -1139,6 +1152,9 @@ export class AuthService extends BaseService {
     const authDto = isOAuthAccessToken(appToken)
       ? await this.oauthApps.validateAccessToken(appToken, metadata.via)
       : await this.validate({ headers, queryParams }, metadata.refreshElevation !== false);
+    if (authDto.oauthApp) {
+      await this.countAppRequest(authDto.oauthApp.grantId, metadata);
+    }
     const { adminRoute, sharedLinkRoute, uri } = metadata;
     const requestedPermission = metadata.permission ?? Permission.All;
 
@@ -1187,6 +1203,40 @@ export class AuthService extends BaseService {
     }
 
     return this.applyHiddenContent(authDto);
+  }
+
+  /**
+   * FL-1421: every request a connected app's token authenticates counts for its grant, from any address,
+   * at home and away, whether or not the request is then allowed. A session or API key of the same person
+   * has no such counter. Going over answers 429 with `Retry-After`. When the counters cannot be reached, a
+   * remote request is refused (503) and a request from the home network is let through with a warning, as
+   * `RateLimitGuard` does.
+   */
+  private async countAppRequest(grantId: string, { via, media }: ValidateRequest['metadata']): Promise<void> {
+    const check = oauthGrantCheck(grantId, media === true);
+    let hit: RateLimitHit;
+    try {
+      hit = await this.rateLimits.hit(check.key, check.windowSeconds);
+    } catch (error) {
+      if (isRemoteVia(via)) {
+        this.logger.error(
+          `Rate limit counters are unavailable; a connected app's remote request was refused: ${error}`,
+        );
+        throw new ServiceUnavailableException({
+          message: 'This server is busy. Try again in a moment.',
+          error: 'Service Unavailable',
+          statusCode: 503,
+          retryAfter: COUNTERS_UNAVAILABLE_RETRY_AFTER,
+        });
+      }
+      this.logger.warn(
+        `Rate limit counters are unavailable; a connected app's request from home was allowed: ${error}`,
+      );
+      return;
+    }
+    if (hit.count > check.limit) {
+      throw rateLimitedException(hit.resetSeconds);
+    }
   }
 
   async authenticateMcp(headers: IncomingHttpHeaders, resource: string, via: FrameleafVia | null) {

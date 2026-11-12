@@ -204,6 +204,7 @@ export class AuthGuard implements CanActivate {
         refreshElevation,
         via,
         remoteSignInExempt,
+        media: this.reflector.get<boolean | undefined>(MetadataKey.RemoteMediaCeiling, context.getHandler()) === true,
       },
     });
 

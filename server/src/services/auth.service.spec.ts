@@ -8,6 +8,11 @@ import { UserAdmin } from 'src/database.js';
 import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
 import { AdminAuditAction, AuthCookie, AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { ImportedPassword } from 'src/library-import/passwords.js';
+import {
+  COUNTERS_UNAVAILABLE_RETRY_AFTER,
+  OAUTH_GRANT_CEILING,
+  OAUTH_GRANT_MEDIA_CEILING,
+} from 'src/middleware/rate-limit.guard.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { AuthService, emailVerificationProblem, loginEventDetails } from 'src/services/auth.service.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
@@ -1484,6 +1489,134 @@ describe(AuthService.name, () => {
       useApp(appAuth([Permission.AssetRead]));
       const auth = await request({ permission: Permission.AssetRead });
       expect(auth.session).toBeUndefined();
+    });
+
+    describe('per-app request limit (FL-1421)', () => {
+      /** Counts like the PostgreSQL counters do, in memory. */
+      const useCounters = () => {
+        const counts = new Map<string, number>();
+        const hit = vi.fn((key: string, windowSeconds: number) => {
+          const count = (counts.get(key) ?? 0) + 1;
+          counts.set(key, count);
+          return Promise.resolve({ count, resetSeconds: windowSeconds - 18 });
+        });
+        Object.assign(sut, { rateLimits: { hit } });
+        return { counts, hit };
+      };
+      const grantKey = (auth: AuthDto) => `frameleaf:rate-limit:oauth-grant:grant:${auth.oauthApp!.grantId}`;
+      const read = { permission: Permission.AssetRead };
+
+      it('counts every request an app token makes for its grant, also one it is then refused', async () => {
+        const auth = appAuth([Permission.AssetRead]);
+        useApp(auth);
+        const { counts, hit } = useCounters();
+
+        await expect(request(read)).resolves.toMatchObject({ oauthApp: { grantId: auth.oauthApp!.grantId } });
+        await expect(request({ permission: Permission.AssetDownload })).rejects.toBeInstanceOf(ForbiddenException);
+        await expect(request({ adminRoute: true, ...read })).rejects.toBeInstanceOf(ForbiddenException);
+
+        expect(hit).toHaveBeenCalledWith(grantKey(auth), OAUTH_GRANT_CEILING.windowSeconds);
+        expect([...counts]).toEqual([[grantKey(auth), 3]]);
+      });
+
+      it('answers 429 with the seconds to wait once a grant is over its limit, from any address', async () => {
+        const auth = appAuth([Permission.AssetRead]);
+        useApp(auth);
+        const { counts } = useCounters();
+        counts.set(grantKey(auth), OAUTH_GRANT_CEILING.limit - 2);
+
+        // one grant shares one counter wherever its requests come from
+        await expect(request({ ...read, via: 'lan' })).resolves.toBeDefined();
+        // away from home this unlinked account is refused (403) by the sign-in rule; the request still counts
+        await expect(request({ ...read, via: 'relay' })).rejects.toMatchObject({ status: 403 });
+        const refused = request({ ...read, via: 'wan' });
+        await expect(refused).rejects.toMatchObject({
+          status: 429,
+          response: { code: 'rate_limited', retryAfter: OAUTH_GRANT_CEILING.windowSeconds - 18 },
+        });
+        await expect(request({ ...read, via: 'lan' })).rejects.toMatchObject({ status: 429 });
+      });
+
+      it('keeps one counter for a grant when its token rotates, and a separate one for each grant', async () => {
+        const first = appAuth([Permission.AssetRead]);
+        const second = appAuth([Permission.AssetRead]);
+        // both apps act for the same person
+        second.user = first.user;
+        const validateAccessToken = vi.fn((token: string) => Promise.resolve(token === 'fla_second' ? second : first));
+        Object.assign(sut, { oauthApps: { validateAccessToken } });
+        const { counts } = useCounters();
+        const call = (token: string) =>
+          sut.authenticate({
+            headers: { authorization: `Bearer ${token}` },
+            queryParams: {},
+            metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test', ...read },
+          });
+        counts.set(grantKey(first), OAUTH_GRANT_CEILING.limit - 1);
+
+        await expect(call('fla_first')).resolves.toBeDefined();
+        // the first grant's refreshed token is still the first grant
+        await expect(call('fla_first_after_refresh')).rejects.toMatchObject({ status: 429 });
+        // the other app, same person, same address, is not held back
+        await expect(call('fla_second')).resolves.toMatchObject({ oauthApp: { grantId: second.oauthApp!.grantId } });
+        expect(counts.get(grantKey(second))).toBe(1);
+      });
+
+      it('never counts or holds back the same person’s own session', async () => {
+        const auth = appAuth([Permission.AssetRead]);
+        useApp(auth);
+        const { counts, hit } = useCounters();
+        counts.set(grantKey(auth), OAUTH_GRANT_CEILING.limit);
+        await expect(request(read)).rejects.toMatchObject({ status: 429 });
+        hit.mockClear();
+
+        const session = SessionFactory.create();
+        mocks.session.getByToken.mockResolvedValue({
+          id: session.id,
+          updatedAt: new Date(),
+          user: auth.user,
+          isPendingSyncReset: false,
+          pinExpiresAt: null,
+          appVersion: null,
+          oauthSid: null,
+        } as never);
+
+        await expect(
+          sut.authenticate({
+            headers: { cookie: 'immich_access_token=auth_token' },
+            queryParams: {},
+            metadata: { adminRoute: false, sharedLinkRoute: false, uri: 'test', ...read },
+          }),
+        ).resolves.toMatchObject({ user: { id: auth.user.id }, session: { id: session.id } });
+        expect(hit).not.toHaveBeenCalled();
+      });
+
+      it('counts thumbnails and previews on the higher media limit, apart from other requests', async () => {
+        const auth = appAuth([Permission.AssetRead]);
+        useApp(auth);
+        const { counts, hit } = useCounters();
+        const mediaKey = `frameleaf:rate-limit:oauth-grant-media:grant:${auth.oauthApp!.grantId}`;
+        counts.set(grantKey(auth), OAUTH_GRANT_CEILING.limit);
+
+        await expect(request({ ...read, media: true })).resolves.toBeDefined();
+        expect(hit).toHaveBeenLastCalledWith(mediaKey, OAUTH_GRANT_MEDIA_CEILING.windowSeconds);
+
+        counts.set(mediaKey, OAUTH_GRANT_MEDIA_CEILING.limit);
+        await expect(request({ ...read, media: true })).rejects.toMatchObject({ status: 429 });
+      });
+
+      it('refuses a remote request and lets a home request through when the counters are unavailable', async () => {
+        useApp(appAuth([Permission.AssetRead]));
+        Object.assign(sut, { rateLimits: { hit: vi.fn().mockRejectedValue(new Error('database unavailable')) } });
+
+        await expect(request({ ...read, via: 'lan' })).resolves.toBeDefined();
+        await expect(request(read)).resolves.toBeDefined();
+        for (const via of ['relay', 'wan']) {
+          await expect(request({ ...read, via })).rejects.toMatchObject({
+            status: 503,
+            response: { retryAfter: COUNTERS_UNAVAILABLE_RETRY_AFTER },
+          });
+        }
+      });
     });
 
     it('leaves other Bearer tokens to the session check', async () => {

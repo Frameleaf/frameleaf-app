@@ -85,6 +85,7 @@ import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-tras
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
+import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
@@ -706,6 +707,10 @@ export const newTestService = <T extends BaseService>(
     }
     if (type === OAuthAppRepository) {
       Object.assign(sut, { [key]: mocks.oauthApp });
+    }
+    // FL-1421: counters that never refuse; a spec that tests a limit assigns its own
+    if (type === RateLimitRepository) {
+      Object.assign(sut, { [key]: { hit: vitest.fn().mockResolvedValue({ count: 1, resetSeconds: 60 }) } });
     }
   }
 

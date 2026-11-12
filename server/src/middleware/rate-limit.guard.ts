@@ -50,6 +50,12 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  *   the home network gives each visitor their own counter. Behind a proxy on another address (for
  *   example a Tailscale `100.64.0.0/10` address), set `FRAMELEAF_TRUSTED_PROXIES`.
  *
+ * - FL-1421: a connected app is also limited by who it is, whatever address it calls from. Every request
+ *   its access token authenticates counts toward `OAUTH_GRANT_CEILING` for that grant (thumbnails and
+ *   previews toward the higher `OAUTH_GRANT_MEDIA_CEILING`), at home and away; `AuthService.authenticate`
+ *   counts it, because the grant is known only once the token has been checked. The token and revocation
+ *   endpoints count per `client_id` as well as per address.
+ *
  * Going over answers 429 with `Retry-After` (seconds until the window ends) and the error code
  * `rate_limited`. If the counters cannot be reached, remote-access requests are refused (503) and
  * requests from the home network are let through with a warning, so a counter-service outage never locks
@@ -59,7 +65,7 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  * of times from one address); the remote-access ceiling always is.
  */
 
-export type RateLimitPrincipal = 'email' | 'shared-link' | 'credential' | 'two-factor-token';
+export type RateLimitPrincipal = 'email' | 'shared-link' | 'credential' | 'two-factor-token' | 'oauth-client';
 
 export type RateLimitRule = {
   /** Name of the counter; routes with the same bucket share it. */
@@ -185,11 +191,17 @@ export const RATE_LIMITS = Object.freeze({
     limit: 60,
     windowSeconds: 10 * MINUTE,
   },
-  /** FL-803: connected apps' token and revocation endpoints; apps refresh about once an hour. */
+  /**
+   * FL-803: connected apps' token and revocation endpoints; apps refresh about once an hour. FL-1421: also
+   * 60 per app (`client_id`) from every address together, so an app spread over many addresses is still
+   * one app.
+   */
   oauthAppToken: {
     bucket: 'oauth-app-token',
     limit: 120,
     windowSeconds: 10 * MINUTE,
+    principal: 'oauth-client',
+    principalLimit: 60,
   },
   /** FL-803: apps registering themselves (RFC 7591), which also caps how many can pile up. */
   oauthAppRegister: {
@@ -231,6 +243,17 @@ export const RATE_LIMITS = Object.freeze({
 export const REMOTE_ACCESS_CEILING = Object.freeze({ bucket: 'remote-access', limit: 1200, windowSeconds: MINUTE });
 /** Thumbnails and previews arriving through remote access, per client address (shared links included). */
 export const REMOTE_MEDIA_CEILING = Object.freeze({ bucket: 'remote-media', limit: 6000, windowSeconds: MINUTE });
+/**
+ * FL-1421: every request one connected app's grant makes with its access token, from any address, at home
+ * or away. Ten a second leaves a polling integration (Home Assistant asks a few times a minute) far below it.
+ */
+export const OAUTH_GRANT_CEILING = Object.freeze({ bucket: 'oauth-grant', limit: 600, windowSeconds: MINUTE });
+/** FL-1421: thumbnails and previews one grant asks for; a grid of them is a few hundred requests at once. */
+export const OAUTH_GRANT_MEDIA_CEILING = Object.freeze({
+  bucket: 'oauth-grant-media',
+  limit: 3000,
+  windowSeconds: MINUTE,
+});
 
 export const RATE_LIMIT_KEY_PREFIX = 'frameleaf:rate-limit';
 
@@ -340,6 +363,11 @@ export const rateLimitPrincipal = (request: Request, principal: RateLimitPrincip
       const token = text((request.body as Record<string, unknown> | undefined)?.twoFactorToken);
       return token ? `two-factor:${token}` : undefined;
     }
+    case 'oauth-client': {
+      // the token and revocation endpoints name the app in the form body (RFC 6749 §3.2.1, RFC 7009 §2.1)
+      const clientId = text((request.body as Record<string, unknown> | undefined)?.client_id);
+      return clientId ? `oauth-client:${clientId.trim().toLowerCase()}` : undefined;
+    }
   }
 };
 
@@ -401,11 +429,25 @@ export interface RateLimitedRequest extends FrameleafRequest {
   frameleafRateLimitFailures?: RateLimitCheck[];
 }
 
+/**
+ * FL-1421: the counter of one connected app's grant. The grant id is the key as it is: it is not a
+ * credential, and it stays the same when the app's tokens rotate, so a refresh never starts a new count.
+ */
+export const oauthGrantCheck = (grantId: string, media: boolean): RateLimitCheck => {
+  const ceiling = media ? OAUTH_GRANT_MEDIA_CEILING : OAUTH_GRANT_CEILING;
+  return {
+    key: `${RATE_LIMIT_KEY_PREFIX}:${ceiling.bucket}:grant:${grantId}`,
+    limit: ceiling.limit,
+    windowSeconds: ceiling.windowSeconds,
+    counts: 'requests',
+  };
+};
+
 export const RATE_LIMITED_MESSAGE = 'Too many requests. Try again later.';
 
-const tooManyRequests = (response: Response, resetSeconds: number) => {
-  response.setHeader('Retry-After', String(resetSeconds));
-  return new HttpException(
+/** The 429 every limit answers with; `GlobalExceptionFilter` sends its `retryAfter` as `Retry-After`. */
+export const rateLimitedException = (resetSeconds: number) =>
+  new HttpException(
     {
       message: RATE_LIMITED_MESSAGE,
       error: 'Too Many Requests',
@@ -415,6 +457,10 @@ const tooManyRequests = (response: Response, resetSeconds: number) => {
     },
     HttpStatus.TOO_MANY_REQUESTS,
   );
+
+const tooManyRequests = (response: Response, resetSeconds: number) => {
+  response.setHeader('Retry-After', String(resetSeconds));
+  return rateLimitedException(resetSeconds);
 };
 
 /** Registered before `AuthGuard`, so failed sign-ins and bad credentials count too. */
