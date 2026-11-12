@@ -1384,6 +1384,29 @@ export class SqlQueueStore {
   }
 
   /**
+   * FL-1486 Stop trying, for failed jobs of any run: their processing steps are dismissed on the photos they worked on,
+   * as `stopRunFailures` does for one run. Returns how many photos were stopped.
+   */
+  async stopFailedJobs(jobIds: string[], lastError: 'unsupported' | 'unreadable') {
+    const {
+      rows: [stopped],
+    } = await sql<{ photos: number }>`with picked as (
+        select distinct j."rootItemKey" root, a.id "assetId", j.name step from job j join asset a
+          on a.id = case when pg_input_is_valid(j.data->>'id', 'uuid') then (j.data->>'id')::uuid end
+        where j.id = any(${jobIds}::uuid[]) and j.state in ('failed','needs_attention')
+          and j.name = any(${[...processingFailureSteps]}::text[])
+      ), written as (
+        insert into asset_processing_failure as f ("assetId", step, attempts, "lastError", "lastFailedAt", "dismissedAt")
+        select distinct "assetId", step, 1, ${lastError}::text, clock_timestamp(), clock_timestamp() from picked
+        on conflict ("assetId", step) do update set "dismissedAt" = coalesce(f."dismissedAt", excluded."dismissedAt")
+        returning 1
+      ) select (select count(distinct coalesce(root, "assetId"::text)) from picked)::int photos,
+        (select count(*) from written) "written"`.execute(this.db);
+    this.forgetRunReads();
+    return stopped.photos;
+  }
+
+  /**
    * The job of this name already running on one item or, with none running, the newest one still
    * waiting to run on it (FL-1249: Run on one item counts a running job as started).
    */
@@ -1399,7 +1422,8 @@ export class SqlQueueStore {
    * work set aside, and jobs blocked only because their file was set aside, go back with their failure records
    * re-armed (`rearmProcessingFailures`), so a file type that opens since an update is read again.
    */
-  async retryFailed(queue: string, jobId?: string) {
+  async retryFailed(queue: string, jobId?: string | string[]) {
+    const only = jobId === undefined ? undefined : [jobId].flat();
     let total = 0;
     for (;;) {
       const count = await this.db.transaction().execute(async (tx) => {
@@ -1411,7 +1435,7 @@ export class SqlQueueStore {
               from job j where queue = ${queue} and "safeToRetry"
                 and (state = 'failed' or (state = 'blocked' and ${queuedProcessingIsSetAside}
                   and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))))
-                ${jobId ? sql`and id = ${jobId}::uuid` : sql``}) candidates
+                ${only ? sql`and id = any(${only}::uuid[])` : sql``}) candidates
             where ordinal = 1 and (candidates."dedupKey" is null or not exists (
               select 1 from job d where d.queue = ${queue} and d."dedupKey" = candidates."dedupKey"
                 and d.state in ('pending','waiting','active'))) limit 1000

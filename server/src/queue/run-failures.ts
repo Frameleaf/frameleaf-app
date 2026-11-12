@@ -83,15 +83,23 @@ export async function reviewRunFailures(
   };
 }
 
-const visibleSamples = (db: Kysely<DB>, ids: string[], privacy: RunFailurePrivacy): Promise<RunFailureSample[]> =>
+/** The photos of `ids` the reader may see: not in Trash, not someone else's Locked media, nothing their settings hide. */
+const visibleAssets = (db: Kysely<DB>, ids: string[], privacy: RunFailurePrivacy) =>
   db
     .selectFrom('asset')
-    .innerJoin('user', 'user.id', 'asset.ownerId')
-    .select(['asset.id as assetId', 'asset.originalFileName as fileName', 'asset.ownerId', 'user.name as ownerName'])
     .where('asset.id', '=', anyUuid(ids))
     .where('asset.deletedAt', 'is', null)
     .where((eb) => lockedOwnerScope(eb, privacy.lockedOwnerId))
-    .$call((qb) => withHiddenContentFilter(qb, privacy))
+    .$call((qb) => withHiddenContentFilter(qb, privacy));
+
+/** FL-1486: which of these photos may speak for a problem (their job's message is shown). */
+export const visibleAssetIds = async (db: Kysely<DB>, ids: string[], privacy: RunFailurePrivacy) =>
+  new Set((await visibleAssets(db, ids, privacy).select('asset.id').execute()).map(({ id }) => id));
+
+const visibleSamples = (db: Kysely<DB>, ids: string[], privacy: RunFailurePrivacy): Promise<RunFailureSample[]> =>
+  visibleAssets(db, ids, privacy)
+    .innerJoin('user', 'user.id', 'asset.ownerId')
+    .select(['asset.id as assetId', 'asset.originalFileName as fileName', 'asset.ownerId', 'user.name as ownerName'])
     .orderBy('asset.originalFileName')
     .orderBy('asset.id')
     .limit(RUN_FAILURE_SAMPLES)

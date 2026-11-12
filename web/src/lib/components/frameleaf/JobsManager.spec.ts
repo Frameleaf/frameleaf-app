@@ -8,6 +8,10 @@ import {
   getMachineLearningHardware,
   MachineLearningHardwareAcceleration,
   getQueueJobs,
+  getQueueOverview,
+  QueueIdleReason,
+  QueueProblemCause,
+  QueueProblemUnit,
   ManualJobName,
   JobName,
   QueueCommand,
@@ -28,7 +32,7 @@ import {
   updateQueue,
   type QueueResponseDto,
 } from '@frameleaf/sdk';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import { goto } from '$app/navigation';
@@ -52,6 +56,8 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   listDurableJobRuns: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),
   listDurableJobRunItems: vi.fn().mockResolvedValue({ items: [], hasNextPage: false }),
   getQueueJobs: vi.fn(),
+  getQueueOverview: vi.fn(),
+  actOnQueueProblem: vi.fn(),
   getAssetInfo: vi.fn(),
   runQueueCommandLegacy: vi.fn(),
   updateQueue: vi.fn(),
@@ -151,6 +157,7 @@ beforeEach(() => {
     queue(QueueName.BackgroundTask, { active: 1 }),
   ];
   vi.mocked(getQueueJobs).mockResolvedValue([]);
+  vi.mocked(getQueueOverview).mockResolvedValue({ problems: [], tasks: [] });
   vi.mocked(getMachineLearningHardware).mockResolvedValue({
     preferredAcceleration: MachineLearningHardwareAcceleration.Auto,
   } as never);
@@ -165,75 +172,90 @@ beforeEach(() => {
 });
 
 describe('Job manager (FL-71, JobsManager.jsx)', () => {
-  it('lists every task with its feature, status, counts and how many run at once (approved design, 2026-11-04)', () => {
+  it('lists what needs a look, then each task with why it is not running (approved design, 2026-11-12, FL-1486)', async () => {
+    vi.mocked(getQueueOverview).mockResolvedValue({
+      problems: [
+        {
+          cause: QueueProblemCause.MlUnavailable,
+          count: 3,
+          unit: QueueProblemUnit.Photos,
+          queues: [QueueName.FaceDetection],
+          message: 'Machine learning request failed with status 503',
+        },
+      ],
+      tasks: [{ name: QueueName.Ocr, reason: QueueIdleReason.FeatureOff }],
+    });
     render(JobsManager);
 
     // The page's heading is the settings host's; Advanced names itself under the Everyday | Advanced switch.
     expect(screen.getByRole('button', { name: 'Advanced', pressed: true })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Every task' })).toBeInTheDocument();
-    for (const label of ['Resume 1 paused', 'Pause everything', 'Enrichment tasks', 'Create job']) {
+    for (const label of ['Resume the one you paused', 'Pause everything', 'Enrichment tasks', 'Create a job']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     }
-    // Concurrency edits the settings draft, so it shows only once the settings have loaded.
-    expect(screen.queryByRole('button', { name: /^Concurrency/ })).not.toBeInTheDocument();
-    const failed = screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling;
-    expect(failed).toHaveTextContent('3');
+    // How many run at once edits the settings draft, so it waits for the settings to load.
+    expect(screen.getByRole('button', { name: 'How many run at once' })).toBeDisabled();
+    expect(screen.getByText('3 running')).toBeInTheDocument();
+    expect(screen.getByText('6 waiting')).toBeInTheDocument();
 
-    const table = screen.getByRole('table');
-    for (const column of ['Work', 'Status', 'Active', 'Waiting', 'Failed', 'At once']) {
-      expect(within(table).getByRole('columnheader', { name: column })).toBeInTheDocument();
-    }
-    const [, ...rows] = within(table).getAllByRole('row');
-    expect(rows.map((row) => row.querySelector('[aria-label^="Open "]')?.getAttribute('aria-label'))).toEqual([
-      'Open Making thumbnails',
-      'Open Finding faces',
-      'Open Housekeeping',
-      'Open Reading text in photos',
-    ]);
-    // Each task names the feature it belongs to, as everywhere else.
-    expect(within(rows[0]).getByText('Ready to browse')).toBeInTheDocument();
-    expect(within(rows[1]).getByText('Faces & identity')).toBeInTheDocument();
-    expect(within(rows[3]).getByText('Text, documents & receipts · feature off')).toBeInTheDocument();
-    expect(within(rows[0]).getByText('Processing')).toBeInTheDocument();
-    expect(within(rows[3]).getByText('Paused')).toBeInTheDocument();
-    expect(within(rows[1]).getByRole('button', { name: '3' })).toBeEnabled();
-    expect(within(rows[0]).getByRole('button', { name: 'Pause Making thumbnails' })).toBeEnabled();
-    expect(within(rows[2]).getByRole('button', { name: 'Pause Housekeeping' })).toBeDisabled();
-    expect(within(rows[3]).getByRole('button', { name: 'Resume Reading text in photos' })).toBeEnabled();
-    expect(screen.getByText('4 of 4 tasks')).toBeInTheDocument();
+    // what went wrong comes first, with its one action
+    const look = within(screen.getByRole('region', { name: 'Needs a look' }));
+    expect(
+      await look.findByRole('heading', { level: 4, name: /The face and search helper didn’t answer/ }),
+    ).toBeInTheDocument();
+    expect(look.getByText('In Finding faces')).toBeInTheDocument();
+    expect(look.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.getByText('3 need a look')).toBeInTheDocument();
+
+    // every task the server reports has a row: none is folded here, each has work or a reason shown
+    const tasks = within(screen.getByRole('region', { name: 'Tasks with work' }));
+    expect(tasks.getAllByRole('button', { name: /^Open / }).map((button) => button.getAttribute('aria-label'))).toEqual(
+      ['Open Making thumbnails', 'Open Finding faces', 'Open Housekeeping'],
+    );
+    const thumbnails = within(tasks.getByRole('button', { name: 'Open Making thumbnails' }).closest('li')!);
+    // each task names the feature it belongs to, as everywhere else
+    expect(thumbnails.getByText('Ready to browse')).toBeInTheDocument();
+    expect(thumbnails.getByText('Running 2 at once')).toBeInTheDocument();
+    expect(thumbnails.getByRole('button', { name: 'Pause Making thumbnails' })).toBeEnabled();
+    const faces = within(tasks.getByRole('button', { name: 'Open Finding faces' }).closest('li')!);
+    expect(faces.getByText('Faces & identity')).toBeInTheDocument();
+    expect(faces.getByText('3 failed')).toBeInTheDocument();
+    // the server never pauses its own housekeeping: no button
+    const housekeeping = within(tasks.getByRole('button', { name: 'Open Housekeeping' }).closest('li')!);
+    expect(housekeeping.queryByRole('button', { name: /^Pause / })).not.toBeInTheDocument();
+
+    // a task with nothing to do is folded away, with its reason when opened
+    await fireEvent.click(screen.getByRole('button', { name: '1 task has nothing to do' }));
+    const ocr = within(screen.getByRole('button', { name: 'Open Reading text in photos' }).closest('li')!);
+    expect(ocr.getByText('This feature is off')).toBeInTheDocument();
+
+    // Recent work is no longer on this page
+    expect(screen.queryByText('Queue action history')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Recent work is in Activity' })).toHaveAttribute('href', '/activity');
   });
 
-  it('shows photo-details follow-up steps as their own count, so the photos still to read visibly fall (FL-1272)', () => {
+  it('keeps photo-details follow-up steps as their own count on the task’s own screen (FL-1272)', () => {
     queues.list = [queue(QueueName.MetadataExtraction, { active: 4, waiting: 608_111, followUp: 59_271 })];
+    at('&queue=metadata-extraction');
     render(JobsManager);
 
     const waiting = screen.getByText('Waiting & scheduled', { selector: '.jm-metric span' }).parentElement!;
     expect(waiting).toHaveTextContent('548,840');
     expect(waiting).toHaveTextContent('+59,271 finishing up');
-    const [, row] = within(screen.getByRole('table')).getAllByRole('row');
-    expect(within(row).getByText('548,840')).toBeInTheDocument();
-    expect(within(row).getByText('+59,271 finishing up')).toBeInTheDocument();
   });
 
-  it("shows one feature's tasks, filters by status, and opens a task on its failed jobs", async () => {
+  it("opens on one feature's tasks, and opens a task from its row", async () => {
     at('&view=advanced&feature=faces');
-    const { unmount } = render(JobsManager);
+    render(JobsManager);
 
-    expect(screen.getByRole('combobox', { name: 'Feature' })).toHaveValue('faces');
+    // the feature's name is in the search box, so its tasks are the ones shown and the filter is plain to clear
+    expect(screen.getByRole('searchbox', { name: 'Search queues' })).toHaveValue('Faces & identity');
     expect(screen.getByRole('button', { name: 'Open Finding faces' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open Making thumbnails' })).not.toBeInTheDocument();
-    expect(screen.getByText('1 of 4 tasks')).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: '3' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Finding faces' }));
     await waitFor(() =>
-      expect(goto).toHaveBeenCalledWith(expect.stringContaining('queue=face-detection&tab=failed'), expect.anything()),
+      expect(goto).toHaveBeenCalledWith(expect.stringContaining('queue=face-detection'), expect.anything()),
     );
-    unmount();
-
-    at('&view=advanced');
-    render(JobsManager);
-    await fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'paused' } });
-    expect(screen.getByRole('button', { name: 'Open Reading text in photos' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Open Finding faces' })).not.toBeInTheDocument();
   });
 
   it('pauses everything after its review, leaving out what the server never pauses', async () => {
@@ -373,7 +395,7 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
   it('creates a maintenance job from the template dialog through the review, and records it in the history', async () => {
     render(JobsManager);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Create job' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Create a job' }));
     const dialog = screen.getByRole('dialog', { name: 'Create a maintenance job' });
     await fireEvent.input(within(dialog).getByRole('searchbox', { name: 'Search maintenance jobs' }), {
       target: { value: 'deleted accounts' },
@@ -390,6 +412,10 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     await fireEvent.click(confirm);
 
     await waitFor(() => expect(createJob).toHaveBeenCalledWith({ jobCreateDto: { name: ManualJobName.UserCleanup } }));
+    // the history of commands is on each task's own screen, no longer on the list (FL-1486)
+    cleanup();
+    at('&queue=background-task');
+    render(JobsManager);
     const history = screen.getByText('Queue action history').closest('details')!;
     expect(within(history).getByText('Clean up deleted accounts')).toBeInTheDocument();
     expect(within(history).getByText('Housekeeping · 1 item · all accounts')).toBeInTheDocument();
@@ -546,15 +572,14 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
       await screen.findByText('Some counts for Grace Hopper could not be loaded. They show as unknown.'),
     ).toBeInTheDocument();
     // What could be read is shown; the task that could not shows a dash, never 0.
-    const faces = screen.getByRole('button', { name: 'Open Finding faces' }).closest('tr')!;
-    expect(within(faces).getAllByText('—').length).toBeGreaterThan(0);
-    const thumbnails = screen.getByRole('button', { name: 'Open Making thumbnails' }).closest('tr')!;
-    expect(
-      within(thumbnails)
-        .getAllByRole('cell')
-        .map((cell) => cell.textContent?.trim())
-        .slice(1, 3),
-    ).toEqual(['1', '2']);
+    const faces = within(screen.getByRole('button', { name: 'Open Finding faces' }).closest('li')!);
+    expect(faces.getAllByText('—').length).toBeGreaterThan(0);
+    expect(faces.queryByText('No failures')).not.toBeInTheDocument();
+    const thumbnails = within(screen.getByRole('button', { name: 'Open Making thumbnails' }).closest('li')!);
+    expect(thumbnails.getByText('Running 1 at once')).toBeInTheDocument();
+    expect(thumbnails.getByText('2 waiting')).toBeInTheDocument();
+    // a part is not summed as if it were the whole
+    expect(screen.queryByText(/^\d+ running$/)).not.toBeInTheDocument();
   });
 
   it("lets a slow read of an account's counts land while the open queue keeps changing (FL-1239)", async () => {
@@ -610,16 +635,13 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     render(JobsManager);
     await tick();
     expect(getQueueOwnerStatistics).not.toHaveBeenCalled();
-    // Nothing read yet: a dash, not 0.
-    expect(screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling).toHaveTextContent('—');
-
     queues.list = [queue(QueueName.ThumbnailGeneration), queue(QueueName.FaceDetection)];
     queues.changed();
     await waitFor(() => expect(getQueueOwnerStatistics).toHaveBeenCalledTimes(2));
     expect(getQueueOwnerStatistics).toHaveBeenCalledWith({ name: QueueName.FaceDetection, ownerId: 'grace' });
-    await waitFor(() =>
-      expect(screen.getByText('Failed', { selector: '.jm-metric span' }).nextElementSibling).toHaveTextContent('8'),
-    );
+    // the account's counts, not the server's zeros
+    const faces = within((await screen.findByRole('button', { name: 'Open Finding faces' })).closest('li')!);
+    expect(await faces.findByText('4 failed')).toBeInTheDocument();
 
     // A stats tick for the same queues does not read them again.
     queues.list = [queue(QueueName.ThumbnailGeneration, { waiting: 3 }), queue(QueueName.FaceDetection)];

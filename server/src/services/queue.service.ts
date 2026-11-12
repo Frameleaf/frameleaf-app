@@ -16,7 +16,10 @@ import {
   QueueDeleteDto,
   QueueJobResponseDto,
   QueueJobSearchDto,
+  QueueOverviewResponseDto,
   QueueOwnerStatisticsResponseDto,
+  QueueProblemActionDto,
+  QueueProblemActionResponseDto,
   QueueResponseDto,
   QueueRetryFailedResponseDto,
   QueueRunOneDto,
@@ -55,10 +58,15 @@ const RUN_ONE_JOBS: Partial<Record<QueueName, JobName>> = {
   [QueueName.ImageDescription]: JobName.ImageDescription,
   [QueueName.NsfwDetection]: JobName.NsfwDetection,
 };
+import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import {
   handlePromiseError,
+  isDuplicateDetectionEnabled,
+  isFacialRecognitionEnabled,
   isImageDescriptionEnabled,
   isNsfwDetectionEnabled,
+  isOcrEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
 import { overnightCron } from 'src/utils/overnight.js';
@@ -73,6 +81,28 @@ const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
   [QueueName.ImageDescription]: MlWorkload.Enrichment,
   [QueueName.NsfwDetection]: MlWorkload.Enrichment,
   [QueueName.PetRecognition]: MlWorkload.PetRecognition,
+};
+
+type MachineLearning = SystemConfig['machineLearning'];
+/** FL-1486: the queues that do nothing while their feature is off (the web's `JOB_QUEUES` features). */
+const QUEUE_FEATURES: Partial<Record<QueueName, (machineLearning: MachineLearning) => boolean>> = {
+  [QueueName.FaceDetection]: isFacialRecognitionEnabled,
+  [QueueName.FacialRecognition]: isFacialRecognitionEnabled,
+  [QueueName.SmartSearch]: isSmartSearchEnabled,
+  [QueueName.PetRecognition]: isSmartSearchEnabled,
+  [QueueName.DuplicateDetection]: isDuplicateDetectionEnabled,
+  [QueueName.VideoDuplicateDetection]: isDuplicateDetectionEnabled,
+  [QueueName.Ocr]: isOcrEnabled,
+  [QueueName.ImageDescription]: isImageDescriptionEnabled,
+  [QueueName.NsfwDetection]: isNsfwDetectionEnabled,
+  [QueueName.ImageEnrichment]: (machineLearning) =>
+    isImageDescriptionEnabled(machineLearning) || isNsfwDetectionEnabled(machineLearning),
+};
+
+/** FL-1486: what each action may be used on. Missing and damaged files are Library care's; other is looked at. */
+const PROBLEM_ACTIONS: Record<QueueProblemActionDto['action'], QueueProblemActionDto['cause'][]> = {
+  retry: ['drive', 'writeDenied', 'mlUnavailable', 'tooLong', 'other'],
+  stop: ['unsupported'],
 };
 
 /** FL-71 (J-1): the most jobs of one state read to count an account's share of a queue. */
@@ -194,7 +224,7 @@ export class QueueService extends BaseService {
       }
 
       case QueueCommand.Pause: {
-        await this.jobRepository.pause(name);
+        await this.pauseByPerson(name);
         break;
       }
 
@@ -263,7 +293,7 @@ export class QueueService extends BaseService {
       if (name === QueueName.BackgroundTask) {
         throw new BadRequestException(`The BackgroundTask queue cannot be paused`);
       }
-      await this.jobRepository.pause(name);
+      await this.pauseByPerson(name);
     } else if (dto.isPaused === false) {
       await this.resumeAndReleaseQuietHold(name);
     }
@@ -289,7 +319,76 @@ export class QueueService extends BaseService {
       const quiet = { ...state.quiet, holding: holding.filter((held) => held !== name) };
       await this.systemMetadataRepository.set(SystemMetadataKey.OvernightSequence, { ...state, quiet });
     });
+    await this.notePaused(name, false);
     await this.eventRepository.emit('QueueResumed', { queue: name });
+  }
+
+  /** FL-1486: a pause someone asked for is dated, so the task can say since when; a pause already dated keeps its date. */
+  private async pauseByPerson(name: QueueName): Promise<void> {
+    await this.jobRepository.pause(name);
+    await this.notePaused(name, true);
+  }
+
+  private async notePaused(name: QueueName, paused: boolean): Promise<void> {
+    const { [name]: since, ...others } =
+      (await this.systemMetadataRepository.get(SystemMetadataKey.QueuePausedAt)) ?? {};
+    if (paused ? since !== undefined : since === undefined) {
+      return;
+    }
+    await this.systemMetadataRepository.set(
+      SystemMetadataKey.QueuePausedAt,
+      paused ? { ...others, [name]: new Date().toISOString() } : others,
+    );
+  }
+
+  /**
+   * FL-1486: Background work › Advanced. Failures by what went wrong across every queue (counts cover every account;
+   * the one raw message follows Library care's privacy), and why each queue is not running. One reason per queue, the
+   * one a person can act on first: feature off, then paused, then quiet hours, then waiting for another queue.
+   */
+  async getOverview(auth: AuthDto): Promise<QueueOverviewResponseDto> {
+    const [problems, holds, pausedAt, { machineLearning }] = await Promise.all([
+      this.jobRepository.listQueueProblems({
+        ...getHiddenContentQueryOptions(auth),
+        ...getLockedVisibilityOptions(auth),
+        ...getOthersRulesQueryOptions(auth),
+      }),
+      this.jobRepository.getQueueHolds(),
+      this.systemMetadataRepository.get(SystemMetadataKey.QueuePausedAt),
+      this.getConfig({ withCache: true }),
+    ]);
+    const names = new Set<string>(Object.values(QueueName));
+    const held = new Map(holds.map((hold) => [hold.name, hold]));
+    return {
+      problems: problems.map((problem) => ({
+        ...problem,
+        queues: problem.queues.filter((queue): queue is QueueName => names.has(queue)),
+      })),
+      tasks: Object.values(QueueName).map((name) => {
+        const hold = held.get(name);
+        if (QUEUE_FEATURES[name]?.(machineLearning) === false) {
+          return { name, reason: 'featureOff' as const };
+        }
+        if (hold?.paused) {
+          return { name, reason: 'paused' as const, ...(pausedAt?.[name] && { pausedAt: pausedAt[name] }) };
+        }
+        if (hold?.closedUntil) {
+          return { name, reason: 'quietHours' as const, closedUntil: new Date(hold.closedUntil).toISOString() };
+        }
+        if (hold?.waitingFor && names.has(hold.waitingFor)) {
+          return { name, reason: 'waitingFor' as const, waitingFor: hold.waitingFor as QueueName };
+        }
+        return { name, reason: null };
+      }),
+    };
+  }
+
+  /** FL-1486: Try again or Stop trying on every failed job with one problem. */
+  async actOnProblem(_auth: AuthDto, { cause, action }: QueueProblemActionDto): Promise<QueueProblemActionResponseDto> {
+    if (!PROBLEM_ACTIONS[action].includes(cause)) {
+      throw new BadRequestException(`This problem can't be handled with ${action}`);
+    }
+    return { count: await this.jobRepository.actOnQueueProblem(cause, action) };
   }
 
   /**

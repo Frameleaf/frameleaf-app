@@ -864,4 +864,119 @@ describe(QueueService.name, () => {
       sut.getOwnerStatistics(factory.auth(), QueueName.ThumbnailGeneration, 'af1d7c6e-2b0f-4c55-9b0e-6b8f2c1c1a03'),
     ).resolves.toEqual(expect.objectContaining({ truncated: true }));
   });
+
+  describe('Background work › Advanced (FL-1486)', () => {
+    const hold = (name: QueueName, more: object = {}) => ({
+      name,
+      paused: false,
+      closedUntil: null,
+      waitingFor: null,
+      ...more,
+    });
+    const reasonOf = async (name: QueueName) =>
+      (await sut.getOverview(authStub.admin)).tasks.find((task) => task.name === name);
+
+    beforeEach(() => {
+      mocks.job.listQueueProblems.mockResolvedValue([]);
+      mocks.job.getQueueHolds.mockResolvedValue([]);
+    });
+
+    it('says since when a person paused a task, and forgets it on resume', async () => {
+      mocks.job.getQueueHolds.mockResolvedValue([hold(QueueName.FaceDetection, { paused: true })]);
+      await sut.update(authStub.admin, QueueName.FaceDetection, { isPaused: true });
+      const [, saved] = mocks.systemMetadata.set.mock.calls.at(-1)!;
+      expect(mocks.systemMetadata.set).toHaveBeenLastCalledWith(SystemMetadataKey.QueuePausedAt, {
+        [QueueName.FaceDetection]: expect.any(String),
+      });
+
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(key === SystemMetadataKey.QueuePausedAt ? (saved as never) : null),
+      );
+      await expect(reasonOf(QueueName.FaceDetection)).resolves.toEqual({
+        name: QueueName.FaceDetection,
+        reason: 'paused',
+        pausedAt: (saved as Record<string, string>)[QueueName.FaceDetection],
+      });
+
+      // pausing again keeps the first date
+      mocks.systemMetadata.set.mockClear();
+      await sut.update(authStub.admin, QueueName.FaceDetection, { isPaused: true });
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+
+      mocks.database.withLock.mockImplementation((_, callback) => callback());
+      await sut.update(authStub.admin, QueueName.FaceDetection, { isPaused: false });
+      expect(mocks.systemMetadata.set).toHaveBeenLastCalledWith(SystemMetadataKey.QueuePausedAt, {});
+    });
+
+    it('a pause the server made has no date', async () => {
+      mocks.job.getQueueHolds.mockResolvedValue([hold(QueueName.MetadataExtraction, { paused: true })]);
+      await expect(reasonOf(QueueName.MetadataExtraction)).resolves.toEqual({
+        name: QueueName.MetadataExtraction,
+        reason: 'paused',
+      });
+    });
+
+    it('quiet hours are not a pause', async () => {
+      const closedUntil = new Date('2026-11-13T07:00:00.000Z');
+      mocks.job.getQueueHolds.mockResolvedValue([hold(QueueName.VideoConversion, { closedUntil })]);
+      await expect(reasonOf(QueueName.VideoConversion)).resolves.toEqual({
+        name: QueueName.VideoConversion,
+        reason: 'quietHours',
+        closedUntil: '2026-11-13T07:00:00.000Z',
+      });
+    });
+
+    it('names the task another waits for, and a feature that is off first', async () => {
+      mocks.job.getQueueHolds.mockResolvedValue([
+        hold(QueueName.StorageTemplateMigration, { waitingFor: QueueName.MetadataExtraction }),
+        hold(QueueName.Ocr, { paused: true }),
+      ]);
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          key === SystemMetadataKey.SystemConfig ? ({ machineLearning: { ocr: { enabled: false } } } as never) : null,
+        ),
+      );
+      await expect(reasonOf(QueueName.StorageTemplateMigration)).resolves.toEqual({
+        name: QueueName.StorageTemplateMigration,
+        reason: 'waitingFor',
+        waitingFor: QueueName.MetadataExtraction,
+      });
+      await expect(reasonOf(QueueName.Ocr)).resolves.toEqual({ name: QueueName.Ocr, reason: 'featureOff' });
+      await expect(reasonOf(QueueName.Library)).resolves.toEqual({ name: QueueName.Library, reason: null });
+    });
+
+    it('passes the problems on with the reader’s privacy', async () => {
+      const problem = {
+        cause: 'mlUnavailable' as const,
+        count: 3,
+        unit: 'photos' as const,
+        queues: [QueueName.FaceDetection],
+        message: 'Machine learning request failed',
+      };
+      mocks.job.listQueueProblems.mockResolvedValue([problem]);
+      await expect(sut.getOverview(authStub.admin)).resolves.toMatchObject({ problems: [problem] });
+      expect(mocks.job.listQueueProblems).toHaveBeenCalledWith(
+        expect.objectContaining({ othersRulesViewerId: authStub.admin.user.id }),
+      );
+    });
+
+    it('only offers each action where it helps', async () => {
+      mocks.job.actOnQueueProblem.mockResolvedValue(7);
+      await expect(sut.actOnProblem(authStub.admin, { cause: 'tooLong', action: 'retry' })).resolves.toEqual({
+        count: 7,
+      });
+      await expect(sut.actOnProblem(authStub.admin, { cause: 'unsupported', action: 'stop' })).resolves.toEqual({
+        count: 7,
+      });
+      for (const [cause, action] of [
+        ['missing', 'retry'],
+        ['damaged', 'retry'],
+        ['unsupported', 'retry'],
+        ['mlUnavailable', 'stop'],
+      ] as const) {
+        await expect(sut.actOnProblem(authStub.admin, { cause, action })).rejects.toBeInstanceOf(BadRequestException);
+      }
+      expect(mocks.job.actOnQueueProblem).toHaveBeenCalledTimes(2);
+    });
+  });
 });

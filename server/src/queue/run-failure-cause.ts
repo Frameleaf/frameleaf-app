@@ -84,3 +84,60 @@ export const failureCauseName = (rank: RawBuilder<unknown>) =>
 
 /** The cause of each failed task `j` of a photo `a` (nullable) with its finding column `finding`. */
 export const failureCauseSql = (columns: CauseColumns) => failureCauseName(failureCauseRank(columns));
+
+/**
+ * FL-1486: what went wrong across every task, for Background work › Advanced. The run causes plus three the server can
+ * tell from its own message: the machine-learning helper did not answer, the job ran past its deadline, a folder could
+ * not be written to. Most telling first (a photo with several failed tasks takes the first any of them has). These
+ * never reach `JobRunFailureCause`, which strict clients decode.
+ */
+export const QUEUE_PROBLEM_CAUSES = [
+  'drive',
+  'missing',
+  'damaged',
+  'unsupported',
+  'writeDenied',
+  'mlUnavailable',
+  'tooLong',
+  'other',
+] as const;
+export type QueueProblemCause = (typeof QUEUE_PROBLEM_CAUSES)[number];
+
+/** Same rules as `FAILURE_PATTERNS`: syntax Postgres and JavaScript read alike. */
+export const PROBLEM_PATTERNS = {
+  // ponytail: `open` is left out (it fails the same way on a read); those stay "other" until the handler says which
+  writeDenied:
+    'EROFS|(EACCES|EPERM)[^,]*, (mkdir|mkdtemp|rename|unlink|rmdir|copyfile|write|ftruncate|symlink|link|utime|futime|chmod|chown)',
+  // no answer, or a 5xx/429 one; a 4xx (a model it does not have) is a different problem
+  mlUnavailable:
+    'machine learning (hardware )?request .* failed(:| with status (5[0-9][0-9]|429))|machine learning worker is busy',
+  tooLong: 'job deadline',
+} as const satisfies Record<'writeDenied' | 'mlUnavailable' | 'tooLong', string>;
+
+export type QueueProblemInput = RunFailureInput & { deadline: boolean };
+
+/** The problem of one failed task. Mirrors `queueProblemRank`, which is what the server counts with. */
+export const queueProblemCause = (input: QueueProblemInput): QueueProblemCause => {
+  const base = runFailureCause(input);
+  // what is known about the file itself wins over what the task said
+  if (base === 'drive' || base === 'missing') return base;
+  if (matches(input.error, PROBLEM_PATTERNS.writeDenied)) return 'writeDenied';
+  if (matches(input.error, PROBLEM_PATTERNS.mlUnavailable)) return 'mlUnavailable';
+  if (input.deadline || matches(input.error, PROBLEM_PATTERNS.tooLong)) return 'tooLong';
+  return base;
+};
+
+export const problemRank = (cause: QueueProblemCause) => QUEUE_PROBLEM_CAUSES.indexOf(cause) + 1;
+
+/** `queueProblemCause` in SQL, as its rank in `QUEUE_PROBLEM_CAUSES`. */
+export const queueProblemRank = (columns: CauseColumns & { deadline: RawBuilder<unknown> }) => {
+  const text = sql`coalesce(${columns.error}, '')`;
+  const is = (pattern: string) => sql`${text} ~* ${pattern}::text`;
+  return sql<number>`(select case
+    when base.rank in (1, 2) then base.rank
+    when ${is(PROBLEM_PATTERNS.writeDenied)} then ${problemRank('writeDenied')}::int
+    when ${is(PROBLEM_PATTERNS.mlUnavailable)} then ${problemRank('mlUnavailable')}::int
+    when coalesce(${columns.deadline}, false) or ${is(PROBLEM_PATTERNS.tooLong)} then ${problemRank('tooLong')}::int
+    when base.rank = 5 then ${problemRank('other')}::int
+    else base.rank end from (select ${failureCauseRank(columns)} rank) base)`;
+};

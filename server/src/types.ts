@@ -1736,6 +1736,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.BackupSequence]: BackupSequenceState;
   [SystemMetadataKey.ApiKeyLastUsed]: Record<string, string>;
   [SystemMetadataKey.ProcessingReconcileLastRun]: import('src/dtos/queue-legacy.dto.js').ProcessingReconcileSummary;
+  [SystemMetadataKey.QueuePausedAt]: Record<string, string>;
   [SystemMetadataKey.OvernightSequence]: import('src/utils/overnight.js').OvernightState;
   [SystemMetadataKey.OverviewDismissed]: { ids: string[] };
   [SystemMetadataKey.FileFixSourceRoots]: string[];

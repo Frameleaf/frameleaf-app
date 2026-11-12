@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
@@ -8,8 +8,11 @@ import {
   QueueJobResponseDto,
   QueueJobSearchDto,
   QueueNameParamDto,
+  QueueOverviewResponseDto,
   QueueOwnerStatisticsResponseDto,
   QueueOwnerStatisticsSearchDto,
+  QueueProblemActionDto,
+  QueueProblemActionResponseDto,
   QueueResponseDto,
   QueueRetryFailedResponseDto,
   QueueRunOneDto,
@@ -33,6 +36,33 @@ export class QueueController {
   })
   getQueues(@Auth() auth: AuthDto): Promise<QueueResponseDto[]> {
     return this.service.getAll(auth);
+  }
+
+  // FL-1486: declared before `:name`, which would otherwise take these paths.
+  @Get('overview')
+  @Authenticated({ permission: Permission.QueueRead, admin: true })
+  @Endpoint({
+    summary: 'What went wrong and why queues are not running',
+    description:
+      "Failed jobs of every queue grouped by what went wrong, most first, with one of the server's messages each, and for each queue why it is not running: paused, closed by quiet hours, waiting for another queue, or its feature is off.",
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  getQueueOverview(@Auth() auth: AuthDto): Promise<QueueOverviewResponseDto> {
+    return this.service.getOverview(auth);
+  }
+
+  @Post('problems')
+  @Authenticated({ permission: Permission.QueueJobCreate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @ApiResponse({ status: 400, description: "This action doesn't apply to this problem" })
+  @Endpoint({
+    summary: 'Act on failed jobs with one problem',
+    description:
+      'Try again (retry) every failed job with one problem, or stop trying (stop) the files of a format that cannot be read. Missing and damaged files are handled in Library care.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  actOnQueueProblem(@Auth() auth: AuthDto, @Body() dto: QueueProblemActionDto): Promise<QueueProblemActionResponseDto> {
+    return this.service.actOnProblem(auth, dto);
   }
 
   @Get(':name')

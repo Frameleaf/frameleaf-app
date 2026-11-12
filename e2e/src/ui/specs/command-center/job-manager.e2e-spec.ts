@@ -29,7 +29,7 @@ const statistics = (values: Partial<Statistics> = {}): Statistics => ({
 });
 
 const jobManager = '/user-settings?area=processing&section=queues';
-// Every task in detail, as the page was before the Everyday view (approved design, 2026-11-04).
+// What went wrong, then every task with why it is not running (approved design, 2026-11-12, FL-1486).
 const advanced = `${jobManager}&view=advanced`;
 
 const setupQueueMocks = async (context: BrowserContext) => {
@@ -45,6 +45,24 @@ const setupQueueMocks = async (context: BrowserContext) => {
     retries: [] as string[],
     ownerQueries: [] as string[],
     enrichment: [] as Array<{ path: string; body?: unknown }>,
+    problems: [] as Array<{ cause: string; action: string }>,
+  };
+  // FL-1486: failures by what went wrong, and why a task is not running (quiet hours are not a pause).
+  const overview = {
+    problems: [
+      {
+        cause: 'mlUnavailable',
+        count: 3,
+        unit: 'photos',
+        queues: ['faceDetection'],
+        message: 'Machine learning request to http://ml:3003 failed with status 503: Service Unavailable',
+      },
+    ],
+    tasks: [
+      { name: 'thumbnailGeneration', reason: null },
+      { name: 'faceDetection', reason: 'quietHours', closedUntil: new Date(Date.now() + 2 * 3_600_000).toISOString() },
+      { name: 'backgroundTask', reason: null },
+    ],
   };
 
   await context.route('**/api/queues', (route) => route.fulfill({ json: queues }));
@@ -102,6 +120,15 @@ const setupQueueMocks = async (context: BrowserContext) => {
     }
     return route.fulfill({ json: queue });
   });
+  // Registered after the route above, which would otherwise answer these as unknown queues.
+  await context.route('**/api/queues/overview', (route) => route.fulfill({ json: overview }));
+  await context.route('**/api/queues/problems', async (route, request) => {
+    const body = request.postDataJSON() as { cause: string; action: string };
+    requests.problems.push(body);
+    const acted = overview.problems.find(({ cause }) => cause === body.cause);
+    overview.problems = overview.problems.filter(({ cause }) => cause !== body.cause);
+    return route.fulfill({ json: { count: acted?.count ?? 0 } });
+  });
   // Legacy queue commands (`PUT /jobs/{name}`), such as clear-failed from "Remove failed records".
   await context.route('**/api/jobs/*', async (route, request) => {
     if (request.method() !== 'PUT') {
@@ -151,20 +178,47 @@ test.describe('Job manager', () => {
     requests = await setupQueueMocks(context);
   });
 
-  test('lists every task in Advanced, and pauses and resumes one task through its review', async ({ page }) => {
+  test('lists what needs a look and every task in Advanced, and pauses and resumes one task through its review', async ({
+    page,
+  }) => {
     await page.goto(advanced);
 
     await expect(page.getByRole('heading', { level: 1, name: 'Background work' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'Every task' })).toBeVisible();
-    // Every task the server runs, with its feature, status, counts and how many run at once.
-    const table = page.getByRole('table');
-    for (const column of ['Work', 'Status', 'Active', 'Waiting', 'Failed', 'At once']) {
-      await expect(table.getByRole('columnheader', { name: column })).toBeVisible();
-    }
-    const thumbnails = table.getByRole('row').filter({ hasText: 'Making thumbnails' });
+
+    // What went wrong comes first: the reason, where it is, the server's words on request, and one action.
+    const look = page.getByRole('region', { name: 'Needs a look' });
+    await expect(
+      look.getByRole('heading', { level: 4, name: /The face and search helper didn’t answer/ }),
+    ).toBeVisible();
+    await expect(look.getByText('3 photos')).toBeVisible();
+    await expect(look.getByText('In Finding faces')).toBeVisible();
+    await look.getByRole('button', { name: 'What the server said' }).click();
+    await expect(look.getByText(/failed with status 503/)).toBeVisible();
+
+    // Every task with work, with its feature and why it is or is not running.
+    const tasks = page.getByRole('region', { name: 'Tasks with work' });
+    const thumbnails = tasks.getByRole('listitem').filter({ hasText: 'Making thumbnails' });
     await expect(thumbnails.getByText('Ready to browse')).toBeVisible();
-    await expect(thumbnails.getByText('Processing', { exact: true })).toBeVisible();
-    await expect(table.getByRole('row').filter({ hasText: 'Housekeeping' })).toBeVisible();
+    await expect(thumbnails.getByText('Running 2 at once')).toBeVisible();
+    await expect(thumbnails.getByText('5 waiting')).toBeVisible();
+    // Quiet hours are not a pause: the task says when it starts, and can be started now.
+    const faces = tasks.getByRole('listitem').filter({ hasText: 'Finding faces' });
+    await expect(faces.locator('.ja-state')).toHaveText(/Heavy work\. Starts tonight at /);
+    await expect(faces.getByText('3 failed')).toBeVisible();
+    await expect(faces.getByRole('button', { name: 'Start Finding faces now' })).toBeVisible();
+    await expect(faces.getByText(/paused/i)).toHaveCount(0);
+    // A task with nothing to do is folded away.
+    await expect(tasks.getByRole('listitem').filter({ hasText: 'Housekeeping' })).toHaveCount(0);
+    await page.getByRole('button', { name: '1 task has nothing to do' }).click();
+    await expect(tasks.getByRole('listitem').filter({ hasText: 'Housekeeping' })).toBeVisible();
+    // Recent work is in Activity now.
+    await expect(page.getByRole('link', { name: 'Recent work is in Activity' })).toHaveAttribute('href', '/activity');
+    await expect(page.getByText('Queue action history')).toHaveCount(0);
+
+    await look.getByRole('button', { name: 'Try again' }).click();
+    await expect.poll(() => requests.problems).toEqual([{ cause: 'mlUnavailable', action: 'retry' }]);
+    await expect(look.getByText('Queued again.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Open Making thumbnails' }).click();
     await page.waitForURL('**/user-settings?area=processing&section=queues&queue=thumbnail-generation');
@@ -241,9 +295,9 @@ test.describe('Job manager', () => {
     await effort.getByRole('button', { name: 'Fast' }).click();
     await expect(effort.getByRole('button', { name: 'Fast' })).toHaveAttribute('aria-pressed', 'true');
 
-    // Each task's own number is Advanced › Concurrency, on the same settings draft.
+    // Each task's own number is Advanced › How many run at once, on the same settings draft.
     await page.getByRole('button', { name: 'Advanced', exact: true }).click();
-    await page.getByRole('button', { name: /^Concurrency/ }).click();
+    await page.getByRole('button', { name: /^How many run at once/ }).click();
     const dialog = page.getByRole('dialog', { name: 'How many run at once' });
     const thumbnails = dialog.getByLabel('Making thumbnails simultaneous jobs');
     await expect(thumbnails).toHaveValue('6');
@@ -251,10 +305,33 @@ test.describe('Job manager', () => {
     await expect(dialog.getByText('Pending').first()).toBeVisible();
   });
 
+  test('fits a phone in Advanced: nothing scrolls sideways at 375px', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(advanced);
+    await expect(
+      page.getByRole('heading', { level: 4, name: /The face and search helper didn’t answer/ }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'What the server said' }).click();
+    await page.getByRole('button', { name: '1 task has nothing to do' }).click();
+    const sideways = await page.evaluate(() => {
+      const list = document.querySelector('.ja')!;
+      const wide = [...list.querySelectorAll('*')].filter((element) => {
+        const { left, right } = element.getBoundingClientRect();
+        return right > window.innerWidth + 1 || left < -1;
+      });
+      return {
+        page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        list: list.scrollWidth - list.clientWidth,
+        wide: wide.length,
+      };
+    });
+    expect(sideways).toEqual({ page: 0, list: 0, wide: 0 });
+  });
+
   test('creates a job from Advanced through its review', async ({ page }) => {
     await page.goto(advanced);
 
-    await page.getByRole('button', { name: 'Create job', exact: true }).click();
+    await page.getByRole('button', { name: 'Create a job', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Create a maintenance job' });
     await dialog.getByRole('searchbox', { name: 'Search maintenance jobs' }).fill('unused tags');
     await dialog.getByRole('radio', { name: /Clean up unused tags/ }).check();

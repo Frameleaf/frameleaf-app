@@ -2,7 +2,10 @@ import { JobName } from 'src/enum.js';
 import {
   FAILURE_PATTERNS,
   NIGHTLY_RUN_KINDS,
+  QUEUE_PROBLEM_CAUSES,
+  type QueueProblemInput,
   RUN_FAILURE_CAUSES,
+  queueProblemCause,
   runFailureCause,
   singleMessage,
 } from 'src/queue/run-failure-cause.js';
@@ -92,5 +95,53 @@ describe('runFailureCause', () => {
   it('names five causes and the nightly kinds', () => {
     expect(RUN_FAILURE_CAUSES).toEqual(['drive', 'missing', 'damaged', 'unsupported', 'other']);
     expect(NIGHTLY_RUN_KINDS).toEqual([JobName.OvernightSequence]);
+  });
+});
+
+describe('queueProblemCause (FL-1486)', () => {
+  const of = (error: string | null, more: Partial<QueueProblemInput> = {}) =>
+    queueProblemCause({ ...upload, error, deadline: false, ...more });
+
+  it('tells a machine-learning helper that did not answer from one that refused', () => {
+    expect(
+      of('Machine learning request \'{"clip":{}}\' to http://ml:3003 failed with status 503: Service Unavailable'),
+    ).toBe('mlUnavailable');
+    expect(of("Machine learning request '{}' to http://ml:3003 failed: fetch failed")).toBe('mlUnavailable');
+    expect(of('Machine learning worker is busy; try again shortly')).toBe('mlUnavailable');
+    expect(of("Machine learning request '{}' to http://ml:3003 failed with status 404: Not Found")).toBe('other');
+  });
+
+  it('a job stopped at its deadline took too long', () => {
+    expect(of('Job deadline or cancellation requested')).toBe('tooLong');
+    expect(of(null, { deadline: true })).toBe('tooLong');
+    expect(of('Timed out after 120 s')).toBe('other');
+  });
+
+  it('a refused write is a folder problem; a refused read is not', () => {
+    expect(of("EACCES: permission denied, mkdir '/library/library/admin/2019'")).toBe('writeDenied');
+    expect(of("EPERM: operation not permitted, rename '/a' -> '/b'")).toBe('writeDenied');
+    expect(of("EROFS: read-only file system, open '/library/thumbs/a.webp'")).toBe('writeDenied');
+    expect(of("EACCES: permission denied, open '/library/upload/a.jpg'")).toBe('other');
+  });
+
+  it('what is known about the file wins over what the task said', () => {
+    const ml = "Machine learning request '{}' to http://ml:3003 failed: fetch failed";
+    expect(of(ml, { finding: 'missing' })).toBe('missing');
+    expect(of(ml, { offline: true })).toBe('drive');
+    // a damaged file whose task failed for the helper's reason is the helper's problem this time
+    expect(of(ml, { finding: 'corrupt' })).toBe('mlUnavailable');
+    expect(of('VipsJpeg: premature end of JPEG image')).toBe('damaged');
+    expect(of('Input file contains unsupported image format')).toBe('unsupported');
+  });
+
+  it('work that is no photo’s can still say what went wrong', () => {
+    expect(of('Job deadline or cancellation requested', { asset: false })).toBe('tooLong');
+    expect(of('duplicate key value violates unique constraint', { asset: false })).toBe('other');
+  });
+
+  it('keeps the run causes in their order, so a photo takes the most telling one', () => {
+    expect(QUEUE_PROBLEM_CAUSES.filter((cause) => (RUN_FAILURE_CAUSES as readonly string[]).includes(cause))).toEqual([
+      ...RUN_FAILURE_CAUSES,
+    ]);
   });
 });

@@ -48594,6 +48594,113 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/queues/overview": {
+      "get": {
+        "description": "Failed jobs of every queue grouped by what went wrong, most first, with one of the server's messages each, and for each queue why it is not running: paused, closed by quiet hours, waiting for another queue, or its feature is off.",
+        "operationId": "getQueueOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueOverviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "What went wrong and why queues are not running",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queue.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/queues/problems": {
+      "post": {
+        "description": "Try again (retry) every failed job with one problem, or stop trying (stop) the files of a format that cannot be read. Missing and damaged files are handled in Library care.",
+        "operationId": "actOnQueueProblem",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueueProblemActionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueProblemActionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "description": "This action doesn't apply to this problem"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Act on failed jobs with one problem",
+        "tags": [
+          "Queues"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "queueJob.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/queues/{name}": {
       "get": {
         "description": "Retrieves a specific queue by its name.",
@@ -143702,6 +143809,16 @@
         },
         "type": "object"
       },
+      "QueueIdleReason": {
+        "description": "Why a queue is not running: paused (by a person, or by the server while it moves the library), quietHours (closed until closedUntil), waitingFor (its jobs wait for the waitingFor queue), featureOff",
+        "enum": [
+          "paused",
+          "quietHours",
+          "waitingFor",
+          "featureOff"
+        ],
+        "type": "string"
+      },
       "QueueJobAccountDto": {
         "properties": {
           "id": {
@@ -143885,6 +144002,29 @@
         ],
         "type": "object"
       },
+      "QueueOverviewResponseDto": {
+        "properties": {
+          "problems": {
+            "description": "Failures by what went wrong, across every queue, most first",
+            "items": {
+              "$ref": "#/components/schemas/QueueProblemDto"
+            },
+            "type": "array"
+          },
+          "tasks": {
+            "description": "One per queue",
+            "items": {
+              "$ref": "#/components/schemas/QueueTaskDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "problems",
+          "tasks"
+        ],
+        "type": "object"
+      },
       "QueueOwnerStatisticsResponseDto": {
         "properties": {
           "active": {
@@ -143958,6 +144098,102 @@
           "ownerId"
         ],
         "type": "object"
+      },
+      "QueueProblemAction": {
+        "description": "retry: put the failed jobs back; stop: stop trying (unsupported files)",
+        "enum": [
+          "retry",
+          "stop"
+        ],
+        "type": "string"
+      },
+      "QueueProblemActionDto": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/QueueProblemAction"
+          },
+          "cause": {
+            "$ref": "#/components/schemas/QueueProblemCause"
+          }
+        },
+        "required": [
+          "action",
+          "cause"
+        ],
+        "type": "object"
+      },
+      "QueueProblemActionResponseDto": {
+        "properties": {
+          "count": {
+            "description": "Jobs put back, or photos stopped",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "QueueProblemCause": {
+        "description": "What went wrong: drive (an external library can't be reached), missing (the file is gone), damaged, unsupported (a format that can't be read), writeDenied (a folder could not be written to), mlUnavailable (the machine-learning helper did not answer), tooLong (the job ran past its deadline), or other",
+        "enum": [
+          "drive",
+          "missing",
+          "damaged",
+          "unsupported",
+          "writeDenied",
+          "mlUnavailable",
+          "tooLong",
+          "other"
+        ],
+        "type": "string"
+      },
+      "QueueProblemDto": {
+        "properties": {
+          "cause": {
+            "$ref": "#/components/schemas/QueueProblemCause"
+          },
+          "count": {
+            "description": "Photos, videos or jobs with this problem that still need a look",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "message": {
+            "description": "One raw error message, from a job that may show it on a photo the caller may see; null when none may",
+            "nullable": true,
+            "type": "string"
+          },
+          "queues": {
+            "description": "The queues whose failed jobs have this problem",
+            "items": {
+              "$ref": "#/components/schemas/QueueName"
+            },
+            "type": "array"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/QueueProblemUnit"
+          }
+        },
+        "required": [
+          "cause",
+          "count",
+          "message",
+          "queues",
+          "unit"
+        ],
+        "type": "object"
+      },
+      "QueueProblemUnit": {
+        "description": "What count counts: jobs for work that is no photo’s",
+        "enum": [
+          "photos",
+          "videos",
+          "jobs"
+        ],
+        "type": "string"
       },
       "QueueResponseDto": {
         "properties": {
@@ -144201,6 +144437,43 @@
         "required": [
           "isActive",
           "isPaused"
+        ],
+        "type": "object"
+      },
+      "QueueTaskDto": {
+        "properties": {
+          "closedUntil": {
+            "description": "For quietHours: when it opens again",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "name": {
+            "$ref": "#/components/schemas/QueueName"
+          },
+          "pausedAt": {
+            "description": "For paused: when a person paused it; absent when the server did",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QueueIdleReason"
+              }
+            ],
+            "description": "Why it is not running; null when nothing holds it",
+            "nullable": true
+          },
+          "waitingFor": {
+            "$ref": "#/components/schemas/QueueName",
+            "description": "For waitingFor: the queue it waits for"
+          }
+        },
+        "required": [
+          "name",
+          "reason"
         ],
         "type": "object"
       },
