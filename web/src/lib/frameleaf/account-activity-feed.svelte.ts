@@ -15,6 +15,8 @@ export class ActivityFeed {
   loadingMore = $state(false);
   /** An earlier page could not be read; the rows already shown stay. */
   moreFailed = $state(false);
+  /** How many earlier pages have been read since the list was last read from its start. */
+  pages = $state(0);
   #run = 0;
   #fetchPage: (before?: string) => Promise<AccountActivityResponseDto>;
 
@@ -30,6 +32,7 @@ export class ActivityFeed {
     this.failed = false;
     this.loadingMore = false;
     this.moreFailed = false;
+    this.pages = 0;
     try {
       const page = await this.#fetchPage();
       if (run === this.#run) {
@@ -58,6 +61,7 @@ export class ActivityFeed {
         const known = new Set(this.events?.map((event) => event.id));
         this.events = [...(this.events ?? []), ...page.events.filter((event) => !known.has(event.id))];
         this.hasMore = page.hasMore;
+        this.pages++;
       }
     } catch {
       if (run === this.#run) {

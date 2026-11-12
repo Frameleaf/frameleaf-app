@@ -4,6 +4,7 @@ import en from '$i18n/en.json';
 import {
   activityDay,
   activityKind,
+  coversLastDay,
   describeActivity,
   filterActivity,
   groupByDay,
@@ -267,6 +268,31 @@ describe('the answer at the top', () => {
     expect(recentFailures([events[3]], now)?.passwordOnly).toBe(false);
     expect(recentFailures([events[0], events[4]], now)).toBeUndefined();
     expect(lastSignIn(events)?.createdAt).toBe('2026-11-12T08:14:00.000Z');
+  });
+
+  it('counts many sign-ins that did not work for one account, in the order they came', () => {
+    const events = Array.from({ length: 500 }, (_, index) =>
+      event('sign-in-failed', {
+        userId: index % 5 === 0 ? 'u1' : 'u2',
+        createdAt: new Date(now.getTime() - index * 1000).toISOString(),
+      }),
+    );
+    const failures = recentFailures(events, now);
+    expect(failures?.events).toHaveLength(400);
+    expect(failures?.events.every((item) => item.userId === 'u2')).toBe(true);
+    expect(failures?.events[0]).toBe(events[1]);
+  });
+
+  it('knows whether the rows loaded hold the whole last day', () => {
+    const today = [event('app-used', { createdAt: '2026-11-12T14:00:00.000Z' })];
+    const older = [...today, event('app-used', { createdAt: '2026-11-10T14:00:00.000Z' })];
+    // earlier rows are still on the server, and the oldest one loaded is from today
+    expect(coversLastDay(today, true, now)).toBe(false);
+    // the oldest row loaded is more than a day old, so the last day is all here
+    expect(coversLastDay(older, true, now)).toBe(true);
+    // nothing earlier on the server
+    expect(coversLastDay(today, false, now)).toBe(true);
+    expect(coversLastDay([], false, now)).toBe(true);
   });
 });
 

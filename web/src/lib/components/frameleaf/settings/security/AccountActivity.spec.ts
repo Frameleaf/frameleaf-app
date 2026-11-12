@@ -48,6 +48,39 @@ const first = () => [
   event('2026-11-09T21:00:00', 'two-factor-changed', { detail: 'admin-reset' }),
   event('2026-11-09T20:00:00', 'teleported'),
 ];
+/** A page of rows from this afternoon, none of them a sign-in: an app using the library. */
+const busy = (hasMore = true) =>
+  page(
+    Array.from({ length: 50 }, (_, index) =>
+      event(`2026-11-12T14:${String(59 - index).padStart(2, '0')}:00`, 'app-used', { subject: 'Claude' }),
+    ),
+    hasMore,
+  );
+
+/** The end of the list coming into view, as a browser reports it (jsdom has no IntersectionObserver). */
+const view = { visible: false, callbacks: new Set<() => void>() };
+class FakeIntersectionObserver {
+  #fire: () => void;
+  constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+    this.#fire = () => callback([{ isIntersecting: true }]);
+  }
+  observe() {
+    view.callbacks.add(this.#fire);
+    if (view.visible) {
+      queueMicrotask(() => view.callbacks.has(this.#fire) && this.#fire());
+    }
+  }
+  disconnect() {
+    view.callbacks.delete(this.#fire);
+  }
+}
+const scrollToEnd = () => {
+  view.visible = true;
+  for (const fire of view.callbacks) {
+    fire();
+  }
+};
+
 const row = (text: string | RegExp) => screen.getByText(text).closest('li') as HTMLElement;
 
 describe('Account activity (FL-824)', () => {
@@ -201,6 +234,112 @@ describe('Account activity (FL-824)', () => {
     await waitFor(() => expect(nav.goto).toHaveBeenCalledWith('/user-settings?area=privacy&section=password'));
   });
 
+  it('does not say when you last signed in, or that nothing is wrong, while earlier rows are not loaded', async () => {
+    // every page is full of this afternoon's rows, and there is always more
+    sdk.getMyActivity.mockImplementation(() => Promise.resolve(busy()));
+    render(AccountActivity, { now });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Nothing needs a look in what’s shown so far' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('This list goes further back. Show earlier activity to see the rest.')).toBeInTheDocument();
+    // a few earlier pages load by themselves to find the answer, then it is left to the person
+    await waitFor(() => expect(sdk.getMyActivity).toHaveBeenCalledTimes(4));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sdk.getMyActivity).toHaveBeenCalledTimes(4);
+    expect(screen.queryByRole('heading', { name: 'Nothing here needs a look' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show earlier activity' })).toBeInTheDocument();
+  });
+
+  it('looks further back by itself for the last sign-in, and says it once it is found', async () => {
+    sdk.getMyActivity
+      .mockResolvedValueOnce(busy())
+      .mockResolvedValueOnce(
+        page([event('2026-11-12T08:14:00', 'signed-in', mac), event('2026-11-10T09:00:00', 'signed-out', mac)], true),
+      );
+    render(AccountActivity, { now });
+
+    expect(await screen.findByRole('heading', { name: 'Your last sign-in was today at 8:14 AM' })).toBeInTheDocument();
+    // the rows reach back more than a day and hold a sign-in: nothing more is loaded by itself
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sdk.getMyActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it('says a count of failed sign-ins may not be all of them while the last day is not all loaded', async () => {
+    const failed = event('2026-11-12T14:59:30', 'sign-in-failed', { ...windows, detail: 'password' });
+    sdk.getMyActivity.mockImplementation(() =>
+      Promise.resolve(sdk.getMyActivity.mock.calls.length === 1 ? page([failed, ...busy().events], true) : busy()),
+    );
+    render(AccountActivity, { now });
+
+    expect(
+      await screen.findByRole('heading', { name: 'The wrong password was entered once in the last day' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/There may be more further back in the list\.$/)).toBeInTheDocument();
+  });
+
+  it('says the log holds no sign-in only once all of it is loaded', async () => {
+    sdk.getMyActivity.mockResolvedValue(busy(false));
+    render(AccountActivity, { now });
+
+    expect(await screen.findByRole('heading', { name: 'Nothing here needs a look' })).toBeInTheDocument();
+    expect(sdk.getMyActivity).toHaveBeenCalledTimes(1);
+  });
+
+  describe('as the end of the list comes into view', () => {
+    beforeEach(() => {
+      view.visible = false;
+      view.callbacks.clear();
+      vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('stops loading by itself after a few pages that add nothing under the chip', async () => {
+      // every page holds sign-ins from days ago, and there is always more: nothing is ever shared
+      sdk.getMyActivity.mockImplementation(() =>
+        Promise.resolve(
+          page([event('2026-11-08T08:00:00', 'signed-in', mac), event('2026-11-07T08:00:00', 'signed-out', mac)], true),
+        ),
+      );
+      render(AccountActivity, { now });
+      await screen.findByRole('heading', { name: /^Your last sign-in was on / });
+      expect(sdk.getMyActivity).toHaveBeenCalledTimes(1);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Sharing' }));
+      scrollToEnd();
+      await waitFor(() => expect(sdk.getMyActivity).toHaveBeenCalledTimes(4));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(sdk.getMyActivity).toHaveBeenCalledTimes(4);
+      expect(screen.getByText('Nothing shared in this list yet')).toBeInTheDocument();
+      expect(screen.getByText(/There may be some further back\./)).toBeInTheDocument();
+
+      // going on is left to the person, one page at a time
+      await userEvent.click(screen.getByRole('button', { name: 'Show earlier activity' }));
+      await waitFor(() => expect(sdk.getMyActivity).toHaveBeenCalledTimes(5));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(sdk.getMyActivity).toHaveBeenCalledTimes(5);
+
+      // another chip starts the count again
+      await userEvent.click(screen.getByRole('button', { name: 'Apps' }));
+      await waitFor(() => expect(sdk.getMyActivity).toHaveBeenCalledTimes(8));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(sdk.getMyActivity).toHaveBeenCalledTimes(8);
+    });
+
+    it('keeps loading while each page adds rows to what is shown', async () => {
+      let calls = 0;
+      sdk.getMyActivity.mockImplementation(() =>
+        Promise.resolve(page([event('2026-11-08T08:00:00', 'signed-in', mac)], ++calls < 7)),
+      );
+      render(AccountActivity, { now });
+      await screen.findByRole('heading', { name: /^Your last sign-in was on / });
+
+      scrollToEnd();
+      expect(await screen.findByText(/That’s everything/)).toBeInTheDocument();
+      expect(sdk.getMyActivity).toHaveBeenCalledTimes(7);
+    });
+  });
+
   it('says so when nothing has happened yet', async () => {
     sdk.getMyActivity.mockResolvedValue(page([]));
     render(AccountActivity, { now });
@@ -317,6 +456,63 @@ describe('Activity log for administrators (FL-824)', () => {
       within(failed[0].closest('li') as HTMLElement).getByRole('button', { name: 'Open Morgan’s page' }),
     );
     expect(nav.goto).toHaveBeenCalledWith('/user-settings?area=users&section=accounts&user=morgan');
+  });
+
+  it('counts the last day’s failed sign-ins with a request of its own, whatever the list has loaded', async () => {
+    const failed = ['14:42', '14:41', '14:40'].map((time) =>
+      event(`2026-11-12T${time}:00`, 'sign-in-failed', { userId: 'morgan', ...windows, detail: 'password' }),
+    );
+    sdk.getAccountActivityAdmin.mockImplementation(({ action }: { action?: string }) =>
+      // the list's own first page holds no failed sign-in: they are further back
+      Promise.resolve(action === 'sign-in-failed' ? page(failed) : busy()),
+    );
+    render(HouseholdActivity, { onWho, now });
+
+    expect(
+      await screen.findByRole('heading', { name: 'The wrong password was entered for Morgan 3 times in the last day' }),
+    ).toBeInTheDocument();
+    expect(sdk.getAccountActivityAdmin).toHaveBeenCalledWith({
+      action: 'sign-in-failed',
+      $from: new Date(now.getTime() - 86_400_000).toISOString(),
+      take: 200,
+      userId: undefined,
+    });
+    expect(screen.queryByText(/There may be more further back in the list/)).toBeNull();
+  });
+
+  it('says the count may not be all of them when the last day could not be asked for', async () => {
+    const failed = event('2026-11-12T14:59:30', 'sign-in-failed', { userId: 'morgan', detail: 'password' });
+    sdk.getAccountActivityAdmin.mockImplementation(({ action }: { action?: string }) =>
+      action === 'sign-in-failed'
+        ? Promise.reject(new Error('offline'))
+        : Promise.resolve(page([failed, ...busy().events], true)),
+    );
+    render(HouseholdActivity, { onWho, now });
+
+    expect(
+      await screen.findByRole('heading', { name: 'The wrong password was entered for Morgan once in the last day' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/There may be more further back in the list\.$/)).toBeInTheDocument();
+  });
+
+  it('still shows what happened when the names can’t be read, and tries the names again by themselves', async () => {
+    sdk.searchUsersAdmin
+      .mockReset()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([person('taylor', 'Taylor'), person('morgan', 'Morgan')]);
+    render(HouseholdActivity, { onWho, now });
+
+    expect(await screen.findByText('Someone signed in on Chrome on a Mac, at home')).toBeInTheDocument();
+    expect(screen.getByText('Claude used Someone’s library')).toBeInTheDocument();
+    expect(screen.getByText('Names and pictures couldn’t be loaded, so each row says “Someone”')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'The activity log couldn’t be loaded' })).toBeNull();
+    const calls = sdk.getAccountActivityAdmin.mock.calls.length;
+
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Taylor signed in on Chrome on a Mac, at home')).toBeInTheDocument();
+    expect(screen.queryByText(/Names and pictures couldn’t be loaded/)).toBeNull();
+    // only the names were asked for again
+    expect(sdk.getAccountActivityAdmin).toHaveBeenCalledTimes(calls);
   });
 
   it('says it couldn’t load, and that the rest of Users works', async () => {

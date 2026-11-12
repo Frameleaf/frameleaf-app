@@ -37,6 +37,11 @@ export type ActivityEvent = AccountEventResponseDto;
 export const ACTIVITY_KEPT_DAYS = 400;
 /** Events fetched per page. */
 export const ACTIVITY_PAGE_SIZE = 50;
+/** How many earlier pages a page may load by itself before it leaves "Show earlier activity" to the person. */
+export const ACTIVITY_AUTO_PAGES = 3;
+/** The most sign-ins that did not work the household log asks for, to count the last day's. */
+export const ACTIVITY_FAILURES_TAKE = 200;
+const DAY_MS = 86_400_000;
 
 /** The filter chips, in order. `other` has no chip: it shows under All only. */
 export const ACTIVITY_CHIPS = ['all', 'signins', 'security', 'sharing', 'apps'] as const;
@@ -470,11 +475,16 @@ export const recentFailures = <T extends Pick<ActivityEvent, 'action' | 'source'
   events: T[],
   now: Date,
 ): { events: T[]; passwordOnly: boolean } | undefined => {
-  const since = now.getTime() - 86_400_000;
+  const since = now.getTime() - DAY_MS;
   const byAccount = new Map<string, T[]>();
   for (const event of events) {
     if (!isAdminEvent(event) && event.action === 'sign-in-failed' && Date.parse(event.createdAt) >= since) {
-      byAccount.set(event.userId, [...(byAccount.get(event.userId) ?? []), event]);
+      const tries = byAccount.get(event.userId);
+      if (tries) {
+        tries.push(event);
+      } else {
+        byAccount.set(event.userId, [event]);
+      }
     }
   }
   let most: T[] | undefined;
@@ -486,6 +496,16 @@ export const recentFailures = <T extends Pick<ActivityEvent, 'action' | 'source'
   return most
     ? { events: most, passwordOnly: most.every((event) => !event.detail || event.detail === 'password') }
     : undefined;
+};
+
+/**
+ * Whether the rows loaded hold everything from the last day: either there is nothing earlier on the
+ * server, or the oldest row loaded is already more than a day old. Until then a count of the last
+ * day's rows is only "so far".
+ */
+export const coversLastDay = (events: Pick<ActivityEvent, 'createdAt'>[], hasMore: boolean, now: Date) => {
+  const oldest = events.at(-1);
+  return !hasMore || (oldest !== undefined && Date.parse(oldest.createdAt) < now.getTime() - DAY_MS);
 };
 
 /** The newest sign-in that worked, among the rows loaded. */

@@ -7,8 +7,9 @@
    * (`SettingsChangeHistory`), so the two lists read alike.
    *
    * The chips filter the rows already loaded (owner, 2026-11-12: no server filter). The next page
-   * loads by itself as the end of the list comes into view, so a chip with few rows keeps filling
-   * until it has a screenful or there is nothing more; "Show earlier activity" does the same by hand.
+   * loads by itself as the end of the list comes into view, so a chip with few rows keeps filling.
+   * That stops after a few pages in a row that add nothing to what the chip shows, so a chip with
+   * nothing under it never reads the whole log; "Show earlier activity" goes on by hand.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
@@ -16,6 +17,7 @@
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import {
+    ACTIVITY_AUTO_PAGES,
     ACTIVITY_CHIPS,
     ACTIVITY_KEPT_DAYS,
     activityDay,
@@ -33,7 +35,7 @@
   import type { UserAdminResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight } from '@mdi/js';
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
   type RowAction = { text: string; label: string; chevron?: boolean; onclick: () => void };
@@ -82,7 +84,32 @@
   const days = $derived(groupByDay(shown, (createdAt) => activityDay($t, createdAt, now, $locale)));
 
   // The next page loads as the end of the list comes into view. A page that failed waits to be asked.
+  // Pages that load by themselves and add nothing to what the chip shows are counted: after a few in
+  // a row, loading waits to be asked, until the chip changes or a row arrives.
   let end = $state<HTMLElement>();
+  let paused = $state(false);
+  let idle = 0;
+  let seen = -1;
+  $effect(() => {
+    void chip;
+    idle = 0;
+    seen = -1;
+  });
+  $effect(() => {
+    void chip;
+    void shown.length;
+    paused = false;
+  });
+  const loadBySelf = () => {
+    const count = untrack(() => shown.length);
+    idle = count === seen ? idle + 1 : 0;
+    seen = count;
+    if (idle >= ACTIVITY_AUTO_PAGES) {
+      paused = true;
+      return;
+    }
+    onMore();
+  };
   $effect(() => {
     const element = end;
     if (!element || typeof IntersectionObserver === 'undefined') {
@@ -90,7 +117,7 @@
     }
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) {
-        onMore();
+        loadBySelf();
       }
     });
     observer.observe(element);
@@ -199,7 +226,7 @@
           <p role="alert">{$t('frameleaf_account_activity_more_failed')}</p>
           <Button onclick={onMore}>{$t('frameleaf_account_activity_try_again')}</Button>
         {:else}
-          <span class="end" bind:this={end}></span>
+          {#if !paused}<span class="end" bind:this={end}></span>{/if}
           <Button onclick={onMore}>{$t('frameleaf_account_activity_show_earlier')}</Button>
         {/if}
       {:else}

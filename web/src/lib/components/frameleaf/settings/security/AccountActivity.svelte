@@ -6,6 +6,10 @@
    * (FL-808). It opens on the answer: when you last signed in, or that sign-ins did not work in the
    * last day. Sign-ins and security changes you made offer "This wasn't me".
    *
+   * The answer is only as good as the rows loaded, so it says no more than they support: until they
+   * reach back a full day and hold a sign-in (a few earlier pages load by themselves to get there),
+   * it says "in what's shown so far".
+   *
    * States: something to look at, nothing yet, nothing of this kind, loading, couldn't load (the
    * rest of settings stays usable), getting more and all shown.
    */
@@ -15,11 +19,13 @@
   import ActivityList from '$lib/components/frameleaf/settings/security/ActivityList.svelte';
   import WasntMeDialog from '$lib/components/frameleaf/settings/security/WasntMeDialog.svelte';
   import {
+    ACTIVITY_AUTO_PAGES,
     ACTIVITY_PAGE_SIZE,
     activityDay,
     activityDevice,
     activityPlace,
     activityTime,
+    coversLastDay,
     daysAgo,
     describeActivity,
     lastSignIn,
@@ -32,7 +38,7 @@
   import { locale } from '$lib/stores/preferences.store';
   import { getMyActivity } from '@frameleaf/sdk';
   import { mdiCloudAlertOutline, mdiHistory, mdiShieldAlertOutline, mdiShieldCheckOutline } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /** The moment "today" is measured from (for tests). */
@@ -44,6 +50,23 @@
   const events = $derived(feed.events);
   const failures = $derived(events ? recentFailures(events, now) : undefined);
   const last = $derived(events ? lastSignIn(events) : undefined);
+  /** Whether the rows loaded hold the whole last day, so a count of it is complete. */
+  const covered = $derived(events ? coversLastDay(events, feed.hasMore, now) : false);
+  /** Whether the rows loaded can answer "is anything wrong, and when did I last sign in". */
+  const answered = $derived(covered && (last !== undefined || !feed.hasMore));
+  // The answer needs the last day's rows and the last sign-in: a few earlier pages load by themselves.
+  $effect(() => {
+    if (
+      events &&
+      !answered &&
+      feed.hasMore &&
+      !feed.loadingMore &&
+      !feed.moreFailed &&
+      feed.pages < ACTIVITY_AUTO_PAGES
+    ) {
+      untrack(() => void feed.more());
+    }
+  });
 
   const whenOf = (createdAt: string) =>
     $t('frameleaf_account_activity_day_time', {
@@ -88,14 +111,24 @@
             : 'frameleaf_account_activity_hero_warn_sign_in',
           { values: { count: failures.events.length } },
         ),
-        body: $t('frameleaf_account_activity_hero_warn_body', {
-          values: {
-            device,
-            hasDevice: device ? 'yes' : 'no',
-            place: activityPlace(latest.via),
-            time: activityTime(latest.createdAt, $locale),
-          },
-        }),
+        body:
+          $t('frameleaf_account_activity_hero_warn_body', {
+            values: {
+              device,
+              hasDevice: device ? 'yes' : 'no',
+              place: activityPlace(latest.via),
+              time: activityTime(latest.createdAt, $locale),
+            },
+          }) + (covered ? '' : ` ${$t('frameleaf_account_activity_hero_warn_more')}`),
+      };
+    }
+    if (!answered) {
+      // Earlier rows are still on the server: nothing is concluded about them.
+      return {
+        tone: 'quiet',
+        icon: mdiHistory,
+        title: $t('frameleaf_account_activity_hero_so_far_title'),
+        body: $t('frameleaf_account_activity_hero_so_far_body'),
       };
     }
     const body = $t('frameleaf_account_activity_hero_last_body');
