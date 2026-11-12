@@ -120,6 +120,8 @@ describe('/date-doctor', () => {
       .set(asBearerAuth(partner.accessToken))
       .send({ assetIds: [copyId], shiftMinutes: -30 });
     expect(applied.status).toBe(201);
+    const fixed = await dateOf(partner.accessToken, copyId);
+    expect(fixed.fileCreatedAt).toBe(new Date(new Date(before.fileCreatedAt).getTime() - 30 * 60_000).toISOString());
 
     const undone = await request(app)
       .post(`/date-doctor/batches/${applied.body.batch.id}/undo`)

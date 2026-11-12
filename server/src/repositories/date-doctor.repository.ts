@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { DateLock } from 'src/schema/tables/date-fix.table.js';
 import type { DateFinding, DateFindingCause, DateScanRow } from 'src/utils/date-doctor.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
@@ -17,10 +18,11 @@ export type DateFixCurrent = {
   localDateTime: Date;
   dateTimeOriginal: Date | null;
   timeZone: string | null;
-  locked: boolean;
+  /** Which of the date and zone are locked now. */
+  locks: DateLock[];
   earlier: Omit<
     DateFixWrite,
-    'assetId' | 'currentTakenAt' | 'currentLocalDateTime' | 'newDate' | 'newZone' | 'newLocalDateTime'
+    'assetId' | 'currentTakenAt' | 'currentLocalDateTime' | 'currentZone' | 'newDate' | 'newZone' | 'newLocalDateTime'
   > | null;
 };
 
@@ -29,18 +31,32 @@ export type DateFixWrite = {
   assetId: string;
   currentTakenAt: Date;
   currentLocalDateTime: Date;
+  currentZone: string | null;
   previousDate: Date | null;
   previousZone: string | null;
   previousTakenAt: Date;
   previousLocalDateTime: Date;
-  previousLocked: boolean;
+  previousLocks: DateLock[];
   newDate: Date;
   newZone: string | null;
   newLocalDateTime: Date;
 };
 
+/** FL-930: an open proposal, with the date and zone the photo had when the scan made it. */
+export type DateProposal = {
+  assetId: string;
+  cause: DateFindingCause;
+  proposedDate: Date;
+  proposedZone: string | null;
+  currentDate: Date;
+  currentZone: string | null;
+};
+
 /** FL-930: what an Apply was asked to do, kept with its batch. */
 export type DateFixAsked = { cause: DateFindingCause | null; shiftMinutes: number | null; timeZone: string | null };
+
+/** FL-930: work that commits with the date change: partner copies, sidecars. */
+export type DateFixEffects = (tx: Transaction<DB>, assetIds: string[]) => Promise<void>;
 
 const asJson = (rows: unknown[]) => JSON.stringify(rows);
 
@@ -136,10 +152,13 @@ export class DateDoctorRepository {
             exists(
               selectFrom('date_fix_item')
                 .innerJoin('date_fix_batch', 'date_fix_batch.id', 'date_fix_item.batchId')
+                .innerJoin('asset_exif', 'asset_exif.assetId', 'date_fix_item.assetId')
                 .select('date_fix_item.assetId')
                 .whereRef('date_fix_item.assetId', '=', 'asset.id')
                 .where('date_fix_batch.undoneAt', 'is', null)
-                .whereRef('date_fix_item.newDate', '=', 'asset.fileCreatedAt'),
+                .whereRef('date_fix_item.newDate', '=', 'asset.fileCreatedAt')
+                .whereRef('date_fix_item.newLocalDateTime', '=', 'asset.localDateTime')
+                .where(sql<boolean>`date_fix_item."newZone" is not distinct from asset_exif."timeZone"`),
             ),
           ),
         )
@@ -163,6 +182,8 @@ export class DateDoctorRepository {
         'asset_date_finding.cause',
         'asset_date_finding.proposedDate',
         'asset_date_finding.proposedZone',
+        'asset_date_finding.currentDate',
+        'asset_date_finding.currentZone',
       ])
       .where(sql<boolean>`asset_date_finding."assetId" = any(${ids}::uuid[])`)
       .where('asset.ownerId', '=', ownerId)
@@ -171,9 +192,7 @@ export class DateDoctorRepository {
       .orderBy('asset_date_finding.assetId')
       .orderBy('asset_date_finding.confidence', 'desc')
       .orderBy('asset_date_finding.cause')
-      .execute() as Promise<
-      { assetId: string; cause: DateFindingCause; proposedDate: Date; proposedZone: string | null }[]
-    >;
+      .execute() as Promise<DateProposal[]>;
   }
 
   /**
@@ -195,7 +214,7 @@ export class DateDoctorRepository {
               'date_fix_item.previousZone',
               'date_fix_item.previousTakenAt',
               'date_fix_item.previousLocalDateTime',
-              'date_fix_item.previousLocked',
+              'date_fix_item.previousLocks',
             ])
             .whereRef('date_fix_item.assetId', '=', 'asset.id')
             .whereRef('date_fix_batch.userId', '=', 'asset.ownerId')
@@ -214,21 +233,20 @@ export class DateDoctorRepository {
         'asset.localDateTime',
         'asset_exif.dateTimeOriginal',
         'asset_exif.timeZone',
-        sql<boolean>`coalesce(asset_exif."lockedProperties" && array['dateTimeOriginal', 'timeZone']::varchar[], false)`.as(
-          'locked',
-        ),
+        sql<DateLock[]>`array(select property from unnest(coalesce(asset_exif."lockedProperties", '{}')) property
+          where property in ('dateTimeOriginal', 'timeZone') order by property)`.as('locks'),
         'earlier.previousDate',
         'earlier.previousZone',
         'earlier.previousTakenAt',
         'earlier.previousLocalDateTime',
-        'earlier.previousLocked',
+        'earlier.previousLocks',
       ])
       .where(sql<boolean>`asset.id = any(${ids}::uuid[])`)
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
       .execute();
     return rows.map(
-      ({ previousDate, previousZone, previousTakenAt, previousLocalDateTime, previousLocked, ...row }) => ({
+      ({ previousDate, previousZone, previousTakenAt, previousLocalDateTime, previousLocks, ...row }) => ({
         ...(row as Omit<DateFixCurrent, 'earlier'>),
         earlier:
           previousTakenAt && previousLocalDateTime
@@ -237,7 +255,7 @@ export class DateDoctorRepository {
                 previousZone,
                 previousTakenAt: previousTakenAt as Date,
                 previousLocalDateTime: previousLocalDateTime as Date,
-                previousLocked: !!previousLocked,
+                previousLocks: (previousLocks ?? []) as DateLock[],
               }
             : null,
       }),
@@ -248,15 +266,17 @@ export class DateDoctorRepository {
    * FL-930: writes the new dates and zones, locked, and records them as one batch with what was asked. A photo whose
    * date moved since it was read is left out. Returns the batch and the photos written, or nothing when none was.
    */
-  async applyFixes(ownerId: string, items: DateFixWrite[], asked: DateFixAsked) {
+  async applyFixes(ownerId: string, items: DateFixWrite[], asked: DateFixAsked, effects: DateFixEffects) {
     return this.db.transaction().execute(async (tx) => {
       const { rows } = await sql<{
         id: string;
       }>`update asset set "fileCreatedAt" = v."newDate", "localDateTime" = v."newLocalDateTime"
         from jsonb_to_recordset(${asJson(items)}::text::jsonb) as v("assetId" uuid, "currentTakenAt" timestamptz,
-          "currentLocalDateTime" timestamptz, "newDate" timestamptz, "newLocalDateTime" timestamptz)
+          "currentLocalDateTime" timestamptz, "currentZone" text, "newDate" timestamptz, "newLocalDateTime" timestamptz)
         where asset.id = v."assetId" and asset."ownerId" = ${ownerId}::uuid and asset."deletedAt" is null
           and asset."fileCreatedAt" = v."currentTakenAt" and asset."localDateTime" = v."currentLocalDateTime"
+          and exists (select 1 from asset_exif exif where exif."assetId" = asset.id
+            and exif."timeZone" is not distinct from v."currentZone")
         returning asset.id`.execute(tx);
       if (rows.length === 0) {
         return;
@@ -285,7 +305,7 @@ export class DateDoctorRepository {
               previousZone: item.previousZone,
               previousTakenAt: item.previousTakenAt,
               previousLocalDateTime: item.previousLocalDateTime,
-              previousLocked: item.previousLocked,
+              previousLocks: item.previousLocks,
               newDate: item.newDate,
               newZone: item.newZone,
               newLocalDateTime: item.newLocalDateTime,
@@ -293,6 +313,7 @@ export class DateDoctorRepository {
           )
           .execute();
       }
+      await effects(tx, [...written]);
       return { batch, assetIds: [...written] };
     });
   }
@@ -302,7 +323,12 @@ export class DateDoctorRepository {
    * wins), and marks it undone. The date stays locked until the sidecar has been rewritten (`releaseDateLock`).
    * Nothing when the owner has no such batch since `since`.
    */
-  async undoBatch(ownerId: string, batchId: string, since: Date) {
+  async undoBatch(
+    ownerId: string,
+    batchId: string,
+    since: Date,
+    effects: (tx: Transaction<DB>, restored: { assetId: string; previousLocks: DateLock[] }[]) => Promise<void>,
+  ) {
     return this.db.transaction().execute(async (tx) => {
       const batch = await tx
         .selectFrom('date_fix_batch')
@@ -318,13 +344,13 @@ export class DateDoctorRepository {
       if (batch.undoneAt) {
         return { batch, restored: [], alreadyUndone: true };
       }
-      const { rows: restored } = await sql<{ assetId: string; previousLocked: boolean }>`update asset
+      const { rows: restored } = await sql<{ assetId: string; previousLocks: DateLock[] }>`update asset
         set "fileCreatedAt" = item."previousTakenAt", "localDateTime" = item."previousLocalDateTime"
         from date_fix_item item join asset_exif exif on exif."assetId" = item."assetId"
         where item."batchId" = ${batchId}::uuid and asset.id = item."assetId" and asset."ownerId" = ${ownerId}::uuid
           and asset."fileCreatedAt" = item."newDate" and asset."localDateTime" = item."newLocalDateTime"
           and exif."timeZone" is not distinct from item."newZone"
-        returning asset.id as "assetId", item."previousLocked"`.execute(tx);
+        returning asset.id as "assetId", item."previousLocks"`.execute(tx);
       await sql`update asset_exif set "dateTimeOriginal" = item."previousDate", "timeZone" = item."previousZone"
         from date_fix_item item
         where item."batchId" = ${batchId}::uuid and asset_exif."assetId" = item."assetId"
@@ -335,6 +361,7 @@ export class DateDoctorRepository {
         .where('id', '=', batchId)
         .returningAll()
         .executeTakeFirstOrThrow();
+      await effects(tx, restored);
       return { batch: undone, restored, alreadyUndone: false };
     });
   }
@@ -354,7 +381,32 @@ export class DateDoctorRepository {
 
   /** FL-930: batches older than `before` can no longer be undone; removes them and their items. */
   async pruneBatches(before: Date): Promise<number> {
-    const result = await this.db.deleteFrom('date_fix_batch').where('createdAt', '<', before).executeTakeFirst();
-    return Number(result.numDeletedRows);
+    // ponytail: one batch (at most MAX_DATE_FIXES items, through the cascade) a statement keeps each delete small
+    let removed = 0;
+    for (;;) {
+      const result = await this.db
+        .deleteFrom('date_fix_batch')
+        .where('id', '=', (eb) =>
+          eb.selectFrom('date_fix_batch').select('id').where('createdAt', '<', before).orderBy('createdAt').limit(1),
+        )
+        .executeTakeFirst();
+      if (Number(result.numDeletedRows) === 0) {
+        return removed;
+      }
+      removed++;
+    }
+  }
+
+  /** FL-930: the photos a batch of the owner's holds, for the undo's access check. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  async getBatchAssetIds(ownerId: string, batchId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('date_fix_item')
+      .innerJoin('date_fix_batch', 'date_fix_batch.id', 'date_fix_item.batchId')
+      .select('date_fix_item.assetId')
+      .where('date_fix_batch.id', '=', batchId)
+      .where('date_fix_batch.userId', '=', ownerId)
+      .execute();
+    return rows.map(({ assetId }) => assetId);
   }
 }

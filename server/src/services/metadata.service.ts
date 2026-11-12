@@ -962,10 +962,11 @@ export class MetadataService extends BaseService {
     // Capture edits stay authoritative: sidecars lose source precision and may not carry the original zone.
     // FL-1299: undoing a healed date writes the restored date here, so the sidecar can't bring the healed
     // one back, and then lets it go: nobody chose this date, and the photo can be healed again.
+    const released = job.releaseDateLock === true ? ['timeZone', 'dateTimeOriginal'] : job.releaseDateLock || [];
     const keptLocked = new Set<string>([
       ...placeProperties,
       'tags',
-      ...(job.releaseDateLock ? [] : ['timeZone', 'dateTimeOriginal']),
+      ...['timeZone', 'dateTimeOriginal'].filter((property) => !released.includes(property)),
       ...(locationRemoved ? ['latitude', 'longitude'] : []),
     ]);
     await this.assetRepository.unlockProperties(

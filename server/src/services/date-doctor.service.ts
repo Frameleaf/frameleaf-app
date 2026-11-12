@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
-import type { Selectable } from 'kysely';
+import type { Selectable, Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
   DateDoctorApplyResponseDto,
@@ -10,7 +10,8 @@ import type {
   DateDoctorGroup,
   DateDoctorPreviewResponseDto,
 } from 'src/dtos/date-doctor.dto.js';
-import type { DateFixBatchTable } from 'src/schema/tables/date-fix.table.js';
+import type { DB } from 'src/schema/index.js';
+import type { DateFixBatchTable, DateLock } from 'src/schema/tables/date-fix.table.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { AccountEventAction, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
@@ -22,7 +23,6 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetOriginField, PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
-import { recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireAccess } from 'src/utils/access.js';
 import { type DateFindingCause, detectDateFindings, wallToInstant } from 'src/utils/date-doctor.js';
 import { getAssetDateTimeUpdates } from 'src/utils/date.js';
@@ -31,6 +31,8 @@ import { getAssetDateTimeUpdates } from 'src/utils/date.js';
 export const DATE_FIX_UNDO_DAYS = 30;
 
 const iso = (date: Date | string) => new Date(date).toISOString();
+
+const DATE_LOCKS: DateLock[] = ['dateTimeOriginal', 'timeZone'];
 
 /**
  * FL-912: the Date & Time Doctor finds photos whose date or time zone is probably wrong and proposes a fix with a
@@ -120,23 +122,18 @@ export class DateDoctorService {
   async apply(auth: AuthDto, dto: DateDoctorFixDto): Promise<DateDoctorApplyResponseDto> {
     const { items, cause } = await this.plan(auth, dto);
     const asked = { cause, shiftMinutes: dto.shiftMinutes ?? null, timeZone: dto.timeZone ?? null };
+    // the sidecars and partner copies commit with the dates: a failure leaves nothing changed, so a retry is safe
     const result =
-      items.length > 0 ? await this.dateDoctorRepository.applyFixes(auth.user.id, items, asked) : undefined;
+      items.length > 0
+        ? await this.dateDoctorRepository.applyFixes(auth.user.id, items, asked, (tx, assetIds) =>
+            this.queueDateEffects(tx, auth.user.id, assetIds, () => ({})),
+          )
+        : undefined;
     if (!result) {
       throw new BadRequestException('Nothing to fix');
     }
     const { batch, assetIds } = result;
-    await this.afterDateChange(auth.user.id, assetIds, false);
-    try {
-      await this.accountEventRepository.create({
-        userId: auth.user.id,
-        action: AccountEventAction.DatesFixed,
-        subject: auth.user.name,
-        detail: String(batch.count),
-      });
-    } catch (error) {
-      this.logger.error(`Unable to record account activity (${AccountEventAction.DatesFixed}): ${error}`);
-    }
+    await this.afterCommit(auth.user.id, assetIds, AccountEventAction.DatesFixed, batch.count, auth.user.name);
     const written = new Set(assetIds);
     return { batch: toBatchResponse(batch), skipped: dto.assetIds.filter((id) => !written.has(id)) };
   }
@@ -147,7 +144,30 @@ export class DateDoctorService {
   }
 
   async undo(auth: AuthDto, id: string): Promise<DateDoctorBatchDto> {
-    const result = await this.dateDoctorRepository.undoBatch(auth.user.id, id, undoSince());
+    // the same check as a fix: a photo Locked since then needs an elevated session to change
+    const ids = await this.dateDoctorRepository.getBatchAssetIds(auth.user.id, id);
+    if (ids.length > 0) {
+      await requireAccess(this.accessRepository, { auth, permission: Permission.AssetUpdate, ids });
+    }
+    const result = await this.dateDoctorRepository.undoBatch(auth.user.id, id, undoSince(), (tx, restored) => {
+      // a date or zone that was not set by hand before goes back to being read from the file, once the sidecar
+      // holds the restored value
+      const release = new Map(
+        restored.map(({ assetId, previousLocks }) => [
+          assetId,
+          DATE_LOCKS.filter((property) => !previousLocks.includes(property)),
+        ]),
+      );
+      return this.queueDateEffects(
+        tx,
+        auth.user.id,
+        restored.map(({ assetId }) => assetId),
+        (assetId) => {
+          const released = release.get(assetId) ?? [];
+          return released.length === 0 ? {} : { releaseDateLock: released.length === 2 ? true : released };
+        },
+      );
+    });
     if (!result) {
       throw new BadRequestException('Batch not found');
     }
@@ -155,12 +175,9 @@ export class DateDoctorService {
       throw new BadRequestException('Already undone');
     }
     const { batch, restored } = result;
-    // a date that was not set by hand before goes back to being read from the file, once the sidecar holds it
-    const release = new Set(restored.filter(({ previousLocked }) => !previousLocked).map(({ assetId }) => assetId));
-    await this.afterDateChange(
+    await this.afterCommit(
       auth.user.id,
       restored.map(({ assetId }) => assetId),
-      release,
     );
     return { ...toBatchResponse(batch), restored: restored.length };
   }
@@ -190,6 +207,13 @@ export class DateDoctorService {
     const items: DateFixPlan[] = [];
     for (const row of rows.toSorted((a, b) => ordered.get(a.assetId)! - ordered.get(b.assetId)!)) {
       const proposal = proposals?.get(row.assetId);
+      // a proposal made for a date the photo no longer has (edited since the scan) is not applied over the edit
+      if (
+        proposal &&
+        (new Date(proposal.currentDate).getTime() !== row.takenAt.getTime() || proposal.currentZone !== row.timeZone)
+      ) {
+        continue;
+      }
       const newZone = proposal ? (proposal.proposedZone ?? row.timeZone) : (dto.timeZone ?? row.timeZone);
       const newDate = proposal
         ? new Date(proposal.proposedDate)
@@ -219,7 +243,7 @@ export class DateDoctorService {
           previousZone: row.timeZone,
           previousTakenAt: row.takenAt,
           previousLocalDateTime: row.localDateTime,
-          previousLocked: row.locked,
+          previousLocks: row.locks,
         }),
         newDate,
         newZone,
@@ -231,24 +255,50 @@ export class DateDoctorService {
   }
 
   /**
-   * What a date edit sets off, as `AssetService.updateAll` does it: the date is the owner's on partner copies and
-   * copies following these photos receive it, the sidecars are rewritten, and timelines and memories hear of it.
-   * `release`: photos whose date lock goes once their sidecar holds the restored date (undo).
+   * What a date edit sets off, as `AssetService.updateAll` does it, in the transaction that changed the dates: the
+   * date is the owner's on their partner copies, copies following these photos receive it, and the sidecars are
+   * rewritten (`sidecar`: what each photo's job does with the lock).
    */
-  private async afterDateChange(ownerId: string, assetIds: string[], release: Set<string> | false) {
+  private async queueDateEffects(
+    tx: Transaction<DB>,
+    ownerId: string,
+    assetIds: string[],
+    sidecar: (assetId: string) => Omit<JobOf<JobName.SidecarWrite>, 'id'>,
+  ) {
     if (assetIds.length === 0) {
       return;
     }
-    await recordAssetEdit({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, ownerId, assetIds, [
-      AssetOriginField.DateTimeOriginal,
-    ]);
-    await this.jobRepository.queueAll(
-      assetIds.map((id) => ({
-        name: JobName.SidecarWrite as const,
-        data: release && release.has(id) ? { id, releaseDateLock: true } : { id },
+    const fields = [AssetOriginField.DateTimeOriginal];
+    await this.partnerOriginRepository.markOverridden('asset', assetIds, fields, ownerId, tx);
+    const sources = await this.partnerOriginRepository.getIdsWithFollowers('asset', assetIds);
+    await this.jobRepository.queueAllInTransaction(tx, [
+      ...sources.map((sourceId) => ({
+        name: JobName.PartnerPropagate as const,
+        data: { kind: 'asset' as const, sourceId, fields },
       })),
-    );
-    await this.eventRepository.emit('AssetsChanged', { assetIds });
+      ...assetIds.map((id) => ({ name: JobName.SidecarWrite as const, data: { id, ...sidecar(id) } })),
+    ]);
+  }
+
+  /** After the dates commit: timelines and memories hear of it, and an Apply goes in the activity log. */
+  private async afterCommit(
+    ownerId: string,
+    assetIds: string[],
+    action?: AccountEventAction,
+    count?: number,
+    subject?: string,
+  ) {
+    // the change is in; a failure here must not make the client think it is not, and try again
+    try {
+      if (assetIds.length > 0) {
+        await this.eventRepository.emit('AssetsChanged', { assetIds });
+      }
+      if (action) {
+        await this.accountEventRepository.create({ userId: ownerId, action, subject: subject!, detail: String(count) });
+      }
+    } catch (error) {
+      this.logger.error(`Date & Time Doctor: unable to announce changed dates of ${ownerId}: ${error}`);
+    }
   }
 }
 

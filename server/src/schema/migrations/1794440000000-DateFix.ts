@@ -22,7 +22,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   "previousZone" text,
   "previousTakenAt" timestamp with time zone NOT NULL,
   "previousLocalDateTime" timestamp with time zone NOT NULL,
-  "previousLocked" boolean NOT NULL,
+  "previousLocks" character varying[] NOT NULL,
   "newDate" timestamp with time zone NOT NULL,
   "newZone" text,
   "newLocalDateTime" timestamp with time zone NOT NULL,

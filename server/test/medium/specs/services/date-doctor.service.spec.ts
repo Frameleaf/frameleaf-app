@@ -254,7 +254,7 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
       mock: [LoggingRepository],
     });
     const logger = { setContext: vi.fn(), log: vi.fn(), error: vi.fn() } as unknown as LoggingRepository;
-    const jobs = { queue: vi.fn(), queueAll: vi.fn() };
+    const jobs = { queue: vi.fn(), queueAll: vi.fn(), queueAllInTransaction: vi.fn() };
     const events = { emit: vi.fn() };
     const doctor = new DateDoctorService(
       logger,
@@ -270,13 +270,18 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
   type FixContext = ReturnType<typeof fixSetup>['ctx'];
 
   const takenAt = new Date('2022-07-01T10:03:00Z');
-  const photo = async (ctx: FixContext, ownerId: string, zone: string | null = null, locked = false) => {
+  const photo = async (
+    ctx: FixContext,
+    ownerId: string,
+    zone: string | null = null,
+    locks: Array<'dateTimeOriginal' | 'timeZone'> = [],
+  ) => {
     const { asset } = await ctx.newAsset({ ownerId, fileCreatedAt: takenAt, localDateTime: takenAt });
     await ctx.newExif({
       assetId: asset.id,
       dateTimeOriginal: takenAt,
       timeZone: zone,
-      lockedProperties: locked ? ['dateTimeOriginal'] : null,
+      lockedProperties: locks.length > 0 ? locks : null,
     });
     return asset.id;
   };
@@ -312,7 +317,9 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
       timeZone: 'Europe/Paris',
       lockedProperties: expect.arrayContaining(['dateTimeOriginal', 'timeZone']),
     });
-    expect(jobs.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id } }]);
+    expect(jobs.queueAllInTransaction).toHaveBeenCalledWith(expect.anything(), [
+      { name: JobName.SidecarWrite, data: { id } },
+    ]);
     const logged = await db.selectFrom('account_event').selectAll().where('userId', '=', user.id).execute();
     expect(logged).toEqual([expect.objectContaining({ action: 'dates-fixed', detail: '1' })]);
 
@@ -321,23 +328,65 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     const after = await dateOf(id);
     expect({ ...after, lockedProperties: before.lockedProperties }).toEqual(before);
     // the lock goes once the sidecar holds the restored date
-    expect(jobs.queueAll).toHaveBeenLastCalledWith([
+    expect(jobs.queueAllInTransaction).toHaveBeenLastCalledWith(expect.anything(), [
       { name: JobName.SidecarWrite, data: { id, releaseDateLock: true } },
     ]);
     await expect(doctor.undo(auth, batch.id)).rejects.toThrow('Already undone');
   });
 
-  it('a date set by hand before stays set by hand after undo', async () => {
+  it('what was set by hand before stays set by hand after undo, property by property', async () => {
     const { ctx, doctor, jobs } = fixSetup();
     const { user } = await ctx.newUser();
     const auth = factory.auth({ user });
-    const id = await photo(ctx, user.id, 'UTC', true);
+    const both = await photo(ctx, user.id, 'UTC', ['dateTimeOriginal', 'timeZone']);
+    const zoneOnly = await photo(ctx, user.id, 'UTC', ['timeZone']);
 
-    const { batch } = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 30 });
+    const { batch } = await doctor.apply(auth, { assetIds: [both, zoneOnly], shiftMinutes: 30 });
     await doctor.undo(auth, batch.id);
 
-    expect(jobs.queueAll).toHaveBeenLastCalledWith([{ name: JobName.SidecarWrite, data: { id } }]);
-    expect((await dateOf(id)).fileCreatedAt).toEqual(takenAt);
+    expect(jobs.queueAllInTransaction).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.arrayContaining([
+        { name: JobName.SidecarWrite, data: { id: both } },
+        { name: JobName.SidecarWrite, data: { id: zoneOnly, releaseDateLock: ['dateTimeOriginal'] } },
+      ]),
+    );
+    expect((await dateOf(both)).fileCreatedAt).toEqual(takenAt);
+  });
+
+  it('does not apply over a zone changed after the plan was read', async () => {
+    const { ctx } = fixSetup();
+    const { user } = await ctx.newUser();
+    const id = await photo(ctx, user.id, 'Europe/Paris');
+    const repository = new DateDoctorRepository(db);
+    const [row] = await repository.getCurrent(user.id, [id]);
+    // a zone with the same offset set in between, which leaves both clock values as they were
+    await db.updateTable('asset_exif').set({ timeZone: 'Europe/Berlin' }).where('assetId', '=', id).execute();
+
+    const result = await repository.applyFixes(
+      user.id,
+      [
+        {
+          assetId: id,
+          currentTakenAt: row.takenAt,
+          currentLocalDateTime: row.localDateTime,
+          currentZone: row.timeZone,
+          previousDate: row.dateTimeOriginal,
+          previousZone: row.timeZone,
+          previousTakenAt: row.takenAt,
+          previousLocalDateTime: row.localDateTime,
+          previousLocks: [],
+          newDate: new Date(row.takenAt.getTime() + 60_000),
+          newZone: row.timeZone,
+          newLocalDateTime: new Date(row.localDateTime.getTime() + 60_000),
+        },
+      ],
+      { cause: null, shiftMinutes: 1, timeZone: null },
+      () => Promise.resolve(),
+    );
+
+    expect(result).toBeUndefined();
+    expect(await dateOf(id)).toEqual(expect.objectContaining({ fileCreatedAt: takenAt, timeZone: 'Europe/Berlin' }));
   });
 
   it('applying twice keeps the earliest previous value, so undo goes all the way back', async () => {
@@ -416,6 +465,35 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     ]);
   });
 
+  it('a fix the photo no longer carries does not hide its finding', async () => {
+    const { ctx, doctor } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const id = await photo(ctx, user.id);
+    await db
+      .insertInto('asset_date_finding')
+      .values({
+        assetId: id,
+        cause: DateFindingCause.MissingZone,
+        currentDate: takenAt,
+        currentZone: null,
+        proposedDate: takenAt,
+        proposedZone: 'Asia/Tokyo',
+        confidence: 0.8,
+        groupKey: 'unknown|2022-07-01',
+      })
+      .execute();
+
+    // two zone changes that keep the moment, then the second undone: the photo is back as it was, though the first
+    // batch, never undone, still names the same moment
+    await doctor.apply(auth, { assetIds: [id], timeZone: 'Asia/Tokyo' });
+    const { batch: second } = await doctor.apply(auth, { assetIds: [id], timeZone: 'Europe/Paris' });
+    expect(await findingsOf(doctor, auth)).toEqual([]);
+    await doctor.undo(auth, second.id);
+
+    expect((await findingsOf(doctor, auth)).map(({ assetId }) => assetId)).toEqual([id]);
+  });
+
   it('a person cannot fix or undo photos they do not own, a partner’s copy included', async () => {
     const { ctx, doctor } = fixSetup();
     const { user: owner } = await ctx.newUser();
@@ -459,7 +537,10 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     console.log(`FL-930: applied to ${batch.count} photos in ${elapsed} ms`);
     expect(batch.count).toBe(1000);
     expect(elapsed).toBeLessThan(5000);
-    expect(jobs.queueAll).toHaveBeenCalledWith(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+    expect(jobs.queueAllInTransaction).toHaveBeenCalledWith(
+      expect.anything(),
+      ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
+    );
   }, 120_000);
 
   it('removes batches older than 30 days each night', async () => {

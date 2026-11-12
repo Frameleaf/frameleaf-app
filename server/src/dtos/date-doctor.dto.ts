@@ -46,7 +46,7 @@ export type DateDoctorGroup = z.infer<typeof DateDoctorGroupSchema>;
 
 /** FL-930: what to fix: photos, and the Doctor's proposals for them or a zone and shift. */
 // an IANA zone, or a fixed offset as the Doctor writes one (`UTC+2`, `UTC-5:30`); never `local` or `system`
-const isZone = (zone: string) => IANAZone.isValidZone(zone) || /^UTC[+-]\d{1,2}(?::\d{2})?$/.test(zone);
+const isZone = (zone: string) => IANAZone.isValidZone(zone) || /^UTC[+-](?:1[0-4]|0?\d)(?::[0-5]\d)?$/.test(zone);
 
 const DateDoctorFixSchema = z
   .object({
@@ -86,6 +86,9 @@ const DateDoctorFixSchema = z
     'Send useProposal alone, or a timeZone and/or shiftMinutes',
   )
   .refine((dto) => dto.keepWallTime === undefined || dto.timeZone !== undefined, 'keepWallTime needs a timeZone')
+  .describe(
+    'Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes`; `keepWallTime` only with `timeZone`. Any other combination is refused (400).',
+  )
   .meta({ id: 'DateDoctorFixDto' });
 
 const DateDoctorTimeSchema = z

@@ -245,7 +245,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     localDateTime: new Date('2022-07-01T10:03:00Z'),
     dateTimeOriginal: new Date('2022-07-01T10:03:00Z'),
     timeZone: null,
-    locked: false,
+    locks: [],
     earlier: null,
     ...overrides,
   });
@@ -257,9 +257,10 @@ describe('DateDoctorService fixes (FL-930)', () => {
       getBatches: vi.fn().mockResolvedValue([]),
       applyFixes: vi.fn(),
       undoBatch: vi.fn(),
+      getBatchAssetIds: vi.fn().mockResolvedValue([]),
       pruneBatches: vi.fn().mockResolvedValue(0),
     };
-    const jobs = { queue: vi.fn(), queueAll: vi.fn() };
+    const jobs = { queue: vi.fn(), queueAll: vi.fn(), queueAllInTransaction: vi.fn() };
     const access = { asset: { checkOwnerAccess: vi.fn().mockResolvedValue(new Set(owned)) } };
     const accountEvents = { create: vi.fn() };
     const events = { emit: vi.fn() };
@@ -288,7 +289,16 @@ describe('DateDoctorService fixes (FL-930)', () => {
     cause,
     proposedDate: new Date(proposedDate),
     proposedZone,
+    currentDate: new Date('2022-07-01T10:03:00Z'),
+    currentZone: null,
   });
+  const tx = { tx: true };
+  /** The repository's transaction: it runs the effects with the photos it wrote. */
+  const applied = (result: { batch: typeof batch; assetIds: string[] }) =>
+    vi.fn(async (_owner, _items, _asked, effects) => {
+      await effects(tx, result.assetIds);
+      return result;
+    });
 
   it('previews a proposal: its date and zone, and the clock time in that zone', async () => {
     const { sut, repository } = setup(['a']);
@@ -368,9 +378,11 @@ describe('DateDoctorService fixes (FL-930)', () => {
       previousZone: null,
       previousTakenAt: new Date('2000-01-01T00:00:00Z'),
       previousLocalDateTime: new Date('2000-01-01T00:00:00Z'),
-      previousLocked: false,
+      previousLocks: [],
     };
-    repository.getCurrent.mockResolvedValue([current('a', { timeZone: 'Europe/Paris', locked: true, earlier })]);
+    repository.getCurrent.mockResolvedValue([
+      current('a', { timeZone: 'Europe/Paris', locks: ['dateTimeOriginal', 'timeZone'], earlier }),
+    ]);
     repository.applyFixes.mockResolvedValue({ batch, assetIds: ['a'] });
 
     await sut.apply(owner, { assetIds: ['a'], shiftMinutes: 10 });
@@ -385,13 +397,14 @@ describe('DateDoctorService fixes (FL-930)', () => {
         }),
       ],
       { cause: null, shiftMinutes: 10, timeZone: null },
+      expect.any(Function),
     );
   });
 
   it('applies: rewrites sidecars, tells copies following the photos, refreshes timelines and logs the count', async () => {
     const { sut, repository, jobs, events, accountEvents, partnerOrigin } = setup();
     repository.getCurrent.mockResolvedValue([current('a'), current('b')]);
-    repository.applyFixes.mockResolvedValue({ batch, assetIds: ['a', 'b'] });
+    repository.applyFixes.mockImplementation(applied({ batch, assetIds: ['a', 'b'] }));
     partnerOrigin.getIdsWithFollowers.mockResolvedValue(['a']);
 
     await expect(sut.apply(owner, { assetIds: ['a', 'b'], timeZone: 'Europe/Paris' })).resolves.toEqual({
@@ -407,19 +420,26 @@ describe('DateDoctorService fixes (FL-930)', () => {
       },
       skipped: [],
     });
-    expect(repository.applyFixes).toHaveBeenCalledWith(owner.user.id, expect.any(Array), {
-      cause: null,
-      shiftMinutes: null,
-      timeZone: 'Europe/Paris',
-    });
-    expect(partnerOrigin.markOverridden).toHaveBeenCalledWith('asset', ['a', 'b'], ['dateTimeOriginal'], owner.user.id);
-    expect(jobs.queueAll).toHaveBeenCalledWith([
+    expect(repository.applyFixes).toHaveBeenCalledWith(
+      owner.user.id,
+      expect.any(Array),
+      { cause: null, shiftMinutes: null, timeZone: 'Europe/Paris' },
+      expect.any(Function),
+    );
+    // partner copies and sidecars commit in the transaction that wrote the dates
+    expect(partnerOrigin.markOverridden).toHaveBeenCalledWith(
+      'asset',
+      ['a', 'b'],
+      ['dateTimeOriginal'],
+      owner.user.id,
+      tx,
+    );
+    expect(jobs.queueAllInTransaction).toHaveBeenCalledWith(tx, [
       { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: 'a', fields: ['dateTimeOriginal'] } },
-    ]);
-    expect(jobs.queueAll).toHaveBeenCalledWith([
       { name: JobName.SidecarWrite, data: { id: 'a' } },
       { name: JobName.SidecarWrite, data: { id: 'b' } },
     ]);
+    expect(jobs.queueAll).not.toHaveBeenCalled();
     expect(events.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: ['a', 'b'] });
     expect(accountEvents.create).toHaveBeenCalledWith(
       expect.objectContaining({ action: AccountEventAction.DatesFixed, detail: '2' }),
@@ -437,11 +457,12 @@ describe('DateDoctorService fixes (FL-930)', () => {
     const { skipped } = await sut.apply(owner, { assetIds: ['a', 'b'], useProposal: true });
 
     expect(skipped).toEqual(['b']);
-    expect(repository.applyFixes).toHaveBeenCalledWith(owner.user.id, expect.any(Array), {
-      cause: DateFindingCause.GpsZoneMismatch,
-      shiftMinutes: null,
-      timeZone: null,
-    });
+    expect(repository.applyFixes).toHaveBeenCalledWith(
+      owner.user.id,
+      expect.any(Array),
+      { cause: DateFindingCause.GpsZoneMismatch, shiftMinutes: null, timeZone: null },
+      expect.any(Function),
+    );
   });
 
   it('records no cause when the proposals had several', async () => {
@@ -455,11 +476,22 @@ describe('DateDoctorService fixes (FL-930)', () => {
 
     await sut.apply(owner, { assetIds: ['a', 'b'], useProposal: true });
 
-    expect(repository.applyFixes).toHaveBeenCalledWith(owner.user.id, expect.any(Array), {
-      cause: null,
-      shiftMinutes: null,
-      timeZone: null,
-    });
+    expect(repository.applyFixes).toHaveBeenCalledWith(
+      owner.user.id,
+      expect.any(Array),
+      { cause: null, shiftMinutes: null, timeZone: null },
+      expect.any(Function),
+    );
+  });
+
+  it('leaves a proposal alone when the photo was dated again after the scan', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getProposals.mockResolvedValue([
+      proposal('a', DateFindingCause.MissingZone, '2022-07-01T08:03:00Z', 'Europe/Paris'),
+    ]);
+    repository.getCurrent.mockResolvedValue([current('a', { takenAt: new Date('2022-08-01T00:00:00Z') })]);
+
+    await expect(sut.preview(owner, { assetIds: ['a'], useProposal: true })).resolves.toEqual({ items: [] });
   });
 
   it('says there is nothing to fix when no photo would change', async () => {
@@ -479,25 +511,37 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(Date.now() - since.getTime()).toBeGreaterThanOrEqual(30 * 24 * 3_600_000 - 1000);
   });
 
-  it('undoes: the sidecar gets the restored date, and a date nobody set by hand is read from the file again', async () => {
-    const { sut, repository, jobs } = setup();
-    repository.undoBatch.mockResolvedValue({
-      batch: { ...batch, undoneAt: now },
-      restored: [
-        { assetId: 'a', previousLocked: false },
-        { assetId: 'b', previousLocked: true },
-      ],
-      alreadyUndone: false,
+  it('undoes: the sidecar gets the restored date, and what nobody set by hand is read from the file again', async () => {
+    const { sut, repository, jobs } = setup(['a', 'b', 'c']);
+    repository.getBatchAssetIds.mockResolvedValue(['a', 'b', 'c']);
+    const restored = [
+      { assetId: 'a', previousLocks: [] },
+      { assetId: 'b', previousLocks: ['dateTimeOriginal', 'timeZone'] },
+      { assetId: 'c', previousLocks: ['timeZone'] },
+    ];
+    repository.undoBatch.mockImplementation(async (_owner, _id, _since, effects) => {
+      await effects(tx, restored);
+      return { batch: { ...batch, undoneAt: now }, restored, alreadyUndone: false };
     });
 
     await expect(sut.undo(owner, 'batch')).resolves.toEqual(
-      expect.objectContaining({ undoneAt: now.toISOString(), restored: 2 }),
+      expect.objectContaining({ undoneAt: now.toISOString(), restored: 3 }),
     );
-    expect(repository.undoBatch).toHaveBeenCalledWith(owner.user.id, 'batch', expect.any(Date));
-    expect(jobs.queueAll).toHaveBeenCalledWith([
+    expect(repository.undoBatch).toHaveBeenCalledWith(owner.user.id, 'batch', expect.any(Date), expect.any(Function));
+    expect(jobs.queueAllInTransaction).toHaveBeenCalledWith(tx, [
       { name: JobName.SidecarWrite, data: { id: 'a', releaseDateLock: true } },
       { name: JobName.SidecarWrite, data: { id: 'b' } },
+      // only the zone had been set by hand: the date lock goes, the zone's stays
+      { name: JobName.SidecarWrite, data: { id: 'c', releaseDateLock: ['dateTimeOriginal'] } },
     ]);
+  });
+
+  it('refuses to undo when a photo of the batch was Locked since, without an elevated session', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getBatchAssetIds.mockResolvedValue(['a', 'locked']);
+
+    await expect(sut.undo(owner, 'batch')).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.undoBatch).not.toHaveBeenCalled();
   });
 
   it('refuses to undo another person’s batch, an old one or one already undone', async () => {

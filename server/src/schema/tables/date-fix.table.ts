@@ -5,6 +5,8 @@ import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
+export type DateLock = 'dateTimeOriginal' | 'timeZone';
+
 /**
  * FL-930: one Apply of the Date & Time Doctor, which its owner can undo for 30 days. Older batches are removed
  * nightly. Mirrors migration 1794440000000-DateFix.
@@ -64,9 +66,9 @@ export class DateFixItemTable {
   @Column({ type: 'timestamp with time zone' })
   previousLocalDateTime!: Timestamp;
 
-  /** Whether the date or zone was locked before; if not, undo lets go of the lock once the sidecar is rewritten. */
-  @Column({ type: 'boolean' })
-  previousLocked!: boolean;
+  /** Which of the date and zone were locked before; undo lets go of the others once the sidecar is rewritten. */
+  @Column({ type: 'character varying', array: true })
+  previousLocks!: DateLock[];
 
   @Column({ type: 'timestamp with time zone' })
   newDate!: Timestamp;

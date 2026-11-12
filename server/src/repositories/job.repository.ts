@@ -1260,6 +1260,19 @@ export class JobRepository {
     await this.store.enqueue([intent], tx);
   }
 
+  /** FL-930: `queueAll` committed with the caller's transaction, from a request (never from queued work). */
+  async queueAllInTransaction(tx: Transaction<DB>, items: JobItem[]): Promise<void> {
+    if (queueExecution.getStore() || runAdmission.getStore()) {
+      throw new Error('Queued work and run admission queue through their own transaction');
+    }
+    if (items.length > 0) {
+      await this.store.enqueue(
+        items.map((item) => this.intent(item)),
+        tx,
+      );
+    }
+  }
+
   async queueAll(items: JobItem[]): Promise<void> {
     const intents = items.map((item) => this.intent(item));
     const context = queueExecution.getStore();
