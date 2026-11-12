@@ -292,3 +292,33 @@ describe('queueHolds', () => {
     expect((await jobs.searchJobs(QueueName.FaceDetection, {})).map(({ status }) => status)).toEqual(['paused']);
   });
 });
+
+/** FL-1496: an account's counts and job list cover the whole queue, not a share of its newest 1,000 jobs. */
+describe('account filter', () => {
+  it("counts and lists one account's jobs in the database", async () => {
+    const ctx = setup();
+    const { user: ada } = await ctx.newUser();
+    const { user: grace } = await ctx.newUser();
+    const { asset: adas } = await ctx.newAsset({ ownerId: ada.id });
+    const { asset: graces } = await ctx.newAsset({ ownerId: grace.id });
+    const pending = { state: 'pending' };
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, adas.id, null, pending);
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, adas.id, 'boom');
+    // an account's own id names that account; a Locked job's data is not read; a non-uuid names nobody
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, ada.id, null, pending);
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, adas.id, null, { ...pending, sensitive: true });
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, 'not-a-uuid', null, pending);
+    // a job whose `id` names nothing falls to the next thing it names
+    const second = await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, 'also-not-a-uuid', null, pending);
+    await sql`update job set data = data || ${JSON.stringify({ assetId: graces.id })}::text::jsonb
+      where id = ${second}::uuid`.execute(db);
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, graces.id, null, pending);
+
+    const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
+    expect(await jobs.getJobCounts(QueueName.ThumbnailGeneration, ada.id)).toMatchObject({ waiting: 2, failed: 1 });
+    expect(await jobs.getJobCounts(QueueName.ThumbnailGeneration, grace.id)).toMatchObject({ waiting: 2, failed: 0 });
+    expect(await jobs.getJobCounts(QueueName.ThumbnailGeneration)).toMatchObject({ waiting: 6, failed: 1 });
+    expect(await jobs.searchJobs(QueueName.ThumbnailGeneration, { ownerId: grace.id })).toHaveLength(2);
+    expect(await jobs.searchJobs(QueueName.ThumbnailGeneration, { ownerId: ada.id })).toHaveLength(3);
+  });
+});
