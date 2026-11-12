@@ -308,6 +308,18 @@ export function applyServiceOverrides(services: Record<string, unknown>, overrid
     }
   }
 }
+/**
+ * FL-1477: tells the server where its built-in Imports folder is on the host, from the server's final
+ * environment (after the administrator's overrides), so a media location set there is followed. A value the
+ * administrator set themselves is kept.
+ */
+export function withImportsHostPath(server: Record<string, any> | undefined, mounts: Mount[]): void {
+  if (!server) return;
+  const environment: Record<string, string> = server.environment ?? {};
+  if (environment.FRAMELEAF_IMPORTS_HOST_PATH) return;
+  const imports = importsFolder(mounts, environment.FRAMELEAF_MEDIA_LOCATION || environment.IMMICH_MEDIA_LOCATION || undefined);
+  if (imports) server.environment = { ...environment, FRAMELEAF_IMPORTS_HOST_PATH: imports };
+}
 export type ApplicationConfig = z.infer<typeof ApplicationConfig>;
 /**
  * The conflict and deny-list checks renderCompose runs, against the media targets this installation has,
@@ -461,11 +473,6 @@ export async function renderCompose(
     FRAMELEAF_MANAGER_TOKEN_FILE: '/run/frameleaf/manager-token',
     FRAMELEAF_MANAGER_URL: process.env.MANAGER_ORIGIN ?? '',
   };
-  const imports = importsFolder(
-    installation.mounts,
-    environment.FRAMELEAF_MEDIA_LOCATION || environment.IMMICH_MEDIA_LOCATION || undefined,
-  );
-  if (imports) environment.FRAMELEAF_IMPORTS_HOST_PATH = imports;
   if (installation.origin === 'restored_library' && installation.importInstallation) {
     if (!/^[a-f0-9]{12}$/.test(installation.importInstallation)) throw new Refusal('invalid_restore_import_identity');
     environment.FRAMELEAF_MANAGER_IMPORT_INSTALLATION = installation.importInstallation;
@@ -615,6 +622,7 @@ export async function renderCompose(
     };
   }
   applyServiceOverrides(services, application.services);
+  withImportsHostPath(services['frameleaf-server'] as Record<string, any> | undefined, installation.mounts);
   for (const [name, service] of Object.entries(services)) (service as any).container_name = containerName(installation.id, name);
   tuneDatabase(services.database as Record<string, any>, memory ?? (await hostMemory()));
   await mkdir(directory, { recursive: true, mode: 0o700 });

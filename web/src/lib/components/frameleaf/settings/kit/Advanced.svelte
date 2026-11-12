@@ -6,10 +6,15 @@
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
-  let { summary, open = false, children }: { summary?: string; open?: boolean; children: Snippet } = $props();
+  /** `open` can be bound, so a caller that opens it learns when the person closes it again. */
+  let {
+    summary,
+    open = $bindable(false),
+    children,
+  }: { summary?: string; open?: boolean; children: Snippet } = $props();
 </script>
 
-<details class="kit-advanced" {open}>
+<details class="kit-advanced" {open} ontoggle={(event) => (open = event.currentTarget.open)}>
   <summary>{summary ?? $t('frameleaf_kit_advanced')}</summary>
   <div class="body">{@render children()}</div>
 </details>

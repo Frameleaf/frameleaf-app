@@ -377,7 +377,7 @@
     {/if}
 
     {#if showRoots}
-      <Advanced summary={$t('frameleaf_takeout_page_advanced')} open={advancedOpen}>
+      <Advanced summary={$t('frameleaf_takeout_page_advanced')} bind:open={advancedOpen}>
         {#if rootsFailed}
           <InlineError compact message={$t('frameleaf_takeout_error_generic')} />
         {:else if roots === undefined}

@@ -124,7 +124,21 @@ describe('TakeoutSettingsSection', () => {
     );
     // the chosen folder shows straight away: Advanced opens instead of staying collapsed
     expect(screen.getByLabelText(en.frameleaf_takeout_imports_name)).toBeVisible();
-    expect(screen.getByText(en.frameleaf_takeout_page_advanced).closest('details')).toHaveAttribute('open');
+    const advanced = screen.getByText(en.frameleaf_takeout_page_advanced).closest('details')!;
+    expect(advanced).toHaveAttribute('open');
+
+    // closed by hand, then another folder is chosen: it opens again
+    await userEvent.click(screen.getByText(en.frameleaf_takeout_page_advanced));
+    await waitFor(() => expect(advanced).not.toHaveAttribute('open'));
+    await userEvent.click(screen.getByRole('button', { name: en.change }));
+    const again = screen.getByRole('dialog', { name: en.frameleaf_takeout_folder_chooser_title });
+    await userEvent.click(
+      within(again).getByRole('button', {
+        name: `${en.frameleaf_takeout_imports_name} ${en.frameleaf_takeout_imports_built_in}`,
+      }),
+    );
+    await userEvent.click(await within(again).findByRole('button', { name: en.frameleaf_takeout_folder_choose_this }));
+    await waitFor(() => expect(advanced).toHaveAttribute('open'));
   });
 
   it('keeps the start dialog to uploading for everyone else', async () => {
