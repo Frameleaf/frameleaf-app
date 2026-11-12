@@ -7441,6 +7441,96 @@ export type AssetWaveformResponseDto = {
     /** Changes whenever the video changes */
     version: string;
 };
+export type AssistantActionSkippedDto = {
+    /** How many items */
+    count: number;
+    /** Why items were left out: `not_found` (not yours, in the trash or gone), `locked` (Locked or hidden by a Locked rule), `already_done`, `kept` (the best of a burst), `not_in_burst`, `not_scored`, `not_applied` (the change never reached it), `changed_since` (changed after the change was applied) or `album_gone`. Plain string; new reasons may appear */
+    reason: string;
+    /** A few of them */
+    sampleAssetIds: string[];
+};
+export type AssistantActionUndoDto = {
+    /** The album the change made was removed, because nothing else had changed in it */
+    albumRemoved: boolean;
+    /** The background jobs putting the items back */
+    mediaOperationIds: string[];
+    /** How many items are being put back exactly as they were */
+    restored: number;
+    /** What undo left alone, and why */
+    skipped: AssistantActionSkippedDto[];
+    /** Tags the change made that were removed again */
+    tagsRemoved: string[];
+};
+export type AssistantActionResponseDto = {
+    /** The album written to; null until a new album is made */
+    albumId: string | null;
+    /** The name of the album written to */
+    albumName: string | null;
+    /** When it was confirmed */
+    appliedAt: string | null;
+    /** `cull`: how many bursts are thinned out */
+    bursts: number | null;
+    /** Whether it can be undone now */
+    canUndo: boolean;
+    /** When it was proposed */
+    createdAt: string;
+    /** Action ID */
+    id: string;
+    /** `cull`: a few of the frames that are kept */
+    keptAssetIds: string[];
+    /** `create_album`, `add_to_album`, `tag`, `favourite` or `cull`. Plain string; new kinds may appear */
+    kind: string;
+    /** The background job applying the change */
+    mediaOperationId: string | null;
+    /** The question the change came from */
+    question: string | null;
+    /** A few of the items the change covers */
+    sampleAssetIds: string[];
+    /** Items that were asked for and left out, and why */
+    skipped: AssistantActionSkippedDto[];
+    /** `proposed`, `applied`, `undone` or `expired`. Plain string; new values may appear */
+    status: string;
+    /** The tags written */
+    tags: string[];
+    /** How many items the change covers */
+    total: number;
+    /** What undo did, once it was undone */
+    undo: (AssistantActionUndoDto) | null;
+    /** Until when it can be undone */
+    undoExpiresAt: string | null;
+    /** When it was undone */
+    undoneAt: string | null;
+};
+export type AssistantActionListResponseDto = {
+    /** Newest first */
+    actions: AssistantActionResponseDto[];
+    /** Whether an older page exists */
+    hasMore: boolean;
+};
+export type AssistantActionArgumentsDto = {
+    /** `add_to_album`: the album, by name */
+    album?: string;
+    /** `add_to_album`: the album, by id, in place of its name */
+    albumId?: string;
+    /** `create_album`: its description */
+    description?: string;
+    /** `create_album`: the name of the new album */
+    name?: string;
+    /** `tag`: the tags, by name. A name no tag has yet becomes a new tag when the change is confirmed */
+    tags?: string[];
+};
+export type AssistantActionProposeDto = {
+    arguments?: AssistantActionArgumentsDto;
+    /** The items the person is looking at. The set is frozen here and never re-resolved */
+    assetIds: string[];
+    /** The question the change came from, as typed */
+    question?: string;
+    tool: AssistantActionTool;
+};
+export type AssistantActionApplyDto = {
+    /** The person confirmed the proposal. Must be true */
+    confirm: true;
+};
 export type AssistantAskDto = {
     /** Language of the question */
     language?: string;
@@ -21287,6 +21377,12 @@ export type AssetWaveformOptionsDto = {
     buckets?: number;
     channels?: AssetWaveformChannelMode;
 };
+export type AssistantActionSearchDto = {
+    /** The id of the last action of the previous page */
+    before?: string;
+    /** At most this many actions */
+    take?: number;
+};
 export type BackupDevicePageDto = {
     limit?: number;
     offset?: number;
@@ -28471,6 +28567,68 @@ export function getAssetWaveform({ buckets, channels, id, key, slug }: {
         slug
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * List your Frameleaf Assistant changes
+ */
+export function getAssistantActions({ before, take }: {
+    before?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssistantActionListResponseDto;
+    }>(`/assistant/actions${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Propose a Frameleaf Assistant change
+ */
+export function proposeAssistantAction({ assistantActionProposeDto }: {
+    assistantActionProposeDto: AssistantActionProposeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssistantActionResponseDto;
+    }>("/assistant/actions", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assistantActionProposeDto
+    })));
+}
+/**
+ * Confirm a Frameleaf Assistant change
+ */
+export function applyAssistantAction({ id, assistantActionApplyDto }: {
+    id: string;
+    assistantActionApplyDto: AssistantActionApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssistantActionResponseDto;
+    }>(`/assistant/actions/${encodeURIComponent(id)}/apply`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assistantActionApplyDto
+    })));
+}
+/**
+ * Undo a Frameleaf Assistant change
+ */
+export function undoAssistantAction({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssistantActionResponseDto;
+    }>(`/assistant/actions/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -42976,6 +43134,13 @@ export enum AssetMediaSize {
 export enum AssetWaveformChannelMode {
     Mono = "mono",
     All = "all"
+}
+export enum AssistantActionTool {
+    CreateAlbum = "create_album",
+    AddToAlbum = "add_to_album",
+    Tag = "tag",
+    Favourite = "favourite",
+    Cull = "cull"
 }
 export enum AssistantMediaType {
     Image = "IMAGE",

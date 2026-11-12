@@ -101,6 +101,7 @@ import { AssetUploadSkipExceptionTable } from 'src/schema/tables/asset-upload-sk
 import { AssetVideoFingerprintTable } from 'src/schema/tables/asset-video-fingerprint.table.js';
 import { AssetViewTable } from 'src/schema/tables/asset-view.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { AssistantActionTable } from 'src/schema/tables/assistant-action.table.js';
 import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
 import { BackupRestoreReportTable } from 'src/schema/tables/backup-restore-report.table.js';
 import { BookmarkTagTable } from 'src/schema/tables/bookmark-tag.table.js';
@@ -387,6 +388,7 @@ export class ImmichDatabase {
     BookmarkTagTable,
     AssetSourceTable,
     AccountEventTable,
+    AssistantActionTable,
     ActivityTable,
     AdminAuditEventTable,
     AlbumAssetTable,
@@ -648,6 +650,7 @@ export interface DB extends QueueDatabase {
   frameleaf_migrations: { timestamp: string; name: string };
 
   account_event: AccountEventTable;
+  assistant_action: AssistantActionTable;
   activity: ActivityTable;
   admin_audit_event: AdminAuditEventTable;
 
