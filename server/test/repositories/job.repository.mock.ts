@@ -56,6 +56,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     wakeLockedDeferrals: vitest.fn().mockResolvedValue(0),
     isActive: vitest.fn(),
     isPaused: vitest.fn(),
+    nightHasLiveWork: vitest.fn(),
     getJobCounts: vitest.fn(),
     hasUnfinishedWork: vitest.fn().mockResolvedValue(false),
     getPausedQueues: vitest.fn().mockResolvedValue(new Set()),

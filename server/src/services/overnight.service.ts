@@ -36,6 +36,8 @@ import {
   type OvernightState,
   type OvernightStep,
   type OvernightStepResult,
+  QUIET_HOURS_FEEDERS,
+  QUIET_HOURS_IDLE_MS,
   QUIET_HOURS_NEVER,
   QUIET_HOURS_QUEUES,
   isHeavyWorkWindow,
@@ -103,10 +105,9 @@ export class OvernightService {
 
   @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit() {
+    // FL-1480: the lock is tried again on every look, so a lock missed at start does not leave runs unwatched
     this.lock = await this.databaseRepository.tryLock(DatabaseLock.OvernightSequence);
-    if (this.lock) {
-      this.timer = setInterval(() => this.watch(), WATCH_INTERVAL_MS);
-    }
+    this.timer = setInterval(() => this.watch(), WATCH_INTERVAL_MS);
   }
 
   @OnEvent({ name: 'AppShutdown' })
@@ -152,7 +153,7 @@ export class OvernightService {
       await nightWork.run({ startedAt, manual }, async () => {
         await this.startRequestedRedo();
         await this.startRequestedRecompare();
-        await this.advance(true);
+        await this.advance();
       });
       return JobStatus.Success;
     });
@@ -230,10 +231,15 @@ export class OvernightService {
 
   /** Looks whether the step a run waits for has finished. One look at a time. */
   watch() {
-    if (!this.lock || this.moving) {
+    if (this.moving) {
       return;
     }
-    this.moving = this.move()
+    this.moving = (async () => {
+      this.lock ||= await this.databaseRepository.tryLock(DatabaseLock.OvernightSequence);
+      if (this.lock) {
+        await this.move();
+      }
+    })()
       .catch((error: unknown) => this.logger.warn(`The overnight run could not move on: ${error}`))
       .finally(() => {
         this.moving = undefined;
@@ -242,7 +248,7 @@ export class OvernightService {
 
   async move(): Promise<void> {
     return this.databaseRepository.withLock(DatabaseLock.OvernightSequenceRun, async () => {
-      await this.advance(false);
+      await this.advance();
       await this.keepQuietHours();
     });
   }
@@ -264,10 +270,22 @@ export class OvernightService {
       nightlyTasks.quietHours && this.configRepository.getEnv().environment !== FrameleafEnvironment.Testing;
     const zone = serverTimeZone(config.server);
     if (quiet.holding === null && quietHours && !nightlyTasks.stopTime) {
-      // With no stop time the window lasts until the heavy work has caught up.
-      const counts = await Promise.all(QUIET_HOURS_QUEUES.map((name) => this.jobRepository.getJobCounts(name)));
-      if (counts.every(({ active, waiting }) => active + waiting === 0)) {
-        quiet = { ...quiet, caughtUpAt: new Date().toISOString() };
+      // With no stop time the window lasts until the heavy work has caught up. FL-1480: that is no single empty
+      // moment. The night's steps and the queues that feed the heavy ones must be done too, and it must stay
+      // that way for a while: a job waiting to be tried again is delayed, not waiting.
+      const counts = state.run
+        ? []
+        : await Promise.all(
+            [...QUIET_HOURS_QUEUES, ...QUIET_HOURS_FEEDERS].map((name) => this.jobRepository.getJobCounts(name)),
+          );
+      const idle = !state.run && counts.every(({ active, waiting }) => active + waiting === 0);
+      const { idleSince, ...rest } = quiet;
+      if (!idle) {
+        quiet = rest;
+      } else if (!idleSince) {
+        quiet = { ...rest, idleSince: new Date().toISOString() };
+      } else if (Date.now() - new Date(idleSince).getTime() >= QUIET_HOURS_IDLE_MS) {
+        quiet = { ...rest, caughtUpAt: new Date().toISOString() };
       }
     }
     const open = !quietHours || isHeavyWorkWindow(DateTime.now(), nightlyTasks, zone, quiet.caughtUpAt);
@@ -371,17 +389,16 @@ export class OvernightService {
   }
 
   /** Whether a step's work is still being done. */
-  private async isBusy(step: OvernightStep, insideJob: boolean): Promise<boolean> {
+  private async isBusy(step: OvernightStep, startedAt: string): Promise<boolean> {
     const queueBusy = async (name: QueueName) => {
       const counts = await this.jobRepository.getJobCounts(name);
       return counts.active + counts.waiting + counts.delayed > 0;
     };
     switch (step) {
       case 'cleanup': {
-        // Inside the overnight job, that job is one of the active BackgroundTask jobs and has finished its
-        // own part by now. A look from watch() runs after it ended, so any active job is still tidy-up.
-        const counts = await this.jobRepository.getJobCounts(QueueName.BackgroundTask);
-        return counts.waiting + counts.delayed > 0 || counts.active > (insideJob ? 1 : 0);
+        // FL-1480: only what this night queued. The queue is shared with work that is not the night's and can
+        // wait for hours (a Locked photo waiting for its key, an iCloud sync, a backup).
+        return this.jobRepository.nightHasLiveWork(QueueName.BackgroundTask, startedAt);
       }
       case 'folders': {
         return queueBusy(QueueName.Library);
@@ -399,7 +416,7 @@ export class OvernightService {
    * Moves the run as far as it can go: past every step that is off, not due or finished, starting
    * each step that is due, and stopping to wait at the first one still being done.
    */
-  private async advance(insideJob: boolean): Promise<void> {
+  private async advance(): Promise<void> {
     let state = await this.state();
     let run: OvernightRun | null = state.run;
     if (!run) {
@@ -415,7 +432,7 @@ export class OvernightService {
       if (run.begunAt) {
         let busy = false;
         try {
-          busy = await this.isBusy(step, insideJob);
+          busy = await this.isBusy(step, run.startedAt);
         } catch (error) {
           this.logger.warn(`Overnight run: could not tell whether ${step} finished: ${error}`);
         }
@@ -436,7 +453,15 @@ export class OvernightService {
           } else if (await this.isOn(step, config)) {
             if (stopAt && DateTime.now() >= stopAt) {
               result = 'stopped';
-            } else if (OVERNIGHT_STEPS_COMPETING_WITH_BACKUP.has(step) && (await this.backupRunning())) {
+            } else if (
+              OVERNIGHT_STEPS_COMPETING_WITH_BACKUP.has(step) &&
+              // FL-1480: a backup that never ends holds the night no longer than a step may take
+              !(
+                run.waitingForBackupSince &&
+                Date.now() - new Date(run.waitingForBackupSince).getTime() >= OVERNIGHT_STEP_LIMIT_MS
+              ) &&
+              (await this.backupRunning())
+            ) {
               // FL-540: the two schedules overlap; a step that uses the disk or the internet waits its turn
               if (!run.waitingForBackupSince) {
                 run = { ...run, waitingForBackupSince: new Date().toISOString() };

@@ -95,6 +95,7 @@ const setup = (
           name === QueueName.BackgroundTask ? counts(1, busy.cleanup ? 1 : 0) : counts(busy[name] ? 1 : 0),
         ),
       ),
+      nightHasLiveWork: vi.fn(() => Promise.resolve(!!busy.cleanup)),
     },
     library: { getAll: vi.fn().mockResolvedValue([{ id: 'library-1' }]) },
     icloud: {
@@ -265,22 +266,56 @@ describe(OvernightService.name, () => {
     expect(stored.state?.run).toBeNull();
   });
 
-  it('after the overnight job ended, waits for a tidy-up job that is still running', async () => {
+  it('stops waiting for a backup that never ends after the time a step may take (FL-1480)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-21T00:00:00Z'));
     const { sut, mocks, stored } = setup();
-    // inside the overnight job: that job plus one tidy-up job queued behind it
-    mocks.job.getJobCounts.mockImplementation(() => Promise.resolve(counts(1, 1)));
+    mocks.metadata.get.mockImplementation((key: SystemMetadataKey) =>
+      Promise.resolve(
+        (key === SystemMetadataKey.OvernightSequence
+          ? stored.state
+          : key === SystemMetadataKey.BackupSequence
+            ? { run: { place: 'cloud' } }
+            : undefined) as never,
+      ),
+    );
+    await sut.handleStart();
+    expect(stored.state?.run).toMatchObject({ step: 'folders', begunAt: null });
+    vi.setSystemTime(new Date('2026-10-21T02:59:00Z'));
+    await sut.move();
+    expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
+    vi.setSystemTime(new Date('2026-10-21T03:01:00Z'));
+    await sut.move();
+    expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
+  });
+
+  it('keeps trying for the watch lock it did not get at start (FL-1480)', async () => {
+    const { sut, mocks } = setup();
+    mocks.database.tryLock.mockResolvedValueOnce(false);
+    const move = vi.spyOn(sut, 'move').mockResolvedValue();
+    await sut.onConfigInit();
+    sut.watch();
+    await (sut as unknown as { moving?: Promise<void> }).moving;
+    expect(move).toHaveBeenCalledOnce();
+    await sut.onShutdown();
+  });
+
+  it('after the overnight job ended, waits for a tidy-up job that is still running', async () => {
+    const { sut, mocks, stored, busy } = setup();
+    // inside the overnight job: one tidy-up job queued behind it
+    busy.cleanup = true;
     await sut.handleStart();
     expect(stored.state?.run).toMatchObject({ step: 'cleanup', begunAt: expect.any(String) });
+    expect(mocks.job.nightHasLiveWork).toHaveBeenCalledWith(QueueName.BackgroundTask, stored.state?.run?.startedAt);
 
-    // the overnight job has ended; the one active BackgroundTask job is the tidy-up
-    mocks.job.getJobCounts.mockImplementation(() => Promise.resolve(counts(1)));
+    // the overnight job has ended; the tidy-up is still running
     await sut.move();
     expect(stored.state?.run?.step).toBe('cleanup');
     expect(mocks.job.queue).not.toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
     // FL-1235: the database is optimized only after the tidy-up jobs have deleted their rows
     expect(mocks.database.vacuum).not.toHaveBeenCalled();
 
-    mocks.job.getJobCounts.mockImplementation(() => Promise.resolve(counts()));
+    busy.cleanup = false;
     await sut.move();
     expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
     expect(stored.state?.nights[0].results.cleanup).toBe('done');
@@ -421,6 +456,17 @@ describe(OvernightService.name, () => {
 
     vi.setSystemTime(new Date('2026-10-21T09:00:00Z'));
     busy[QueueName.SmartSearch] = false;
+    await sut.move();
+    // FL-1480: one empty moment is not caught up (a job waiting to be tried again is not counted as waiting)
+    expect(mocks.job.setQueueSchedule).not.toHaveBeenCalled();
+    // nor is it while the photos are still on their way to the heavy tasks
+    vi.setSystemTime(new Date('2026-10-21T09:11:00Z'));
+    busy[QueueName.ThumbnailGeneration] = true;
+    await sut.move();
+    busy[QueueName.ThumbnailGeneration] = false;
+    await sut.move();
+    expect(mocks.job.setQueueSchedule).not.toHaveBeenCalled();
+    vi.setSystemTime(new Date('2026-10-21T09:22:00Z'));
     await sut.move();
     expect(mocks.job.closed.keys().toArray()).toEqual([...QUIET_HOURS_QUEUES]);
 

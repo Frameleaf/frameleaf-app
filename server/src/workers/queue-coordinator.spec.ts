@@ -17,6 +17,7 @@ const fixture = vi.hoisted(() => ({
     deadlines: vi.fn(),
     claim: vi.fn(),
     queuesWithUnfinishedWork: vi.fn(),
+    queuesWithFrontWork: vi.fn(),
     reconcileHolds: vi.fn(),
     settleTerminalLibrarySources: vi.fn(),
   },
@@ -62,6 +63,7 @@ describe('coordinator capacity admission', () => {
     fixture.store.deadlines.mockResolvedValue([]);
     fixture.store.claim.mockResolvedValue([]);
     fixture.store.queuesWithUnfinishedWork.mockResolvedValue(coordinatorData.queues);
+    fixture.store.queuesWithFrontWork.mockResolvedValue([]);
     fixture.store.reconcileHolds.mockResolvedValue(0);
     fixture.store.settleTerminalLibrarySources.mockResolvedValue(0);
     fixture.port = Object.assign(new EventEmitter(), { postMessage: vi.fn() });
@@ -91,6 +93,16 @@ describe('coordinator capacity admission', () => {
     expect(fixture.store.claim.mock.calls).toEqual([['deep', 'worker', QUEUE_EXECUTION_CAPACITY]]);
     // Already acquired claims reach the executor's pre-handler deferral guard.
     expect(vi.mocked(fixture.port!.postMessage).mock.calls).toEqual([[{ type: 'execute', claim: admitted }]]);
+  });
+
+  it('visits a queue holding work from the front of the line before its turn (FL-1479)', async () => {
+    await coordinate(coordinatorData);
+    fixture.store.claim.mockClear();
+    fixture.store.queuesWithFrontWork.mockResolvedValue(['ml']);
+    fixture.wake!();
+    await vi.waitFor(() => expect(visits()).toHaveLength(3));
+    expect(visits()[0]).toBe('ml');
+    expect(visits().toSorted()).toEqual(['deep', 'ml', 'thumbnail']);
   });
 
   it('applies a new capacity to the next claims', async () => {
