@@ -575,6 +575,21 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('canSeeUploadResult (FL-1472)', () => {
+    it('asks for the photo even when the session has no filters, so Locked media stays out', async () => {
+      mocks.asset.isVisibleToUploader.mockResolvedValue(false);
+      await expect(sut.canSeeUploadResult(authStub.user1, 'locked-asset')).resolves.toBe(false);
+      expect(mocks.asset.isVisibleToUploader).toHaveBeenCalledWith(authStub.user1.user.id, 'locked-asset', {});
+    });
+
+    it('never shows a shared link the photo', async () => {
+      await expect(sut.canSeeUploadResult({ ...authStub.user1, sharedLink: {} } as never, 'asset')).resolves.toBe(
+        false,
+      );
+      expect(mocks.asset.isVisibleToUploader).not.toHaveBeenCalled();
+    });
+  });
+
   describe('a lost original (media health)', () => {
     const lost = {
       id: 'lost-asset',
@@ -895,6 +910,20 @@ describe(AssetMediaService.name, () => {
         data: { id: 'repaired-asset', path: expect.stringContaining('/.library-care/repaired-asset-pending-') },
       });
       expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('hashes for the SHA-1 only for an owner with a SHA-1-only repair (FL-1472)', async () => {
+      mocks.asset.getByChecksums.mockResolvedValue([]);
+      mocks.asset.hasSha1OnlyRepairs.mockResolvedValue(true);
+      const sha1 = Buffer.alloc(20, 4);
+      mocks.crypto.hashFileDigests.mockResolvedValue({ sha1, sha256: upload.checksum, sizeInBytes: 42 } as never);
+      mocks.asset.getRepairedByOriginal.mockResolvedValue('repaired-asset');
+      const { legacyChecksum: _legacy, ...sha256Only } = upload;
+
+      await expect(sut.uploadAsset(authStub.admin, createDto, sha256Only)).resolves.toMatchObject({
+        id: 'repaired-asset',
+      });
+      expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith(authStub.admin.user.id, [upload.checksum, sha1]);
     });
 
     it('never answers for a hidden repaired photo with another one’s visibility (FL-1472)', async () => {

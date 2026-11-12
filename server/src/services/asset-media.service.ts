@@ -242,15 +242,23 @@ export class AssetMediaService extends BaseService {
     if (auth.sharedLink) {
       return;
     }
+    if (!file.legacyChecksum && (await this.assetRepository.hasSha1OnlyRepairs(auth.user.id))) {
+      // a SHA-1 photo repaired with no SHA-256 of its original on record matches only by SHA-1: hash for it, which
+      // is only ever done for an owner who has such a repair
+      checksums = [...checksums, (await this.cryptoRepository.hashFileDigests(file.originalPath)).sha1];
+    }
     const id = await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums);
     if (!id) {
       return;
     }
     await this.queuePutBack(auth, id, file);
-    const options = this.getDuplicateCheckOptions(auth);
-    // this very photo: another repaired photo with the same original never answers for it
+    // this very photo, as this session may see it: another repaired photo with the same original never answers for it
     const visible =
-      !options || (await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums, options)) === id;
+      (await this.assetRepository.getRepairedByOriginal(
+        auth.user.id,
+        checksums,
+        this.getDuplicateCheckOptions(auth) ?? {},
+      )) === id;
     return { id, visible, fileUsed: true };
   }
 
@@ -275,6 +283,12 @@ export class AssetMediaService extends BaseService {
     this.logger.log(`Upload for asset ${id} queued to take its damaged or repaired file's place`);
   }
 
+  /** FL-1472: the owner's repaired photo whose true original has these bytes, if any (the repair is still in place). */
+  async repairedPhotoFor(ownerId: string, checksums: Buffer[]): Promise<{ id: string } | undefined> {
+    const id = await this.assetRepository.getRepairedByOriginal(ownerId, checksums);
+    return id ? { id } : undefined;
+  }
+
   /**
    * FL-1472: whether this session may see the photo an upload put its bytes back under. An upload whose put-back is
    * still queued has no checksum match to prove it by yet. A shared link never sees one, as it never probes.
@@ -283,8 +297,8 @@ export class AssetMediaService extends BaseService {
     if (auth.sharedLink) {
       return false;
     }
-    const options = this.getDuplicateCheckOptions(auth);
-    return options ? this.assetRepository.isVisibleToUploader(auth.user.id, assetId, options) : true;
+    // without options a session still never sees Locked media: the repository's default leaves it out
+    return this.assetRepository.isVisibleToUploader(auth.user.id, assetId, this.getDuplicateCheckOptions(auth) ?? {});
   }
 
   /**

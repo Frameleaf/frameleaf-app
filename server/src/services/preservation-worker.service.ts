@@ -1450,8 +1450,16 @@ export class PreservationWorkerService {
     }
 
     const rows = await this.repository.findByChecksum(ownerId, entry.data.original.sha256, entry.data.original.sha1);
-    const live = rows.find((row) => !row.deletedAt);
     const trashed = rows.find((row) => row.deletedAt);
+    // FL-1472: a photo Library care repaired has the repair's bytes as its checksum, but it is this original's photo
+    const live =
+      rows.find((row) => !row.deletedAt) ??
+      (trashed
+        ? undefined
+        : await this.assetMedia.repairedPhotoFor(ownerId, [
+            Buffer.from(entry.data.original.sha256, 'hex'),
+            Buffer.from(entry.data.original.sha1, 'hex'),
+          ]));
     let conflicts: Record<string, unknown>[] = [];
     if (live && sidecar) {
       const library = await this.repository.getLibraryState(live.id);

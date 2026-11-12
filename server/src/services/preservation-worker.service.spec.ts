@@ -219,6 +219,7 @@ describe(PreservationWorkerService.name, () => {
       uploadAsset: vi.fn(),
       needsOriginal: vi.fn().mockResolvedValue(false),
       restoreFromCopy: vi.fn().mockResolvedValue(undefined),
+      repairedPhotoFor: vi.fn().mockResolvedValue(undefined),
     };
     assets = { update: vi.fn(), editAsset: vi.fn() };
     albums = { addAssets: vi.fn() };
@@ -1946,6 +1947,45 @@ describe(PreservationWorkerService.name, () => {
         expect(repository.findByChecksum).toHaveBeenCalledWith(ownerId, good.original.sha256, good.original.sha1);
         expect(repository.updateRestore).toHaveBeenCalledWith(restore.id, { status: 'ready' });
         expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+      });
+
+      it('matches an original to the photo Library care repaired, with its conflicts (FL-1472)', async () => {
+        const built = buildPackage(1);
+        useSource(built.entries);
+        const found = packageOf({ origin: 'upload', format: 'zip', status: 'ready' });
+        const restore = restoreFor(found);
+        repository.getRestoreById.mockResolvedValue(restore);
+        repository.getPackageById.mockResolvedValue(found);
+        const [entry] = built.index;
+        const items = [
+          restoreItemOf({
+            restoreId: restore.id,
+            sourceAssetId: entry.sourceAssetId,
+            state: 'pending',
+            entry,
+          } as never),
+        ];
+        repository.reviewWork.mockResolvedValueOnce(items).mockResolvedValue([]);
+        repository.countRestoreItems.mockResolvedValue({ total: 1, pending: 1 });
+        // the repair gave the photo bytes of its own: no checksum matches the archive's original
+        repository.findByChecksum.mockResolvedValue([]);
+        const repaired = newUuid();
+        assetMedia.repairedPhotoFor.mockResolvedValue({ id: repaired });
+
+        await sut.run({
+          operation: operationOf(MediaOperationKind.PreservationReview, { packageId: found.id, restoreId: restore.id }),
+          claimToken: newUuid(),
+        });
+
+        expect(assetMedia.repairedPhotoFor).toHaveBeenCalledWith(ownerId, [
+          Buffer.from(entry.original.sha256, 'hex'),
+          Buffer.from(entry.original.sha1, 'hex'),
+        ]);
+        expect(repository.getLibraryState).toHaveBeenCalledWith(repaired);
+        expect(repository.updateRestoreItem).toHaveBeenCalledWith(
+          items[0].id,
+          expect.objectContaining({ state: 'ready', match: 'existing', assetId: repaired }),
+        );
       });
 
       it('calls a restoration of a tampered manifest unreadable and writes nothing to the library', async () => {

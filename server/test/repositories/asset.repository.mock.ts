@@ -36,6 +36,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getReuploadWanted: vitest.fn().mockResolvedValue(new Set()),
     getRepairedByOriginal: vitest.fn().mockResolvedValue(undefined),
     isVisibleToUploader: vitest.fn().mockResolvedValue(true),
+    hasSha1OnlyRepairs: vitest.fn().mockResolvedValue(false),
     getLivePhotoCount: vitest.fn(),
     getLibraryAssetCount: vitest.fn(),
     updateAll: vitest.fn(),

@@ -629,12 +629,14 @@ describe(MediaHealthRepository.name, () => {
           }),
         ),
       ).resolves.toBe(true);
-      // the repair records the original's bytes
+      // the repair records the original's bytes; with no checksum row for the original, only its SHA-1
       const [repaired] = await sut.getByIds([finding.id]);
       expect(repaired.evidence).toMatchObject({
         fixState: 'part-saved',
         originalChecksum: originalSha1.toString('hex'),
       });
+      expect(repaired.evidence).not.toHaveProperty('originalSha256');
+      await expect(new AssetRepository(defaultDatabase).hasSha1OnlyRepairs(user.id)).resolves.toBe(true);
       const current = (
         await sql<{
           updateId: string;
@@ -698,6 +700,57 @@ describe(MediaHealthRepository.name, () => {
           }),
         }),
       ]);
+    });
+
+    it('a repair records the original’s SHA-256 from its own checksum row, never a damaged file’s (FL-1472)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const originalSha1 = Buffer.alloc(20, 5);
+      const originalSha256 = Buffer.alloc(32, 5);
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id, checksum: originalSha1 });
+      // the row describes the recorded original: its SHA-1 is the photo's checksum
+      await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+        VALUES (${asset.id}::uuid, ${originalSha1}, ${originalSha256}, 50, ARRAY[${asset.originalPath}]::text[], 1, '{}'::jsonb, now(), now())`.execute(
+        defaultDatabase,
+      );
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, null),
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+      });
+      assert.isDefined(finding);
+      const sha1 = Buffer.alloc(20, 6);
+      const sha256 = Buffer.alloc(32, 6);
+      await expect(
+        sut.replaceRepairedOriginal({
+          expectedUpdateId: asset.updateId,
+          expectedChecksumAlgorithm: asset.checksumAlgorithm,
+          verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 50 }),
+          assetId: asset.id,
+          ownerId: user.id,
+          healthId: finding.id,
+          expectedOriginalPath: asset.originalPath,
+          expectedChecksum: originalSha1,
+          originalPath: `/data/upload/${user.id}/.library-care/${asset.id}-repaired.jpg`,
+          originalFileName: asset.originalFileName,
+          sha1,
+          sha256,
+          sizeInBytes: 50,
+          fileModifiedAt: new Date(),
+          evidence: { fixState: 'repaired' },
+        }),
+      ).resolves.toBe(true);
+
+      const [repaired] = await sut.getByIds([finding.id]);
+      expect(repaired.evidence).toMatchObject({
+        originalChecksum: originalSha1.toString('hex'),
+        originalSha256: originalSha256.toString('hex'),
+        repairedChecksum: sha256.toString('hex'),
+      });
+      // a SHA-256-only upload of the original finds it, with no hashing for its SHA-1
+      const assets = new AssetRepository(defaultDatabase);
+      await expect(assets.getRepairedByOriginal(user.id, [originalSha256])).resolves.toBe(asset.id);
+      await expect(assets.hasSha1OnlyRepairs(user.id)).resolves.toBe(false);
     });
 
     it('a scan that finds the file fine settles only open problems, saying so (FL-1472)', async () => {

@@ -2594,6 +2594,20 @@ export class AssetRepository {
       .executeTakeFirst();
     return asset?.id;
   }
+  /**
+   * FL-1472: whether the owner has a repaired photo whose original is known only by its SHA-1 (no `originalSha256`
+   * on record), so an upload that only gives its SHA-256 must be hashed for its SHA-1 to find it.
+   */
+  async hasSha1OnlyRepairs(ownerId: string): Promise<boolean> {
+    const { rows } = await sql<{ found: boolean }>`SELECT EXISTS (SELECT 1 FROM public.asset_health h
+      JOIN public.asset a ON a.id = h."assetId"
+      WHERE a."ownerId" = ${ownerId}::uuid AND a."deletedAt" IS NULL AND h.category = 'corrupt' AND h.status = 'resolved'
+        AND h."dismissedAt" IS NULL AND h.evidence->>'fixState' IN ('repaired', 'part-saved')
+        AND length(h.evidence->>'originalChecksum') = 40 AND NOT h.evidence ? 'originalSha256') AS found`.execute(
+      this.db,
+    );
+    return !!rows[0]?.found;
+  }
   /** FL-1472: whether one of the owner's photos is one this session may see, by its id (an upload's own result). */
   async isVisibleToUploader(ownerId: string, assetId: string, options: AssetChecksumOptions = {}): Promise<boolean> {
     const asset = await this.db
