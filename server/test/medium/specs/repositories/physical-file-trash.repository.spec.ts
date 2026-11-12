@@ -380,17 +380,10 @@ describe(PhysicalFileTrashRepository.name, () => {
         checksum: randomBytes(20),
         checksumAlgorithm: ChecksumAlgorithm.sha1File,
       });
-      await defaultDatabase
-        .insertInto('asset_checksum')
-        .values({
-          assetId: linked.id,
-          sha1: linked.checksum,
-          sha256: checksum,
-          sizeInBytes: 1000,
-          linkCount: 1,
-          verifiedPaths: [linked.originalPath],
-        })
-        .execute();
+      await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "linkCount", "verifiedPaths")
+        VALUES (${linked.id}::uuid, ${linked.checksum}, ${checksum}, 1000, 1, ARRAY[${linked.originalPath}]::text[])`.execute(
+        defaultDatabase,
+      );
       const health = {
         assetId: linked.id,
         category: MediaHealthCategory.Corrupt,
