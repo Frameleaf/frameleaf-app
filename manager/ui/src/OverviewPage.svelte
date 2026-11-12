@@ -2,13 +2,14 @@
   /** "Last night, 2:00", "Today, 14:05", "Tuesday, 2:00", "3 Nov": how long ago without making people do date maths. */
   export function when(time: string | number, now = Date.now()) {
     const date = new Date(time);
+    if (now - date.getTime() < 120_000 && now >= date.getTime()) return 'Just now';
     const clock = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     const days = Math.round((day(new Date(now)) - day(date)) / 86_400_000);
     if (days === 0) return date.getHours() < 6 ? `Last night, ${clock}` : `Today, ${clock}`;
-    if (days === 1) return date.getHours() >= 18 || date.getHours() < 6 ? `Last night, ${clock}` : `Yesterday, ${clock}`;
+    if (days === 1) return date.getHours() >= 18 ? `Last night, ${clock}` : `Yesterday, ${clock}`;
     if (days < 7) return `${date.toLocaleDateString([], { weekday: 'long' })}, ${clock}`;
-    return date.toLocaleDateString([], { day: 'numeric', month: 'short', year: days > 300 ? 'numeric' : undefined });
+    return `${date.toLocaleDateString([], { day: 'numeric', month: 'short', year: days > 300 ? 'numeric' : undefined })}, ${clock}`;
   }
   export const ageDays = (time: string | number, now = Date.now()) => (now - new Date(time).getTime()) / 86_400_000;
 </script>
@@ -64,8 +65,8 @@
           screen: 'storage',
         });
     if (!latest) items.push({ tone: 'warning', icon: 'shield', title: 'No recovery point yet', detail: 'Make one now so the database can be put back if something goes wrong.', action: 'Open Backups', screen: 'backups' });
-    else if (ageDays(latest.time) > 2)
-      items.push({ tone: 'warning', icon: 'shield', title: `No recovery point since ${when(latest.time)}`, detail: 'The nightly backup hasn’t run. Check Backups.', action: 'Open Backups', screen: 'backups' });
+    else if (ageDays(latest.time) > 7)
+      items.push({ tone: 'warning', icon: 'shield', title: `No recovery point since ${when(latest.time)}`, detail: 'Manager makes them when you ask and before updates. Make one now so recent changes are safe.', action: 'Open Backups', screen: 'backups' });
     for (const [id, override] of Object.entries(containers?.outside ?? {}))
       if (Object.keys(override.environment ?? {}).length || override.mounts?.length)
         items.push({ tone: 'warning', icon: 'box', title: `${STATE[id]} was changed in Docker or Unraid`, detail: 'The next update removes those changes unless you keep them in Manager.', action: 'Review on Containers', screen: 'containers', tab: id as ContainerId });
