@@ -721,7 +721,8 @@ export class VideoMomentRepository {
             .where(notLockedOrOwnedBy(scope.lockedOwnerId))
             // the frames a search may return, so hidden ones never move the line
             .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
-            .orderBy('video_moment_frame_embedding.frameId')
+            // Frame ids sort by when they were cut; their hash spreads the sample over the whole library.
+            .orderBy(sql`md5(video_moment_frame_embedding."frameId"::text)`)
             .limit(UNRELATED_FRAME_SAMPLE),
       )
       .selectFrom('sample')

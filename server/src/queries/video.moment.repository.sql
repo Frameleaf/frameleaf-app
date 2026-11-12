@@ -105,7 +105,7 @@ with
         )
       )
     order by
-      "video_moment_frame_embedding"."frameId"
+      md5(video_moment_frame_embedding."frameId"::text)
     limit
       $7
   )

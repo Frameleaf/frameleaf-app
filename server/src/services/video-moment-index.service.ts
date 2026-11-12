@@ -612,7 +612,9 @@ export class VideoMomentIndexService {
     const complete = new Map(momentsByVideo(all).map((video) => [video.assetId, video]));
     return {
       hits: uniqueMoments(all).slice(0, limit),
-      videos: chosen.map((video) => complete.get(video.assetId) ?? video),
+      // A video chosen only for a caption that has gone stale has no matches left, and is not shown.
+      // ponytail: that can leave fewer than `limit` videos; rank again if it ever matters.
+      videos: chosen.flatMap((video) => complete.get(video.assetId) ?? []),
     };
   }
 
@@ -623,10 +625,14 @@ export class VideoMomentIndexService {
     visual: VisualQuery | null,
   ): Promise<MomentSearchHit[]> {
     const textHits = await this.moments.searchMomentText(query, scope);
-    // Only generated captions can go stale; manual moments are the owner's own words.
-    const staleCaptions = await this.staleCaptionIds(
-      textHits.filter(({ source }) => source === VideoMomentSource.Generated).map(({ momentId }) => momentId),
-    );
+    // Only generated captions can go stale; manual moments are the owner's own words. The ranking
+    // read keeps one row a video, which may be a stale caption beside a current one: it is checked
+    // when the chosen videos are read in full.
+    const staleCaptions = scope.onePerVideo
+      ? new Set<string>()
+      : await this.staleCaptionIds(
+          textHits.filter(({ source }) => source === VideoMomentSource.Generated).map(({ momentId }) => momentId),
+        );
     const hits: MomentSearchHit[] = textHits
       .filter(({ momentId }) => !staleCaptions.has(momentId))
       .map((hit) => {
