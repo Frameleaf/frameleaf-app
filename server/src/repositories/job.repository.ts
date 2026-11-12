@@ -376,7 +376,7 @@ export class JobRepository {
       );
       // Work whose effects may not repeat keeps its proof ahead of completion, while the watchdog still owns the
       // claim: lease recovery reads it to choose between a retry and waiting for a person.
-      if (!claim.safeToRetry || claim.data.operationId) await recordStop();
+      if (!claim.safeToRetry || claim.data?.operationId) await recordStop();
       abort.signal.throwIfAborted();
       if (context.dependencyReason) {
         await recordStop();

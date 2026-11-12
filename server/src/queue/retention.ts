@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { QUEUE_BATCH } from 'src/queue/types.js';
-import { preserveAttemptEvidence, pruneWorkerStopEvidence } from 'src/utils/attempt-evidence.js';
+import { dropAttemptEvidence, pruneWorkerStopEvidence } from 'src/utils/attempt-evidence.js';
 
 const RETENTION_CURSOR = 'frameleaf-queue-retention-cursor';
 
@@ -92,13 +92,10 @@ export async function pruneQueueHistoryPage(
             where m.key='frameleaf-worker-stopped:' || a."workerId"::text
               and m.value->>'workerId'=a."workerId"::text and m.value ? 'stoppedAt'))
       order by j."finishedAt", j.id`.execute(tx);
-    let pruned = 0;
-    if (rows.length > 0) {
-      const ids = await preserveAttemptEvidence(
-        tx,
-        rows.map(({ id }) => id),
-      );
-      pruned = ids.length;
+    const pruned = rows.length;
+    if (pruned > 0) {
+      const ids = rows.map(({ id }) => id);
+      await dropAttemptEvidence(tx, ids);
       await sql`delete from job where id = any(${ids}::uuid[])`.execute(tx);
     }
     await sql`delete from job_worker where id in (

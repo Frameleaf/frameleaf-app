@@ -52,6 +52,17 @@ describe('bounded PostgreSQL queue history', () => {
     );
   });
 
+  it('keeps a completed job for one hour and any other ended job for 30 days (FL-1485)', async () => {
+    await sql`insert into job(id, queue, name, data, state, "safeToRetry", "deadlineMs", "finishedAt")
+      select gen_random_uuid(), ${queue}, name, '{}', state, true, 1, now() - age::interval from (values
+        ('fresh', 'completed', '30 minutes'), ('due', 'completed', '2 hours'),
+        ('failed-recent', 'failed', '2 hours'), ('failed-due', 'failed', '31 days')) v(name, state, age)`.execute(db);
+    expect(await pruneQueueHistory(db)).toBe(2);
+    expect(
+      (await sql<{ name: string }>`select name from job where queue = ${queue} order by name`.execute(db)).rows,
+    ).toEqual([{ name: 'failed-recent' }, { name: 'fresh' }]);
+  });
+
   it('keeps the jobs of a finished run while one of its stages is parked', async () => {
     const runId = await store.createRun('retention-parked', {});
     await sql`insert into job(id, queue, name, data, state, "safeToRetry", "deadlineMs", "runId", "itemKey", "finishedAt")
