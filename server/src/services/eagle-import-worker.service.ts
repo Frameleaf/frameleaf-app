@@ -36,6 +36,8 @@ import {
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 export const EAGLE_IMPORT_TICK_MS = 5000;
+/** FL-1478: the run an Eagle import's files join; Activity titles it "… from Eagle". */
+const EAGLE_RUN_ORIGIN = { origin: 'import', label: 'Eagle' } as const;
 export const EAGLE_IMPORT_LEASE_MS = 2 * 60_000;
 /** The lease is renewed this often while an item is being copied, however long the file takes. */
 export const EAGLE_IMPORT_HEARTBEAT_MS = 30_000;
@@ -432,6 +434,9 @@ export class EagleImportWorkerService {
         originalName: name,
         size: digest.size,
       },
+      undefined,
+      undefined,
+      EAGLE_RUN_ORIGIN,
     );
     if (response.status === AssetMediaStatus.DUPLICATE && NIL_UUID.test(response.id)) {
       throw new EagleItemError('A matching file is in the library but can’t be reached');

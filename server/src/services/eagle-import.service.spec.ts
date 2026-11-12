@@ -415,6 +415,10 @@ describe('FL-653 Eagle import from a server folder', () => {
           expect.anything(),
           expect.objectContaining({ filename, libraryScope: LibraryScope.Design }),
           expect.objectContaining({ originalName: filename, originalPath: expect.stringMatching(/\.bin$/) }),
+          undefined,
+          undefined,
+          // FL-1478: Activity names the Eagle import, not the owner's computer
+          { origin: 'import', label: 'Eagle' },
         );
       }
       expect(repository.finish).toHaveBeenCalledWith(expect.any(String), workerId, 'finished');

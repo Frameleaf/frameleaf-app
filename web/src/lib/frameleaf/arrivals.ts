@@ -117,9 +117,12 @@ export const arrivalTitle = (
   return $t(key, { values: { count } });
 };
 
-/** An upload's run by what came in, for Recent work's card; null for other work, which keeps its own title. */
+/**
+ * An upload's run by what came in, for Recent work's card; null for other work, which keeps its own title. An
+ * importer's photos come in through the upload path too (FL-1478: "180 photos from Google Photos").
+ */
 export const uploadRunTitle = (run: DurableJobRun, $t: MessageFormatter): string | null =>
-  run.origin && UPLOAD_ORIGINS.has(run.origin)
+  run.origin && (UPLOAD_ORIGINS.has(run.origin) || run.kind === 'upload')
     ? arrivalTitle({ origin: run.origin, name: run.label ?? null, count: run.itemCount ?? run.total }, $t)
     : null;
 

@@ -67,7 +67,7 @@ const deferralDelay = (reason: JobDependencyReason) =>
 
 /**
  * The `availableAt` of a job started by hand (Start now, Run on one item). Nothing else is available
- * from the epoch: queued work is available from when it was queued, or later when delayed.
+ * from the epoch: queued work is available from when it was queued (arrivals from ARRIVAL), or later when delayed.
  */
 const STARTED_BY_HAND = sql`'epoch'::timestamptz`;
 /** FL-1265: a held job (setup, a setup pause, a parked stage) waits with this `availableAt`; claims never reach it. */
@@ -88,8 +88,19 @@ const HOLD_PAGE = 2000;
 /** Whether the run holds this stage: its jobs are inserted or retried held. */
 const stageHeld = (runId: RawBuilder<unknown>, name: RawBuilder<unknown>) =>
   sql<boolean>`exists (select 1 from job_run r where r.id = ${runId} and r.selection->'holds' ? ${name})`;
+/**
+ * FL-1478: the `availableAt` of work for photos that just came in (a run with an `origin`: an upload, an import,
+ * a shared link, a folder scan). It sorts after work started by hand and before every backlog job, so a new
+ * import's thumbnails do not wait behind a library-wide queue. Arrivals stay in order among themselves by
+ * `createdAt`; the claim index is unchanged.
+ */
+const ARRIVAL = sql`'epoch'::timestamptz + interval '1 day'`;
+const arrivalRun = (runId: RawBuilder<unknown>) =>
+  sql<boolean>`exists (select 1 from job_run r where r.id = ${runId} and r.origin is not null)`;
 const availability = (runId: RawBuilder<unknown>, name: RawBuilder<unknown>, delayMs: number = 0) =>
-  sql`case when ${stageHeld(runId, name)} then ${HELD} else now() + ${delayMs} * interval '1 millisecond' end`;
+  delayMs > 0
+    ? sql`case when ${stageHeld(runId, name)} then ${HELD} else now() + ${delayMs} * interval '1 millisecond' end`
+    : sql`case when ${stageHeld(runId, name)} then ${HELD} when ${arrivalRun(runId)} then ${ARRIVAL} else now() end`;
 const intentAvailability = (intent: QueueIntent) =>
   availability(sql`${intent.runId ?? null}::uuid`, sql`${intent.name}::text`, intent.options?.delay ?? 0);
 
@@ -1118,7 +1129,8 @@ export class SqlQueueStore {
           update job j set "availableAt" = ${HELD} from page p where j.id = p.id and j.state in ('pending','waiting')
             and j.name = any(${held}::text[]) and j."availableAt" <> ${HELD} returning 1
         ), released as (
-          update job j set "availableAt" = now() from page p where j.id = p.id and j.state in ('pending','waiting')
+          update job j set "availableAt" = case when ${arrivalRun(sql`${run.id}::uuid`)} then ${ARRIVAL} else now() end
+            from page p where j.id = p.id and j.state in ('pending','waiting')
             and not (j.name = any(${held}::text[])) and j."availableAt" = ${HELD} returning 1
         ), last as (select "itemKey", name from page order by "itemKey" desc, name desc limit 1)
         select (select count(*) from page)::int selected,
