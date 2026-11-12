@@ -9,6 +9,7 @@
    * `StudioHost` into a single element and is handed data and callbacks only — never the
    * SDK, never a token, never the API base URL.
    */
+  import { newRequestKey } from '$lib/frameleaf/request-key';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { beforeNavigate, goto, replaceState } from '$app/navigation';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
@@ -1566,7 +1567,7 @@
         studioExportCreateDto: {
           ...choice,
           expectedRevision: revision,
-          requestKey: crypto.randomUUID(),
+          requestKey: newRequestKey(),
         },
       });
       videoExportOpen = false;

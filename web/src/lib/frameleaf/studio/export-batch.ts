@@ -1,4 +1,5 @@
 import type { StudioExportBatchCreateDto, StudioExportCreateDto } from '@frameleaf/sdk';
+import { newRequestKey } from '$lib/frameleaf/request-key';
 
 /**
  * One "Export more than one shape" request. The batch API takes the reframed shapes only, so Original
@@ -37,7 +38,7 @@ export function deliverySubmission(
   }
   return {
     projectId,
-    batch: request.batch && { ...request.batch, requestKey: crypto.randomUUID() },
-    original: request.original && { ...request.original, requestKey: crypto.randomUUID() },
+    batch: request.batch && { ...request.batch, requestKey: newRequestKey() },
+    original: request.original && { ...request.original, requestKey: newRequestKey() },
   };
 }

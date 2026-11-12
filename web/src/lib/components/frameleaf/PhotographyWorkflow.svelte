@@ -4,6 +4,7 @@
    * sections, and the section itself. `publishing` is the Galleries section, which shows the strip
    * without the tabs.
    */
+  import { newRequestKey } from '$lib/frameleaf/request-key';
   import { onMount, onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import { AssetMediaSize, getAssetDevelop } from '@frameleaf/sdk';
@@ -295,7 +296,7 @@
       return;
     }
     draft.config.downloadOutputs.push({
-      key: `${kind}-${crypto.randomUUID().slice(0, 8)}`,
+      key: `${kind}-${newRequestKey().slice(0, 8)}`,
       label:
         kind === 'print'
           ? $t('frameleaf_photography_output_print')
@@ -316,7 +317,7 @@
       return;
     }
     draft.config.presentation.blocks.push({
-      id: crypto.randomUUID(),
+      id: newRequestKey(),
       type,
       chapterId: null,
       selection: 'automatic',
@@ -531,7 +532,7 @@
       return;
     }
     draft.chapters.push({
-      id: crypto.randomUUID(),
+      id: newRequestKey(),
       title: $t('frameleaf_photography_chapter_default', { values: { number: draft.chapters.length + 1 } }),
       description: '',
       position: draft.chapters.length,

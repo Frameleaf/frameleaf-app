@@ -298,6 +298,24 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(await screen.findByText('Pause queue: request sent to the server.')).toBeInTheDocument();
   });
 
+  it('reports a command as sent on a server opened over plain http, where crypto.randomUUID is missing', async () => {
+    vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+    try {
+      vi.mocked(updateQueue).mockResolvedValue(queue(QueueName.ThumbnailGeneration, {}, true));
+      at('&queue=thumbnail-generation');
+      render(JobsManager);
+      await fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+      await fireEvent.click(
+        within(screen.getByRole('dialog', { name: 'Pause queue' })).getByRole('button', { name: 'Pause queue' }),
+      );
+
+      expect(await screen.findByText('Pause queue: request sent to the server.')).toBeInTheDocument();
+      expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('opens one queue on its failed jobs and removes them only after acknowledging the review', async () => {
     at('&queue=face-detection&tab=failed');
     vi.mocked(getQueueJobs).mockResolvedValue([
