@@ -5,6 +5,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { ATTENTION_KINDS, ATTENTION_REASONS } from 'src/dtos/attention.dto.js';
 import { QueueName, SystemMetadataKey } from 'src/enum.js';
 import { AttentionService } from 'src/services/attention.service.js';
+import { UPGRADE_FINGERPRINT_KEY } from 'src/utils/library-fingerprint.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 
 const GB = 1_000_000_000;
@@ -116,7 +117,44 @@ describe(AttentionService.name, () => {
       fileProblems: { fixed: 0, needsYou: 0, since: null, latest: null },
       processingFailures: { count: 0, setAside: 0 },
       unexplainedOriginals: { count: 0, since: null },
+      upgradeCheck: { state: 'none', reason: null, checkedAt: null, fromVersion: null, toVersion: null },
     });
+  });
+
+  it('says how the library check after the last upgrade came out in a field of its own (FL-954)', async () => {
+    const { sut, mocks, metadata } = setup();
+    const latest = {
+      fromVersion: '1.4.0',
+      toVersion: '1.4.1',
+      checkedAt: daysAgo(1),
+      state: 'attention',
+      findings: [{ reason: 'drive-missing', path: '/mnt/photos' }],
+    };
+    metadata[UPGRADE_FINGERPRINT_KEY] = { latest };
+
+    const response = await sut.getAttention(admin);
+
+    expect(response.upgradeCheck).toEqual({
+      state: 'attention',
+      reason: 'upgrade-check-failed',
+      checkedAt: daysAgo(1),
+      fromVersion: '1.4.0',
+      toVersion: '1.4.1',
+    });
+    // not an attention item: nothing is added, no check changes, and the reasons stay as they were
+    expect(response.items).toEqual([]);
+    expect(response.checks.every((check) => check.state === 'ok')).toBe(true);
+    expect(ATTENTION_REASONS).not.toContain('upgrade-check-failed');
+
+    metadata[UPGRADE_FINGERPRINT_KEY] = { latest: { ...latest, state: 'ok', findings: [] } };
+    await expect(sut.getAttention(admin)).resolves.toMatchObject({ upgradeCheck: { state: 'ok', reason: null } });
+
+    mocks.metadata.get.mockImplementation((key: SystemMetadataKey) =>
+      key === UPGRADE_FINGERPRINT_KEY
+        ? Promise.reject(new Error('connection terminated'))
+        : Promise.resolve(metadata[key]),
+    );
+    await expect(sut.getAttention(admin)).resolves.toMatchObject({ upgradeCheck: { state: 'none', reason: null } });
   });
 
   it('counts the files Frameleaf could not process in a field of its own, never as a new kind or reason (FL-862)', async () => {

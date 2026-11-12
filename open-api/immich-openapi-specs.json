@@ -10602,6 +10602,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/upgrade-check": {
+      "get": {
+        "description": "After each upgrade the server compares the library with how it was just before: how many photos and videos there are, when the newest was added, the folders they are in and whether each drive is mounted. This returns the latest comparison: everything where it was, or each difference found.",
+        "operationId": "getUpgradeCheck",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpgradeCheckResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the library check after the last upgrade",
+        "tags": [
+          "Attention (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.statistics",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/users": {
       "get": {
         "description": "Search for users.",
@@ -86863,6 +86910,10 @@
           "unexplainedOriginals": {
             "$ref": "#/components/schemas/AttentionUnexplainedOriginalsDto",
             "description": "FL-921: originals the nothing-lost ledger cannot account for. Only a count: no file is named. They add no item and change no check."
+          },
+          "upgradeCheck": {
+            "$ref": "#/components/schemas/UpgradeCheckSummaryDto",
+            "description": "FL-954: how the library check after the last upgrade came out. A field of its own: it adds no item and changes no check."
           }
         },
         "required": [
@@ -86872,7 +86923,8 @@
           "fileProblems",
           "items",
           "processingFailures",
-          "unexplainedOriginals"
+          "unexplainedOriginals",
+          "upgradeCheck"
         ],
         "type": "object"
       },
@@ -111375,6 +111427,10 @@
             },
             "type": "array"
           },
+          "nothingConnected": {
+            "description": "Whether nothing is connected here: the folder holds nothing at all and is on the server’s own disk",
+            "type": "boolean"
+          },
           "parent": {
             "description": "The folder above it; null at the top",
             "nullable": true,
@@ -111396,6 +111452,7 @@
         "required": [
           "defaultExclusionPatterns",
           "folders",
+          "nothingConnected",
           "parent",
           "path",
           "readable",
@@ -169514,6 +169571,225 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "UpgradeCheckCountDto": {
+        "properties": {
+          "after": {
+            "description": "Rows now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "before": {
+            "description": "Rows before the upgrade; null when it was not there",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "name": {
+            "description": "What was counted, for example asset or person",
+            "type": "string"
+          }
+        },
+        "required": [
+          "after",
+          "before",
+          "name"
+        ],
+        "type": "object"
+      },
+      "UpgradeCheckFindingDto": {
+        "properties": {
+          "after": {
+            "description": "Photos and videos now; null for a drive that is not mounted",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "afterAt": {
+            "description": "When the newest photo was added, now",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "before": {
+            "description": "Photos and videos before the upgrade: in the library, in the folder, or on the drive",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "beforeAt": {
+            "description": "When the newest photo was added, before the upgrade",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The external library the folder belongs to, when it is one",
+            "nullable": true,
+            "type": "string"
+          },
+          "path": {
+            "description": "The folder of the drive, or the folder that is empty now",
+            "nullable": true,
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/UpgradeCheckFindingReason"
+          }
+        },
+        "required": [
+          "after",
+          "afterAt",
+          "before",
+          "beforeAt",
+          "name",
+          "path",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "UpgradeCheckFindingReason": {
+        "description": "What differs: a drive that is not mounted, fewer photos and videos, a newest photo older than before, or a folder that is empty now",
+        "enum": [
+          "drive-missing",
+          "photos-fewer",
+          "newest-earlier",
+          "folder-empty"
+        ],
+        "type": "string"
+      },
+      "UpgradeCheckReason": {
+        "description": "Why the check needs an administrator",
+        "enum": [
+          "upgrade-check-failed"
+        ],
+        "type": "string"
+      },
+      "UpgradeCheckResponseDto": {
+        "properties": {
+          "assetsAfter": {
+            "description": "Photos and videos after it",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "assetsBefore": {
+            "description": "Photos and videos before the upgrade",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "checkedAt": {
+            "description": "When the check ran",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "counts": {
+            "description": "Row counts of the key tables, before and after",
+            "items": {
+              "$ref": "#/components/schemas/UpgradeCheckCountDto"
+            },
+            "type": "array"
+          },
+          "findings": {
+            "description": "Each difference found, a drive that is not mounted first",
+            "items": {
+              "$ref": "#/components/schemas/UpgradeCheckFindingDto"
+            },
+            "type": "array"
+          },
+          "fromVersion": {
+            "description": "The version before the upgrade",
+            "nullable": true,
+            "type": "string"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpgradeCheckReason"
+              }
+            ],
+            "description": "Set when the state is attention",
+            "nullable": true
+          },
+          "state": {
+            "$ref": "#/components/schemas/UpgradeCheckState"
+          },
+          "toVersion": {
+            "description": "The version the upgrade installed",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetsAfter",
+          "assetsBefore",
+          "checkedAt",
+          "counts",
+          "findings",
+          "fromVersion",
+          "reason",
+          "state",
+          "toVersion"
+        ],
+        "type": "object"
+      },
+      "UpgradeCheckState": {
+        "description": "How the library check after the last upgrade came out; none when there has been no check yet",
+        "enum": [
+          "none",
+          "ok",
+          "attention"
+        ],
+        "type": "string"
+      },
+      "UpgradeCheckSummaryDto": {
+        "properties": {
+          "checkedAt": {
+            "description": "When the check ran",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "fromVersion": {
+            "description": "The version before the upgrade",
+            "nullable": true,
+            "type": "string"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpgradeCheckReason"
+              }
+            ],
+            "description": "Set when the state is attention",
+            "nullable": true
+          },
+          "state": {
+            "$ref": "#/components/schemas/UpgradeCheckState"
+          },
+          "toVersion": {
+            "description": "The version the upgrade installed",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "fromVersion",
+          "reason",
+          "state",
+          "toVersion"
+        ],
         "type": "object"
       },
       "UploadSkipAllowDto": {

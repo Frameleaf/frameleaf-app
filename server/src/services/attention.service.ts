@@ -20,6 +20,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { upgradeCheckSummary } from 'src/services/upgrade-check.service.js';
 import { isNewerRelease } from 'src/services/version.service.js';
 import {
   type BackupPlaceFacts,
@@ -36,6 +37,7 @@ import { effectiveBackupSchedule } from 'src/utils/backup-sequence.js';
 import { getConfig } from 'src/utils/config.js';
 import { isValidDatabaseRoutineBackupName } from 'src/utils/database-backups.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { UPGRADE_FINGERPRINT_KEY, type UpgradeFingerprintState } from 'src/utils/library-fingerprint.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { quietHoursHolds } from 'src/utils/overnight.js';
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
@@ -79,17 +81,27 @@ export class AttentionService {
     const now = new Date();
     const config = await this.readConfig();
     // The three counts never throw (each has its own fallback), so they are read alongside the checks.
-    const [backup, storage, work, version, dismissed, fileProblems, processingFailures, unexplainedOriginals] =
-      await Promise.all([
-        this.check('backup', () => this.backup(config, now)),
-        this.check('storage', () => this.storage(config)),
-        this.check('work', () => this.work(config)),
-        this.check('version', () => this.version(config)),
-        this.dismissed(),
-        this.fileProblems(auth),
-        this.processingFailures(auth),
-        this.unexplainedOriginals(),
-      ]);
+    const [
+      backup,
+      storage,
+      work,
+      version,
+      dismissed,
+      fileProblems,
+      processingFailures,
+      unexplainedOriginals,
+      upgradeCheck,
+    ] = await Promise.all([
+      this.check('backup', () => this.backup(config, now)),
+      this.check('storage', () => this.storage(config)),
+      this.check('work', () => this.work(config)),
+      this.check('version', () => this.version(config)),
+      this.dismissed(),
+      this.fileProblems(auth),
+      this.processingFailures(auth),
+      this.unexplainedOriginals(),
+      this.upgradeCheck(),
+    ]);
     const results: Record<AttentionKind, SignalResult> = { backup, storage, work, version };
     return {
       checkedAt: now.toISOString(),
@@ -99,7 +111,22 @@ export class AttentionService {
       fileProblems,
       processingFailures,
       unexplainedOriginals,
+      upgradeCheck,
     };
+  }
+
+  /**
+   * FL-954: the library check after the last upgrade, in short. A field of its own, so the kinds and
+   * reasons native apps decode stay as they are. It adds no item and changes no check.
+   */
+  private async upgradeCheck(): Promise<AttentionResponseDto['upgradeCheck']> {
+    try {
+      const state = await this.systemMetadataRepository.get(UPGRADE_FINGERPRINT_KEY);
+      return upgradeCheckSummary(state as UpgradeFingerprintState | null);
+    } catch (error) {
+      this.logger.warn(`Could not read the library check after the last upgrade for what needs attention: ${error}`);
+      return upgradeCheckSummary(null);
+    }
   }
 
   /**

@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { UpgradeCheckSummarySchema } from 'src/dtos/upgrade-check.dto.js';
 import { QueueNameSchema } from 'src/enum.js';
 
 /**
@@ -176,6 +177,9 @@ const AttentionResponseSchema = z
     ),
     unexplainedOriginals: AttentionUnexplainedOriginalsSchema.describe(
       'FL-921: originals the nothing-lost ledger cannot account for. Only a count: no file is named. They add no item and change no check.',
+    ),
+    upgradeCheck: UpgradeCheckSummarySchema.describe(
+      'FL-954: how the library check after the last upgrade came out. A field of its own: it adds no item and changes no check.',
     ),
   })
   .meta({ id: 'AttentionResponseDto' });

@@ -43,6 +43,7 @@ const healthy = {
   fileProblems: { fixed: 0, needsYou: 0, since: null, latest: null },
   processingFailures: { count: 0, setAside: 0 },
   unexplainedOriginals: { count: 0, since: null },
+  upgradeCheck: { state: 'none', reason: null, checkedAt: null, fromVersion: null, toVersion: null },
 };
 
 describe('Overview (FL-363)', () => {
