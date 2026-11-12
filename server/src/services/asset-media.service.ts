@@ -213,7 +213,7 @@ export class AssetMediaService extends BaseService {
     }
     const lost = await this.lostOriginalMatches(auth, checksums, { includeHidden: true });
     if (lost.length === 0) {
-      return;
+      return this.restoreOverRepair(auth, file, checksums);
     }
     const isVisible = async (assetId: string) => {
       const options = this.getDuplicateCheckOptions(auth);
@@ -228,15 +228,61 @@ export class AssetMediaService extends BaseService {
     }
     const damaged = lost.find(({ damaged }) => damaged);
     if (damaged) {
-      // FL-1472: the job owns the upload from here, and removes it once it is done with it
-      const device = await this.uploadingDevice(auth);
-      await this.jobRepository.queue({
-        name: JobName.MediaHealthPutBackUpload,
-        data: { id: damaged.id, path: file.originalPath, ...(device && { device }) },
-      });
-      this.logger.log(`Upload of damaged asset ${damaged.id} queued to take its damaged file's place`);
+      await this.queuePutBack(auth, damaged.id, file);
       return { id: damaged.id, visible: await isVisible(damaged.id), fileUsed: true };
     }
+  }
+
+  /**
+   * FL-1472: the true original of a photo Library care repaired, which no longer has these bytes as its checksum.
+   * Library care puts it back in the repair's place. A photo this session may not see answers as hidden.
+   */
+  private async restoreOverRepair(auth: AuthDto, file: UploadFile, checksums: Buffer[]) {
+    if (auth.sharedLink) {
+      return;
+    }
+    const id = await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums);
+    if (!id) {
+      return;
+    }
+    await this.queuePutBack(auth, id, file);
+    const options = this.getDuplicateCheckOptions(auth);
+    const visible = !options || (await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums, options));
+    return { id, visible: !!visible, fileUsed: true };
+  }
+
+  /** FL-1472: Library care's job owns the upload from here, and removes it once it is done with it. */
+  private async queuePutBack(auth: AuthDto, id: string, file: UploadFile) {
+    const device = await this.uploadingDevice(auth);
+    await this.jobRepository.queue({
+      name: JobName.MediaHealthPutBackUpload,
+      data: { id, path: file.originalPath, ...(device && { device }) },
+    });
+    this.logger.log(`Upload for asset ${id} queued to take its damaged or repaired file's place`);
+  }
+
+  /**
+   * FL-1472: whether a copy of these bytes would put one of the owner's photos right: its original is lost, damaged
+   * and its finding asks for a re-upload, or repaired. Hidden photos count, as `restoreLostOriginal` repairs them too.
+   */
+  async needsOriginal(auth: AuthDto, { checksum, legacyChecksum }: { checksum: Buffer; legacyChecksum?: Buffer }) {
+    const checksums = [checksum, ...(legacyChecksum ? [legacyChecksum] : [])];
+    return (
+      (await this.lostOriginalMatches(auth, checksums, { includeHidden: true })).length > 0 ||
+      (!auth.sharedLink && !!(await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums)))
+    );
+  }
+
+  /**
+   * FL-1472: an importer's verified copy of a photo the library already has goes back under it when its original is
+   * lost or damaged (`restoreLostOriginal`). The copy is removed when no photo took it.
+   */
+  async restoreFromCopy(auth: AuthDto, dto: AssetMediaCreateDto, file: UploadFile) {
+    const restored = await this.restoreLostOriginal(auth, dto, file);
+    if (!restored?.fileUsed) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [file.originalPath] } });
+    }
+    return restored;
   }
 
   /** What the history calls the device that uploaded: its session's model, else its system. */

@@ -5125,6 +5125,54 @@ describe(MediaHealthService.name, () => {
         expect(mocks.storage.unlink).toHaveBeenCalledWith(upload);
       });
 
+      it('puts the true original in a repair’s place (FL-1472)', async () => {
+        await original(join(root, 'IMG_2041.jpg'), Buffer.from('the repaired picture'));
+        recorded({
+          ...finding(MediaHealthCategory.Corrupt, MediaHealthStatus.Resolved, {
+            fixState: 'part-saved',
+            originalChecksum: sha1(good).toString('hex'),
+          }),
+          resolvedAt: new Date(),
+        });
+        (mediaHealthRepository as unknown as Record<string, unknown>).restoreOriginalOverRepair = vi
+          .fn()
+          .mockResolvedValue(true);
+
+        await expect(sut.handlePutBackUpload({ id: 'asset-1', path: upload })).resolves.toBe(JobStatus.Success);
+
+        const input = vi.mocked(mediaHealthRepository.restoreOriginalOverRepair).mock.calls[0][0];
+        expect(input).toMatchObject({
+          expectedOriginalPath: asset.originalPath,
+          evidence: { fixState: 'found-again' },
+          steps: [
+            {
+              step: 'put-back',
+              outcome: 'ok',
+              facts: { uploaded: true, overRepair: true },
+              undo: { kind: 'relink', previousPath: asset.originalPath },
+            },
+          ],
+        });
+        await expect(readFile(input.originalPath)).resolves.toEqual(good);
+        expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+      });
+
+      it('never puts other bytes in a repair’s place', async () => {
+        await original(join(root, 'IMG_2041.jpg'), Buffer.from('the repaired picture'));
+        recorded({
+          ...finding(MediaHealthCategory.Corrupt, MediaHealthStatus.Resolved, {
+            fixState: 'repaired',
+            originalChecksum: 'ab'.repeat(20),
+          }),
+          resolvedAt: new Date(),
+        });
+        (mediaHealthRepository as unknown as Record<string, unknown>).restoreOriginalOverRepair = vi.fn();
+
+        await expect(sut.handlePutBackUpload({ id: 'asset-1', path: upload })).resolves.toBe(JobStatus.Skipped);
+
+        expect(mediaHealthRepository.restoreOriginalOverRepair).not.toHaveBeenCalled();
+      });
+
       it('never removes an upload that became a photo’s original', async () => {
         await damagedOnDisk(Buffer.from('changed on the drive'));
         vi.mocked(mediaHealthRepository.isOriginalPathInUse).mockResolvedValue(true);

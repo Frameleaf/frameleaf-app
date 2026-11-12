@@ -8779,6 +8779,7 @@
   "frameleaf_file_step_put_back_ok_detail_copied": "Uma cópia nas pastas que a sua aplicação de fotografias anterior usava era exatamente igual. O Frameleaf copiou-a para a sua biblioteca e deixou a antiga onde estava.",
   "frameleaf_file_step_put_back_ok_detail_copied_by": "Uma cópia nas pastas que a sua aplicação de fotografias anterior usava era exatamente igual. O Frameleaf copiou-a para a sua biblioteca e deixou a antiga onde estava. {person} escolheu-a.",
   "frameleaf_file_step_put_back_ok_detail_phone": "A sua biblioteca usa a fotografia enviada pelo telemóvel.",
+  "frameleaf_file_step_put_back_ok_detail_repaired": "O original voltou e ocupa o lugar da reparação. A reparação e o ficheiro danificado são mantidos.",
   "frameleaf_file_step_put_back_ok_result": "Encontrado de novo",
   "frameleaf_file_step_put_back_ok_what": "Voltou a colocá-lo",
   "frameleaf_file_step_put_back_ok_what_copied": "Copiou-o de volta",

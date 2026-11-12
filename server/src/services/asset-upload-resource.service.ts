@@ -226,6 +226,10 @@ export class AssetUploadResourceService {
         verified.state === 'verified'
           ? await this.media.prepareUploadAsset(auth, this.metadata(verified), this.file(verified))
           : undefined;
+      // FL-1472: a capture of a photo whose original is lost or damaged puts it back, as any upload does
+      const restored = prepared
+        ? await this.media.restoreLostOriginal(auth, this.metadata(verified), this.file(verified))
+        : undefined;
       const result = await this.uploads.locked(id, auth.user.id, async (tx, current) => {
         await check(tx);
         await this.sourceAdmission(auth, current, tx);
@@ -233,7 +237,9 @@ export class AssetUploadResourceService {
         return commit(tx, async () => {
           if (published.state !== 'published') {
             if (published.state !== 'verified' || !prepared) throw new ConflictException('Capture upload is not ready');
-            published = await this.uploads.publish(tx, published, prepared);
+            published = restored
+              ? await this.uploads.publishRestored(tx, published, restored.id, restored.visible)
+              : await this.uploads.publish(tx, published, prepared);
           }
           if (!published.resultAssetId || !published.resultStatus)
             throw new ConflictException('Capture upload was not published');
@@ -312,10 +318,19 @@ export class AssetUploadResourceService {
       verified.state === 'verified'
         ? await this.media.prepareUploadAsset(auth, this.metadata(verified), this.file(verified))
         : undefined;
+    // FL-1472: a download of a photo whose original is lost or damaged puts it back, as any upload does
+    const restored = prepared
+      ? await this.media.restoreLostOriginal(auth, this.metadata(verified), this.file(verified))
+      : undefined;
     const assetId = await this.uploads.locked(id, user.id, async (tx, current) => {
       await check(tx);
       return this.mediaImports.publish(tx, authority, async () => {
-        const published = current.state === 'published' ? current : await this.uploads.publish(tx, current, prepared!);
+        const published =
+          current.state === 'published'
+            ? current
+            : restored
+              ? await this.uploads.publishRestored(tx, current, restored.id, restored.visible)
+              : await this.uploads.publish(tx, current, prepared!);
         return { id: published.resultAssetId!, status: published.resultStatus! };
       });
     });

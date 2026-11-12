@@ -215,7 +215,11 @@ describe(PreservationWorkerService.name, () => {
       fail: vi.fn().mockResolvedValue('retrying'),
     };
     users = { get: vi.fn().mockResolvedValue({ id: ownerId }) };
-    assetMedia = { uploadAsset: vi.fn() };
+    assetMedia = {
+      uploadAsset: vi.fn(),
+      needsOriginal: vi.fn().mockResolvedValue(false),
+      restoreFromCopy: vi.fn().mockResolvedValue(undefined),
+    };
     assets = { update: vi.fn(), editAsset: vi.fn() };
     albums = { addAssets: vi.fn() };
     stacks = { create: vi.fn() };
@@ -904,6 +908,27 @@ describe(PreservationWorkerService.name, () => {
       expect(outcome).toBe('matched');
       expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
       expect(files.extractVerified).not.toHaveBeenCalled();
+      expect(repository.updateRestoreItem).toHaveBeenCalledWith(item.id, { assetId: existing, match: 'existing' });
+    });
+
+    it('puts the archived original back under a photo whose own is lost or damaged (FL-1472)', async () => {
+      const existing = newUuid();
+      repository.findByChecksum.mockResolvedValue([
+        { id: existing, deletedAt: null, createdAt: new Date('2020-01-01') },
+      ]);
+      assetMedia.needsOriginal.mockResolvedValue(true);
+      const item = restoreItemOf();
+
+      const outcome = await worker().restoreItem(contextOf(), item);
+
+      expect(outcome).toBe('matched');
+      expect(files.extractVerified).toHaveBeenCalledTimes(1);
+      expect(assetMedia.restoreFromCopy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filename: expect.any(String) }),
+        expect.objectContaining({ originalPath: expect.any(String) }),
+      );
+      expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
       expect(repository.updateRestoreItem).toHaveBeenCalledWith(item.id, { assetId: existing, match: 'existing' });
     });
 

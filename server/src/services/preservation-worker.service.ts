@@ -1693,8 +1693,25 @@ export class PreservationWorkerService {
         );
       }
 
-      if (!assetId) {
-        await this.repository.updateRestoreItem(item.id, { state: 'creating', creatingAt: new Date() });
+      const dto = () => ({
+        filename: entry.originalFileName,
+        fileCreatedAt: new Date(sidecar?.dates.fileCreatedAt ?? Date.now()),
+        fileModifiedAt: new Date(sidecar?.dates.fileModifiedAt ?? Date.now()),
+        isFavorite: sidecar?.isFavorite ?? false,
+        libraryScope: sidecar?.libraryScope ?? LibraryScope.Personal,
+        // Locked from the first moment it exists: never listed unlocked, not even for an instant.
+        visibility: locked
+          ? AssetVisibility.Locked
+          : sidecar?.visibility === 'hidden'
+            ? AssetVisibility.Hidden
+            : AssetVisibility.Timeline,
+      });
+      const checksums = {
+        checksum: Buffer.from(entry.original.sha256, 'hex'),
+        legacyChecksum: Buffer.from(entry.original.sha1, 'hex'),
+      };
+      /** The archived original, copied and verified into the owner's upload storage. */
+      const extract = async () => {
         const destination = StorageCore.getNestedPath(
           StorageFolder.Upload,
           context.ownerId,
@@ -1705,32 +1722,26 @@ export class PreservationWorkerService {
           sha256: entry.original.sha256,
           bytes: entry.original.bytes,
         });
+        return {
+          uuid: randomUUID(),
+          ...checksums,
+          originalPath: destination,
+          originalName: entry.originalFileName,
+          size: entry.original.bytes,
+        };
+      };
+
+      if (live && !created && (await this.assetMedia.needsOriginal(context.auth, checksums))) {
+        // FL-1472: the library's copy is lost or damaged; the archive's original goes back under it
+        await this.assetMedia.restoreFromCopy(context.auth, dto(), await extract());
+      }
+
+      if (!assetId) {
+        await this.repository.updateRestoreItem(item.id, { state: 'creating', creatingAt: new Date() });
+        const file = await extract();
         locked ||= await retained();
-        const response = await this.assetMedia.uploadAsset(
-          context.auth,
-          {
-            filename: entry.originalFileName,
-            fileCreatedAt: new Date(sidecar?.dates.fileCreatedAt ?? Date.now()),
-            fileModifiedAt: new Date(sidecar?.dates.fileModifiedAt ?? Date.now()),
-            isFavorite: sidecar?.isFavorite ?? false,
-            libraryScope: sidecar?.libraryScope ?? LibraryScope.Personal,
-            // Locked from the first moment it exists: never listed unlocked, not even for an instant.
-            visibility: locked
-              ? AssetVisibility.Locked
-              : sidecar?.visibility === 'hidden'
-                ? AssetVisibility.Hidden
-                : AssetVisibility.Timeline,
-          },
-          {
-            uuid: randomUUID(),
-            checksum: Buffer.from(entry.original.sha256, 'hex'),
-            legacyChecksum: Buffer.from(entry.original.sha1, 'hex'),
-            originalPath: destination,
-            originalName: entry.originalFileName,
-            size: entry.original.bytes,
-          },
-          undefined,
-          (create) => this.repository.publishRestoreAsset(context.restore.id, item.id, context.ownerId, locked, create),
+        const response = await this.assetMedia.uploadAsset(context.auth, dto(), file, undefined, (create) =>
+          this.repository.publishRestoreAsset(context.restore.id, item.id, context.ownerId, locked, create),
         );
         if (response.status === AssetMediaStatus.DUPLICATE && /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(response.id)) {
           throw new PreservationPackageError(

@@ -625,6 +625,18 @@ describe('file steps in plain words (FL-1338)', () => {
       },
     ],
     [
+      'the true original took a repair’s place',
+      'put-back',
+      'ok',
+      { uploaded: true, overRepair: true },
+      corruptCategory,
+      {
+        what: 'Put it back',
+        detail: 'The original came back and takes the repair’s place. The repair and the damaged file are kept.',
+        result: r('good', 'Found again'),
+      },
+    ],
+    [
       'put back what a phone sent',
       'put-back',
       'ok',

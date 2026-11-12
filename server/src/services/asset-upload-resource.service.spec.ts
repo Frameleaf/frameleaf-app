@@ -352,7 +352,47 @@ describe('resumable asset byte commit boundaries', () => {
       ),
     ).toBe('saved-receipt');
     expect(commit).toHaveBeenCalledTimes(1);
-    expect(harness.media.restoreLostOriginal).not.toHaveBeenCalled();
+    // FL-1472: asked first, and no photo had these bytes lost or damaged
+    expect(harness.media.restoreLostOriginal).toHaveBeenCalledTimes(1);
+  });
+  it('puts a capture of a lost or damaged photo back under it instead of publishing a new asset (FL-1472)', async () => {
+    const harness = setup();
+    const captureAuth = { ...auth, apiKey: { id: 'capture-key', permissions: [] } };
+    harness.mutate({
+      state: 'verified',
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: createHash('sha256').update('abcd').digest(),
+      legacyChecksum: createHash('sha1').update('abcd').digest(),
+      metadata: {
+        ...harness.row().metadata,
+        publication: 'capture',
+        captureId: harness.row().id,
+        captureActor: 'key:capture-key',
+        libraryScope: 'design',
+      } as never,
+    });
+    harness.media.restoreLostOriginal.mockResolvedValue({ id: 'lost-asset', visible: true });
+    harness.uploads.publishRestored.mockImplementation(() => {
+      harness.mutate({ state: 'published', ingested: true, resultAssetId: 'lost-asset', resultStatus: 'created' });
+      return Promise.resolve(harness.row());
+    });
+    const commit = vi.fn(async (_tx, publish) => {
+      expect(await publish()).toEqual({ id: 'lost-asset', status: 'created' });
+      return 'saved-receipt';
+    });
+    await harness.service.commitCapture(
+      captureAuth,
+      harness.row().id,
+      harness.row().expectedChecksum.toString('hex'),
+      commit,
+    );
+    expect(harness.uploads.publishRestored).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'lost-asset',
+      true,
+    );
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
   });
 
   const folderAuth = { user: { id: 'owner' }, session: { id: 'photo-session' } } as AuthDto;

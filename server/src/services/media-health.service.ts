@@ -2036,13 +2036,37 @@ export class MediaHealthService {
     if (!asset || asset.deletedAt || asset.isExternal || (await this.isEncryptedOriginal(asset))) {
       return JobStatus.Skipped;
     }
-    const finding = (await this.mediaHealthRepository.getFindingsForAsset(asset.id)).find(
-      (open) => open.category === MediaHealthCategory.Corrupt && isOpenFinding(open),
+    const findings = await this.mediaHealthRepository.getFindingsForAsset(asset.id);
+    const damaged = findings.find(
+      (finding) =>
+        finding.category === MediaHealthCategory.Corrupt &&
+        isOpenFinding(finding) &&
+        (finding.resolution as Record<string, unknown> | null)?.reuploadRecommended === true,
     );
-    const resolution = (finding?.resolution ?? {}) as Record<string, unknown>;
-    if (!finding || resolution.reuploadRecommended !== true) {
-      return JobStatus.Skipped;
+    if (damaged) {
+      return this.putBackOverDamage(asset, damaged, upload, device);
     }
+    const repaired = findings.find((finding) => {
+      const evidence = (finding.evidence ?? {}) as Record<string, unknown>;
+      return (
+        finding.category === MediaHealthCategory.Corrupt &&
+        finding.status === MediaHealthStatus.Resolved &&
+        !finding.dismissedAt &&
+        finding.originalPath === asset.originalPath &&
+        ['repaired', 'part-saved'].includes(evidence.fixState as string) &&
+        typeof evidence.originalChecksum === 'string'
+      );
+    });
+    return repaired ? this.putBackOverRepair(asset, repaired, upload, device) : JobStatus.Skipped;
+  }
+
+  /** The upload of a damaged photo's own bytes takes the damaged file's place, which is kept beside it. */
+  private async putBackOverDamage(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    upload: string,
+    device?: string,
+  ): Promise<JobStatus> {
     const digests = await this.validateManagedCandidate(asset, upload);
     if (!digests) {
       return JobStatus.Skipped;
@@ -2051,11 +2075,91 @@ export class MediaHealthService {
       // the file there is these very bytes: an upload can do no better, so none is asked for again
       await this.mediaHealthRepository.upsertFinding({
         ...finding,
-        resolution: { ...resolution, reuploadRecommended: false },
+        resolution: { ...(finding.resolution as Record<string, unknown> | null), reuploadRecommended: false },
         expectedUpdateId: asset.updateId,
       });
       return JobStatus.Success;
     }
+    const destination = await this.publishUpload(asset, finding, upload, digests, 'upload');
+    if (!destination) {
+      return JobStatus.Skipped;
+    }
+    const committed = await this.mediaHealthRepository.replaceRepairedOriginal(
+      await this.uploadRelink(asset, finding, destination, digests, device),
+    );
+    if (!committed) {
+      // left unreferenced in the hidden folder, where a later upload of the same photo reuses it
+      this.logger.log(`Library care left the upload of ${asset.id} unused: the photo or its finding changed`);
+      return JobStatus.Skipped;
+    }
+    const after = { originalPath: destination, checksum: digests.sha256.toString('hex') };
+    await this.retainDamagedOriginal(finding.id, (retainedPath) => ({
+      step: 'put-back',
+      outcome: 'ok',
+      facts: { uploaded: true },
+      undo: { kind: 'relink', previousPath: retainedPath, ...after },
+    }));
+    await this.queueRelinkJobs(asset.id);
+    return JobStatus.Success;
+  }
+
+  /**
+   * The true original of a photo Library care repaired came in: it takes the repair's place, with the bytes the
+   * repair recorded as the original's. The repair stays in Library care's folder, for Undo; the damaged file stays
+   * where the repair kept it.
+   */
+  private async putBackOverRepair(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    upload: string,
+    device?: string,
+  ): Promise<JobStatus> {
+    const expected = (finding.evidence as Record<string, unknown>).originalChecksum;
+    let digests: FileDigests;
+    try {
+      digests = await this.cryptoRepository.hashFileDigests(upload);
+    } catch {
+      return JobStatus.Skipped;
+    }
+    if (![digests.sha1.toString('hex'), digests.sha256.toString('hex')].includes(expected as string)) {
+      return JobStatus.Skipped;
+    }
+    const destination = await this.publishUpload(asset, finding, upload, digests, 'original');
+    if (!destination) {
+      return JobStatus.Skipped;
+    }
+    const relink = await this.uploadRelink(asset, finding, destination, digests, device);
+    const committed = await this.mediaHealthRepository.restoreOriginalOverRepair({
+      ...relink,
+      steps: [
+        ...(relink.steps ?? []),
+        {
+          step: 'put-back',
+          outcome: 'ok',
+          facts: { uploaded: true, overRepair: true },
+          undo: { kind: 'relink', previousPath: asset.originalPath },
+        },
+      ],
+    });
+    if (!committed) {
+      this.logger.log(`Library care left the original of ${asset.id} unused: the photo or its repair changed`);
+      return JobStatus.Skipped;
+    }
+    await this.queueRelinkJobs(asset.id);
+    return JobStatus.Success;
+  }
+
+  /**
+   * An upload Library care uses, decoded and published into its folder under a name fixed by the asset and finding
+   * (a repeat reuses it). Undefined when it does not decode or the drive is not there.
+   */
+  private async publishUpload(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    upload: string,
+    digests: FileDigests,
+    kind: 'upload' | 'original',
+  ): Promise<string | undefined> {
     const decoded = await this.integrityService.validate({
       path: upload,
       originalFileName: asset.originalFileName,
@@ -2065,15 +2169,15 @@ export class MediaHealthService {
     });
     if (decoded.status !== 'healthy') {
       this.logger.log(`Library care did not use the upload of ${asset.id}: ${decoded.status}`);
-      return JobStatus.Skipped;
+      return;
     }
     const extension = path.extname(asset.originalFileName).toLowerCase();
     const destination = this.libraryCarePath(
       asset,
-      `${asset.id}-${finding.id}-upload${/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : ''}`,
+      `${asset.id}-${finding.id}-${kind}${/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : ''}`,
     );
     if (!(await this.canReach(destination))) {
-      return JobStatus.Skipped;
+      return;
     }
     await publishVerifiedCopy({
       source: upload,
@@ -2081,8 +2185,19 @@ export class MediaHealthService {
       expected: digests,
       hash: (filePath) => this.cryptoRepository.hashFileDigests(filePath),
     });
+    return destination;
+  }
+
+  /** What relinking the photo to a published upload writes: it is found again, sent by a phone when one did. */
+  private async uploadRelink(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    destination: string,
+    digests: FileDigests,
+    device?: string,
+  ): Promise<ReplaceRepairedOriginal> {
     const stat = await this.storageRepository.stat(destination);
-    const committed = await this.mediaHealthRepository.replaceRepairedOriginal({
+    return {
       assetId: asset.id,
       ownerId: asset.ownerId,
       healthId: finding.id,
@@ -2103,21 +2218,7 @@ export class MediaHealthService {
       evidence: { fixState: 'found-again' satisfies FixState },
       steps: device ? [{ step: 'asked-phones', outcome: 'ok', facts: { device } }] : [],
       verifyCandidate: () => this.cryptoRepository.hashFileDigests(destination).catch((): undefined => {}),
-    });
-    if (!committed) {
-      // left unreferenced in the hidden folder, where a later upload of the same photo reuses it
-      this.logger.log(`Library care left the upload of ${asset.id} unused: the photo or its finding changed`);
-      return JobStatus.Skipped;
-    }
-    const after = { originalPath: destination, checksum: digests.sha256.toString('hex') };
-    await this.retainDamagedOriginal(finding.id, (retainedPath) => ({
-      step: 'put-back',
-      outcome: 'ok',
-      facts: { uploaded: true },
-      undo: { kind: 'relink', previousPath: retainedPath, ...after },
-    }));
-    await this.queueRelinkJobs(asset.id);
-    return JobStatus.Success;
+    };
   }
 
   /**

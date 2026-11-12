@@ -8780,6 +8780,7 @@
   "frameleaf_file_step_put_back_ok_detail_copied": "Kopia w folderach, z których korzystała Twoja dawna aplikacja do zdjęć, była dokładnie taka sama. Frameleaf skopiował ją do Twojej biblioteki, a starą zostawił na miejscu.",
   "frameleaf_file_step_put_back_ok_detail_copied_by": "Kopia w folderach, z których korzystała Twoja dawna aplikacja do zdjęć, była dokładnie taka sama. Frameleaf skopiował ją do Twojej biblioteki, a starą zostawił na miejscu. Wybrał ją {person}.",
   "frameleaf_file_step_put_back_ok_detail_phone": "Twoja biblioteka korzysta ze zdjęcia przesłanego przez telefon.",
+  "frameleaf_file_step_put_back_ok_detail_repaired": "Oryginał wrócił i zastępuje naprawę. Naprawa i uszkodzony plik zostają zachowane.",
   "frameleaf_file_step_put_back_ok_result": "Znaleziono ponownie",
   "frameleaf_file_step_put_back_ok_what": "Przywrócono",
   "frameleaf_file_step_put_back_ok_what_copied": "Skopiowano z powrotem",

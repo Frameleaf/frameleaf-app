@@ -8773,6 +8773,7 @@
   "frameleaf_file_step_put_back_ok_detail_copied": "En kopi i de mapper, din gamle fotoapp brugte, passede nøjagtigt. Frameleaf kopierede den ind i dit bibliotek og lod den gamle blive, hvor den var.",
   "frameleaf_file_step_put_back_ok_detail_copied_by": "En kopi i de mapper, din gamle fotoapp brugte, passede nøjagtigt. Frameleaf kopierede den ind i dit bibliotek og lod den gamle blive, hvor den var. {person} valgte den.",
   "frameleaf_file_step_put_back_ok_detail_phone": "Dit bibliotek bruger det foto, din telefon sendte.",
+  "frameleaf_file_step_put_back_ok_detail_repaired": "Originalen kom tilbage og erstatter reparationen. Reparationen og den beskadigede fil gemmes.",
   "frameleaf_file_step_put_back_ok_result": "Fundet igen",
   "frameleaf_file_step_put_back_ok_what": "Lagde den tilbage",
   "frameleaf_file_step_put_back_ok_what_copied": "Kopierede den tilbage",

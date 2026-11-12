@@ -8779,6 +8779,7 @@
   "frameleaf_file_step_put_back_ok_detail_copied": "Een kopie in de mappen die je oude foto-app gebruikte kwam exact overeen. Frameleaf heeft die naar je bibliotheek gekopieerd en de oude laten staan waar die stond.",
   "frameleaf_file_step_put_back_ok_detail_copied_by": "Een kopie in de mappen die je oude foto-app gebruikte kwam exact overeen. Frameleaf heeft die naar je bibliotheek gekopieerd en de oude laten staan waar die stond. {person} heeft die gekozen.",
   "frameleaf_file_step_put_back_ok_detail_phone": "Je bibliotheek gebruikt de foto die je telefoon heeft gestuurd.",
+  "frameleaf_file_step_put_back_ok_detail_repaired": "Het origineel is terug en neemt de plaats van de reparatie in. De reparatie en het beschadigde bestand blijven bewaard.",
   "frameleaf_file_step_put_back_ok_result": "Opnieuw gevonden",
   "frameleaf_file_step_put_back_ok_what": "Teruggezet",
   "frameleaf_file_step_put_back_ok_what_copied": "Teruggekopieerd",

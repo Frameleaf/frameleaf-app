@@ -8779,6 +8779,7 @@
   "frameleaf_file_step_put_back_ok_detail_copied": "Eine Kopie in den Ordnern deiner alten Foto-App stimmte genau überein. Frameleaf hat sie in deine Bibliothek kopiert und die alte dort belassen.",
   "frameleaf_file_step_put_back_ok_detail_copied_by": "Eine Kopie in den Ordnern deiner alten Foto-App stimmte genau überein. Frameleaf hat sie in deine Bibliothek kopiert und die alte dort belassen. {person} hat sie ausgewählt.",
   "frameleaf_file_step_put_back_ok_detail_phone": "Deine Bibliothek verwendet das Foto, das dein Smartphone gesendet hat.",
+  "frameleaf_file_step_put_back_ok_detail_repaired": "Das Original ist zurück und ersetzt die Reparatur. Die Reparatur und die beschädigte Datei bleiben erhalten.",
   "frameleaf_file_step_put_back_ok_result": "Wieder gefunden",
   "frameleaf_file_step_put_back_ok_what": "Zurückgelegt",
   "frameleaf_file_step_put_back_ok_what_copied": "Zurückkopiert",

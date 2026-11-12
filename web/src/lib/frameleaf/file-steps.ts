@@ -297,6 +297,11 @@ export const stepWords = (
         detail = by ? say('detail_copied_by', { person: by }) : say('detail_copied');
         break;
       }
+      if (facts.overRepair === true) {
+        // FL-1472: the true original came back after Library care had repaired the damaged file
+        detail = say('detail_repaired');
+        break;
+      }
       detail =
         context.category === MediaHealthCategory.Corrupt
           ? say('detail_changed')

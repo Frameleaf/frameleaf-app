@@ -39,6 +39,8 @@ import {
   ImageEnrichmentFilter,
   LibraryScope,
   LibraryViewScope,
+  MediaHealthCategory,
+  MediaHealthStatus,
   StudioExportVersionState,
   TimeBucketDateType,
 } from 'src/enum.js';
@@ -2551,6 +2553,43 @@ export class AssetRepository {
         AND h.status IN ('corrupt_confirmed', 'corrupt_suspect') AND h."resolvedAt" IS NULL AND h."dismissedAt" IS NULL
         AND coalesce((h.resolution->>'reuploadRecommended')::boolean, false)`.execute(this.db);
     return new Set(rows.map(({ assetId }) => assetId));
+  }
+  /**
+   * FL-1472: the owner's photo Library care repaired whose true original has these bytes: the repair recorded them
+   * (`originalChecksum`), and the photo still uses the repair. An upload of them puts the original back.
+   */
+  async getRepairedByOriginal(
+    ownerId: string,
+    checksums: Buffer[],
+    options: AssetChecksumOptions = {},
+  ): Promise<string | undefined> {
+    // from the findings, which are few: never a walk of the owner's whole library on every upload
+    const repaired = this.db
+      .selectFrom('asset_health')
+      .select(['asset_health.assetId', 'asset_health.originalPath'])
+      .where('asset_health.category', '=', MediaHealthCategory.Corrupt)
+      .where('asset_health.status', '=', MediaHealthStatus.Resolved)
+      .where('asset_health.dismissedAt', 'is', null)
+      .where(sql<string>`asset_health.evidence->>'fixState'`, 'in', ['repaired', 'part-saved'])
+      .where(
+        sql<string>`asset_health.evidence->>'originalChecksum'`,
+        'in',
+        checksums.map((checksum) => checksum.toString('hex')),
+      );
+    const asset = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      // still the repair: the photo uses the file the finding was settled with
+      .where(sql<boolean>`("asset"."id", "asset"."originalPath") IN (${repaired})`)
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .where('asset.libraryId', 'is', null)
+      .where('asset.isExternal', '=', false)
+      .where('asset.deletedAt', 'is', null)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .limit(1)
+      .executeTakeFirst();
+    return asset?.id;
   }
   /** FL-365: the uploaded originals a re-file into the folder layout checks (not in an added folder, not deleted). */
   async countUploadedOriginals(): Promise<number> {

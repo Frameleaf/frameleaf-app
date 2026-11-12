@@ -8682,6 +8682,7 @@
   "frameleaf_file_step_put_back_ok_detail_copied": "A copy in the folders your old photo app used matched exactly. Frameleaf copied it into your library and left the old one where it was.",
   "frameleaf_file_step_put_back_ok_detail_copied_by": "A copy in the folders your old photo app used matched exactly. Frameleaf copied it into your library and left the old one where it was. {person} chose it.",
   "frameleaf_file_step_put_back_ok_detail_phone": "Your library uses the photo your phone sent.",
+  "frameleaf_file_step_put_back_ok_detail_repaired": "The original came back and takes the repair’s place. The repair and the damaged file are kept.",
   "frameleaf_file_step_put_back_ok_result": "Found again",
   "frameleaf_file_step_put_back_ok_what": "Put it back",
   "frameleaf_file_step_put_back_ok_what_copied": "Copied it back",

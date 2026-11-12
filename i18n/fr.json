@@ -8777,6 +8777,7 @@
   "frameleaf_file_step_put_back_ok_detail_copied": "Une copie parfaitement identique a été trouvée dans les dossiers de votre ancienne application photo. Frameleaf l’a copiée dans votre bibliothèque et a laissé l’ancienne à son emplacement.",
   "frameleaf_file_step_put_back_ok_detail_copied_by": "Une copie parfaitement identique a été trouvée dans les dossiers de votre ancienne application photo. Frameleaf l’a copiée dans votre bibliothèque et a laissé l’ancienne à son emplacement. {person} a choisi cette copie.",
   "frameleaf_file_step_put_back_ok_detail_phone": "Votre bibliothèque utilise la photo envoyée par votre téléphone.",
+  "frameleaf_file_step_put_back_ok_detail_repaired": "L’original est revenu et remplace la réparation. La réparation et le fichier endommagé sont conservés.",
   "frameleaf_file_step_put_back_ok_result": "Retrouvé",
   "frameleaf_file_step_put_back_ok_what": "Remis en place",
   "frameleaf_file_step_put_back_ok_what_copied": "Remis en place par copie",

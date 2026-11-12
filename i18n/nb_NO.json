@@ -8779,6 +8779,7 @@
   "frameleaf_file_step_put_back_ok_detail_copied": "En kopi i mappene den gamle bildeappen din brukte, stemte nøyaktig. Frameleaf kopierte den inn i biblioteket ditt og lot den gamle ligge der den var.",
   "frameleaf_file_step_put_back_ok_detail_copied_by": "En kopi i mappene den gamle bildeappen din brukte, stemte nøyaktig. Frameleaf kopierte den inn i biblioteket ditt og lot den gamle ligge der den var. {person} valgte den.",
   "frameleaf_file_step_put_back_ok_detail_phone": "Biblioteket ditt bruker bildet telefonen din sendte.",
+  "frameleaf_file_step_put_back_ok_detail_repaired": "Originalen kom tilbake og erstatter reparasjonen. Reparasjonen og den skadde filen beholdes.",
   "frameleaf_file_step_put_back_ok_result": "Funnet igjen",
   "frameleaf_file_step_put_back_ok_what": "Satt den tilbake",
   "frameleaf_file_step_put_back_ok_what_copied": "Kopierte den tilbake",

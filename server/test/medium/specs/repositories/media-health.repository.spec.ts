@@ -584,6 +584,139 @@ describe(MediaHealthRepository.name, () => {
       ]);
     });
 
+    it('puts the true original back in a repair’s place, and only those bytes (FL-1472)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const originalSha1 = Buffer.alloc(20, 7);
+      const { result: asset } = await ctx.newAsset({ ownerId: user.id, checksum: originalSha1 });
+      const finding = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, null),
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.CorruptConfirmed,
+      });
+      assert.isDefined(finding);
+      const relink = (
+        to: string,
+        sha1: Buffer,
+        sha256: Buffer,
+        from: { updateId: string; path: string; checksum: Buffer; algorithm?: ChecksumAlgorithm },
+      ) => ({
+        expectedUpdateId: from.updateId,
+        expectedChecksumAlgorithm: from.algorithm ?? asset.checksumAlgorithm,
+        verifyCandidate: () => Promise.resolve({ sha1, sha256, sizeInBytes: 50 }),
+        assetId: asset.id,
+        ownerId: user.id,
+        healthId: finding.id,
+        expectedOriginalPath: from.path,
+        expectedChecksum: from.checksum,
+        originalPath: to,
+        originalFileName: asset.originalFileName,
+        sha1,
+        sha256,
+        sizeInBytes: 50,
+        fileModifiedAt: new Date(),
+        evidence: { fixState: 'part-saved' },
+      });
+      const repairedPath = `/data/upload/${user.id}/.library-care/${asset.id}-repaired.jpg`;
+      const repairedSha256 = Buffer.alloc(32, 9);
+      await expect(
+        sut.replaceRepairedOriginal(
+          relink(repairedPath, Buffer.alloc(20, 8), repairedSha256, {
+            updateId: asset.updateId,
+            path: asset.originalPath,
+            checksum: originalSha1,
+          }),
+        ),
+      ).resolves.toBe(true);
+      // the repair records the original's bytes
+      const [repaired] = await sut.getByIds([finding.id]);
+      expect(repaired.evidence).toMatchObject({
+        fixState: 'part-saved',
+        originalChecksum: originalSha1.toString('hex'),
+      });
+      const current = (
+        await sql<{
+          updateId: string;
+          checksumAlgorithm: ChecksumAlgorithm;
+        }>`SELECT "updateId", "checksumAlgorithm" FROM public.asset WHERE id = ${asset.id}::uuid`.execute(
+          defaultDatabase,
+        )
+      ).rows[0];
+      // the repair is the photo's own SHA-256 file now
+      const from = {
+        updateId: current.updateId,
+        path: repairedPath,
+        checksum: repairedSha256,
+        algorithm: current.checksumAlgorithm,
+      };
+      const originalPath = `/data/upload/${user.id}/.library-care/${asset.id}-original.jpg`;
+
+      // other bytes never replace the repair
+      await expect(
+        sut.restoreOriginalOverRepair({
+          ...relink(originalPath, Buffer.alloc(20, 3), Buffer.alloc(32, 3), from),
+          evidence: { fixState: 'found-again' },
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        sut.restoreOriginalOverRepair({
+          ...relink(originalPath, originalSha1, Buffer.alloc(32, 7), from),
+          evidence: { fixState: 'found-again' },
+        }),
+      ).resolves.toBe(true);
+
+      const rows = await sql<{ originalPath: string }>`
+        SELECT "originalPath" FROM public.asset WHERE id = ${asset.id}::uuid`.execute(defaultDatabase);
+      expect(rows.rows[0]).toEqual({ originalPath });
+      await expect(sut.getByIds([finding.id])).resolves.toEqual([
+        expect.objectContaining({
+          status: MediaHealthStatus.Resolved,
+          originalPath,
+          evidence: expect.objectContaining({
+            fixState: 'found-again',
+            reason: 'original_restored_over_repair',
+            previousPath: repairedPath,
+            // the damaged file stays where the repair kept it
+            retainedPath: asset.originalPath,
+          }),
+        }),
+      ]);
+    });
+
+    it('a scan that finds the file fine settles only open problems, saying so (FL-1472)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const open = await sut.upsertFinding(findingDto(asset.id, asset.originalPath, null));
+      const fixed = await sut.upsertFinding({
+        ...findingDto(asset.id, asset.originalPath, null),
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.Relinked,
+        resolvedAt: new Date('2026-10-01T00:00:00.000Z'),
+      });
+      assert.isDefined(open);
+      assert.isDefined(fixed);
+
+      const [current] = await sut.getAssets([asset.id]);
+      await sut.markResolvedForAssets([MediaHealthCategory.Missing, MediaHealthCategory.Corrupt], [current]);
+
+      const [settled, untouched] = await sut
+        .getByIds([open.id, fixed.id])
+        .then((rows) => [open.id, fixed.id].map((id) => rows.find((row) => row.id === id)!));
+      expect(settled).toMatchObject({ status: MediaHealthStatus.Resolved });
+      expect(settled.resolvedAt).not.toBeNull();
+      // how the other was fixed, and when, stay as they were
+      expect(untouched).toMatchObject({
+        status: MediaHealthStatus.Relinked,
+        resolvedAt: new Date('2026-10-01T00:00:00.000Z'),
+      });
+      const steps = await sql<{ healthId: string; step: string; outcome: string }>`
+        SELECT "healthId", step, outcome FROM public.asset_health_step WHERE "assetId" = ${asset.id}::uuid`.execute(
+        defaultDatabase,
+      );
+      expect(steps.rows).toEqual([{ healthId: open.id, step: 'checked', outcome: 'ok' }]);
+    });
+
     it('markResolved moves the finding to resolved/info and stamps resolvedAt', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

@@ -877,6 +877,22 @@ describe(AssetMediaService.name, () => {
       });
     });
 
+    it('hands the true original of a repaired photo to Library care instead of creating a second photo (FL-1472)', async () => {
+      // the repair gave the photo a checksum of its own, so these bytes match nothing by checksum
+      mocks.asset.getByChecksums.mockResolvedValue([]);
+      mocks.asset.getRepairedByOriginal.mockResolvedValue('repaired-asset');
+      await expect(sut.uploadAsset(authStub.admin, createDto, upload)).resolves.toEqual({
+        id: 'repaired-asset',
+        status: AssetMediaStatus.CREATED,
+      });
+      expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith(authStub.admin.user.id, [upload.checksum, file1]);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.MediaHealthPutBackUpload,
+        data: { id: 'repaired-asset', path: upload.originalPath },
+      });
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
     it('uploads normally when the photo changed before it could be restored', async () => {
       mocks.physicalFile.restoreLostOriginal.mockResolvedValue(false);
       mocks.asset.create.mockResolvedValue(assetEntity);
