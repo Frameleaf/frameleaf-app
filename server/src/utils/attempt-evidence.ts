@@ -24,22 +24,15 @@ export async function pruneWorkerStopEvidence(db: Kysely<any>) {
     ORDER BY m.key LIMIT 250 FOR UPDATE SKIP LOCKED)`.execute(db);
 }
 
-/** Retention owns the job rows. Completed handlers are stopped; lease expiry alone is never evidence. */
-export async function preserveAttemptEvidence(db: Kysely<any>, ids: string[]): Promise<string[]> {
-  await sql`INSERT INTO system_metadata (key,value)
-    SELECT ${ATTEMPT_EVIDENCE_PREFIX} || a.token::text,
-      jsonb_build_object('jobId',a."jobId"::text,'stoppedAt',CASE WHEN a.outcome='completed' THEN extract(epoch FROM a."finishedAt")*1000
-        ELSE (worker.value->>'stoppedAt')::numeric END,
-        'recordedAt',extract(epoch FROM clock_timestamp())*1000,'seenPass',NULL)
-    FROM job_attempt a LEFT JOIN system_metadata worker ON worker.key='frameleaf-worker-stopped:' || a."workerId"::text
-      WHERE a."jobId"=ANY(${ids}::uuid[]) AND a."finishedAt" IS NOT NULL
-        AND (a.outcome='completed' OR worker.value->>'workerId'=a."workerId"::text)
-    ON CONFLICT (key) DO NOTHING`.execute(db);
-  const { rows } = await sql<{ id: string }>`SELECT j.id FROM job j WHERE j.id=ANY(${ids}::uuid[])
-    AND NOT EXISTS (SELECT 1 FROM job_attempt a WHERE a."jobId"=j.id AND NOT EXISTS (
-      SELECT 1 FROM system_metadata m WHERE m.key=${ATTEMPT_EVIDENCE_PREFIX} || a.token::text
-        AND m.value->>'jobId'=j.id::text AND m.value ? 'stoppedAt'))`.execute(db);
-  return rows.map(({ id }) => id);
+/**
+ * FL-1485: retention deletes the proof with the job. Once a job is gone its outputs need none (`sweepAttemptOutputs`),
+ * and keeping one row per pruned job put millions of rows into system_metadata.
+ */
+export async function dropAttemptEvidence(db: Kysely<any>, ids: string[]) {
+  await sql`DELETE FROM system_metadata WHERE key IN (
+    SELECT ${ATTEMPT_EVIDENCE_PREFIX} || a.token::text FROM job_attempt a WHERE a."jobId"=ANY(${ids}::uuid[]))`.execute(
+    db,
+  );
 }
 
 /** Complete traversals only, in small pages. Concurrently created evidence waits for the next pass. */

@@ -350,28 +350,36 @@ export class JobRepository {
       progressUnits: 0,
       progress: (units) => this.coordinator?.postMessage({ type: 'progress', id: claim.id, units }),
     };
-    try {
+    // FL-1485: handler/native work has returned; lease expiry alone cannot attest this. A clean completion of
+    // repeatable work is its own proof (`job_attempt.outcome`), so only the other endings write one, before they
+    // settle the claim. Writing it for every job put a row per job into system_metadata (7.8 million rows on a
+    // 900,000 photo library) and cost each job a second commit.
+    let stopRecorded = false;
+    const recordStop = async () => {
+      if (stopRecorded) return;
+      stopRecorded = true;
       try {
-        if (this.stopping) abort.abort(new Error('Worker stopped'));
-        // Backpressure before media work so every committed callback has reserved delivery capacity.
-        releaseObservers = await deliverJobObservers.reserve(abort.signal);
-        releaseExecution = await admission.execution.acquire(abort.signal);
-        abort.signal.throwIfAborted();
-        started = true;
-        await queueExecution.run(context, () =>
-          this.eventRepository.emit('JobRun', claim.queue as QueueName, toJobItem(claim)),
-        );
-      } finally {
-        // Handler/native work has returned; lease expiry alone cannot attest this.
-        // Keep this before durable completion, while the watchdog still owns the claim.
-        try {
-          await recordStoppedAttempt(this.store.db, claim.id, claim.token);
-        } catch {
-          this.logger.warn('Could not persist stopped-attempt evidence; output cleanup will retain it');
-        }
+        await recordStoppedAttempt(this.store.db, claim.id, claim.token);
+      } catch {
+        this.logger.warn('Could not persist stopped-attempt evidence; output cleanup will retain it');
       }
+    };
+    try {
+      if (this.stopping) abort.abort(new Error('Worker stopped'));
+      // Backpressure before media work so every committed callback has reserved delivery capacity.
+      releaseObservers = await deliverJobObservers.reserve(abort.signal);
+      releaseExecution = await admission.execution.acquire(abort.signal);
+      abort.signal.throwIfAborted();
+      started = true;
+      await queueExecution.run(context, () =>
+        this.eventRepository.emit('JobRun', claim.queue as QueueName, toJobItem(claim)),
+      );
+      // Work whose effects may not repeat keeps its proof ahead of completion, while the watchdog still owns the
+      // claim: lease recovery reads it to choose between a retry and waiting for a person.
+      if (!claim.safeToRetry || claim.data?.operationId) await recordStop();
       abort.signal.throwIfAborted();
       if (context.dependencyReason) {
+        await recordStop();
         this.warnDeferral(claim, context.dependencyReason);
         settled = await this.store.defer(claim, context.dependencyReason);
         await this.wakeIfLockedKeyLoaded(claim, context.dependencyReason, settled);
@@ -425,6 +433,7 @@ export class JobRepository {
         }
       }
     } catch (error) {
+      await recordStop();
       if (context.dependencyReason) {
         // A dependency refusal is a wait, not a failure, and repeats for every job behind it.
         this.warnDeferral(claim, context.dependencyReason);
@@ -458,6 +467,7 @@ export class JobRepository {
       }
     } finally {
       if (!settled) {
+        await recordStop();
         try {
           // The database fence can observe cancellation before the coordinator's abort arrives.
           // Settle only this stopped claim, never publish its rejected output or rerun its handler.
