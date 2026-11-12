@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Expression, Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { IntegrityReport, MediaHealthStatus } from 'src/enum.js';
 import {
   PhysicalFileTrashMove,
   countPathReferences,
@@ -89,6 +90,15 @@ const LOCK_EVIDENCE = sql<boolean | null>`coalesce(
 const ENTRY_COLUMNS = sql`
   id, "physicalFileId", path, checksum, "sizeInBytes"::float8 AS "sizeInBytes", "lastOwnerId", "lastAssetId",
   "originalFileName", "trashedAt", ${LOCK_EVIDENCE} AS "wasLocked"`;
+/** Library care findings still waiting: the photo's file is missing or damaged. */
+const OPEN_HEALTH_STATUSES = [
+  MediaHealthStatus.Missing,
+  MediaHealthStatus.Candidate,
+  MediaHealthStatus.Found,
+  MediaHealthStatus.CorruptSuspect,
+  MediaHealthStatus.CorruptConfirmed,
+  MediaHealthStatus.TrashQueued,
+];
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === 'ENOENT';
 /** Library Care file trash (universal storage, spec §3.5). */
 @Injectable()
@@ -233,6 +243,11 @@ export class PhysicalFileTrashRepository {
         return;
       }
       await lockFilePath(trx, entry.path);
+      if (await this.holdsLostBytes(trx, entry)) {
+        throw new ConflictException(
+          'Kept: a photo with these bytes is missing or damaged, and this may be its last good copy',
+        );
+      }
       await unlink(entry.path, entry).catch((error: unknown) => {
         if (!isMissing(error)) {
           throw error;
@@ -241,6 +256,30 @@ export class PhysicalFileTrashRepository {
       await sql`DELETE FROM public.physical_file_trash WHERE id = ${id}::uuid`.execute(trx);
       return entry;
     });
+  }
+  /**
+   * Whether a photo with the entry's bytes has an open missing or damaged finding. Identical files keep one
+   * file for many photos and move the extra copies here; once that one file is lost, a copy here is the only
+   * good one left, so it is never deleted until the finding is settled. An entry recorded with SHA-1 matches
+   * the photo's own checksum, which is SHA-1 for those records too.
+   */
+  private async holdsLostBytes(trx: Transaction<DB>, entry: PhysicalFileTrashEntry) {
+    // ponytail: findings are not locked; one that appears mid-delete is missed, the next nightly check reports it
+    const { rows } = await sql`
+      WITH same AS (
+        SELECT id FROM public.asset WHERE checksum = ${entry.checksum}
+        UNION
+        SELECT "assetId" FROM public.asset_checksum
+        WHERE sha256 = ${entry.checksum} AND "sizeInBytes" = ${entry.sizeInBytes}::bigint
+      )
+      SELECT 1 FROM same
+      WHERE EXISTS (SELECT 1 FROM public.integrity_report r WHERE r."assetId" = same.id
+          AND r.type IN (${IntegrityReport.MissingFile}, ${IntegrityReport.ChecksumFail}))
+        OR EXISTS (SELECT 1 FROM public.asset_health h WHERE h."assetId" = same.id
+          AND h."resolvedAt" IS NULL AND h."dismissedAt" IS NULL
+          AND h.status IN (${sql.join(OPEN_HEALTH_STATUSES)}))
+      LIMIT 1`.execute(trx);
+    return rows.length > 0;
   }
   private async getForUpdate(trx: Transaction<DB>, id: string) {
     const { rows } = await sql<PhysicalFileTrashEntry>`
