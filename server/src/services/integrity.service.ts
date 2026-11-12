@@ -343,14 +343,13 @@ export class IntegrityService extends BaseService {
   getIntegrityReportCsv(type: IntegrityReport): Readable {
     const items = this.integrityRepository.streamIntegrityReports(type);
 
-    // very rudimentary csv serialiser
+    // very rudimentary csv serialiser; names can hold a comma, newline or quote character
+    const quote = (value: string | null) => (value === null ? '' : `"${value.replaceAll('"', '""')}"`);
     async function* generator() {
-      yield 'id,type,assetId,fileAssetId,path\n';
+      yield 'id,type,assetId,fileAssetId,originalFileName,path\n';
 
       for await (const item of items) {
-        // no expectation of particularly bad filenames
-        // but they could potentially have a newline or quote character
-        yield `${item.id},${item.type},${item.assetId},${item.fileAssetId},"${item.path.replaceAll('"', '""')}"\n`;
+        yield `${item.id},${item.type},${item.assetId},${item.fileAssetId},${quote(item.originalFileName)},${quote(item.path)}\n`;
       }
     }
 

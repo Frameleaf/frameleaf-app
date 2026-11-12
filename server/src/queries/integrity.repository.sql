@@ -213,17 +213,23 @@ where
 
 -- IntegrityRepository.streamIntegrityReports
 select
-  "id",
-  "type",
-  "path",
-  "assetId",
-  "fileAssetId"
+  "integrity_report"."id",
+  "integrity_report"."type",
+  "integrity_report"."path",
+  "integrity_report"."assetId",
+  "integrity_report"."fileAssetId",
+  "asset"."originalFileName"
 from
   "integrity_report"
+  left join "asset_file" on "asset_file"."id" = "integrity_report"."fileAssetId"
+  left join "asset" on "asset"."id" = coalesce(
+    "integrity_report"."assetId",
+    "asset_file"."assetId"
+  )
 where
-  "type" = $1
+  "integrity_report"."type" = $1
 order by
-  "createdAt" desc
+  "integrity_report"."createdAt" desc
 
 -- IntegrityRepository.streamIntegrityReportsWithAssetChecksum
 select
