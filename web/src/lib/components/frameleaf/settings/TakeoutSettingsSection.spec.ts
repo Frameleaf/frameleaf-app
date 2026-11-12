@@ -85,6 +85,53 @@ describe('TakeoutSettingsSection', () => {
     unmount();
   });
 
+  it('lets an administrator choose a server folder in the chooser and import from it', async () => {
+    const empty = { zip: 0, tgz: 0, bytes: 0, unpacked: false };
+    sdkMock.getTakeoutRoots.mockResolvedValue({ roots: [{ id: '0', path: '/imports' }] });
+    sdkMock.getTakeoutFolders.mockImplementation(
+      ({ path }) =>
+        Promise.resolve(
+          path
+            ? { here: { ...empty, tgz: 3 }, folders: [] }
+            : {
+                here: empty,
+                folders: [
+                  { name: 'Old phone', ...empty },
+                  { name: 'Takeout 2024', ...empty, tgz: 3 },
+                ],
+              },
+        ) as never,
+    );
+    sdkMock.createTakeoutImport.mockResolvedValue(takeout('import-2', 'Server export'));
+    sdkMock.scanTakeoutImport.mockResolvedValue(takeout('import-2', 'Server export'));
+    render(TakeoutSettingsSection, { showRoots: true });
+
+    await userEvent.click(await screen.findByText(en.frameleaf_takeout_page_advanced));
+    expect(screen.queryByRole('button', { name: en.frameleaf_takeout_import_folder })).toBeNull();
+    await userEvent.click(await screen.findByRole('button', { name: en.frameleaf_takeout_folder_choose }));
+    const dialog = screen.getByRole('dialog', { name: en.frameleaf_takeout_folder_chooser_title });
+    expect(within(dialog).getByRole('button', { name: en.frameleaf_takeout_folder_choose_this })).toBeDisabled();
+    await userEvent.click(within(dialog).getByRole('button', { name: '/imports' }));
+    expect(
+      await within(dialog).findByRole('button', { name: `Old phone ${en.frameleaf_takeout_folder_no_export}` }),
+    ).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: /Takeout 2024/ }));
+    await waitFor(() =>
+      expect(sdkMock.getTakeoutFolders).toHaveBeenLastCalledWith({ rootId: '0', path: 'Takeout 2024' }),
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: en.frameleaf_takeout_folder_choose_this }));
+
+    expect(screen.getByLabelText('/imports, Takeout 2024')).toBeInTheDocument();
+    expect(screen.getByText(/3 \.tgz files · .*\. Ready to check\./)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: en.frameleaf_takeout_import_folder }));
+    await waitFor(() =>
+      expect(sdkMock.createTakeoutImport).toHaveBeenCalledWith({
+        takeoutCreateDto: expect.objectContaining({ rootId: '0', directory: 'Takeout 2024' }),
+      }),
+    );
+    expect(sdkMock.scanTakeoutImport).toHaveBeenCalledWith({ id: 'import-2' });
+  });
+
   it('opens one import from a deep link', async () => {
     sdkMock.getTakeoutImport.mockResolvedValue(takeout('import-1', 'Family export'));
     at('area=backup&section=takeout&workflow=import&import=import-1');

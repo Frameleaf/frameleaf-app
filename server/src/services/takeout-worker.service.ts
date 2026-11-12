@@ -16,11 +16,13 @@ import {
   type MediaOperationWriteState,
 } from 'src/repositories/media-operation.repository.js';
 import {
+  OpenArchive,
   StagedDigest,
   TAKEOUT_SIDECAR_MAX_BYTES,
   TAKEOUT_STAGING_RESERVE_BYTES,
   TakeoutStagingError,
   TakeoutStagingRepository,
+  WalkedFile,
 } from 'src/repositories/takeout-staging.repository.js';
 import {
   TakeoutFile,
@@ -37,7 +39,8 @@ import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { UPLOADS_PAUSED_MESSAGE } from 'src/utils/access.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS, mediaOperationProgress } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { TakeoutZipError } from 'src/utils/takeout-zip.js';
+import { TakeoutTarError } from 'src/utils/takeout-tar.js';
+import { TakeoutZipEntry, TakeoutZipError } from 'src/utils/takeout-zip.js';
 import {
   TakeoutAction,
   TakeoutAssetPatch,
@@ -50,6 +53,7 @@ import {
   parseTakeoutSidecar,
   takeoutCreatedPatch,
   takeoutEntryPath,
+  takeoutFolderArchiveKind,
   takeoutLivePhotoKey,
   takeoutMatchedPatch,
   takeoutScannedItem,
@@ -430,19 +434,79 @@ export class TakeoutWorkerService {
           ? new TakeoutJobError('takeout_archive_invalid', `${source.name}: ${error.message}`)
           : error;
       });
-      run.total = (run.total ?? 0) + entries.length;
-      await this.checkpoint(run, true);
+      return await this.stageZipEntries(run, source, directory, archive, entries, '');
+    } finally {
+      await archive.close();
+    }
+  }
+
+  private async stageZipEntries(
+    run: TakeoutRun,
+    source: TakeoutSource,
+    directory: string,
+    archive: OpenArchive,
+    entries: TakeoutZipEntry[],
+    keyPrefix: string,
+  ): Promise<number> {
+    run.total = (run.total ?? 0) + entries.length;
+    await this.checkpoint(run, true);
+
+    let rejected = 0;
+    for (const entry of entries) {
+      this.throwIfStopped(run);
+      const outcome = await this.stageEntry(run, source, directory, {
+        key: keyPrefix + entry.name,
+        entryName: entry.name,
+        size: entry.uncompressedSize,
+        modifiedAt: entry.modifiedAt,
+        refused: !!entry.refused,
+        stage: (destination) => this.staging.stageArchiveEntry(archive, entry, destination, run.controller.signal),
+      });
+      if (outcome === 'rejected') {
+        rejected++;
+      }
+      run.processed++;
+      await this.checkpoint(run);
+    }
+    return rejected;
+  }
+
+  /**
+   * A ZIP (ZIP64 included) or `.tgz` Takeout archive inside a server folder, read where it is and
+   * never copied whole. Its entries are keyed under the archive's own path, so two archives holding
+   * the same entry names stay apart. An archive that is damaged or is not a Takeout archive is
+   * counted as one rejected entry, and the files staged from it before the damage are kept.
+   */
+  private async scanFolderArchive(
+    run: TakeoutRun,
+    source: TakeoutSource,
+    directory: string,
+    file: WalkedFile & { entryName: string },
+    kind: 'zip' | 'tgz',
+  ): Promise<number> {
+    const keyPrefix = `${file.entryName}!/`;
+    try {
+      if (kind === 'zip') {
+        const archive = await this.staging.openFolderArchive(source.path, file);
+        try {
+          const entries = await this.staging.readArchiveDirectory(archive.source);
+          return await this.stageZipEntries(run, source, directory, archive, entries, keyPrefix);
+        } finally {
+          await archive.close();
+        }
+      }
 
       let rejected = 0;
-      for (const entry of entries) {
+      for await (const entry of this.staging.readFolderTar(source.path, file)) {
         this.throwIfStopped(run);
+        run.total = (run.total ?? 0) + 1;
         const outcome = await this.stageEntry(run, source, directory, {
+          key: keyPrefix + entry.name,
           entryName: entry.name,
-          size: entry.uncompressedSize,
+          size: entry.size,
           modifiedAt: entry.modifiedAt,
           refused: !!entry.refused,
-          stage: (destination) =>
-            this.staging.stageArchiveEntry(source.path, archive.source, entry, destination, run.controller.signal),
+          stage: (destination) => this.staging.stageTarEntry(entry, destination, run.controller.signal),
         });
         if (outcome === 'rejected') {
           rejected++;
@@ -451,8 +515,16 @@ export class TakeoutWorkerService {
         await this.checkpoint(run);
       }
       return rejected;
-    } finally {
-      await archive.close();
+    } catch (error) {
+      if (!(
+        error instanceof TakeoutZipError ||
+        error instanceof TakeoutTarError ||
+        error instanceof TakeoutStagingError
+      )) {
+        throw error;
+      }
+      this.logger.warn(`Google Photos import ${run.row.id}: refused archive ${file.entryName}: ${errorMessage(error)}`);
+      return 1;
     }
   }
 
@@ -469,6 +541,13 @@ export class TakeoutWorkerService {
     for await (const file of this.staging.walk(source.path, run.controller.signal)) {
       this.throwIfStopped(run);
       run.total = (run.total ?? 0) + 1;
+      const archive = file.link ? undefined : takeoutFolderArchiveKind(file.entryName);
+      if (archive) {
+        rejected += await this.scanFolderArchive(run, source, directory, file, archive);
+        run.processed++;
+        await this.checkpoint(run);
+        continue;
+      }
       const outcome = await this.stageEntry(run, source, directory, {
         entryName: file.entryName,
         size: file.size,
@@ -495,6 +574,8 @@ export class TakeoutWorkerService {
     source: TakeoutSource,
     directory: string,
     entry: {
+      /** Identifies the entry within its source; the entry name unless an archive in a folder holds it. */
+      key?: string;
       entryName: string;
       size: number;
       modifiedAt: Date;
@@ -522,7 +603,8 @@ export class TakeoutWorkerService {
       return 'rejected';
     }
 
-    const id = takeoutStableId(`${source.id}:${entry.entryName}`);
+    const key = entry.key ?? entry.entryName;
+    const id = takeoutStableId(`${source.id}:${key}`);
     if (await this.repository.hasFile(id)) {
       return 'staged';
     }
@@ -554,7 +636,7 @@ export class TakeoutWorkerService {
       id,
       importId: run.row.id,
       sourceId: source.id,
-      entryName: entry.entryName,
+      entryName: key,
       relativePath: boundary.relativePath,
       folder: boundary.folder,
       name: boundary.name,

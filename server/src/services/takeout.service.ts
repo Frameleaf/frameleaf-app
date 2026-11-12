@@ -10,6 +10,7 @@ import {
   TakeoutArchiveCreateDto,
   TakeoutControlDto,
   TakeoutCreateDto,
+  TakeoutFoldersResponseDto,
   TakeoutItemQueryDto,
   TakeoutItemsResponseDto,
   TakeoutOptionsDto,
@@ -155,22 +156,20 @@ export class TakeoutService {
     };
   }
 
+  /** The folders inside a folder of a permitted import location, for choosing one to import. */
+  async folders(auth: AuthDto, rootId: string, relative: string): Promise<TakeoutFoldersResponseDto> {
+    this.requireSession(auth);
+    const root = this.folderRoot(auth, rootId);
+    return this.mapErrors(() => this.staging.listFolder(root, relative));
+  }
+
   async create(auth: AuthDto, dto: TakeoutCreateDto): Promise<TakeoutResponseDto> {
     this.requireSession(auth);
     requireUploadsNotPaused(auth);
     const wantsDirectory = dto.rootId !== undefined || dto.directory !== undefined;
     let directory: string | undefined;
     if (wantsDirectory) {
-      // A server folder is an administrator's choice made in a signed-in session; an API key, even an
-      // administrator's, may upload archives but never point the server at its own filesystem.
-      if (!auth.user.isAdmin || auth.apiKey) {
-        throw new ForbiddenException('Only an administrator can import from a server folder');
-      }
-      const roots = this.config.getEnv().storage.importRoots;
-      const root = dto.rootId !== undefined && /^\d+$/.test(dto.rootId) ? roots[Number(dto.rootId)] : undefined;
-      if (!root) {
-        throw new BadRequestException('Choose one of the permitted import locations');
-      }
+      const root = this.folderRoot(auth, dto.rootId);
       directory = await this.mapErrors(() => this.staging.resolveDirectory(root, dto.directory ?? ''));
     }
 
@@ -677,6 +676,22 @@ export class TakeoutService {
           year: isTakeoutYearFolder(folder),
         })),
     };
+  }
+
+  /**
+   * A server folder is an administrator's choice made in a signed-in session; an API key, even an
+   * administrator's, may upload archives but never point the server at its own filesystem.
+   */
+  private folderRoot(auth: AuthDto, rootId: string | undefined): string {
+    if (!auth.user.isAdmin || auth.apiKey) {
+      throw new ForbiddenException('Only an administrator can import from a server folder');
+    }
+    const roots = this.config.getEnv().storage.importRoots;
+    const root = rootId !== undefined && /^\d+$/.test(rootId) ? roots[Number(rootId)] : undefined;
+    if (!root) {
+      throw new BadRequestException('Choose one of the permitted import locations');
+    }
+    return root;
   }
 
   private requireSession(auth: AuthDto) {

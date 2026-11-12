@@ -6,6 +6,7 @@ import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { TakeoutFile, TakeoutImport, TakeoutItem, TakeoutSource } from 'src/repositories/takeout.repository.js';
 import { TakeoutWorkerService } from 'src/services/takeout-worker.service.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
+import { TakeoutTarError } from 'src/utils/takeout-tar.js';
 import { TAKEOUT_DEFAULT_OPTIONS, TakeoutPhase, takeoutStableId } from 'src/utils/takeout.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 
@@ -405,7 +406,7 @@ describe(TakeoutWorkerService.name, () => {
           { name: 'Takeout/Google Photos/Trip/photo.jpg', uncompressedSize: 10, modifiedAt: new Date(0) },
         ]);
         staging.stageArchiveEntry.mockImplementationOnce(
-          (_path: string, _source: unknown, _entry: unknown, _destination: string, signal: AbortSignal) =>
+          (_archive: unknown, _entry: unknown, _destination: string, signal: AbortSignal) =>
             new Promise((_resolve, reject) =>
               signal.addEventListener(
                 'abort',
@@ -1011,6 +1012,64 @@ describe(TakeoutWorkerService.name, () => {
         expect.objectContaining({ errorCode: 'takeout_folder_not_permitted' }),
       );
       expect(staging.walk).not.toHaveBeenCalled();
+    });
+
+    it('reads ZIP and .tgz archives inside a server folder in place, keyed under each archive', async () => {
+      const folder = { ...source, kind: 'directory' as const, path: '/imports/Takeout', size: 0, received: 0 };
+      repository.sources.mockResolvedValue([folder]);
+      const digest = { size: 10, checksum: Buffer.alloc(32, 1), legacyChecksum: Buffer.alloc(20, 1) };
+      const walked = (entryName: string) => ({
+        entryName,
+        filePath: `${folder.path}/${entryName}`,
+        size: 100,
+        modifiedAt: new Date(0),
+        link: false,
+        dev: 1,
+        ino: 1,
+      });
+      staging.walk.mockImplementation(async function* () {
+        await Promise.resolve();
+        yield walked('takeout-001.zip');
+        yield walked('takeout-002.tgz');
+        yield walked('broken.tar.gz');
+      });
+      const archive = { handle: {}, source: {}, close: vi.fn() };
+      staging.openFolderArchive = vi.fn().mockResolvedValue(archive);
+      staging.readArchiveDirectory.mockResolvedValue([
+        { name: 'Takeout/Google Photos/Trip/IMG_1.jpg', uncompressedSize: 10, modifiedAt: new Date(0) },
+      ]);
+      staging.stageArchiveEntry.mockResolvedValue(digest);
+      staging.readFolderTar = vi.fn(async function* (_directory: string, file: { entryName: string }) {
+        await Promise.resolve();
+        if (file.entryName === 'broken.tar.gz') {
+          throw new TakeoutTarError('The archive is damaged');
+        }
+        yield { name: 'Takeout/Google Photos/Trip/IMG_1.jpg', size: 10, modifiedAt: new Date(0), body: vi.fn() };
+      });
+      staging.stageTarEntry = vi.fn().mockResolvedValue(digest);
+
+      await sut.run(operationOf('scan'), claimToken);
+
+      expect(staging.stageFile).not.toHaveBeenCalled();
+      expect(staging.stageArchiveEntry).toHaveBeenCalledWith(
+        archive,
+        expect.anything(),
+        expect.any(String),
+        expect.anything(),
+      );
+      expect(archive.close).toHaveBeenCalled();
+      expect(staging.stageTarEntry).toHaveBeenCalledTimes(1);
+      for (const key of ['takeout-001.zip', 'takeout-002.tgz']) {
+        expect(repository.recordFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: takeoutStableId(`${source.id}:${key}!/Takeout/Google Photos/Trip/IMG_1.jpg`),
+            relativePath: 'Trip/IMG_1.jpg',
+          }),
+        );
+      }
+      // The damaged archive is one refused entry, not a failed import.
+      expect(repository.markSourceScanned).toHaveBeenCalledWith(source.id, 1);
+      expect(operations.complete).toHaveBeenCalled();
     });
 
     it('fails the job when the staging volume is full, so the retry resumes once there is space', async () => {

@@ -350,6 +350,49 @@ export class TakeoutPairsResponseDto extends createZodDto(
   z.object({ pairs: z.array(TakeoutPairSchema), total: z.int() }).meta({ id: 'TakeoutPairsResponseDto' }),
 ) {}
 
+export class TakeoutRootParamsDto extends createZodDto(
+  z.object({
+    rootId: z
+      .string()
+      .regex(/^\d{1,4}$/u)
+      .describe('The permitted import location, as listed'),
+  }),
+) {}
+
+export class TakeoutFolderQueryDto extends createZodDto(
+  z.object({
+    path: z
+      .string()
+      .max(4096)
+      .default('')
+      .describe('The folder inside the location, relative to it; empty for the location itself'),
+  }),
+) {}
+
+const TakeoutFolderContentsSchema = z
+  .object({
+    zip: z.int().describe('ZIP archives directly inside it'),
+    tgz: z.int().describe('.tgz and .tar.gz archives directly inside it'),
+    bytes: z.int().describe('Size of those archives in bytes'),
+    unpacked: z.boolean().describe('It is, or directly holds, an unpacked Takeout or Google Photos folder'),
+  })
+  .meta({ id: 'TakeoutFolderContentsDto' });
+
+export class TakeoutFoldersResponseDto extends createZodDto(
+  z
+    .object({
+      here: TakeoutFolderContentsSchema.describe('What the folder itself holds'),
+      folders: z
+        .array(
+          TakeoutFolderContentsSchema.extend({ name: z.string().describe('The folder’s name') }).meta({
+            id: 'TakeoutFolderDto',
+          }),
+        )
+        .describe('The folders directly inside it, with what each holds'),
+    })
+    .meta({ id: 'TakeoutFoldersResponseDto' }),
+) {}
+
 export class TakeoutRootsResponseDto extends createZodDto(
   z
     .object({
