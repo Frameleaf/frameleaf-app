@@ -229,4 +229,34 @@ describe('/oauth/apps', () => {
       expect(body.error).toBe('unsupported_grant_type');
     }
   });
+
+  it('holds one app to its own request limit and nobody else (FL-1421)', async () => {
+    // the server's per-grant limit: 600 requests a minute (OAUTH_GRANT_CEILING)
+    const limit = 600;
+    const { tokens } = await connect();
+    const other = await connect();
+    const call = (token: string) =>
+      request(app)
+        .get('/timeline/buckets')
+        .set({ Authorization: `Bearer ${token}` });
+
+    const statuses: number[] = [];
+    for (let sent = 0; sent < limit; sent += 50) {
+      const batch = await Promise.all(Array.from({ length: 50 }, () => call(tokens.access_token)));
+      statuses.push(...batch.map(({ status }) => status));
+    }
+    expect(statuses.filter((status) => status !== 200)).toEqual([]);
+
+    const refused = await call(tokens.access_token);
+    expect(refused.status).toBe(429);
+    expect(refused.body.code).toBe('rate_limited');
+    expect(Number(refused.headers['retry-after'])).toBeGreaterThan(0);
+    expect(Number(refused.headers['retry-after'])).toBeLessThanOrEqual(60);
+
+    // the same person's own session and another connected app, from the same address, carry on
+    const session = await request(app).get('/timeline/buckets').set(asBearerAuth(user.accessToken));
+    expect(session.status).toBe(200);
+    const otherApp = await call(other.tokens.access_token);
+    expect(otherApp.status).toBe(200);
+  }, 120_000);
 });

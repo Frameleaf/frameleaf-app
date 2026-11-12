@@ -10,6 +10,7 @@ import {
   OriginalTransfer,
   RemoteSignInExempt,
 } from 'src/middleware/auth.guard.js';
+import { RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { sharedLinkStub } from 'test/fixtures/shared-link.stub.js';
@@ -31,6 +32,10 @@ class TestController {
 
   @Authenticated()
   thumbnailRoute() {}
+
+  @Authenticated()
+  @RemoteMediaCeiling()
+  mediaRoute() {}
 
   @Authenticated({ public: true })
   @HomeNetworkOnly()
@@ -189,6 +194,20 @@ describe(AuthGuard.name, () => {
       await sut.canActivate(contextFor(TestController.prototype.thumbnailRoute, { frameleafVia: 'relay' }));
       expect(authenticate).toHaveBeenLastCalledWith(
         expect.objectContaining({ metadata: expect.objectContaining({ remoteSignInExempt: false }) }),
+      );
+    });
+
+    it('tells authentication which routes are thumbnails and previews (FL-1421)', async () => {
+      const authenticate = vitest.spyOn(authService, 'authenticate').mockResolvedValue({} as never);
+
+      await sut.canActivate(contextFor(TestController.prototype.mediaRoute));
+      expect(authenticate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ media: true }) }),
+      );
+
+      await sut.canActivate(contextFor(TestController.prototype.thumbnailRoute));
+      expect(authenticate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ media: false }) }),
       );
     });
 

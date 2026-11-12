@@ -10,6 +10,8 @@ import { Reflector } from '@nestjs/core';
 import { lastValueFrom, of, throwError } from 'rxjs';
 import { FrameleafEnvironment } from 'src/enum.js';
 import {
+  OAUTH_GRANT_CEILING,
+  OAUTH_GRANT_MEDIA_CEILING,
   RATE_LIMITS,
   REMOTE_ACCESS_CEILING,
   REMOTE_MEDIA_CEILING,
@@ -18,6 +20,7 @@ import {
   RateLimited,
   type RateLimitedRequest,
   RemoteMediaCeiling,
+  oauthGrantCheck,
   rateLimitAddress,
   rateLimitChecks,
 } from 'src/middleware/rate-limit.guard.js';
@@ -41,6 +44,9 @@ class TestController {
 
   @RateLimited(RATE_LIMITS.stepUp)
   stepUp() {}
+
+  @RateLimited(RATE_LIMITS.oauthAppToken)
+  oauthToken() {}
 
   @RemoteMediaCeiling()
   thumbnail() {}
@@ -235,6 +241,44 @@ describe(RateLimitGuard.name, () => {
         RATE_LIMITS.linkStart.windowSeconds,
       );
     }
+  });
+
+  it('counts the token endpoint per app (client_id) from every address together (FL-1421)', async () => {
+    const tokenRequest = (ip: string, clientId: string) =>
+      sut.canActivate(
+        contextFor(
+          TestController.prototype.oauthToken,
+          makeRequest({ ip, body: { grant_type: 'refresh_token', client_id: clientId } }),
+        ),
+      );
+    const appKey = `frameleaf:rate-limit:oauth-app-token:principal:${keyed('oauth-client:app-1')}`;
+
+    await tokenRequest('198.51.100.7', 'app-1');
+    expect(store.hit).toHaveBeenNthCalledWith(1, 'frameleaf:rate-limit:oauth-app-token:ip:198.51.100.7', 600);
+    expect(store.hit).toHaveBeenNthCalledWith(2, appKey, 600);
+    await tokenRequest('203.0.113.9', ' APP-1 ');
+    expect(store.hit).toHaveBeenLastCalledWith(appKey, 600);
+    expect(store.counters.get(appKey)).toBe(2);
+
+    // spread over addresses that each stay far below the address limit, the app still reaches its own
+    store.counters.set(appKey, RATE_LIMITS.oauthAppToken.principalLimit);
+    const response = { setHeader: vi.fn() };
+    const refused = sut.canActivate(
+      contextFor(
+        TestController.prototype.oauthToken,
+        makeRequest({ ip: '192.0.2.44', body: { client_id: 'app-1' } }),
+        response,
+      ),
+    );
+    await expect(refused).rejects.toMatchObject({ status: HttpStatus.TOO_MANY_REQUESTS });
+    expect(response.setHeader).toHaveBeenCalledWith('Retry-After', '600');
+
+    // another app from one of the same addresses has its own counter
+    await expect(tokenRequest('192.0.2.44', 'app-2')).resolves.toBe(true);
+    // a request that names no app counts the address only
+    store.hit.mockClear();
+    await expect(tokenRequest('192.0.2.50', '')).resolves.toBe(true);
+    expect(store.hit).toHaveBeenCalledExactlyOnceWith('frameleaf:rate-limit:oauth-app-token:ip:192.0.2.50', 600);
   });
 
   it('counts wrong two-step codes per sign-in token from any address (FL-793)', async () => {
@@ -515,6 +559,23 @@ describe(RateLimitFailureInterceptor.name, () => {
   it('never refunds a counter without the window that admitted the request', async () => {
     await sut.release([{ ...failures[0], windowExpiresAt: undefined }]);
     expect(release).not.toHaveBeenCalled();
+  });
+});
+
+describe(oauthGrantCheck.name, () => {
+  it('gives each grant its own counter, with no address in it, and media a separate higher one (FL-1421)', () => {
+    expect(oauthGrantCheck('grant-1', false)).toEqual({
+      key: 'frameleaf:rate-limit:oauth-grant:grant:grant-1',
+      limit: OAUTH_GRANT_CEILING.limit,
+      windowSeconds: OAUTH_GRANT_CEILING.windowSeconds,
+      counts: 'requests',
+    });
+    expect(oauthGrantCheck('grant-2', false).key).not.toBe(oauthGrantCheck('grant-1', false).key);
+    expect(oauthGrantCheck('grant-1', true)).toMatchObject({
+      key: 'frameleaf:rate-limit:oauth-grant-media:grant:grant-1',
+      limit: OAUTH_GRANT_MEDIA_CEILING.limit,
+    });
+    expect(OAUTH_GRANT_MEDIA_CEILING.limit).toBeGreaterThan(OAUTH_GRANT_CEILING.limit);
   });
 });
 

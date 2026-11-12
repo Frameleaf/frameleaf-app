@@ -147,6 +147,12 @@ describe('FL-328 server error display contract', () => {
     expect(b.res.header).toHaveBeenCalledWith(expect.objectContaining({ [RequestHeader.CorrelationId]: 'request-b' }));
   });
 
+  it('sends Retry-After with a 503 that says how long to wait (FL-1421)', () => {
+    const { res } = respond(new HttpException({ message: 'This server is busy.', retryAfter: 30 }, 503));
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.header).toHaveBeenCalledWith(expect.objectContaining({ 'Retry-After': '30' }));
+  });
+
   it.each([{ headersSent: true }, { destroyed: true, complete: false }, { code: 'ECONNABORTED' }])(
     'preserves aborted and already-sent response handling: %j',
     (state) => {
