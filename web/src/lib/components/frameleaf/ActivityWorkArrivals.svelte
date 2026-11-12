@@ -207,7 +207,7 @@
     align-items: start;
     gap: var(--fl-space-2);
     padding: 10px var(--fl-space-3);
-    color: var(--fl-subtle);
+    color: var(--fl-muted);
     background: var(--fl-raised);
     border-radius: var(--fl-radius-sm);
   }
@@ -232,7 +232,7 @@
   .fw3-stage.is-failed,
   .fw3-stage.is-paused {
     color: var(--fl-warning);
-    background: var(--fl-warning-soft);
+    background: color-mix(in srgb, var(--fl-warning) 9%, var(--fl-raised));
   }
   .fw3-meter {
     display: block;
