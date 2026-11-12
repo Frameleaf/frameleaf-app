@@ -96159,6 +96159,10 @@
             },
             "type": "array"
           },
+          "scanning": {
+            "description": "A check of your photos is waiting or running; the findings update when it ends",
+            "type": "boolean"
+          },
           "total": {
             "description": "Findings in all groups",
             "maximum": 9007199254740991,
@@ -96168,6 +96172,7 @@
         },
         "required": [
           "groups",
+          "scanning",
           "total"
         ],
         "type": "object"

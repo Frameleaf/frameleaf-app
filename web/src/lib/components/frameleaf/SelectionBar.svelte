@@ -4,6 +4,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
   import BulkDateDialog from '$lib/components/frameleaf/BulkDateDialog.svelte';
+  import DateFixDialog from '$lib/components/frameleaf/DateFixDialog.svelte';
   import BulkDescriptionDialog from '$lib/components/frameleaf/BulkDescriptionDialog.svelte';
   import BulkLocationDialog from '$lib/components/frameleaf/BulkLocationDialog.svelte';
   import BulkOperationStatus from '$lib/components/frameleaf/BulkOperationStatus.svelte';
@@ -36,6 +37,7 @@
   import {
     mdiArchiveArrowUpOutline,
     mdiArchiveOutline,
+    mdiCalendarClock,
     mdiCalendarEdit,
     mdiClose,
     mdiDatabaseRefreshOutline,
@@ -79,6 +81,7 @@
   const ICONS: Record<string, string> = {
     mdiArchiveArrowUpOutline,
     mdiArchiveOutline,
+    mdiCalendarClock,
     mdiCalendarEdit,
     mdiDatabaseRefreshOutline,
     mdiDeleteForeverOutline,
@@ -731,6 +734,18 @@
     {resolveCaptureTimes}
     bind:open={dialogOpen}
     onSubmit={(payload) => submitDialog('change-date', payload)}
+  />
+{:else if dialog === 'fix-dates'}
+  <!-- FL-943: the Date & Time Doctor's preview; Change date is one click away for a date to set outright. -->
+  <DateFixDialog
+    {count}
+    ids={[...selectedIds]}
+    bind:open={dialogOpen}
+    onSubmit={(payload) => submitDialog('fix-dates', payload)}
+    onChangeDate={() => {
+      dialog = 'change-date';
+      dialogOpen = true;
+    }}
   />
 {:else if dialog === 'change-description'}
   <BulkDescriptionDialog

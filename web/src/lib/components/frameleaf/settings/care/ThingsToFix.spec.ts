@@ -1,4 +1,4 @@
-import { FileProblemTab, ProcessingFailureStep, type AdminConfigDto } from '@frameleaf/sdk';
+import { DateFindingCause, FileProblemTab, ProcessingFailureStep, type AdminConfigDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -91,6 +91,41 @@ describe('Things to fix (FL-366)', () => {
     sdkMock.getFileProblems.mockResolvedValue({ items: [], total: 0 });
     sdkMock.getAttention.mockResolvedValue(attention(0));
     sdkMock.getProcessingFailures.mockResolvedValue([]);
+    sdkMock.getDateDoctorFindings.mockResolvedValue({ total: 0, scanning: false, groups: [] });
+  });
+
+  it('counts the photos whose date looks wrong and opens the Date & Time Doctor (FL-943)', async () => {
+    const finding = (assetId: string, cause: DateFindingCause) => ({
+      assetId,
+      cause,
+      confidence: 0.9,
+      currentDate: '2026-08-12T22:40:00.000Z',
+      currentZone: 'America/Edmonton',
+      proposedDate: '2026-08-12T15:40:00.000Z',
+      proposedZone: 'America/Edmonton',
+    });
+    sdkMock.getDateDoctorFindings.mockResolvedValue({
+      total: 3,
+      scanning: false,
+      groups: [
+        {
+          groupKey: 'Sony|2026-08-12',
+          camera: 'Sony',
+          day: '2026-08-12',
+          // one photo wrong in two ways counts once
+          findings: [
+            finding('a', DateFindingCause.BurstDrift),
+            finding('a', DateFindingCause.FilenameDate),
+            finding('b', DateFindingCause.BurstDrift),
+          ],
+        },
+      ],
+    });
+    newStore();
+    render(ThingsToFix);
+
+    expect(await row('Dates that look wrong').findByText('2 photos')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Review Dates that look wrong' })).toBeInTheDocument();
   });
 
   it('says "Nothing to fix" when nothing is waiting', async () => {

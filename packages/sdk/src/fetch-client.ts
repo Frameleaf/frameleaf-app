@@ -8760,6 +8760,8 @@ export type DateDoctorGroupDto = {
 };
 export type DateDoctorFindingsResponseDto = {
     groups: DateDoctorGroupDto[];
+    /** A check of your photos is waiting or running; the findings update when it ends */
+    scanning: boolean;
     /** Findings in all groups */
     total: number;
 };

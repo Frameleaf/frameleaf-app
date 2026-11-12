@@ -120,12 +120,14 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     // Place names row and kept out of the navigation, as the prototype does. FL-1338: Damaged and missing
     // files (prototype `care/files.jsx`) is every account's own list, opened from Things to fix and File checks.
     // FL-862: Couldn't process, every account's own list, opened from Things to fix and the landing page.
-    personal: ['repair', 'files', 'couldnt-process', 'location-scan'],
+    // FL-943: the Date & Time Doctor, every account's own photos, opened from Things to fix.
+    personal: ['repair', 'files', 'couldnt-process', 'dates', 'location-scan'],
     order: [
       'integrity-checks',
       'repair',
       'files',
       'couldnt-process',
+      'dates',
       'duplicates',
       'enrichment-care',
       'unused-files',
@@ -273,7 +275,7 @@ export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area
  */
 export const NAV_HIDDEN_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({
   processing: ['hardware'],
-  care: ['location-scan', 'couldnt-process'],
+  care: ['location-scan', 'couldnt-process', 'dates'],
 });
 
 /**
@@ -328,6 +330,7 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   repair: 'frameleaf_page_repair_description',
   files: 'frameleaf_page_files_description',
   'couldnt-process': 'frameleaf_page_couldnt_process_description',
+  dates: 'frameleaf_page_date_doctor_description',
   'enrichment-care': 'frameleaf_page_enrichment_description',
   duplicates: 'frameleaf_page_duplicates_description',
   'unused-files': 'frameleaf_page_unused_files_description',
@@ -747,6 +750,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     repair: 'repairs',
     files: 'repairs',
     'couldnt-process': 'repairs',
+    dates: 'repairs',
     duplicates: 'identical_files',
     deduplication: 'identical_files',
     'unused-files': 'identical_files',

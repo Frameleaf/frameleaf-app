@@ -27,6 +27,7 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
+  import { photoCount } from '$lib/frameleaf/date-doctor';
   import { processingFailureCounts } from '$lib/frameleaf/processing-failures';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
@@ -36,6 +37,7 @@
   import {
     FileProblemTab,
     getAttention,
+    getDateDoctorFindings,
     getFileProblems,
     getIntegrityOverview,
     getLivePhotoCandidates,
@@ -47,6 +49,7 @@
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAutoFix,
+    mdiCalendarClock,
     mdiCheckCircleOutline,
     mdiChevronRight,
     mdiFileAlertOutline,
@@ -76,6 +79,16 @@
   let loaded = $state(false);
   /** FL-862: files Frameleaf couldn't process, and how many of them are set aside. */
   let processing = $state<{ count: number; setAside: number }>();
+  /** FL-943: photos the Date & Time Doctor thinks have the wrong date or zone; undefined when it can't be read. */
+  let wrongDates = $state<number>();
+
+  const wrongDatesCount = async () => {
+    try {
+      return photoCount((await getDateDoctorFindings()).groups.flatMap((group) => group.findings));
+    } catch {
+      return undefined;
+    }
+  };
 
   /** FL-520: the one source of findings, or nothing when it cannot be read. */
   const overviewOf = async () => {
@@ -115,7 +128,8 @@
       admin ? fixedThisWeek() : Promise.resolve(0),
       totalOf(FileProblemTab.Needs),
       processingFailureCounts(),
-    ]).then(([health, reports, pairs, fixed, needs, failures]) => {
+      wrongDatesCount(),
+    ]).then(([health, reports, pairs, fixed, needs, failures, dates]) => {
       if (!current) {
         return;
       }
@@ -125,6 +139,7 @@
       fixedFiles = fixed;
       needsYou = needs;
       processing = failures;
+      wrongDates = dates;
       loaded = true;
     });
     return () => {
@@ -160,7 +175,7 @@
   };
 
   const attention = $derived(missing + damaged);
-  const suggestions = $derived(pairs + lookAlikes);
+  const suggestions = $derived(pairs + lookAlikes + (wrongDates ?? 0));
   const unprocessed = $derived(processing?.count ?? 0);
 
   const hero = $derived.by(() => {
@@ -221,7 +236,7 @@
     detail: string;
     /** Undefined when the app keeps no count for this kind. */
     count?: number;
-    unit: 'found' | 'waiting' | 'groups' | 'week' | 'files';
+    unit: 'found' | 'waiting' | 'groups' | 'week' | 'files' | 'photos';
     note: string;
     tone: KitTone;
     /** The row's switch, for an administrator. */
@@ -270,6 +285,18 @@
           : '',
         tone: 'warn',
         href: commandCenterUrl('care', 'couldnt-process'),
+      },
+      // FL-943: the Date & Time Doctor (FL-912's findings), every account's own photos.
+      {
+        id: 'dates',
+        icon: mdiCalendarClock,
+        name: $t('frameleaf_date_doctor_row_name'),
+        detail: $t('frameleaf_date_doctor_row_detail'),
+        count: wrongDates,
+        unit: 'photos',
+        note: '',
+        tone: 'warn',
+        href: commandCenterUrl('care', 'dates'),
       },
       // the 7-day count is an administrator's reading, like the Overview it matches
       isAdmin && {

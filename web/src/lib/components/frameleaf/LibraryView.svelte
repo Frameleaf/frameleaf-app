@@ -766,7 +766,8 @@
       return;
     }
     // FL-1410: a date set by hand is no longer one to check; the server says where each photo belongs now.
-    if (action === 'change-date' && manager.datesToCheckCount > 0) {
+    // FL-943: a Date & Time Doctor fix moves photos on the timeline, which only the server can place.
+    if (action === 'fix-dates' || (action === 'change-date' && manager.datesToCheckCount > 0)) {
       void manager.refresh();
       return;
     }
@@ -1555,10 +1556,9 @@
 
   /**
    * FL-1410 "Fix dates": the photos whose date cannot be right (the "Dates to check" group at the end
-   * of the timeline) are selected and "Change date" opens on them. The prototype opens its Date & Time
-   * Doctor here, which the app does not have yet; Change date is what sets a date by hand, and a date
-   * set by hand is no longer one to check. Where these photos' dates are not the viewer's to change,
-   * they are left selected and brought into view.
+   * of the timeline) are selected and the Date & Time Doctor's "Fix dates…" opens on them (FL-943), with
+   * Change date one click away for a date to set outright. Where these photos' dates are not the viewer's
+   * to change, they are left selected and brought into view.
    */
   const canFixDates = $derived(libraryChrome && !selectionBar && !noSelectionBar && !options?.isTrashed);
   export const fixDates = async () => {
@@ -1601,10 +1601,10 @@
     const before = session.selection;
     session.dispatch({ type: 'selection', ids });
     await tick();
-    if (selectionBarRef?.canPerform('change-date')) {
+    if (selectionBarRef?.canPerform('fix-dates')) {
       barSelectedIds = ids;
       barRestoreIds = before;
-      selectionBarRef.performAction('change-date');
+      selectionBarRef.performAction('fix-dates');
       return;
     }
     if (pages[0]) {

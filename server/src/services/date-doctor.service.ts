@@ -62,6 +62,9 @@ export class DateDoctorService {
   }
 
   async getFindings(auth: AuthDto): Promise<DateDoctorFindingsResponseDto> {
+    // the status first: a scan that ends between the two reads then shows as running, and the page reads again,
+    // instead of its old findings showing as final
+    const scanning = await this.dateDoctorRepository.isScanning(auth.user.id);
     const rows = await this.dateDoctorRepository.getFindings(auth.user.id);
     const groups = new Map<string, DateDoctorGroup>();
     for (const row of rows) {
@@ -84,7 +87,7 @@ export class DateDoctorService {
         confidence: row.confidence,
       });
     }
-    return { total: rows.length, groups: groups.values().toArray() };
+    return { total: rows.length, scanning, groups: groups.values().toArray() };
   }
 
   @OnJob({ name: JobName.DateDoctorScanQueueAll, queue: QueueName.IntegrityCheck })

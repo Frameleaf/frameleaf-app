@@ -14,6 +14,7 @@
   import CareProgress from '$lib/components/frameleaf/settings/care/CareProgress.svelte';
   import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
   import CouldntProcess from '$lib/components/frameleaf/settings/care/CouldntProcess.svelte';
+  import DateDoctor from '$lib/components/frameleaf/settings/care/DateDoctor.svelte';
   import FileProblems from '$lib/components/frameleaf/settings/care/FileProblems.svelte';
   import PhotoLocationScan from '$lib/components/frameleaf/settings/care/PhotoLocationScan.svelte';
   import ThingsToFix from '$lib/components/frameleaf/settings/care/ThingsToFix.svelte';
@@ -78,6 +79,8 @@
   <FileProblems />
 {:else if section.key === 'couldnt-process'}
   <CouldntProcess />
+{:else if section.key === 'dates'}
+  <DateDoctor />
 {:else if section.key === 'contents'}
   <TrashSection />
 {:else if section.key === 'location-scan'}

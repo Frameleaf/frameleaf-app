@@ -15,6 +15,7 @@ import {
   mdiBackupRestore,
   mdiBellOutline,
   mdiBookshelf,
+  mdiCalendarClock,
   mdiCellphoneKey,
   mdiClockOutline,
   mdiCogOutline,
@@ -161,6 +162,13 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
       title: $t('frameleaf_cc_section_couldnt_process'),
       icon: mdiFileClockOutline,
       href: commandCenterUrl('care', 'couldnt-process'),
+    },
+    // FL-943: Library care's Date & Time Doctor, every account's own photos.
+    {
+      id: 'care-dates',
+      title: $t('frameleaf_date_doctor_title'),
+      icon: mdiCalendarClock,
+      href: commandCenterUrl('care', 'dates'),
     },
   ];
   for (const extra of extras) {

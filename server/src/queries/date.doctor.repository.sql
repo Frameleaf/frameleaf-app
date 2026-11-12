@@ -75,6 +75,19 @@ where
       and not ('dateTimeOriginal' = any (o."overriddenFields"))
   )
 
+-- DateDoctorRepository.isScanning
+select
+  "id"
+from
+  "job"
+where
+  "queue" = $1
+  and "state" in ($2, $3, $4)
+  and "name" = $5
+  and data ->> 'userId' = $6
+limit
+  $7
+
 -- DateDoctorRepository.getFindings
 select
   "asset_date_finding".*

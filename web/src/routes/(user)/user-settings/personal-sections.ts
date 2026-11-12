@@ -1,5 +1,6 @@
 import {
   mdiArchiveLockOutline,
+  mdiCalendarClock,
   mdiCloudOutline,
   mdiDeleteOutline,
   mdiFileAlertOutline,
@@ -97,6 +98,13 @@ export const personalSections = (
     title: $t('frameleaf_cc_section_couldnt_process'),
     subtitle: $t('frameleaf_cc_section_couldnt_process_description'),
     icon: mdiFileClockOutline,
+  },
+  // FL-943: Library care → Dates that look wrong (the Date & Time Doctor), for every account's own photos.
+  {
+    key: 'dates',
+    title: $t('frameleaf_date_doctor_title'),
+    subtitle: $t('frameleaf_cc_section_date_doctor_description'),
+    icon: mdiCalendarClock,
   },
   // Library care → Identify photo locations, for every account (its own library).
   {
