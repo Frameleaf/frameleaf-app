@@ -40571,7 +40571,6 @@ export enum EnvironmentKeys {
     FrameleafHost = "FRAMELEAF_HOST",
     FrameleafIgnoreMountCheckErrors = "FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS",
     FrameleafImportRoots = "FRAMELEAF_IMPORT_ROOTS",
-    FrameleafImportsHostPath = "FRAMELEAF_IMPORTS_HOST_PATH",
     FrameleafLogLevel = "FRAMELEAF_LOG_LEVEL",
     FrameleafLogFormat = "FRAMELEAF_LOG_FORMAT",
     FrameleafMediaLocation = "FRAMELEAF_MEDIA_LOCATION",

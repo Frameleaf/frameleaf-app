@@ -365,7 +365,8 @@ const getEnv = (): EnvData => {
       ignoreMountCheckErrors: !!dto.FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS,
       mediaLocation: dto.FRAMELEAF_MEDIA_LOCATION,
       importRoots: dto.FRAMELEAF_IMPORT_ROOTS,
-      importsHostPath: dto.FRAMELEAF_IMPORTS_HOST_PATH?.trim() || null,
+      // Read directly: every EnvSchema key is published as a response enum, and a new value breaks native apps.
+      importsHostPath: process.env.FRAMELEAF_IMPORTS_HOST_PATH?.trim() || null,
       recoveryRoots: parseRecoveryRoots(dto.FRAMELEAF_RECOVERY_ROOTS),
     },
 
