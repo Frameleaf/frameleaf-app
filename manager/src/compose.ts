@@ -186,7 +186,7 @@ export async function releaseImages(
 }
 
 /** Names Manager sets itself; an advanced setting may not rewire the stack or move the media. */
-export const RESERVED_ENVIRONMENT = /^(DB_|POSTGRES_|FRAMELEAF_MANAGER_|IMMICH_CONFIG_FILE$|IMMICH_MEDIA_LOCATION$)/;
+export const RESERVED_ENVIRONMENT = /^(DB_|POSTGRES_|FRAMELEAF_MANAGER_|IMMICH_CONFIG_FILE$|IMMICH_MEDIA_LOCATION$|FRAMELEAF_CONFIG_FILE$|FRAMELEAF_MEDIA_LOCATION$)/;
 /** Container paths Manager mounts itself; an extra folder may not shadow them. */
 export const RESERVED_TARGETS = ['/run/frameleaf', '/var/lib/postgresql', '/cache'];
 /**
@@ -634,4 +634,32 @@ export async function renderCompose(
   );
   await atomicJson(join(directory, 'compose.json'), compose);
   if (managerPlatform() === 'unraid') await configureUnraidCompose(directory);
+}
+
+/**
+ * FL-1476: what someone added to a running container outside Manager (in Docker or Unraid), which the next
+ * update would remove. Compares the container with the service Manager last rendered: variables neither Manager
+ * nor the image set (or set to something else), and folders Manager didn't mount. Docker's anonymous volumes
+ * (an image's VOLUME lines) and Manager's own names are never reported. Null when nothing differs.
+ */
+export function changedOutsideManager(
+  service: { environment?: Record<string, string>; volumes?: { target: string }[] },
+  container: { Config: { Env: string[] }; Mounts: { Type: string; Source: string; Name?: string; Destination: string; RW: boolean }[] },
+  imageEnvironment: string[],
+): { environment: Record<string, string>; mounts: { source: string; target: string; readOnly: boolean }[] } | null {
+  const pairs = (list: string[]) => new Map(list.map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+  const image = pairs(imageEnvironment);
+  const rendered = service.environment ?? {};
+  const environment: Record<string, string> = {};
+  for (const [name, value] of pairs(container.Config.Env ?? [])) {
+    if (!name || RESERVED_ENVIRONMENT.test(name)) continue;
+    const expected = Object.hasOwn(rendered, name) ? rendered[name] : image.get(name);
+    if (value !== expected) environment[name] = value;
+  }
+  const targets = new Set((service.volumes ?? []).map((v) => v.target));
+  const mounts = (container.Mounts ?? [])
+    .filter((m) => !targets.has(m.Destination) && !(m.Type === 'volume' && /^[a-f0-9]{64}$/.test(m.Name ?? '')))
+    .filter((m) => !RESERVED_TARGETS.some((t) => m.Destination === t || m.Destination.startsWith(`${t}/`)))
+    .map((m) => ({ source: m.Type === 'volume' ? (m.Name ?? m.Source) : m.Source, target: m.Destination, readOnly: !m.RW }));
+  return Object.keys(environment).length || mounts.length ? { environment, mounts } : null;
 }

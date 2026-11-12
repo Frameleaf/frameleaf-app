@@ -102,3 +102,4 @@ progress.progress,progress.meter{appearance:none;border:0;display:block;width:10
 .st-change-link{display:inline-flex;align-items:center;gap:2px;color:var(--accent);font-size:12px;font-weight:600;white-space:nowrap}.st-change-link svg{width:16px;height:16px;transition:transform 200ms}details[open] .st-change-link svg{transform:rotate(180deg)}
 .st-form>details.containers>summary.card-header{flex-direction:row;flex-wrap:nowrap}
 @media(max-width:640px){.st-form>.card .card-header{flex-direction:column}}
+.list-row .service-extra{display:flex;align-items:center;gap:6px;font-size:12px}.list-row .service-extra svg{width:13px;height:13px;flex-shrink:0}.list-row .button svg{width:15px;height:15px}

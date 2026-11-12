@@ -351,6 +351,11 @@ export class Docker {
     const containers = JSON.parse(await this.execute('docker', ['inspect', ...ids])) as Container[];
     return onHost ? containers : containers.map(containerView);
   }
+  /** The variables an image sets itself (its ENV lines), so they aren't mistaken for an administrator's. */
+  async imageEnvironment(image: string): Promise<string[]> {
+    if (!/^[\w.\-/:@]+$/.test(image)) return [];
+    return JSON.parse(await this.execute('docker', ['image', 'inspect', '--format', '{{json .Config.Env}}', image])) ?? [];
+  }
   async inspect(id: string): Promise<Container> {
     containerId.parse(id);
     return containerView(JSON.parse(await this.execute('docker', ['inspect', id]))[0] as Container);
