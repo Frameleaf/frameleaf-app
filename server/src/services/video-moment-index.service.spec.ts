@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import type { QueueExecution } from 'src/queue/types.js';
+import type { Mock } from 'vitest';
 import { defaults } from 'src/config.js';
 import {
   AssetStatus,
@@ -87,6 +88,7 @@ describe(VideoMomentIndexService.name, () => {
       publishCaptions: vi.fn().mockResolvedValue(frames.length),
       listMoments: vi.fn().mockResolvedValue([]),
       getMoment: vi.fn(),
+      getMoments: vi.fn().mockResolvedValue([]),
       createManualMoment: vi.fn(),
       updateManualMoment: vi.fn(),
       deleteManualMoment: vi.fn(),
@@ -538,10 +540,13 @@ describe(VideoMomentIndexService.name, () => {
   });
 
   describe('search', () => {
+    /** Typed, so its implementation may return a promise. */
+    const searchFrames = () =>
+      moments.searchFrames as Mock<(embedding: string, model: string, scope: unknown) => Promise<unknown[]>>;
     /** Nonsense words encode to this, and get no nearer than 0.6 to any frame. */
     const NONSENSE = '[0.9]';
     const frameHits = (hits: { assetId: string; timestampMs: number; distance: number; caption?: string }[]) =>
-      moments.searchFrames.mockImplementation((embedding: string) =>
+      searchFrames().mockImplementation((embedding) =>
         Promise.resolve(
           embedding === NONSENSE
             ? [{ assetId: newUuid(), frameId: newUuid(), momentId: null, timestampMs: 0, distance: 0.6, caption: null }]
@@ -594,19 +599,16 @@ describe(VideoMomentIndexService.name, () => {
 
     it('hides a visual hit’s caption made with names that changed since, keeping the hit', async () => {
       const momentId = newUuid();
-      moments.searchFrames.mockImplementation((embedding: string) =>
+      searchFrames().mockImplementation((embedding) =>
         Promise.resolve([
           embedding === NONSENSE
             ? { assetId, frameId: frames[0].id, momentId: null, timestampMs: 0, distance: 0.6, caption: null }
             : { assetId, frameId: frames[1].id, momentId, timestampMs: 20_000, distance: 0.2, caption: 'Anna laughs' },
         ]),
       );
-      moments.getMoment.mockResolvedValue({
-        id: momentId,
-        assetId,
-        source: VideoMomentSource.Generated,
-        provenance: { identityHash: 'names-before' },
-      });
+      moments.getMoments.mockResolvedValue([
+        { id: momentId, assetId, source: VideoMomentSource.Generated, provenance: { identityHash: 'names-before' } },
+      ]);
 
       const { hits } = await sut.search(authStub.user1, { query: 'laughing' });
 
@@ -660,6 +662,45 @@ describe(VideoMomentIndexService.name, () => {
         expect.objectContaining({ assetId: quiet, momentCount: 1, firstMs: 30_000 }),
       ]);
       expect(hits).toHaveLength(2);
+    });
+
+    it('counts a chosen video from all of its matches, past what the ranking read', async () => {
+      const busy = newUuid();
+      // The ranking saw one frame of the busy video; reading the chosen video again finds three moments.
+      searchFrames().mockImplementation((embedding, _model, scope) =>
+        Promise.resolve(
+          embedding === NONSENSE
+            ? [{ assetId: newUuid(), frameId: newUuid(), momentId: null, timestampMs: 0, distance: 0.6, caption: null }]
+            : (scope as { assetIds?: string[] }).assetIds
+              ? [1000, 20_000, 40_000].map((timestampMs) => ({
+                  assetId: busy,
+                  frameId: newUuid(),
+                  momentId: null,
+                  timestampMs,
+                  distance: 0.2,
+                  caption: null,
+                }))
+              : [
+                  {
+                    assetId: busy,
+                    frameId: newUuid(),
+                    momentId: null,
+                    timestampMs: 20_000,
+                    distance: 0.2,
+                    caption: null,
+                  },
+                ],
+        ),
+      );
+
+      const { videos } = await sut.search(authStub.user1, { query: 'waves' });
+
+      expect(videos).toEqual([expect.objectContaining({ assetId: busy, momentCount: 3, firstMs: 1000 })]);
+      expect(moments.searchFrames).toHaveBeenCalledWith(
+        '[0.3]',
+        expect.any(String),
+        expect.objectContaining({ assetIds: [busy] }),
+      );
     });
 
     it('finds no frames for words nothing matches: none nearer than nonsense gets', async () => {
@@ -819,12 +860,9 @@ describe(VideoMomentIndexService.name, () => {
       moments.searchFrames.mockResolvedValue([
         { assetId, frameId: frames[2].id, momentId, timestampMs: 30_000, distance: 0.3, caption: 'Anna laughs' },
       ]);
-      moments.getMoment.mockResolvedValue({
-        id: momentId,
-        assetId,
-        source: VideoMomentSource.Generated,
-        provenance: { identityHash: 'names-before' },
-      });
+      moments.getMoments.mockResolvedValue([
+        { id: momentId, assetId, source: VideoMomentSource.Generated, provenance: { identityHash: 'names-before' } },
+      ]);
 
       const { hits } = await sut.searchSimilar({ ...authStub.user1, hiddenContent }, frameId, {});
 

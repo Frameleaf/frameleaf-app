@@ -17,6 +17,8 @@ set
   local hnsw.ef_search = 100
 set
   local hnsw.iterative_scan = strict_order
+set
+  local hnsw.max_scan_tuples = 200000
 select
   "video_moment_frame"."assetId",
   "video_moment_frame"."id" as "frameId",
@@ -90,6 +92,17 @@ with
             asset_lock."assetId" = "asset"."id"
         )
         or "asset"."ownerId" = $6::uuid
+      )
+      and not (
+        exists (
+          select
+            1
+          from
+            public.asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
       )
     order by
       "video_moment_frame_embedding"."frameId"

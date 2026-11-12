@@ -64,6 +64,7 @@ const setup = () => {
   });
   machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
   machineLearning.encodeImage.mockImplementation(() => Promise.resolve(newEmbedding()));
+  machineLearning.clipCacheKey.mockResolvedValue('legacy');
 
   // Library workloads are routed to a healthy local destination, as in the unit tests (FL-110). The
   // index records the destination's id in a uuid column, so this one has a real id.
