@@ -244,7 +244,8 @@ describe(McpService.name, () => {
       tagIds: ['hidden-tag'],
       personIds: [],
       petIds: [],
-    } as AuthDto['hiddenContent'];
+      scope: 'owned',
+    };
     await connect('library:read');
     getAsset.mockResolvedValue({ id: assetId, visibility: AssetVisibility.Timeline, originalFileName: 'photo.jpg' });
 
