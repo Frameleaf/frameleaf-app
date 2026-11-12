@@ -61,6 +61,24 @@ const CloudProcessingUpdateSchema = z
   .optional()
   .meta({ id: 'CloudProcessingUpdate' });
 
+// FL-813: whether what this person permanently deleted may be uploaded again. Only the person changes it.
+const BackupUpdateSchema = z
+  .object({
+    skipDeleted: z
+      .object({
+        enabled: z
+          .boolean()
+          .optional()
+          .describe(
+            'Whether photos and videos you permanently delete from now on are refused when a phone or app uploads them again',
+          ),
+      })
+      .optional()
+      .meta({ id: 'BackupSkipDeletedUpdate' }),
+  })
+  .optional()
+  .meta({ id: 'BackupPreferencesUpdate' });
+
 const FoldersUpdateSchema = z
   .object({
     enabled: z.boolean().optional().describe('Whether folders are enabled'),
@@ -345,6 +363,7 @@ const UserPreferencesUpdateSchema = z
     privacy: PrivacyUpdateSchema,
     purchase: PurchaseUpdateSchema,
     trash: TrashUpdateSchema,
+    backup: BackupUpdateSchema,
     ratings: RatingsUpdateSchema,
     cloudProcessing: CloudProcessingUpdateSchema,
     search: SearchPreferencesUpdateSchema,
@@ -493,6 +512,23 @@ const TrashResponseSchema = z
   })
   .meta({ id: 'TrashPreferencesResponse' });
 
+const BackupResponseSchema = z
+  .object({
+    skipDeleted: z
+      .object({
+        enabled: z
+          .boolean()
+          .describe('Whether photos and videos you permanently delete are refused when uploaded again'),
+        since: z
+          .string()
+          .meta({ format: 'date-time' })
+          .nullable()
+          .describe('When it was turned on; only items deleted from then on are refused (null while off)'),
+      })
+      .meta({ id: 'BackupSkipDeletedResponse' }),
+  })
+  .meta({ id: 'BackupPreferencesResponse' });
+
 const CastResponseSchema = z
   .object({
     gCastEnabled: z
@@ -580,6 +616,8 @@ const UserPreferencesResponseSchema = z
     download: DownloadResponseSchema,
     purchase: PurchaseResponseSchema,
     trash: TrashResponseSchema,
+    // always sent; optional in the schema so clients built before FL-813 keep compiling
+    backup: BackupResponseSchema.optional(),
     cast: CastResponseSchema,
     recentlyAdded: RecentlyAddedResponseSchema,
     // always sent; optional in the schema so clients built before FL-1398 keep compiling
@@ -630,6 +668,12 @@ export const mapPreferences = (
   const { suppression } = preferences.privacy;
   return {
     ...preferences,
+    backup: {
+      skipDeleted: {
+        enabled: preferences.backup.skipDeleted.enabled,
+        since: preferences.backup.skipDeleted.since || null,
+      },
+    },
     cast: { gCastEnabled: gCastEnabled && !adminDisabled, adminDisabled },
     privacy:
       audience === 'self'

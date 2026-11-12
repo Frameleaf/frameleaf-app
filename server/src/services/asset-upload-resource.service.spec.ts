@@ -65,6 +65,10 @@ describe('resumable asset byte commit boundaries', () => {
           const query = {
             where: () => query,
             returningAll: () => query,
+            execute: () => {
+              row = { ...row, ...value };
+              return Promise.resolve([]);
+            },
             executeTakeFirstOrThrow: () => {
               row = { ...row, ...value };
               return Promise.resolve(row);
@@ -108,6 +112,7 @@ describe('resumable asset byte commit boundaries', () => {
     };
     const media = {
       canUploadFile: vi.fn(),
+      refuseDeletedByOwner: vi.fn((_auth: AuthDto, _checksums: (Buffer | null | undefined)[]) => Promise.resolve()),
       prepareUploadAsset: vi.fn(() => Promise.resolve({})),
       restoreLostOriginal: vi.fn((): Promise<{ id: string; visible: boolean } | undefined> =>
         Promise.resolve(undefined),
@@ -218,6 +223,8 @@ describe('resumable asset byte commit boundaries', () => {
     };
     const resume = vi.fn();
     await harness.service.create(captureAuth, headers, Readable.from([]), resume, 'capture');
+    // FL-813: a capture is its owner's own new save, not a backup of something they deleted
+    expect(harness.media.refuseDeletedByOwner).not.toHaveBeenCalled();
     expect(resume).toHaveBeenCalledWith(
       expect.objectContaining({
         id,
@@ -422,6 +429,85 @@ describe('resumable asset byte commit boundaries', () => {
     expect(read).toBe(false);
     expect(harness.inserts).toHaveLength(0);
   });
+  describe('items the owner deleted are not uploaded again (FL-813)', () => {
+    const deletedByOwner = () => new ConflictException({ message: 'deleted_by_owner', code: 'deleted_by_owner' });
+
+    it('refuses the upload before a resource or any bytes exist', async () => {
+      const harness = setup();
+      const create = vi.fn();
+      Object.assign(harness.uploads, { create });
+      harness.media.refuseDeletedByOwner.mockRejectedValue(deletedByOwner());
+      const headers = {
+        'upload-draft-interop-version': '9',
+        'upload-complete': '?0',
+        'upload-length': '4',
+        'content-type': 'image/jpeg',
+        'repr-digest': `sha-256=:${harness.row().expectedChecksum.toString('base64')}:`,
+        'asset-metadata': Buffer.from(
+          JSON.stringify({
+            filename: 'deleted.jpg',
+            fileCreatedAt: new Date().toISOString(),
+            fileModifiedAt: new Date().toISOString(),
+          }),
+        ).toString('base64url'),
+      };
+      const resume = vi.fn();
+
+      await expect(harness.service.create(auth, headers, Readable.from([]), resume)).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'deleted_by_owner' },
+      });
+
+      expect(harness.media.refuseDeletedByOwner).toHaveBeenCalledWith(auth, [harness.row().expectedChecksum]);
+      expect(create).not.toHaveBeenCalled();
+      expect(resume).not.toHaveBeenCalled();
+    });
+
+    it('refuses publication with the verified digests, and cancels the upload so its bytes are swept', async () => {
+      const harness = setup();
+      const legacyChecksum = Buffer.alloc(20, 3);
+      harness.mutate({
+        state: 'verified',
+        offset: 4,
+        finalPath: join(folder, 'verified.jpg'),
+        verifiedChecksum: harness.row().expectedChecksum,
+        legacyChecksum,
+      });
+      harness.media.refuseDeletedByOwner.mockRejectedValue(deletedByOwner());
+
+      await expect(harness.service.result(auth, harness.row().id)).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'deleted_by_owner' },
+      });
+
+      expect(harness.media.refuseDeletedByOwner).toHaveBeenCalledWith(auth, [
+        harness.row().expectedChecksum,
+        legacyChecksum,
+      ]);
+      expect(harness.media.prepareUploadAsset).not.toHaveBeenCalled();
+      expect(harness.media.restoreLostOriginal).not.toHaveBeenCalled();
+      expect(harness.uploads.publish).not.toHaveBeenCalled();
+      expect(harness.row().state).toBe('cancelled');
+    });
+
+    it('publishes as before when the item is not on the list', async () => {
+      const harness = setup();
+      harness.mutate({
+        state: 'verified',
+        offset: 4,
+        finalPath: join(folder, 'verified.jpg'),
+        verifiedChecksum: harness.row().expectedChecksum,
+        legacyChecksum: Buffer.alloc(20),
+      });
+
+      await harness.service.result(auth, harness.row().id);
+
+      expect(harness.media.refuseDeletedByOwner).toHaveBeenCalledTimes(1);
+      expect(harness.uploads.publish).toHaveBeenCalledTimes(1);
+      expect(harness.row().state).toBe('published');
+    });
+  });
+
   it('restores a lost original from a verified upload instead of publishing a new asset', async () => {
     const harness = setup();
     const finalPath = join(folder, 'verified.jpg');
@@ -1012,6 +1098,7 @@ describe('Live Photo required postcommit ingestion', () => {
       livePhotoPairIngested: vi.fn(() => Promise.resolve(rows.every((row) => row.ingested))),
     };
     const media = {
+      refuseDeletedByOwner: vi.fn(() => Promise.resolve()),
       prepareUploadAsset: vi.fn(() => Promise.resolve({})),
       restoreLostOriginal: vi.fn(() => Promise.resolve(undefined)),
       finishUploadAsset: vi

@@ -602,6 +602,152 @@ where
 limit
   $3
 
+-- AssetRepository.getUploadSkipped
+select distinct
+  "deletion"."checksum"
+from
+  "asset_backup_deletion" as "deletion"
+where
+  "deletion"."ownerId" = $1::uuid
+  and "deletion"."deletedAt" >= $2
+  and "deletion"."checksum" is not null
+  and "deletion"."checksumAlgorithm" in ($3, $4)
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset_upload_skip_exception" as "allowed"
+    where
+      "allowed"."ownerId" = "deletion"."ownerId"
+      and "allowed"."checksum" = "deletion"."checksum"
+      and "allowed"."createdAt" >= "deletion"."deletedAt"
+  )
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset"
+    where
+      "asset"."ownerId" = "deletion"."ownerId"
+      and "asset"."checksum" = "deletion"."checksum"
+  )
+  and "deletion"."checksum" in ($5)
+
+-- AssetRepository.getUploadSkipList
+select
+  "deletion"."checksum",
+  max("deletion"."deletedAt") as "deletedAt",
+  bool_or(deletion."wasLocked") as "wasLocked"
+from
+  "asset_backup_deletion" as "deletion"
+where
+  "deletion"."ownerId" = $1::uuid
+  and "deletion"."deletedAt" >= $2
+  and "deletion"."checksum" is not null
+  and "deletion"."checksumAlgorithm" in ($3, $4)
+  and "deletion"."wasLocked" = $5
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset_upload_skip_exception" as "allowed"
+    where
+      "allowed"."ownerId" = "deletion"."ownerId"
+      and "allowed"."checksum" = "deletion"."checksum"
+      and "allowed"."createdAt" >= "deletion"."deletedAt"
+  )
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset"
+    where
+      "asset"."ownerId" = "deletion"."ownerId"
+      and "asset"."checksum" = "deletion"."checksum"
+  )
+group by
+  "deletion"."checksum"
+order by
+  "deletedAt" desc,
+  "deletion"."checksum"
+limit
+  $6
+offset
+  $7
+select
+  count(distinct deletion.checksum) as "total"
+from
+  "asset_backup_deletion" as "deletion"
+where
+  "deletion"."ownerId" = $1::uuid
+  and "deletion"."deletedAt" >= $2
+  and "deletion"."checksum" is not null
+  and "deletion"."checksumAlgorithm" in ($3, $4)
+  and "deletion"."wasLocked" = $5
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset_upload_skip_exception" as "allowed"
+    where
+      "allowed"."ownerId" = "deletion"."ownerId"
+      and "allowed"."checksum" = "deletion"."checksum"
+      and "allowed"."createdAt" >= "deletion"."deletedAt"
+  )
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset"
+    where
+      "asset"."ownerId" = "deletion"."ownerId"
+      and "asset"."checksum" = "deletion"."checksum"
+  )
+
+-- AssetRepository.allowUploadSkips
+insert into
+  "asset_upload_skip_exception" ("ownerId", "checksum", "createdAt")
+select
+  "deletion"."ownerId",
+  deletion.checksum as "checksum",
+  clock_timestamp() as "createdAt"
+from
+  "asset_backup_deletion" as "deletion"
+where
+  "deletion"."ownerId" = $1::uuid
+  and "deletion"."deletedAt" >= $2
+  and "deletion"."checksum" is not null
+  and "deletion"."checksumAlgorithm" in ($3, $4)
+  and "deletion"."wasLocked" = $5
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset_upload_skip_exception" as "allowed"
+    where
+      "allowed"."ownerId" = "deletion"."ownerId"
+      and "allowed"."checksum" = "deletion"."checksum"
+      and "allowed"."createdAt" >= "deletion"."deletedAt"
+  )
+  and not exists (
+    select
+      1 as "exists"
+    from
+      "asset"
+    where
+      "asset"."ownerId" = "deletion"."ownerId"
+      and "asset"."checksum" = "deletion"."checksum"
+  )
+  and "deletion"."checksum" in ($6)
+group by
+  "deletion"."ownerId",
+  "deletion"."checksum"
+on conflict ("ownerId", "checksum") do update
+set
+  "createdAt" = "excluded"."createdAt"
+returning
+  "checksum"
+
 -- AssetRepository.countLockedRuleMatches
 select
   count(*) filter (

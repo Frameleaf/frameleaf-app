@@ -603,6 +603,18 @@
       ],
       "indexes": [
         {
+          "name": "asset_backup_deletion_ownerId_checksum_idx",
+          "definition": "CREATE INDEX \"asset_backup_deletion_ownerId_checksum_idx\" ON public.asset_backup_deletion USING btree (\"ownerId\", checksum)",
+          "tableName": "asset_backup_deletion",
+          "columnNames": [
+            "ownerId",
+            "checksum"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_backup_deletion_ownerId_idx",
           "definition": "CREATE INDEX \"asset_backup_deletion_ownerId_idx\" ON public.asset_backup_deletion USING btree (\"ownerId\")",
           "tableName": "asset_backup_deletion",
@@ -52879,22 +52891,13 @@
       "synchronize": true
     },
     {
-      "name": "asset_ledger",
+      "name": "asset_upload_skip_exception",
       "columns": [
         {
           "type": "uuid",
           "primary": false,
-          "name": "assetId",
-          "tableName": "asset_ledger",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
           "name": "ownerId",
-          "tableName": "asset_ledger",
+          "tableName": "asset_upload_skip_exception",
           "nullable": false,
           "isArray": false,
           "synchronize": true
@@ -52903,16 +52906,7 @@
           "type": "bytea",
           "primary": false,
           "name": "checksum",
-          "tableName": "asset_ledger",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "originalFileName",
-          "tableName": "asset_ledger",
+          "tableName": "asset_upload_skip_exception",
           "nullable": false,
           "isArray": false,
           "synchronize": true
@@ -52920,98 +52914,42 @@
         {
           "type": "timestamp with time zone",
           "primary": false,
-          "name": "addedAt",
-          "tableName": "asset_ledger",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "addedVia",
-          "tableName": "asset_ledger",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "state",
-          "tableName": "asset_ledger",
-          "nullable": false,
-          "isArray": false,
-          "default": "'kept'::text",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "stateAt",
-          "tableName": "asset_ledger",
+          "name": "createdAt",
+          "tableName": "asset_upload_skip_exception",
           "nullable": false,
           "isArray": false,
           "default": "now()",
           "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "stateBy",
-          "tableName": "asset_ledger",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "reason",
-          "tableName": "asset_ledger",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
         }
       ],
-      "indexes": [
-        {
-          "name": "asset_ledger_missing_idx",
-          "definition": "CREATE INDEX asset_ledger_missing_idx ON public.asset_ledger USING btree (\"ownerId\") WHERE (state = 'missing'::text)",
-          "tableName": "asset_ledger",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "where": "(state = 'missing'::text)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_ledger_owner_state_idx",
-          "definition": "CREATE INDEX asset_ledger_owner_state_idx ON public.asset_ledger USING btree (\"ownerId\", state, \"stateAt\", \"assetId\")",
-          "tableName": "asset_ledger",
-          "columnNames": [
-            "ownerId",
-            "state",
-            "stateAt",
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
+      "indexes": [],
       "triggers": [],
       "constraints": [
         {
           "type": "primary-key",
-          "name": "asset_ledger_pkey",
-          "definition": "PRIMARY KEY (\"assetId\")",
-          "tableName": "asset_ledger",
+          "name": "asset_upload_skip_exception_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", checksum)",
+          "tableName": "asset_upload_skip_exception",
           "columnNames": [
-            "assetId"
+            "ownerId",
+            "checksum"
           ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_upload_skip_exception_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_upload_skip_exception",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
           "synchronize": true
         }
       ],
