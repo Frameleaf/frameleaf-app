@@ -51,8 +51,10 @@
   es, de, it, pt, nl, pl, sv, da, nb_NO) in the same pull request: web `i18n/*.json`,
   server emails (`server/src/emails/translations/locales.json`) and notifications
   (`server/src/utils/notification-translations.json`). Never merge English-only
-  strings or leave translations to a follow-up; `web/src/lib/i18n-catalogues.spec.ts`
-  (Test Web, a required check) fails the pull request and main otherwise.
+  strings or leave translations to a follow-up. `web/src/lib/i18n-catalogues.spec.ts`
+  (Test Web, a required check) fails a web key with no translation or a broken
+  message contract; it does not read the server catalogues or notice translations
+  left stale by an English rewording, so check those by hand in review.
   Product names stay in English and uninflected.
 - Assign one owner per external operation. Reconcile live PR state, exact code ancestry,
   exact-head checks, and linked issue status at shipping boundaries.
