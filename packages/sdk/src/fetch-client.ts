@@ -2872,6 +2872,8 @@ export type LibraryFolderEntryDto = {
 export type LibraryFolderBrowseResponseDto = {
     /** What a new folder skips by default: NAS thumbnails, recycle bins, snapshots and the like */
     defaultExclusionPatterns: string[];
+    /** Whether the folder holds nothing at all, files included */
+    empty: boolean;
     /** Its folders, sorted by name; hidden, system and NAS folders are left out */
     folders: LibraryFolderEntryDto[];
     /** The folder above it; null at the top */

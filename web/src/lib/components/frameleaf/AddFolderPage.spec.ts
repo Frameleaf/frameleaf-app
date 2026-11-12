@@ -7,12 +7,13 @@ import en from '../../../../../i18n/en.json';
 
 const owners = [{ id: 'owner-1', name: 'Taylor', status: UserStatus.Active, deletedAt: null }] as never[];
 const props = { owners, onAdded: vi.fn(), onCancel: vi.fn(), onOpenChecks: vi.fn() };
-const listing = (folders: { name: string; path: string }[]) => ({
+const listing = (folders: { name: string; path: string }[], empty = folders.length === 0) => ({
   path: '/mnt',
   parent: '/',
   folders,
   truncated: false,
   readable: true,
+  empty,
   defaultExclusionPatterns: [],
 });
 const open = () => fireEvent.click(screen.getByRole('button', { name: en.frameleaf_libraries_choose_folder }));
@@ -45,6 +46,30 @@ describe('AddFolderPage folder list (FL-1495)', () => {
 
     expect(await screen.findByText(en.frameleaf_libraries_browse_connected_only)).toBeInTheDocument();
     expect(screen.queryByText(en.frameleaf_libraries_browse_none_title)).not.toBeInTheDocument();
+  });
+
+  it('keeps the plain empty line for a connected folder that has photos but no folders inside', async () => {
+    sdkMock.getManagerAccess.mockResolvedValue({ url: 'http://nas:2284' } as never);
+    sdkMock.browseLibraryFolders.mockResolvedValue(listing([], false));
+    render(AddFolderPage, props);
+    await open();
+
+    expect(await screen.findByText(en.frameleaf_libraries_browse_empty)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_libraries_browse_none_title)).not.toBeInTheDocument();
+  });
+
+  it('looks again on coming back from Manager, so a folder connected there shows', async () => {
+    sdkMock.getManagerAccess.mockResolvedValue({ url: 'http://nas:2284' } as never);
+    sdkMock.browseLibraryFolders.mockResolvedValue(listing([]));
+    render(AddFolderPage, props);
+    await open();
+    await screen.findByText(en.frameleaf_libraries_browse_none_title);
+
+    sdkMock.browseLibraryFolders.mockResolvedValue(listing([{ name: 'user', path: '/mnt/user' }]));
+    await fireEvent.focus(document.defaultView!);
+
+    expect(await screen.findByRole('button', { name: 'user' })).toBeInTheDocument();
+    expect(sdkMock.browseLibraryFolders).toHaveBeenLastCalledWith({ path: '/mnt' });
   });
 
   it('keeps the plain empty line on an install without Manager', async () => {

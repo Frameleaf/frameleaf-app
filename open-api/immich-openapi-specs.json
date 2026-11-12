@@ -110774,6 +110774,10 @@
             },
             "type": "array"
           },
+          "empty": {
+            "description": "Whether the folder holds nothing at all, files included",
+            "type": "boolean"
+          },
           "folders": {
             "description": "Its folders, sorted by name; hidden, system and NAS folders are left out",
             "items": {
@@ -110801,6 +110805,7 @@
         },
         "required": [
           "defaultExclusionPatterns",
+          "empty",
           "folders",
           "parent",
           "path",

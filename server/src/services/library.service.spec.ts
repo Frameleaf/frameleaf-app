@@ -437,14 +437,22 @@ describe(LibraryService.name, () => {
         ],
         truncated: false,
         readable: true,
+        empty: false,
         defaultExclusionPatterns: expect.arrayContaining(['**/.DS_Store', '**/@eaDir/**', '**/#recycle/**']),
       });
+    });
+
+    it('tells a folder with nothing at all from one that only has files (FL-1495)', async () => {
+      mocks.storage.readdirWithTypes.mockResolvedValue([]);
+      await expect(sut.browseFolders({ path: '/mnt' })).resolves.toMatchObject({ folders: [], empty: true });
+      mocks.storage.readdirWithTypes.mockResolvedValue([dirent('IMG_0001.jpg', false)]);
+      await expect(sut.browseFolders({ path: '/mnt/photos' })).resolves.toMatchObject({ folders: [], empty: false });
     });
 
     it('starts at the top, says when a folder cannot be read, and refuses a relative path', async () => {
       mocks.storage.readdirWithTypes.mockRejectedValue(new Error('EACCES'));
       await expect(sut.browseFolders({})).resolves.toEqual(
-        expect.objectContaining({ path: '/', parent: null, readable: false, folders: [] }),
+        expect.objectContaining({ path: '/', parent: null, readable: false, empty: false, folders: [] }),
       );
       await expect(sut.browseFolders({ path: '/photos/../etc' })).rejects.toThrow();
       await expect(sut.browseFolders({ path: 'photos' })).rejects.toThrow();

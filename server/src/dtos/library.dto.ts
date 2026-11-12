@@ -230,6 +230,7 @@ const LibraryFolderBrowseResponseSchema = z
       .describe('Its folders, sorted by name; hidden, system and NAS folders are left out'),
     truncated: z.boolean().describe('Whether there were more folders than listed'),
     readable: z.boolean().describe('Whether the folder could be read'),
+    empty: z.boolean().describe('Whether the folder holds nothing at all, files included'),
     defaultExclusionPatterns: z
       .array(z.string())
       .describe('What a new folder skips by default: NAS thumbnails, recycle bins, snapshots and the like'),

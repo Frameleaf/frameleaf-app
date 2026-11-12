@@ -359,9 +359,12 @@ export class LibraryService extends BaseService {
     }
     const parent = folder === '/' ? null : path.posix.dirname(folder);
     let readable = true;
+    // FL-1495: nothing at all here (not even files) reads as "nothing is connected here yet".
+    let empty = false;
     let folders: { name: string; path: string }[] = [];
     try {
       const entries = await this.storageRepository.readdirWithTypes(folder);
+      empty = entries.length === 0;
       folders = entries
         .filter((entry) => entry.isDirectory() && isBrowsableFolder(entry.name))
         .map((entry) => ({ name: entry.name, path: path.posix.join(folder, entry.name) }))
@@ -375,6 +378,7 @@ export class LibraryService extends BaseService {
       folders: folders.slice(0, BROWSE_FOLDER_LIMIT),
       truncated: folders.length > BROWSE_FOLDER_LIMIT,
       readable,
+      empty,
       defaultExclusionPatterns: [...DEFAULT_LIBRARY_EXCLUSION_PATTERNS],
     };
   }
