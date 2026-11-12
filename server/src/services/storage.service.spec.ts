@@ -152,6 +152,8 @@ describe(StorageService.name, () => {
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/backups'));
       // exports (memory highlights, Studio bundles) live under the media location too
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/exports'));
+      // FL-1477: the built-in Imports folder is ready from the first start
+      expect(mocks.storage.mkdirSync).toHaveBeenCalledWith('/data/imports');
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
         expect.stringContaining('/data/exports/.frameleaf'),
         expect.any(Buffer),
@@ -218,7 +220,8 @@ describe(StorageService.name, () => {
           upload: true,
         },
       });
-      expect(mocks.storage.mkdirSync).toHaveBeenCalledTimes(2);
+      expect(mocks.storage.mkdirSync).toHaveBeenCalledTimes(3);
+      expect(mocks.storage.mkdirSync).toHaveBeenCalledWith('/data/imports');
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/library'));
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/backups'));
       expect(mocks.storage.createFile).toHaveBeenCalledTimes(2);

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
   TakeoutArchiveCreateDto,
@@ -152,7 +153,10 @@ export class TakeoutService {
   /** The directories an administrator may import from. Administrators only (see the controller). */
   roots(): TakeoutRootsResponseDto {
     return {
-      roots: this.config.getEnv().storage.importRoots.map((root, index) => ({ id: String(index), path: root })),
+      roots: StorageCore.getImportRoots(this.config.getEnv().storage.importRoots).map((root) => ({
+        ...root,
+        hostPath: root.builtIn ? (this.config.getEnv().storage.importsHostPath ?? null) : null,
+      })),
     };
   }
 
@@ -686,12 +690,13 @@ export class TakeoutService {
     if (!auth.user.isAdmin || auth.apiKey) {
       throw new ForbiddenException('Only an administrator can import from a server folder');
     }
-    const roots = this.config.getEnv().storage.importRoots;
-    const root = rootId !== undefined && /^\d+$/.test(rootId) ? roots[Number(rootId)] : undefined;
+    const root = StorageCore.getImportRoots(this.config.getEnv().storage.importRoots).find(
+      (item) => item.id === rootId,
+    );
     if (!root) {
       throw new BadRequestException('Choose one of the permitted import locations');
     }
-    return root;
+    return root.path;
   }
 
   private requireSession(auth: AuthDto) {

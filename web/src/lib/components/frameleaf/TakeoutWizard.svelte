@@ -79,10 +79,13 @@
   let {
     current: initial,
     onClose,
+    onChooseFolder,
   }: {
     current?: TakeoutResponseDto;
     /** Closes the Command Center dialog that hosts the wizard. */
     onClose?: () => void;
+    /** FL-1477, administrators: import an export already on this server instead of uploading it. */
+    onChooseFolder?: () => void;
   } = $props();
 
   /**
@@ -521,6 +524,15 @@
         <p>{$t('frameleaf_takeout_all_files_body')}</p>
       </div>
     </div>
+    {#if onChooseFolder}
+      <div class="from-folder">
+        <div>
+          <strong>{$t('frameleaf_takeout_from_folder_title')}</strong>
+          <p>{$t('frameleaf_takeout_from_folder_body')}</p>
+        </div>
+        <Button onclick={onChooseFolder}>{$t('frameleaf_takeout_folder_choose')}</Button>
+      </div>
+    {/if}
   {:else if current && (view === 'upload' || view === 'stopped')}
     {#if view === 'stopped'}
       <div class="note-box warn" role="status">
@@ -894,6 +906,25 @@
   .note-box p {
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
+  }
+  /* FL-1477: the prototype's "Already on this server?" row under the warning, a divider above it. */
+  .from-folder {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-3);
+    align-items: center;
+    justify-content: space-between;
+    padding-top: var(--fl-space-4);
+    border-top: 1px solid var(--fl-border);
+  }
+  .from-folder > div {
+    flex: 1 1 16rem;
+  }
+  .from-folder p {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    line-height: 1.5;
   }
   /* The prototype's warning notice (settings-v2 kit `Notice tone="warn"`): a warm wash, not just a line. */
   .note-box.warn {

@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { TakeoutStagingError } from 'src/repositories/takeout-staging.repository.js';
@@ -136,6 +137,7 @@ describe(TakeoutService.name, () => {
     operations = [];
     sources = [archive()];
     importRoots = ['/imports'];
+    StorageCore.setMediaLocation('/data');
     repository = {
       list: vi.fn(() => Promise.resolve([row])),
       get: vi.fn(() => Promise.resolve(row)),
@@ -194,7 +196,9 @@ describe(TakeoutService.name, () => {
     };
     mediaOperations = { pause: vi.fn(), resume: vi.fn(), cancel: vi.fn() };
     access = newAccessRepositoryMock();
-    const config = { getEnv: () => ({ storage: { importRoots } }) };
+    const config = {
+      getEnv: () => ({ storage: { importRoots, importsHostPath: '/mnt/user/appdata/frameleaf/imports' } }),
+    };
     logger = { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() };
     media = { generateThumbnail: vi.fn() };
 
@@ -326,7 +330,28 @@ describe(TakeoutService.name, () => {
     });
   });
 
+  describe('roots', () => {
+    it('always offers the built-in Imports folder first, then the configured roots by position', () => {
+      expect(sut.roots()).toEqual({
+        roots: [
+          { id: 'imports', path: '/data/imports', builtIn: true, hostPath: '/mnt/user/appdata/frameleaf/imports' },
+          { id: '0', path: '/imports', builtIn: false, hostPath: null },
+        ],
+      });
+    });
+
+    it('offers the Imports folder when no root is configured', () => {
+      importRoots.length = 0;
+      expect(sut.roots().roots.map((root) => root.id)).toEqual(['imports']);
+    });
+  });
+
   describe('folders', () => {
+    it('lists the built-in Imports folder by its id', async () => {
+      await expect(sut.folders(authStub.admin, 'imports', 'Google export')).resolves.toEqual(folderListing);
+      expect(staging.listFolder).toHaveBeenCalledWith('/data/imports', 'Google export');
+    });
+
     it('lists a folder inside a configured root for an administrator', async () => {
       await expect(sut.folders(authStub.admin, '0', 'Exports')).resolves.toEqual(folderListing);
       expect(staging.listFolder).toHaveBeenCalledWith('/imports', 'Exports');

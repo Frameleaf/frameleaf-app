@@ -227,7 +227,8 @@ export class EagleImportWorkerService {
     if (!auth) {
       throw new EagleItemError('The account that started this import is gone');
     }
-    if (!(await this.staging.isInsideRoots(row.libraryPath, this.config.getEnv().storage.importRoots))) {
+    const roots = StorageCore.getImportRoots(this.config.getEnv().storage.importRoots).map((root) => root.path);
+    if (!(await this.staging.isInsideRoots(row.libraryPath, roots))) {
       throw new EagleItemError('This folder is no longer one the server may import from');
     }
     const library = await this.imports.read(row.libraryPath).catch((error: unknown) => {

@@ -530,7 +530,7 @@ export class TakeoutWorkerService {
 
   private async scanDirectory(run: TakeoutRun, source: TakeoutSource, directory: string): Promise<number> {
     // The operator may have narrowed the permitted locations since the folder was chosen.
-    const roots = this.config.getEnv().storage.importRoots;
+    const roots = StorageCore.getImportRoots(this.config.getEnv().storage.importRoots).map((root) => root.path);
     if (!(await this.staging.isInsideRoots(source.path, roots))) {
       throw new TakeoutJobError(
         'takeout_folder_not_permitted',

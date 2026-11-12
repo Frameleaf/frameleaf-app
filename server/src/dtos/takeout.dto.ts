@@ -354,7 +354,7 @@ export class TakeoutRootParamsDto extends createZodDto(
   z.object({
     rootId: z
       .string()
-      .regex(/^\d{1,4}$/u)
+      .regex(/^(?:\d{1,4}|imports)$/u)
       .describe('The permitted import location, as listed'),
   }),
 ) {}
@@ -398,7 +398,15 @@ export class TakeoutRootsResponseDto extends createZodDto(
     .object({
       roots: z.array(
         z
-          .object({ id: z.string(), path: z.string().describe('The directory the administrator permitted') })
+          .object({
+            id: z.string().describe('`imports` for the built-in Imports folder, otherwise its position'),
+            path: z.string().describe('The directory imports may read, as the server sees it'),
+            builtIn: z.boolean().describe('The Imports folder every server has, beside the library'),
+            hostPath: z
+              .string()
+              .nullable()
+              .describe('Where the built-in Imports folder is on the computer, when Manager says so'),
+          })
           .meta({ id: 'TakeoutRootDto' }),
       ),
     })

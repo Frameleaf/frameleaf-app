@@ -213,6 +213,21 @@ describe(TakeoutStagingRepository.name, () => {
     await expect(Array.fromAsync(sut.readFolderTar(selected, file))).rejects.toThrow('damaged');
   });
 
+  it('allows the built-in Imports folder inside the media location, but nothing else of the library', async () => {
+    vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(join(directory, 'media'));
+    await mkdir(join(directory, 'media', 'imports', 'Google export'), { recursive: true });
+    await mkdir(join(directory, 'media', 'upload'), { recursive: true });
+
+    await expect(sut.resolveDirectory(join(directory, 'media', 'imports'), 'Google export')).resolves.toBe(
+      join(directory, 'media', 'imports', 'Google export'),
+    );
+    await expect(sut.resolveDirectory(join(directory, 'media', 'imports'), '')).resolves.toBe(
+      join(directory, 'media', 'imports'),
+    );
+    await expect(sut.resolveDirectory(directory, 'media/upload')).rejects.toThrow('outside the library’s own storage');
+    await expect(sut.resolveDirectory(directory, 'media')).rejects.toThrow('outside the library’s own storage');
+  });
+
   it('lists what a permitted location and each folder in it hold, without leaving it', async () => {
     vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(join(directory, 'library'));
     await mkdir(join(directory, 'library'));

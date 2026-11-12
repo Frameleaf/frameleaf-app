@@ -67,7 +67,8 @@ export const EnvSchema = z
     FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS: stringBool.optional(),
     /**
      * Directories an administrator permits Google Photos imports to read from (FL-65), comma
-     * separated, each an absolute path. Only directories under one of these can be selected.
+     * separated, each an absolute path, besides the built-in `<media>/imports` (FL-1477). Only
+     * directories under one of these can be selected.
      */
     FRAMELEAF_IMPORT_ROOTS: z
       .string()

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import path from 'node:path';
 import type { Selectable } from 'kysely';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   EagleImportCreateDto,
@@ -70,17 +71,15 @@ export class EagleImportService {
       return { available: false, roots: roots.length, libraries: [] };
     }
     const libraries = [];
-    for (const [index, root] of roots.entries()) {
+    for (const { id, path: root } of roots) {
       const found = await this.libraries.findLibraries(root).catch((error: unknown) => {
         if (error instanceof EagleListingUnavailableError) {
           throw new ServiceUnavailableException(error.message);
         }
-        this.logger.warn(`Import folder ${index} could not be read: ${String(error)}`);
+        this.logger.warn(`Import folder ${id} could not be read: ${String(error)}`);
         return [] as string[];
       });
-      libraries.push(
-        ...found.map((relative) => ({ rootId: String(index), path: relative, name: path.basename(relative) })),
-      );
+      libraries.push(...found.map((relative) => ({ rootId: id, path: relative, name: path.basename(relative) })));
     }
     return { available: true, roots: roots.length, libraries };
   }
@@ -199,7 +198,7 @@ export class EagleImportService {
   }
 
   private roots() {
-    return this.config.getEnv().storage.importRoots;
+    return StorageCore.getImportRoots(this.config.getEnv().storage.importRoots);
   }
 
   /**
@@ -207,14 +206,13 @@ export class EagleImportService {
    * stay inside that folder, keep out of the library's own storage, and end in `.library`.
    */
   private async resolve(rootId: string, relative: string) {
-    const roots = this.roots();
-    const root = /^\d+$/.test(rootId) ? roots[Number(rootId)] : undefined;
+    const root = this.roots().find((item) => item.id === rootId);
     if (!root) {
       throw new BadRequestException('Choose one of the permitted import locations');
     }
     let directory: string;
     try {
-      directory = await this.staging.resolveDirectory(root, relative);
+      directory = await this.staging.resolveDirectory(root.path, relative);
     } catch (error) {
       throw error instanceof TakeoutStagingError ? new BadRequestException(error.message) : error;
     }
