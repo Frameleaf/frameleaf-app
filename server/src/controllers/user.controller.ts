@@ -26,6 +26,12 @@ import { LicenseResponseDto } from 'src/dtos/license.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
 import { PinnedCollectionsResponseDto, PinnedCollectionsUpdateDto } from 'src/dtos/pinned-collection.dto.js';
 import {
+  UploadSkipAllowDto,
+  UploadSkipAllowResponseDto,
+  UploadSkipListDto,
+  UploadSkipListResponseDto,
+} from 'src/dtos/upload-skip.dto.js';
+import {
   LockedRulesCountResponseDto,
   LockedRulesDraftDto,
   UserPreferenceHistoryResponseDto,
@@ -202,6 +208,31 @@ export class UserController {
     @Body() dto: UserPreferencesUpdateDto,
   ): Promise<UserPreferencesResponseDto> {
     return this.service.updateMyPreferences(auth, dto);
+  }
+
+  @Get('me/upload-skips')
+  @Authenticated({ permission: Permission.UserPreferenceRead })
+  @Endpoint({
+    summary: 'List what I deleted that is not uploaded again',
+    description:
+      'While "do not upload what I deleted again" is on (preferences backup.skipDeleted), the photos and videos you permanently deleted since then, by checksum, latest first. A phone or app that uploads one of them is refused with 409 deleted_by_owner. Items deleted while Locked are listed only for an unlocked session.',
+    history: new HistoryBuilder().added('v3.5.0').alpha('v3.5.0'),
+  })
+  getUploadSkips(@Auth() auth: AuthDto, @Query() dto: UploadSkipListDto): Promise<UploadSkipListResponseDto> {
+    return this.service.getUploadSkips(auth, dto);
+  }
+
+  @Post('me/upload-skips/allow')
+  @Authenticated({ permission: Permission.UserPreferenceUpdate })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Allow items I deleted to be uploaded again',
+    description:
+      'Takes items off the list by checksum, so the next upload of each is accepted and it appears in the library as usual. Deleting it again later puts it back on the list. Checksums that are not on the list are ignored.',
+    history: new HistoryBuilder().added('v3.5.0').alpha('v3.5.0'),
+  })
+  allowUploadSkips(@Auth() auth: AuthDto, @Body() dto: UploadSkipAllowDto): Promise<UploadSkipAllowResponseDto> {
+    return this.service.allowUploadSkips(auth, dto);
   }
 
   @Get('me/license')

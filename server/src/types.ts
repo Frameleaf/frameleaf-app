@@ -1870,6 +1870,16 @@ export type UserPreferences = {
   trash: {
     reuploadUntil: string;
   };
+  /**
+   * FL-813: while on, an item this account permanently deleted is not accepted as an upload again. `since`
+   * is when it was last turned on ('' while off); only deletions from then on count.
+   */
+  backup: {
+    skipDeleted: {
+      enabled: boolean;
+      since: string;
+    };
+  };
   cast: {
     gCastEnabled: boolean;
   };

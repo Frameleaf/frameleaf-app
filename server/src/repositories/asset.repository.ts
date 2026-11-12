@@ -2540,6 +2540,132 @@ export class AssetRepository {
       .executeTakeFirst();
     return asset?.id;
   }
+
+  /**
+   * FL-813: the owner's skip list. Every item they permanently deleted since they turned "don't upload
+   * deleted items again" on, by its bytes, unless they allowed it again after that deletion or the library
+   * holds those bytes again (in the Trash included, so the FL-556 bring-back window and duplicate answers
+   * come first). Other owners' deletions never count.
+   */
+  private uploadSkips(ownerId: string, since: Date, { includeLocked = true } = {}) {
+    return (
+      this.db
+        .selectFrom('asset_backup_deletion as deletion')
+        .where('deletion.ownerId', '=', asUuid(ownerId))
+        .where('deletion.deletedAt', '>=', since)
+        .where('deletion.checksum', 'is not', null)
+        // a library folder's path digest is not the file's bytes
+        .where('deletion.checksumAlgorithm', 'in', ['sha256', 'sha1'])
+        .$if(!includeLocked, (qb) => qb.where('deletion.wasLocked', '=', false))
+        .where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('asset_upload_skip_exception as allowed')
+                .select(sql.lit(1).as('exists'))
+                .whereRef('allowed.ownerId', '=', 'deletion.ownerId')
+                .whereRef('allowed.checksum', '=', 'deletion.checksum')
+                .whereRef('allowed.createdAt', '>=', 'deletion.deletedAt'),
+            ),
+          ),
+        )
+        .where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('asset')
+                .select(sql.lit(1).as('exists'))
+                .whereRef('asset.ownerId', '=', 'deletion.ownerId')
+                .whereRef('asset.checksum', '=', 'deletion.checksum'),
+            ),
+          ),
+        )
+    );
+  }
+
+  /** FL-813: which of these bytes are on the owner's skip list. */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.BUFFER], DummyValue.DATE] })
+  async getUploadSkipped(ownerId: string, checksums: Buffer[], since: Date): Promise<Buffer[]> {
+    if (checksums.length === 0) {
+      return [];
+    }
+    const rows = await this.uploadSkips(ownerId, since)
+      .select('deletion.checksum')
+      .distinct()
+      .where('deletion.checksum', 'in', checksums)
+      .execute();
+    return rows.flatMap(({ checksum }) => (checksum ? [checksum] : []));
+  }
+
+  /**
+   * FL-813: a page of the owner's skip list, latest deletion first, one row per file. Items deleted while
+   * Locked are left out (and not counted) unless `includeLocked`.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.DATE, { limit: 50, offset: 0, includeLocked: false }] })
+  async getUploadSkipList(
+    ownerId: string,
+    since: Date,
+    { limit, offset, includeLocked }: { limit: number; offset: number; includeLocked: boolean },
+  ) {
+    const items = await this.uploadSkips(ownerId, since, { includeLocked })
+      .select((eb) => [
+        'deletion.checksum',
+        eb.fn.max('deletion.deletedAt').as('deletedAt'),
+        sql<boolean>`bool_or(deletion."wasLocked")`.as('wasLocked'),
+      ])
+      .groupBy('deletion.checksum')
+      .orderBy('deletedAt', 'desc')
+      .orderBy('deletion.checksum')
+      .limit(limit)
+      .offset(offset)
+      .execute();
+    const { total } = await this.uploadSkips(ownerId, since, { includeLocked })
+      .select(sql<string>`count(distinct deletion.checksum)`.as('total'))
+      .executeTakeFirstOrThrow();
+    return {
+      items: items.flatMap(({ checksum, deletedAt, wasLocked }) =>
+        checksum ? [{ checksum, deletedAt: new Date(deletedAt as unknown as string | Date), wasLocked }] : [],
+      ),
+      total: Number(total),
+    };
+  }
+
+  /**
+   * FL-813: "Allow again". Of these bytes, the ones on the owner's skip list may be uploaded again; anything
+   * else is ignored. Answers how many were allowed. The time is the clock's, not the transaction's, so it is
+   * never earlier than a deletion this statement saw.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.BUFFER], DummyValue.DATE, { includeLocked: false }] })
+  async allowUploadSkips(
+    ownerId: string,
+    checksums: Buffer[],
+    since: Date,
+    { includeLocked }: { includeLocked: boolean },
+  ): Promise<number> {
+    if (checksums.length === 0) {
+      return 0;
+    }
+    const rows = await this.db
+      .insertInto('asset_upload_skip_exception')
+      .columns(['ownerId', 'checksum', 'createdAt'])
+      .expression(
+        this.uploadSkips(ownerId, since, { includeLocked })
+          .select([
+            'deletion.ownerId',
+            sql<Buffer>`deletion.checksum`.as('checksum'),
+            sql<Date>`clock_timestamp()`.as('createdAt'),
+          ])
+          .distinct()
+          .where('deletion.checksum', 'in', checksums),
+      )
+      .onConflict((oc) =>
+        oc.columns(['ownerId', 'checksum']).doUpdateSet((eb) => ({ createdAt: eb.ref('excluded.createdAt') })),
+      )
+      .returning('checksum')
+      .execute();
+    return rows.length;
+  }
+
   /**
    * FL-1472: of these photos, the ones whose original is damaged and whose open finding asks for a re-upload.
    * An upload of their own bytes is not a duplicate: it takes the damaged file's place.

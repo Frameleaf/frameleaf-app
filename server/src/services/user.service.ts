@@ -13,6 +13,12 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import { CalendarHeatmapDto, CalendarHeatmapResponseDto } from 'src/dtos/calendar-heatmap.dto.js';
 import { OnboardingDto, OnboardingResponseDto } from 'src/dtos/onboarding.dto.js';
 import {
+  UploadSkipAllowDto,
+  UploadSkipAllowResponseDto,
+  UploadSkipListDto,
+  UploadSkipListResponseDto,
+} from 'src/dtos/upload-skip.dto.js';
+import {
   LockedRulesCountResponseDto,
   LockedRulesDraftDto,
   type PreferencesAudience,
@@ -50,7 +56,7 @@ import { moveFileWithin } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { isLockedAsset } from 'src/utils/locked-state.js';
-import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { findOrFail } from 'src/utils/misc.js';
 import {
@@ -61,6 +67,7 @@ import {
   getPreferences,
   getPreferencesPartial,
   mergePreferences,
+  uploadSkipSince,
 } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { canUploadWith, getServerRole } from 'src/utils/server-role.js';
@@ -221,6 +228,47 @@ export class UserService extends BaseService {
     this.websocketRepository.clientSend('on_speech_index_change', auth.user.id);
 
     return mapPreferences(updated, preferencesAudience(auth));
+  }
+
+  /**
+   * FL-813: what this account permanently deleted since it asked for deleted items not to be uploaded again.
+   * An item deleted while Locked is listed, and counted, only for an unlocked session.
+   */
+  async getUploadSkips(auth: AuthDto, dto: UploadSkipListDto): Promise<UploadSkipListResponseDto> {
+    const since = uploadSkipSince(getPreferences(await this.userRepository.getMetadata(auth.user.id)));
+    if (!since) {
+      return { enabled: false, items: [], total: 0 };
+    }
+    const { items, total } = await this.assetRepository.getUploadSkipList(auth.user.id, since, {
+      limit: dto.limit,
+      offset: dto.offset,
+      includeLocked: !!getLockedOwnerId(auth),
+    });
+    return {
+      enabled: true,
+      items: items.map(({ checksum, deletedAt, wasLocked }) => ({
+        checksum: checksum.toString('hex'),
+        deletedAt: deletedAt.toISOString(),
+        wasLocked,
+      })),
+      total,
+    };
+  }
+
+  /**
+   * FL-813: "Allow again": the next upload of each of these items is accepted. Only items this session can
+   * see on the list are allowed, so a session that is not unlocked never changes a Locked one.
+   */
+  async allowUploadSkips(auth: AuthDto, dto: UploadSkipAllowDto): Promise<UploadSkipAllowResponseDto> {
+    const since = uploadSkipSince(getPreferences(await this.userRepository.getMetadata(auth.user.id)));
+    if (!since) {
+      return { allowed: 0 };
+    }
+    const checksums = dto.checksums.map((checksum) => Buffer.from(checksum, 'hex'));
+    const allowed = await this.assetRepository.allowUploadSkips(auth.user.id, checksums, since, {
+      includeLocked: !!getLockedOwnerId(auth),
+    });
+    return { allowed };
   }
 
   /** FL-71 (CC-10): the signed-in account's own preference history, newest first. */
