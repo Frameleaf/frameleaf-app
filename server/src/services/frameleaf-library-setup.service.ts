@@ -819,9 +819,7 @@ export class FrameleafLibrarySetupService {
         // FL-1265: a scan that failed or was cancelled has ended too; what it imported is processed, and the problem is
         // reported (Retry scans again).
         const scansFinished = state.libraries.every((id) =>
-          state.scans[id]
-            ? records.rows.some((r) => r.id === state.scans[id] && ENDED.has(r.status))
-            : dismissed,
+          state.scans[id] ? records.rows.some((r) => r.id === state.scans[id] && ENDED.has(r.status)) : dismissed,
         );
         let checkProblem = records.rows.some((record) => ['failed', 'cancelled'].includes(record.status));
         if (scansFinished && !state.healthAfter) {

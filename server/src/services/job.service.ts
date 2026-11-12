@@ -25,7 +25,13 @@ import {
   ManualJobName,
   QueueName,
 } from 'src/enum.js';
-import { afterJobCommit, jobHandedToCare, publishJobResult, queueExecution } from 'src/queue/context.js';
+import {
+  afterJobCommit,
+  jobFailureReason,
+  jobHandedToCare,
+  publishJobResult,
+  queueExecution,
+} from 'src/queue/context.js';
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { workerMetrics } from 'src/repositories/metrics.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -258,7 +264,7 @@ export class JobService extends BaseService {
             });
           }
         }
-        throw new Error('Handler returned Failed');
+        throw new Error(jobFailureReason());
       }
       await this.jobRepository.collectFollowups(() => this.onSuccess(job, response));
     } catch (error: unknown) {

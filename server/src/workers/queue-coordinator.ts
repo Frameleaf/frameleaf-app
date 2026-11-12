@@ -201,7 +201,10 @@ export async function coordinate({
         const front = new Set(await store.queuesWithFrontWork(queues));
         const start = nextQueue;
         const turns = Array.from({ length: queues.length }, (_, offset) => (start + offset) % queues.length);
-        for (const index of [...turns.filter((i) => front.has(queues[i])), ...turns.filter((i) => !front.has(queues[i]))]) {
+        for (const index of [
+          ...turns.filter((i) => front.has(queues[i])),
+          ...turns.filter((i) => !front.has(queues[i])),
+        ]) {
           const capacity = executionCapacity - active.size;
           if (stopping || capacity <= 0) break;
           const queue = queues[index];

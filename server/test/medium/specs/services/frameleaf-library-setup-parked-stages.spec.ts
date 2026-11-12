@@ -335,7 +335,9 @@ it('lets the owner dismiss a running setup: held stages start, the bar and phone
 it('starts no file check for a dismissed setup, and lets it settle (FL-1481)', async () => {
   const owner = randomUUID();
   await sql`WITH g AS (INSERT INTO cluster_group DEFAULT VALUES RETURNING id)
-    INSERT INTO "user"(id,email,"clusterGroupId") SELECT ${owner}::uuid,'dismissed-owner@example.test',id FROM g`.execute(db);
+    INSERT INTO "user"(id,email,"clusterGroupId") SELECT ${owner}::uuid,'dismissed-owner@example.test',id FROM g`.execute(
+    db,
+  );
   // The library scans are over and this owner's file check has not started yet.
   await importRun('immich-import-derived', [], {
     owners: [owner],

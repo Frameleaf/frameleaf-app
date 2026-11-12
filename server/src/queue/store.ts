@@ -618,7 +618,11 @@ export class SqlQueueStore {
         ? await sql<{ front: boolean }>`select "availableAt" <= ${ARRIVAL} front from job
             where id = ${claim.id}::uuid`.execute(tx)
         : { rows: [] };
-    await this.enqueue(parent?.front ? inherited.map((intent) => ({ ...intent, front: true })) : inherited, tx, claim.runId);
+    await this.enqueue(
+      parent?.front ? inherited.map((intent) => ({ ...intent, front: true })) : inherited,
+      tx,
+      claim.runId,
+    );
   }
 
   /**

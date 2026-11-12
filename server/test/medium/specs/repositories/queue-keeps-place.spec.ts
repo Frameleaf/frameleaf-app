@@ -86,9 +86,9 @@ describe('a job keeps its place in line', () => {
     await store.enqueue([intent('backlog-1')]);
     const [first] = await store.claim(queue, worker, 1);
     await store.defer(first, 'local-capacity');
-    const { rows } = await sql<{ resumeAt: Date | null }>`select "resumeAt" from job where id = ${first.id}::uuid`.execute(
-      db,
-    );
+    const { rows } = await sql<{
+      resumeAt: Date | null;
+    }>`select "resumeAt" from job where id = ${first.id}::uuid`.execute(db);
     expect(rows[0].resumeAt).toBeNull();
   });
 
