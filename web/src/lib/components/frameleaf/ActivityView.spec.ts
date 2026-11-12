@@ -518,7 +518,10 @@ describe('Frameleaf Activity page', () => {
       memoryExports: [],
       canManageQueues: true,
       canReadJobRuns: true,
-      queues: [queue(QueueName.ThumbnailGeneration, { active: 4, waiting: 120, processed: 1116, total: 1240 })],
+      queues: [
+        queue(QueueName.ThumbnailGeneration, { active: 4, waiting: 120, processed: 1116, total: 1240 }),
+        queue(QueueName.Ocr, { state: State4.Blocked, waiting: 5, total: 5 }),
+      ],
       durableRuns: [
         durableRun({
           id: 'upload-1',
@@ -547,6 +550,9 @@ describe('Frameleaf Activity page', () => {
       const steps = within(section).getByRole('list', { name: '1,240 photos from Pixel 8, step by step' });
       expect(within(steps).getByText('1,116 of 1,240')).toBeInTheDocument();
       expect(within(steps).getByText('Up next')).toBeInTheDocument();
+      // A feature waiting on another step still shows, under Needs a look, while In progress shows what came in
+      const needsLook = screen.getByRole('region', { name: /Needs a look/ });
+      expect(within(needsLook).getByText('Text, documents & receipts')).toBeInTheDocument();
 
       await fireEvent.click(within(section).getByRole('button', { name: 'By feature' }));
       expect(await within(section).findByText('Ready to browse')).toBeInTheDocument();

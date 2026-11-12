@@ -74,14 +74,11 @@ export const importProgress = (
   // The thumbnails queue counts every upload's photos: a device is named only when its upload is the one under way
   const uploads = summary.canReadJobRuns
     ? (summary.durableRuns ?? []).filter(
-        (candidate) =>
-          !!candidate.origin &&
-          UPLOAD_ORIGINS.has(candidate.origin) &&
-          !isRunSettled(candidate) &&
-          (candidate.itemCount ?? candidate.total) >= LARGE_IMPORT,
+        (candidate) => !!candidate.origin && UPLOAD_ORIGINS.has(candidate.origin) && !isRunSettled(candidate),
       )
     : [];
-  const upload = uploads.length === 1 ? uploads[0] : undefined;
+  const upload =
+    uploads.length === 1 && (uploads[0].itemCount ?? uploads[0].total) >= LARGE_IMPORT ? uploads[0] : undefined;
   const total = queue ? Math.max(queue.total, queue.processed + queue.active + queue.waiting) : 0;
   const counted = !!queue && total >= LARGE_IMPORT;
   // Thumbnails done and the scan's folder read: what is left (search, faces) is Activity's to show.

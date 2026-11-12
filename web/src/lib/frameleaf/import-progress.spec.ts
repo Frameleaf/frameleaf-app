@@ -154,4 +154,12 @@ describe('importProgress names uploads (FL-1459)', () => {
     expect(line?.upload).toBeUndefined();
     expect(line?.ready).toBeDefined();
   });
+
+  it('names no device when a small upload from another one shares the counts', () => {
+    const large = scanRun({ id: 'upload-1', kind: 'upload', origin: 'phone', label: 'Pixel 8', itemCount: 1000 });
+    const small = scanRun({ id: 'upload-2', kind: 'upload', origin: 'computer', label: 'Chrome', itemCount: 100 });
+    expect(
+      importProgress(summary({ queues: [thumbnails()], durableRuns: [large, small] }), NOW)?.upload,
+    ).toBeUndefined();
+  });
 });

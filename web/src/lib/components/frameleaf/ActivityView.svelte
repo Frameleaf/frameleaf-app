@@ -212,7 +212,6 @@
    * chip, whose filter lists them under Needs a look (All shows them under In progress, where their row warns).
    */
   const stuckRows = $derived(stuckWorkRows(features));
-  const stuckShown = $derived(filter === 'failed' ? stuckRows : []);
   /**
    * FL-1409: finished work that left photos over. Recent work says "312 photos need a look" for it, so this page
    * counts it too and never says "Everything is up to date" beside that card. Shown under All and Needs a look.
@@ -227,6 +226,13 @@
   const backgroundCount = $derived(showProgress ? busyServer : 0);
   /** The server's work shows, by what came in or by feature, whenever there is any. */
   const showServerWork = $derived(backgroundCount > 0 || (showProgress && arrivals.length > 0));
+  /**
+   * FL-1457: a feature waiting on another step is listed under Needs a look with the Failed filter. FL-1459: under
+   * All the feature rows show it, unless In progress shows what came in; then Needs a look lists it too.
+   */
+  const stuckShown = $derived(
+    filter === 'failed' || (filter === 'all' && showServerWork && workView === 'arrival') ? stuckRows : [],
+  );
   /** A chip counts what its filter shows: background work under All and In progress, and finished lines, not runs. */
   const chipCount = (name: ActivityFilter) =>
     name === 'done'
