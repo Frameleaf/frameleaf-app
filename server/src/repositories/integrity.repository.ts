@@ -168,7 +168,7 @@ export class IntegrityRepository {
     // affect row a second time"), and a batch can repeat a path: two photos sharing one stored file, or a photo
     // that already has two reports. The last row for a key wins, as it would across two statements.
     const rows = Array.isArray(dto)
-      ? [...new Map(dto.map((row) => [JSON.stringify([row.type, row.path]), row])).values()]
+      ? new Map(dto.map((row) => [JSON.stringify([row.type, row.path]), row])).values().toArray()
       : dto;
     return this.db
       .insertInto('integrity_report')
