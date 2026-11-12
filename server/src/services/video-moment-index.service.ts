@@ -603,7 +603,10 @@ export class VideoMomentIndexService {
   ): Promise<VideoMomentSearchResponseDto> {
     // One caption or transcript match per video, so many matches in a few videos cannot crowd out the rest.
     const ranked = await this.matchingHits(query, { ...scope, onePerVideo: true }, visual);
-    const chosen = momentsByVideo(ranked).slice(0, limit);
+    // Twice as many as asked for: a video chosen only for a caption that has gone stale drops out
+    // when it is read in full, and the next one takes its place.
+    // ponytail: more than `limit` such videos ranked first still leaves the answer short.
+    const chosen = momentsByVideo(ranked).slice(0, limit * 2);
     if (chosen.length === 0) {
       return { hits: [], videos: [] };
     }
@@ -612,9 +615,7 @@ export class VideoMomentIndexService {
     const complete = new Map(momentsByVideo(all).map((video) => [video.assetId, video]));
     return {
       hits: uniqueMoments(all).slice(0, limit),
-      // A video chosen only for a caption that has gone stale has no matches left, and is not shown.
-      // ponytail: that can leave fewer than `limit` videos; rank again if it ever matters.
-      videos: chosen.flatMap((video) => complete.get(video.assetId) ?? []),
+      videos: chosen.flatMap((video) => complete.get(video.assetId) ?? []).slice(0, limit),
     };
   }
 

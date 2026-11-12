@@ -704,6 +704,37 @@ describe(VideoMomentIndexService.name, () => {
       );
     });
 
+    it('fills a slot left by a video whose only match is a caption gone stale', async () => {
+      // The fixture video, whose owner and people the stale-caption check can read.
+      const staleVideo = assetId;
+      const goodVideo = newUuid();
+      const staleId = newUuid();
+      const row = (videoId: string, momentId: string, source: VideoMomentSource) => ({
+        assetId: videoId,
+        momentId,
+        timestampMs: 5000,
+        source,
+        caption: 'Anna laughs',
+        transcript: null,
+      });
+      moments.searchMomentText.mockResolvedValue([
+        row(staleVideo, staleId, VideoMomentSource.Generated),
+        row(goodVideo, newUuid(), VideoMomentSource.Manual),
+      ]);
+      moments.getMoments.mockResolvedValue([
+        {
+          id: staleId,
+          assetId: staleVideo,
+          source: VideoMomentSource.Generated,
+          provenance: { identityHash: 'names-before' },
+        },
+      ]);
+
+      const { videos } = await sut.search(authStub.user1, { query: 'anna', limit: 1 });
+
+      expect(videos).toEqual([expect.objectContaining({ assetId: goodVideo, momentCount: 1 })]);
+    });
+
     it('finds no frames for words nothing matches: none nearer than nonsense gets', async () => {
       frameHits([
         { assetId, timestampMs: 1000, distance: 0.6 },

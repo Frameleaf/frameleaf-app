@@ -651,39 +651,43 @@ export class VideoMomentRepository {
       // ponytail: a fixed budget; a library under 1 in 10 of a huge index can still come back short.
       await sql`set local hnsw.iterative_scan = strict_order`.execute(trx);
       await sql`set local hnsw.max_scan_tuples = 200000`.execute(trx);
-      return trx
-        .selectFrom('video_moment_frame_embedding')
-        .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
-        .innerJoin('asset', 'asset.id', 'video_moment_frame.assetId')
-        .leftJoin('video_moment', (join) =>
-          join
-            .onRef('video_moment.frameId', '=', 'video_moment_frame.id')
-            .on('video_moment.source', '=', VideoMomentSource.Generated),
-        )
-        .select([
-          'video_moment_frame.assetId',
-          'video_moment_frame.id as frameId',
-          'video_moment.id as momentId',
-          'video_moment_frame.timestampMs',
-          'video_moment.caption',
-          sql<number>`video_moment_frame_embedding.embedding <=> ${embedding}`.as('distance'),
-        ])
-        .where('video_moment_frame_embedding.modelName', '=', modelName)
-        .where('asset.ownerId', '=', asUuid(scope.ownerId))
-        .where('asset.status', '=', AssetStatus.Active)
-        .where('asset.deletedAt', 'is', null)
-        .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
-        .where(notLockedOrOwnedBy(scope.lockedOwnerId))
-        .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
-        .$if(!!scope.excludeFrameId, (qb) =>
-          qb.where('video_moment_frame_embedding.frameId', '!=', asUuid(scope.excludeFrameId!)),
-        )
-        .$if(!!scope.assetIds, (qb) => qb.where('video_moment_frame.assetId', '=', anyUuid(scope.assetIds!)))
-        .orderBy(sql`video_moment_frame_embedding.embedding <=> ${embedding}`)
-        .limit(scope.limit)
-        .execute();
+      return (
+        trx
+          .selectFrom('video_moment_frame_embedding')
+          .innerJoin('video_moment_frame', 'video_moment_frame.id', 'video_moment_frame_embedding.frameId')
+          .innerJoin('asset', 'asset.id', 'video_moment_frame.assetId')
+          .leftJoin('video_moment', (join) =>
+            join
+              .onRef('video_moment.frameId', '=', 'video_moment_frame.id')
+              .on('video_moment.source', '=', VideoMomentSource.Generated),
+          )
+          .select([
+            'video_moment_frame.assetId',
+            'video_moment_frame.id as frameId',
+            'video_moment.id as momentId',
+            'video_moment_frame.timestampMs',
+            'video_moment.caption',
+            sql<number>`video_moment_frame_embedding.embedding <=> ${embedding}`.as('distance'),
+          ])
+          .where('video_moment_frame_embedding.modelName', '=', modelName)
+          .where('asset.ownerId', '=', asUuid(scope.ownerId))
+          .where('asset.status', '=', AssetStatus.Active)
+          .where('asset.deletedAt', 'is', null)
+          .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+          .where(notLockedOrOwnedBy(scope.lockedOwnerId))
+          .$call((qb) => withHiddenContentFilter(qb, scope.privacy))
+          .$if(!!scope.excludeFrameId, (qb) =>
+            qb.where('video_moment_frame_embedding.frameId', '!=', asUuid(scope.excludeFrameId!)),
+          )
+          .$if(!!scope.assetIds, (qb) => qb.where('video_moment_frame.assetId', '=', anyUuid(scope.assetIds!)))
+          // FL-1439: a few named videos are read in full, without the vector index and its scan
+          // budget; they are ranked by distance below.
+          .$if(!scope.assetIds, (qb) => qb.orderBy(sql`video_moment_frame_embedding.embedding <=> ${embedding}`))
+          .limit(scope.limit)
+          .execute()
+      );
     });
-    return rows.map((row) => ({ ...row, distance: Number(row.distance) }));
+    return rows.map((row) => ({ ...row, distance: Number(row.distance) })).toSorted((a, b) => a.distance - b.distance);
   }
 
   /**
@@ -745,7 +749,7 @@ export class VideoMomentRepository {
   })
   searchMomentText(text: string, scope: VideoMomentSearchScope): Promise<VideoMomentTextHit[]> {
     const pattern = `%${text.replaceAll(/[%_\\]/g, (match) => `\\${match}`)}%`;
-    return this.db
+    const matches = this.db
       .selectFrom('video_moment')
       .innerJoin('asset', 'asset.id', 'video_moment.assetId')
       .select([
@@ -765,8 +769,25 @@ export class VideoMomentRepository {
       .$if(!!scope.assetIds, (qb) => qb.where('video_moment.assetId', '=', anyUuid(scope.assetIds!)))
       .where((eb) =>
         eb.or([eb('video_moment.caption', 'ilike', pattern), eb('video_moment.transcript', 'ilike', pattern)]),
-      )
-      .$if(!!scope.onePerVideo, (qb) => qb.distinctOn('video_moment.assetId').orderBy('video_moment.assetId'))
+      );
+    if (scope.onePerVideo) {
+      // FL-1439: each video's best match, then the videos in the same order as every match.
+      const best = matches
+        .select('video_moment.updatedAt')
+        .distinctOn('video_moment.assetId')
+        .orderBy('video_moment.assetId')
+        .orderBy('video_moment.source', 'desc')
+        .orderBy('video_moment.updatedAt', 'desc')
+        .as('best');
+      return this.db
+        .selectFrom(best)
+        .selectAll()
+        .orderBy('best.source', 'desc')
+        .orderBy('best.updatedAt', 'desc')
+        .limit(scope.limit)
+        .execute() as Promise<VideoMomentTextHit[]>;
+    }
+    return matches
       .orderBy('video_moment.source', 'desc')
       .orderBy('video_moment.updatedAt', 'desc')
       .limit(scope.limit)
