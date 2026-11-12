@@ -124,6 +124,7 @@ import {
 } from 'src/schema/tables/cloud-backup.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
+import { DateFixBatchTable, DateFixItemTable } from 'src/schema/tables/date-fix.table.js';
 import { DesktopClipIndexTable, DesktopClipProducerTable } from 'src/schema/tables/desktop-clip-index.table.js';
 import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
 import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
@@ -377,6 +378,8 @@ export class ImmichDatabase {
     AlbumCleanupSnapshotTable,
     AssetViewTable,
     AssetDateFindingTable,
+    DateFixBatchTable,
+    DateFixItemTable,
     BookmarkTagTable,
     AssetSourceTable,
     AccountEventTable,
@@ -707,6 +710,8 @@ export interface DB extends QueueDatabase {
   asset_video_fingerprint: AssetVideoFingerprintTable;
   asset_view: AssetViewTable;
   asset_date_finding: AssetDateFindingTable;
+  date_fix_batch: DateFixBatchTable;
+  date_fix_item: DateFixItemTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;

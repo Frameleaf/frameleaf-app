@@ -3865,6 +3865,21 @@ describe(MetadataService.name, () => {
       expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['dateTimeOriginal', 'timeZone'], undefined);
     });
 
+    it('lets go only of the named date locks (FL-930 undo, the zone set by hand before)', async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ dateTimeOriginal: new Date('2023-11-21T22:56:12.196-06:00'), timeZone: 'America/Chicago' })
+        .build();
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['dateTimeOriginal', 'timeZone']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+
+      await expect(sut.handleSidecarWrite({ id: asset.id, releaseDateLock: ['dateTimeOriginal'] })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.asset.unlockProperties).toHaveBeenCalledWith(asset.id, ['dateTimeOriginal'], undefined);
+    });
+
     it('writes one sidecar per asset at a time, on the lock connection (FL-195)', async () => {
       const asset = AssetFactory.from()
         .file({ type: AssetFileType.Sidecar })

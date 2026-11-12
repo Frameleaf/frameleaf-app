@@ -1,15 +1,22 @@
-import { Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { DateDoctorFindingsResponseDto } from 'src/dtos/date-doctor.dto.js';
+import {
+  DateDoctorApplyResponseDto,
+  DateDoctorBatchDto,
+  DateDoctorFindingsResponseDto,
+  DateDoctorFixDto,
+  DateDoctorPreviewResponseDto,
+} from 'src/dtos/date-doctor.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
+import { UUIDv7ParamDto } from 'src/validation.js';
 
 const history = () => new HistoryBuilder().added('v3.4.0').alpha('v3.4.0');
 
-/** FL-912: the Date & Time Doctor's findings, and a new scan. Fixing them is FL-930. */
+/** FL-912: the Date & Time Doctor's findings, and a new scan. FL-930: fixing them, and undoing a fix. */
 @ApiTags(ApiTag.MediaHealth)
 @Controller('date-doctor')
 export class DateDoctorController {
@@ -38,5 +45,54 @@ export class DateDoctorController {
   })
   scanDateDoctor(@Auth() auth: AuthDto): Promise<void> {
     return this.service.scan(auth);
+  }
+
+  @Post('preview')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Preview a date fix',
+    description:
+      'What each photo would be dated after the fix: the Doctor’s proposals, or a time zone and shift. Nothing changes.',
+    history: history(),
+  })
+  previewDateFix(@Auth() auth: AuthDto, @Body() dto: DateDoctorFixDto): Promise<DateDoctorPreviewResponseDto> {
+    return this.service.preview(auth, dto);
+  }
+
+  @Post('apply')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @Endpoint({
+    summary: 'Fix dates',
+    description:
+      'Give the photos their new dates and time zones, set as if by hand, and rewrite their sidecars. The original files never change. It can be undone for 30 days.',
+    history: history(),
+  })
+  applyDateFix(@Auth() auth: AuthDto, @Body() dto: DateDoctorFixDto): Promise<DateDoctorApplyResponseDto> {
+    return this.service.apply(auth, dto);
+  }
+
+  @Get('batches')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Get the date fixes that can be undone',
+    description: 'Your date fixes of the last 30 days, newest first, undone ones included.',
+    history: history(),
+  })
+  getDateFixBatches(@Auth() auth: AuthDto): Promise<DateDoctorBatchDto[]> {
+    return this.service.getBatches(auth);
+  }
+
+  @Post('batches/:id/undo')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Undo a date fix',
+    description:
+      'Put back the dates and time zones the photos had before the fix. A photo whose date was changed again since keeps that date.',
+    history: history(),
+  })
+  undoDateFix(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<DateDoctorBatchDto> {
+    return this.service.undo(auth, id);
   }
 }

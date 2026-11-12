@@ -47,6 +47,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     resume: vitest.fn(),
     searchJobs: vitest.fn(),
     queueInTransaction: vitest.fn().mockResolvedValue(undefined),
+    queueAllInTransaction: vitest.fn().mockResolvedValue(undefined),
     queue: vitest.fn().mockImplementation(() => Promise.resolve()),
     queueUpload: vitest.fn().mockResolvedValue(undefined),
     queueSelection: vitest.fn().mockResolvedValue({ runId: 'test-run', inserted: 0 }),

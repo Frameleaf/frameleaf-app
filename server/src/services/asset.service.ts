@@ -65,7 +65,7 @@ import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.s
 import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
-import { extractTimeZone, withDateTimeOffset } from 'src/utils/date.js';
+import { extractTimeZone, getAssetDateTimeUpdates, withDateTimeOffset } from 'src/utils/date.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { fontFactsFromName, isBrowserFont } from 'src/utils/font-file.js';
@@ -106,32 +106,6 @@ const videoEditActions = new Set<AssetEditAction>([
 const getDurationMs = (duration: number | null | undefined) => {
   const value = Number(duration);
   return Number.isFinite(value) && value > 0 ? value : null;
-};
-
-const getAssetDateTimeUpdates = (
-  dateTimeOriginal?: string,
-  timeZone?: string | null,
-  previous?: { fileCreatedAt: Date; localDateTime: Date },
-) => {
-  if (!dateTimeOriginal) {
-    return {};
-  }
-
-  const dateTime = DateTime.fromISO(withDateTimeOffset(dateTimeOriginal)!, { setZone: true, zone: 'UTC' });
-  if (!dateTime.isValid) {
-    return {};
-  }
-
-  const zoned = timeZone ? dateTime.setZone(timeZone) : undefined;
-  const localDateTime = zoned?.isValid
-    ? zoned.setZone('UTC', { keepLocalTime: true }).toJSDate()
-    : previous
-      ? new Date(previous.localDateTime.getTime() + dateTime.toMillis() - previous.fileCreatedAt.getTime())
-      : dateTime.setZone('UTC', { keepLocalTime: true }).toJSDate();
-  return {
-    fileCreatedAt: dateTime.toUTC().toJSDate(),
-    localDateTime,
-  };
 };
 
 const videoVersionErrors: Record<string, string> = {

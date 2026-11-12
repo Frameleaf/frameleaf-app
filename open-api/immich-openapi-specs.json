@@ -26128,6 +26128,168 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/date-doctor/apply": {
+      "post": {
+        "description": "Give the photos their new dates and time zones, set as if by hand, and rewrite their sidecars. The original files never change. It can be undone for 30 days.",
+        "operationId": "applyDateFix",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DateDoctorFixDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DateDoctorApplyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Fix dates",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/date-doctor/batches": {
+      "get": {
+        "description": "Your date fixes of the last 30 days, newest first, undone ones included.",
+        "operationId": "getDateFixBatches",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DateDoctorBatchDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the date fixes that can be undone",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/date-doctor/batches/{id}/undo": {
+      "post": {
+        "description": "Put back the dates and time zones the photos had before the fix. A photo whose date was changed again since keeps that date.",
+        "operationId": "undoDateFix",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DateDoctorBatchDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo a date fix",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/date-doctor/findings": {
       "get": {
         "description": "Your photos whose date or time zone looks wrong, with what the Doctor proposes and why, grouped by camera and day.",
@@ -26171,6 +26333,62 @@
           }
         ],
         "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/date-doctor/preview": {
+      "post": {
+        "description": "What each photo would be dated after the fix: the Doctor’s proposals, or a time zone and shift. Nothing changes.",
+        "operationId": "previewDateFix",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DateDoctorFixDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DateDoctorPreviewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview a date fix",
+        "tags": [
+          "Media Health"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
         "x-immich-state": "Alpha"
       }
     },
@@ -95796,6 +96014,94 @@
         },
         "type": "object"
       },
+      "DateDoctorApplyResponseDto": {
+        "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/DateDoctorBatchDto"
+          },
+          "skipped": {
+            "description": "Photos left as they were: nothing to change, or dated again meanwhile",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "batch",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "DateDoctorBatchDto": {
+        "properties": {
+          "cause": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DateFindingCause"
+              }
+            ],
+            "description": "The cause of the proposals applied, when they all had one; null for a zone or shift chosen by hand",
+            "nullable": true
+          },
+          "count": {
+            "description": "Photos fixed",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "When the fix was applied",
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "Undo is possible until then",
+            "type": "string"
+          },
+          "id": {
+            "description": "Batch ID, for undo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "restored": {
+            "description": "After undo: photos put back. A photo dated again since keeps that date",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "shiftMinutes": {
+            "description": "The shift chosen, in minutes",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "timeZone": {
+            "description": "The time zone chosen",
+            "nullable": true,
+            "type": "string"
+          },
+          "undoneAt": {
+            "description": "When it was undone",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "cause",
+          "count",
+          "createdAt",
+          "expiresAt",
+          "id",
+          "shiftMinutes",
+          "timeZone",
+          "undoneAt"
+        ],
+        "type": "object"
+      },
       "DateDoctorFindingDto": {
         "properties": {
           "assetId": {
@@ -95866,6 +96172,44 @@
         ],
         "type": "object"
       },
+      "DateDoctorFixDto": {
+        "description": "Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes`; `keepWallTime` only with `timeZone`. Any other combination is refused (400).",
+        "properties": {
+          "assetIds": {
+            "description": "The photos to fix",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "keepWallTime": {
+            "description": "With timeZone: keep the clock time shown and read it in the new zone; otherwise the moment stays",
+            "type": "boolean"
+          },
+          "shiftMinutes": {
+            "description": "Move their dates this many minutes (a camera clock that was off)",
+            "maximum": 52560000,
+            "minimum": -52560000,
+            "type": "integer"
+          },
+          "timeZone": {
+            "description": "The time zone they were taken in (IANA, or UTC+2 for a fixed offset)",
+            "type": "string"
+          },
+          "useProposal": {
+            "description": "Give each photo the date and zone the Doctor proposes for it; photos without a proposal are left alone",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
       "DateDoctorGroupDto": {
         "properties": {
           "camera": {
@@ -95893,6 +96237,66 @@
           "day",
           "findings",
           "groupKey"
+        ],
+        "type": "object"
+      },
+      "DateDoctorPreviewItemDto": {
+        "properties": {
+          "after": {
+            "$ref": "#/components/schemas/DateDoctorTimeDto"
+          },
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "before": {
+            "$ref": "#/components/schemas/DateDoctorTimeDto"
+          }
+        },
+        "required": [
+          "after",
+          "assetId",
+          "before"
+        ],
+        "type": "object"
+      },
+      "DateDoctorPreviewResponseDto": {
+        "properties": {
+          "items": {
+            "description": "Each photo that would change, before and after",
+            "items": {
+              "$ref": "#/components/schemas/DateDoctorPreviewItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "DateDoctorTimeDto": {
+        "properties": {
+          "date": {
+            "description": "The moment, ISO 8601",
+            "type": "string"
+          },
+          "local": {
+            "description": "The clock time shown, YYYY-MM-DDTHH:mm:ss",
+            "type": "string"
+          },
+          "zone": {
+            "description": "The time zone; null when the photo has none",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "local",
+          "zone"
         ],
         "type": "object"
       },

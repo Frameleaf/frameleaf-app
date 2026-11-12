@@ -1,14 +1,21 @@
+import { BadRequestException } from '@nestjs/common';
 import { vi } from 'vitest';
-import type { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
+import type { AccessRepository } from 'src/repositories/access.repository.js';
+import type { AccountEventRepository } from 'src/repositories/account-event.repository.js';
+import type { DateDoctorRepository, DateFixCurrent } from 'src/repositories/date-doctor.repository.js';
+import type { EventRepository } from 'src/repositories/event.repository.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { JobName } from 'src/enum.js';
+import type { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { AccountEventAction, JobName } from 'src/enum.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
 import { DateFindingCause, type DateScanRow, dateFromFileName, detectDateFindings } from 'src/utils/date-doctor.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { FIXTURE_NOW, buildDateDoctorFixture, scoreFindings } from 'test/fixtures/date-doctor.fixture.js';
 
 const now = new Date('2026-06-01T12:00:00Z');
+
+type FixDeps = [AccessRepository, AccountEventRepository, EventRepository, PartnerOriginRepository];
 
 describe('dateFromFileName', () => {
   it.each([
@@ -156,6 +163,7 @@ describe(DateDoctorService.name, () => {
       logger as unknown as LoggingRepository,
       jobs as unknown as JobRepository,
       repository as unknown as DateDoctorRepository,
+      ...([{}, {}, {}, {}] as unknown as FixDeps),
     );
     return { sut, repository, jobs };
   };
@@ -226,5 +234,339 @@ describe(DateDoctorService.name, () => {
         expect.objectContaining({ camera: 'Brand Series|X', day: '2022-06-30' }),
       ],
     });
+  });
+});
+
+describe('DateDoctorService fixes (FL-930)', () => {
+  const owner = authStub.admin;
+  const current = (assetId: string, overrides: Partial<DateFixCurrent> = {}): DateFixCurrent => ({
+    assetId,
+    takenAt: new Date('2022-07-01T10:03:00Z'),
+    localDateTime: new Date('2022-07-01T10:03:00Z'),
+    dateTimeOriginal: new Date('2022-07-01T10:03:00Z'),
+    timeZone: null,
+    locks: [],
+    earlier: null,
+    ...overrides,
+  });
+
+  const setup = (owned: string[] = ['a', 'b']) => {
+    const repository = {
+      getProposals: vi.fn().mockResolvedValue([]),
+      getCurrent: vi.fn().mockResolvedValue([]),
+      getBatches: vi.fn().mockResolvedValue([]),
+      applyFixes: vi.fn(),
+      undoBatch: vi.fn(),
+      getBatchAssetIds: vi.fn().mockResolvedValue([]),
+      pruneBatches: vi.fn().mockResolvedValue(0),
+    };
+    const jobs = { queue: vi.fn(), queueAll: vi.fn(), queueAllInTransaction: vi.fn() };
+    const access = { asset: { checkOwnerAccess: vi.fn().mockResolvedValue(new Set(owned)) } };
+    const accountEvents = { create: vi.fn() };
+    const events = { emit: vi.fn() };
+    const partnerOrigin = { markOverridden: vi.fn(), getIdsWithFollowers: vi.fn().mockResolvedValue([]) };
+    const logger = { setContext: vi.fn(), log: vi.fn(), error: vi.fn() };
+    const sut = new DateDoctorService(
+      logger as unknown as LoggingRepository,
+      jobs as unknown as JobRepository,
+      repository as unknown as DateDoctorRepository,
+      ...([access, accountEvents, events, partnerOrigin] as unknown as FixDeps),
+    );
+    return { sut, repository, jobs, access, accountEvents, events, partnerOrigin };
+  };
+  const batch = {
+    id: 'batch',
+    userId: owner.user.id,
+    count: 2,
+    createdAt: now,
+    undoneAt: null,
+    cause: null,
+    shiftMinutes: null,
+    timeZone: 'Europe/Paris',
+  };
+  const proposal = (assetId: string, cause: DateFindingCause, proposedDate: string, proposedZone: string) => ({
+    assetId,
+    cause,
+    proposedDate: new Date(proposedDate),
+    proposedZone,
+    currentDate: new Date('2022-07-01T10:03:00Z'),
+    currentZone: null,
+  });
+  const tx = { tx: true };
+  /** The repository's transaction: it runs the effects with the photos it wrote. */
+  const applied = (result: { batch: typeof batch; assetIds: string[] }) =>
+    vi.fn(async (_owner, _items, _asked, effects) => {
+      await effects(tx, result.assetIds);
+      return result;
+    });
+
+  it('previews a proposal: its date and zone, and the clock time in that zone', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getProposals.mockResolvedValue([
+      proposal('a', DateFindingCause.MissingZone, '2022-07-01T08:03:00Z', 'Europe/Paris'),
+    ]);
+    repository.getCurrent.mockResolvedValue([current('a')]);
+
+    await expect(sut.preview(owner, { assetIds: ['a'], useProposal: true })).resolves.toEqual({
+      items: [
+        {
+          assetId: 'a',
+          before: { date: '2022-07-01T10:03:00.000Z', zone: null, local: '2022-07-01T10:03:00' },
+          after: { date: '2022-07-01T08:03:00.000Z', zone: 'Europe/Paris', local: '2022-07-01T10:03:00' },
+        },
+      ],
+    });
+    expect(repository.getProposals).toHaveBeenCalledWith(owner.user.id, ['a']);
+    expect(repository.getCurrent).toHaveBeenCalledWith(owner.user.id, ['a']);
+    expect(repository.applyFixes).not.toHaveBeenCalled();
+  });
+
+  it('with keepWallTime keeps the clock time shown, read in the new zone and moved by the shift', async () => {
+    const { sut, repository } = setup();
+    repository.getCurrent.mockResolvedValue([current('a'), current('b', { timeZone: 'UTC' })]);
+
+    const { items } = await sut.preview(owner, {
+      assetIds: ['a', 'b'],
+      timeZone: 'Asia/Tokyo',
+      keepWallTime: true,
+      shiftMinutes: 60,
+    });
+
+    // 11:03 on the camera's clock in Tokyo is 02:03 UTC
+    expect(items.map(({ after }) => after)).toEqual([
+      { date: '2022-07-01T02:03:00.000Z', zone: 'Asia/Tokyo', local: '2022-07-01T11:03:00' },
+      { date: '2022-07-01T02:03:00.000Z', zone: 'Asia/Tokyo', local: '2022-07-01T11:03:00' },
+    ]);
+  });
+
+  it('without keepWallTime keeps the moment and shows it in the new zone', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getCurrent.mockResolvedValue([current('a')]);
+
+    const { items } = await sut.preview(owner, { assetIds: ['a'], timeZone: 'Asia/Tokyo' });
+
+    expect(items.map(({ after }) => after)).toEqual([
+      { date: '2022-07-01T10:03:00.000Z', zone: 'Asia/Tokyo', local: '2022-07-01T19:03:00' },
+    ]);
+  });
+
+  it('shifts the photos, keeping their own zone', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getCurrent.mockResolvedValue([current('a', { timeZone: 'Europe/Paris' })]);
+
+    const { items } = await sut.preview(owner, { assetIds: ['a'], shiftMinutes: -90 });
+
+    expect(items.map(({ after }) => after)).toEqual([
+      expect.objectContaining({ date: '2022-07-01T08:33:00.000Z', zone: 'Europe/Paris' }),
+    ]);
+  });
+
+  it('refuses photos the caller does not own, a partner’s copy included, before reading or writing anything', async () => {
+    const { sut, repository } = setup(['a']);
+
+    await expect(sut.apply(owner, { assetIds: ['a', 'partner-copy'], shiftMinutes: 5 })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(repository.getCurrent).not.toHaveBeenCalled();
+    expect(repository.applyFixes).not.toHaveBeenCalled();
+  });
+
+  it('keeps the values from before an earlier fix still in place', async () => {
+    const { sut, repository } = setup(['a']);
+    const earlier = {
+      previousDate: null,
+      previousZone: null,
+      previousTakenAt: new Date('2000-01-01T00:00:00Z'),
+      previousLocalDateTime: new Date('2000-01-01T00:00:00Z'),
+      previousLocks: [],
+    };
+    repository.getCurrent.mockResolvedValue([
+      current('a', { timeZone: 'Europe/Paris', locks: ['dateTimeOriginal', 'timeZone'], earlier }),
+    ]);
+    repository.applyFixes.mockResolvedValue({ batch, assetIds: ['a'] });
+
+    await sut.apply(owner, { assetIds: ['a'], shiftMinutes: 10 });
+
+    expect(repository.applyFixes).toHaveBeenCalledWith(
+      owner.user.id,
+      [
+        expect.objectContaining({
+          ...earlier,
+          currentTakenAt: new Date('2022-07-01T10:03:00Z'),
+          newZone: 'Europe/Paris',
+        }),
+      ],
+      { cause: null, shiftMinutes: 10, timeZone: null },
+      expect.any(Function),
+    );
+  });
+
+  it('applies: rewrites sidecars, tells copies following the photos, refreshes timelines and logs the count', async () => {
+    const { sut, repository, jobs, events, accountEvents, partnerOrigin } = setup();
+    repository.getCurrent.mockResolvedValue([current('a'), current('b')]);
+    repository.applyFixes.mockImplementation(applied({ batch, assetIds: ['a', 'b'] }));
+    partnerOrigin.getIdsWithFollowers.mockResolvedValue(['a']);
+
+    await expect(sut.apply(owner, { assetIds: ['a', 'b'], timeZone: 'Europe/Paris' })).resolves.toEqual({
+      batch: {
+        id: 'batch',
+        createdAt: now.toISOString(),
+        expiresAt: '2026-07-01T12:00:00.000Z',
+        count: 2,
+        cause: null,
+        shiftMinutes: null,
+        timeZone: 'Europe/Paris',
+        undoneAt: null,
+      },
+      skipped: [],
+    });
+    expect(repository.applyFixes).toHaveBeenCalledWith(
+      owner.user.id,
+      expect.any(Array),
+      { cause: null, shiftMinutes: null, timeZone: 'Europe/Paris' },
+      expect.any(Function),
+    );
+    // partner copies and sidecars commit in the transaction that wrote the dates
+    expect(partnerOrigin.markOverridden).toHaveBeenCalledWith(
+      'asset',
+      ['a', 'b'],
+      ['dateTimeOriginal'],
+      owner.user.id,
+      tx,
+    );
+    expect(jobs.queueAllInTransaction).toHaveBeenCalledWith(tx, [
+      { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: 'a', fields: ['dateTimeOriginal'] } },
+      { name: JobName.SidecarWrite, data: { id: 'a' } },
+      { name: JobName.SidecarWrite, data: { id: 'b' } },
+    ]);
+    expect(jobs.queueAll).not.toHaveBeenCalled();
+    expect(events.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: ['a', 'b'] });
+    expect(accountEvents.create).toHaveBeenCalledWith(
+      expect.objectContaining({ action: AccountEventAction.DatesFixed, detail: '2' }),
+    );
+  });
+
+  it('records the proposals’ cause when they share one, and names the photos it left alone', async () => {
+    const { sut, repository } = setup();
+    repository.getProposals.mockResolvedValue([
+      proposal('a', DateFindingCause.GpsZoneMismatch, '2022-07-01T10:03:00Z', 'Asia/Tokyo'),
+    ]);
+    repository.getCurrent.mockResolvedValue([current('a')]);
+    repository.applyFixes.mockResolvedValue({ batch: { ...batch, count: 1 }, assetIds: ['a'] });
+
+    const { skipped } = await sut.apply(owner, { assetIds: ['a', 'b'], useProposal: true });
+
+    expect(skipped).toEqual(['b']);
+    expect(repository.applyFixes).toHaveBeenCalledWith(
+      owner.user.id,
+      expect.any(Array),
+      { cause: DateFindingCause.GpsZoneMismatch, shiftMinutes: null, timeZone: null },
+      expect.any(Function),
+    );
+  });
+
+  it('records no cause when the proposals had several', async () => {
+    const { sut, repository } = setup();
+    repository.getProposals.mockResolvedValue([
+      proposal('a', DateFindingCause.GpsZoneMismatch, '2022-07-01T10:03:00Z', 'Asia/Tokyo'),
+      proposal('b', DateFindingCause.MissingZone, '2022-07-01T08:03:00Z', 'Europe/Paris'),
+    ]);
+    repository.getCurrent.mockResolvedValue([current('a'), current('b')]);
+    repository.applyFixes.mockResolvedValue({ batch, assetIds: ['a', 'b'] });
+
+    await sut.apply(owner, { assetIds: ['a', 'b'], useProposal: true });
+
+    expect(repository.applyFixes).toHaveBeenCalledWith(
+      owner.user.id,
+      expect.any(Array),
+      { cause: null, shiftMinutes: null, timeZone: null },
+      expect.any(Function),
+    );
+  });
+
+  it('leaves a proposal alone when the photo was dated again after the scan', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getProposals.mockResolvedValue([
+      proposal('a', DateFindingCause.MissingZone, '2022-07-01T08:03:00Z', 'Europe/Paris'),
+    ]);
+    repository.getCurrent.mockResolvedValue([current('a', { takenAt: new Date('2022-08-01T00:00:00Z') })]);
+
+    await expect(sut.preview(owner, { assetIds: ['a'], useProposal: true })).resolves.toEqual({ items: [] });
+  });
+
+  it('leaves a proposal alone when only the photo’s zone changed after the scan', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getProposals.mockResolvedValue([
+      proposal('a', DateFindingCause.MissingZone, '2022-07-01T08:03:00Z', 'Europe/Paris'),
+    ]);
+    repository.getCurrent.mockResolvedValue([current('a', { timeZone: 'Asia/Tokyo' })]);
+
+    await expect(sut.preview(owner, { assetIds: ['a'], useProposal: true })).resolves.toEqual({ items: [] });
+  });
+
+  it('says there is nothing to fix when no photo would change', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getCurrent.mockResolvedValue([current('a', { timeZone: 'UTC' })]);
+
+    await expect(sut.apply(owner, { assetIds: ['a'], timeZone: 'UTC' })).rejects.toThrow('Nothing to fix');
+    expect(repository.applyFixes).not.toHaveBeenCalled();
+  });
+
+  it('lists the batches of the last 30 days', async () => {
+    const { sut, repository } = setup();
+    repository.getBatches.mockResolvedValue([batch]);
+    await expect(sut.getBatches(owner)).resolves.toEqual([expect.objectContaining({ id: 'batch', count: 2 })]);
+    const [ownerId, since] = repository.getBatches.mock.calls[0];
+    expect(ownerId).toBe(owner.user.id);
+    expect(Date.now() - since.getTime()).toBeGreaterThanOrEqual(30 * 24 * 3_600_000 - 1000);
+  });
+
+  it('undoes: the sidecar gets the restored date, and what nobody set by hand is read from the file again', async () => {
+    const { sut, repository, jobs } = setup(['a', 'b', 'c']);
+    repository.getBatchAssetIds.mockResolvedValue(['a', 'b', 'c']);
+    const restored = [
+      { assetId: 'a', previousLocks: [] },
+      { assetId: 'b', previousLocks: ['dateTimeOriginal', 'timeZone'] },
+      { assetId: 'c', previousLocks: ['timeZone'] },
+    ];
+    repository.undoBatch.mockImplementation(async (_owner, _id, _since, effects) => {
+      await effects(tx, restored);
+      return { batch: { ...batch, undoneAt: now }, restored, alreadyUndone: false };
+    });
+
+    await expect(sut.undo(owner, 'batch')).resolves.toEqual(
+      expect.objectContaining({ undoneAt: now.toISOString(), restored: 3 }),
+    );
+    expect(repository.undoBatch).toHaveBeenCalledWith(owner.user.id, 'batch', expect.any(Date), expect.any(Function));
+    expect(jobs.queueAllInTransaction).toHaveBeenCalledWith(tx, [
+      { name: JobName.SidecarWrite, data: { id: 'a', releaseDateLock: true } },
+      { name: JobName.SidecarWrite, data: { id: 'b' } },
+      // only the zone had been set by hand: the date lock goes, the zone's stays
+      { name: JobName.SidecarWrite, data: { id: 'c', releaseDateLock: ['dateTimeOriginal'] } },
+    ]);
+  });
+
+  it('refuses to undo when a photo of the batch was Locked since, without an elevated session', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getBatchAssetIds.mockResolvedValue(['a', 'locked']);
+
+    await expect(sut.undo(owner, 'batch')).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.undoBatch).not.toHaveBeenCalled();
+  });
+
+  it('refuses to undo another person’s batch, an old one or one already undone', async () => {
+    const { sut, repository } = setup();
+    repository.undoBatch.mockResolvedValue(undefined);
+    await expect(sut.undo(owner, 'batch')).rejects.toThrow('Batch not found');
+
+    repository.undoBatch.mockResolvedValue({ batch: { ...batch, undoneAt: now }, restored: [], alreadyUndone: true });
+    await expect(sut.undo(owner, 'batch')).rejects.toThrow('Already undone');
+  });
+
+  it('removes batches older than 30 days each night', async () => {
+    const { sut, repository } = setup();
+    await sut.onNightlyDatabaseCleanup();
+    const [before] = repository.pruneBatches.mock.calls[0];
+    expect(Date.now() - before.getTime()).toBeGreaterThanOrEqual(30 * 24 * 3_600_000 - 1000);
   });
 });

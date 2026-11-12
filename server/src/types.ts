@@ -702,8 +702,11 @@ export type JobItem =
   | { name: JobName.SidecarCheck; data: IEntityJob }
   | {
       name: JobName.SidecarWrite;
-      /** `releaseDateLock`: FL-1299's Undo. The date goes into the sidecar, then stops being locked. */
-      data: IEntityJob & { releaseDateLock?: boolean; facesOnly?: boolean };
+      /**
+       * `releaseDateLock`: FL-1299's Undo. The date goes into the sidecar, then stops being locked. FL-930 names the
+       * properties to let go of when only one of the date and zone had been set by hand.
+       */
+      data: IEntityJob & { releaseDateLock?: boolean | Array<'dateTimeOriginal' | 'timeZone'>; facesOnly?: boolean };
     }
   | { name: JobName.DuplicateResolutionLifecycle; data: IDuplicateResolutionLifecycleJob }
 
