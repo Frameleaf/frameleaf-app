@@ -14,6 +14,7 @@ import {
   mergePreferences,
   relockMinutesOf,
   restrictPreferencesUpdate,
+  uploadSkipSince,
   withoutStoredLockedRuleIds,
 } from 'src/utils/preferences.js';
 
@@ -498,6 +499,62 @@ describe('re-uploading from the Trash (FL-556)', () => {
     const reuploadUntil = new Date(Date.now() + 60_000).toISOString();
     const merged = mergePreferences(getPreferences([]), { trash: { reuploadUntil } }, 'admin');
     expect(merged.trash.reuploadUntil).toBe('');
+  });
+});
+
+describe('not uploading deleted items again (FL-813)', () => {
+  const on = { backup: { skipDeleted: { enabled: true } } };
+
+  it('is off by default, with nothing stored and no time to count from', () => {
+    const preferences = getPreferences([]);
+    expect(preferences.backup.skipDeleted).toEqual({ enabled: false, since: '' });
+    expect(uploadSkipSince(preferences)).toBeUndefined();
+    expect(mapPreferences(preferences).backup).toEqual({ skipDeleted: { enabled: false, since: null } });
+    expect(getPreferencesPartial(preferences)).toEqual({});
+  });
+
+  it('counts from the moment it is turned on, never earlier, and keeps that time on later saves', () => {
+    const before = Date.now();
+    const merged = mergePreferences(getPreferences([]), on, 'user');
+    const since = uploadSkipSince(merged)!;
+    expect(since.getTime()).toBeGreaterThanOrEqual(before);
+    expect(since.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(mapPreferences(merged).backup?.skipDeleted).toEqual({ enabled: true, since: since.toISOString() });
+
+    const reloaded = getPreferences(stored(getPreferencesPartial(merged)));
+    const savedAgain = mergePreferences(reloaded, { ...on, memories: { enabled: false } }, 'user');
+    expect(uploadSkipSince(savedAgain)).toEqual(since);
+  });
+
+  it('never takes the time from the client', () => {
+    const update = { backup: { skipDeleted: { enabled: true, since: '2001-01-01T00:00:00.000Z' } } };
+    const before = Date.now();
+    const merged = mergePreferences(getPreferences([]), update as UserPreferencesUpdateDto, 'user');
+    expect(uploadSkipSince(merged)!.getTime()).toBeGreaterThanOrEqual(before);
+
+    const kept = merged.backup.skipDeleted.since;
+    const again = mergePreferences(merged, update as UserPreferencesUpdateDto, 'user');
+    expect(again.backup.skipDeleted.since).toBe(kept);
+  });
+
+  it('stops at once when turned off, and starts afresh when turned on again', () => {
+    const earlier = '2026-01-01T00:00:00.000Z';
+    const wasOn = getPreferences(stored({ backup: { skipDeleted: { enabled: true, since: earlier } } }));
+    expect(uploadSkipSince(wasOn)).toEqual(new Date(earlier));
+
+    const off = mergePreferences(wasOn, { backup: { skipDeleted: { enabled: false } } }, 'user');
+    expect(off.backup.skipDeleted).toEqual({ enabled: false, since: '' });
+    expect(uploadSkipSince(off)).toBeUndefined();
+    expect(getPreferencesPartial(off)).toEqual({});
+
+    const before = Date.now();
+    const onAgain = mergePreferences(off, on, 'user');
+    expect(uploadSkipSince(onAgain)!.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("is the account owner's choice, never an administrator's", () => {
+    const merged = mergePreferences(getPreferences([]), on, 'admin');
+    expect(merged.backup.skipDeleted).toEqual({ enabled: false, since: '' });
   });
 });
 

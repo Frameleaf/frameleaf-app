@@ -76,7 +76,7 @@ import {
   OriginalPurpose,
   getOriginalLocationPolicies,
 } from 'src/utils/partner-location.js';
-import { getPreferences, isTrashReuploadOpen } from 'src/utils/preferences.js';
+import { getPreferences, isTrashReuploadOpen, uploadSkipSince } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
 
 /** How long a finished document PDF may take to download before the response is ended. */
@@ -90,6 +90,9 @@ export interface AssetMediaRedirectResponse {
 export type AssetUploadPublication = (
   create: (tx: Transaction<DB>, locked: boolean) => Promise<Asset>,
 ) => Promise<Asset>;
+
+/** FL-813: the 409 an upload gets when its owner deleted the item and asked for it not to be uploaded again. */
+export const DELETED_BY_OWNER = 'deleted_by_owner';
 
 type PreparedUploadOriginal = {
   stored: Awaited<ReturnType<PhysicalFileRepository['linkUploadedOriginal']>>;
@@ -179,6 +182,59 @@ export class AssetMediaService extends BaseService {
     return matches.filter(
       ({ status, libraryId, isExternal }) => status === AssetStatus.Trashed && !libraryId && !isExternal,
     );
+  }
+
+  /**
+   * FL-813: of these bytes, the ones this account permanently deleted since it asked for deleted items not
+   * to be uploaded again, and has not allowed again. Empty while that is off (the default), and for a
+   * shared link. Bytes the library still holds, in the Trash included, are never among them, so the FL-556
+   * bring-back window and the duplicate answers come first. Another account's deletions never count.
+   */
+  private async deletedByOwner(auth: AuthDto, checksums: Buffer[]): Promise<Buffer[]> {
+    if (auth.sharedLink || checksums.length === 0) {
+      return [];
+    }
+    const since = uploadSkipSince(getPreferences(await this.userRepository.getMetadata(auth.user.id)));
+    return since ? this.assetRepository.getUploadSkipped(auth.user.id, checksums, since) : [];
+  }
+
+  /**
+   * FL-813: an upload of an item on the account's skip list is refused with 409 `deleted_by_owner`, which
+   * an app treats as "leave this one out", like FL-296's `icloud_claimed`. Nothing is ever deleted on the
+   * device that sent it.
+   */
+  async refuseDeletedByOwner(auth: AuthDto, checksums: (Buffer | null | undefined)[]): Promise<void> {
+    const known = checksums.filter((checksum): checksum is Buffer => !!checksum);
+    if ((await this.deletedByOwner(auth, known)).length > 0) {
+      throw new ConflictException({ message: DELETED_BY_OWNER, code: DELETED_BY_OWNER });
+    }
+  }
+
+  /**
+   * FL-813: removing the row of an upload that failed half-way is recorded like any removal. It was not the
+   * owner's deletion, so those bytes are allowed again at once.
+   */
+  private async allowFailedUpload(auth: AuthDto, file: UploadFile): Promise<void> {
+    if (auth.sharedLink) {
+      return;
+    }
+    const since = uploadSkipSince(getPreferences(await this.userRepository.getMetadata(auth.user.id)));
+    if (since) {
+      await this.assetRepository.allowUploadSkips(auth.user.id, [file.checksum], since, { includeLocked: true });
+    }
+  }
+
+  /** FL-813: `refuseDeletedByOwner` for a file that is already here (multipart): a refused file is removed. */
+  async refuseDeletedUpload(auth: AuthDto, file: UploadFile, sidecarFile?: UploadFile): Promise<void> {
+    try {
+      await this.refuseDeletedByOwner(auth, [file.checksum, file.legacyChecksum]);
+    } catch (error) {
+      await this.jobRepository.queue({
+        name: JobName.FileDelete,
+        data: { files: [file.originalPath, sidecarFile?.originalPath] },
+      });
+      throw error;
+    }
   }
 
   /**
@@ -749,6 +805,10 @@ export class AssetMediaService extends BaseService {
       // clean up the asset row if one was created
       if (asset) {
         await this.assetRepository.remove({ id: asset.id });
+        // FL-813: the owner did not delete this one; the next try must not be refused as if they had
+        await this.allowFailedUpload(auth, file).catch((allowError: unknown) =>
+          this.logger.warn(`A failed upload could not be kept off the skip list: ${String(allowError)}`),
+        );
       }
 
       this.logger.error(`Error uploading file ${error}`, error?.stack);
@@ -1248,10 +1308,16 @@ export class AssetMediaService extends BaseService {
       }
     }
 
+    // FL-813: what the account deleted and asked not to have uploaded again would be refused
+    const deleted = new Set((await this.deletedByOwner(auth, lookups)).map((checksum) => checksum.toString('hex')));
+
     for (const { sha1, checksum } of translations) {
       const match = checksumMap[checksum.toString('hex')];
       if (match) {
         checksumMap[sha1.toString('hex')] = match;
+      }
+      if (deleted.has(checksum.toString('hex'))) {
+        deleted.add(sha1.toString('hex'));
       }
     }
 
@@ -1266,6 +1332,10 @@ export class AssetMediaService extends BaseService {
             assetId: duplicate.id,
             isTrashed: duplicate.isTrashed,
           };
+        }
+        if (deleted.has(checksums[index].toString('hex'))) {
+          // a new field, not a new reason: apps decode `reason` strictly
+          return { id, action: AssetUploadAction.REJECT, deletedByOwner: true };
         }
 
         return {

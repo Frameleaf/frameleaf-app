@@ -184,6 +184,8 @@ export class AssetUploadResourceService {
       expectedSize: parsed.size ?? null,
     });
     await this.refuseClaimedItem(ownerId, parsed.metadata.sourceIdentity);
+    // FL-813: an item its owner deleted and asked not to have uploaded again is refused before any bytes
+    if (this.honoursSkipList(parsed.metadata)) await this.media.refuseDeletedByOwner(auth, [parsed.checksum]);
     // The committed resource exists before its URI is sent, including on an interrupted POST.
     if (mode === 'capture') await this.captures.assertNotCancelled(auth, id);
     const resource = await this.uploads.create(id, ownerId, { ...parsed, maxSize: limits.maxSize });
@@ -843,6 +845,7 @@ export class AssetUploadResourceService {
     if (row.state === 'verified' && ['capture', 'media-import'].includes(row.metadata.publication ?? '')) return row;
     if (row.state === 'verified' && row.metadata.publication !== 'live-photo') {
       await check();
+      await this.refuseDeleted(auth, [row]);
       const prepared = await this.media.prepareUploadAsset(auth, this.metadata(row), this.file(row));
       // Media health: the bytes of a photo whose original is gone go back under that photo (an
       // iCloud edit render is bound to its own asset and is never a repair).
@@ -912,6 +915,46 @@ export class AssetUploadResourceService {
     const [claim] = claims;
     if (claim && claim.id !== source.claimId) {
       throw new ConflictException('icloud_claimed');
+    }
+  }
+
+  /**
+   * FL-813: the skip list is for what phones, computers and apps upload. A capture and a Boards media
+   * download are their owner's own new save, and keep their own rules.
+   */
+  private honoursSkipList(metadata: Pick<AssetUploadResource['metadata'], 'publication'>) {
+    return !['capture', 'media-import'].includes(metadata.publication ?? '');
+  }
+
+  /**
+   * FL-813: checked again at publication, with the verified digests: the item may have been deleted, or the
+   * option turned on, while its bytes were arriving, and an item stored before SHA-256 is known by its SHA-1.
+   * A refused upload is cancelled, so its bytes are swept like any cancelled upload's.
+   */
+  private async refuseDeleted(auth: AuthDto, rows: AssetUploadResource[]) {
+    if (rows.some((row) => !this.honoursSkipList(row.metadata))) {
+      return;
+    }
+    try {
+      await this.media.refuseDeletedByOwner(
+        auth,
+        rows.flatMap((row) => [row.verifiedChecksum, row.legacyChecksum]),
+      );
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        for (const { id } of rows) {
+          await this.uploads.locked(id, auth.user.id, async (tx, current) => {
+            if (current.state !== 'published') {
+              await tx
+                .updateTable('asset_upload_resource')
+                .set({ state: 'cancelled', expiresAt: new Date() })
+                .where('id', '=', id)
+                .execute();
+            }
+          });
+        }
+      }
+      throw error;
     }
   }
 
@@ -1036,6 +1079,7 @@ export class AssetUploadResourceService {
           still.metadata.publication === 'live-photo' &&
           video.metadata.publication === 'live-photo'
         ) {
+          await this.refuseDeleted(auth, [still, video]);
           prepared = {
             still: await this.media.prepareUploadAsset(auth, this.metadata(still), this.file(still)),
             video: await this.media.prepareUploadAsset(auth, this.metadata(video), this.file(video)),

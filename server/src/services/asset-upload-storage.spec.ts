@@ -15,7 +15,7 @@ it('caps new resources at half the actual writable volume and refuses declared e
   const uploads = { create: vi.fn() };
   const service = new AssetUploadResourceService(
     uploads as never,
-    { canUploadFile: vi.fn() } as never,
+    { canUploadFile: vi.fn(), refuseDeletedByOwner: vi.fn() } as never,
     {} as never,
     {} as never,
     storage as never,
