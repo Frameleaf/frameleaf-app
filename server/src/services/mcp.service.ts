@@ -196,7 +196,10 @@ export class McpService extends BaseService {
         async ({ assetId }) => {
           const id = assetId.toLowerCase();
           const asset = await this.assets.get(auth, id);
-          if (!visibleAsset(asset)) {
+          // The rule the thumbnail route applies, checked here as well as in the access check behind
+          // `assets.get`: a photo the person's hide rules hide (people, pets, tags) is not found, so its
+          // caption, file name and place never depend on how the asset was read (FL-1423).
+          if (!visibleAsset(asset) || !(await this.assetRepository.isCastable(id, auth.hiddenContent, true))) {
             throw new NotFoundException();
           }
           const { exifInfo } = asset;
@@ -233,7 +236,11 @@ export class McpService extends BaseService {
         'library:read',
         z.strictObject({ limit: limitSchema }),
         async ({ limit = MAX_RESULTS }) =>
-          (await this.albums.getAll(auth, { take: limit })).slice(0, limit).map((album) => albumSummary(album)),
+          (await this.albums.getAll(auth, { take: limit }))
+            // A connected app cannot add to a Locked album (FL-1422), so it is not offered one either.
+            .filter(({ isLocked }) => !isLocked)
+            .slice(0, limit)
+            .map((album) => albumSummary(album)),
       ),
       get_album: tool(
         'Read an album and list its visible photos and videos.',
