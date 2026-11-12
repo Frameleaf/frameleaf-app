@@ -27,6 +27,11 @@ const WIDTH_FOLDS: readonly (readonly [number, readonly FoldableAction[]])[] = [
 /** A header this wide puts its actions beside the title; the title keeps about `WIDE_TITLE` px. */
 const WIDE = 1180;
 const WIDE_TITLE = 560;
+/**
+ * FL-1457 (N5): a header this narrow (the filter or information panel open on a small window) folds everything, as a
+ * phone does.
+ */
+const FOLD_ALL = 700;
 
 export const isWideAlbumHeader = (width: number) => width >= WIDE;
 
@@ -34,6 +39,9 @@ export const isWideAlbumHeader = (width: number) => width >= WIDE;
 export const foldedAlbumActions = (width: number): readonly FoldableAction[] => {
   if (width <= 0) {
     return [];
+  }
+  if (width <= FOLD_ALL) {
+    return EVERY_FOLDABLE_ACTION;
   }
   const room = isWideAlbumHeader(width) ? width - WIDE_TITLE : width;
   return WIDTH_FOLDS.find(([max]) => room <= max)?.[1] ?? [];

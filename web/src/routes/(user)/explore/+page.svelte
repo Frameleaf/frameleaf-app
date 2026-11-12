@@ -13,7 +13,7 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
-  import { getAssetMediaUrl, memoryLaneTitle } from '$lib/utils';
+  import { getAssetMediaUrl, memoryHeadline } from '$lib/utils';
   import { restoreScroll } from '$lib/utils/restore-scroll';
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { getNextAsset, getPreviousAsset } from '$lib/utils/asset-utils';
@@ -78,7 +78,8 @@
   let memories = $derived(
     data.memories.map((memory) => ({
       id: memory.id,
-      title: $memoryLaneTitle(memory),
+      // FL-1457 (N3): named as the Memories page names it ("One year ago in Jasper").
+      title: $memoryHeadline(memory).title,
       href: Route.viewMemory({ id: memory.id, assetId: memory.assets[0].id }),
       alt: $getAltText(toTimelineAsset(memory.assets[0])),
       src: getAssetMediaUrl({ id: memory.assets[0].id }),

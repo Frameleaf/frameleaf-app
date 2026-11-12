@@ -82,4 +82,46 @@ describe('VideoMomentResults (FL-1393)', () => {
     await waitFor(() => expect(sdkMock.searchVideoMoments).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId('search-moments')).toBeNull();
   });
+
+  // FL-1457 (N2): the count the search page reads belongs to the current query, and is unknown while it is asked.
+  it('reports how many videos match, and nothing for a new query until its own answer comes', async () => {
+    sdkMock.searchVideoMoments.mockResolvedValueOnce({ hits: [hit(LAKE, 44_000)] });
+    let found: number | undefined = -1;
+    const view = render(VideoMomentResults, { query: 'lake', onFound: (count: number | undefined) => (found = count) });
+    await waitFor(() => expect(found).toBe(1));
+
+    let answer: (value: { hits: VideoMomentSearchHitDto[] }) => void = () => {};
+    sdkMock.searchVideoMoments.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)) as never);
+    await view.rerender({ query: 'campfire' });
+    await waitFor(() => expect(found).toBeUndefined());
+    answer({ hits: [] });
+    await waitFor(() => expect(found).toBe(0));
+  });
+
+  // FL-1457: only the latest request counts, even when an earlier one for the same words fails after it answered.
+  it('keeps the latest answer when an earlier request for the same words fails later', async () => {
+    let failFirst: (error: Error) => void = () => {};
+    sdkMock.searchVideoMoments
+      .mockImplementationOnce(() => new Promise((_, reject) => (failFirst = reject)) as never)
+      .mockResolvedValueOnce({ hits: [] })
+      .mockResolvedValueOnce({ hits: [hit(LAKE, 44_000)] });
+    const view = render(VideoMomentResults, { query: 'lake' });
+    await view.rerender({ query: 'drive' });
+    await view.rerender({ query: 'lake' });
+    expect(await screen.findByTestId('search-moments')).toBeInTheDocument();
+
+    failFirst(new Error('late'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId('search-moments')).toBeInTheDocument();
+  });
+
+  // FL-1457: a request that never answers gives up, so the search page is not held waiting for good.
+  it('asks with a time limit, and reports no videos when it runs out', async () => {
+    sdkMock.searchVideoMoments.mockRejectedValueOnce(new DOMException('The operation timed out.', 'TimeoutError'));
+    let found: number | undefined = -1;
+    render(VideoMomentResults, { query: 'lake', onFound: (count: number | undefined) => (found = count) });
+
+    await waitFor(() => expect(found).toBe(0));
+    expect(sdkMock.searchVideoMoments.mock.calls[0][1]).toEqual({ signal: expect.any(AbortSignal) });
+  });
 });
