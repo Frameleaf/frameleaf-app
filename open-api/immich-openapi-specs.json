@@ -169692,10 +169692,48 @@
               "$ref": "#/components/schemas/VideoMomentSearchHitDto"
             },
             "type": "array"
+          },
+          "videos": {
+            "description": "FL-1439: one entry per matching video, best first, counted from all of its matching hits; `limit` counts videos here",
+            "items": {
+              "$ref": "#/components/schemas/VideoMomentSearchVideoDto"
+            },
+            "type": "array"
           }
         },
         "required": [
           "hits"
+        ],
+        "type": "object"
+      },
+      "VideoMomentSearchVideoDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "first": {
+            "$ref": "#/components/schemas/VideoMomentSearchHitDto"
+          },
+          "firstMs": {
+            "description": "Where the first matching moment starts",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "momentCount": {
+            "description": "How many separate moments match: hits within five seconds are one",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "first",
+          "firstMs",
+          "momentCount"
         ],
         "type": "object"
       },

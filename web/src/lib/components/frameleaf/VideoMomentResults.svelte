@@ -4,14 +4,13 @@
    *
    * A strip above the search results with one tile per video that holds a matching moment: how
    * many moments match, the time of the first, and when and where the video was taken. Choosing a
-   * tile opens the video at that first moment instead of at its start. Moment search answers with
-   * single frames, found by meaning against the frame index or by the words of a caption or typed
-   * transcript; they are grouped here (`momentsByVideo`), so four frames of one scene are one tile,
-   * not four. Nothing is shown when no video matches.
+   * tile opens the video at that first moment instead of at its start. The server groups the
+   * matches (FL-1439): frames found by meaning against the frame index, and the words of captions
+   * and typed transcripts, one entry per video counted from all of its matching moments. Nothing
+   * is shown when no video matches.
    */
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import { formatMomentTime } from '$lib/frameleaf/enrichment';
-  import { momentsByVideo } from '$lib/frameleaf/search-results';
   import { momentImageUrl } from '$lib/frameleaf/video-moment-image';
   import { videoSeek } from '$lib/frameleaf/video-seek.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -21,7 +20,7 @@
     getAssetInfo,
     searchVideoMoments,
     type AssetResponseDto,
-    type VideoMomentSearchHitDto,
+    type VideoMomentSearchVideoDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiPlay } from '@mdi/js';
@@ -41,7 +40,7 @@
 
   let { query, assets = [], onFound }: Props = $props();
 
-  let hits = $state<VideoMomentSearchHitDto[]>([]);
+  let videos = $state<VideoMomentSearchVideoDto[]>([]);
   let searching = $state(false);
   /** The latest request: only its answer counts, even when an earlier one for the same words arrives later. */
   let latest = 0;
@@ -53,18 +52,18 @@
 
   const search = async (text: string, request: number) => {
     try {
-      // The server's own default: enough frames that a video's count is not cut short by its neighbours.
+      // Up to 24 videos, each counted from all of its matching moments (FL-1439).
       const response = await searchVideoMoments(
         { videoMomentSearchDto: { query: text, limit: 24 } },
         { signal: AbortSignal.timeout(MOMENTS_TIMEOUT_MS) },
       );
       if (request === latest) {
-        hits = response.hits;
+        videos = response.videos ?? [];
       }
     } catch {
       // Moments are an addition to the results, never a reason for the search to fail.
       if (request === latest) {
-        hits = [];
+        videos = [];
       }
     } finally {
       if (request === latest) {
@@ -77,14 +76,13 @@
     const text = query.trim();
     const request = ++latest;
     // Another query's moments are not this one's: the strip, and the count it reports (FL-1457), start empty.
-    hits = [];
+    videos = [];
     searching = !!text;
     if (text) {
       void search(text, request);
     }
   });
 
-  const videos = $derived(momentsByVideo(hits));
   $effect(() => {
     onFound?.(searching ? undefined : videos.length);
   });
@@ -147,7 +145,7 @@
             type="button"
             onclick={() => void open(video.assetId, video.firstMs)}
             aria-label={$t('frameleaf_moments_video_label', {
-              values: { count: video.count, place: where ? 'yes' : 'no', where, time },
+              values: { count: video.momentCount, place: where ? 'yes' : 'no', where, time },
             })}
           >
             <span class="thumb">
@@ -155,7 +153,7 @@
               <span class="time"><Icon icon={mdiPlay} size="12" aria-hidden />{time}</span>
             </span>
             <span class="text">
-              <strong>{$t('frameleaf_moments_video_count', { values: { count: video.count } })}</strong>
+              <strong>{$t('frameleaf_moments_video_count', { values: { count: video.momentCount } })}</strong>
               {#if where}<span>{where}</span>{/if}
             </span>
           </button>
