@@ -33,6 +33,7 @@ import {
   WaveformPeaks,
   decodeWaveformPeaks,
   encodeWaveformPeaks,
+  getFilmstripCardDecode,
   getFilmstripFrameCommand,
   getFilmstripPassCommand,
   getWaveformCommand,
@@ -206,12 +207,23 @@ export class StudioMediaService extends BaseService {
     work: string,
   ): Promise<Array<string | null>> {
     const { ffmpeg } = await this.getConfig({ withCache: true });
-    try {
-      await this.mediaRepository.transcode(
+    const cardDecode = getFilmstripCardDecode(ffmpeg, video);
+    const pass = (decode: string[]) =>
+      this.mediaRepository.transcode(
         source.path,
         join(work, 'pass-%d.jpg'),
-        getFilmstripPassCommand(ffmpeg, video, durationMs, count, height),
+        getFilmstripPassCommand(ffmpeg, video, durationMs, count, height, decode),
       );
+    try {
+      try {
+        await pass(cardDecode);
+      } catch (error) {
+        if (cardDecode.length === 0) {
+          throw error;
+        }
+        this.logger.warn(`Could not read ${source.assetId} with the graphics card, using the processor: ${error}`);
+        await pass([]);
+      }
     } catch (error) {
       this.logger.warn(`Could not cut the filmstrip of ${source.assetId} in one pass, seeking per frame: ${error}`);
       return [];
@@ -345,14 +357,29 @@ export class StudioMediaService extends BaseService {
             : [];
         // long videos, or a short one the single pass could not decode: one seek per frame
         if (cut.length === 0) {
+          // the card reads every frame until one fails; that one and the rest go to the processor
+          let cardDecode = getFilmstripCardDecode(ffmpeg, video);
           for (const [frameIndex, timeMs] of plan.timesMs.entries()) {
             const output = join(work, `${frameIndex}.jpg`);
-            try {
-              await this.mediaRepository.transcode(
+            const cutFrame = (decode: string[]) =>
+              this.mediaRepository.transcode(
                 source.path,
                 output,
-                getFilmstripFrameCommand(ffmpeg, video, timeMs, height),
+                getFilmstripFrameCommand(ffmpeg, video, timeMs, height, decode),
               );
+            try {
+              try {
+                await cutFrame(cardDecode);
+              } catch (error) {
+                if (cardDecode.length === 0) {
+                  throw error;
+                }
+                this.logger.warn(
+                  `Could not read ${source.assetId} with the graphics card, using the processor: ${error}`,
+                );
+                cardDecode = [];
+                await cutFrame([]);
+              }
               cut.push((await this.storageRepository.checkFileExists(output)) ? output : null);
             } catch (error) {
               this.logger.warn(`Could not cut filmstrip frame of ${source.assetId} at ${timeMs} ms: ${error}`);

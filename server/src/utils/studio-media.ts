@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { Writable } from 'node:stream';
 import type { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
 import type { AudioStreamInfo, TranscodeCommand, VideoStreamInfo } from 'src/types.js';
+import { TranscodeHardwareAcceleration } from 'src/enum.js';
+import { qualifySourceDecode, selectDecodeAcceleration } from 'src/utils/media-decode.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
 
 /**
@@ -94,6 +96,32 @@ export const planFilmstrip = (input: {
   };
 };
 
+const CARD_DECODER: Record<TranscodeHardwareAcceleration, string | null> = {
+  [TranscodeHardwareAcceleration.Nvenc]: 'cuda',
+  [TranscodeHardwareAcceleration.Qsv]: 'qsv',
+  [TranscodeHardwareAcceleration.Vaapi]: 'vaapi',
+  [TranscodeHardwareAcceleration.Rkmpp]: 'rkmpp',
+  [TranscodeHardwareAcceleration.Disabled]: null,
+};
+
+/**
+ * Filmstrip frames are read with the graphics card when Video playback copies uses it and the card
+ * reads this source faithfully (the same rule as playback copies). Without `-hwaccel_output_format`
+ * ffmpeg hands the decoded frames back to memory, so tone mapping, scaling and the JPEG stay as they
+ * are. Empty when the processor reads it.
+ */
+export const getFilmstripCardDecode = (config: ConfigFFmpegDto, video: VideoStreamInfo): string[] => {
+  const decoder = CARD_DECODER[config.accel];
+  if (!decoder || !selectDecodeAcceleration(config, qualifySourceDecode(video, config)).accelDecode) {
+    return [];
+  }
+  // ponytail: only VAAPI is pointed at a chosen card; the others use ffmpeg's first card
+  const device = config.preferredHwDevice.replace('/dev/dri/', '');
+  return decoder === 'vaapi' && device !== 'auto'
+    ? ['-hwaccel', decoder, '-hwaccel_device', `/dev/dri/${device}`]
+    : ['-hwaccel', decoder];
+};
+
 /**
  * One frame at `timeMs`, `height` pixels high, as a JPEG. Input seeking decodes up to the exact
  * frame; ffmpeg's autorotate orients it; HDR is tone mapped the way video thumbnails are.
@@ -103,10 +131,11 @@ export const getFilmstripFrameCommand = (
   video: VideoStreamInfo,
   timeMs: number,
   height: number,
+  cardDecode: string[] = [],
 ): TranscodeCommand => {
   const tonemap = new ThumbnailConfig({ ...config, targetResolution: 'original' }).getToneMapping(video);
   return {
-    inputOptions: ['-ss', (Math.max(0, timeMs) / 1000).toFixed(3)],
+    inputOptions: [...cardDecode, '-ss', (Math.max(0, timeMs) / 1000).toFixed(3)],
     outputOptions: [
       '-map',
       `0:${video.index}`,
@@ -152,11 +181,12 @@ export const getFilmstripPassCommand = (
   durationMs: number,
   count: number,
   height: number,
+  cardDecode: string[] = [],
 ): TranscodeCommand => {
   const tonemap = new ThumbnailConfig({ ...config, targetResolution: 'original' }).getToneMapping(video);
   const slice = Math.max(0, durationMs) / count;
   return {
-    inputOptions: ['-ss', (slice / 2 / 1000).toFixed(3)],
+    inputOptions: [...cardDecode, '-ss', (slice / 2 / 1000).toFixed(3)],
     outputOptions: [
       '-map',
       `0:${video.index}`,
