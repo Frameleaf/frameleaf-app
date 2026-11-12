@@ -155,7 +155,7 @@ export class TakeoutService {
     return {
       roots: StorageCore.getImportRoots(this.config.getEnv().storage.importRoots).map((root) => ({
         ...root,
-        hostPath: root.builtIn ? this.config.getEnv().storage.importsHostPath : null,
+        hostPath: root.builtIn ? (this.config.getEnv().storage.importsHostPath ?? null) : null,
       })),
     };
   }

@@ -118,7 +118,7 @@ export interface EnvData {
     /** Directories administrators may select Google Photos imports from (FL-65). */
     importRoots: string[];
     /** FL-1477: where the built-in Imports folder is on the host, for display only (Manager sets it). */
-    importsHostPath: string | null;
+    importsHostPath?: string | null;
     /** Library Care recovery locations (FL-69). Searched and read only; never linked in place. */
     recoveryRoots?: RecoveryRootConfig[];
   };
