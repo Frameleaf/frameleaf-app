@@ -224,6 +224,8 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'display.hourCycle': { label: 'frameleaf_prefs_look_time_format' },
   // FL-556: Look & playback › Safety.
   'trash.reuploadUntil': { label: 'frameleaf_prefs_look_reupload' },
+  // FL-1484: Your preferences › Where your photos are processed.
+  'cloudProcessing.enabled': { label: 'frameleaf_prefs_processing_title' },
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },
   'albums.showPartnerAlbums': { label: 'frameleaf_sharing_partner_albums' },
   'albums.cleanupBannerDismissed': { label: 'frameleaf_album_cleanup_banner_setting' },

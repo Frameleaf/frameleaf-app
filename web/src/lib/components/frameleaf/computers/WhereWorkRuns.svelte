@@ -20,6 +20,7 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { OpenQueryParam } from '$lib/constants';
   import { isIndexWork } from '$lib/frameleaf/cloud-ml';
+  import { keptHome, loadCloudChoices, type PersonCloudChoice } from '$lib/frameleaf/cloud-processing-choice';
   import { aiState, canRunStudioWork, computersFrom, entryState } from '$lib/frameleaf/computers';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
@@ -108,6 +109,9 @@
   let processing = $state<MlProcessingOrderResponseDto | null>(null);
   let loadError = $state(false);
   let unread = $state(false);
+  /** FL-1484: each person's own choice of whether their photos may use Frameleaf Cloud. */
+  let people = $state<PersonCloudChoice[]>([]);
+  const homeOnly = $derived(keptHome(people));
 
   /** A reading the page can do without: unreadable is null, and the page says so. */
   const read = async <T,>(request: () => Promise<T>) => {
@@ -132,6 +136,7 @@
       ]);
       routes = saved.routes;
       destinations = places;
+      people = await loadCloudChoices();
     } catch {
       loadError = true;
     }
@@ -567,6 +572,16 @@
                     waiting ? $t('frameleaf_workruns_waiting_note', { values: { name: placeName(current) } }) : '',
                     reason(kind, current, fixed),
                     isIndexWork(kind) && current !== NONE ? $t('frameleaf_index_one_place') : '',
+                    homeOnly.length > 0 && (current === CLOUD || current === ASK)
+                      ? $t(
+                          current === ASK
+                            ? 'frameleaf_cloud_choice_row_ask'
+                            : isIndexWork(kind)
+                              ? 'frameleaf_cloud_choice_row_index'
+                              : 'frameleaf_cloud_choice_row',
+                          { values: { names: list(homeOnly) } },
+                        )
+                      : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
@@ -660,6 +675,26 @@
               onChange={(value) => (work.when = value as MlWhenUnavailable)}
             />
           </Row>
+        </Section>
+      {/if}
+      {#if cloudOn && people.length > 0}
+        <Section
+          title={$t('frameleaf_cloud_choice_people_title')}
+          description={$t('frameleaf_cloud_choice_people_description')}
+        >
+          {#each people as person (person.id)}
+            <Row
+              label={person.name}
+              help={$t(person.home ? 'frameleaf_cloud_choice_home_help' : 'frameleaf_cloud_choice_anywhere_help')}
+            >
+              <Pill tone={person.home ? 'warn' : 'good'}>
+                {$t(person.home ? 'frameleaf_prefs_processing_home' : 'frameleaf_prefs_processing_anywhere')}
+              </Pill>
+            </Row>
+          {/each}
+          <a class="button" href={commandCenterUrl('preferences', 'cloud-processing')}>
+            {$t('frameleaf_cloud_choice_change_own')}
+          </a>
         </Section>
       {/if}
     {/if}

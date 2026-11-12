@@ -50,6 +50,17 @@ const RatingsUpdateSchema = z
   .optional()
   .meta({ id: 'RatingsUpdate' });
 
+// FL-1484: whether AI work on this person's own photos may use Frameleaf Cloud. Only the person changes it.
+const CloudProcessingUpdateSchema = z
+  .object({
+    enabled: z
+      .boolean()
+      .optional()
+      .describe('Whether AI work on your photos may use Frameleaf Cloud (false: only at home)'),
+  })
+  .optional()
+  .meta({ id: 'CloudProcessingUpdate' });
+
 const FoldersUpdateSchema = z
   .object({
     enabled: z.boolean().optional().describe('Whether folders are enabled'),
@@ -335,6 +346,7 @@ const UserPreferencesUpdateSchema = z
     purchase: PurchaseUpdateSchema,
     trash: TrashUpdateSchema,
     ratings: RatingsUpdateSchema,
+    cloudProcessing: CloudProcessingUpdateSchema,
     search: SearchPreferencesUpdateSchema,
     display: DisplayUpdateSchema,
     sharedLinks: SharedLinksUpdateSchema,
@@ -405,6 +417,12 @@ const RatingsResponseSchema = z
     enabled: z.boolean().describe('Whether ratings are enabled'),
   })
   .meta({ id: 'RatingsResponse' });
+
+const CloudProcessingResponseSchema = z
+  .object({
+    enabled: z.boolean().describe('Whether AI work on your photos may use Frameleaf Cloud (false: only at home)'),
+  })
+  .meta({ id: 'CloudProcessingResponse' });
 
 const SharedLinksResponseSchema = z
   .object({
@@ -551,6 +569,8 @@ const UserPreferencesResponseSchema = z
     people: PeopleResponseSchema,
     privacy: PrivacyResponseSchema,
     ratings: RatingsResponseSchema,
+    // always sent; optional in the schema so clients built before FL-1484 keep compiling
+    cloudProcessing: CloudProcessingResponseSchema.optional(),
     search: SearchPreferencesResponseSchema,
     // always sent; optional in the schema so clients built before FL-783 keep compiling
     display: DisplayPreferencesResponseSchema.optional(),

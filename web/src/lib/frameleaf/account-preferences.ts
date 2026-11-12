@@ -73,6 +73,8 @@ export type AccountPreferencesDraft = {
   'purchase.hideBuyButtonUntil': string;
   /** FL-556: Look & playback › Safety, the account's own choice (never on an administrator's editor) */
   'trash.reuploadUntil': string;
+  /** FL-1484: AI work on this person's photos may use Frameleaf Cloud (the account's own choice) */
+  'cloudProcessing.enabled': boolean;
 };
 
 export type AccountPreferenceKey = keyof AccountPreferencesDraft;
@@ -191,6 +193,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'purchase.showSupportBadge': true,
   'purchase.hideBuyButtonUntil': new Date(2022, 1, 12).toISOString(),
   'trash.reuploadUntil': '',
+  'cloudProcessing.enabled': true,
 });
 
 export const draftFromPreferences = (preferences: UserPreferencesResponseDto): AccountPreferencesDraft => ({
@@ -230,6 +233,7 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'purchase.showSupportBadge': preferences.purchase.showSupportBadge,
   'purchase.hideBuyButtonUntil': preferences.purchase.hideBuyButtonUntil,
   'trash.reuploadUntil': preferences.trash.reuploadUntil,
+  'cloudProcessing.enabled': preferences.cloudProcessing?.enabled ?? true,
 });
 
 export const changedPreferenceKeys = (

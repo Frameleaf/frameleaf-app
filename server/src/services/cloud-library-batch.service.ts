@@ -343,8 +343,17 @@ export class CloudLibraryBatchService extends BaseService {
         for (const item of waiting) {
           perOwner.set(item.ownerId, [...(perOwner.get(item.ownerId) ?? []), item]);
         }
+        // FL-1484: someone who now keeps their photos at home has them read at home, by their own jobs
+        const home = await this.userRepository.getCloudProcessingOptOuts(perOwner.keys().toArray());
         const open = await this.mediaOperationRepository.getOpenCloudLibraryAssetIds(workload);
-        for (const items of perOwner.values()) {
+        for (const [ownerId, items] of perOwner) {
+          if (home.has(ownerId)) {
+            for (const item of items) {
+              taken.add(`${workload}:${item.assetId}`);
+              backHome.push({ workload, assetId: item.assetId });
+            }
+            continue;
+          }
           const ready =
             items.length >= CLOUD_LIBRARY_MIN_BATCH ||
             now.getTime() - Date.parse(items[0].queuedAt) >= CLOUD_LIBRARY_MAX_WAIT_MS;

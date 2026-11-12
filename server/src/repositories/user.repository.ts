@@ -13,6 +13,7 @@ import { publicationDatabase } from 'src/queue/transaction.js';
 import { UTILITY_ACTIVITY_RETENTION_DAYS } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
+import { cloudProcessingOptOuts } from 'src/utils/cloud-processing-choice.js';
 import { bestPhotoRank, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
 import { asUuid, isNotLockedAsset, nsfwAssetIdExists } from 'src/utils/database.js';
 import { isLockedAssetId, isUnlockedAsset } from 'src/utils/locked-state.js';
@@ -104,6 +105,13 @@ export class UserRepository {
       .select(['key', 'value'])
       .where('user_metadata.userId', '=', userId)
       .execute() as Promise<UserMetadataItem[]>;
+  }
+  /**
+   * FL-1484: of `userIds`, the people who keep AI work on their photos at home (Your preferences › Where
+   * your photos are processed). Their photos are never sent to Frameleaf Cloud for AI work.
+   */
+  getCloudProcessingOptOuts(userIds?: readonly string[], db: Kysely<DB> = this.db): Promise<Set<string>> {
+    return cloudProcessingOptOuts(db, userIds);
   }
   /** FL-232: private, revisioned pin references; hydration always rechecks current access. */
   getPinnedCollections(userId: string) {

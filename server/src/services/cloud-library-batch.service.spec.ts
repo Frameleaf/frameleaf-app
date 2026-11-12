@@ -121,6 +121,26 @@ describe(CloudLibraryBatchService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SmartSearch, data: { id: 'a' } }]);
     });
 
+    it('gives the photos of someone who now keeps theirs at home back to their own jobs (FL-1484)', async () => {
+      routeTo(matchedCloud);
+      mocks.user.getCloudProcessingOptOuts.mockResolvedValue(new Set(['emma']));
+      queue.items = [
+        ...Array.from({ length: 50 }, (_, index) => ({
+          assetId: `t${index}`,
+          ownerId: 'taylor',
+          workload: 'clip' as const,
+          queuedAt: now.toISOString(),
+        })),
+        { assetId: 'e', ownerId: 'emma', workload: 'clip', queuedAt: now.toISOString() },
+      ];
+
+      await sut.batchQueued(now);
+
+      const [operations] = mocks.mediaOperation.createCloudDescriptionBatches.mock.calls[0];
+      expect(operations.map(({ ownerId }) => ownerId)).toEqual(['taylor']);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SmartSearch, data: { id: 'e' } }]);
+    });
+
     it('gives the photos back to their own jobs once the work is routed home', async () => {
       routeTo(mlDestinationStub.local);
       queue.items = [{ assetId: 'a', ownerId: 'owner', workload: 'face', queuedAt: now.toISOString() }];

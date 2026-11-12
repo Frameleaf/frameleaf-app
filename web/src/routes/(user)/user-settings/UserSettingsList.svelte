@@ -25,6 +25,7 @@
   import CloudBackupChoiceSection from '$lib/components/frameleaf/backup/CloudBackupChoiceSection.svelte';
   import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import AppSettings from './AppSettings.svelte';
+  import CloudProcessingSettings from './CloudProcessingSettings.svelte';
   import DownloadSettings from './DownloadSettings.svelte';
   import FeatureSettings from './FeatureSettings.svelte';
   import NotificationsSettings from './NotificationsSettings.svelte';
@@ -76,6 +77,9 @@
   <ConnectedAppsSection />
 {:else if section === 'download-settings'}
   <DownloadSettings />
+{:else if section === 'cloud-processing'}
+  <!-- FL-1484: whether AI work on your own photos may use Frameleaf Cloud. -->
+  <CloudProcessingSettings />
 {:else if section === 'preservation'}
   <!-- FL-74: every account preserves and restores its own originals, not only administrators. -->
   <PreservationPanel />

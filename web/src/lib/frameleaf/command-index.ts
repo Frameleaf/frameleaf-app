@@ -32,6 +32,7 @@ import {
   mdiFolderOutline,
   mdiFingerprint,
   mdiFormTextboxPassword,
+  mdiHomeOutline,
   mdiImageAlbum,
   mdiImageEditOutline,
   mdiImageMultipleOutline,
@@ -281,6 +282,13 @@ export const USER_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_prefs_downloads_title',
     descriptionKey: 'frameleaf_prefs_downloads_description',
     icon: mdiDownload,
+  },
+  // FL-1484: whether AI work on your own photos may use Frameleaf Cloud.
+  {
+    key: 'cloud-processing',
+    titleKey: 'frameleaf_prefs_processing_title',
+    descriptionKey: 'frameleaf_prefs_processing_description',
+    icon: mdiHomeOutline,
   },
   {
     key: 'feature',

@@ -521,6 +521,9 @@ export const getMocks = () => {
   mocks.albumSummary.getChangedAt.mockResolvedValue([]);
   mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
   mocks.smartAlbum.getHiddenAlbumIds.mockResolvedValue(new Set());
+  // FL-1484: nobody keeps their photos at home unless a test says so
+  mocks.user.getCloudProcessingOptOuts.mockResolvedValue(new Set());
+  mocks.assetJob.getOwnerId.mockResolvedValue(undefined);
   mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
   mocks.classification.getRules.mockResolvedValue([]);
   mocks.classification.getEnabledRules.mockResolvedValue([]);

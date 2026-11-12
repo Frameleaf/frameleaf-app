@@ -18,6 +18,7 @@
     mdiDownloadOutline,
     mdiEmailOutline,
     mdiHeartOutline,
+    mdiHomeOutline,
     mdiPuzzleOutline,
     mdiShieldLockOutline,
     mdiThemeLightDark,
@@ -43,6 +44,13 @@
           ? $t('frameleaf_prefs_landing_numbers_limit', { values: { used, limit: size(user.quotaSizeInBytes) } })
           : $t('frameleaf_prefs_landing_numbers_no_limit', { values: { used } });
       }
+      case 'cloud-processing': {
+        return $t(
+          authManager.authenticated && authManager.preferences.cloudProcessing?.enabled === false
+            ? 'frameleaf_prefs_processing_home'
+            : 'frameleaf_prefs_processing_anywhere',
+        );
+      }
       case 'user-purchase-settings': {
         return user.license
           ? $t('frameleaf_prefs_landing_supporter_yes')
@@ -61,6 +69,7 @@
     'app-settings': mdiThemeLightDark,
     feature: mdiPuzzleOutline,
     'download-settings': mdiDownloadOutline,
+    'cloud-processing': mdiHomeOutline,
     'frameleaf-account': mdiCloudCheckOutline,
     'user-usage-info': mdiChartBoxOutline,
     'user-purchase-settings': mdiHeartOutline,

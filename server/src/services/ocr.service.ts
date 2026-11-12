@@ -54,6 +54,8 @@ export class OcrService extends BaseService {
       workload: MlWorkload.Ocr,
       jobId: id,
       jobName: JobName.Ocr,
+      // FL-1484: the photo's owner may keep their photos at home
+      ownerId: await this.assetJobRepository.getOwnerId(id),
     });
     const ocrResults = await this.machineLearningRepository.ocr(selection, asset.previewFile, machineLearning.ocr);
     await publishJobResult(async () => {

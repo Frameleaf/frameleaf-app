@@ -24,6 +24,7 @@ import {
 } from 'src/repositories/studio-storage-admission.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
+import { assertCloudProcessingAllowed } from 'src/utils/cloud-processing-choice.js';
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
 import { JOB_QUEUE_CLAIMANT, JOB_QUEUE_EXECUTOR, notJobQueueExecuted } from 'src/utils/edit-operation.js';
 import {
@@ -311,6 +312,8 @@ export class MediaOperationRepository {
           throw new ConflictException('Invalid Studio export reservation');
         await assertStudioStorageAdmission(db, operation.ownerId, reservation, 'export');
       }
+      // FL-1484: Frameleaf Cloud work is never recorded for someone who keeps their photos at home
+      await assertCloudProcessingAllowed(db, operation);
       await holdSourceAdmission(db, operation.snapshot, operation.ownerId);
       const created = await db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
       await holdSourceAdmission(db, operation.snapshot, operation.ownerId);
@@ -327,6 +330,7 @@ export class MediaOperationRepository {
     const created = await this.db.transaction().execute(async (tx) => {
       const rows: MediaOperation[] = [];
       for (const operation of operations) {
+        await assertCloudProcessingAllowed(tx, operation);
         await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
         const row = await tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
         await holdSourceAdmission(tx, operation.snapshot, operation.ownerId);
