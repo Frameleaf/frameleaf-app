@@ -97,12 +97,23 @@ const stageHeld = (runId: RawBuilder<unknown>, name: RawBuilder<unknown>) =>
 const ARRIVAL = sql`'epoch'::timestamptz + interval '1 day'`;
 const arrivalRun = (runId: RawBuilder<unknown>) =>
   sql<boolean>`exists (select 1 from job_run r where r.id = ${runId} and r.origin is not null)`;
-const availability = (runId: RawBuilder<unknown>, name: RawBuilder<unknown>, delayMs: number = 0) =>
+const availability = (runId: RawBuilder<unknown>, name: RawBuilder<unknown>, delayMs: number = 0, front = false) =>
   delayMs > 0
     ? sql`case when ${stageHeld(runId, name)} then ${HELD} else now() + ${delayMs} * interval '1 millisecond' end`
-    : sql`case when ${stageHeld(runId, name)} then ${HELD} when ${arrivalRun(runId)} then ${ARRIVAL} else now() end`;
+    : sql`case when ${stageHeld(runId, name)} then ${HELD} when ${front} or ${arrivalRun(runId)} then ${ARRIVAL} else now() end`;
 const intentAvailability = (intent: QueueIntent) =>
-  availability(sql`${intent.runId ?? null}::uuid`, sql`${intent.name}::text`, intent.options?.delay ?? 0);
+  availability(
+    sql`${intent.runId ?? null}::uuid`,
+    sql`${intent.name}::text`,
+    intent.options?.delay ?? 0,
+    intent.front === true,
+  );
+/**
+ * FL-1479: a wait (a retry, a busy server) replaces `availableAt`, which is also the job's place in line. A job from
+ * the front of the line (started by hand, or an arrival) keeps that place in `resumeAt` while it waits, and the next
+ * claim after the wait puts it back (`claim`). Without it the job came back behind the whole backlog.
+ */
+const KEEP_PLACE = sql`case when "availableAt" <= ${ARRIVAL} then "availableAt" end`;
 
 type WakeState = { timer?: NodeJS.Timeout; inFlight: boolean; again: boolean };
 /** One wake state per database pool: stores built per call on the same pool share it. */
@@ -424,6 +435,10 @@ export class SqlQueueStore {
       if (!config) {
         return [];
       }
+      // FL-1479: jobs whose wait is over go back to their place at the front of the line
+      await sql`update job set "availableAt" = "resumeAt", "resumeAt" = null
+        where queue = ${queue} and state in ('pending','waiting') and "resumeAt" is not null
+          and "availableAt" <= now() and "availableAt" > "resumeAt"`.execute(tx);
       // Started by hand (Start now, Run on one item): claimed first, even while the task is paused, closed or full.
       const byHand = await this.claimPending(tx, queue, workerId, Math.min(QUEUE_BATCH, maxClaims), true);
       if (config.paused || config.closed || byHand.length >= maxClaims) {
@@ -499,7 +514,7 @@ export class SqlQueueStore {
    * apply. False when the job is not waiting to run in this queue.
    */
   async startNow(queue: string, jobId: string): Promise<boolean> {
-    const { rows } = await sql<{ id: string }>`update job j set "availableAt" = ${STARTED_BY_HAND}
+    const { rows } = await sql<{ id: string }>`update job j set "availableAt" = ${STARTED_BY_HAND}, "resumeAt" = null
       where id = ${jobId}::uuid and queue = ${queue} and state in ('pending','waiting') and "availableAt" <> ${HELD}
         and ("cancelRequestedAt" is null or "cancelReason" = 'deadline')
         and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
@@ -594,7 +609,16 @@ export class SqlQueueStore {
               ),
           },
     );
-    await this.enqueue(inherited, tx, claim.runId);
+    // FL-1479: the next steps of work from the front of the line (started by hand, or an arrival) run ahead of the
+    // backlog too. Not as started by hand: only the job a person started skips a pause or a full task.
+    const {
+      rows: [parent],
+    } =
+      inherited.length > 0
+        ? await sql<{ front: boolean }>`select "availableAt" <= ${ARRIVAL} front from job
+            where id = ${claim.id}::uuid`.execute(tx)
+        : { rows: [] };
+    await this.enqueue(parent?.front ? inherited.map((intent) => ({ ...intent, front: true })) : inherited, tx, claim.runId);
   }
 
   /**
@@ -617,7 +641,7 @@ export class SqlQueueStore {
       const { rows } = await sql`update job set state = 'pending', token = null, "leaseExpiresAt" = null,
         "workerId" = null, "cancelRequestedAt" = null, "cancelReason" = null, "finishedAt" = null, error = null,
         "retryBaseAttempt" = "retryBaseAttempt" + 1, "dependencyReason" = ${reason},
-        "availableAt" = clock_timestamp() + ${deferralDelay(reason)}
+        "availableAt" = clock_timestamp() + ${deferralDelay(reason)}, "resumeAt" = ${KEEP_PLACE}
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
           and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null returning id`.execute(tx);
       if (rows.length === 0) return false;
@@ -729,11 +753,14 @@ export class SqlQueueStore {
           reason,
           options.expiredRecovery ? 'crashed' : job.stopRequested ? 'timed-out' : undefined,
         ));
+      // Whether this failure ends the job; otherwise it is tried once more after a short wait.
+      const settled = sql`${unconfirmedAttention} or ${job.cancelled} or ${setAside} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2`;
       const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
         state = case when ${unconfirmedAttention} then 'needs_attention' when ${job.cancelled} then 'cancelled'
           when not "safeToRetry" then 'needs_attention' when ${setAside} then 'failed' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
         "availableAt" = now() + interval '30 seconds', "dependencyReason" = null, token = null, "leaseExpiresAt" = null,
-        "finishedAt" = case when ${unconfirmedAttention} or ${job.cancelled} or ${setAside} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
+        "finishedAt" = case when ${settled} then now() else null end,
+        "resumeAt" = case when not (${settled}) then ${KEEP_PLACE} end,
         error = case when sensitive then 'Job failed; sensitive details omitted' else ${reason.slice(0, 500)} end,
         data = case when sensitive then '{}'::jsonb else data end
         where id = ${claim.id}::uuid and ${owned}
@@ -989,6 +1016,18 @@ export class SqlQueueStore {
       queues.map((queue) => sql`select ${queue}::text queue where ${this.unfinished(queue, includeHeld)}`),
       sql` union all `,
     )}`.execute(this.db);
+    return rows.map(({ queue }) => queue);
+  }
+
+  /**
+   * FL-1479: which of these queues hold work from the front of the line (started by hand, or an arrival) that is
+   * waiting to run. The coordinator visits them before the others.
+   */
+  async queuesWithFrontWork(queues: readonly string[]) {
+    if (queues.length === 0) return [];
+    const { rows } = await sql<{ queue: string }>`select q.queue from unnest(${queues}::text[]) q(queue)
+      where exists (select 1 from job j where j.queue = q.queue and j.state in ('pending','waiting')
+        and j."availableAt" <= ${ARRIVAL})`.execute(this.db);
     return rows.map(({ queue }) => queue);
   }
 
@@ -1416,6 +1455,7 @@ export async function resetQueueAfterRestore(db: QueryExecutorProvider) {
     "safeToRetry" = "safeToRetry" or (${backup} and not (data ? 'operationId')),
     token = null, "leaseExpiresAt" = null, "workerId" = null, "cancelRequestedAt" = null, "cancelReason" = null,
     "availableAt" = case when state != 'active' and "availableAt" = ${HELD} then "availableAt" else now() + interval '30 seconds' end,
+    "resumeAt" = ${KEEP_PLACE},
     "latestPending" = null,
     "finishedAt" = case when not ${discardBackup} and not ${cancelled} and ${repeatable} and attempt < "retryBaseAttempt" + 2 then null else now() end,
     error = case when ${discardBackup} then 'Restore discarded the snapshot backup invocation'

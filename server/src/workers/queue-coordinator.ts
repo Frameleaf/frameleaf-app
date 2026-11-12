@@ -196,15 +196,18 @@ export async function coordinate({
       if (!stopping) {
         // Ordinary wakes discover claimable work once, rather than running an idle claim per queue.
         const outstanding = reconcile ? undefined : new Set(await store.queuesWithUnfinishedWork(queues, false));
+        // FL-1479: queues holding work from the front of the line (started by hand, or photos that just came in) are
+        // visited first, each up to how many it may run at once; the rest take turns as before.
+        const front = new Set(await store.queuesWithFrontWork(queues));
         const start = nextQueue;
-        for (let offset = 0; offset < queues.length; offset++) {
+        const turns = Array.from({ length: queues.length }, (_, offset) => (start + offset) % queues.length);
+        for (const index of [...turns.filter((i) => front.has(queues[i])), ...turns.filter((i) => !front.has(queues[i]))]) {
           const capacity = executionCapacity - active.size;
           if (stopping || capacity <= 0) break;
-          const index = (start + offset) % queues.length;
           const queue = queues[index];
           if (outstanding && !outstanding.has(queue)) continue;
           // Resume at the next queue after filling the shared budget, so a deep queue cannot starve others.
-          nextQueue = (index + 1) % queues.length;
+          if (!front.has(queue)) nextQueue = (index + 1) % queues.length;
           const claims = await store.claim(queue, workerId, capacity);
           claimed += claims.length;
           for (const claim of claims) {
