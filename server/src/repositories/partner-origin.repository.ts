@@ -13,6 +13,7 @@ import {
 } from 'src/enum.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 
+import { recordLedgerAdded } from 'src/repositories/asset-ledger.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { isInOwnerFolder, ownLibraryPath } from 'src/utils/library-path.js';
@@ -830,6 +831,8 @@ export class PartnerOriginRepository {
         })
         .returning('id')
         .executeTakeFirstOrThrow();
+      // FL-921: the copy is an original of the recipient's own ledger, not the partner's a second time
+      await recordLedgerAdded(trx, [copy.id], 'partner-copy');
       // FL-417: the copy shows a path in its owner's own folder, never the partner's
       const recipient = await trx
         .selectFrom('user')

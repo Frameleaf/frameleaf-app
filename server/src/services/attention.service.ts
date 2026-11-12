@@ -12,6 +12,7 @@ import {
 } from 'src/dtos/attention.dto.js';
 import { QueueName, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetLedgerRepository } from 'src/repositories/asset-ledger.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -64,6 +65,7 @@ export class AttentionService {
     private buddyRepository: BuddyBackupRepository,
     private mediaHealthRepository: MediaHealthRepository,
     private assetJobRepository: AssetJobRepository,
+    private assetLedgerRepository: AssetLedgerRepository,
   ) {
     this.logger.setContext(AttentionService.name);
   }
@@ -79,17 +81,27 @@ export class AttentionService {
     const now = new Date();
     const config = await this.readConfig();
     // The three counts never throw (each has its own fallback), so they are read alongside the checks.
-    const [backup, storage, work, version, dismissed, fileProblems, processingFailures, upgradeCheck] =
-      await Promise.all([
-        this.check('backup', () => this.backup(config, now)),
-        this.check('storage', () => this.storage(config)),
-        this.check('work', () => this.work(config)),
-        this.check('version', () => this.version(config)),
-        this.dismissed(),
-        this.fileProblems(auth),
-        this.processingFailures(auth),
-        this.upgradeCheck(),
-      ]);
+    const [
+      backup,
+      storage,
+      work,
+      version,
+      dismissed,
+      fileProblems,
+      processingFailures,
+      unexplainedOriginals,
+      upgradeCheck,
+    ] = await Promise.all([
+      this.check('backup', () => this.backup(config, now)),
+      this.check('storage', () => this.storage(config)),
+      this.check('work', () => this.work(config)),
+      this.check('version', () => this.version(config)),
+      this.dismissed(),
+      this.fileProblems(auth),
+      this.processingFailures(auth),
+      this.unexplainedOriginals(),
+      this.upgradeCheck(),
+    ]);
     const results: Record<AttentionKind, SignalResult> = { backup, storage, work, version };
     return {
       checkedAt: now.toISOString(),
@@ -98,6 +110,7 @@ export class AttentionService {
       dismissed,
       fileProblems,
       processingFailures,
+      unexplainedOriginals,
       upgradeCheck,
     };
   }
@@ -151,6 +164,26 @@ export class AttentionService {
     } catch (error) {
       this.logger.warn(`Could not count the files Frameleaf could not process for what needs attention: ${error}`);
       return { count: 0, setAside: 0 };
+    }
+  }
+
+  /**
+   * FL-921: originals that are gone with no record of a removal, from the nightly pass over the nothing-lost
+   * ledger. A count across every account, which names no file. It adds no item and changes no check.
+   */
+  private async unexplainedOriginals(): Promise<AttentionResponseDto['unexplainedOriginals']> {
+    try {
+      const owners = await this.assetLedgerRepository.missingByOwner();
+      return {
+        count: owners.reduce((sum, { count }) => sum + count, 0),
+        since:
+          owners.length === 0
+            ? null
+            : new Date(Math.min(...owners.map(({ since }) => new Date(since).getTime()))).toISOString(),
+      };
+    } catch (error) {
+      this.logger.warn(`Could not count the originals the ledger cannot account for: ${error}`);
+      return { count: 0, since: null };
     }
   }
 

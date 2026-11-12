@@ -398,6 +398,27 @@ where
 delete from "asset"
 where
   "ownerId" = $1
+update asset_ledger
+set
+  state = 'removed',
+  "stateAt" = now(),
+  reason = 'account-removed',
+  "stateBy" = (
+    select
+      e."actorId"
+    from
+      admin_audit_event e
+    where
+      e."userId" = $1::uuid
+      and e.action = 'account-deleted'
+    order by
+      e."createdAt" desc
+    limit
+      1
+  )
+where
+  "ownerId" = $2::uuid
+  and state <> 'removed'
 commit
 
 -- AssetRepository.getByLibraryIdAndOriginalPath

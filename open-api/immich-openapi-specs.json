@@ -7551,6 +7551,53 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/ledger/summary": {
+      "get": {
+        "description": "How many of the originals the server accepted, for every account, are kept, in the Trash, removed, sharing an identical file, or missing, and which accounts have originals the server cannot account for. No file is named.",
+        "operationId": "getLedgerAdminSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetLedgerAdminSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the server’s nothing-lost totals",
+        "tags": [
+          "Users (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "server.statistics",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/libraries/folders": {
       "get": {
         "description": "For an administrator choosing a folder of photos to add: the folders under a path the server can see (names only; hidden, system and NAS folders are left out), and what a new folder skips by default.",
@@ -69450,6 +69497,130 @@
         "x-immich-permission": "adminCloudBackup.read"
       }
     },
+    "/users/me/ledger": {
+      "get": {
+        "description": "Every original the server accepted for you, the newest change first: where it is now, since when, who put it there and why. Photos that are locked are listed only while they are unlocked.",
+        "operationId": "getLedger",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "The nextCursor of the previous page",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "description": "Items per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 200,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "description": "Only originals in this state",
+            "schema": {
+              "$ref": "#/components/schemas/AssetLedgerState"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetLedgerListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your originals and where they are now",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/ledger/summary": {
+      "get": {
+        "description": "How many of the originals the server accepted for you are kept, in the Trash, removed, sharing an identical file, or missing with no record of a removal.",
+        "operationId": "getLedgerSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetLedgerSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get your nothing-lost totals",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/me/license": {
       "delete": {
         "description": "Remove your supporter key from this server. The key stays yours to activate again.",
@@ -84221,6 +84392,225 @@
         ],
         "type": "object"
       },
+      "AssetLedgerAdminSummaryResponseDto": {
+        "properties": {
+          "missingByOwner": {
+            "description": "The accounts with originals the server cannot account for, most first. No file is named.",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerMissingOwnerDto"
+            },
+            "type": "array"
+          },
+          "states": {
+            "$ref": "#/components/schemas/AssetLedgerCountsDto"
+          },
+          "total": {
+            "description": "Every original the server has accepted, for every account",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "missingByOwner",
+          "states",
+          "total"
+        ],
+        "type": "object"
+      },
+      "AssetLedgerCountsDto": {
+        "properties": {
+          "kept": {
+            "description": "Originals in the library",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "merged": {
+            "description": "Originals that share an identical file; their own copy went to Unused files",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missing": {
+            "description": "Originals that are gone with no record of a removal",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "description": "Originals somebody removed, or whose time in the Trash ran out",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trashed": {
+            "description": "Originals in the Trash",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kept",
+          "merged",
+          "missing",
+          "removed",
+          "trashed"
+        ],
+        "type": "object"
+      },
+      "AssetLedgerItemDto": {
+        "properties": {
+          "addedAt": {
+            "description": "When the server accepted it",
+            "format": "date-time",
+            "type": "string"
+          },
+          "addedVia": {
+            "description": "How it arrived, for example upload, library-scan, import, partner-copy, studio, recovered or unknown. More may be added.",
+            "type": "string"
+          },
+          "assetId": {
+            "description": "The id the original had, or has, in the library",
+            "type": "string"
+          },
+          "checksum": {
+            "description": "Its content checksum, base64",
+            "type": "string"
+          },
+          "originalFileName": {
+            "description": "Its file name",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why, when there is a reason, for example deleted, trash-expired, library-removed, account-removed, identical-file, not-found or found. More may be added.",
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AssetLedgerState"
+          },
+          "stateAt": {
+            "description": "When it came to be in this state",
+            "format": "date-time",
+            "type": "string"
+          },
+          "stateBy": {
+            "description": "The account that put it there; null when Frameleaf did",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "addedAt",
+          "addedVia",
+          "assetId",
+          "checksum",
+          "originalFileName",
+          "reason",
+          "state",
+          "stateAt",
+          "stateBy"
+        ],
+        "type": "object"
+      },
+      "AssetLedgerListResponseDto": {
+        "properties": {
+          "items": {
+            "description": "The newest change first",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "description": "Pass as cursor for the next page; null on the last page",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "AssetLedgerMissingOwnerDto": {
+        "properties": {
+          "count": {
+            "description": "Originals of that account that are missing",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ownerId": {
+            "description": "The account the originals belonged to",
+            "type": "string"
+          },
+          "since": {
+            "description": "When the first of them was found missing",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "ownerId",
+          "since"
+        ],
+        "type": "object"
+      },
+      "AssetLedgerQueryDto": {
+        "properties": {
+          "cursor": {
+            "description": "The nextCursor of the previous page",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "size": {
+            "default": 200,
+            "description": "Items per page",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AssetLedgerState",
+            "description": "Only originals in this state"
+          }
+        },
+        "type": "object"
+      },
+      "AssetLedgerState": {
+        "description": "Where an original is now: kept, in the Trash, removed, sharing an identical file (merged), or missing with no record of a removal",
+        "enum": [
+          "kept",
+          "trashed",
+          "removed",
+          "merged",
+          "missing"
+        ],
+        "type": "string"
+      },
+      "AssetLedgerSummaryResponseDto": {
+        "properties": {
+          "states": {
+            "$ref": "#/components/schemas/AssetLedgerCountsDto"
+          },
+          "total": {
+            "description": "Every original the server has accepted for this account",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "states",
+          "total"
+        ],
+        "type": "object"
+      },
       "AssetLockReason": {
         "description": "Why an asset is locked",
         "enum": [
@@ -87124,6 +87514,10 @@
             "$ref": "#/components/schemas/AttentionProcessingFailuresDto",
             "description": "FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check."
           },
+          "unexplainedOriginals": {
+            "$ref": "#/components/schemas/AttentionUnexplainedOriginalsDto",
+            "description": "FL-921: originals the nothing-lost ledger cannot account for. Only a count: no file is named. They add no item and change no check."
+          },
           "upgradeCheck": {
             "$ref": "#/components/schemas/UpgradeCheckSummaryDto",
             "description": "FL-954: how the library check after the last upgrade came out. A field of its own: it adds no item and changes no check."
@@ -87136,6 +87530,7 @@
           "fileProblems",
           "items",
           "processingFailures",
+          "unexplainedOriginals",
           "upgradeCheck"
         ],
         "type": "object"
@@ -87178,6 +87573,27 @@
           "drive",
           "totalBytes",
           "usedPercent"
+        ],
+        "type": "object"
+      },
+      "AttentionUnexplainedOriginalsDto": {
+        "properties": {
+          "count": {
+            "description": "Originals that are gone with no record of a removal, across every account",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "since": {
+            "description": "When the first of them was found missing, or null when there are none",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "since"
         ],
         "type": "object"
       },

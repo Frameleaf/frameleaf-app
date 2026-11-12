@@ -13,6 +13,7 @@ import { ArchiveOperationController } from 'src/controllers/archive-operation.co
 import { AssetAnnotationController } from 'src/controllers/asset-annotation.controller.js';
 import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
 import { AssetFilesController } from 'src/controllers/asset-file.controller.js';
+import { AssetLedgerAdminController, AssetLedgerController } from 'src/controllers/asset-ledger.controller.js';
 import { AssetMediaController } from 'src/controllers/asset-media.controller.js';
 import { AssetPaletteController } from 'src/controllers/asset-palette.controller.js';
 import { AssetRestorationController } from 'src/controllers/asset-restoration.controller.js';
@@ -296,6 +297,8 @@ export const controllers = [
   AlbumSourceController,
   AlbumCleanupController,
   DateDoctorController,
+  AssetLedgerController,
+  AssetLedgerAdminController,
   AlbumMergeController,
   SharedSpaceController,
   StackController,

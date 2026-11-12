@@ -79,6 +79,7 @@ import {
   AssetHealthTable,
 } from 'src/schema/tables/asset-health.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
+import { AssetLedgerTable } from 'src/schema/tables/asset-ledger.table.js';
 import {
   AssetLocalEffectCursorTable,
   AssetLocalEffectStreamTable,
@@ -383,6 +384,7 @@ export class ImmichDatabase {
     AssetDateFindingTable,
     DateFixBatchTable,
     DateFixItemTable,
+    AssetLedgerTable,
     BookmarkTagTable,
     AssetSourceTable,
     AccountEventTable,
@@ -718,6 +720,7 @@ export interface DB extends QueueDatabase {
   asset_date_finding: AssetDateFindingTable;
   date_fix_batch: DateFixBatchTable;
   date_fix_item: DateFixItemTable;
+  asset_ledger: AssetLedgerTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;

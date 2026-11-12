@@ -257,6 +257,7 @@ describe(PhysicalFileTrashService.name, () => {
         }),
         undefined,
         transaction,
+        'recovered',
       );
       expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledWith(
         'new-asset-id',
