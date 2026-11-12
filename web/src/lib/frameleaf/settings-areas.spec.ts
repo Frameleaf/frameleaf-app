@@ -316,6 +316,9 @@ describe('Frameleaf settings areas', () => {
         'couldnt-process',
         // FL-943: the Date & Time Doctor, an account page every account has
         'dates',
+        // FL-1470: Tidy up and its review, account pages every account has
+        'tidy-up',
+        'tidy-up-review',
         'duplicates',
         'enrichment-care',
         'unused-files',
