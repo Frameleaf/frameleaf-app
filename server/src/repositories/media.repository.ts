@@ -65,6 +65,13 @@ import { tryParseRational } from 'src/utils/rational-time.js';
 import { RawRenderError, type RawRenderOptions, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { stillConverters } from 'src/utils/still-converters.js';
 
+/**
+ * FL-1489: the largest value a PostgreSQL `integer` column holds. ffprobe reports 64-bit numbers
+ * and a damaged file can carry nonsense in them; one that does not fit where it is stored is not
+ * a measurement, and sending it on fails the whole metadata statement for that video.
+ */
+const POSTGRES_INT_MAX = 2_147_483_647;
+
 const probe = (input: string, options: string[], signal = executionSignal()): Promise<FfprobeData> => {
   signal?.throwIfAborted();
   const child = spawn('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', ...options, input], {
@@ -904,7 +911,13 @@ export class MediaRepository {
       }
       const [ptsStr, durationStr, flags] = line.split(',', 3);
       const pts = Number.parseInt(ptsStr);
-      const duration = Number.parseInt(durationStr);
+      // FL-1489: a Matroska track whose default duration is a negative number stored unsigned makes
+      // ffprobe report 18446744072576 ticks (2^64 ns over the 1,000,000 ns timestamp scale) for
+      // every packet. That is no duration: read it as unstated, like "N/A".
+      // ponytail: the packet is skipped whole, as "N/A" ones already are, so its keyframe is not
+      // indexed either. Rebuild durations from pts gaps if such files need a keyframe index.
+      const statedDuration = Number.parseInt(durationStr);
+      const duration = statedDuration > POSTGRES_INT_MAX ? NaN : statedDuration;
       if (
         flags?.[1] !== 'D' &&
         (!/^-?\d+$/.test(ptsStr) ||
@@ -1148,7 +1161,7 @@ export class MediaRepository {
   }
 
   private parseInt(value: string | number | undefined): number {
-    return Number.parseInt(value as string) || 0;
+    return this.parseOptionalInt(value) ?? 0;
   }
 
   /**
@@ -1194,7 +1207,8 @@ export class MediaRepository {
 
   private parseOptionalInt(value: string | number | undefined): number | null {
     const parsed = Number.parseInt(value as string);
-    return Number.isNaN(parsed) ? null : parsed;
+    // FL-1489: past the integer range is unknown, not a value (see POSTGRES_INT_MAX)
+    return Number.isNaN(parsed) || Math.abs(parsed) > POSTGRES_INT_MAX ? null : parsed;
   }
 
   private parseEnum<E extends Record<string, number | string>>(enumObj: E, value?: string) {
