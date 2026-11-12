@@ -733,8 +733,14 @@ export class CloudMlBatchService extends BaseService {
     approvals: Array<number | null>,
     acknowledge: (tx: Transaction<DB>, operationIds: string[]) => Promise<void>,
   ): Promise<string[]> {
-    const operations = batches.map(({ ownerId, assetIds }, index): CloudDescriptionBatchCreate => {
-      const approvedP90Usd = approvals[index] ?? null;
+    // FL-1484: the photos of someone who keeps theirs at home are never batched; they are described at home
+    const home = await this.userRepository.getCloudProcessingOptOuts(batches.map(({ ownerId }) => ownerId));
+    const kept = batches.filter(({ ownerId }) => home.has(ownerId));
+    const sent = batches.flatMap((batch, index) =>
+      home.has(batch.ownerId) ? [] : [{ ...batch, approval: approvals[index] ?? null }],
+    );
+    const operations = sent.map(({ ownerId, assetIds, approval }): CloudDescriptionBatchCreate => {
+      const approvedP90Usd = approval;
       const snapshot: CloudDescriptionSnapshot = {
         version: 1,
         origin,
@@ -774,6 +780,10 @@ export class CloudMlBatchService extends BaseService {
       this.logger.log(
         `Queued ${ids.length} Frameleaf Cloud description ${ids.length === 1 ? 'batch' : 'batches'} (${origin})`,
       );
+    }
+    const atHome = kept.flatMap(({ assetIds }) => assetIds);
+    if (atHome.length > 0) {
+      await this.jobRepository.queueAll(atHome.map((id) => ({ name: JobName.ImageDescription, data: { id } })));
     }
     return ids;
   }

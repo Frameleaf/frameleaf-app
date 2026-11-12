@@ -163,6 +163,10 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     ratings: {
       enabled: true,
     },
+    // FL-1484: AI work on this person's photos may use Frameleaf Cloud where Computers sends it.
+    cloudProcessing: {
+      enabled: true,
+    },
     tags: {
       enabled: true,
       sidebarWeb: true,
@@ -312,13 +316,22 @@ export const restrictPreferencesUpdate = (
   // Locked people, pets and tags, saved searches (FL-49) and how long an unlock lasts (FL-517) are the
   // account owner's private choices.
   // FL-556: so is letting uploads bring photos back from the Trash.
-  const { privacy: _privacy, savedSearches: _savedSearches, lockedPin: _lockedPin, trash: _trash, ...ownerOnly } = dto;
+  // FL-1484: and whether their photos may use Frameleaf Cloud.
+  const {
+    privacy: _privacy,
+    savedSearches: _savedSearches,
+    lockedPin: _lockedPin,
+    trash: _trash,
+    cloudProcessing: _cloudProcessing,
+    ...ownerOnly
+  } = dto;
   const allowed =
     editor === 'admin' &&
     (dto.privacy !== undefined ||
       dto.savedSearches !== undefined ||
       dto.lockedPin !== undefined ||
-      dto.trash !== undefined)
+      dto.trash !== undefined ||
+      dto.cloudProcessing !== undefined)
       ? ownerOnly
       : dto;
 

@@ -1181,6 +1181,9 @@
   "preferences.clients.enabled": {
     "type": "boolean"
   },
+  "preferences.cloudProcessing.enabled": {
+    "type": "boolean"
+  },
   "preferences.display.dateFormat": {
     "type": "string",
     "enum": [

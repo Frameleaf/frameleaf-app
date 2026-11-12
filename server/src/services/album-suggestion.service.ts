@@ -182,6 +182,8 @@ export class AlbumSuggestionService extends BaseService {
       workload: MlWorkload.Clip,
       jobId: id,
       jobName: JobName.AlbumSuggestionOutfit,
+      // FL-1484: the photo's owner may keep their photos at home
+      ownerId: asset.ownerId,
     });
     const folder = await mkdtemp(join(tmpdir(), 'frameleaf-outfit-'));
     try {

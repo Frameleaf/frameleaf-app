@@ -650,6 +650,12 @@ export class AssetJobRepository {
     );
   }
 
+  /** FL-1484: whose photo this is, so its AI work follows that person's choice about Frameleaf Cloud. */
+  async getOwnerId(id: string): Promise<string | undefined> {
+    const row = await this.db.selectFrom('asset').select('asset.ownerId').where('asset.id', '=', id).executeTakeFirst();
+    return row?.ownerId;
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   getForOcr(id: string) {
     return this.db
@@ -1086,7 +1092,8 @@ export class AssetJobRepository {
     return Number(count);
   }
 
-  selectionForImageDescriptionJob(force?: boolean) {
+  /** `ownerIds` (FL-1484): only these people's photos, when given. */
+  selectionForImageDescriptionJob(force?: boolean, ownerIds?: readonly string[]) {
     // Image descriptions run on photos and videos. A video is described from its reusable moment
     // frames (FL-59), which the description job cuts itself when the video has none yet; duplicate
     // detection is no longer a prerequisite, so videos are not filtered on its frames here.
@@ -1096,6 +1103,7 @@ export class AssetJobRepository {
         // background work includes locked media (owner decision, September 22, 2026): stored visibility only
         .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
         .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
+        .$if(!!ownerIds?.length, (qb) => qb.where('asset.ownerId', 'in', [...ownerIds!]))
         .$if(!force, (qb) =>
           qb.where((eb) =>
             eb.not(

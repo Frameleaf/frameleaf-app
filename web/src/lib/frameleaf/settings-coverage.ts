@@ -1853,6 +1853,13 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'showSupportBadge',
   },
   {
+    pattern: 'cloudProcessing.enabled',
+    // FL-1484: Your preferences › Where your photos are processed
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/CloudProcessingSettings.svelte',
+    evidence: "'cloudProcessing.enabled'",
+  },
+  {
     pattern: 'trash.reuploadUntil',
     // FL-556: Look & playback › Safety, "Let uploads bring back deleted photos" (24 hours)
     kind: 'control',

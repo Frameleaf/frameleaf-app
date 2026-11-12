@@ -188,6 +188,12 @@ export type MlSelectionRequest = {
   modelSku?: string | null;
   /** FL-455: work that never leaves this network (search text): a Frameleaf Cloud destination is refused. */
   homeOnly?: boolean;
+  /**
+   * FL-1484: whose photo this work is on. When that person keeps their photos at home (Your preferences),
+   * the request is `homeOnly`: routed work skips Frameleaf Cloud in its processing order, and a request
+   * naming Frameleaf Cloud is refused.
+   */
+  ownerId?: string;
   /** Bind an explicitly named request to the destination kind before probing or accounting. */
   requiredKind?: MlDestinationKind;
   /**

@@ -1359,11 +1359,13 @@ export class PersonService extends BaseService {
       (await cloudLibraryDestination(this.mlDestinationRepository, MlWorkload.Face))
     ) {
       const owner = await this.assetJobRepository.getForImageEnrichment(asset.id);
-      if (owner) {
+      // FL-1484: someone who keeps their photos at home never has faces found on Frameleaf Cloud
+      if (owner && !(await this.keepsPhotosHome(owner.ownerId))) {
         await this.cloudLibraryQueue.add({ assetId: asset.id, ownerId: owner.ownerId, workload: 'face' });
         return JobStatus.Skipped;
       }
     }
+    const ownerId = await this.assetJobRepository.getOwnerId(asset.id);
 
     const selection = onThisServer
       ? await this.selectMlDestination({
@@ -1371,11 +1373,13 @@ export class PersonService extends BaseService {
           jobId: id,
           jobName: JobName.AssetDetectFaces,
           destinationId: await homeMlDestinationId(this.mlDestinationRepository, MlWorkload.Face),
+          ownerId,
         })
       : await this.selectRoutedMlDestination({
           workload: MlWorkload.Face,
           jobId: id,
           jobName: JobName.AssetDetectFaces,
+          ownerId,
         });
     const { imageHeight, imageWidth, faces } = await this.machineLearningRepository.detectFaces(
       selection,

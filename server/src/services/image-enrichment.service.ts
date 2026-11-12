@@ -777,10 +777,18 @@ export class ImageEnrichmentService extends BaseService {
     // before anything is queued; this job never queues it one photo at a time. While cloud processing
     // is off for descriptions, the photos are queued and each is refused with that reason.
     if (await cloudDescriptionDestination(this.mlDestinationRepository, null, frameleafCloud.cloudMl)) {
+      // FL-1484: the photos of people who keep theirs at home are described at home, one job each
+      const home = [...(await this.userRepository.getCloudProcessingOptOuts())];
+      if (home.length > 0) {
+        await this.jobRepository.queueSelection(
+          JobName.ImageDescription,
+          this.assetJobRepository.selectionForImageDescriptionJob(force, home),
+        );
+      }
       this.logger.log(
         'Descriptions are routed to Frameleaf Cloud; describe the library from Frameleaf Cloud processing, where the estimate is shown first',
       );
-      return JobStatus.Skipped;
+      return home.length > 0 ? JobStatus.Success : JobStatus.Skipped;
     }
 
     // Library care → "Reprocess only affected outputs" (FL-69, settings-catalog.mjs:966-971): a full
@@ -1094,7 +1102,10 @@ export class ImageEnrichmentService extends BaseService {
     }
     // FL-163: the description stage routed (or pinned) to Frameleaf Cloud runs in batches, never one
     // photo at a time, and nothing is sent from here
-    const cloud = await this.cloudDescriptionDestination(options);
+    // FL-1484: someone who keeps their photos at home has them described at home, never in a Cloud batch
+    const cloud = (await this.keepsPhotosHome(asset.ownerId))
+      ? undefined
+      : await this.cloudDescriptionDestination(options);
     if (cloud) {
       return this.leaveForCloudBatch(asset, config, machineLearning.imageDescription.modelName);
     }
@@ -1739,7 +1750,7 @@ export class ImageEnrichmentService extends BaseService {
    * destination. Never a different one: a pinned destination that is gone or refuses fails the
    * stage in place.
    */
-  private selectEnrichmentDestination(
+  private async selectEnrichmentDestination(
     workload: MlWorkload,
     jobName: JobName,
     assetId: string,
@@ -1750,9 +1761,11 @@ export class ImageEnrichmentService extends BaseService {
     if (options.planRun && !destinationId) {
       throw new BadRequestException(`This plan has no processing destination for ${workload}`);
     }
+    // FL-1484: the photo's owner may keep their photos at home
+    const ownerId = await this.assetJobRepository.getOwnerId(assetId);
     return destinationId
-      ? this.selectMlDestination({ workload, destinationId, jobId, jobName })
-      : this.selectRoutedMlDestination({ workload, jobId, jobName });
+      ? this.selectMlDestination({ workload, destinationId, jobId, jobName, ownerId })
+      : this.selectRoutedMlDestination({ workload, jobId, jobName, ownerId });
   }
   /** Reusable frames (FL-59), on the injected database. Tests hand one in with `useVideoMomentRepository`. */
   private _videoMoments?: VideoMomentRepository;

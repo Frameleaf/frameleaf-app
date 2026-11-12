@@ -89,6 +89,23 @@ describe('preferences (FL-77 admin casting permission)', () => {
     });
   });
 
+  describe('Where your photos are processed (FL-1484)', () => {
+    it('lets Frameleaf Cloud be used unless the person keeps their photos at home', () => {
+      expect(getPreferences([]).cloudProcessing.enabled).toBe(true);
+      expect(getPreferences(stored({ cloudProcessing: { enabled: false } })).cloudProcessing.enabled).toBe(false);
+    });
+
+    it('is the person’s own choice: an administrator cannot change it', () => {
+      const current = getPreferences([]);
+      expect(restrictPreferencesUpdate(current, { cloudProcessing: { enabled: false } }, 'admin')).not.toHaveProperty(
+        'cloudProcessing',
+      );
+      expect(
+        restrictPreferencesUpdate(current, { cloudProcessing: { enabled: false } }, 'user').cloudProcessing,
+      ).toEqual({ enabled: false });
+    });
+  });
+
   describe('Lock again after (FL-517)', () => {
     it('lasts an hour unless the account chose 5 or 15 minutes', () => {
       expect(relockMinutesOf(getPreferences([]))).toBe(60);

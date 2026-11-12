@@ -198,6 +198,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
       'app-settings',
       'feature',
       'download-settings',
+      'cloud-processing',
       'frameleaf-account',
       'user-usage-info',
       'user-purchase-settings',
@@ -814,6 +815,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'app-settings': 'library',
     feature: 'library',
     'download-settings': 'downloads',
+    'cloud-processing': 'library',
   },
 };
 

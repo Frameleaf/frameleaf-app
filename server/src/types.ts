@@ -1826,6 +1826,10 @@ export type UserPreferences = {
   ratings: {
     enabled: boolean;
   };
+  /** FL-1484: false keeps AI work on this person's photos at home, never on Frameleaf Cloud */
+  cloudProcessing: {
+    enabled: boolean;
+  };
   sharedLinks: {
     enabled: boolean;
     sidebarWeb: boolean;

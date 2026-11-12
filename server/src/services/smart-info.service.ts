@@ -245,9 +245,12 @@ export class SmartInfoService extends BaseService {
     // Frameleaf Cloud result that was refused is made here instead (`onThisServer`), never on the cloud.
     // A person's own search model is never offered to Frameleaf Cloud, so it always runs at home.
     const customModel = isCustomClipModelName(machineLearning.clip.modelName);
+    // FL-1484: the photos of someone who keeps theirs at home are read here, never on Frameleaf Cloud
+    const home = await this.keepsPhotosHome(asset.ownerId);
     if (
       !onThisServer &&
       !customModel &&
+      !home &&
       (await cloudLibraryDestination(this.mlDestinationRepository, MlWorkload.Clip))
     ) {
       await this.cloudLibraryQueue.add({ assetId: asset.id, ownerId: asset.ownerId, workload: 'clip' });
@@ -261,8 +264,14 @@ export class SmartInfoService extends BaseService {
             jobId: id,
             jobName: JobName.SmartSearch,
             destinationId: await homeMlDestinationId(this.mlDestinationRepository, MlWorkload.Clip),
+            ownerId: asset.ownerId,
           })
-        : await this.selectRoutedMlDestination({ workload: MlWorkload.Clip, jobId: id, jobName: JobName.SmartSearch });
+        : await this.selectRoutedMlDestination({
+            workload: MlWorkload.Clip,
+            jobId: id,
+            jobName: JobName.SmartSearch,
+            ownerId: asset.ownerId,
+          });
     const embedding = await this.machineLearningRepository.encodeImage(
       selection,
       asset.files[0].path,

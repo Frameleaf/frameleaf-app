@@ -4096,6 +4096,10 @@ export type ClientsResponse = {
     /** Whether Clients is in use and shown in the top bar */
     enabled: boolean;
 };
+export type CloudProcessingResponse = {
+    /** Whether AI work on your photos may use Frameleaf Cloud (false: only at home) */
+    enabled: boolean;
+};
 export type DisplayPreferencesResponse = {
     dateFormat: DisplayDateFormat;
     hourCycle: DisplayHourCycle;
@@ -4245,6 +4249,7 @@ export type UserPreferencesResponseDto = {
     albums: AlbumsResponse;
     cast: CastResponse;
     clients?: ClientsResponse;
+    cloudProcessing?: CloudProcessingResponse;
     display?: DisplayPreferencesResponse;
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
@@ -4294,6 +4299,10 @@ export type CastUpdate = {
 };
 export type ClientsUpdate = {
     /** Whether Clients is in use and shown in the top bar */
+    enabled?: boolean;
+};
+export type CloudProcessingUpdate = {
+    /** Whether AI work on your photos may use Frameleaf Cloud (false: only at home) */
     enabled?: boolean;
 };
 export type DisplayPreferencesUpdate = {
@@ -4438,6 +4447,7 @@ export type UserPreferencesUpdateDto = {
     avatar?: AvatarUpdate;
     cast?: CastUpdate;
     clients?: ClientsUpdate;
+    cloudProcessing?: CloudProcessingUpdate;
     display?: DisplayPreferencesUpdate;
     download?: DownloadUpdate;
     emailNotifications?: EmailNotificationsUpdate;

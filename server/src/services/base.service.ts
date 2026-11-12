@@ -117,6 +117,8 @@ import {
   MlDestinationRefusedError,
   MlSelectionRequest,
   clipTextDestinationId,
+  homeMlDestinationId,
+  isCloudDestination,
   routedMlDestinationId,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
@@ -553,8 +555,29 @@ export class BaseService {
    * does not serve the workload; never substitutes another destination.
    */
   protected async selectMlDestination(request: MlSelectionRequest) {
-    const destinationId = await this.jobRepository.pinDestination(request.workload, request.destinationId);
-    return this.admitMlDestination({ ...request, destinationId });
+    const homeOnly = await this.isHomeOnly(request);
+    let destinationId = await this.jobRepository.pinDestination(request.workload, request.destinationId);
+    if (homeOnly && destinationId !== request.destinationId && (await this.isCloudDestinationId(destinationId))) {
+      // FL-1484: a job pinned to Frameleaf Cloud before its owner kept their photos home runs at home instead
+      destinationId = request.destinationId;
+    }
+    return this.admitMlDestination({ ...request, destinationId, homeOnly });
+  }
+
+  /**
+   * FL-1484: whether a request must stay on this network: search text and other home-only work, or work on
+   * the photo of someone who keeps their photos at home (Your preferences › Where your photos are processed).
+   */
+  protected async isHomeOnly(request: Pick<MlSelectionRequest, 'homeOnly' | 'ownerId'>): Promise<boolean> {
+    if (request.homeOnly) {
+      return true;
+    }
+    return !!request.ownerId && (await this.keepsPhotosHome(request.ownerId));
+  }
+
+  /** FL-1484: this person keeps AI work on their photos at home, never on Frameleaf Cloud. */
+  protected async keepsPhotosHome(ownerId: string): Promise<boolean> {
+    return (await this.userRepository.getCloudProcessingOptOuts([ownerId])).has(ownerId);
   }
 
   private admitMlDestination(request: MlSelectionRequest) {
@@ -576,16 +599,24 @@ export class BaseService {
    * place's). Work never goes to a place outside the order; a workload whose order names nowhere is
    * refused, not sent anywhere.
    */
-  protected async selectRoutedMlDestination(request: Omit<MlSelectionRequest, 'destinationId'>) {
+  protected async selectRoutedMlDestination(routed: Omit<MlSelectionRequest, 'destinationId'>) {
+    // FL-1484: the photo's owner keeps their photos at home, so Frameleaf Cloud is skipped in the order
+    const homeOnly = await this.isHomeOnly(routed);
+    const request = { ...routed, homeOnly };
     const pinned = await this.jobRepository.pinnedDestination(request.workload);
-    if (pinned) {
+    if (pinned && !(homeOnly && (await this.isCloudDestinationId(pinned)))) {
       return this.selectMlDestination({ ...request, destinationId: pinned });
     }
-    const candidates = (await this.mlDestinationRepository.resolveRoute(request.workload)) ?? [];
+    const candidates = ((await this.mlDestinationRepository.resolveRoute(request.workload)) ?? []).filter(
+      (candidate) => !homeOnly || candidate.source !== MlProcessingSource.Cloud,
+    );
     const available = candidates.filter((candidate) => candidate.available);
     if (available.length === 0) {
       const destinationId =
-        candidates[0]?.destinationId ?? (await routedMlDestinationId(this.mlDestinationRepository, request.workload));
+        candidates[0]?.destinationId ??
+        (homeOnly
+          ? await homeMlDestinationId(this.mlDestinationRepository, request.workload)
+          : await routedMlDestinationId(this.mlDestinationRepository, request.workload));
       try {
         return await this.selectMlDestination({ ...request, destinationId });
       } catch (error) {
@@ -623,6 +654,11 @@ export class BaseService {
       context.dependencyReason = first!.reason;
     }
     throw await this.computerAway(first!.error, available[0]?.source);
+  }
+
+  private async isCloudDestinationId(destinationId: string): Promise<boolean> {
+    const destination = await this.mlDestinationRepository.getById(destinationId);
+    return !!destination && isCloudDestination(destination.kind);
   }
 
   /**

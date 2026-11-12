@@ -19,7 +19,8 @@ class AdmittingService extends BaseService {
 
 const local = mlDestinationStub.local;
 const study = { ...mlDestinationStub.libraryLan, workloads: [MlWorkload.Enrichment, MlWorkload.Ocr] };
-const rows = new Map([local, study].map((row) => [row.id, row]));
+const cloud = mlDestinationStub.frameleafCloudConsented;
+const rows = new Map([local, study, cloud].map((row) => [row.id, row]));
 
 const candidate = (
   destinationId: string,
@@ -201,6 +202,51 @@ describe('admission follows the processing order (FL-456)', () => {
       expect(selection.destinationId).toBe(study.id);
       expect(selection.desktopOcr).toBeUndefined();
       expect(context.dependencyReason).toBeUndefined();
+    });
+  });
+});
+
+describe('someone who keeps their photos at home (FL-1484)', () => {
+  let sut: AdmittingService;
+  let mocks: ServiceMocks;
+
+  beforeEach(() => {
+    ({ sut, mocks } = newTestService(AdmittingService));
+    mocks.mlDestination.getById.mockImplementation((id) => Promise.resolve(rows.get(id)));
+    mocks.mlDestination.getAll.mockResolvedValue([local, study, cloud]);
+    mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
+    mocks.user.getCloudProcessingOptOuts.mockImplementation((ids) =>
+      Promise.resolve(new Set((ids ?? []).filter((id) => id === 'emma'))),
+    );
+  });
+
+  it('skips Frameleaf Cloud in the order and runs at home', async () => {
+    mocks.mlDestination.resolveRoute.mockResolvedValue([
+      candidate(cloud.id, MlProcessingSource.Cloud),
+      candidate(study.id, MlProcessingSource.Desktops),
+    ]);
+    const selection = await sut.select({ workload: MlWorkload.Enrichment, ownerId: 'emma' });
+    expect(selection.destinationId).toBe(study.id);
+  });
+
+  it('runs on this server when the order names only Frameleaf Cloud', async () => {
+    mocks.mlDestination.resolveRoute.mockResolvedValue([candidate(cloud.id, MlProcessingSource.Cloud)]);
+    mocks.mlDestination.getRoute.mockResolvedValue({
+      workload: MlWorkload.Enrichment,
+      destinationId: cloud.id,
+      modelId: null,
+      updatedAt: new Date(),
+    });
+    const selection = await sut.select({ workload: MlWorkload.Enrichment, ownerId: 'emma' });
+    expect(selection.destinationId).toBe(local.id);
+  });
+
+  it('leaves everyone else on Frameleaf Cloud', async () => {
+    mocks.mlDestination.resolveRoute.mockResolvedValue([candidate(cloud.id, MlProcessingSource.Cloud)]);
+    mocks.mlDestination.getCloudModelChoice.mockResolvedValue(null);
+    // Taylor's photo is tried on Frameleaf Cloud (here it isn't answering), never moved home
+    await expect(sut.select({ workload: MlWorkload.Enrichment, ownerId: 'taylor' })).rejects.toMatchObject({
+      destinationId: cloud.id,
     });
   });
 });
