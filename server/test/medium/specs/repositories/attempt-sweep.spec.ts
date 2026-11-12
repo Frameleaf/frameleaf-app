@@ -67,7 +67,7 @@ describe('attempt output retention and cleanup', () => {
     await rm(root, { force: true, recursive: true });
   });
 
-  it('recovers stopped HDR staging after restart while retaining active, unknown and referenced staged outputs', async () => {
+  it('recovers stopped HDR staging after restart while retaining active and referenced staged outputs', async () => {
     const { ctx } = setup();
     const { user } = await ctx.newUser();
     const settled = await claim();
@@ -84,24 +84,24 @@ describe('attempt output retention and cleanup', () => {
       db,
     );
     const unknown = await file({ id: randomUUID(), token: randomUUID() }, '.sharp-pqr678/unknown.jpg');
-    // Retain the positive stopped proof while SQL history is pruned, then restart the scanner.
+    // FL-1485: SQL history is pruned and the proof goes with it; a job that is gone needs none. Restart the scanner.
     await sql`UPDATE job SET "finishedAt"=clock_timestamp()-interval '8 days' WHERE id=${settled.id}::uuid`.execute(db);
     await pruneQueueHistory(db);
     await closeAttemptSweep();
     const restarted = new PhysicalFileRepository(db);
-    expect((await restarted.sweepAttempts([root]))?.deleted).toBe(1);
-    await expect(readFile(orphan)).rejects.toMatchObject({ code: 'ENOENT' });
-    for (const path of [referenced, pinned, recent, inFlight, unknown])
+    expect((await restarted.sweepAttempts([root]))?.deleted).toBe(2);
+    for (const path of [orphan, unknown]) await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' });
+    for (const path of [referenced, pinned, recent, inFlight])
       expect(await readFile(path, 'utf8')).toBe('generated fixture');
     expect(
       (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + settled.token}`.execute(db))
         .rows,
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     await db.updateTable('user').set({ profileImagePath: '' }).where('id', '=', user.id).execute();
     await sql`UPDATE buddy_backup_reference SET released=true WHERE path=${pinned}`.execute(db);
     await restarted.sweepAttempts([root]);
     expect((await restarted.sweepAttempts([root]))?.deleted).toBe(2);
-    for (const path of [recent, inFlight, unknown]) expect(await readFile(path, 'utf8')).toBe('generated fixture');
+    for (const path of [recent, inFlight]) expect(await readFile(path, 'utf8')).toBe('generated fixture');
   });
 
   it('keeps profile references, Buddy pins and active expired claims; removes a settled orphan and the output of a job that is gone (FL-1485)', async () => {
