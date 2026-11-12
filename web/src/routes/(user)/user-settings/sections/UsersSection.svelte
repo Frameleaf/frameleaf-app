@@ -419,7 +419,7 @@
     />
     <HouseholdActivity
       who={logWho}
-      onWho={(who) => void goto(Route.activityLog({ who }), { replaceState: true, keepFocus: true, noScroll: true })}
+      onWho={(who) => void goto(Route.activityLog({ who }), { replaceState: true, reset: false })}
     />
   </div>
 {:else if creating}
