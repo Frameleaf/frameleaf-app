@@ -932,6 +932,18 @@ export class SqlQueueStore {
     return row;
   }
 
+  /**
+   * FL-1480: whether a job the overnight run queued on this queue is not finished: one carrying that night's mark,
+   * or one of a run the night opened. Held jobs wait for someone else and are left out.
+   */
+  async nightHasLiveWork(queue: string, startedAt: string) {
+    const { rows } = await sql`select 1 from job j where queue = ${queue} and state in ${LIVE}
+      and "availableAt" <> ${HELD} and (j.data->${NIGHT_DATA_KEY}::text->>'startedAt' = ${startedAt}
+        or exists (select 1 from job_run r where r.id = j."runId"
+          and r.selection->'night'->>'startedAt' = ${startedAt})) limit 1`.execute(this.db);
+    return rows.length > 0;
+  }
+
   async hasDedup(queue: string, key: string) {
     const { rows } = await sql`select 1 from job where queue = ${queue} and "dedupKey" = ${key}
       and state in ${LIVE} limit 1`.execute(this.db);

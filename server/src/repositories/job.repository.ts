@@ -715,6 +715,10 @@ export class JobRepository {
   wakeLockedDeferrals(ids: string[]) {
     return this.store.wakeDeferred(ids, 'locked-key-unavailable');
   }
+  /** FL-1480: whether work the overnight run that started at `startedAt` queued on this queue is still to be done. */
+  nightHasLiveWork(name: QueueName, startedAt: string): Promise<boolean> {
+    return this.store.nightHasLiveWork(name, startedAt);
+  }
   getJobCounts(name: QueueName): Promise<JobCounts> {
     return this.store.counts(name);
   }

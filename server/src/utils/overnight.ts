@@ -57,6 +57,8 @@ export type OvernightQuiet = {
   until?: string;
   /** With no stop time, when the heavy work last caught up; it waits again until the next start. */
   caughtUpAt?: string;
+  /** FL-1480: since when the heavy work and what feeds it have had nothing running or waiting. */
+  idleSince?: string;
 };
 
 export type OvernightNight = {
@@ -198,6 +200,22 @@ export const isHeavyWorkWindow = (
   }
   return now < overnightStopAt(start.toISO()!, nightly.stopTime, zone)!;
 };
+
+/**
+ * FL-1480: work that ends up on the heavy queues passes through these first. While they are busy the heavy
+ * queues can be empty for a moment without the night's work being over.
+ */
+export const QUIET_HOURS_FEEDERS: readonly QueueName[] = [
+  QueueName.Library,
+  QueueName.Sidecar,
+  QueueName.MetadataExtraction,
+  QueueName.ThumbnailGeneration,
+];
+/**
+ * FL-1480: how long nothing must be running or waiting before a night with no stop time has caught up. Longer
+ * than a retry's wait (30 seconds) and most waits for a busy machine-learning server, whose jobs are delayed, not waiting.
+ */
+export const QUIET_HOURS_IDLE_MS = 10 * 60 * 1000;
 
 /** Quiet hours' closing time for a schedule that never fires. */
 export const QUIET_HOURS_NEVER = new Date('9999-12-31T00:00:00.000Z');
