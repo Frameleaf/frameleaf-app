@@ -388,15 +388,16 @@ export class PartnerOriginRepository {
    * FL-1287: hand `assetId`'s generated thumbnail files (same path and physical file, as `insertAssetCopy` links
    * them) and thumbhash to every copy below it while each source on the way is live (A→B→C), so no copy renders
    * its own. Returns the paths copies stopped naming, for a FileDelete (which keeps any path still named).
+   * FL-1487: `types` names other generated files to hand over the same way (the converted video).
    */
-  async shareGeneratedFiles(assetId: string): Promise<string[]> {
+  async shareGeneratedFiles(assetId: string, types: AssetFileType[] = THUMBNAIL_FILE_TYPES): Promise<string[]> {
     return this.db.transaction().execute(async (trx) => {
       const files = await trx
         .selectFrom('asset_file')
         .select('path')
         .where('assetId', '=', assetId)
         .where('isEdited', '=', false)
-        .where('type', 'in', THUMBNAIL_FILE_TYPES)
+        .where('type', 'in', types)
         .execute();
       // the paths gain references: a concurrent FileDelete must not count them unreferenced in between
       for (const path of [...new Set(files.map((file) => file.path))].toSorted()) {
@@ -404,9 +405,11 @@ export class PartnerOriginRepository {
       }
       const { rows } = await sql<{ path: string }>`
         WITH RECURSIVE tree AS (
+          -- an origin row outlives a permanently deleted copy: only copies that still exist take files
           SELECT origin."assetId" AS id, 1 AS depth
           FROM public.asset_origin origin
           JOIN asset source ON source.id = origin."sourceAssetId"
+          JOIN asset recipient ON recipient.id = origin."assetId"
           WHERE origin."sourceAssetId" = ${assetId}::uuid
             AND source."deletedAt" IS NULL AND source.status = ${AssetStatus.Active}
           UNION ALL
@@ -414,12 +417,13 @@ export class PartnerOriginRepository {
           FROM tree
           JOIN asset parent ON parent.id = tree.id
           JOIN public.asset_origin origin ON origin."sourceAssetId" = parent.id
+          JOIN asset recipient ON recipient.id = origin."assetId"
           WHERE parent."deletedAt" IS NULL AND parent.status = ${AssetStatus.Active} AND tree.depth < ${MAX_LINEAGE_DEPTH}
         ),
         source_file AS (
           SELECT type, path, "physicalFileId", "isProgressive", "isTransparent", "renditionIdentity"
           FROM asset_file
-          WHERE "assetId" = ${assetId}::uuid AND "isEdited" = false AND type = ANY(${THUMBNAIL_FILE_TYPES}::text[])
+          WHERE "assetId" = ${assetId}::uuid AND "isEdited" = false AND type = ANY(${types}::text[])
         ),
         previous AS (
           SELECT DISTINCT copy_file.path

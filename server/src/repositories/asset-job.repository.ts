@@ -50,6 +50,12 @@ const rendersOwnThumbnails = sql<boolean>`(asset."isEdited" OR NOT EXISTS (
   JOIN asset source ON source.id = origin."sourceAssetId"
   WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
 ))`;
+/** FL-1487: a partner copy with a live source never converts its own video; it plays the source's. */
+const convertsOwnVideo = sql<boolean>`NOT EXISTS (
+  SELECT 1 FROM public.asset_origin origin
+  JOIN asset source ON source.id = origin."sourceAssetId"
+  WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
+)`;
 /**
  * FL-1287: a partner copy that rendered its own thumbnail or preview before copies shared them, while its live
  * source has one at another path. Its job (the nightly "Missing" scan) links the source's and deletes its own.
@@ -138,6 +144,8 @@ export class AssetJobRepository {
             sql<boolean>`"asset_job_status"."transcodeSkippedFor" is distinct from
             (encode(asset.checksum, 'hex') || ':' || ${options.videoPolicy})`,
           )
+          // a copy whose source is trashed or deleted later is picked up again and converts its own
+          .where(convertsOwnVideo)
           .where(originalNotMissing),
       [JobName.SmartSearch]: () => this.selectionForEncodeClip(false),
       [JobName.AssetDetectFaces]: () => this.selectionForDetectFacesJob(false).clearOrderBy(),
