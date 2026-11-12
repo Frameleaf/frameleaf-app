@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import type { DateFinding, DateScanRow } from 'src/utils/date-doctor.js';
+import type { DateFinding, DateFindingCause, DateScanRow } from 'src/utils/date-doctor.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
@@ -38,6 +38,9 @@ export type DateFixWrite = {
   newZone: string | null;
   newLocalDateTime: Date;
 };
+
+/** FL-930: what an Apply was asked to do, kept with its batch. */
+export type DateFixAsked = { cause: DateFindingCause | null; shiftMinutes: number | null; timeZone: string | null };
 
 const asJson = (rows: unknown[]) => JSON.stringify(rows);
 
@@ -127,6 +130,19 @@ export class DateDoctorRepository {
         .where('asset_date_finding.dismissedAt', 'is', null)
         // a photo locked or hidden since the scan stays out until the next one drops it
         .where(isDefaultVisible('asset'))
+        // FL-930: a photo still carrying a fix is out; undoing the fix brings its findings back
+        .where(({ not, exists, selectFrom }) =>
+          not(
+            exists(
+              selectFrom('date_fix_item')
+                .innerJoin('date_fix_batch', 'date_fix_batch.id', 'date_fix_item.batchId')
+                .select('date_fix_item.assetId')
+                .whereRef('date_fix_item.assetId', '=', 'asset.id')
+                .where('date_fix_batch.undoneAt', 'is', null)
+                .whereRef('date_fix_item.newDate', '=', 'asset.fileCreatedAt'),
+            ),
+          ),
+        )
         .orderBy(sql`right(asset_date_finding."groupKey", 10)`, 'desc')
         .orderBy('asset_date_finding.groupKey')
         .orderBy('asset_date_finding.currentDate')
@@ -135,21 +151,29 @@ export class DateDoctorRepository {
     );
   }
 
-  /** FL-930: the open proposals among `keys` that carry a date, for the owner's photos. */
-  @GenerateSql({ params: [DummyValue.UUID, [{ assetId: DummyValue.UUID, cause: 'missing-zone' }]] })
-  getProposals(ownerId: string, keys: { assetId: string; cause: string }[]) {
+  /** FL-930: each of the owner's photos among `ids` with an open proposal that has a date: its surest one. */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  getProposals(ownerId: string, ids: string[]) {
     return this.db
       .selectFrom('asset_date_finding')
       .innerJoin('asset', 'asset.id', 'asset_date_finding.assetId')
-      .select(['asset_date_finding.assetId', 'asset_date_finding.proposedDate', 'asset_date_finding.proposedZone'])
+      .distinctOn('asset_date_finding.assetId')
+      .select([
+        'asset_date_finding.assetId',
+        'asset_date_finding.cause',
+        'asset_date_finding.proposedDate',
+        'asset_date_finding.proposedZone',
+      ])
+      .where(sql<boolean>`asset_date_finding."assetId" = any(${ids}::uuid[])`)
       .where('asset.ownerId', '=', ownerId)
       .where('asset_date_finding.dismissedAt', 'is', null)
       .where('asset_date_finding.proposedDate', 'is not', null)
-      .where(
-        sql<boolean>`(asset_date_finding."assetId", asset_date_finding.cause) in (select k."assetId", k.cause
-          from jsonb_to_recordset(${asJson(keys)}::text::jsonb) as k("assetId" uuid, cause text))`,
-      )
-      .execute() as Promise<{ assetId: string; proposedDate: Date; proposedZone: string | null }[]>;
+      .orderBy('asset_date_finding.assetId')
+      .orderBy('asset_date_finding.confidence', 'desc')
+      .orderBy('asset_date_finding.cause')
+      .execute() as Promise<
+      { assetId: string; cause: DateFindingCause; proposedDate: Date; proposedZone: string | null }[]
+    >;
   }
 
   /**
@@ -221,11 +245,10 @@ export class DateDoctorRepository {
   }
 
   /**
-   * FL-930: writes the new dates and zones, locked, and records them as one batch. A photo whose date moved since
-   * it was read is left out. Its open findings are settled. Returns the batch and the photos written, or nothing
-   * when none was.
+   * FL-930: writes the new dates and zones, locked, and records them as one batch with what was asked. A photo whose
+   * date moved since it was read is left out. Returns the batch and the photos written, or nothing when none was.
    */
-  async applyFixes(ownerId: string, items: DateFixWrite[]) {
+  async applyFixes(ownerId: string, items: DateFixWrite[], asked: DateFixAsked) {
     return this.db.transaction().execute(async (tx) => {
       const { rows } = await sql<{
         id: string;
@@ -247,7 +270,7 @@ export class DateDoctorRepository {
         where asset_exif."assetId" = v."assetId"`.execute(tx);
       const batch = await tx
         .insertInto('date_fix_batch')
-        .values({ userId: ownerId, count: kept.length })
+        .values({ userId: ownerId, count: kept.length, ...asked })
         .returningAll()
         .executeTakeFirstOrThrow();
       // ponytail: 1,000 rows (10,000 binds) a statement keeps far below Postgres's 65,535
@@ -270,11 +293,6 @@ export class DateDoctorRepository {
           )
           .execute();
       }
-      await tx
-        .deleteFrom('asset_date_finding')
-        .where('dismissedAt', 'is', null)
-        .where(sql<boolean>`"assetId" = any(${[...written]}::uuid[])`)
-        .execute();
       return { batch, assetIds: [...written] };
     });
   }
@@ -319,6 +337,19 @@ export class DateDoctorRepository {
         .executeTakeFirstOrThrow();
       return { batch: undone, restored, alreadyUndone: false };
     });
+  }
+
+  /** FL-930: the owner's batches since `since`, newest first. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.DATE] })
+  getBatches(ownerId: string, since: Date) {
+    return this.db
+      .selectFrom('date_fix_batch')
+      .selectAll()
+      .where('userId', '=', ownerId)
+      .where('createdAt', '>=', since)
+      .orderBy('createdAt', 'desc')
+      .orderBy('id', 'desc')
+      .execute();
   }
 
   /** FL-930: batches older than `before` can no longer be undone; removes them and their items. */

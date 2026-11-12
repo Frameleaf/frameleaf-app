@@ -3,11 +3,12 @@ import { DateTime } from 'luxon';
 import type { Selectable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
+  DateDoctorApplyResponseDto,
+  DateDoctorBatchDto,
   DateDoctorFindingsResponseDto,
   DateDoctorFixDto,
   DateDoctorGroup,
   DateDoctorPreviewResponseDto,
-  DateFixBatchResponseDto,
 } from 'src/dtos/date-doctor.dto.js';
 import type { DateFixBatchTable } from 'src/schema/tables/date-fix.table.js';
 import type { JobOf } from 'src/types.js';
@@ -23,7 +24,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetOriginField, PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireAccess } from 'src/utils/access.js';
-import { detectDateFindings, wallToInstant } from 'src/utils/date-doctor.js';
+import { type DateFindingCause, detectDateFindings, wallToInstant } from 'src/utils/date-doctor.js';
 import { getAssetDateTimeUpdates } from 'src/utils/date.js';
 
 /** FL-930: how long an Apply can be undone; older batches are removed nightly. */
@@ -33,8 +34,8 @@ const iso = (date: Date | string) => new Date(date).toISOString();
 
 /**
  * FL-912: the Date & Time Doctor finds photos whose date or time zone is probably wrong and proposes a fix with a
- * reason (`src/utils/date-doctor.ts`). The scan changes nothing. FL-930 applies proposals, or a zone and shift
- * chosen for a selection, the way a bulk date edit does (locked, sidecars rewritten, partner copies following), and
+ * reason (`src/utils/date-doctor.ts`). The scan changes nothing. FL-930 gives chosen photos their proposals, or a
+ * zone and shift, the way a bulk date edit does (locked, sidecars rewritten, partner copies following), and
  * undoes them for 30 days.
  *
  * A scan runs per owner, when asked (`POST /date-doctor/scan`) and once a week in the overnight "Check files" step,
@@ -106,21 +107,21 @@ export class DateDoctorService {
   }
 
   async preview(auth: AuthDto, dto: DateDoctorFixDto): Promise<DateDoctorPreviewResponseDto> {
-    const items = await this.plan(auth, dto);
+    const { items } = await this.plan(auth, dto);
     return {
       items: items.map((item) => ({
         assetId: item.assetId,
-        previousDate: iso(item.currentTakenAt),
-        previousZone: item.currentZone,
-        newDate: iso(item.newDate),
-        newZone: item.newZone,
+        before: toTime(item.currentTakenAt, item.currentZone, item.currentLocalDateTime),
+        after: toTime(item.newDate, item.newZone, item.newLocalDateTime),
       })),
     };
   }
 
-  async apply(auth: AuthDto, dto: DateDoctorFixDto): Promise<DateFixBatchResponseDto> {
-    const items = await this.plan(auth, dto);
-    const result = items.length > 0 ? await this.dateDoctorRepository.applyFixes(auth.user.id, items) : undefined;
+  async apply(auth: AuthDto, dto: DateDoctorFixDto): Promise<DateDoctorApplyResponseDto> {
+    const { items, cause } = await this.plan(auth, dto);
+    const asked = { cause, shiftMinutes: dto.shiftMinutes ?? null, timeZone: dto.timeZone ?? null };
+    const result =
+      items.length > 0 ? await this.dateDoctorRepository.applyFixes(auth.user.id, items, asked) : undefined;
     if (!result) {
       throw new BadRequestException('Nothing to fix');
     }
@@ -136,12 +137,17 @@ export class DateDoctorService {
     } catch (error) {
       this.logger.error(`Unable to record account activity (${AccountEventAction.DatesFixed}): ${error}`);
     }
-    return toBatchResponse(batch);
+    const written = new Set(assetIds);
+    return { batch: toBatchResponse(batch), skipped: dto.assetIds.filter((id) => !written.has(id)) };
   }
 
-  async undo(auth: AuthDto, id: string): Promise<DateFixBatchResponseDto> {
-    const since = DateTime.now().minus({ days: DATE_FIX_UNDO_DAYS }).toJSDate();
-    const result = await this.dateDoctorRepository.undoBatch(auth.user.id, id, since);
+  async getBatches(auth: AuthDto): Promise<DateDoctorBatchDto[]> {
+    const rows = await this.dateDoctorRepository.getBatches(auth.user.id, undoSince());
+    return rows.map((batch) => toBatchResponse(batch));
+  }
+
+  async undo(auth: AuthDto, id: string): Promise<DateDoctorBatchDto> {
+    const result = await this.dateDoctorRepository.undoBatch(auth.user.id, id, undoSince());
     if (!result) {
       throw new BadRequestException('Batch not found');
     }
@@ -161,35 +167,33 @@ export class DateDoctorService {
 
   @OnEvent({ name: 'NightlyDatabaseCleanup' })
   async onNightlyDatabaseCleanup(): Promise<void> {
-    const before = DateTime.now().minus({ days: DATE_FIX_UNDO_DAYS }).toJSDate();
-    const removed = await this.dateDoctorRepository.pruneBatches(before);
+    const removed = await this.dateDoctorRepository.pruneBatches(undoSince());
     if (removed > 0) {
       this.logger.log(`Removed ${removed} Date & Time Doctor batches older than ${DATE_FIX_UNDO_DAYS} days`);
     }
   }
 
   /**
-   * What each photo would get, read from the database: the Doctor's proposal, or the selection's zone (the clock
-   * time shown stays) and shift. Only the caller's own photos: a partner's copy, or the original of one, is refused.
+   * What each photo would get, read from the database: the Doctor's proposal, or the zone (keeping the moment, or with
+   * `keepWallTime` the clock time shown) and the shift. Only the caller's own photos: a partner's copy, or the
+   * original of one, is refused. `cause` is the proposals' cause when they all share one.
    */
-  private async plan(auth: AuthDto, dto: DateDoctorFixDto): Promise<(DateFixWrite & { currentZone: string | null })[]> {
-    const ids = dto.findings ? dto.findings.map(({ assetId }) => assetId) : (dto.assetIds ?? []);
+  private async plan(auth: AuthDto, dto: DateDoctorFixDto) {
+    const ids = dto.assetIds;
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetUpdate, ids });
-    const proposals = dto.findings
-      ? new Map(
-          (await this.dateDoctorRepository.getProposals(auth.user.id, dto.findings)).map((row) => [row.assetId, row]),
-        )
+    const proposals = dto.useProposal
+      ? new Map((await this.dateDoctorRepository.getProposals(auth.user.id, ids)).map((row) => [row.assetId, row]))
       : undefined;
     const ordered = new Map(ids.map((id, index) => [id, index]));
     const rows = await this.dateDoctorRepository.getCurrent(auth.user.id, proposals ? proposals.keys().toArray() : ids);
-    const items: (DateFixWrite & { currentZone: string | null })[] = [];
+    const shift = (dto.shiftMinutes ?? 0) * 60_000;
+    const items: DateFixPlan[] = [];
     for (const row of rows.toSorted((a, b) => ordered.get(a.assetId)! - ordered.get(b.assetId)!)) {
       const proposal = proposals?.get(row.assetId);
-      const shift = (dto.shiftMinutes ?? 0) * 60_000;
       const newZone = proposal ? (proposal.proposedZone ?? row.timeZone) : (dto.timeZone ?? row.timeZone);
       const newDate = proposal
         ? new Date(proposal.proposedDate)
-        : dto.timeZone
+        : dto.timeZone && dto.keepWallTime
           ? wallToInstant(new Date(row.localDateTime.getTime() + shift), dto.timeZone)
           : new Date(row.takenAt.getTime() + shift);
       const { localDateTime: newLocalDateTime } = getAssetDateTimeUpdates(newDate.toISOString(), newZone, {
@@ -206,6 +210,7 @@ export class DateDoctorService {
       }
       items.push({
         assetId: row.assetId,
+        cause: proposal?.cause ?? null,
         currentTakenAt: row.takenAt,
         currentLocalDateTime: row.localDateTime,
         currentZone: row.timeZone,
@@ -221,7 +226,8 @@ export class DateDoctorService {
         newLocalDateTime,
       });
     }
-    return items;
+    const causes = new Set(items.map(({ cause }) => cause));
+    return { items, cause: causes.size === 1 ? causes.values().next().value! : null };
   }
 
   /**
@@ -246,10 +252,24 @@ export class DateDoctorService {
   }
 }
 
-const toBatchResponse = (batch: Selectable<DateFixBatchTable>): DateFixBatchResponseDto => ({
+type DateFixPlan = DateFixWrite & { cause: DateFindingCause | null; currentZone: string | null };
+
+const undoSince = () => DateTime.now().minus({ days: DATE_FIX_UNDO_DAYS }).toJSDate();
+
+/** A moment as the Doctor shows it; `local` is the clock time, which the asset row keeps in UTC fields. */
+const toTime = (date: Date, zone: string | null, local: Date) => ({
+  date: iso(date),
+  zone,
+  local: iso(local).slice(0, 19),
+});
+
+const toBatchResponse = (batch: Selectable<DateFixBatchTable>): DateDoctorBatchDto => ({
   id: batch.id,
-  count: batch.count,
   createdAt: iso(batch.createdAt),
+  expiresAt: DateTime.fromJSDate(new Date(batch.createdAt)).plus({ days: DATE_FIX_UNDO_DAYS }).toUTC().toISO()!,
+  count: batch.count,
+  cause: batch.cause,
+  shiftMinutes: batch.shiftMinutes,
+  timeZone: batch.timeZone,
   undoneAt: batch.undoneAt ? iso(batch.undoneAt) : null,
-  undoUntil: DateTime.fromJSDate(new Date(batch.createdAt)).plus({ days: DATE_FIX_UNDO_DAYS }).toUTC().toISO()!,
 });

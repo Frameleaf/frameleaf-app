@@ -301,7 +301,7 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     const id = await photo(ctx, user.id);
     const before = await dateOf(id);
 
-    const batch = await doctor.apply(auth, { assetIds: [id], timeZone: 'Europe/Paris' });
+    const { batch } = await doctor.apply(auth, { assetIds: [id], timeZone: 'Europe/Paris', keepWallTime: true });
 
     expect(batch).toEqual(expect.objectContaining({ count: 1, undoneAt: null }));
     // 10:03 on the camera's clock in Paris (summer time) is 08:03 UTC
@@ -333,7 +333,7 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     const auth = factory.auth({ user });
     const id = await photo(ctx, user.id, 'UTC', true);
 
-    const batch = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 30 });
+    const { batch } = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 30 });
     await doctor.undo(auth, batch.id);
 
     expect(jobs.queueAll).toHaveBeenLastCalledWith([{ name: JobName.SidecarWrite, data: { id } }]);
@@ -347,8 +347,8 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     const id = await photo(ctx, user.id);
     const before = await dateOf(id);
 
-    const first = await doctor.apply(auth, { assetIds: [id], timeZone: 'Asia/Tokyo' });
-    const second = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 60 });
+    const { batch: first } = await doctor.apply(auth, { assetIds: [id], timeZone: 'Asia/Tokyo', keepWallTime: true });
+    const { batch: second } = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 60 });
     const items = await db.selectFrom('date_fix_item').selectAll().where('assetId', '=', id).execute();
     expect(items.map(({ previousTakenAt, previousZone }) => ({ previousTakenAt, previousZone }))).toEqual([
       { previousTakenAt: takenAt, previousZone: null },
@@ -368,7 +368,7 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     const auth = factory.auth({ user });
     const [kept, restored] = [await photo(ctx, user.id), await photo(ctx, user.id)];
 
-    const batch = await doctor.apply(auth, { assetIds: [kept, restored], shiftMinutes: 120 });
+    const { batch } = await doctor.apply(auth, { assetIds: [kept, restored], shiftMinutes: 120 });
     const later = new Date('2023-01-01T00:00:00Z');
     await db.updateTable('asset').set({ fileCreatedAt: later }).where('id', '=', kept).execute();
 
@@ -377,7 +377,7 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     expect((await dateOf(restored)).fileCreatedAt).toEqual(takenAt);
   });
 
-  it('applies the Doctor’s proposals and settles their findings', async () => {
+  it('applies the Doctor’s proposals, hiding their findings until undone', async () => {
     const { ctx, doctor } = fixSetup();
     const { user } = await ctx.newUser();
     const auth = factory.auth({ user });
@@ -396,13 +396,24 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
       })
       .execute();
 
-    const { items } = await doctor.preview(auth, { findings: [{ assetId: id, cause: DateFindingCause.MissingZone }] });
-    expect(items).toEqual([expect.objectContaining({ newDate: '2022-07-01T08:03:00.000Z', newZone: 'Europe/Paris' })]);
+    const { items } = await doctor.preview(auth, { assetIds: [id], useProposal: true });
+    expect(items).toEqual([
+      expect.objectContaining({
+        after: { date: '2022-07-01T08:03:00.000Z', zone: 'Europe/Paris', local: '2022-07-01T10:03:00' },
+      }),
+    ]);
     expect((await dateOf(id)).fileCreatedAt).toEqual(takenAt);
 
-    await doctor.apply(auth, { findings: [{ assetId: id, cause: DateFindingCause.MissingZone }] });
+    const { batch } = await doctor.apply(auth, { assetIds: [id], useProposal: true });
+    expect(batch).toEqual(expect.objectContaining({ cause: DateFindingCause.MissingZone, timeZone: null }));
     expect(await dateOf(id)).toEqual(expect.objectContaining({ timeZone: 'Europe/Paris', localDateTime: takenAt }));
-    expect(await db.selectFrom('asset_date_finding').select('assetId').where('assetId', '=', id).execute()).toEqual([]);
+    // the fixed photo leaves the findings at once, and undo brings its finding back without a scan
+    expect(await findingsOf(doctor, auth)).toEqual([]);
+    await doctor.undo(auth, batch.id);
+    expect((await findingsOf(doctor, auth)).map(({ assetId }) => assetId)).toEqual([id]);
+    await expect(doctor.getBatches(auth)).resolves.toEqual([
+      expect.objectContaining({ id: batch.id, undoneAt: expect.any(String) }),
+    ]);
   });
 
   it('a person cannot fix or undo photos they do not own, a partner’s copy included', async () => {
@@ -427,7 +438,7 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     await expect(doctor.apply(partnerAuth, { assetIds: [original], shiftMinutes: 5 })).rejects.toThrow(
       'Not found or no asset.update access',
     );
-    const batch = await doctor.apply(ownerAuth, { assetIds: [original], shiftMinutes: 5 });
+    const { batch } = await doctor.apply(ownerAuth, { assetIds: [original], shiftMinutes: 5 });
     await expect(doctor.undo(partnerAuth, batch.id)).rejects.toThrow('Batch not found');
     expect((await dateOf(copy)).fileCreatedAt).toEqual(takenAt);
   });
@@ -442,7 +453,7 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     }
 
     const started = Date.now();
-    const batch = await doctor.apply(auth, { assetIds: ids, timeZone: 'America/Edmonton' });
+    const { batch } = await doctor.apply(auth, { assetIds: ids, timeZone: 'America/Edmonton' });
     const elapsed = Date.now() - started;
 
     console.log(`FL-930: applied to ${batch.count} photos in ${elapsed} ms`);
@@ -456,8 +467,8 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     const { user } = await ctx.newUser();
     const auth = factory.auth({ user });
     const id = await photo(ctx, user.id);
-    const old = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 1 });
-    const recent = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 1 });
+    const { batch: old } = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 1 });
+    const { batch: recent } = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 1 });
     await db
       .updateTable('date_fix_batch')
       .set({ createdAt: new Date(Date.now() - 31 * 24 * 3_600_000) })

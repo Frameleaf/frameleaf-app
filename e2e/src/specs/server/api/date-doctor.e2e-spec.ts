@@ -51,8 +51,10 @@ describe('/date-doctor', () => {
       items: [
         expect.objectContaining({
           assetId: original.id,
-          previousDate: before.fileCreatedAt,
-          newDate: new Date(new Date(before.fileCreatedAt).getTime() + 3_600_000).toISOString(),
+          before: expect.objectContaining({ date: before.fileCreatedAt }),
+          after: expect.objectContaining({
+            date: new Date(new Date(before.fileCreatedAt).getTime() + 3_600_000).toISOString(),
+          }),
         }),
       ],
     });
@@ -82,28 +84,31 @@ describe('/date-doctor', () => {
       .set(asBearerAuth(owner.accessToken))
       .send({ assetIds: [original.id], timeZone: 'Asia/Tokyo' });
     expect(applied.status).toBe(201);
-    expect(applied.body).toEqual(
-      expect.objectContaining({ id: expect.any(String), count: 1, undoneAt: null, undoUntil: expect.any(String) }),
-    );
+    expect(applied.body).toEqual({
+      batch: expect.objectContaining({ id: expect.any(String), count: 1, timeZone: 'Asia/Tokyo', undoneAt: null }),
+      skipped: [],
+    });
+    const batchId = applied.body.batch.id;
     const fixed = await dateOf(owner.accessToken, original.id);
     expect(fixed.timeZone).toBe('Asia/Tokyo');
 
     const partnerUndo = await request(app)
-      .post(`/date-doctor/batches/${applied.body.id}/undo`)
+      .post(`/date-doctor/batches/${batchId}/undo`)
       .set(asBearerAuth(partner.accessToken));
     expect(partnerUndo.status).toBe(400);
 
-    const undone = await request(app)
-      .post(`/date-doctor/batches/${applied.body.id}/undo`)
-      .set(asBearerAuth(owner.accessToken));
+    const undone = await request(app).post(`/date-doctor/batches/${batchId}/undo`).set(asBearerAuth(owner.accessToken));
     expect(undone.status).toBe(200);
     expect(undone.body).toEqual(expect.objectContaining({ restored: 1, undoneAt: expect.any(String) }));
     expect(await dateOf(owner.accessToken, original.id)).toEqual(before);
 
-    const again = await request(app)
-      .post(`/date-doctor/batches/${applied.body.id}/undo`)
-      .set(asBearerAuth(owner.accessToken));
+    const again = await request(app).post(`/date-doctor/batches/${batchId}/undo`).set(asBearerAuth(owner.accessToken));
     expect(again.status).toBe(400);
+
+    const listed = await request(app).get('/date-doctor/batches').set(asBearerAuth(owner.accessToken));
+    expect(listed.body).toEqual([expect.objectContaining({ id: batchId, undoneAt: expect.any(String) })]);
+    const othersList = await request(app).get('/date-doctor/batches').set(asBearerAuth(partner.accessToken));
+    expect(othersList.body).toEqual([]);
   });
 
   it('lets the partner fix and undo their own copy', async () => {
@@ -117,7 +122,7 @@ describe('/date-doctor', () => {
     expect(applied.status).toBe(201);
 
     const undone = await request(app)
-      .post(`/date-doctor/batches/${applied.body.id}/undo`)
+      .post(`/date-doctor/batches/${applied.body.batch.id}/undo`)
       .set(asBearerAuth(partner.accessToken));
     expect(undone.status).toBe(200);
     expect(await dateOf(partner.accessToken, copyId)).toEqual(before);

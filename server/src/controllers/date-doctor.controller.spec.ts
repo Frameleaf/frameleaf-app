@@ -7,7 +7,14 @@ import { ControllerContext, controllerSetup } from 'test/utils.js';
 
 describe(DateDoctorController.name, () => {
   let ctx: ControllerContext;
-  const service = { getFindings: vi.fn(), scan: vi.fn(), preview: vi.fn(), apply: vi.fn(), undo: vi.fn() };
+  const service = {
+    getFindings: vi.fn(),
+    scan: vi.fn(),
+    preview: vi.fn(),
+    apply: vi.fn(),
+    undo: vi.fn(),
+    getBatches: vi.fn(),
+  };
 
   beforeAll(async () => {
     ctx = await controllerSetup(DateDoctorController, [{ provide: DateDoctorService, useValue: service }]);
@@ -41,11 +48,12 @@ describe(DateDoctorController.name, () => {
     const id = factory.uuid();
 
     it.each([
-      ['neither findings nor photos', {}],
-      ['both', { findings: [{ assetId: id, cause: 'missing-zone' }], assetIds: [id], shiftMinutes: 5 }],
-      ['photos without a zone or shift', { assetIds: [id] }],
+      ['no photos', { useProposal: true }],
+      ['photos with nothing to do', { assetIds: [id] }],
+      ['proposals with a zone', { assetIds: [id], useProposal: true, timeZone: 'UTC' }],
+      ['keepWallTime without a zone', { assetIds: [id], shiftMinutes: 5, keepWallTime: true }],
       ['an unknown zone', { assetIds: [id], timeZone: 'Mars/Olympus' }],
-      ['an unknown cause', { findings: [{ assetId: id, cause: 'bad-vibes' }] }],
+      ['the server’s own zone', { assetIds: [id], timeZone: 'local' }],
       ['a photo twice', { assetIds: [id, id], shiftMinutes: 5 }],
     ])('refuses %s', async (_, body) => {
       const { status } = await request(ctx.getHttpServer()).post('/date-doctor/apply').send(body);
@@ -53,18 +61,29 @@ describe(DateDoctorController.name, () => {
       expect(service.apply).not.toHaveBeenCalled();
     });
 
-    it('previews with 200 and applies a selection’s zone', async () => {
+    it('previews with 200 and applies a zone', async () => {
       service.preview.mockResolvedValue({ items: [] });
       const preview = await request(ctx.getHttpServer())
         .post('/date-doctor/preview')
-        .send({ assetIds: [id], timeZone: 'UTC+2' });
+        .send({ assetIds: [id], timeZone: 'UTC+2', keepWallTime: true });
       expect(preview.status).toBe(200);
-      expect(service.preview).toHaveBeenCalledWith(undefined, { assetIds: [id], timeZone: 'UTC+2' });
+      expect(service.preview).toHaveBeenCalledWith(undefined, {
+        assetIds: [id],
+        timeZone: 'UTC+2',
+        keepWallTime: true,
+      });
 
       await request(ctx.getHttpServer())
         .post('/date-doctor/apply')
-        .send({ assetIds: [id], timeZone: 'Europe/Paris' });
-      expect(service.apply).toHaveBeenCalledWith(undefined, { assetIds: [id], timeZone: 'Europe/Paris' });
+        .send({ assetIds: [id], useProposal: true });
+      expect(service.apply).toHaveBeenCalledWith(undefined, { assetIds: [id], useProposal: true });
+    });
+
+    it('lists the batches', async () => {
+      service.getBatches.mockResolvedValue([]);
+      const { status, body } = await request(ctx.getHttpServer()).get('/date-doctor/batches');
+      expect(status).toBe(200);
+      expect(body).toEqual([]);
     });
 
     it('undoes a batch by its id', async () => {

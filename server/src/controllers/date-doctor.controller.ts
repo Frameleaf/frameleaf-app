@@ -3,10 +3,11 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  DateDoctorApplyResponseDto,
+  DateDoctorBatchDto,
   DateDoctorFindingsResponseDto,
   DateDoctorFixDto,
   DateDoctorPreviewResponseDto,
-  DateFixBatchResponseDto,
 } from 'src/dtos/date-doctor.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -52,7 +53,7 @@ export class DateDoctorController {
   @Endpoint({
     summary: 'Preview a date fix',
     description:
-      'What each photo would be dated after the fix: the Doctor’s proposals, or a time zone and shift for a selection. Nothing changes.',
+      'What each photo would be dated after the fix: the Doctor’s proposals, or a time zone and shift. Nothing changes.',
     history: history(),
   })
   previewDateFix(@Auth() auth: AuthDto, @Body() dto: DateDoctorFixDto): Promise<DateDoctorPreviewResponseDto> {
@@ -67,8 +68,19 @@ export class DateDoctorController {
       'Give the photos their new dates and time zones, set as if by hand, and rewrite their sidecars. The original files never change. It can be undone for 30 days.',
     history: history(),
   })
-  applyDateFix(@Auth() auth: AuthDto, @Body() dto: DateDoctorFixDto): Promise<DateFixBatchResponseDto> {
+  applyDateFix(@Auth() auth: AuthDto, @Body() dto: DateDoctorFixDto): Promise<DateDoctorApplyResponseDto> {
     return this.service.apply(auth, dto);
+  }
+
+  @Get('batches')
+  @Authenticated({ permission: Permission.AssetRead })
+  @Endpoint({
+    summary: 'Get the date fixes that can be undone',
+    description: 'Your date fixes of the last 30 days, newest first, undone ones included.',
+    history: history(),
+  })
+  getDateFixBatches(@Auth() auth: AuthDto): Promise<DateDoctorBatchDto[]> {
+    return this.service.getBatches(auth);
   }
 
   @Post('batches/:id/undo')
@@ -80,7 +92,7 @@ export class DateDoctorController {
       'Put back the dates and time zones the photos had before the fix. A photo whose date was changed again since keeps that date.',
     history: history(),
   })
-  undoDateFix(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<DateFixBatchResponseDto> {
+  undoDateFix(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<DateDoctorBatchDto> {
     return this.service.undo(auth, id);
   }
 }

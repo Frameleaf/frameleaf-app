@@ -8,6 +8,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   "createdAt" timestamp with time zone NOT NULL DEFAULT now(),
   "undoneAt" timestamp with time zone,
   "count" integer NOT NULL,
+  "cause" text,
+  "shiftMinutes" integer,
+  "timeZone" text,
   CONSTRAINT "date_fix_batch_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user" ("id") ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT "date_fix_batch_pkey" PRIMARY KEY ("id")
 );`.execute(db);

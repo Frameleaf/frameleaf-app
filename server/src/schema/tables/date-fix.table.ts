@@ -1,5 +1,6 @@
 import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { DateFindingCause } from 'src/utils/date-doctor.js';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -25,6 +26,16 @@ export class DateFixBatchTable {
 
   @Column({ type: 'integer' })
   count!: number;
+
+  /** What was asked: the proposals' cause when they all had one, or the zone and shift chosen by hand. */
+  @Column({ type: 'text', nullable: true })
+  cause!: DateFindingCause | null;
+
+  @Column({ type: 'integer', nullable: true })
+  shiftMinutes!: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  timeZone!: string | null;
 }
 
 /**
