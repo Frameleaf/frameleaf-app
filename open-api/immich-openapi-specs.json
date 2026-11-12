@@ -101447,7 +101447,7 @@
             "type": "string"
           },
           "step": {
-            "description": "What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed",
+            "description": "What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, asked-icloud, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed",
             "type": "string"
           }
         },
@@ -101624,7 +101624,7 @@
             "type": "string"
           },
           "step": {
-            "description": "What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed",
+            "description": "What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, asked-icloud, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed",
             "type": "string"
           }
         },

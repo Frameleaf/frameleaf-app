@@ -57,6 +57,11 @@ describe(MediaHealthService.name, () => {
   let mediaOperationRepository: MediaOperationRepository;
   let mediaOperationService: MediaOperationService;
   let cloudBackupService: { restoreLostOriginal: ReturnType<typeof vi.fn> };
+  let iCloudSyncRepository: {
+    requestRepair: ReturnType<typeof vi.fn>;
+    ownerUploadsPaused: ReturnType<typeof vi.fn>;
+    queueOperation: ReturnType<typeof vi.fn>;
+  };
   let recoveryRoots: Array<{ label: string; path: string }>;
 
   beforeEach(() => {
@@ -129,6 +134,11 @@ describe(MediaHealthService.name, () => {
     } as unknown as MediaOperationService;
     // Cloud Backup holds no copy unless a spec says so
     cloudBackupService = { restoreLostOriginal: vi.fn().mockResolvedValue({ outcome: 'not-in-backup' }) };
+    iCloudSyncRepository = {
+      requestRepair: vi.fn().mockResolvedValue([]),
+      ownerUploadsPaused: vi.fn().mockResolvedValue(false),
+      queueOperation: vi.fn().mockResolvedValue({ outcome: 'created' }),
+    };
 
     sut = new MediaHealthService(
       mocks.logger as never,
@@ -152,6 +162,7 @@ describe(MediaHealthService.name, () => {
       mocks.systemMetadata as never,
       cloudBackupService as never,
       mocks.session as never,
+      iCloudSyncRepository as never,
     );
     clearConfigCache();
     vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([]);
@@ -4996,6 +5007,132 @@ describe(MediaHealthService.name, () => {
       // it no longer waits for the search
       expect(fixState()).toEqual({ fixState: 'waiting-phone', searchPending: false });
       expect(mediaHealthRepository.relinkManagedAsset).not.toHaveBeenCalled();
+    });
+
+    describe('iCloud Photos (FL-1472)', () => {
+      beforeEach(() => {
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+        recorded(finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, { searchPending: true }));
+        vi.spyOn(sut as any, 'phonesToAsk').mockResolvedValue([{ deviceId: 'session-1', name: 'iPhone' }]);
+      });
+
+      it('asks iCloud Photos for a missing file that came from it, and syncs now', async () => {
+        iCloudSyncRepository.requestRepair.mockResolvedValue([
+          { connectionId: 'icloud-1', automatic: true, due: true },
+        ]);
+
+        await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+        expect(iCloudSyncRepository.requestRepair).toHaveBeenCalledWith('user-id', 'asset-1');
+        expect(stepsWritten()).toEqual([
+          'searched-copy/not-found',
+          'checked-backups/not-found',
+          'asked-icloud/waiting',
+          'asked-phones/waiting',
+        ]);
+        expect(stepNamed('asked-icloud')?.facts).toEqual({ later: false });
+        expect(iCloudSyncRepository.queueOperation).toHaveBeenCalledWith('icloud-1', 'user-id', { trigger: 'manual' });
+        expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.ICloudSync, data: { id: 'icloud-1' } });
+      });
+
+      it('waits for the next sync of a connection that only checks when asked, or must back off', async () => {
+        iCloudSyncRepository.requestRepair.mockResolvedValue([
+          { connectionId: 'icloud-1', automatic: false, due: true },
+          { connectionId: 'icloud-2', automatic: true, due: false },
+        ]);
+
+        await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+        expect(stepNamed('asked-icloud')?.facts).toEqual({ later: true });
+        expect(iCloudSyncRepository.queueOperation).not.toHaveBeenCalled();
+      });
+
+      it('says nothing about iCloud for a photo that did not come from it', async () => {
+        await sut.handleFixAsset({ id: 'asset-1', from: 'check', searched: true });
+
+        expect(stepsWritten()).not.toContain('asked-icloud/waiting');
+      });
+    });
+
+    describe('an upload of a damaged photo (FL-1472)', () => {
+      const good = Buffer.from('the photo as it was stored');
+      const sha1 = (bytes: Buffer) => createHash('sha1').update(bytes).digest();
+      let upload: string;
+
+      const damagedOnDisk = async (bytes: Buffer) => {
+        await original(join(root, 'IMG_2041.jpg'), bytes);
+        asset = { ...asset, checksum: sha1(good) };
+        vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+        recorded({
+          ...finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed),
+          resolution: { reuploadRecommended: true },
+        });
+      };
+
+      beforeEach(async () => {
+        upload = join(root, 'uploaded.jpg');
+        await writeFile(upload, good);
+      });
+
+      it('puts the upload in the damaged file’s place and keeps the damaged file', async () => {
+        await damagedOnDisk(Buffer.from('changed on the drive'));
+        const damaged = asset.originalPath;
+        vi.mocked(mediaHealthRepository.getByIds).mockImplementation(() => {
+          const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0]?.[0];
+          return Promise.resolve([
+            {
+              ...finding(MediaHealthCategory.Corrupt, MediaHealthStatus.Resolved, { retainedPath: damaged }),
+              originalPath: input?.originalPath,
+            },
+          ] as never);
+        });
+
+        await expect(sut.handlePutBackUpload({ id: 'asset-1', path: upload, device: 'iPhone' })).resolves.toBe(
+          JobStatus.Success,
+        );
+
+        const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0][0];
+        expect(input).toMatchObject({
+          expectedOriginalPath: damaged,
+          evidence: { fixState: 'found-again' },
+          steps: [{ step: 'asked-phones', outcome: 'ok', facts: { device: 'iPhone' } }],
+        });
+        expect(input.originalPath).toContain('.library-care');
+        await expect(readFile(input.originalPath)).resolves.toEqual(good);
+        expect(stepNamed('put-back')).toMatchObject({ facts: { uploaded: true }, undo: { kind: 'relink' } });
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(upload);
+      });
+
+      it('changes nothing for the damaged file’s own bytes, and stops asking for them', async () => {
+        await damagedOnDisk(good);
+
+        await expect(sut.handlePutBackUpload({ id: 'asset-1', path: upload })).resolves.toBe(JobStatus.Success);
+
+        expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+        expect(mediaHealthRepository.upsertFinding).toHaveBeenCalledWith(
+          expect.objectContaining({ resolution: { reuploadRecommended: false }, expectedUpdateId: 'update-1' }),
+        );
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(upload);
+      });
+
+      it('leaves a photo alone when its finding no longer asks for an upload', async () => {
+        await damagedOnDisk(Buffer.from('changed on the drive'));
+        recorded(finding(MediaHealthCategory.Corrupt, MediaHealthStatus.CorruptConfirmed));
+
+        await expect(sut.handlePutBackUpload({ id: 'asset-1', path: upload })).resolves.toBe(JobStatus.Skipped);
+
+        expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(upload);
+      });
+
+      it('never removes an upload that became a photo’s original', async () => {
+        await damagedOnDisk(Buffer.from('changed on the drive'));
+        vi.mocked(mediaHealthRepository.isOriginalPathInUse).mockResolvedValue(true);
+
+        await sut.handlePutBackUpload({ id: 'asset-1', path: upload });
+
+        expect(mocks.storage.unlink).not.toHaveBeenCalledWith(upload);
+      });
     });
 
     it('does not wait for phones that are never shown the photo (F4)', async () => {

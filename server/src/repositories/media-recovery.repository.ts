@@ -777,16 +777,28 @@ export class MediaRecoveryRepository {
           "verifiedPaths" = EXCLUDED."verifiedPaths", evidence = EXCLUDED.evidence, "verifiedAt" = now(), "updatedAt" = now()`.execute(
           trx,
         );
-        await sql`UPDATE public.asset_health SET status = ${MediaHealthStatus.Resolved}, severity = 'info',
+        // FL-1472: the problem was fixed for its owner, and its history says iCloud Photos had the original
+        const { rows: answered } = await sql<{
+          id: string;
+        }>`UPDATE public.asset_health SET status = ${MediaHealthStatus.Resolved}, severity = 'info',
           "resolvedAt" = now(), "checkedAt" = now(), "dismissedAt" = NULL,
+          evidence = coalesce(evidence, '{}'::jsonb) || '{"fixState":"found-again"}'::jsonb,
           resolution = resolution || jsonb_build_object('recoveredBy', 'icloud', 'resourceId', ${input.resourceId}::text,
             'previousPath', "originalPath", 'previousEvidence', evidence,
             'recoveryHistory', COALESCE(resolution->'recoveryHistory', '[]'::jsonb) || jsonb_build_array(jsonb_build_object(
               'resourceId', ${input.resourceId}::text, 'previousPath', "originalPath", 'evidence', evidence, 'status', status,
               'dismissedAt', "dismissedAt", 'recoveredAt', clock_timestamp()))), "originalPath" = ${promotedPath}
-          WHERE "assetId" = ${assetId}::uuid AND category IN ('missing', 'corrupt') AND "resolvedAt" IS NULL`.execute(
-          trx,
-        );
+          WHERE "assetId" = ${assetId}::uuid AND category IN ('missing', 'corrupt') AND "resolvedAt" IS NULL
+          RETURNING id`.execute(trx);
+        if (answered.length > 0) {
+          await trx
+            .withSchema('public')
+            .insertInto('asset_health_step')
+            .values(
+              answered.map(({ id }) => ({ healthId: id, assetId, step: 'asked-icloud', outcome: 'ok', undo: null })),
+            )
+            .execute();
+        }
         await sql`UPDATE public.asset_health_candidate c SET status = 'candidate',
           resolution = c.resolution || '{"autoRelinkable":false,"invalidatedBy":"icloud-recovery"}'::jsonb
           FROM public.asset_health h WHERE c."healthId" = h.id AND h."assetId" = ${assetId}::uuid

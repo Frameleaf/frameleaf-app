@@ -124,8 +124,9 @@ export class AssetMediaService extends BaseService {
   }
 
   /**
-   * Media health: the owner's assets with these bytes whose original file is gone. Those are not
-   * duplicates of a re-upload; the upload restores them. Empty when any match still has its file
+   * Media health: the owner's assets with these bytes that a re-upload puts right. Their original file is
+   * gone, or (FL-1472) it is damaged and its finding asks for a re-upload (`damaged`). Those are not
+   * duplicates of a re-upload; the upload restores them. Empty when any match still has a good file
    * (a real duplicate), or for trashed, hidden, external or shared-link matches.
    */
   private async lostOriginalMatches(auth: AuthDto, checksums: Buffer[], { includeHidden = false } = {}) {
@@ -136,13 +137,26 @@ export class AssetMediaService extends BaseService {
     const matches = options
       ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options)
       : await this.assetRepository.getByChecksums(auth.user.id, checksums);
-    const present = await Promise.all(
-      matches.map(({ originalPath }) => this.storageRepository.checkFileExists(originalPath)),
-    );
-    if (matches.length === 0 || present.some(Boolean)) {
+    const files = await this.originalFiles(matches);
+    if (matches.length === 0 || files.includes('good')) {
       return [];
     }
-    return matches.filter((match) => !match.deletedAt && !match.libraryId && !match.isExternal);
+    return matches
+      .map((match, index) => ({ ...match, damaged: files[index] === 'damaged' }))
+      .filter((match) => !match.deletedAt && !match.libraryId && !match.isExternal);
+  }
+
+  /**
+   * What each match's original file is: `gone`, `damaged` (FL-1472: there, but its open finding asks for a
+   * re-upload) or `good`.
+   */
+  private async originalFiles(matches: { id: string; originalPath: string }[]) {
+    const exists = await Promise.all(
+      matches.map(({ originalPath }) => this.storageRepository.checkFileExists(originalPath)),
+    );
+    const there = matches.filter((_, index) => exists[index]).map(({ id }) => id);
+    const wanted = there.length > 0 ? await this.assetRepository.getReuploadWanted(there) : new Set<string>();
+    return matches.map(({ id }, index) => (exists[index] ? (wanted.has(id) ? 'damaged' : 'good') : 'gone'));
   }
 
   /**
@@ -201,12 +215,27 @@ export class AssetMediaService extends BaseService {
     if (lost.length === 0) {
       return;
     }
+    const isVisible = async (assetId: string) => {
+      const options = this.getDuplicateCheckOptions(auth);
+      const visible = options ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options) : lost;
+      return visible.some(({ id }) => id === assetId);
+    };
+    // a lost original goes back at once; a damaged one is replaced by Library care, which keeps it beside the copy
     for (const asset of lost) {
-      if (await this.restoreOriginalFrom(auth, asset, dto, file, checksums)) {
-        const options = this.getDuplicateCheckOptions(auth);
-        const visible = options ? await this.assetRepository.getByChecksums(auth.user.id, checksums, options) : lost;
-        return { id: asset.id, visible: visible.some(({ id }) => id === asset.id), fileUsed: true };
+      if (!asset.damaged && (await this.restoreOriginalFrom(auth, asset, dto, file, checksums))) {
+        return { id: asset.id, visible: await isVisible(asset.id), fileUsed: true };
       }
+    }
+    const damaged = lost.find(({ damaged }) => damaged);
+    if (damaged) {
+      // FL-1472: the job owns the upload from here, and removes it once it is done with it
+      const device = await this.uploadingDevice(auth);
+      await this.jobRepository.queue({
+        name: JobName.MediaHealthPutBackUpload,
+        data: { id: damaged.id, path: file.originalPath, ...(device && { device }) },
+      });
+      this.logger.log(`Upload of damaged asset ${damaged.id} queued to take its damaged file's place`);
+      return { id: damaged.id, visible: await isVisible(damaged.id), fileUsed: true };
     }
   }
 
@@ -1106,17 +1135,19 @@ export class AssetMediaService extends BaseService {
     // Media health: a match whose original is gone is accepted, so the upload can restore it. So is a
     // photo in the Trash while the account lets uploads bring them back (FL-556).
     const trashOpen = isTrashReuploadOpen(getPreferences(await this.userRepository.getMetadata(auth.user.id)));
-    const present = await Promise.all(
-      results.map(async ({ originalPath, deletedAt, status, libraryId, isExternal }) => {
-        if (libraryId || isExternal) {
-          return true;
-        }
-        if (deletedAt) {
-          return !(trashOpen && status === AssetStatus.Trashed);
-        }
-        return this.storageRepository.checkFileExists(originalPath);
-      }),
-    );
+    const managed = results.filter(({ deletedAt, libraryId, isExternal }) => !deletedAt && !libraryId && !isExternal);
+    // FL-1472: a damaged original whose finding asks for a re-upload has no good file either
+    const files = await this.originalFiles(managed);
+    const good = new Map(managed.map(({ id }, index) => [id, files[index] === 'good'] as const));
+    const present = results.map(({ id, deletedAt, status, libraryId, isExternal }) => {
+      if (libraryId || isExternal) {
+        return true;
+      }
+      if (deletedAt) {
+        return !(trashOpen && status === AssetStatus.Trashed);
+      }
+      return good.get(id) ?? true;
+    });
     for (const [index, { id, deletedAt, checksum }] of results.entries()) {
       if (present[index]) {
         checksumMap[checksum.toString('hex')] = { id, isTrashed: !!deletedAt };

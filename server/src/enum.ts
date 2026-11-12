@@ -2372,6 +2372,8 @@ export enum JobName {
   MediaHealthDeleteCorrupt = 'MediaHealthDeleteCorrupt',
   /** FL-1337: check one damaged or missing file and fix what can be fixed by itself, step by step. */
   MediaHealthFixAsset = 'MediaHealthFixAsset',
+  /** FL-1472: an upload of a damaged photo's own bytes takes the damaged file's place. */
+  MediaHealthPutBackUpload = 'MediaHealthPutBackUpload',
 
   AuditTableCleanup = 'AuditTableCleanup',
 
@@ -2560,6 +2562,7 @@ export const JobNameSchema = z
     JobName.LockedRewrap,
     JobName.LockedSweep,
     JobName.MediaHealthFixAsset,
+    JobName.MediaHealthPutBackUpload,
     JobName.WorkflowEventDispatch,
     JobName.WorkflowEventTrigger,
     // the member's key: its value is 'media-import', unlike the names above

@@ -151,6 +151,7 @@ describe('Library care inside a run', () => {
       mocks.systemMetadata as never,
       { restoreLostOriginal: vi.fn().mockResolvedValue({ outcome: 'not-in-backup' }) } as never,
       mocks.session as never,
+      { requestRepair: vi.fn().mockResolvedValue([]) } as never,
     );
     return { sut, asset, repository, integrity };
   };

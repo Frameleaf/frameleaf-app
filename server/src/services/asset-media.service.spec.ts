@@ -836,6 +836,47 @@ describe(AssetMediaService.name, () => {
       });
     });
 
+    describe('a damaged original whose finding asks for a re-upload (FL-1472)', () => {
+      beforeEach(() => {
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+        mocks.asset.getReuploadWanted.mockResolvedValue(new Set([lost.id]));
+      });
+
+      it('accepts the file in the bulk upload check', async () => {
+        await expect(
+          sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
+        ).resolves.toEqual({ results: [{ id: '1', action: AssetUploadAction.ACCEPT }] });
+        expect(mocks.asset.getReuploadWanted).toHaveBeenCalledWith([lost.id]);
+      });
+
+      it('does not answer a checksum preflight with a duplicate', async () => {
+        mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue(lost.id);
+        await expect(sut.getUploadAssetIdByChecksum(authStub.admin, file1.toString('hex'))).resolves.toBeUndefined();
+      });
+
+      it('hands the upload to Library care, which puts it in the damaged file’s place', async () => {
+        await expect(sut.uploadAsset(authStub.admin, createDto, upload)).resolves.toEqual({
+          id: lost.id,
+          status: AssetMediaStatus.CREATED,
+        });
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.MediaHealthPutBackUpload,
+          data: { id: lost.id, path: upload.originalPath },
+        });
+        expect(mocks.physicalFile.restoreLostOriginal).not.toHaveBeenCalled();
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+        // the job owns the upload now: it is not deleted here
+        expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+      });
+
+      it('still rejects the file when the damaged file is not asked to be replaced', async () => {
+        mocks.asset.getReuploadWanted.mockResolvedValue(new Set());
+        await expect(
+          sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
+        ).resolves.toMatchObject({ results: [{ id: '1', action: AssetUploadAction.REJECT, assetId: lost.id }] });
+      });
+    });
+
     it('uploads normally when the photo changed before it could be restored', async () => {
       mocks.physicalFile.restoreLostOriginal.mockResolvedValue(false);
       mocks.asset.create.mockResolvedValue(assetEntity);

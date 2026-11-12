@@ -90,6 +90,7 @@ import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -402,6 +403,7 @@ export class MediaHealthService {
     private systemMetadataRepository: SystemMetadataRepository,
     private cloudBackupService: CloudBackupService,
     private sessionRepository: SessionRepository,
+    private iCloudSyncRepository: ICloudSyncRepository,
   ) {
     this.logger.setContext(MediaHealthService.name);
   }
@@ -1842,19 +1844,56 @@ export class MediaHealthService {
         }
         // a day of waiting: carry on without Cloud Backup, naming no backup
         this.logger.log(`Library care stopped waiting for Cloud Backup to put back ${asset.id}`);
-        return 'none';
+        return this.askICloud(asset, finding);
       }
       case 'not-in-backup': {
         await this.mediaHealthRepository.appendSteps(
           this.stepsOf(finding, [{ step: 'checked-backups', outcome: 'not-found', facts: backupFacts(restore) }]),
         );
-        return 'none';
+        return this.askICloud(asset, finding);
       }
       default: {
         // no Cloud Backup is set up, or this photo is never restored from it: there is no backup to name
-        return 'none';
+        return this.askICloud(asset, finding);
       }
     }
+  }
+
+  /**
+   * FL-1472: a photo that came from iCloud Photos is asked for there, first in its connection's next run. That run
+   * starts now when the connection checks by itself and the provider asked for no back-off; otherwise it waits for
+   * the next sync. The history says so, and the run's answer follows it. Whatever comes of it, the fix carries on.
+   */
+  private async askICloud(asset: MediaHealthAsset, finding: MediaHealthFinding): Promise<'none'> {
+    let asked: Awaited<ReturnType<ICloudSyncRepository['requestRepair']>>;
+    try {
+      asked = await this.iCloudSyncRepository.requestRepair(asset.ownerId, asset.id);
+    } catch (error) {
+      this.logger.warn(`Library care could not ask iCloud Photos for ${asset.id}: ${getErrorMessage(error)}`);
+      return 'none';
+    }
+    if (asked.length === 0) {
+      return 'none';
+    }
+    let now = false;
+    if (!(await this.iCloudSyncRepository.ownerUploadsPaused(asset.ownerId))) {
+      for (const { connectionId, automatic, due } of asked) {
+        if (!automatic || !due) {
+          continue;
+        }
+        const queued = await this.iCloudSyncRepository.queueOperation(connectionId, asset.ownerId, {
+          trigger: 'manual',
+        });
+        if (queued.outcome === 'created' || queued.outcome === 'existing') {
+          await this.jobRepository.queue({ name: JobName.ICloudSync, data: { id: connectionId } });
+          now = true;
+        }
+      }
+    }
+    await this.mediaHealthRepository.appendSteps(
+      this.stepsOf(finding, [{ step: 'asked-icloud', outcome: 'waiting', facts: { later: !now } }]),
+    );
+    return 'none';
   }
 
   /**
@@ -1972,6 +2011,113 @@ export class MediaHealthService {
       },
     );
     return item.status === MediaOperationItemStatus.Ok;
+  }
+
+  /**
+   * FL-1472: a damaged photo's own bytes came in by upload. They take the damaged file's place as a found copy does
+   * (`putBackCopy`): published into Library care's folder, the photo relinked to it, and the damaged file kept
+   * beside it with Undo. Bytes that are the damaged file itself change nothing, and the finding stops asking for
+   * an upload, so phones do not send them again. The upload is removed once it is done with: it is only a copy.
+   */
+  @OnJob({ name: JobName.MediaHealthPutBackUpload, queue: QueueName.MediaHealth })
+  async handlePutBackUpload(job: JobOf<JobName.MediaHealthPutBackUpload>): Promise<JobStatus> {
+    try {
+      return await this.putBackUpload(job);
+    } finally {
+      // never a file the library uses: a relink meanwhile may have made it someone's original
+      if (!(await this.mediaHealthRepository.isOriginalPathInUse(job.path))) {
+        await this.storageRepository.unlink(job.path).catch(() => {});
+      }
+    }
+  }
+
+  private async putBackUpload({ id, path: upload, device }: JobOf<JobName.MediaHealthPutBackUpload>) {
+    const [asset] = await this.mediaHealthRepository.getAssets([id]);
+    if (!asset || asset.deletedAt || asset.isExternal || (await this.isEncryptedOriginal(asset))) {
+      return JobStatus.Skipped;
+    }
+    const finding = (await this.mediaHealthRepository.getFindingsForAsset(asset.id)).find(
+      (open) => open.category === MediaHealthCategory.Corrupt && isOpenFinding(open),
+    );
+    const resolution = (finding?.resolution ?? {}) as Record<string, unknown>;
+    if (!finding || resolution.reuploadRecommended !== true) {
+      return JobStatus.Skipped;
+    }
+    const digests = await this.validateManagedCandidate(asset, upload);
+    if (!digests) {
+      return JobStatus.Skipped;
+    }
+    if (await this.matchesStoredChecksum(asset)) {
+      // the file there is these very bytes: an upload can do no better, so none is asked for again
+      await this.mediaHealthRepository.upsertFinding({
+        ...finding,
+        resolution: { ...resolution, reuploadRecommended: false },
+        expectedUpdateId: asset.updateId,
+      });
+      return JobStatus.Success;
+    }
+    const decoded = await this.integrityService.validate({
+      path: upload,
+      originalFileName: asset.originalFileName,
+      type: asset.type,
+      expected: digests,
+      deep: true,
+    });
+    if (decoded.status !== 'healthy') {
+      this.logger.log(`Library care did not use the upload of ${asset.id}: ${decoded.status}`);
+      return JobStatus.Skipped;
+    }
+    const extension = path.extname(asset.originalFileName).toLowerCase();
+    const destination = this.libraryCarePath(
+      asset,
+      `${asset.id}-${finding.id}-upload${/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : ''}`,
+    );
+    if (!(await this.canReach(destination))) {
+      return JobStatus.Skipped;
+    }
+    await publishVerifiedCopy({
+      source: upload,
+      destination,
+      expected: digests,
+      hash: (filePath) => this.cryptoRepository.hashFileDigests(filePath),
+    });
+    const stat = await this.storageRepository.stat(destination);
+    const committed = await this.mediaHealthRepository.replaceRepairedOriginal({
+      assetId: asset.id,
+      ownerId: asset.ownerId,
+      healthId: finding.id,
+      expectedUpdateId: asset.updateId,
+      expectedChecksumAlgorithm: asset.checksumAlgorithm,
+      expectedOriginalPath: asset.originalPath,
+      expectedChecksum: asset.checksum,
+      originalPath: destination,
+      originalFileName: asset.originalFileName,
+      ...digests,
+      fileModifiedAt: stat.mtime,
+      provenance: {
+        recoveredBy: asset.ownerId,
+        automatic: true,
+        source: 'upload',
+        recoveredAt: new Date().toISOString(),
+      },
+      evidence: { fixState: 'found-again' satisfies FixState },
+      steps: device ? [{ step: 'asked-phones', outcome: 'ok', facts: { device } }] : [],
+      verifyCandidate: () => this.cryptoRepository.hashFileDigests(destination).catch((): undefined => {}),
+    });
+    if (!committed) {
+      // left unreferenced in the hidden folder, where a later upload of the same photo reuses it
+      this.logger.log(`Library care left the upload of ${asset.id} unused: the photo or its finding changed`);
+      return JobStatus.Skipped;
+    }
+    const after = { originalPath: destination, checksum: digests.sha256.toString('hex') };
+    await this.retainDamagedOriginal(finding.id, (retainedPath) => ({
+      step: 'put-back',
+      outcome: 'ok',
+      facts: { uploaded: true },
+      undo: { kind: 'relink', previousPath: retainedPath, ...after },
+    }));
+    await this.queueRelinkJobs(asset.id);
+    return JobStatus.Success;
   }
 
   /**

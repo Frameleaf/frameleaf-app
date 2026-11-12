@@ -6,7 +6,7 @@ import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repos
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
-import { canonicalDatabaseUrl, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
+import { canonicalDatabaseUrl, seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { SCALE_ITEMS } from 'test/medium/scale.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -84,6 +84,70 @@ describe(ICloudSyncRepository.name, () => {
       expect(finished!.status).toBe(status);
     },
   );
+
+  describe('a photo Library care asks iCloud for (FL-1472)', () => {
+    /** The item mapped to a library photo with an open problem, finished as `status`. */
+    const mappedItem = async (status: string) => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+      await repository.materialize(connection, 'library', library);
+      const photo = await seedCanonicalAsset(db, { ownerId: connection.ownerId });
+      const resource = (await repository.claim(connection.id, 1000))!;
+      await sql`UPDATE icloud_resource SET status=${status},"assetId"=${photo.id}::uuid,"leaseToken"=NULL,"leaseExpiresAt"=NULL,
+        "reservedBytes"=0,attempts=3 WHERE id=${resource.id}::uuid`.execute(db);
+      const { rows } = await sql<{ id: string }>`INSERT INTO public.asset_health ("assetId", category, status, severity,
+          "originalPath", "originalFileName", evidence, resolution, "checkedAt")
+        VALUES (${photo.id}::uuid, 'missing', 'missing', 'critical', '/data/upload/IMG_0001.jpg', 'IMG_0001.jpg',
+          '{}'::jsonb, '{}'::jsonb, now()) RETURNING id`.execute(db);
+      return { resource, photo, healthId: rows[0].id };
+    };
+    const steps = async (healthId: string) =>
+      (
+        await sql<{ step: string; outcome: string }>`SELECT step, outcome FROM public.asset_health_step
+          WHERE "healthId"=${healthId}::uuid ORDER BY at`.execute(db)
+      ).rows.map(({ step, outcome }) => `${step}/${outcome}`);
+
+    it.each(['finalized', 'failed', 'needs-review'])('puts a %s item back in line, first', async (status) => {
+      const { resource, photo } = await mappedItem(status);
+
+      await expect(repository.requestRepair(connection.ownerId, photo.id)).resolves.toEqual([
+        { connectionId: connection.id, automatic: expect.any(Boolean), due: true },
+      ]);
+
+      const asked = await repository.resource(resource.id);
+      expect(asked).toMatchObject({ status: 'pending', source: expect.objectContaining({ repairRequested: true }) });
+      expect((await repository.claim(connection.id, 1000))?.id).toBe(resource.id);
+    });
+
+    it('asks nothing of a photo no iCloud item came from', async () => {
+      await mappedItem('finalized');
+      const other = await seedCanonicalAsset(db, { ownerId: connection.ownerId });
+      await expect(repository.requestRepair(connection.ownerId, other.id)).resolves.toEqual([]);
+    });
+
+    it('says in the history when the asked item ends without the photo', async () => {
+      const { photo, healthId } = await mappedItem('finalized');
+      await repository.requestRepair(connection.ownerId, photo.id);
+      const claimed = (await repository.claim(connection.id, 1000))!;
+
+      await repository.finish(claimed, 'needs-review', 'mapped_asset_identity_changed');
+
+      expect(await steps(healthId)).toEqual(['asked-icloud/not-found']);
+      expect((await repository.resource(claimed.id))!.source.repairRequested).toBeUndefined();
+    });
+
+    it('tries a failed item again on the next run while its photo is missing', async () => {
+      const { resource } = await mappedItem('failed');
+      await repository.startRun(connection);
+      expect(await repository.resource(resource.id)).toMatchObject({ status: 'pending', attempts: 0 });
+    });
+
+    it('leaves a failed item alone on the next run when its photo is fine', async () => {
+      const { resource, healthId } = await mappedItem('failed');
+      await sql`UPDATE public.asset_health SET "resolvedAt"=now() WHERE id=${healthId}::uuid`.execute(db);
+      await repository.startRun(connection);
+      expect(await repository.resource(resource.id)).toMatchObject({ status: 'failed' });
+    });
+  });
 
   it('repairs historic unstaged terminal reservations before admitting another claim', async () => {
     await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);

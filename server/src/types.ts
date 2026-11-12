@@ -510,6 +510,14 @@ export interface IMediaHealthDeleteCorruptJob extends IBaseJob {
   userId: string;
 }
 
+/** FL-1472: the bytes uploaded for a damaged photo, waiting to take its damaged file's place. */
+export interface IMediaHealthPutBackUploadJob extends IEntityJob {
+  /** The uploaded file, in the owner's upload storage; the job removes it once it is done with it. */
+  path: string;
+  /** The phone or tablet that sent it, for the file's history. */
+  device?: string;
+}
+
 /** FL-1337: check one damaged or missing file and fix it by itself where it can, recording each step. */
 export interface IMediaHealthFixAssetJob extends IEntityJob {
   /** What asked: a preview that failed, a file check, an import, or a person's Try again. */
@@ -669,6 +677,7 @@ export type JobItem =
   | { name: JobName.MediaHealthScanCorrupt; data: IMediaHealthScanJob }
   | { name: JobName.MediaHealthDeleteCorrupt; data: IMediaHealthDeleteCorruptJob }
   | { name: JobName.MediaHealthFixAsset; data: IMediaHealthFixAssetJob }
+  | { name: JobName.MediaHealthPutBackUpload; data: IMediaHealthPutBackUploadJob }
 
   // User
   | { name: JobName.UserDeleteCheck; data?: IBaseJob }

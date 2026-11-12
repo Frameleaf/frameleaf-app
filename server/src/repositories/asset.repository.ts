@@ -2538,6 +2538,20 @@ export class AssetRepository {
       .executeTakeFirst();
     return asset?.id;
   }
+  /**
+   * FL-1472: of these photos, the ones whose original is damaged and whose open finding asks for a re-upload.
+   * An upload of their own bytes is not a duplicate: it takes the damaged file's place.
+   */
+  async getReuploadWanted(assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+    const { rows } = await sql<{ assetId: string }>`SELECT DISTINCT h."assetId" FROM public.asset_health h
+      WHERE h."assetId" = ANY(${assetIds}::uuid[]) AND h.category = 'corrupt'
+        AND h.status IN ('corrupt_confirmed', 'corrupt_suspect') AND h."resolvedAt" IS NULL AND h."dismissedAt" IS NULL
+        AND coalesce((h.resolution->>'reuploadRecommended')::boolean, false)`.execute(this.db);
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
   /** FL-365: the uploaded originals a re-file into the folder layout checks (not in an added folder, not deleted). */
   async countUploadedOriginals(): Promise<number> {
     const row = await this.db
