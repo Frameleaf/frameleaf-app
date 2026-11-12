@@ -207,6 +207,10 @@
     if (folder && unconnected === folder) {
       looks++;
     }
+    // FL-1495: a folder connected in Manager shows on coming back; a look that failed while Frameleaf restarted is tried again.
+    if (browseOpen && (browsing || browseError)) {
+      void browse(browsing?.path);
+    }
   }}
 />
 
@@ -223,8 +227,8 @@
           variant={folder ? 'default' : 'primary'}
           onclick={() => {
             browseOpen = !browseOpen;
-            if (browseOpen && !browsing) {
-              void browse(folder || undefined);
+            if (browseOpen) {
+              void browse(browsing?.path ?? (folder || undefined));
             }
           }}
         >
@@ -255,9 +259,30 @@
                   <button type="button" class="resource-button" onclick={() => browse(entry.path)}>{entry.name}</button>
                 </li>
               {:else}
-                <li class="resource-footnote">{$t('frameleaf_libraries_browse_empty')}</li>
+                {#if !managerUrl || !browsing.nothingConnected}
+                  <li class="resource-footnote">{$t('frameleaf_libraries_browse_empty')}</li>
+                {/if}
               {/each}
             </ul>
+            <!-- FL-1495: with Manager, Frameleaf sees a folder only once it is connected there, so /mnt holds nothing
+                 at all until then. A connected folder with no folders inside, empty or not, keeps the plain line. -->
+            {#if managerUrl && browsing.readable}
+              {#if browsing.nothingConnected}
+                <Notice title={$t('frameleaf_libraries_browse_none_title')}
+                  >{$t('frameleaf_libraries_browse_none_body')}
+                  {#snippet action()}
+                    <a
+                      class="fl-control button primary"
+                      href={`${managerUrl}/#services`}
+                      target="_blank"
+                      rel="noopener noreferrer">{$t('frameleaf_move_open_manager')}</a
+                    >
+                  {/snippet}
+                </Notice>
+              {:else if browsing.folders.length > 0}
+                <p class="resource-footnote">{$t('frameleaf_libraries_browse_connected_only')}</p>
+              {/if}
+            {/if}
             {#if browsing.path !== '/' && browsing.readable}
               <button type="button" class="resource-button primary" onclick={() => choose(browsing!.path)}
                 >{$t('frameleaf_libraries_browse_use')}</button

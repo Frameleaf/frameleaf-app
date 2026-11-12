@@ -110959,6 +110959,10 @@
             },
             "type": "array"
           },
+          "nothingConnected": {
+            "description": "Whether nothing is connected here: the folder holds nothing at all and is on the server’s own disk",
+            "type": "boolean"
+          },
           "parent": {
             "description": "The folder above it; null at the top",
             "nullable": true,
@@ -110980,6 +110984,7 @@
         "required": [
           "defaultExclusionPatterns",
           "folders",
+          "nothingConnected",
           "parent",
           "path",
           "readable",

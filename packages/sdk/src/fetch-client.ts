@@ -2874,6 +2874,8 @@ export type LibraryFolderBrowseResponseDto = {
     defaultExclusionPatterns: string[];
     /** Its folders, sorted by name; hidden, system and NAS folders are left out */
     folders: LibraryFolderEntryDto[];
+    /** Whether nothing is connected here: the folder holds nothing at all and is on the server’s own disk */
+    nothingConnected: boolean;
     /** The folder above it; null at the top */
     parent: string | null;
     /** The folder that was listed */
