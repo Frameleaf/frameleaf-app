@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Mocked, vitest } from 'vitest';
 import type {
   AlbumSuggestionRepository,
@@ -372,6 +372,42 @@ describe(AlbumSuggestionService.name, () => {
     it('stores the choice per person', async () => {
       await sut.setAutoAdd(auth, albumId, { enabled: true });
       expect(suggestions.setAutoAdd).toHaveBeenCalledWith(albumId, auth.user.id, true);
+    });
+
+    describe('connected apps (FL-1490)', () => {
+      const app = {
+        ...auth,
+        oauthApp: {
+          clientId: 'client',
+          clientName: 'Test app',
+          grantId: 'grant',
+          scopes: ['albums:write'],
+          resource: null,
+        },
+      } as typeof auth;
+
+      it('refuses an app turning it on for a Locked album', async () => {
+        mocks.album.getById.mockResolvedValue({ isLocked: true } as never);
+        await expect(sut.setAutoAdd(app, albumId, { enabled: true })).rejects.toBeInstanceOf(ForbiddenException);
+        expect(suggestions.setAutoAdd).not.toHaveBeenCalled();
+      });
+
+      it('lets an app turn it on for an unlocked album, and off for a Locked one', async () => {
+        mocks.album.getById.mockResolvedValue({ isLocked: false } as never);
+        await sut.setAutoAdd(app, albumId, { enabled: true });
+        mocks.album.getById.mockResolvedValue({ isLocked: true } as never);
+        await sut.setAutoAdd(app, albumId, { enabled: false });
+        expect(suggestions.setAutoAdd.mock.calls).toEqual([
+          [albumId, auth.user.id, true],
+          [albumId, auth.user.id, false],
+        ]);
+      });
+
+      it('leaves a signed-in person free to turn it on for their Locked album', async () => {
+        mocks.album.getById.mockResolvedValue({ isLocked: true } as never);
+        await sut.setAutoAdd(auth, albumId, { enabled: true });
+        expect(suggestions.setAutoAdd).toHaveBeenCalledWith(albumId, auth.user.id, true);
+      });
     });
 
     it('queues a check only for people who turned it on', async () => {

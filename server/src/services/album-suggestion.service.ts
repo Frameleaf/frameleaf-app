@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -101,6 +101,14 @@ export class AlbumSuggestionService extends BaseService {
 
   async setAutoAdd(auth: AuthDto, id: string, { enabled }: AlbumSuggestionAutoAddDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
+    // Auto-add runs later as the owner, and adding to a Locked album locks what is added. A connected app
+    // cannot add to a Locked album (FL-1422), so it cannot arm the job that would do it either (FL-1490).
+    if (auth.oauthApp && enabled) {
+      const album = await this.albumRepository.getById(id, { withAssets: false });
+      if (album?.isLocked) {
+        throw new ForbiddenException('Connected apps can’t add to a Locked album');
+      }
+    }
     await this.albumRepository.suggestions.setAutoAdd(id, auth.user.id, enabled);
   }
 
