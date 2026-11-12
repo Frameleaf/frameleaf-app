@@ -48,7 +48,7 @@ test('FL-1477: compose names Imports from the server environment after overrides
   assert.equal(own.environment.FRAMELEAF_IMPORTS_HOST_PATH, '/srv/imports');
 });
 
-test('FL-1477: the rendered stack names Imports from a media location set in a server override', async () => {
+test('FL-1477: the rendered stack names Imports inside the media location Manager sets', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'manager-imports-'));
   try {
     const bundle = join(dir, 'bundle');
@@ -72,17 +72,14 @@ test('FL-1477: the rendered stack names Imports from a media location set in a s
       databasePath: '/fixtures/db',
     } as unknown as Installation;
     const stack = join(dir, 'stack');
-    const render = async (services: Record<string, unknown>) => {
-      await renderCompose(release, installation, 'pw', stack, { environment: {}, settings: null, services } as never, 'cpu');
+    const render = async (environment: Record<string, string>) => {
+      await renderCompose(release, installation, 'pw', stack, { environment, settings: null } as never, 'cpu');
       const compose = JSON.parse(await readFile(join(stack, 'compose.json'), 'utf8'));
       return compose.services['frameleaf-server'].environment.FRAMELEAF_IMPORTS_HOST_PATH;
     };
 
     assert.equal(await render({}), '/mnt/user/photos/imports');
-    assert.equal(
-      await render({ 'frameleaf-server': { environment: { FRAMELEAF_MEDIA_LOCATION: '/data/custom' }, mounts: [] } }),
-      '/mnt/user/photos/custom/imports',
-    );
+    assert.equal(await render({ IMMICH_MEDIA_LOCATION: '/data/custom' }), '/mnt/user/photos/custom/imports');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
