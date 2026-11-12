@@ -242,6 +242,9 @@ export const Route = {
   newUser: () => commandCenterUrl('users', 'accounts', { new: 1 }),
   viewUser: ({ id }: { id: string }) => commandCenterUrl('users', 'accounts', { user: id }),
   editUser: ({ id }: { id: string }) => commandCenterUrl('users', 'accounts', { user: id, edit: 1 }),
+  // FL-824: the household Activity log, for everyone or narrowed to one account.
+  activityLog: (params: { who?: string } = {}) =>
+    commandCenterUrl('users', 'accounts', { show: 'activity', who: params.who }),
 
   // utilities
   utilities: () => utilitiesUrl(),

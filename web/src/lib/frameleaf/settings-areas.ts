@@ -217,6 +217,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
       'oauth',
       'authorized-devices',
       'connected-apps',
+      'account-activity',
       'api-keys',
       'user-pin-code-settings',
       'suppressed-content',
@@ -353,6 +354,8 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   password: 'frameleaf_how_page_description',
   passkeys: 'frameleaf_passkey_page_description',
   'two-step': 'frameleaf_two_step_page_description',
+  // FL-824: Account activity (AccountActivity.jsx).
+  'account-activity': 'frameleaf_account_activity_page_description',
   // Sign-in methods (SignInMethods.jsx): "How people may sign in to this server, and how to get back in."
   authentication: 'frameleaf_signin_page_description',
   'frameleaf-signin': 'frameleaf_signin_frameleaf_page_description',
@@ -795,6 +798,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'authorized-devices': 'devices',
     'api-keys': 'devices',
     'connected-apps': 'devices',
+    'account-activity': 'devices',
   },
   // FL-421: the prototype's "Alerts" group (CommandCenter.jsx `signals: "Alerts"`).
   notifications: { notifications: 'email', 'email-preferences': 'email', signals: 'alerts' },

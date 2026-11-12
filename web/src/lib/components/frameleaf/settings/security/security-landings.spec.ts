@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
 import en from '../../../../../../../i18n/en.json';
 import WhoCanSignInLanding from './WhoCanSignInLanding.svelte';
@@ -13,8 +14,11 @@ const sdk = vi.hoisted(() => ({
   getLockedEncryption: vi.fn(),
   getFrameleafAccountLink: vi.fn(),
   getOAuthAppGrants: vi.fn(),
+  getMyActivity: vi.fn(),
 }));
 const cloud = vi.hoisted(() => ({ status: null as unknown }));
+const nav = vi.hoisted(() => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto: nav.goto }));
 const user = vi.hoisted(() => ({ isAdmin: true, email: 'taylor@example.test', name: 'Taylor' }));
 vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<typeof import('@frameleaf/sdk')>()), ...sdk }));
 vi.mock('$lib/managers/cloud-manager.svelte', () => ({
@@ -36,6 +40,7 @@ const sections = [
   { key: 'password', title: 'How you sign in', subtitle: 'Your email, password and linked accounts', icon: ICON },
   { key: 'authorized-devices', title: 'Signed-in devices', subtitle: 'Where you are signed in', icon: ICON },
   { key: 'connected-apps', title: 'Connected apps', subtitle: 'AI assistants and other apps', icon: ICON },
+  { key: 'account-activity', title: 'Account activity', subtitle: 'Your sign-ins and changes', icon: ICON },
   { key: 'api-keys', title: 'API keys', subtitle: 'For apps', icon: ICON },
   { key: 'user-pin-code-settings', title: 'Locked PIN', subtitle: 'Opens Locked photos', icon: ICON },
   { key: 'suppressed-content', title: 'Always Locked', subtitle: 'People, pets and tags', icon: ICON },
@@ -81,6 +86,7 @@ describe('Your sign-in & privacy (FL-367)', () => {
     sdk.getApiKeys.mockResolvedValue([]);
     sdk.getFrameleafAccountLink.mockResolvedValue({ available: true, linked: false });
     sdk.getOAuthAppGrants.mockResolvedValue([]);
+    sdk.getMyActivity.mockResolvedValue({ events: [], hasMore: false });
   });
 
   it('says the account is protected', async () => {
@@ -106,6 +112,37 @@ describe('Your sign-in & privacy (FL-367)', () => {
     render(YourSignInLanding, { sections });
     expect(screen.getByText('Connected apps')).toBeInTheDocument();
     expect(await screen.findByText('1 app')).toBeInTheDocument();
+  });
+
+  it('links Account activity with when you last signed in, or that sign-ins did not work (FL-824)', async () => {
+    const event = (action: string, minutesAgo: number) => ({
+      id: `${action}-${minutesAgo}`,
+      source: 'account',
+      userId: 'u1',
+      action,
+      detail: 'password',
+      createdAt: new Date(now - minutesAgo * 60_000).toISOString(),
+    });
+    sdk.getSessions.mockResolvedValue([session('a', 0, true)]);
+    const view = render(YourSignInLanding, { sections });
+    expect(screen.getByText('Account activity')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing yet')).toBeInTheDocument();
+    expect(sdk.getMyActivity).toHaveBeenCalledWith({ take: 50 });
+    view.unmount();
+
+    sdk.getMyActivity.mockResolvedValue({ events: [event('signed-in', 0)], hasMore: false });
+    const signedIn = render(YourSignInLanding, { sections });
+    expect(await screen.findByText(/^Last sign-in today, /)).toBeInTheDocument();
+    signedIn.unmount();
+
+    sdk.getMyActivity.mockResolvedValue({
+      events: [event('signed-in', 0), event('sign-in-failed', 5), event('sign-in-failed', 6)],
+      hasMore: false,
+    });
+    render(YourSignInLanding, { sections });
+    expect(await screen.findByText('2 sign-ins didn’t work in the last day')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Open: Account activity' }));
+    expect(nav.goto).toHaveBeenCalledWith('/user-settings?area=privacy&section=account-activity');
   });
 
   it('raises a device not used for a while', async () => {
