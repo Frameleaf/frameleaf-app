@@ -15,7 +15,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '$i18n/en.json';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import JobsAdvancedList from '$lib/components/frameleaf/jobs/JobsAdvancedList.svelte';
-import { JOB_QUEUES } from '$lib/frameleaf/job-queues';
+import { JOB_QUEUES, type JobQueueDefinition } from '$lib/frameleaf/job-queues';
 
 const TITLES: Partial<Record<QueueName, string>> = {
   [QueueName.VideoConversion]: 'Converting videos',
@@ -68,7 +68,7 @@ const show = (
   render(JobsAdvancedList, {
     rows,
     refreshToken: 0,
-    title: (definition) => TITLES[definition.name] ?? definition.name,
+    title: (definition: JobQueueDefinition) => TITLES[definition.name] ?? definition.name,
     featureName: () => 'Ready to browse',
     workersOf: () => 3,
     careHref: '/care',
@@ -376,7 +376,7 @@ describe('the head and the foot (FL-1486)', () => {
     const { rerender } = render(JobsAdvancedList, {
       rows: [row(QueueName.VideoConversion)],
       refreshToken: 'a',
-      title: (definition) => definition.name,
+      title: (definition: JobQueueDefinition) => definition.name,
       featureName: () => '',
       workersOf: () => 1,
       careHref: '/care',
