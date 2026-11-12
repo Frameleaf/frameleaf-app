@@ -383,6 +383,10 @@ const searchFilterBranchShape = {
     'Source pixel width divided by height; null when dimensions are unavailable',
   ),
   durationMs: NumberFilterNullableSchema.describe('Video/GIF duration in milliseconds; null for static images'),
+  // FL-1469: the photo-quality check's technical score (sharpness and exposure, 0–1); null until a photo is scored
+  technicalScore: NumberFilterNullableSchema.describe(
+    'Technical quality from the best-photo check (0 to 1); null when the photo has not been scored',
+  ),
   takenAt: DateFilterSchema,
   // FL-49: the local capture date and time (the wall clock where the photo was taken, written as UTC), the
   // date the timeline and the search histogram bucket by; year:, month:, after: and before: narrow on it

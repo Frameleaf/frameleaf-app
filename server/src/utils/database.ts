@@ -1200,6 +1200,13 @@ function branchPredicates(
       branch.aspectRatio,
     ),
     ...comparisonPredicates(eb, 'asset.duration', branch.durationMs),
+    ...comparisonPredicates(
+      eb,
+      sql<
+        number | null
+      >`(select score."technicalScore" from asset_best_photo_score as score where score."assetId" = asset.id)`,
+      branch.technicalScore,
+    ),
     ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
     ...comparisonPredicates(eb, 'asset.localDateTime', branch.localDateTime),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),

@@ -200,6 +200,7 @@ import { SystemMetadataService } from 'src/services/system-metadata.service.js';
 import { TagService } from 'src/services/tag.service.js';
 import { TakeoutWorkerService } from 'src/services/takeout-worker.service.js';
 import { TakeoutService } from 'src/services/takeout.service.js';
+import { TidyUpService } from 'src/services/tidy-up.service.js';
 import { TimelineService } from 'src/services/timeline.service.js';
 import { TranscodingService } from 'src/services/transcoding.service.js';
 import { TrashService } from 'src/services/trash.service.js';
@@ -419,6 +420,7 @@ export const services = [
   EagleImportWorkerService,
   TakeoutService,
   TakeoutWorkerService,
+  TidyUpService,
   TimelineService,
   TranscodingService,
   TrashService,

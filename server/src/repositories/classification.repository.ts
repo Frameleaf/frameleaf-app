@@ -36,6 +36,12 @@ export type ClassificationRuleEffects = Pick<
 
 export type ClassificationScoredAsset = { assetId: string; score: number | null };
 
+/** A rule Library care's Tidy up made (FL-1469), with the collection its album sits in. */
+export type ClassificationCareRule = ClassificationRuleWithAlbum & { careKind: string; parentId: string | null };
+
+/** One photo in Tidy up's review or Tidied away list, with every kind that found it. */
+export type ClassificationCareItem = { assetId: string; kinds: string[]; automatic: boolean };
+
 export type ClassificationApplyOutcome = {
   added: number;
   suggested: number;
@@ -234,6 +240,115 @@ export class ClassificationRepository {
       }
     }
     return counts;
+  }
+
+  /* ---------------- Tidy up (FL-1469) ---------------- */
+
+  getCareRules(ownerId: string): Promise<ClassificationCareRule[]> {
+    return this.rules()
+      .select('album.parentId')
+      .where('classification_rule.ownerId', '=', ownerId)
+      .where('classification_rule.careKind', 'is not', null)
+      .orderBy('classification_rule.id')
+      .execute() as Promise<ClassificationCareRule[]>;
+  }
+
+  async setCareKind(id: string, careKind: string): Promise<void> {
+    await this.db.updateTable('classification_rule').set({ careKind }).where('id', '=', id).execute();
+  }
+
+  /**
+   * Waiting: suggestions on photos still on the timeline, minus any photo the person chose to keep for
+   * another kind (Keep is for good, whichever kind asks). Tidied away: photos a Tidy up rule archived
+   * that are still in the Archive. Locked and trashed photos are never listed.
+   */
+  private careItems(ownerId: string, list: 'waiting' | 'tidied', kind?: string) {
+    return this.db
+      .selectFrom('classification_match')
+      .innerJoin('classification_rule', 'classification_rule.id', 'classification_match.ruleId')
+      .innerJoin('album', 'album.id', 'classification_rule.albumId')
+      .innerJoin('asset', 'asset.id', 'classification_match.assetId')
+      .where('classification_rule.ownerId', '=', ownerId)
+      .where('classification_rule.careKind', 'is not', null)
+      .where('album.deletedAt', 'is', null)
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.deletedAt', 'is', null)
+      .where(isNotLocked('asset'))
+      .$if(!!kind, (qb) => qb.where('classification_rule.careKind', '=', kind!))
+      .$if(list === 'waiting', (qb) =>
+        qb
+          .where('classification_rule.enabled', '=', true)
+          .where('classification_match.decision', '=', ClassificationMatchDecision.Suggested)
+          .where('asset.visibility', '=', AssetVisibility.Timeline)
+          .where(({ not, exists, selectFrom }) =>
+            not(
+              exists(
+                selectFrom('classification_match as kept')
+                  .innerJoin('classification_rule as kept_rule', 'kept_rule.id', 'kept.ruleId')
+                  .select('kept.ruleId')
+                  .whereRef('kept.assetId', '=', 'classification_match.assetId')
+                  .where('kept_rule.careKind', 'is not', null)
+                  .where('kept.decision', '=', ClassificationMatchDecision.Rejected),
+              ),
+            ),
+          ),
+      )
+      .$if(list === 'tidied', (qb) =>
+        qb
+          .where('classification_match.decision', 'in', ACTIVE)
+          .where('classification_match.archiveContributed', '=', true)
+          .where('asset.visibility', '=', AssetVisibility.Archive),
+      );
+  }
+
+  async getCarePage(
+    ownerId: string,
+    list: 'waiting' | 'tidied',
+    { kind, offset, limit }: { kind?: string; offset: number; limit: number },
+  ): Promise<{ total: number; items: ClassificationCareItem[] }> {
+    const base = this.careItems(ownerId, list, kind);
+    const [count, rows] = await Promise.all([
+      base
+        .select((eb) => eb.fn.count<number>('classification_match.assetId').distinct().as('count'))
+        .executeTakeFirst(),
+      base
+        .select([
+          'classification_match.assetId',
+          sql<string[]>`array_agg(distinct classification_rule."careKind")`.as('kinds'),
+          sql<boolean>`bool_or(classification_match.decision = ${ClassificationMatchDecision.Matched})`.as('automatic'),
+        ])
+        .groupBy('classification_match.assetId')
+        .orderBy(sql`max(asset."fileCreatedAt")`, 'desc')
+        .orderBy('classification_match.assetId')
+        .offset(offset)
+        .limit(limit)
+        .execute(),
+    ]);
+    return {
+      total: Number(count?.count ?? 0),
+      items: rows.map((row) => ({ assetId: row.assetId, kinds: [...row.kinds].sort(), automatic: !!row.automatic })),
+    };
+  }
+
+  /** Per kind and in all: photos waiting for review, and photos Tidy up keeps in the Archive. */
+  async countCare(ownerId: string): Promise<{ waiting: Map<string, number>; waitingTotal: number; tidied: number }> {
+    const [perKind, total, tidied] = await Promise.all([
+      this.careItems(ownerId, 'waiting')
+        .select(['classification_rule.careKind', (eb) => eb.fn.countAll<number>().as('count')])
+        .groupBy('classification_rule.careKind')
+        .execute(),
+      this.careItems(ownerId, 'waiting')
+        .select((eb) => eb.fn.count<number>('classification_match.assetId').distinct().as('count'))
+        .executeTakeFirst(),
+      this.careItems(ownerId, 'tidied')
+        .select((eb) => eb.fn.count<number>('classification_match.assetId').distinct().as('count'))
+        .executeTakeFirst(),
+    ]);
+    return {
+      waiting: new Map(perKind.map((row) => [row.careKind!, Number(row.count)])),
+      waitingTotal: Number(total?.count ?? 0),
+      tidied: Number(tidied?.count ?? 0),
+    };
   }
 
   /* ---------------- matching (reads only) ---------------- */
@@ -586,12 +701,16 @@ export class ClassificationRepository {
   /**
    * The owner's review of a rule's matches. Accepting applies the rule's album, tag and archive and
    * keeps the item whatever later reprocessing finds. Rejecting takes back what this rule applied and
-   * keeps it from ever applying again.
+   * keeps it from ever applying again. Suggesting again (Tidy up's Undo, FL-1469) takes back what the
+   * rule applied and puts the item back up for review.
    */
   async decide(
     rule: ClassificationRuleEffects,
     assetIds: string[],
-    decision: ClassificationMatchDecision.Accepted | ClassificationMatchDecision.Rejected,
+    decision:
+      | ClassificationMatchDecision.Accepted
+      | ClassificationMatchDecision.Rejected
+      | ClassificationMatchDecision.Suggested,
   ): Promise<ClassificationApplyOutcome & { updated: number; skipped: number }> {
     const outcome = { ...emptyOutcome(), updated: 0, skipped: 0 };
     if (assetIds.length === 0) {

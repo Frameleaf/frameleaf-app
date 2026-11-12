@@ -497,7 +497,8 @@ export class ClassificationService extends BaseService {
     return outcome;
   }
 
-  private async emitTagEvents(ownerId: string, outcome: Pick<ClassificationApplyOutcome, 'tagged' | 'untagged'>) {
+  /** Sidecar events for what a rule tagged or untagged. Tidy up (FL-1469) reuses it for its own decisions. */
+  async emitTagEvents(ownerId: string, outcome: Pick<ClassificationApplyOutcome, 'tagged' | 'untagged'>) {
     for (const assetId of outcome.tagged) {
       await this.eventRepository.emit('AssetTag', { assetId, userId: ownerId });
     }

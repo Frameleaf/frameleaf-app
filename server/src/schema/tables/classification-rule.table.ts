@@ -16,6 +16,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  * together with the moment the owner consented to it (`classification_rule_archive_consent_chk`).
  */
 @Unique({ name: 'classification_rule_albumId_uq', columns: ['albumId'] })
+@Unique({ name: 'classification_rule_ownerId_careKind_uq', columns: ['ownerId', 'careKind'] })
 @Check({
   name: 'classification_rule_archive_consent_chk',
   expression: `NOT "archive" OR "archiveConsentAt" IS NOT NULL`,
@@ -90,4 +91,8 @@ export class ClassificationRuleTable {
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   lastAppliedAt!: Timestamp | null;
+
+  /** FL-1469: the Tidy up kind (`memes`, `documents`, …) when Library care made this rule; null otherwise. */
+  @Column({ nullable: true })
+  careKind!: string | null;
 }
