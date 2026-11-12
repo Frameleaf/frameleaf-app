@@ -769,6 +769,9 @@ export class FrameleafLibrarySetupService {
         if (!admin) {
           return state;
         }
+        // FL-1481: a dismissed setup starts nothing new. A scan or file check it had not started yet counts as
+        // finished, so setup settles once the work already under way ends; Retry starts them (`begin`).
+        const dismissed = !!state.dismissedAt;
         for (const libraryId of state.libraries) {
           const library = await this.libraries.get(libraryId);
           // A library deleted since setup began, or whose owner's account was deleted, holds nothing to wait for, nor
@@ -791,8 +794,8 @@ export class FrameleafLibrarySetupService {
           const existing = await sql<{ id: string }>`SELECT id FROM media_operation WHERE kind='library_scan'
             AND snapshot->>'libraryId'=${libraryId} AND "createdAt" >= ${state.startedAt}::timestamptz
             ORDER BY "createdAt" LIMIT 1`.execute(db);
-          if (state.paused && !existing.rows[0]) {
-            continue; // A paused setup admits no new library scan; resuming admits it.
+          if ((state.paused || dismissed) && !existing.rows[0]) {
+            continue; // A paused or dismissed setup admits no new library scan; resuming or Retry admits it.
           }
           try {
             state.scans[libraryId] =
@@ -816,7 +819,9 @@ export class FrameleafLibrarySetupService {
         // FL-1265: a scan that failed or was cancelled has ended too; what it imported is processed, and the problem is
         // reported (Retry scans again).
         const scansFinished = state.libraries.every((id) =>
-          records.rows.some((r) => r.id === state.scans[id] && ENDED.has(r.status)),
+          state.scans[id]
+            ? records.rows.some((r) => r.id === state.scans[id] && ENDED.has(r.status))
+            : dismissed,
         );
         let checkProblem = records.rows.some((record) => ['failed', 'cancelled'].includes(record.status));
         if (scansFinished && !state.healthAfter) {
@@ -848,7 +853,7 @@ export class FrameleafLibrarySetupService {
             if (full.every((row) => row.id !== id)) delete state.health[ownerId];
           }
         }
-        if (scansFinished && !state.paused) {
+        if (scansFinished && !state.paused && !dismissed) {
           for (const ownerId of state.owners) {
             if (state.health[ownerId]) {
               continue;
@@ -904,7 +909,9 @@ export class FrameleafLibrarySetupService {
             ['failed', 'cancelled'].includes(record.status) || (record.status === 'completed' && !record.verified),
         );
         const healthFinished = state.owners.every((id) =>
-          health.rows.some((record) => record.id === state.health[id] && ENDED.has(record.status)),
+          state.health[id]
+            ? health.rows.some((record) => record.id === state.health[id] && ENDED.has(record.status))
+            : dismissed,
         );
         if (scansFinished && healthFinished && !state.checkReleasedAt && !state.paused) {
           state.checkReleasedAt = new Date().toISOString();
@@ -995,7 +1002,8 @@ export class FrameleafLibrarySetupService {
   /**
    * The owner would rather let the server run than follow setup (a stopped check, a phone they will not connect).
    * Every held stage is released as if the file check had finished, a pause is lifted, and the setup bar and the
-   * phone's preparation step stop asking. Setup keeps tracking in the background; Retry brings it back.
+   * phone's preparation step stop asking. Setup starts no new scan or file check
+   * from then on (FL-1481) and settles once the work already under way ends; Retry brings it back.
    */
   async dismiss(): Promise<void> {
     this.identity();
