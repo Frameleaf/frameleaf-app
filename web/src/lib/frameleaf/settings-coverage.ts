@@ -1867,6 +1867,13 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: "'trash.reuploadUntil'",
   },
   {
+    pattern: 'backup.skipDeleted.enabled',
+    // FL-813: "Don't upload photos I deleted in Frameleaf again"; its switch and list wait for the approved mock
+    kind: 'api-only',
+    file: '../server/src/utils/preferences.ts',
+    evidence: 'skipDeleted: {',
+  },
+  {
     pattern: 'ratings.enabled',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',

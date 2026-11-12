@@ -2655,8 +2655,9 @@ export class AssetRepository {
             sql<Buffer>`deletion.checksum`.as('checksum'),
             sql<Date>`clock_timestamp()`.as('createdAt'),
           ])
-          .distinct()
-          .where('deletion.checksum', 'in', checksums),
+          .where('deletion.checksum', 'in', checksums)
+          // one row per file, however often it was deleted
+          .groupBy(['deletion.ownerId', 'deletion.checksum']),
       )
       .onConflict((oc) =>
         oc.columns(['ownerId', 'checksum']).doUpdateSet((eb) => ({ createdAt: eb.ref('excluded.createdAt') })),
