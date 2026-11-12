@@ -29,6 +29,11 @@ import { adoptLegacyLedger } from 'src/schema/legacy-ledger.js';
 import { ExtensionVersion, VectorExtension } from 'src/types.js';
 import { vectorIndexQuery } from 'src/utils/database.js';
 import { withDatabaseCleanup } from 'src/utils/execution-database.js';
+import {
+  FINGERPRINT_TABLES,
+  type LibraryFingerprintCounts,
+  MAX_FOLDERS_PER_ROOT,
+} from 'src/utils/library-fingerprint.js';
 import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
 
 const CLIP_TABLES = ['smart_search', 'smart_search_description', 'video_moment_frame_embedding'] as const;
@@ -470,6 +475,96 @@ export class DatabaseRepository {
         tx,
       );
     });
+  }
+
+  /**
+   * FL-954: the version this database last ran, from the upgrade history. Null on a database that has
+   * no history yet. Read before the migrations run, so it does not assume the table is there.
+   */
+  async getRecordedVersion(): Promise<string | null> {
+    if (!(await this.hasTable('version_history'))) return null;
+    const { rows } = await sql<{
+      version: string;
+    }>`SELECT "version" FROM public.version_history ORDER BY "createdAt" DESC LIMIT 1`.execute(this.db);
+    return rows[0]?.version ?? null;
+  }
+
+  /**
+   * FL-954: the database half of the library fingerprint: photos and videos by type, owner and library,
+   * when the newest was added, the row counts of the key tables, and for each storage root the files by
+   * top-level folder. Counts only, each one a single pass, so it stays in seconds on a large library.
+   * It runs before the migrations as well as after, so it names only columns every release has had.
+   * Null when there is no asset table yet (a new server).
+   */
+  async getLibraryFingerprintCounts(rootPaths: string[]): Promise<LibraryFingerprintCounts | null> {
+    const tables: Record<string, number | null> = {};
+    for (const name of FINGERPRINT_TABLES) {
+      if (await this.hasTable(name)) {
+        const { rows } = await sql<{
+          count: string;
+        }>`SELECT count(*)::text AS count FROM public.${sql.id(name)}`.execute(this.db);
+        tables[name] = Number(rows[0].count);
+      } else {
+        tables[name] = null;
+      }
+    }
+    if (tables.asset === null) return null;
+
+    const grouped = async (key: RawBuilder<unknown>) => {
+      const { rows } = await sql<{
+        key: string;
+        count: string;
+      }>`SELECT ${key} AS key, count(*)::text AS count FROM public.asset GROUP BY 1`.execute(this.db);
+      return Object.fromEntries(rows.map((row) => [row.key, Number(row.count)]));
+    };
+    const { rows: newest } = await sql<{
+      newest: Date | string | null;
+    }>`SELECT max("createdAt") AS newest FROM public.asset`.execute(this.db);
+
+    const roots: LibraryFingerprintCounts['roots'] = [];
+    for (const path of rootPaths) {
+      const prefix = `${path}/`;
+      // the part of the path after the root: its first segment is the top-level folder, when there is one
+      const { rows } = await sql<{ folder: string; count: string }>`
+        SELECT CASE WHEN position('/' IN rest) > 0 THEN split_part(rest, '/', 1) ELSE '' END AS folder,
+          count(*)::text AS count
+        FROM (
+          SELECT substr("originalPath", length(${prefix}::text) + 1) AS rest
+          FROM public.asset
+          WHERE starts_with("originalPath", ${prefix}::text)
+        ) AS inside
+        GROUP BY 1
+        ORDER BY count(*) DESC, 1
+        LIMIT ${MAX_FOLDERS_PER_ROOT + 1}`.execute(this.db);
+      if (rows.length > MAX_FOLDERS_PER_ROOT) {
+        const { rows: all } = await sql<{
+          count: string;
+        }>`SELECT count(*)::text AS count FROM public.asset WHERE starts_with("originalPath", ${prefix}::text)`.execute(
+          this.db,
+        );
+        roots.push({ path, assets: Number(all[0].count), folders: null });
+        continue;
+      }
+      const folders = Object.fromEntries(rows.map((row) => [row.folder, Number(row.count)]));
+      roots.push({ path, assets: Object.values(folders).reduce((sum, count) => sum + count, 0), folders });
+    }
+
+    return {
+      total: tables.asset,
+      newestAt: newest[0]?.newest ? new Date(newest[0].newest).toISOString() : null,
+      byType: await grouped(sql`"type"::text`),
+      byOwner: await grouped(sql`"ownerId"::text`),
+      byLibrary: await grouped(sql`coalesce("libraryId"::text, '')`),
+      tables,
+      roots,
+    };
+  }
+
+  private async hasTable(name: string): Promise<boolean> {
+    const { rows } = await sql<{
+      present: boolean;
+    }>`SELECT to_regclass(${`public."${name}"`}) IS NOT NULL AS present`.execute(this.db);
+    return rows[0]?.present ?? false;
   }
 
   async runMigrations(): Promise<void> {

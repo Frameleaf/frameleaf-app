@@ -204,6 +204,7 @@ import { TidyUpService } from 'src/services/tidy-up.service.js';
 import { TimelineService } from 'src/services/timeline.service.js';
 import { TranscodingService } from 'src/services/transcoding.service.js';
 import { TrashService } from 'src/services/trash.service.js';
+import { UpgradeCheckService } from 'src/services/upgrade-check.service.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { UtilitiesService } from 'src/services/utilities.service.js';
@@ -304,6 +305,7 @@ export const services = [
   AssetRestorationService,
   AssetService,
   AttentionService,
+  UpgradeCheckService,
   LibraryProgressService,
   OvernightService,
   AuthService,

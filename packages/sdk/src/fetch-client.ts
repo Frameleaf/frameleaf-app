@@ -158,6 +158,17 @@ export type AttentionProcessingFailuresDto = {
     /** Of those, files set aside after repeated tries; they are not tried again by themselves */
     setAside: number;
 };
+export type UpgradeCheckSummaryDto = {
+    /** When the check ran */
+    checkedAt: string | null;
+    /** The version before the upgrade */
+    fromVersion: string | null;
+    /** Set when the state is attention */
+    reason: (UpgradeCheckReason) | null;
+    state: UpgradeCheckState;
+    /** The version the upgrade installed */
+    toVersion: string | null;
+};
 export type AttentionResponseDto = {
     /** When the checks were made */
     checkedAt: string;
@@ -171,6 +182,8 @@ export type AttentionResponseDto = {
     items: AttentionItemDto[];
     /** FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check. */
     processingFailures: AttentionProcessingFailuresDto;
+    /** FL-954: how the library check after the last upgrade came out. A field of its own: it adds no item and changes no check. */
+    upgradeCheck: UpgradeCheckSummaryDto;
 };
 export type AttentionDismissDto = {
     /** True dismisses it; false brings it back */
@@ -3927,6 +3940,48 @@ export type TrashEveryoneResponseDto = {
     tidyUpOn: boolean;
     /** Whether the trash is on */
     trashEnabled: boolean;
+};
+export type UpgradeCheckCountDto = {
+    /** Rows now */
+    after: number | null;
+    /** Rows before the upgrade; null when it was not there */
+    before: number | null;
+    /** What was counted, for example asset or person */
+    name: string;
+};
+export type UpgradeCheckFindingDto = {
+    /** Photos and videos now; null for a drive that is not mounted */
+    after: number | null;
+    /** When the newest photo was added, now */
+    afterAt: string | null;
+    /** Photos and videos before the upgrade: in the library, in the folder, or on the drive */
+    before: number | null;
+    /** When the newest photo was added, before the upgrade */
+    beforeAt: string | null;
+    /** The external library the folder belongs to, when it is one */
+    name: string | null;
+    /** The folder of the drive, or the folder that is empty now */
+    path: string | null;
+    reason: UpgradeCheckFindingReason;
+};
+export type UpgradeCheckResponseDto = {
+    /** Photos and videos after it */
+    assetsAfter: number | null;
+    /** Photos and videos before the upgrade */
+    assetsBefore: number | null;
+    /** When the check ran */
+    checkedAt: string | null;
+    /** Row counts of the key tables, before and after */
+    counts: UpgradeCheckCountDto[];
+    /** Each difference found, a drive that is not mounted first */
+    findings: UpgradeCheckFindingDto[];
+    /** The version before the upgrade */
+    fromVersion: string | null;
+    /** Set when the state is attention */
+    reason: (UpgradeCheckReason) | null;
+    state: UpgradeCheckState;
+    /** The version the upgrade installed */
+    toVersion: string | null;
 };
 export type UserLicense = {
     /** Activation date */
@@ -25637,6 +25692,17 @@ export function getTrashEveryone({ days }: {
     }));
 }
 /**
+ * Get the library check after the last upgrade
+ */
+export function getUpgradeCheck(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UpgradeCheckResponseDto;
+    }>("/admin/upgrade-check", {
+        ...opts
+    }));
+}
+/**
  * Search users
  */
 export function searchUsersAdmin({ id, withDeleted }: {
@@ -40635,6 +40701,14 @@ export enum QueueName {
     Editor = "editor",
     PetRecognition = "petRecognition"
 }
+export enum UpgradeCheckReason {
+    UpgradeCheckFailed = "upgrade-check-failed"
+}
+export enum UpgradeCheckState {
+    None = "none",
+    Ok = "ok",
+    Attention = "attention"
+}
 export enum State {
     Pending = "pending",
     Active = "active",
@@ -41656,6 +41730,12 @@ export enum RenderWorkerAuditEvent {
     Revoked = "revoked",
     Updated = "updated",
     DeviceLost = "device_lost"
+}
+export enum UpgradeCheckFindingReason {
+    DriveMissing = "drive-missing",
+    PhotosFewer = "photos-fewer",
+    NewestEarlier = "newest-earlier",
+    FolderEmpty = "folder-empty"
 }
 export enum Kind2 {
     Individual = "individual"

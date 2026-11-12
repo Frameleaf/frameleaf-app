@@ -5,6 +5,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { MaintenanceAuthDto, MaintenanceDetectInstallResponseDto } from 'src/dtos/maintenance.dto.js';
 import { StorageFolder } from 'src/enum.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SENTINEL_FILE } from 'src/utils/library-fingerprint.js';
 
 /**
  * The maintenance login address. FL-190: without a public address (`baseUrl` undefined) it is a path
@@ -66,7 +67,8 @@ export async function detectPriorInstall(
           folder,
           readable: isReadable,
           writable: isWritable,
-          files: files.filter((fn) => fn !== '.frameleaf' && fn !== '.immich').length,
+          // the mount files and the FL-954 mount sentinel are Frameleaf's own, not library files
+          files: files.filter((fn) => fn !== '.frameleaf' && fn !== '.immich' && fn !== SENTINEL_FILE).length,
         };
       }),
     ),
