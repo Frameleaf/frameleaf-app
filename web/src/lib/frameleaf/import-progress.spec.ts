@@ -113,6 +113,24 @@ describe('importProgress (FL-1409)', () => {
     expect(held?.stopped).toBeUndefined();
   });
 
+  // FL-1457: Activity's "moving" rule. A poll between two thumbnail jobs (none active for a moment) keeps the time left.
+  it('keeps the time left while photos wait between two thumbnail jobs', () => {
+    const line = importProgress(summary({ queues: [thumbnails({ active: 0 })] }), NOW);
+    expect(line?.stopped).toBeUndefined();
+    expect(Math.round(line!.etaSeconds! / 60)).toBe(13);
+  });
+
+  // FL-1457: work that can't go on by itself stops the line, in the run's own words, as Activity says.
+  it.each([
+    ['waits for another step', { reasons: ['dependency_wait'] }, 'frameleaf_job_runs_state_blocked'],
+    ['lost its worker', { reasons: ['worker_unavailable'] }, 'frameleaf_job_runs_state_unavailable'],
+  ] as const)('says a scan that %s is stopped, with no time left', (_, patch, status) => {
+    const run = scanRun({ active: 0, reasons: [...patch.reasons] });
+    const line = importProgress(summary({ queues: [thumbnails({ active: 0 })], durableRuns: [run] }), NOW);
+    expect(line?.stopped).toMatchObject({ status });
+    expect(line?.etaSeconds).toBeNull();
+  });
+
   it('shows a scan that is still reading its folder before any thumbnail waits', () => {
     const run = scanRun({ enumerationDone: false, total: 900 });
     expect(importProgress(summary({ durableRuns: [run] }), NOW)).toMatchObject({ found: 900, scan: { name: null } });

@@ -1,4 +1,4 @@
-import { foldedAlbumActions, isWideAlbumHeader } from './album-header-folds';
+import { EVERY_FOLDABLE_ACTION, foldedAlbumActions, isWideAlbumHeader } from './album-header-folds';
 
 describe('album header folds (prototype CollectionHeader.jsx)', () => {
   it('folds nothing before the header has been measured', () => {
@@ -27,5 +27,11 @@ describe('album header folds (prototype CollectionHeader.jsx)', () => {
     expect(foldedAlbumActions(841)).toEqual(['links', 'map']);
     expect(foldedAlbumActions(840)).toEqual(['links', 'map', 'movie', 'download']);
     expect(foldedAlbumActions(701)).toEqual(['links', 'map', 'movie', 'download']);
+  });
+
+  // FL-1457 (N5): the header's own width, not only the window's, puts everything in "…".
+  it('folds every secondary action when the header is 700px or narrower', () => {
+    expect(foldedAlbumActions(700)).toEqual(EVERY_FOLDABLE_ACTION);
+    expect(foldedAlbumActions(500)).toEqual(EVERY_FOLDABLE_ACTION);
   });
 });

@@ -1,7 +1,6 @@
 import {
   AssetMediaSize,
   AssetTypeEnum,
-  MemoryType,
   finishOAuth,
   getAssetOriginalPath,
   getAssetPlaybackPath,
@@ -20,27 +19,12 @@ import {
   type UserResponseDto,
 } from '@frameleaf/sdk';
 import { toastManager, type ActionItem, type IfLike } from '@frameleaf/ui';
-import { DateTime } from 'luxon';
 import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
 import { recordOAuthRequest } from '$lib/frameleaf/auth-session-preference';
-import {
-  formatDate as displayFormatDate,
-  formatLuxon,
-  formatTime as displayFormatTime,
-} from '$lib/frameleaf/date-format';
-import {
-  eventStoryPlace,
-  formatLocalDateRange,
-  memoryHeadline as headlineOf,
-  isBirthday,
-  isEventStory,
-  isPetStory,
-  isPersonRecap,
-  isYearInReview,
-  onThisDayYears,
-} from '$lib/frameleaf/memory-stories';
+import { formatDate as displayFormatDate, formatTime as displayFormatTime } from '$lib/frameleaf/date-format';
+import { memoryHeadline as headlineOf } from '$lib/frameleaf/memory-stories';
 import { mayHaveDevelopPlaybackRevision, playbackCacheKey } from '$lib/frameleaf/playback-revision.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
@@ -464,45 +448,6 @@ export const handlePromiseError = <T>(promise: Promise<T>): void => {
 export const memoryHeadline = derived([t, locale], ([$t, $locale]) => {
   return (memory: MemoryResponseDto) =>
     headlineOf(memory, { t: $t as Parameters<typeof headlineOf>[1]['t'], locale: $locale ?? undefined });
-});
-
-export const memoryLaneTitle = derived(t, ($t) => {
-  return (memory: MemoryResponseDto) => {
-    // FL-62: the owner's own title wins everywhere a memory is named.
-    if (memory.title) {
-      return memory.title;
-    }
-
-    if (memory.type === MemoryType.OnThisDay) {
-      // FL-1408: several small years share one memory, which no single "N years ago" names
-      if (onThisDayYears(memory).length > 1) {
-        return $t('frameleaf_memories_on_this_day');
-      }
-      const now = DateTime.now();
-      const memoryDate = DateTime.fromISO(memory.memoryAt, { zone: 'utc' });
-
-      return memoryDate.day === now.day && memoryDate.month === now.month
-        ? $t('years_ago', { values: { years: now.year - memory.data.year } })
-        : formatLuxon(memoryDate, DateTime.DATE_MED, get(locale));
-    }
-
-    // FL-62: event stories and year-in-review recaps. An event story names its place when
-    // it has one and otherwise reads as its local day range; the range comes from the
-    // server's `yyyy-MM-dd` local days, so it is not re-zoned here.
-    if (isEventStory(memory)) {
-      return eventStoryPlace(memory) ?? formatLocalDateRange(memory.data.startDate, memory.data.endDate, get(locale));
-    }
-
-    if (isYearInReview(memory)) {
-      return $t('frameleaf_memories_year_in_review_title', { values: { year: memory.data.year } });
-    }
-
-    if (isPetStory(memory) || isBirthday(memory) || isPersonRecap(memory)) {
-      return get(memoryHeadline)(memory).title;
-    }
-
-    return $t('unknown');
-  };
 });
 
 export const withError = async <T>(fn: () => Promise<T>): Promise<[undefined, T] | [unknown, undefined]> => {

@@ -12,9 +12,12 @@
     title,
     children,
     actions,
+    level = 'h3',
   }: {
     icon: string;
     title: string;
+    /** h2 where the notice stands on its own under the page title (a stopped scan, FL-1457); h3 inside a section. */
+    level?: 'h2' | 'h3';
     /** The sentence under the title, and anything quieter beneath it (Technical details). */
     children?: Snippet;
     actions?: Snippet;
@@ -26,7 +29,7 @@
 <article class="act-notice" aria-labelledby={headingId}>
   <span class="act-notice-icon" aria-hidden="true"><Icon {icon} size="22" /></span>
   <div class="act-notice-text">
-    <h3 id={headingId}>{title}</h3>
+    <svelte:element this={level} id={headingId} class="act-notice-title">{title}</svelte:element>
     {@render children?.()}
   </div>
   {#if actions}
@@ -57,7 +60,7 @@
     flex: 1;
     min-width: 0;
   }
-  h3 {
+  .act-notice-title {
     margin: 0;
     font-size: inherit;
     font-weight: 600;

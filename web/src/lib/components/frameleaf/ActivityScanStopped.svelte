@@ -47,6 +47,7 @@
 </script>
 
 <ActivityNotice
+  level="h2"
   icon={interrupted ? mdiAlertCircleOutline : mdiHarddisk}
   title={interrupted
     ? $t('frameleaf_activity_scan_interrupted_title', { values: { name: item.title } })

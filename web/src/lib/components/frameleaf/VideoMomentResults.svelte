@@ -32,39 +32,62 @@
     query: string;
     /** The results already on the page: a video among them needs no lookup for its date and place. */
     assets?: AssetResponseDto[];
+    /**
+     * FL-1457 (N2): how many videos the strip shows, so a page with no photo results can point at them; undefined
+     * while the moments for the current query are still on their way.
+     */
+    onFound?: (count: number | undefined) => void;
   };
 
-  let { query, assets = [] }: Props = $props();
+  let { query, assets = [], onFound }: Props = $props();
 
   let hits = $state<VideoMomentSearchHitDto[]>([]);
-  let requested = '';
+  let searching = $state(false);
+  /** The latest request: only its answer counts, even when an earlier one for the same words arrives later. */
+  let latest = 0;
+  /**
+   * FL-1457: the search page waits for the moments before calling a search empty, so a stalled request gives up and
+   * counts as no moments rather than holding the page blank.
+   */
+  const MOMENTS_TIMEOUT_MS = 10_000;
 
-  const search = async (text: string) => {
+  const search = async (text: string, request: number) => {
     try {
       // The server's own default: enough frames that a video's count is not cut short by its neighbours.
-      const response = await searchVideoMoments({ videoMomentSearchDto: { query: text, limit: 24 } });
-      if (requested === text) {
+      const response = await searchVideoMoments(
+        { videoMomentSearchDto: { query: text, limit: 24 } },
+        { signal: AbortSignal.timeout(MOMENTS_TIMEOUT_MS) },
+      );
+      if (request === latest) {
         hits = response.hits;
       }
     } catch {
       // Moments are an addition to the results, never a reason for the search to fail.
-      if (requested === text) {
+      if (request === latest) {
         hits = [];
+      }
+    } finally {
+      if (request === latest) {
+        searching = false;
       }
     }
   };
 
   $effect(() => {
     const text = query.trim();
-    requested = text;
-    if (!text) {
-      hits = [];
-      return;
+    const request = ++latest;
+    // Another query's moments are not this one's: the strip, and the count it reports (FL-1457), start empty.
+    hits = [];
+    searching = !!text;
+    if (text) {
+      void search(text, request);
     }
-    void search(text);
   });
 
   const videos = $derived(momentsByVideo(hits));
+  $effect(() => {
+    onFound?.(searching ? undefined : videos.length);
+  });
 
   /** Videos that are not among the results on the page, looked up once for their date and place. */
   let lookedUp = $state<Record<string, AssetResponseDto>>({});

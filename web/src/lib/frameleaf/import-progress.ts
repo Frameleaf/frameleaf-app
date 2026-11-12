@@ -51,6 +51,9 @@ const HOLDING: ReadonlySet<string> = new Set([
   'frameleaf_job_runs_state_waiting',
   'frameleaf_job_runs_status_waiting_setup',
   'frameleaf_job_runs_state_delayed',
+  // FL-1457: work that can't go on by itself (another step it waits for, a worker that is gone), as Activity says.
+  'frameleaf_job_runs_state_blocked',
+  'frameleaf_job_runs_state_unavailable',
 ] satisfies Translations[]);
 
 export const importProgress = (
@@ -96,12 +99,18 @@ export const importProgress = (
   };
 
   const held = !!queue?.heldForNight && !queue.isPaused;
-  const moving = counted && !!queue && !queue.isPaused && !held && queue.active > 0;
+  const headline = run ? runHeadline(run) : undefined;
+  const holding = !!run && !!headline && HOLDING.has(headline.status);
+  /*
+   * FL-1457: moving by Activity's rule (`workEtaSeconds`): photos wait and nothing holds them. A poll that lands
+   * between two thumbnail jobs (none active for a moment) keeps the time left instead of dropping it.
+   */
+  const moving =
+    counted && !!queue && !queue.isPaused && !held && (queue.active > 0 || (queue.waiting > 0 && !holding));
   if (moving) {
     return { ...base, etaSeconds: workEtaSeconds({ ...summary, queues: [queue] }, now) };
   }
-  const headline = run ? runHeadline(run) : undefined;
-  if (run && headline && HOLDING.has(headline.status)) {
+  if (run && headline && holding) {
     return {
       ...base,
       stopped: {

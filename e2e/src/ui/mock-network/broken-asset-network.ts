@@ -1,5 +1,12 @@
 import { faker } from '@faker-js/faker';
-import { AssetTypeEnum, AssetVisibility, type AssetResponseDto, type StackResponseDto } from '@frameleaf/sdk';
+import {
+  AssetTypeEnum,
+  AssetVisibility,
+  ProcessingFailureStep,
+  type AssetResponseDto,
+  type ProcessingFailureResponseDto,
+  type StackResponseDto,
+} from '@frameleaf/sdk';
 import { BrowserContext } from '@playwright/test';
 import { randomPreview, randomThumbnail } from 'src/ui/generators/timeline.js';
 
@@ -185,5 +192,22 @@ export const setupBrokenAssetMockApiRoutes = async (context: BrowserContext, moc
       headers: { 'content-type': 'image/jpeg' },
       body,
     });
+  });
+
+  // FL-1457: a photo whose thumbnail can't be made is listed by Library care's failures, which is how the viewer's
+  // strips (as the Library's tiles) tell "can't show" from "still getting ready".
+  await context.route('**/api/assets/processing-failures*', async (route) => {
+    const rows: ProcessingFailureResponseDto[] = [...mockStack.brokenAssetIds].map((assetId) => ({
+      assetId,
+      attempts: 3,
+      cause: 'decode_failed',
+      fileName: `${assetId}.jpg`,
+      lastFailedAt: '2026-11-10T10:00:00.000Z',
+      ownerId: mockStack.assetMap.get(assetId)?.ownerId ?? '',
+      ownerName: 'Admin',
+      quarantinedAt: null,
+      step: ProcessingFailureStep.AssetGenerateThumbnails,
+    }));
+    return route.fulfill({ status: 200, contentType: 'application/json', json: rows });
   });
 };
