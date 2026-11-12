@@ -46,5 +46,16 @@
 - Local tests, lint, typechecks, builds, and CI validation are allowed. Hosted
   checks must pass for the exact candidate before an authorized merge; source
   review, CI, deployment, and acceptance are separate claims.
+- **Languages are always respected and enforced.** Every pull request that adds
+  or rewords a user-facing string ships English plus all ten translations (fr,
+  es, de, it, pt, nl, pl, sv, da, nb_NO) in the same pull request: web `i18n/*.json`,
+  server emails (`server/src/emails/translations/locales.json`) and notifications
+  (`server/src/utils/notification-translations.json`). Never merge English-only
+  strings or leave translations to a follow-up. `web/src/lib/i18n-catalogues.spec.ts`
+  (Test Web, a required check) fails only a web key that is missing or empty, or a
+  broken message contract. It passes English copied into another catalogue, does
+  not read the server catalogues, and does not notice translations left stale by
+  an English rewording, so review checks by hand that new values are translated.
+  Product names stay in English and uninflected.
 - Assign one owner per external operation. Reconcile live PR state, exact code ancestry,
   exact-head checks, and linked issue status at shipping boundaries.
