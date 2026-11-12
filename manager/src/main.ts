@@ -456,7 +456,7 @@ class Api {
     return { id: operations.control(value.action, value.key).id };
   }
   @Get('container-settings') async containerSettings() {
-    return { ...operations.containerSettings(), stack: await operations.renderedStack() };
+    return { ...operations.containerSettings(), stack: await operations.renderedStack(), outside: await operations.changedOutside() };
   }
   @Post('container-settings') saveContainerSettings(@Body() input: unknown) {
     const { services, key } = z.object({ services: ServiceOverrides, key: RequestKey }).strict().parse(input);

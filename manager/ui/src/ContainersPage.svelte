@@ -194,7 +194,7 @@
 
     <div class="segmented cs-tabs" role="tablist" aria-label="Containers">
       {#each CONTAINERS as container (container.id)}
-        <button role="tab" aria-selected={tab === container.id} aria-pressed={tab === container.id} onclick={() => { tab = container.id; text = null; }}>
+        <button role="tab" aria-selected={tab === container.id} onclick={() => { tab = container.id; text = null; }}>
           <Icon name={container.icon} />{container.label}{#if count(container.id)}<span class="cs-count">{count(container.id)}</span>{/if}
         </button>
       {/each}
@@ -516,6 +516,7 @@
   .cs code, dialog code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .cs-tabs { flex-wrap: wrap; }
   .cs-tabs button { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; }
+  .cs-tabs button[aria-selected='true'] { background: var(--raised); color: var(--text); box-shadow: 0 1px 4px #0002; }
   .cs-tabs :global(svg) { width: 16px; height: 16px; }
   .cs-count { min-width: 20px; padding: 0 6px; border-radius: 10px; font-size: 11px; line-height: 20px; text-align: center; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
   .card-header h2 { font-size: 16px; }
@@ -552,8 +553,6 @@
   .cs-path :global(svg) { width: 18px; height: 18px; color: var(--muted); flex-shrink: 0; }
   .cs-folder .check-row { min-height: 40px; align-items: center; }
   .cs-folder .check-row input { margin: 0; }
-  .disclosure summary { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); }
-  .disclosure summary :global(svg) { width: 15px; height: 15px; }
   .cs-link { margin-top: 8px; color: var(--accent); }
   .cs-limits { max-width: 480px; }
   .cs-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; padding: 0 20px 8px; }
