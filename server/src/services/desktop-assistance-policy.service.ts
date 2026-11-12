@@ -57,31 +57,58 @@ export class DesktopAssistancePolicyService {
 
   /**
    * FL-1484: whether a computer works on everyone's photos at home, not only those of the account signed in on
-   * it. Any change gives the list a new revision, so work authorized under the old one is refused.
+   * it. Any change gives the list a new revision and gives the computer a new authorization epoch, ending its
+   * sessions, so no work it held under the old list can be read, finished or revived by adding it again.
+   * A revoked computer can still be removed; computers that are gone or revoked leave the list on any change.
    */
   setHousehold(auth: AuthDto, deviceId: string, enabled: boolean) {
     z.uuid().parse(deviceId);
     return this.asAdministrator(auth, async (metadata, tx) => {
       const device = await tx
         .selectFrom('desktop_device')
-        .select('id')
+        .select(['id', 'revokedAt'])
         .where('id', '=', deviceId)
         .where('mode', '=', 'client-worker')
-        .where('revokedAt', 'is', null)
-        .forShare()
+        .forUpdate()
         .executeTakeFirst();
-      if (!device) throw new NotFoundException('Computer not found');
       const policy = await this.registry(metadata);
-      const devices = new Set(policy.household?.devices);
-      if (devices.has(deviceId) === enabled) return { enabled };
+      const listed = new Set(policy.household?.devices);
+      // a computer is added only while it is live; one that is gone or revoked can still be taken off the list
+      const removable = !enabled && listed.has(deviceId);
+      if ((!device || (enabled && device.revokedAt)) && !removable) throw new NotFoundException('Computer not found');
+      if (listed.has(deviceId) === enabled) return { enabled };
+      const live = new Set(
+        listed.size === 0
+          ? []
+          : (
+              await tx
+                .selectFrom('desktop_device')
+                .select('id')
+                .where('id', 'in', [...listed])
+                .where('mode', '=', 'client-worker')
+                .where('revokedAt', 'is', null)
+                .execute()
+            ).map(({ id }) => id),
+      );
+      const devices = new Set([...listed].filter((id) => live.has(id) && id !== deviceId));
       if (enabled) {
         if (devices.size >= 64) throw new ConflictException('desktop_household_capacity');
         devices.add(deviceId);
-      } else {
-        devices.delete(deviceId);
       }
       policy.household = { revisionId: randomUUID(), devices: [...devices] };
       await metadata.set(SystemMetadataKey.FrameleafDesktopAssistance, policy);
+      if (device) {
+        await tx
+          .updateTable('desktop_device')
+          .set({ authorizationEpoch: sql`"authorizationEpoch" + 1` })
+          .where('id', '=', deviceId)
+          .execute();
+        await tx
+          .withTables<DesktopWorkerTables>()
+          .deleteFrom('desktop_worker_session')
+          .where('deviceId', '=', deviceId)
+          .execute();
+      }
       return { enabled };
     });
   }

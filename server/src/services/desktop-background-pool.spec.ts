@@ -221,7 +221,8 @@ describe('when the processing order sends the job to the helpers (FL-456)', () =
     ready.mockResolvedValue(true);
     await queueExecution.run(context, async () => {
       expect((await selectReady()).desktopClip).toBeTypeOf('function');
-      expect(ready).toHaveBeenCalledWith(ownerId, space.visualModelKey);
+      // FL-1484: an unlocked photo may also go to a computer that helps everyone
+      expect(ready).toHaveBeenCalledWith(ownerId, space.visualModelKey, { household: true });
     });
   });
   it('hands the job back for the next place when none is ready', async () => {

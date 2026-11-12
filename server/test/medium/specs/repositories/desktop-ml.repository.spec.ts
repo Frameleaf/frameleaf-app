@@ -106,7 +106,26 @@ const setup = async (withQualification = true, profile?: DesktopModelProfile, me
     grants.map((grant) => new DesktopWorkerRepository(db).consume(grant.sessionId, grant.credentialHash, 1)),
   );
   if (withQualification) await Promise.all(grants.map((grant) => seedDesktopQualification(db, grant, request)));
-  return { sut: new DesktopMlRepository(db), second: new DesktopMlRepository(db), devices, grants, request };
+  /** A new, qualified session for a computer at its current authorization epoch (FL-1484). */
+  const regrant = async (deviceId: string) => {
+    const { authorizationEpoch } = await db
+      .selectFrom('desktop_device')
+      .select('authorizationEpoch')
+      .where('id', '=', deviceId)
+      .executeTakeFirstOrThrow();
+    const session = await new DesktopWorkerRepository(db).issue({
+      deviceId,
+      authorizationEpoch,
+      photoSessionId: photoSession.id!,
+      tokenHash: createHash('sha256').update(randomUUID()).digest(),
+      modelKeys: [modelKey],
+    });
+    const grant = { deviceId, authorizationEpoch, sessionId: session!.id, credentialHash: session!.tokenHash };
+    await new DesktopWorkerRepository(db).consume(grant.sessionId, grant.credentialHash, 1);
+    await seedDesktopQualification(db, grant, request);
+    return grant;
+  };
+  return { sut: new DesktopMlRepository(db), second: new DesktopMlRepository(db), devices, grants, request, regrant };
 };
 
 it('lets an approved member claim its own work and never another account with the same model', async () => {
@@ -1285,25 +1304,33 @@ describe("a computer that works on everyone's photos (FL-1484)", () => {
     const own = await setup();
     const other = await setup();
     const modelKey = own.request.modelKey;
+    const deviceId = own.grants[0].deviceId;
     const task = await own.sut.create({ ...other.request, modelKey });
     try {
       expect(await own.sut.claim(own.grants[0], [modelKey])).toBeUndefined();
       expect(await own.sut.hasReadyWorker(other.request.ownerId, modelKey)).toBe(false);
 
-      await household(own.grants[0].deviceId, true);
+      await household(deviceId, true);
+      // the change ends the computer's sessions: a session from before it takes nothing
+      expect(await own.sut.claim(own.grants[0], [modelKey])).toBeUndefined();
+      const helping = await own.regrant(deviceId);
       expect(await own.sut.hasReadyWorker(other.request.ownerId, modelKey)).toBe(true);
-      const claimed = await own.sut.claim(own.grants[0], [modelKey]);
+      // readiness for a photo that must stay on the owner's computers counts only theirs
+      expect(await own.sut.hasReadyWorker(other.request.ownerId, modelKey, { household: false })).toBe(false);
+      const claimed = await own.sut.claim(helping, [modelKey]);
       expect(claimed?.task.id).toBe(task.id);
       expect(await own.sut.hasLiveAttempt(task.id)).toBe(true);
-      expect(await own.sut.input(own.grants[0], claimed!.attempt.id, () => Promise.resolve())).toEqual(
-        other.request.input,
-      );
+      expect(await own.sut.input(helping, claimed!.attempt.id, () => Promise.resolve())).toEqual(other.request.input);
 
-      await household(own.grants[0].deviceId, false);
+      // removed, then added again: the work it held before never comes back
+      await household(deviceId, false);
       expect(await own.sut.hasLiveAttempt(task.id)).toBe(false);
-      expect(await own.sut.input(own.grants[0], claimed!.attempt.id, () => Promise.resolve())).toBeUndefined();
+      expect(await own.sut.input(helping, claimed!.attempt.id, () => Promise.resolve())).toBeUndefined();
+      await household(deviceId, true);
+      expect(await own.sut.input(helping, claimed!.attempt.id, () => Promise.resolve())).toBeUndefined();
+      expect(await own.sut.hasLiveAttempt(task.id)).toBe(false);
     } finally {
-      await household(own.grants[0].deviceId, false);
+      await household(deviceId, false);
     }
   });
 
@@ -1311,9 +1338,11 @@ describe("a computer that works on everyone's photos (FL-1484)", () => {
     const own = await setup();
     const other = await setup();
     const modelKey = own.request.modelKey;
+    const deviceId = own.grants[0].deviceId;
     const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
     const { asset } = await ctx.newAsset({ ownerId: other.request.ownerId });
     await db.insertInto('asset_lock').values({ assetId: asset.id, reason: AssetLockReason.Marked }).execute();
+    expect(await own.sut.isLockedAsset(asset.id)).toBe(true);
     const task = await own.sut.create({ ...other.request, modelKey });
     await brokerDb
       .updateTable('desktop_ml_task')
@@ -1321,13 +1350,26 @@ describe("a computer that works on everyone's photos (FL-1484)", () => {
       .where('id', '=', task.id)
       .execute();
     try {
-      await household(own.grants[0].deviceId, true);
-      expect(await own.sut.claim(own.grants[0], [modelKey])).toBeUndefined();
+      await household(deviceId, true);
+      const helping = await own.regrant(deviceId);
+      expect(await own.sut.claim(helping, [modelKey])).toBeUndefined();
 
       await db.deleteFrom('asset_lock').where('assetId', '=', asset.id).execute();
-      expect((await own.sut.claim(own.grants[0], [modelKey]))?.task.id).toBe(task.id);
+      expect((await own.sut.claim(helping, [modelKey]))?.task.id).toBe(task.id);
     } finally {
-      await household(own.grants[0].deviceId, false);
+      await household(deviceId, false);
     }
+  });
+
+  it('lets a revoked computer be taken off the list, and never adds one', async () => {
+    const own = await setup();
+    const deviceId = own.grants[0].deviceId;
+    await household(deviceId, true);
+    await db.updateTable('desktop_device').set({ revokedAt: new Date() }).where('id', '=', deviceId).execute();
+    await expect(household(deviceId, true)).rejects.toThrow('Computer not found');
+    await household(deviceId, false);
+    const policy = await new SystemMetadataRepository(db).get(SystemMetadataKey.FrameleafDesktopAssistance);
+    expect(policy?.household?.devices ?? []).not.toContain(deviceId);
+    await expect(household(deviceId, true)).rejects.toThrow('Computer not found');
   });
 });

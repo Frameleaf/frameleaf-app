@@ -405,8 +405,8 @@ export class DesktopMlRepository {
    * everyone's photos, is online (seen in the last 90 seconds) and holds a current qualification for
    * `modelKey`, so a job sent to the helpers now can be taken.
    */
-  async hasReadyWorker(ownerId: string, modelKey: string): Promise<boolean> {
-    const household = householdMatch(await desktopHouseholdDevices(this.db));
+  async hasReadyWorker(ownerId: string, modelKey: string, options: { household?: boolean } = {}): Promise<boolean> {
+    const household = householdMatch(options.household === false ? [] : await desktopHouseholdDevices(this.db));
     const { rows } = await sql<{ userId: string; isAdmin: boolean }>`
       SELECT u.id AS "userId", u."isAdmin" FROM desktop_device d
       JOIN "user" u ON u.id=d."userId" AND u."deletedAt" IS NULL
@@ -425,6 +425,14 @@ export class DesktopMlRepository {
       if (await desktopWorkerAccountAllowed(this.db, row.userId, row.isAdmin)) return true;
     }
     return false;
+  }
+
+  /** FL-1484: whether this photo is Locked, which keeps it off another account's computers. */
+  async isLockedAsset(assetId: string): Promise<boolean> {
+    const { rows } = await sql<{
+      locked: boolean;
+    }>`SELECT ${lockedAssetIdExists(sql`${assetId}::uuid`)} AS locked`.execute(this.db);
+    return !!rows[0]?.locked;
   }
 
   result(id: string): Promise<TaskMetadata | undefined> {
