@@ -247,7 +247,10 @@ export class AssetMediaService extends BaseService {
       // is only ever done for an owner who has such a repair
       checksums = [...checksums, (await this.cryptoRepository.hashFileDigests(file.originalPath)).sha1];
     }
-    const id = await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums);
+    // a Locked photo is repaired too, as a lost one is; its id is only answered when this session may see it
+    const id = await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums, {
+      lockedOwnerId: auth.user.id,
+    });
     if (!id) {
       return;
     }
@@ -285,7 +288,8 @@ export class AssetMediaService extends BaseService {
 
   /** FL-1472: the owner's repaired photo whose true original has these bytes, if any (the repair is still in place). */
   async repairedPhotoFor(ownerId: string, checksums: Buffer[]): Promise<{ id: string } | undefined> {
-    const id = await this.assetRepository.getRepairedByOriginal(ownerId, checksums);
+    // the owner's own Locked photos too: only the owner's work asks, never a session that may not see them
+    const id = await this.assetRepository.getRepairedByOriginal(ownerId, checksums, { lockedOwnerId: ownerId });
     return id ? { id } : undefined;
   }
 
@@ -309,7 +313,8 @@ export class AssetMediaService extends BaseService {
     const checksums = [checksum, ...(legacyChecksum ? [legacyChecksum] : [])];
     return (
       (await this.lostOriginalMatches(auth, checksums, { includeHidden: true })).length > 0 ||
-      (!auth.sharedLink && !!(await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums)))
+      (!auth.sharedLink &&
+        !!(await this.assetRepository.getRepairedByOriginal(auth.user.id, checksums, { lockedOwnerId: auth.user.id })))
     );
   }
 

@@ -751,6 +751,18 @@ describe(MediaHealthRepository.name, () => {
       const assets = new AssetRepository(defaultDatabase);
       await expect(assets.getRepairedByOriginal(user.id, [originalSha256])).resolves.toBe(asset.id);
       await expect(assets.hasSha1OnlyRepairs(user.id)).resolves.toBe(false);
+
+      // once Locked: found for its owner's own work, never for a session that may not see Locked media
+      await defaultDatabase
+        .insertInto('asset_lock')
+        .values({ assetId: asset.id, reason: AssetLockReason.Marked })
+        .execute();
+      await expect(assets.getRepairedByOriginal(user.id, [originalSha256])).resolves.toBeUndefined();
+      await expect(assets.getRepairedByOriginal(user.id, [originalSha256], { lockedOwnerId: user.id })).resolves.toBe(
+        asset.id,
+      );
+      await expect(assets.isVisibleToUploader(user.id, asset.id, {})).resolves.toBe(false);
+      await expect(assets.isVisibleToUploader(user.id, asset.id, { lockedOwnerId: user.id })).resolves.toBe(true);
     });
 
     it('a scan that finds the file fine settles only open problems, saying so (FL-1472)', async () => {

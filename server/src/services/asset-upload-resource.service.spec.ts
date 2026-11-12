@@ -465,6 +465,24 @@ describe('resumable asset byte commit boundaries', () => {
     expect(harness.media.canSeeUploadResult).toHaveBeenCalledWith(auth, 'damaged-asset');
   });
 
+  it('answers a session that may not see the photo (it became Locked) with no id (FL-1472)', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'verified',
+      offset: 4,
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: harness.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+    });
+    harness.media.restoreLostOriginal.mockResolvedValue({ id: 'damaged-asset', visible: true });
+    harness.media.getUploadAssetIdByChecksum.mockResolvedValue(undefined as never);
+    // published as visible; Locked since, so this session's check by id says no
+    harness.media.canSeeUploadResult.mockResolvedValue(false);
+    await expect(harness.service.result(auth, harness.row().id)).resolves.toMatchObject({
+      result: { id: '00000000-0000-0000-0000-000000000000', status: AssetMediaStatus.CREATED },
+    });
+  });
+
   it('rechecks source authority inside publication after media preparation', async () => {
     const harness = setup();
     bindFolder(harness);

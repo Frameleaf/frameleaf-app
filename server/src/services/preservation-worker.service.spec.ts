@@ -1971,6 +1971,8 @@ describe(PreservationWorkerService.name, () => {
         repository.findByChecksum.mockResolvedValue([]);
         const repaired = newUuid();
         assetMedia.repairedPhotoFor.mockResolvedValue({ id: repaired });
+        // the repaired photo's own details differ from the archive's: a conflict for the owner to decide
+        repository.getLibraryState.mockResolvedValue(library({ description: 'Mine now' }));
 
         await sut.run({
           operation: operationOf(MediaOperationKind.PreservationReview, { packageId: found.id, restoreId: restore.id }),
@@ -1984,7 +1986,12 @@ describe(PreservationWorkerService.name, () => {
         expect(repository.getLibraryState).toHaveBeenCalledWith(repaired);
         expect(repository.updateRestoreItem).toHaveBeenCalledWith(
           items[0].id,
-          expect.objectContaining({ state: 'ready', match: 'existing', assetId: repaired }),
+          expect.objectContaining({
+            state: 'ready',
+            match: 'existing',
+            assetId: repaired,
+            conflicts: expect.arrayContaining([expect.anything()]),
+          }),
         );
       });
 

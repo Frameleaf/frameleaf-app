@@ -575,6 +575,16 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('repairedPhotoFor (FL-1472)', () => {
+    it('finds the owner’s own Locked repaired photo, for the owner’s restore', async () => {
+      mocks.asset.getRepairedByOriginal.mockResolvedValue('locked-repaired');
+      await expect(sut.repairedPhotoFor('owner-id', [file1])).resolves.toEqual({ id: 'locked-repaired' });
+      expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith('owner-id', [file1], {
+        lockedOwnerId: 'owner-id',
+      });
+    });
+  });
+
   describe('canSeeUploadResult (FL-1472)', () => {
     it('asks for the photo even when the session has no filters, so Locked media stays out', async () => {
       mocks.asset.isVisibleToUploader.mockResolvedValue(false);
@@ -904,7 +914,10 @@ describe(AssetMediaService.name, () => {
         id: 'repaired-asset',
         status: AssetMediaStatus.CREATED,
       });
-      expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith(authStub.admin.user.id, [upload.checksum, file1]);
+      // the owner's own Locked photos are looked for too; only the answer is filtered for the session
+      expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith(authStub.admin.user.id, [upload.checksum, file1], {
+        lockedOwnerId: authStub.admin.user.id,
+      });
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.MediaHealthPutBackUpload,
         data: { id: 'repaired-asset', path: expect.stringContaining('/.library-care/repaired-asset-pending-') },
@@ -923,7 +936,11 @@ describe(AssetMediaService.name, () => {
       await expect(sut.uploadAsset(authStub.admin, createDto, sha256Only)).resolves.toMatchObject({
         id: 'repaired-asset',
       });
-      expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith(authStub.admin.user.id, [upload.checksum, sha1]);
+      expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        [upload.checksum, sha1],
+        expect.anything(),
+      );
     });
 
     it('never answers for a hidden repaired photo with another one’s visibility (FL-1472)', async () => {
