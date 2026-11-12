@@ -29,7 +29,8 @@ fi
 # GPU device nodes the container was given belong to host groups (render, video) whose ids differ on every
 # host. Join them, so the unprivileged user can open the GPU without a group_add nobody can guess: without
 # this, OpenVINO (and ROCm, ArmNN) lost the GPU the moment the service stopped running as root.
-groups=$({ id -G | tr ' ' '\n'; stat -c %g /dev/dri/* /dev/kfd /dev/mali0 /dev/dxg 2>/dev/null || true; } | grep -vx 0 | sort -un | paste -sd, -)
+# 10001 stays whatever FRAMELEAF_ML_GID is: a root server shares the Studio worker's enrolment with it.
+groups=$({ id -G | tr ' ' '\n'; echo 10001; stat -c %g /dev/dri/* /dev/kfd /dev/mali0 /dev/dxg 2>/dev/null || true; } | grep -vx 0 | sort -un | paste -sd, -)
 if [ -n "$groups" ]; then
   exec setpriv --reuid="$uid" --regid="$gid" --groups="$groups" env HOME=/home/frameleaf "$@"
 fi

@@ -243,7 +243,8 @@ The `studio-worker` volume only works when both containers run on the same Docke
 - `FRAMELEAF_STUDIO_WORKER_MEMORY_BYTES` (machine learning, default half the container's memory, at most 8 GiB): the working memory the worker declares. It decides the largest export resolution offered (2 GiB for 720p, 4 GiB for 1080p, 6 GiB for 1440p, 8 GiB for 2160p).
 - `FRAMELEAF_STUDIO_WORKER_MAX_INPUT_BYTES` (machine learning, default 8 GiB): the most media one export may read.
 - `FRAMELEAF_STUDIO_WORKER_TRUST_DIR` (both, default `/run/frameleaf/studio-worker`): where the enrolment volume is mounted.
-- `FRAMELEAF_ML_GID` (server, default `10001`): the group the machine learning container runs as. Set it only if you changed `FRAMELEAF_ML_GID` on machine learning, so its worker can still read the enrolment.
+
+A server running as root shares the enrolment with group `10001`, which the machine learning container always keeps. If you run machine learning with your own `user:` while the server runs as root, add `group_add: ["10001"]` to it.
 
 ## Prometheus
 

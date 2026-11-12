@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chown, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerAuditEvent, RenderWorkerStatus } from 'src/enum.js';
@@ -8,6 +8,12 @@ import { BUNDLED_RENDER_WORKER_APPROVAL } from 'src/utils/bundled-render-worker.
 import { STUDIO_ENGINE_REVISION } from 'src/utils/studio-commands.generated.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+// Only root may give a file to another group; the mode is still checked on the real file.
+vi.mock('node:fs/promises', async (original) => ({
+  ...(await original<typeof import('node:fs/promises')>()),
+  chown: vi.fn(),
+}));
 
 const bundled = (overrides: Partial<RenderWorker> = {}) =>
   ({
@@ -28,7 +34,7 @@ describe(BundledRenderWorkerService.name, () => {
   beforeEach(async () => {
     ({ sut, mocks } = newTestService(BundledRenderWorkerService));
     trustDir = join(await mkdtemp(join(tmpdir(), 'fl408-trust-')), 'studio-worker');
-    mocks.config.getEnv.mockReturnValue(mockEnvData({ studioWorker: { enabled: true, trustDir, gid: 10_001 } }));
+    mocks.config.getEnv.mockReturnValue(mockEnvData({ studioWorker: { enabled: true, trustDir } }));
     mocks.crypto.randomBytesAsText.mockReturnValue('fresh-secret');
     mocks.renderWorker.listWorkers.mockResolvedValue([]);
     mocks.renderWorker.createWorker.mockImplementation((worker) =>
@@ -44,7 +50,7 @@ describe(BundledRenderWorkerService.name, () => {
   const readTrust = async () => JSON.parse(await readFile(join(trustDir, 'enrolment.json'), 'utf8'));
 
   it('does nothing when the bundled worker is turned off', async () => {
-    mocks.config.getEnv.mockReturnValue(mockEnvData({ studioWorker: { enabled: false, trustDir, gid: 10_001 } }));
+    mocks.config.getEnv.mockReturnValue(mockEnvData({ studioWorker: { enabled: false, trustDir } }));
     await expect(sut.ensureEnrolment()).resolves.toBe('disabled');
     expect(mocks.renderWorker.listWorkers).not.toHaveBeenCalled();
     expect(mocks.renderWorker.createWorker).not.toHaveBeenCalled();
@@ -80,17 +86,14 @@ describe(BundledRenderWorkerService.name, () => {
 
   it('lets the machine-learning group read the enrolment a root server wrote', async () => {
     // The ML container drops to an unprivileged user; a root-only file left its Studio worker waiting forever.
-    const gid = process.getgid!();
-    mocks.config.getEnv.mockReturnValue(mockEnvData({ studioWorker: { enabled: true, trustDir, gid } }));
     const root = vi.spyOn(process, 'getuid').mockReturnValue(0);
     try {
       await expect(sut.ensureEnrolment()).resolves.toBe('enrolled');
     } finally {
       root.mockRestore();
     }
-    const file = await stat(join(trustDir, 'enrolment.json'));
-    expect(file.mode & 0o777).toBe(0o640);
-    expect(file.gid).toBe(gid);
+    expect(chown).toHaveBeenCalledWith(expect.stringContaining('enrolment.json'), -1, 10_001);
+    expect((await stat(join(trustDir, 'enrolment.json'))).mode & 0o777).toBe(0o640);
   });
 
   it('rotates the secret of the existing bundled worker on every start instead of enrolling another', async () => {
@@ -131,9 +134,7 @@ describe(BundledRenderWorkerService.name, () => {
   it('reports the trust volume as unavailable when it cannot be written', async () => {
     const file = join(trustDir, '..', 'not-a-directory');
     await writeFile(file, '');
-    mocks.config.getEnv.mockReturnValue(
-      mockEnvData({ studioWorker: { enabled: true, trustDir: join(file, 'x'), gid: 10_001 } }),
-    );
+    mocks.config.getEnv.mockReturnValue(mockEnvData({ studioWorker: { enabled: true, trustDir: join(file, 'x') } }));
     await expect(sut.ensureEnrolment()).resolves.toBe('unavailable');
     expect(mocks.logger.warn).toHaveBeenCalled();
   });

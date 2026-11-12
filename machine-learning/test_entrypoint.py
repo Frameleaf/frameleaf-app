@@ -1,4 +1,4 @@
-"""The entrypoint drops to the unprivileged user with the groups that own the GPU devices it was given."""
+"""The entrypoint drops to the unprivileged user with the GPU devices' groups and the enrolment group."""
 
 import os
 import subprocess
@@ -20,4 +20,4 @@ def test_joins_the_groups_of_the_gpu_devices(tmp_path: Path) -> None:
     entrypoint = Path(__file__).parent / "scripts" / "entrypoint.sh"
     env = {"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"}
     result = subprocess.run(["sh", str(entrypoint), "python"], env=env, capture_output=True, text=True, check=True)
-    assert result.stdout.splitlines()[-1] == "--reuid=10001 --regid=10001 --groups=44,993 env HOME=/home/frameleaf python"
+    assert result.stdout.splitlines()[-1] == "--reuid=10001 --regid=10001 --groups=44,993,10001 env HOME=/home/frameleaf python"

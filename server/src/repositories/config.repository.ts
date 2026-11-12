@@ -150,8 +150,6 @@ export interface EnvData {
     enabled: boolean;
     /** Where the enrolment is written for the machine-learning container to read. */
     trustDir: string;
-    /** The machine-learning container's group (its FRAMELEAF_ML_GID), which may read the enrolment a root server wrote. */
-    gid: number;
   };
 
   /** FL-159: Frameleaf Cloud deployment configuration. `url` null means not configured. */
@@ -345,7 +343,6 @@ const getEnv = (): EnvData => {
     studioWorker: {
       enabled: dto.FRAMELEAF_STUDIO_WORKER ?? true,
       trustDir: dto.FRAMELEAF_STUDIO_WORKER_TRUST_DIR ?? '/run/frameleaf/studio-worker',
-      gid: dto.FRAMELEAF_ML_GID ?? 10_001,
     },
 
     frameleafCloud: {

@@ -13,6 +13,9 @@ import {
 } from 'src/utils/bundled-render-worker.js';
 import { STUDIO_ENGINE_REVISION } from 'src/utils/studio-commands.generated.js';
 
+/** The machine-learning image's `frameleaf` group; its entrypoint keeps it whatever user it drops to. */
+const MACHINE_LEARNING_GID = 10_001;
+
 export type BundledEnrolmentOutcome = 'disabled' | 'revoked' | 'enrolled' | 'unavailable';
 
 /**
@@ -85,11 +88,7 @@ export class BundledRenderWorkerService extends BaseService {
     }
 
     try {
-      await this.writeTrust(studioWorker.trustDir, studioWorker.gid, {
-        version: 1,
-        workerId: worker.id,
-        enrolmentSecret,
-      });
+      await this.writeTrust(studioWorker.trustDir, { version: 1, workerId: worker.id, enrolmentSecret });
     } catch (error) {
       this.logger.warn(
         `Bundled Studio worker enrolment could not be written to ${studioWorker.trustDir} (${error}); ` +
@@ -104,19 +103,16 @@ export class BundledRenderWorkerService extends BaseService {
    * Write atomically, never world-readable. A server running as root shares the file with the machine-learning
    * container's unprivileged user by group (machine-learning/scripts/entrypoint.sh drops to it), which could not
    * read a root-only file and waited for its enrolment forever. Any other server user is the reader's own user.
+   * A fixed group, not a setting: environment names are part of the API, and a new one breaks strict clients.
    */
-  private async writeTrust(
-    directory: string,
-    gid: number,
-    trust: { version: 1; workerId: string; enrolmentSecret: string },
-  ) {
+  private async writeTrust(directory: string, trust: { version: 1; workerId: string; enrolmentSecret: string }) {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const target = join(directory, BUNDLED_RENDER_WORKER_TRUST_FILE);
     const partial = `${target}.${process.pid}.partial`;
     try {
       await writeFile(partial, `${JSON.stringify(trust)}\n`, { mode: 0o600, flag: 'w' });
       if (process.getuid?.() === 0) {
-        await chown(partial, -1, gid);
+        await chown(partial, -1, MACHINE_LEARNING_GID);
         await chmod(partial, 0o640);
       }
       await rename(partial, target);
