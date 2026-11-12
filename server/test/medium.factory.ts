@@ -238,6 +238,14 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
       mlDestination.recordProbe.mockResolvedValue();
       mlDestination.recordAccounting.mockResolvedValue();
     }
+    if (this.options.mock.includes(UserRepository)) {
+      // FL-1484: nobody keeps their photos at home unless a test says so
+      this.getMock(UserRepository).getCloudProcessingOptOuts.mockResolvedValue(new Set());
+    }
+    if (this.options.mock.includes(AssetJobRepository)) {
+      // FL-1484: whose photo it is, for that person's choice about Frameleaf Cloud; tests that care say so
+      this.getMock(AssetJobRepository).getOwnerId.mockResolvedValue(undefined);
+    }
     if (this.options.mock.includes(WebsocketRepository)) {
       // an asset change is pushed to the owner's other sessions (FL-53)
       this.getMock(WebsocketRepository).clientSend.mockReturnValue();
@@ -272,7 +280,8 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
       }
 
       // FL-326: every asset, tag and partner edit records partner-copy lineage; it is real unless mocked
-      if (dep === PartnerOriginRepository) {
+      // FL-1484: and every machine-learning admission reads whether the photo's owner keeps it at home
+      if (dep === PartnerOriginRepository || dep === UserRepository) {
         return this.get(dep);
       }
     }) as unknown as ClassConstructorsToInstances<BaseServiceDeps>;

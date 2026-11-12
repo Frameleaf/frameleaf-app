@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { type Kysely, sql } from 'kysely';
+import z from 'zod';
 import type { DB } from 'src/schema/index.js';
 import { MediaOperationDestination, UserMetadataKey } from 'src/enum.js';
 
@@ -26,15 +27,14 @@ export const cloudProcessingOptOuts = async (db: Kysely<DB>, userIds?: readonly 
   return new Set(rows.map((row) => row.userId));
 };
 
+const isUuid = (value: unknown): value is string => z.uuid().safeParse(value).success;
+
 const snapshotAssetIds = (snapshot: unknown): string[] => {
   if (!snapshot || typeof snapshot !== 'object') {
     return [];
   }
   const { assetId, assetIds } = snapshot as { assetId?: unknown; assetIds?: unknown };
-  return [
-    ...(typeof assetId === 'string' ? [assetId] : []),
-    ...(Array.isArray(assetIds) ? assetIds.filter((id): id is string => typeof id === 'string') : []),
-  ];
+  return [...(isUuid(assetId) ? [assetId] : []), ...(Array.isArray(assetIds) ? assetIds.filter(isUuid) : [])];
 };
 
 /**
@@ -49,7 +49,7 @@ export const assertCloudProcessingAllowed = async (
     return;
   }
   const assetIds = [
-    ...new Set([...(operation.assetId ? [operation.assetId] : []), ...snapshotAssetIds(operation.snapshot)]),
+    ...new Set([...(isUuid(operation.assetId) ? [operation.assetId] : []), ...snapshotAssetIds(operation.snapshot)]),
   ];
   const assetOwners =
     assetIds.length === 0
