@@ -85,7 +85,8 @@ export class AssistantService {
     this.logger.setContext(AssistantService.name);
   }
 
-  async ask(auth: AuthDto, dto: AssistantAskDto): Promise<AssistantAskResponseDto> {
+  /** Refuses a shared link (403) and a server with the assistant turned off (400); answers its settings. */
+  async requireAvailable(auth: AuthDto) {
     // A shared link has no library to ask about; its visitors keep the album's own search.
     if (auth.sharedLink) {
       throw new ForbiddenException('Frameleaf Assistant is not available from a shared link');
@@ -95,6 +96,11 @@ export class AssistantService {
     if (!settings.enabled) {
       throw new BadRequestException('Frameleaf Assistant is turned off');
     }
+    return { settings, machineLearning };
+  }
+
+  async ask(auth: AuthDto, dto: AssistantAskDto): Promise<AssistantAskResponseDto> {
+    const { settings, machineLearning } = await this.requireAvailable(auth);
     const size = Math.min(dto.size ?? settings.maxResults, settings.maxResults);
     const query = dto.query.trim().replaceAll(/\s+/g, ' ');
     // Question text stays out of every log above debug.
