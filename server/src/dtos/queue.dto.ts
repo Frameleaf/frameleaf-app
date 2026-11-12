@@ -127,8 +127,8 @@ export const QueueStatisticsSchema = z
 
 /**
  * FL-71 (J-1): one account's jobs in a queue, for the Job manager's account filter. Jobs are
- * attributed through the item they name; at most QUEUE_OWNER_SCAN_LIMIT jobs of each state are
- * read, and `truncated` says a state had more than that, so its count is a lower bound.
+ * attributed through the item they name and counted over the whole queue; `truncated` is kept
+ * for older apps and is always false.
  */
 const QueueOwnerStatisticsResponseSchema = QueueStatisticsSchema.extend({
   truncated: z.boolean().describe('Whether a state had more jobs than were scanned, so its count is a lower bound'),

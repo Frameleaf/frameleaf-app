@@ -105,9 +105,6 @@ const PROBLEM_ACTIONS: Record<QueueProblemActionDto['action'], QueueProblemActio
   stop: ['unsupported'],
 };
 
-/** FL-71 (J-1): the most jobs of one state read to count an account's share of a queue. */
-export const QUEUE_OWNER_SCAN_LIMIT = 1000;
-
 /** Statuses whose job has been claimed by a worker, so its accounting names where it ran. */
 const RAN_STATUSES = new Set<QueueJobStatus>([QueueJobStatus.Active, QueueJobStatus.Complete, QueueJobStatus.Failed]);
 
@@ -447,48 +444,16 @@ export class QueueService extends BaseService {
         worker,
       };
     });
-    return dto.ownerId ? result.filter((job) => job.account?.id === dto.ownerId) : result;
+    // the repository already kept only `dto.ownerId`'s jobs
+    return result;
   }
 
   /**
-   * FL-71 (J-1): how many of a queue's jobs, per state, work on one account's items. This view reads
-   * up to QUEUE_OWNER_SCAN_LIMIT PostgreSQL jobs of each state and attributes them through the
-   * items they name (as the Account column does); `truncated` marks counts that are lower bounds.
+   * FL-71 (J-1): how many of a queue's jobs, per state, work on one account's items, counted in the database
+   * over the whole queue. `truncated` stays in the response for older apps; a count is never a lower bound now.
    */
   async getOwnerStatistics(auth: AuthDto, name: QueueName, ownerId: string): Promise<QueueOwnerStatisticsResponseDto> {
-    const totals = await this.jobRepository.getJobCounts(name);
-    const states = [
-      QueueJobStatus.Active,
-      QueueJobStatus.Complete,
-      QueueJobStatus.Failed,
-      QueueJobStatus.Delayed,
-      QueueJobStatus.Waiting,
-      QueueJobStatus.Paused,
-    ] as const;
-    const lists = await Promise.all(
-      states.map((status) => this.jobRepository.searchJobs(name, { status: [status] }, QUEUE_OWNER_SCAN_LIMIT)),
-    );
-    const subjects = lists.map((jobs) => jobs.map((job) => subjectIdsOf(job.data)));
-    const owners = new Map(
-      (await this.userRepository.getJobSubjectOwners([...new Set(subjects.flat().flat())])).map((row) => [
-        row.subjectId,
-        row.ownerId,
-      ]),
-    );
-    const count = (index: number) =>
-      subjects[index].filter((ids) => ids.map((id) => owners.get(id)).find(Boolean) === ownerId).length;
-    return {
-      active: count(0),
-      completed: count(1),
-      failed: count(2),
-      delayed: count(3),
-      waiting: count(4),
-      paused: count(5),
-      // A full page may hide jobs added since the counts were read, so it is a lower bound too.
-      truncated: states.some(
-        (status, index) => (totals[status] ?? 0) > lists[index].length || lists[index].length >= QUEUE_OWNER_SCAN_LIMIT,
-      ),
-    };
+    return { ...(await this.jobRepository.getJobCounts(name, ownerId)), truncated: false };
   }
 
   /**

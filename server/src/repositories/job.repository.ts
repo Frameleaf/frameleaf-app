@@ -36,7 +36,7 @@ import { listQueueProblems, queueHolds, queueProblemJobs } from 'src/queue/queue
 import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
 import { causeRank } from 'src/queue/run-failure-cause.js';
 import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
-import { failureRoots, needsLook, reportedQueueJobs } from 'src/queue/run-query.js';
+import { failureRoots, needsLook, ownerJobs, reportedQueueJobs } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
@@ -730,8 +730,8 @@ export class JobRepository {
   nightHasLiveWork(name: QueueName, startedAt: string): Promise<boolean> {
     return this.store.nightHasLiveWork(name, startedAt);
   }
-  getJobCounts(name: QueueName): Promise<JobCounts> {
-    return this.store.counts(name);
+  getJobCounts(name: QueueName, ownerId?: string): Promise<JobCounts> {
+    return this.store.counts(name, ownerId);
   }
   /** Held work counts unless `includeHeld` is false. */
   hasUnfinishedWork(name: QueueName, options: { includeHeld?: boolean } = {}): Promise<boolean> {
@@ -1384,6 +1384,7 @@ export class JobRepository {
         when j.state in ('pending','waiting') and coalesce(q."closedUntil" > now(), false) then 'delayed'
         when j.state = 'pending' then 'waiting' else j.state end status
       from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue
+      ${dto.ownerId ? ownerJobs(dto.ownerId) : sql``}
       ) jobs where status = any(${statuses}::text[])
       and (${!publicOnly} or name = any(${JobNameSchema.options}::text[]))
       order by timestamp desc, id limit ${limit}`.execute(this.store.db);

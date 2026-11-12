@@ -22,6 +22,7 @@ import {
   listRunItems,
   listRuns,
   observeQueueRun,
+  ownerJobs,
   reportedQueueJobs,
   rewriteFailureCauses,
   runCountsPhotos,
@@ -937,7 +938,8 @@ export class SqlQueueStore {
     return rows[0]?.closedUntil ?? null;
   }
 
-  async counts(name: string) {
+  /** With `ownerId`, only the jobs that work for that account (FL-71), counted in full however long the queue. */
+  async counts(name: string, ownerId?: string) {
     const steps = FOLLOW_UP_STEPS[name];
     const {
       rows: [row],
@@ -959,7 +961,8 @@ export class SqlQueueStore {
         and not coalesce(q."closedUntil" > now(), false) and not j."operationPaused")::int waiting,
       count(*) filter (where state in ('pending','waiting') and (j."operationPaused" or "availableAt" = ${HELD}
         or ("availableAt" <= now() and (q.paused or coalesce(q."closedUntil" > now(), false)))))::int paused
-      from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue`.execute(this.db);
+      from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue
+      ${ownerId ? ownerJobs(ownerId) : sql``}`.execute(this.db);
     return row;
   }
 
