@@ -528,7 +528,14 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
       { cause: null, shiftMinutes: null, timeZone: 'Asia/Tokyo' },
       () => Promise.resolve(),
     );
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // let the edit commit only once the fix is waiting for the EXIF row lock
+    for (let waiting = 0; waiting === 0;) {
+      const { rows } = await sql<{ count: number }>`select count(*)::int as count from pg_stat_activity
+        where wait_event_type = 'Lock' and query like '%from asset_exif where "assetId" = any(%for update%'`.execute(
+        db,
+      );
+      waiting = rows[0].count;
+    }
     commitEdit();
     await edit;
 
