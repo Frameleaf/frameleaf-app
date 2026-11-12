@@ -50,3 +50,31 @@ export const isDateEstimated = ({
   !!dateTimeOriginal &&
   !!estimatedDateTimeOriginal &&
   new Date(dateTimeOriginal).getTime() === new Date(estimatedDateTimeOriginal).getTime();
+
+/** An edited capture date as the asset row stores it: the instant and the local clock time (in `timeZone`, else
+ * keeping the offset `previous` had). */
+export const getAssetDateTimeUpdates = (
+  dateTimeOriginal?: string,
+  timeZone?: string | null,
+  previous?: { fileCreatedAt: Date; localDateTime: Date },
+) => {
+  if (!dateTimeOriginal) {
+    return {};
+  }
+
+  const dateTime = DateTime.fromISO(withDateTimeOffset(dateTimeOriginal)!, { setZone: true, zone: 'UTC' });
+  if (!dateTime.isValid) {
+    return {};
+  }
+
+  const zoned = timeZone ? dateTime.setZone(timeZone) : undefined;
+  const localDateTime = zoned?.isValid
+    ? zoned.setZone('UTC', { keepLocalTime: true }).toJSDate()
+    : previous
+      ? new Date(previous.localDateTime.getTime() + dateTime.toMillis() - previous.fileCreatedAt.getTime())
+      : dateTime.setZone('UTC', { keepLocalTime: true }).toJSDate();
+  return {
+    fileCreatedAt: dateTime.toUTC().toJSDate(),
+    localDateTime,
+  };
+};

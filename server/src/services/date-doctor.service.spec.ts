@@ -1,14 +1,21 @@
+import { BadRequestException } from '@nestjs/common';
 import { vi } from 'vitest';
-import type { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
+import type { AccessRepository } from 'src/repositories/access.repository.js';
+import type { AccountEventRepository } from 'src/repositories/account-event.repository.js';
+import type { DateDoctorRepository, DateFixCurrent } from 'src/repositories/date-doctor.repository.js';
+import type { EventRepository } from 'src/repositories/event.repository.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { JobName } from 'src/enum.js';
+import type { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { AccountEventAction, JobName } from 'src/enum.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
 import { DateFindingCause, type DateScanRow, dateFromFileName, detectDateFindings } from 'src/utils/date-doctor.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { FIXTURE_NOW, buildDateDoctorFixture, scoreFindings } from 'test/fixtures/date-doctor.fixture.js';
 
 const now = new Date('2026-06-01T12:00:00Z');
+
+type FixDeps = [AccessRepository, AccountEventRepository, EventRepository, PartnerOriginRepository];
 
 describe('dateFromFileName', () => {
   it.each([
@@ -156,6 +163,7 @@ describe(DateDoctorService.name, () => {
       logger as unknown as LoggingRepository,
       jobs as unknown as JobRepository,
       repository as unknown as DateDoctorRepository,
+      ...([{}, {}, {}, {}] as unknown as FixDeps),
     );
     return { sut, repository, jobs };
   };
@@ -226,5 +234,194 @@ describe(DateDoctorService.name, () => {
         expect.objectContaining({ camera: 'Brand Series|X', day: '2022-06-30' }),
       ],
     });
+  });
+});
+
+describe('DateDoctorService fixes (FL-930)', () => {
+  const owner = authStub.admin;
+  const current = (assetId: string, overrides: Partial<DateFixCurrent> = {}): DateFixCurrent => ({
+    assetId,
+    takenAt: new Date('2022-07-01T10:03:00Z'),
+    localDateTime: new Date('2022-07-01T10:03:00Z'),
+    dateTimeOriginal: new Date('2022-07-01T10:03:00Z'),
+    timeZone: null,
+    locked: false,
+    earlier: null,
+    ...overrides,
+  });
+
+  const setup = (owned: string[] = ['a', 'b']) => {
+    const repository = {
+      getProposals: vi.fn().mockResolvedValue([]),
+      getCurrent: vi.fn().mockResolvedValue([]),
+      applyFixes: vi.fn(),
+      undoBatch: vi.fn(),
+      pruneBatches: vi.fn().mockResolvedValue(0),
+    };
+    const jobs = { queue: vi.fn(), queueAll: vi.fn() };
+    const access = { asset: { checkOwnerAccess: vi.fn().mockResolvedValue(new Set(owned)) } };
+    const accountEvents = { create: vi.fn() };
+    const events = { emit: vi.fn() };
+    const partnerOrigin = { markOverridden: vi.fn(), getIdsWithFollowers: vi.fn().mockResolvedValue([]) };
+    const logger = { setContext: vi.fn(), log: vi.fn(), error: vi.fn() };
+    const sut = new DateDoctorService(
+      logger as unknown as LoggingRepository,
+      jobs as unknown as JobRepository,
+      repository as unknown as DateDoctorRepository,
+      ...([access, accountEvents, events, partnerOrigin] as unknown as FixDeps),
+    );
+    return { sut, repository, jobs, access, accountEvents, events, partnerOrigin };
+  };
+  const batch = { id: 'batch', userId: owner.user.id, count: 2, createdAt: now, undoneAt: null };
+
+  it('previews a proposal: its date and zone, the clock time in that zone', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getProposals.mockResolvedValue([
+      { assetId: 'a', proposedDate: new Date('2022-07-01T08:03:00Z'), proposedZone: 'Europe/Paris' },
+    ]);
+    repository.getCurrent.mockResolvedValue([current('a')]);
+
+    await expect(
+      sut.preview(owner, { findings: [{ assetId: 'a', cause: DateFindingCause.MissingZone }] }),
+    ).resolves.toEqual({
+      items: [
+        {
+          assetId: 'a',
+          previousDate: '2022-07-01T10:03:00.000Z',
+          previousZone: null,
+          newDate: '2022-07-01T08:03:00.000Z',
+          newZone: 'Europe/Paris',
+        },
+      ],
+    });
+    expect(repository.getCurrent).toHaveBeenCalledWith(owner.user.id, ['a']);
+    expect(repository.applyFixes).not.toHaveBeenCalled();
+  });
+
+  it('keeps the clock time shown when a selection gets a zone, and moves it by the shift', async () => {
+    const { sut, repository } = setup();
+    repository.getCurrent.mockResolvedValue([current('a'), current('b', { timeZone: 'UTC' })]);
+
+    const { items } = await sut.preview(owner, { assetIds: ['a', 'b'], timeZone: 'Asia/Tokyo', shiftMinutes: 60 });
+
+    // 11:03 on the camera's clock in Tokyo is 02:03 UTC
+    expect(items.map(({ newDate, newZone }) => ({ newDate, newZone }))).toEqual([
+      { newDate: '2022-07-01T02:03:00.000Z', newZone: 'Asia/Tokyo' },
+      { newDate: '2022-07-01T02:03:00.000Z', newZone: 'Asia/Tokyo' },
+    ]);
+  });
+
+  it('shifts a selection without a zone, keeping its own', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getCurrent.mockResolvedValue([current('a', { timeZone: 'Europe/Paris' })]);
+
+    const { items } = await sut.preview(owner, { assetIds: ['a'], shiftMinutes: -90 });
+
+    expect(items).toEqual([expect.objectContaining({ newDate: '2022-07-01T08:33:00.000Z', newZone: 'Europe/Paris' })]);
+  });
+
+  it('refuses photos the caller does not own, a partner’s copy included, before reading or writing anything', async () => {
+    const { sut, repository } = setup(['a']);
+
+    await expect(sut.apply(owner, { assetIds: ['a', 'partner-copy'], shiftMinutes: 5 })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(repository.getCurrent).not.toHaveBeenCalled();
+    expect(repository.applyFixes).not.toHaveBeenCalled();
+  });
+
+  it('keeps the values from before an earlier fix still in place', async () => {
+    const { sut, repository } = setup(['a']);
+    const earlier = {
+      previousDate: null,
+      previousZone: null,
+      previousTakenAt: new Date('2000-01-01T00:00:00Z'),
+      previousLocalDateTime: new Date('2000-01-01T00:00:00Z'),
+      previousLocked: false,
+    };
+    repository.getCurrent.mockResolvedValue([current('a', { timeZone: 'Europe/Paris', locked: true, earlier })]);
+    repository.applyFixes.mockResolvedValue({ batch, assetIds: ['a'] });
+
+    await sut.apply(owner, { assetIds: ['a'], shiftMinutes: 10 });
+
+    expect(repository.applyFixes).toHaveBeenCalledWith(owner.user.id, [
+      expect.objectContaining({
+        ...earlier,
+        currentTakenAt: new Date('2022-07-01T10:03:00Z'),
+        newZone: 'Europe/Paris',
+      }),
+    ]);
+  });
+
+  it('applies: rewrites sidecars, tells copies following the photos, refreshes timelines and logs the count', async () => {
+    const { sut, repository, jobs, events, accountEvents, partnerOrigin } = setup();
+    repository.getCurrent.mockResolvedValue([current('a'), current('b')]);
+    repository.applyFixes.mockResolvedValue({ batch, assetIds: ['a', 'b'] });
+    partnerOrigin.getIdsWithFollowers.mockResolvedValue(['a']);
+
+    await expect(sut.apply(owner, { assetIds: ['a', 'b'], timeZone: 'Europe/Paris' })).resolves.toEqual({
+      id: 'batch',
+      count: 2,
+      createdAt: now.toISOString(),
+      undoneAt: null,
+      undoUntil: '2026-07-01T12:00:00.000Z',
+    });
+    expect(partnerOrigin.markOverridden).toHaveBeenCalledWith('asset', ['a', 'b'], ['dateTimeOriginal'], owner.user.id);
+    expect(jobs.queueAll).toHaveBeenCalledWith([
+      { name: JobName.PartnerPropagate, data: { kind: 'asset', sourceId: 'a', fields: ['dateTimeOriginal'] } },
+    ]);
+    expect(jobs.queueAll).toHaveBeenCalledWith([
+      { name: JobName.SidecarWrite, data: { id: 'a' } },
+      { name: JobName.SidecarWrite, data: { id: 'b' } },
+    ]);
+    expect(events.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: ['a', 'b'] });
+    expect(accountEvents.create).toHaveBeenCalledWith(
+      expect.objectContaining({ action: AccountEventAction.DatesFixed, detail: '2' }),
+    );
+  });
+
+  it('says there is nothing to fix when no photo would change', async () => {
+    const { sut, repository } = setup(['a']);
+    repository.getCurrent.mockResolvedValue([current('a', { timeZone: 'UTC' })]);
+
+    await expect(sut.apply(owner, { assetIds: ['a'], timeZone: 'UTC' })).rejects.toThrow('Nothing to fix');
+    expect(repository.applyFixes).not.toHaveBeenCalled();
+  });
+
+  it('undoes: the sidecar gets the restored date, and a date nobody set by hand is read from the file again', async () => {
+    const { sut, repository, jobs } = setup();
+    repository.undoBatch.mockResolvedValue({
+      batch: { ...batch, undoneAt: now },
+      restored: [
+        { assetId: 'a', previousLocked: false },
+        { assetId: 'b', previousLocked: true },
+      ],
+      alreadyUndone: false,
+    });
+
+    await expect(sut.undo(owner, 'batch')).resolves.toEqual(
+      expect.objectContaining({ undoneAt: now.toISOString(), restored: 2 }),
+    );
+    expect(repository.undoBatch).toHaveBeenCalledWith(owner.user.id, 'batch', expect.any(Date));
+    expect(jobs.queueAll).toHaveBeenCalledWith([
+      { name: JobName.SidecarWrite, data: { id: 'a', releaseDateLock: true } },
+      { name: JobName.SidecarWrite, data: { id: 'b' } },
+    ]);
+  });
+
+  it('refuses to undo another person’s batch, an old one or one already undone', async () => {
+    const { sut, repository } = setup();
+    repository.undoBatch.mockResolvedValue(undefined);
+    await expect(sut.undo(owner, 'batch')).rejects.toThrow('Batch not found');
+
+    repository.undoBatch.mockResolvedValue({ batch: { ...batch, undoneAt: now }, restored: [], alreadyUndone: true });
+    await expect(sut.undo(owner, 'batch')).rejects.toThrow('Already undone');
+  });
+
+  it('removes batches older than 30 days each night', async () => {
+    const { sut, repository } = setup();
+    await sut.onNightlyDatabaseCleanup();
+    const [before] = repository.pruneBatches.mock.calls[0];
+    expect(Date.now() - before.getTime()).toBeGreaterThanOrEqual(30 * 24 * 3_600_000 - 1000);
   });
 });

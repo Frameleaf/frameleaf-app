@@ -1,11 +1,14 @@
 import { Kysely, sql } from 'kysely';
 import { vi } from 'vitest';
+import type { EventRepository } from 'src/repositories/event.repository.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
-import { AssetLockReason, AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, JobName } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { DB } from 'src/schema/index.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
@@ -17,7 +20,8 @@ import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
-/** FL-912: the Date & Time Doctor's scan, on a real database. */
+/** FL-912: the Date & Time Doctor's scan, on a real database. FL-930: its fixes and their undo. */
+type FixDeps = [AccessRepository, AccountEventRepository, EventRepository, PartnerOriginRepository];
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
@@ -34,7 +38,12 @@ const setup = () => {
   });
   const logger = { setContext: vi.fn(), log: vi.fn() } as unknown as LoggingRepository;
   const jobs = { queue: vi.fn(), queueAll: vi.fn() } as unknown as JobRepository;
-  const doctor = new DateDoctorService(logger, jobs, new DateDoctorRepository(db));
+  const doctor = new DateDoctorService(
+    logger,
+    jobs,
+    new DateDoctorRepository(db),
+    ...([{}, {}, {}, {}] as unknown as FixDeps),
+  );
   return { ctx, timeline, doctor };
 };
 type Context = ReturnType<typeof setup>['ctx'];
@@ -234,5 +243,231 @@ describe('Date & Time Doctor scan (FL-912)', () => {
       .where('assetId', '=', dismissed.id)
       .execute();
     expect(kept).toHaveLength(1);
+  });
+});
+
+describe('Date & Time Doctor fixes (FL-930)', () => {
+  const fixSetup = () => {
+    const { ctx } = newMediumService(TimelineService, {
+      database: db,
+      real: [AssetRepository, AccessRepository, PartnerRepository, PartnerOriginRepository, AccountEventRepository],
+      mock: [LoggingRepository],
+    });
+    const logger = { setContext: vi.fn(), log: vi.fn(), error: vi.fn() } as unknown as LoggingRepository;
+    const jobs = { queue: vi.fn(), queueAll: vi.fn() };
+    const events = { emit: vi.fn() };
+    const doctor = new DateDoctorService(
+      logger,
+      jobs as unknown as JobRepository,
+      new DateDoctorRepository(db),
+      ctx.get(AccessRepository),
+      ctx.get(AccountEventRepository),
+      events as unknown as EventRepository,
+      ctx.get(PartnerOriginRepository),
+    );
+    return { ctx, doctor, jobs, events };
+  };
+  type FixContext = ReturnType<typeof fixSetup>['ctx'];
+
+  const takenAt = new Date('2022-07-01T10:03:00Z');
+  const photo = async (ctx: FixContext, ownerId: string, zone: string | null = null, locked = false) => {
+    const { asset } = await ctx.newAsset({ ownerId, fileCreatedAt: takenAt, localDateTime: takenAt });
+    await ctx.newExif({
+      assetId: asset.id,
+      dateTimeOriginal: takenAt,
+      timeZone: zone,
+      lockedProperties: locked ? ['dateTimeOriginal'] : null,
+    });
+    return asset.id;
+  };
+  const dateOf = (id: string) =>
+    db
+      .selectFrom('asset')
+      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select([
+        'asset.fileCreatedAt',
+        'asset.localDateTime',
+        'asset_exif.dateTimeOriginal',
+        'asset_exif.timeZone',
+        'asset_exif.lockedProperties',
+      ])
+      .where('asset.id', '=', id)
+      .executeTakeFirstOrThrow();
+
+  it('writes the date and zone locked, and undo puts back exactly what was there, a missing zone included', async () => {
+    const { ctx, doctor, jobs } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const id = await photo(ctx, user.id);
+    const before = await dateOf(id);
+
+    const batch = await doctor.apply(auth, { assetIds: [id], timeZone: 'Europe/Paris' });
+
+    expect(batch).toEqual(expect.objectContaining({ count: 1, undoneAt: null }));
+    // 10:03 on the camera's clock in Paris (summer time) is 08:03 UTC
+    expect(await dateOf(id)).toEqual({
+      fileCreatedAt: new Date('2022-07-01T08:03:00Z'),
+      localDateTime: takenAt,
+      dateTimeOriginal: new Date('2022-07-01T08:03:00Z'),
+      timeZone: 'Europe/Paris',
+      lockedProperties: expect.arrayContaining(['dateTimeOriginal', 'timeZone']),
+    });
+    expect(jobs.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id } }]);
+    const logged = await db.selectFrom('account_event').selectAll().where('userId', '=', user.id).execute();
+    expect(logged).toEqual([expect.objectContaining({ action: 'dates-fixed', detail: '1' })]);
+
+    await expect(doctor.undo(auth, batch.id)).resolves.toEqual(expect.objectContaining({ restored: 1 }));
+
+    const after = await dateOf(id);
+    expect({ ...after, lockedProperties: before.lockedProperties }).toEqual(before);
+    // the lock goes once the sidecar holds the restored date
+    expect(jobs.queueAll).toHaveBeenLastCalledWith([
+      { name: JobName.SidecarWrite, data: { id, releaseDateLock: true } },
+    ]);
+    await expect(doctor.undo(auth, batch.id)).rejects.toThrow('Already undone');
+  });
+
+  it('a date set by hand before stays set by hand after undo', async () => {
+    const { ctx, doctor, jobs } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const id = await photo(ctx, user.id, 'UTC', true);
+
+    const batch = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 30 });
+    await doctor.undo(auth, batch.id);
+
+    expect(jobs.queueAll).toHaveBeenLastCalledWith([{ name: JobName.SidecarWrite, data: { id } }]);
+    expect((await dateOf(id)).fileCreatedAt).toEqual(takenAt);
+  });
+
+  it('applying twice keeps the earliest previous value, so undo goes all the way back', async () => {
+    const { ctx, doctor } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const id = await photo(ctx, user.id);
+    const before = await dateOf(id);
+
+    const first = await doctor.apply(auth, { assetIds: [id], timeZone: 'Asia/Tokyo' });
+    const second = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 60 });
+    const items = await db.selectFrom('date_fix_item').selectAll().where('assetId', '=', id).execute();
+    expect(items.map(({ previousTakenAt, previousZone }) => ({ previousTakenAt, previousZone }))).toEqual([
+      { previousTakenAt: takenAt, previousZone: null },
+      { previousTakenAt: takenAt, previousZone: null },
+    ]);
+
+    await expect(doctor.undo(auth, second.id)).resolves.toEqual(expect.objectContaining({ restored: 1 }));
+    expect({ ...(await dateOf(id)), lockedProperties: before.lockedProperties }).toEqual(before);
+    // the first batch's date is no longer the photo's: undoing it now changes nothing
+    await expect(doctor.undo(auth, first.id)).resolves.toEqual(expect.objectContaining({ restored: 0 }));
+    expect((await dateOf(id)).fileCreatedAt).toEqual(takenAt);
+  });
+
+  it('a photo dated again since the fix keeps that date on undo', async () => {
+    const { ctx, doctor } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const [kept, restored] = [await photo(ctx, user.id), await photo(ctx, user.id)];
+
+    const batch = await doctor.apply(auth, { assetIds: [kept, restored], shiftMinutes: 120 });
+    const later = new Date('2023-01-01T00:00:00Z');
+    await db.updateTable('asset').set({ fileCreatedAt: later }).where('id', '=', kept).execute();
+
+    await expect(doctor.undo(auth, batch.id)).resolves.toEqual(expect.objectContaining({ count: 2, restored: 1 }));
+    expect((await dateOf(kept)).fileCreatedAt).toEqual(later);
+    expect((await dateOf(restored)).fileCreatedAt).toEqual(takenAt);
+  });
+
+  it('applies the Doctor’s proposals and settles their findings', async () => {
+    const { ctx, doctor } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const id = await photo(ctx, user.id);
+    await db
+      .insertInto('asset_date_finding')
+      .values({
+        assetId: id,
+        cause: DateFindingCause.MissingZone,
+        currentDate: takenAt,
+        currentZone: null,
+        proposedDate: new Date('2022-07-01T08:03:00Z'),
+        proposedZone: 'Europe/Paris',
+        confidence: 0.8,
+        groupKey: 'unknown|2022-07-01',
+      })
+      .execute();
+
+    const { items } = await doctor.preview(auth, { findings: [{ assetId: id, cause: DateFindingCause.MissingZone }] });
+    expect(items).toEqual([expect.objectContaining({ newDate: '2022-07-01T08:03:00.000Z', newZone: 'Europe/Paris' })]);
+    expect((await dateOf(id)).fileCreatedAt).toEqual(takenAt);
+
+    await doctor.apply(auth, { findings: [{ assetId: id, cause: DateFindingCause.MissingZone }] });
+    expect(await dateOf(id)).toEqual(expect.objectContaining({ timeZone: 'Europe/Paris', localDateTime: takenAt }));
+    expect(await db.selectFrom('asset_date_finding').select('assetId').where('assetId', '=', id).execute()).toEqual([]);
+  });
+
+  it('a person cannot fix or undo photos they do not own, a partner’s copy included', async () => {
+    const { ctx, doctor } = fixSetup();
+    const { user: owner } = await ctx.newUser();
+    const { user: partner } = await ctx.newUser();
+    const ownerAuth = factory.auth({ user: owner });
+    const partnerAuth = factory.auth({ user: partner });
+    const original = await photo(ctx, owner.id);
+    const copy = await photo(ctx, partner.id);
+    await ctx.get(PartnerOriginRepository).createOrigin('asset', {
+      id: copy,
+      sourceId: original,
+      ownerId: partner.id,
+      rootOwnerId: owner.id,
+      partnerSharedById: owner.id,
+    });
+
+    await expect(doctor.apply(ownerAuth, { assetIds: [copy], shiftMinutes: 5 })).rejects.toThrow(
+      'Not found or no asset.update access',
+    );
+    await expect(doctor.apply(partnerAuth, { assetIds: [original], shiftMinutes: 5 })).rejects.toThrow(
+      'Not found or no asset.update access',
+    );
+    const batch = await doctor.apply(ownerAuth, { assetIds: [original], shiftMinutes: 5 });
+    await expect(doctor.undo(partnerAuth, batch.id)).rejects.toThrow('Batch not found');
+    expect((await dateOf(copy)).fileCreatedAt).toEqual(takenAt);
+  });
+
+  it('applies to 1,000 photos in one request in under 5 s', async () => {
+    const { ctx, doctor, jobs } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const ids: string[] = [];
+    for (let i = 0; i < 1000; i++) {
+      ids.push(await photo(ctx, user.id));
+    }
+
+    const started = Date.now();
+    const batch = await doctor.apply(auth, { assetIds: ids, timeZone: 'America/Edmonton' });
+    const elapsed = Date.now() - started;
+
+    console.log(`FL-930: applied to ${batch.count} photos in ${elapsed} ms`);
+    expect(batch.count).toBe(1000);
+    expect(elapsed).toBeLessThan(5000);
+    expect(jobs.queueAll).toHaveBeenCalledWith(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } })));
+  }, 120_000);
+
+  it('removes batches older than 30 days each night', async () => {
+    const { ctx, doctor } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const id = await photo(ctx, user.id);
+    const old = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 1 });
+    const recent = await doctor.apply(auth, { assetIds: [id], shiftMinutes: 1 });
+    await db
+      .updateTable('date_fix_batch')
+      .set({ createdAt: new Date(Date.now() - 31 * 24 * 3_600_000) })
+      .where('id', '=', old.id)
+      .execute();
+
+    await expect(doctor.undo(auth, old.id)).rejects.toThrow('Batch not found');
+    await doctor.onNightlyDatabaseCleanup();
+
+    const left = await db.selectFrom('date_fix_batch').select('id').where('userId', '=', user.id).execute();
+    expect(left).toEqual([{ id: recent.id }]);
   });
 });

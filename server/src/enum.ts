@@ -3199,6 +3199,8 @@ export enum AccountEventAction {
   PartnerRemoved = 'partner-removed',
   /** `subject` is the recipient's name; `detail` is how many items. */
   ItemShared = 'item-shared',
+  /** FL-930: the Date & Time Doctor fixed photos' dates; `subject` is the account, `detail` how many photos. */
+  DatesFixed = 'dates-fixed',
   /**
    * Written by Frameleaf Connect (E3); `subject` is the app's name. FL-803: `detail` of a connection
    * is the scopes allowed; of a disconnection, why: `removed` (by you), `app-signed-out` (the app
