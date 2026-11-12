@@ -100,7 +100,13 @@ export class UpgradeCheckService extends BaseService {
     }
 
     // On the start that ran the check, a sentinel that is away stays on record, so the finding holds.
-    const roots = await this.ensureSentinels(state.roots ?? [], current, !checked);
+    // A library marked read-only is a promise that Frameleaf writes nothing there, whatever the drive allows.
+    const readOnly = new Set(
+      storageRoots(libraries.filter((library) => library.readOnly))
+        .filter(({ kind }) => kind === 'library')
+        .map(({ path }) => path),
+    );
+    const roots = await this.ensureSentinels(state.roots ?? [], current, !checked, readOnly);
     // A fingerprint waiting for another version is of no use to this one, and is dropped with the rest.
     await this.systemMetadataRepository.set(UPGRADE_FINGERPRINT_KEY, {
       roots,
@@ -180,9 +186,15 @@ export class UpgradeCheckService extends BaseService {
    * files in it, so an empty mount point (the folder Docker leaves when a drive is not mounted) never
    * gets one. A root whose sentinel is away keeps its record, and with `adopt` takes the sentinel of
    * whatever is mounted there now once that has files: a drive that was replaced settles on a later
-   * start, after the check has had its say.
+   * start, after the check has had its say. No sentinel is ever written into a folder in `readOnly` (a
+   * read-only library): it is recorded without one, and told to be in place by its files.
    */
-  private async ensureSentinels(recorded: SentinelRecord[], current: StorageRoot[], adopt: boolean) {
+  private async ensureSentinels(
+    recorded: SentinelRecord[],
+    current: StorageRoot[],
+    adopt: boolean,
+    readOnly: Set<string>,
+  ) {
     const byPath = new Map(recorded.map((root) => [root.path, root]));
     const next: SentinelRecord[] = [];
     for (const root of current) {
@@ -203,7 +215,7 @@ export class UpgradeCheckService extends BaseService {
         }
         continue;
       }
-      next.push({ kind, name, path, sentinelId: await this.writeSentinel(path) });
+      next.push({ kind, name, path, sentinelId: readOnly.has(path) ? null : await this.writeSentinel(path) });
     }
     return next;
   }

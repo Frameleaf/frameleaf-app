@@ -240,6 +240,37 @@ describe(UpgradeCheckService.name, () => {
       expect(saved().roots?.map(({ path }) => path)).toEqual(['/data/library', '/data/upload']);
     });
 
+    it('never writes a sentinel into a library marked read-only, even where the drive would allow it', async () => {
+      files.clear();
+      folders.set(LIBRARY, ['2023', '2024']);
+      mocks.library.getAll.mockResolvedValue([
+        { name: 'Family archive', importPaths: [LIBRARY], readOnly: true },
+      ] as never);
+
+      await sut.onBootstrap();
+
+      expect(mocks.storage.createFile).not.toHaveBeenCalledWith(`${LIBRARY}/.frameleaf-sentinel`, expect.anything());
+      expect(files.has(`${LIBRARY}/.frameleaf-sentinel`)).toBe(false);
+      // Frameleaf's own folders still get theirs, and the library is recorded without one
+      expect(mocks.storage.createFile).toHaveBeenCalledTimes(OWN.length);
+      expect(saved().roots).toContainEqual({ ...record, sentinelId: null });
+
+      // after the next upgrade the drive is away: told by the folder, as before sentinels
+      stored = {
+        roots: saved().roots,
+        pending: {
+          toVersion: CURRENT,
+          before: { ...before(), roots: [{ ...before().roots[0], sentinelId: null }] },
+        },
+      };
+      folders.delete(LIBRARY);
+
+      await sut.onBootstrap();
+
+      expect(saved().latest?.findings).toEqual([expect.objectContaining({ reason: 'drive-missing', path: LIBRARY })]);
+      expect(files.has(`${LIBRARY}/.frameleaf-sentinel`)).toBe(false);
+    });
+
     it('records a folder it cannot write to without a sentinel, and tells it is in place by its files', async () => {
       files.clear();
       folders.set(LIBRARY, ['2023', '2024']);
