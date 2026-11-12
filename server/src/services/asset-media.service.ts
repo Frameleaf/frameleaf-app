@@ -12,6 +12,7 @@ import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { RunOrigin } from 'src/queue/types.js';
 import type { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import type { DB } from 'src/schema/index.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
@@ -48,7 +49,6 @@ import {
 } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
-import type { RunOrigin } from 'src/queue/types.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess, requireUploadsNotPaused } from 'src/utils/access.js';
 import { asUploadRequest } from 'src/utils/asset.util.js';

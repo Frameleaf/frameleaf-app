@@ -52,7 +52,7 @@
     const at = new Date(iso);
     const today = new Date().toDateString() === at.toDateString();
     return new Intl.DateTimeFormat($locale ?? undefined, {
-      ...(today ? {} : { weekday: 'short' }),
+      ...(!today && { weekday: 'short' as const }),
       hour: 'numeric',
       minute: '2-digit',
     }).format(at);
@@ -117,7 +117,14 @@
           <ol class="fw3-stages" aria-label={$t('frameleaf_activity_arrival_steps', { values: { name: title } })}>
             {#each arrival.steps as step (step.feature.id)}
               {@const name = nameOf(step)}
-              <li class="fw3-stage is-{step.state}">
+              <li
+                class="fw3-stage"
+                class:is-done={step.state === 'done'}
+                class:is-running={step.state === 'running'}
+                class:is-tonight={step.state === 'tonight'}
+                class:is-paused={step.state === 'paused'}
+                class:is-failed={step.state === 'failed'}
+              >
                 <Icon icon={STEP_ICONS[step.state]} size="16" aria-hidden />
                 <span class="fw3-stage-text">
                   <strong>{name}</strong>

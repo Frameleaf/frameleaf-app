@@ -66,6 +66,8 @@ describe('timeline buckets after upload and metadata extraction (FL-432)', () =>
         AssetRepository,
         SharedLinkRepository,
         UserRepository,
+        ApiKeyRepository,
+        SessionRepository,
       ],
       mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository, MetadataRepository],
     });

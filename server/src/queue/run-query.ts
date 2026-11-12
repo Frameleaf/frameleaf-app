@@ -642,7 +642,7 @@ async function runSteps(
     add(step, outcome, n - blocked);
     steps.set(queue, step);
   }
-  return [...steps.values()];
+  return steps.values().toArray();
 }
 
 /** The external libraries (three at most) of the first 200 photos whose work waits for its source, from the deferral index. */

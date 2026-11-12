@@ -805,6 +805,8 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
       mock.collectFollowups.mockImplementation((action) => action());
       mock.isImportedMetadataJob.mockResolvedValue(false);
       mock.pinnedDestination.mockResolvedValue(null);
+      // FL-1459: an upload's run is the queue's business; specs see its work as a plain queue call
+      mock.queueUpload.mockImplementation((item) => mock.queue(item));
       return mock;
     }
 
