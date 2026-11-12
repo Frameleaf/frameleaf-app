@@ -52,9 +52,10 @@
   server emails (`server/src/emails/translations/locales.json`) and notifications
   (`server/src/utils/notification-translations.json`). Never merge English-only
   strings or leave translations to a follow-up. `web/src/lib/i18n-catalogues.spec.ts`
-  (Test Web, a required check) fails a web key with no translation or a broken
-  message contract; it does not read the server catalogues or notice translations
-  left stale by an English rewording, so check those by hand in review.
+  (Test Web, a required check) fails only a web key that is missing or empty, or a
+  broken message contract. It passes English copied into another catalogue, does
+  not read the server catalogues, and does not notice translations left stale by
+  an English rewording, so review checks by hand that new values are translated.
   Product names stay in English and uninflected.
 - Assign one owner per external operation. Reconcile live PR state, exact code ancestry,
   exact-head checks, and linked issue status at shipping boundaries.
