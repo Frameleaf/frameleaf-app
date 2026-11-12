@@ -66,6 +66,8 @@ export type VideoMomentSearchScope = {
   excludeFrameId?: string;
   /** FL-1439: only these videos, to count the chosen ones from all of their matches. */
   assetIds?: string[];
+  /** FL-1439: text matches only: one per video, so a limit counts videos while they are ranked. */
+  onePerVideo?: boolean;
 };
 
 /**
@@ -763,6 +765,7 @@ export class VideoMomentRepository {
       .where((eb) =>
         eb.or([eb('video_moment.caption', 'ilike', pattern), eb('video_moment.transcript', 'ilike', pattern)]),
       )
+      .$if(!!scope.onePerVideo, (qb) => qb.distinctOn('video_moment.assetId').orderBy('video_moment.assetId'))
       .orderBy('video_moment.source', 'desc')
       .orderBy('video_moment.updatedAt', 'desc')
       .limit(scope.limit)

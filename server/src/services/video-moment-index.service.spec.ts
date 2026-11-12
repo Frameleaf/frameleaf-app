@@ -570,6 +570,7 @@ describe(VideoMomentIndexService.name, () => {
         lockedOwnerId: undefined,
         privacy: {},
         limit: 600,
+        onePerVideo: true,
       });
       expect(hits).toEqual([expect.objectContaining({ assetId, timestampMs: 20_000, match: 'visual' })]);
     });
@@ -755,6 +756,12 @@ describe(VideoMomentIndexService.name, () => {
       const hits = [hit('lake', 4000), hit('lake', 8000), hit('lake', 12_000)];
       expect(momentsByVideo(hits)).toMatchObject([{ assetId: 'lake', momentCount: 1, firstMs: 4000 }]);
       expect(momentsByVideo([...hits, hit('lake', 30_000)])).toMatchObject([{ momentCount: 2 }]);
+    });
+
+    it('counts every hit, so two hits in the same second never split a moment', () => {
+      // 0, 4.9, 5.4 and 10.4 s are one moment by the five-second rule.
+      const hits = [0, 4900, 5400, 10_400].map((timestampMs) => hit('lake', timestampMs));
+      expect(momentsByVideo(hits)).toMatchObject([{ momentCount: 1 }]);
     });
 
     it('keeps the order the hits rank the videos in', () => {

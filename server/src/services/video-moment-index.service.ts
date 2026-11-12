@@ -601,19 +601,17 @@ export class VideoMomentIndexService {
     visual: VisualQuery | null,
     limit: number,
   ): Promise<VideoMomentSearchResponseDto> {
-    const ranked = await this.matchingHits(query, scope, visual);
+    // One caption or transcript match per video, so many matches in a few videos cannot crowd out the rest.
+    const ranked = await this.matchingHits(query, { ...scope, onePerVideo: true }, visual);
     const chosen = momentsByVideo(ranked).slice(0, limit);
     if (chosen.length === 0) {
       return { hits: [], videos: [] };
     }
     const assetIds = chosen.map(({ assetId }) => assetId);
-    const complete = new Map(
-      momentsByVideo(await this.matchingHits(query, { ...scope, assetIds, limit: CHOSEN_VIDEO_HITS_CAP }, visual)).map(
-        (video) => [video.assetId, video],
-      ),
-    );
+    const all = await this.matchingHits(query, { ...scope, assetIds, limit: CHOSEN_VIDEO_HITS_CAP }, visual);
+    const complete = new Map(momentsByVideo(all).map((video) => [video.assetId, video]));
     return {
-      hits: ranked.slice(0, limit),
+      hits: uniqueMoments(all).slice(0, limit),
       videos: chosen.map((video) => complete.get(video.assetId) ?? video),
     };
   }
@@ -661,7 +659,8 @@ export class VideoMomentIndexService {
         });
       }
     }
-    return uniqueMoments(hits);
+    // Every match, so moments are counted before near-identical hits are folded for display.
+    return hits;
   }
 
   /**
