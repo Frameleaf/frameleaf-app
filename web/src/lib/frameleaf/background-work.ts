@@ -7,6 +7,7 @@ import {
 } from '@frameleaf/sdk';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
+import { UPLOAD_ORIGINS } from '$lib/frameleaf/arrivals';
 import { isImportRunKind, isRunSettled, runStateKey, settledItems } from '$lib/frameleaf/durable-runs';
 import { JOB_QUEUES } from '$lib/frameleaf/job-queues';
 import { leftOver } from '$lib/frameleaf/run-failures';
@@ -196,6 +197,10 @@ const fromRun = (run: DurableJobRun): BackgroundWorkCard | null => {
   if (isImportRunKind(run.kind)) {
     return fromImportRun(run);
   }
+  // FL-1459: an upload's work is on the cards of the queues it feeds; "By what came in" shows the upload itself
+  if (run.origin && UPLOAD_ORIGINS.has(run.origin)) {
+    return null;
+  }
   const running = run.active;
   const waiting = run.waiting + run.delayed + run.paused + run.blocked + run.retrying;
   if (running + waiting <= 0) {
@@ -295,7 +300,7 @@ export const buildBackgroundWorkCards = (summary: DurableRunningJobs | null | un
  *
  * People see the eight features of Settings › Background work ("Faces & identity"), never the server's own
  * kinds of work: each row adds up the cards of its feature's tasks. The prototype's other view, "By what came
- * in", is not built: the server keeps no record of what a batch came in as (FL-1388 says what is missing).
+ * in", is `arrivals.ts` (FL-1459).
  */
 export type WorkFeatureState = 'stuck' | 'running' | 'waiting' | 'tonight' | 'paused' | 'idle';
 

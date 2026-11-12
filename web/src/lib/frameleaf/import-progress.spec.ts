@@ -120,3 +120,12 @@ describe('importProgress (FL-1409)', () => {
     expect(importProgress(summary({ durableRuns: [scanRun()] }), NOW)).toBeNull();
   });
 });
+
+describe('importProgress names uploads (FL-1459)', () => {
+  it("names a large upload by its phone's name", () => {
+    const upload = scanRun({ id: 'upload-1', kind: 'upload', origin: 'phone', label: 'Pixel 8', itemCount: 1240 });
+    expect(importProgress(summary({ queues: [thumbnails()], durableRuns: [upload] }), NOW)).toMatchObject({
+      upload: { name: 'Pixel 8' },
+    });
+  });
+});

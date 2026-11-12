@@ -108048,7 +108048,17 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "itemCount": {
+            "description": "Photos and videos that came in with it",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "kind": {
+            "type": "string"
+          },
+          "label": {
+            "description": "The phone's, computer's or app's own name, when it gave one",
             "type": "string"
           },
           "lastProgressAt": {
@@ -108108,6 +108118,20 @@
           },
           "noDispatchBacklog": {
             "type": "boolean"
+          },
+          "origin": {
+            "description": "What brought its photos in: phone, computer, client (an app or API key), link (a shared link), library (a folder scan) or import. More may come; absent for other work and runs from before",
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Whose photos came in",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "ownerName": {
+            "description": "The name of the account whose photos came in",
+            "type": "string"
           },
           "paused": {
             "maximum": 9007199254740991,
@@ -108242,6 +108266,13 @@
             ],
             "type": "string"
           },
+          "steps": {
+            "description": "With an origin, while it runs: its tasks counted by queue (tasks, not photos: faces count each face)",
+            "items": {
+              "$ref": "#/components/schemas/JobRunStepDto"
+            },
+            "type": "array"
+          },
           "total": {
             "maximum": 9007199254740991,
             "minimum": 0,
@@ -108306,6 +108337,83 @@
             "type": "integer"
           }
         },
+        "type": "object"
+      },
+      "JobRunStepDto": {
+        "properties": {
+          "active": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "blocked": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cancelled": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "completed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "delayed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "failed": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "needsAttention": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "paused": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/QueueName"
+          },
+          "retrying": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "waiting": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "blocked",
+          "cancelled",
+          "completed",
+          "delayed",
+          "failed",
+          "needsAttention",
+          "paused",
+          "queue",
+          "retrying",
+          "total",
+          "waiting"
+        ],
         "type": "object"
       },
       "KnownAssetDevelopCrop": {

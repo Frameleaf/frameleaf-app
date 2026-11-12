@@ -1,5 +1,6 @@
 import { QueueName, type DurableJobRun, type DurableRunningJobs } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
+import { UPLOAD_ORIGINS } from '$lib/frameleaf/arrivals';
 import { workEtaSeconds } from '$lib/frameleaf/background-work';
 import { isRunSettled } from '$lib/frameleaf/durable-runs';
 import { runHeadline, type Headline } from '$lib/frameleaf/run-headline';
@@ -14,8 +15,8 @@ import { runHeadline, type Headline } from '$lib/frameleaf/run-headline';
  * - An external-library scan has a run (`library_scan`) with a state, the queues it waits on and the libraries it
  *   can't reach. When the photos are not getting ready, the line says why in the run's own words (`runHeadline`,
  *   as its Recent work card does) and offers the card's Resume or Release.
- * - An upload has no run and a run records no origin (FL-1388), so a large upload is counted but never named, and
- *   a scan is named only when its scan job is among the viewer's own jobs.
+ * - FL-1459: a large upload is a run too, with the phone, computer or app it came from (`origin`, `label`), so the
+ *   line names it ("Adding photos from Pixel 8"). A scan's run names its library.
  *
  * Queues and runs are sent to administrators only: nobody else gets a line.
  */
@@ -26,6 +27,8 @@ export const LARGE_IMPORT = 500;
 export type ImportProgress = {
   /** An external-library scan is behind it: its library's name when known, else null. Absent for other imports. */
   scan?: { name: string | null };
+  /** FL-1459: a large upload is behind it: its phone's, computer's or app's name when it gave one. */
+  upload?: { name: string | null };
   /** Photos made ready of those that came in, while the thumbnails queue counts them. */
   ready?: { done: number; total: number };
   /** A scan still reading its folder with nothing waiting for a thumbnail: photos found so far. */
@@ -65,6 +68,15 @@ export const importProgress = (
         (candidate) => candidate.kind === 'library_scan' && !isRunSettled(candidate) && candidate.total >= LARGE_IMPORT,
       )
     : undefined;
+  const upload = summary.canReadJobRuns
+    ? (summary.durableRuns ?? []).find(
+        (candidate) =>
+          !!candidate.origin &&
+          UPLOAD_ORIGINS.has(candidate.origin) &&
+          !isRunSettled(candidate) &&
+          (candidate.itemCount ?? candidate.total) >= LARGE_IMPORT,
+      )
+    : undefined;
   const total = queue ? Math.max(queue.total, queue.processed + queue.active + queue.waiting) : 0;
   const counted = !!queue && total >= LARGE_IMPORT;
   // Thumbnails done and the scan's folder read: what is left (search, faces) is Activity's to show.
@@ -72,10 +84,13 @@ export const importProgress = (
     return null;
   }
 
-  const scan = run && { name: summary.operations.find((operation) => operation.id === run.id)?.label ?? null };
+  const scan = run && {
+    name: run.libraryName ?? summary.operations.find((operation) => operation.id === run.id)?.label ?? null,
+  };
   const ready = counted && queue ? { done: Math.min(queue.processed, total), total } : undefined;
   const base: ImportProgress = {
     ...(scan && { scan }),
+    ...(!scan && counted && upload && { upload: { name: upload.label ?? null } }),
     ...(ready ? { ready } : run && { found: run.total }),
     etaSeconds: null,
   };

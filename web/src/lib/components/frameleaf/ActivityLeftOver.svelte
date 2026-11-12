@@ -7,6 +7,7 @@
   import ActivityNotice from '$lib/components/frameleaf/ActivityNotice.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import type RunFailuresSheet from '$lib/components/frameleaf/jobs/RunFailuresSheet.svelte';
+  import { uploadRunTitle } from '$lib/frameleaf/arrivals';
   import { runTitleKey } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import { CAUSE_VIEW, knowsCauses, leftOver, runCauses } from '$lib/frameleaf/run-failures';
@@ -28,7 +29,8 @@
 
   const number = (value: number) => value.toLocaleString($locale ?? undefined);
   const title = (run: DurableJobRun) =>
-    run.nightly
+    uploadRunTitle(run, $t) ??
+    (run.nightly
       ? $t('frameleaf_job_runs_kind_nightly')
       : $t(
           runTitleKey(
@@ -36,7 +38,7 @@
             jobQueue(run.kind as Parameters<typeof jobQueue>[0])?.key,
             'frameleaf_job_runs_server_work',
           ),
-        );
+        ));
 
   /** The run being reviewed. The sheet follows it as the page reads it again, and keeps it once nothing is left. */
   let opened = $state<DurableJobRun | null>(null);

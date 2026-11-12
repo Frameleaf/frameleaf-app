@@ -15,8 +15,10 @@ export async function createQueueSchema(db: Kysely<any>) {
     create table job_run (
       id uuid primary key, kind text not null, selection jsonb not null,
       "enumerationDone" boolean not null default false,
-      "createdAt" timestamptz not null default now(), "finishedAt" timestamptz, summary jsonb
+      "createdAt" timestamptz not null default now(), "finishedAt" timestamptz, summary jsonb,
+      "ownerId" uuid, origin text, label text, "itemCount" integer
     );
+    create index job_run_origin on job_run("ownerId", "createdAt") where origin is not null;
     create table job (
       id uuid primary key, queue text not null references job_queue(name), name text not null,
       data jsonb not null, state text not null default 'pending',

@@ -10435,6 +10435,20 @@ export type QueuesResponseLegacyDto = {
 export type JobCreateDto = {
     name: ManualJobName;
 };
+export type JobRunStepDto = {
+    active: number;
+    blocked: number;
+    cancelled: number;
+    completed: number;
+    delayed: number;
+    failed: number;
+    needsAttention: number;
+    paused: number;
+    queue: QueueName;
+    retrying: number;
+    total: number;
+    waiting: number;
+};
 export type JobRunResponseDto = {
     active: number;
     blocked: number;
@@ -10470,7 +10484,11 @@ export type JobRunResponseDto = {
     /** Selected items an import's first setup still holds back: until Library Care's file check ends, or while setup is paused */
     held?: number;
     id: string;
+    /** Photos and videos that came in with it */
+    itemCount?: number;
     kind: string;
+    /** The phone's, computer's or app's own name, when it gave one */
+    label?: string;
     lastProgressAt: string | null;
     lastStage: string | null;
     /** Photos that still need a look: the sum of failureCauses, present whenever it is. Cards use it rather than failed + needsAttention, which keep counting stopped photos and a live run's photos still being worked on */
@@ -10490,6 +10508,12 @@ export type JobRunResponseDto = {
     /** The overnight schedule's work */
     nightly?: boolean;
     noDispatchBacklog: boolean;
+    /** What brought its photos in: phone, computer, client (an app or API key), link (a shared link), library (a folder scan) or import. More may come; absent for other work and runs from before */
+    origin?: string;
+    /** Whose photos came in */
+    ownerId?: string;
+    /** The name of the account whose photos came in */
+    ownerName?: string;
     paused: number;
     /** Paused queues that unstarted work of this run waits on; resuming them lets it carry on */
     pausedQueues?: QueueName[];
@@ -10509,6 +10533,8 @@ export type JobRunResponseDto = {
         waiting: number;
     };
     state: State4;
+    /** With an origin, while it runs: its tasks counted by queue (tasks, not photos: faces count each face) */
+    steps?: JobRunStepDto[];
     total: number;
     /** Names of up to three external libraries whose files work of this run waits for (can't be reached) */
     unreachableLibraries?: string[];

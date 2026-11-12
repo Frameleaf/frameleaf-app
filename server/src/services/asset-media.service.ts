@@ -48,6 +48,7 @@ import {
 } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
+import type { RunOrigin } from 'src/queue/types.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess, requireUploadsNotPaused } from 'src/utils/access.js';
 import { asUploadRequest } from 'src/utils/asset.util.js';
@@ -218,6 +219,26 @@ export class AssetMediaService extends BaseService {
     const session = (await this.sessionRepository.getByUserId(auth.user.id)).find(({ id }) => id === sessionId);
     // only a phone or tablet is the phone that was asked
     return (session && isPhoneSession(session) && phoneName(session)) || undefined;
+  }
+
+  /** FL-1459: where an upload came from, for its run: its session's phone or computer, else the app or shared link. */
+  private async uploadOrigin(auth: AuthDto): Promise<{ origin: RunOrigin; label: string | null }> {
+    if (auth.sharedLink) {
+      return { origin: 'link', label: null };
+    }
+    if (auth.session) {
+      const sessionId = auth.session.id;
+      const session = (await this.sessionRepository.getByUserId(auth.user.id)).find(({ id }) => id === sessionId);
+      return {
+        origin: session && isPhoneSession(session) ? 'phone' : 'computer',
+        label: (session && phoneName(session)) || null,
+      };
+    }
+    if (auth.oauthApp) {
+      return { origin: 'client', label: auth.oauthApp.clientName };
+    }
+    const key = auth.apiKey ? await this.apiKeyRepository.getById(auth.user.id, auth.apiKey.id) : undefined;
+    return { origin: 'client', label: key?.name ?? null };
   }
 
   private async restoreOriginalFrom(
@@ -475,7 +496,15 @@ export class AssetMediaService extends BaseService {
     }
 
     await options.checkIngestion?.();
-    await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: asset.id, source: 'upload' } });
+    // FL-1459: the upload joins its device's run; a live photo's hidden motion part comes in without counting
+    await this.jobRepository.queueUpload(
+      { name: JobName.AssetExtractMetadata, data: { id: asset.id, source: 'upload' } },
+      {
+        ownerId: asset.ownerId,
+        ...(await this.uploadOrigin(auth)),
+        count: asset.visibility === AssetVisibility.Hidden ? 0 : 1,
+      },
+    );
 
     if (auth.sharedLink) {
       await this.addToSharedLink(auth.sharedLink, asset.id);
