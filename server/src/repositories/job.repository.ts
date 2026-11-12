@@ -7,7 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { MessageChannel, Worker, parentPort } from 'node:worker_threads';
 import type { ImportConfig, ImportDatabase } from 'src/immich-import/types.js';
-import type { RunFailureCause } from 'src/queue/run-failure-cause.js';
+import type { QueueProblemCause, RunFailureCause } from 'src/queue/run-failure-cause.js';
 import type { DB } from 'src/schema/index.js';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
@@ -32,6 +32,7 @@ import { retryLockContention } from 'src/queue/catalogue.js';
 import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/queue/configuration.js';
 import { NO_FAILURE_REASON, deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
+import { listQueueProblems, queueHolds, queueProblemJobs } from 'src/queue/queue-problems.js';
 import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
 import { causeRank } from 'src/queue/run-failure-cause.js';
 import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
@@ -859,6 +860,34 @@ export class JobRepository {
     return known || roots.length === 0 ? acted.size : 0;
   }
 
+  /** FL-1486: what went wrong across every task, most photos first (Background work › Advanced). */
+  listQueueProblems(privacy: RunFailurePrivacy) {
+    return listQueueProblems(this.store.db, privacy);
+  }
+
+  /** FL-1486: why each queue is not running: paused, closed by quiet hours, or waiting for another queue. */
+  getQueueHolds() {
+    return queueHolds(this.store.db);
+  }
+
+  /**
+   * FL-1486: Try again or Stop trying on one problem's failed jobs, whatever run they are in. Returns how many photos
+   * (jobs, for work that is no photo's) something was done to.
+   */
+  async actOnQueueProblem(cause: QueueProblemCause, action: 'retry' | 'stop') {
+    let count = 0;
+    for (const { queue, ids } of await queueProblemJobs(this.store.db, cause)) {
+      for (let offset = 0; offset < ids.length; offset += 1000) {
+        const page = ids.slice(offset, offset + 1000);
+        count +=
+          action === 'retry'
+            ? await this.store.retryFailed(queue, page)
+            : await this.store.stopFailedJobs(page, cause === 'unsupported' ? 'unsupported' : 'unreadable');
+      }
+    }
+    return count;
+  }
+
   private intent(item: JobItem): QueueIntent {
     const context = queueExecution.getStore();
     const runId = runSubmission.getStore() ?? context?.claim.runId ?? undefined;
@@ -1350,7 +1379,9 @@ export class JobRepository {
         when j."operationPaused" then 'paused'
         when j.state in ('pending','waiting') and j."availableAt" = 'infinity'::timestamptz then 'paused'
         when j.state in ('pending','waiting') and j."availableAt" > now() then 'delayed'
-        when j.state in ('pending','waiting') and (q.paused or coalesce(q."closedUntil" > now(), false)) then 'paused'
+        when j.state in ('pending','waiting') and q.paused then 'paused'
+        -- FL-1486: quiet hours start it again by themselves; nobody paused it
+        when j.state in ('pending','waiting') and coalesce(q."closedUntil" > now(), false) then 'delayed'
         when j.state = 'pending' then 'waiting' else j.state end status
       from (${reportedQueueJobs(name)}) j join job_queue q on q.name = j.queue
       ) jobs where status = any(${statuses}::text[])

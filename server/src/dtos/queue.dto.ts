@@ -8,6 +8,7 @@ import {
   QueueJobWorkerKindSchema,
   QueueNameSchema,
 } from 'src/enum.js';
+import { QUEUE_PROBLEM_CAUSES } from 'src/queue/run-failure-cause.js';
 
 const QueueNameParamSchema = z
   .object({
@@ -145,6 +146,65 @@ const QueueResponseSchema = z
   .meta({ id: 'QueueResponseDto' });
 
 /**
+ * FL-1486: Background work › Advanced. Its own enums: `JobRunFailureCause` and the queue fields above are decoded
+ * strictly by the native apps, so richer values are only ever sent here.
+ */
+export const QueueProblemCauseSchema = z
+  .enum(QUEUE_PROBLEM_CAUSES)
+  .describe(
+    "What went wrong: drive (an external library can't be reached), missing (the file is gone), damaged, unsupported (a format that can't be read), writeDenied (a folder could not be written to), mlUnavailable (the machine-learning helper did not answer), tooLong (the job ran past its deadline), or other",
+  )
+  .meta({ id: 'QueueProblemCause' });
+const QueueProblemSchema = z
+  .object({
+    cause: QueueProblemCauseSchema,
+    count: z.int().min(1).describe('Photos, videos or jobs with this problem that still need a look'),
+    unit: z
+      .enum(['photos', 'videos', 'jobs'])
+      .describe('What count counts: jobs for work that is no photo’s')
+      .meta({ id: 'QueueProblemUnit' }),
+    queues: z.array(QueueNameSchema).describe('The queues whose failed jobs have this problem'),
+    message: z
+      .string()
+      .nullable()
+      .describe('One raw error message, from a job that may show it on a photo the caller may see; null when none may'),
+  })
+  .meta({ id: 'QueueProblemDto' });
+export const QueueIdleReasonSchema = z
+  .enum(['paused', 'quietHours', 'waitingFor', 'featureOff'])
+  .describe(
+    'Why a queue is not running: paused (by a person, or by the server while it moves the library), quietHours (closed until closedUntil), waitingFor (its jobs wait for the waitingFor queue), featureOff',
+  )
+  .meta({ id: 'QueueIdleReason' });
+const QueueTaskSchema = z
+  .object({
+    name: QueueNameSchema,
+    reason: QueueIdleReasonSchema.nullable().describe('Why it is not running; null when nothing holds it'),
+    pausedAt: z.iso.datetime().optional().describe('For paused: when a person paused it; absent when the server did'),
+    closedUntil: z.iso.datetime().optional().describe('For quietHours: when it opens again'),
+    waitingFor: QueueNameSchema.optional().describe('For waitingFor: the queue it waits for'),
+  })
+  .meta({ id: 'QueueTaskDto' });
+const QueueOverviewResponseSchema = z
+  .object({
+    problems: z.array(QueueProblemSchema).describe('Failures by what went wrong, across every queue, most first'),
+    tasks: z.array(QueueTaskSchema).describe('One per queue'),
+  })
+  .meta({ id: 'QueueOverviewResponseDto' });
+const QueueProblemActionSchema = z
+  .object({
+    cause: QueueProblemCauseSchema,
+    action: z
+      .enum(['retry', 'stop'])
+      .describe('retry: put the failed jobs back; stop: stop trying (unsupported files)')
+      .meta({ id: 'QueueProblemAction' }),
+  })
+  .meta({ id: 'QueueProblemActionDto' });
+const QueueProblemActionResponseSchema = z
+  .object({ count: z.int().min(0).describe('Jobs put back, or photos stopped') })
+  .meta({ id: 'QueueProblemActionResponseDto' });
+
+/**
  * FL-349: the storage template migration — moving originals to the paths the storage template names —
  * as one status for the native apps' Migration page. It is the `storageTemplateMigration` queue.
  */
@@ -179,3 +239,6 @@ export class QueueOwnerStatisticsSearchDto extends createZodDto(QueueOwnerStatis
 export class QueueOwnerStatisticsResponseDto extends createZodDto(QueueOwnerStatisticsResponseSchema) {}
 export class QueueStatisticsDto extends createZodDto(QueueStatisticsSchema) {}
 export class QueueResponseDto extends createZodDto(QueueResponseSchema) {}
+export class QueueOverviewResponseDto extends createZodDto(QueueOverviewResponseSchema) {}
+export class QueueProblemActionDto extends createZodDto(QueueProblemActionSchema) {}
+export class QueueProblemActionResponseDto extends createZodDto(QueueProblemActionResponseSchema) {}

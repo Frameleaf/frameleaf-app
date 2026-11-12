@@ -38,15 +38,10 @@
   } from '$lib/components/frameleaf/jobs/BackgroundWorkEveryday.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
-  import {
-    featureOfQueue,
-    WORK_FEATURES,
-    workFeature,
-    type WorkFeature,
-    type WorkFeatureId,
-  } from '$lib/frameleaf/work-features';
+  import { featureOfQueue, workFeature, type WorkFeature, type WorkFeatureId } from '$lib/frameleaf/work-features';
   import type { OverviewTask } from '$lib/components/frameleaf/jobs/BackgroundWorkOverview.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
+  import JobsAdvancedList from '$lib/components/frameleaf/jobs/JobsAdvancedList.svelte';
   import JobsConcurrencyDialog from '$lib/components/frameleaf/jobs/JobsConcurrencyDialog.svelte';
   import JobsCreateDialog from '$lib/components/frameleaf/jobs/JobsCreateDialog.svelte';
   import JobsEnrichmentDialog from '$lib/components/frameleaf/jobs/JobsEnrichmentDialog.svelte';
@@ -63,7 +58,6 @@
     FAILED_CLEAN_LIMIT,
     isFeatureOff,
     isJobTab,
-    JOB_QUEUE_STATUSES,
     JOB_QUEUES,
     JOB_TAB_STATUSES,
     JOB_TABS,
@@ -72,7 +66,6 @@
     jobQueue,
     jobQueueStatus,
     jobTabCount,
-    matchesQueueFilters,
     searchTerms,
     startBlocked,
     sumJobCounts,
@@ -149,7 +142,6 @@
     mdiPlay,
     mdiPlus,
     mdiRedo,
-    mdiShieldCheckOutline,
     mdiTuneVariant,
   } from '@mdi/js';
   import { onMount, untrack } from 'svelte';
@@ -293,7 +285,6 @@
         ? (selected.queue.statistics.followUp ?? 0)
         : queues.reduce((sum, queue) => sum + (queue.statistics.followUp ?? 0), 0),
   );
-  const followUpOf = (queue: QueueResponseDto) => (owner === 'all' ? (queue.statistics.followUp ?? 0) : 0);
 
   // Strings, so a stats tick (new row objects, same queues) doesn't refetch the counts below.
   const rowNames = $derived(rows.map((row) => row.definition.name).join(','));
@@ -382,6 +373,18 @@
   /** What "Pause everything" pauses: every kind that can be paused and is not already. */
   const pausable = $derived(rows.filter(({ queue, definition }) => !queue.isPaused && definition.canPause));
 
+  /**
+   * FL-1486: when the Advanced list reads what went wrong and why tasks are not running again: after a command, and
+   * when a task's failures, pause or last waiting job changes (the queue list is polled; the overview is not).
+   */
+  const overviewToken = $derived.by(() => {
+    const states = rows.map(({ queue }) => {
+      const { failed, waiting, paused, delayed, active } = queue.statistics;
+      return `${failed}${queue.isPaused ? 'p' : ''}${waiting + paused + delayed > 0 ? 'w' : ''}${active > 0 ? 'a' : ''}`;
+    });
+    return `${jobsReload}|${states.join(',')}`;
+  });
+
   let createOpen = $state(false);
   let enrichmentOpen = $state(false);
   const openEnrichmentTasks = () => (enrichmentOpen = true);
@@ -400,8 +403,6 @@
     ((draft?.[source]?.job as JobSettings | undefined)?.[name]?.concurrency ?? null) as number | null;
   const isFixed = (name: QueueName) => draft !== undefined && concurrencyOf(name) === null;
   const workersOf = (name: QueueName) => concurrencyOf(name) ?? 1;
-  const isPendingConcurrency = (name: QueueName) =>
-    draft !== undefined && concurrencyOf(name, 'baseline') !== concurrencyOf(name);
   const pendingConcurrency = $derived(
     draft ? draft.changes.filter((change) => change.path.startsWith('job.')).length : 0,
   );
@@ -439,35 +440,9 @@
       : rows.map((row) => ({ ...row, queue: { ...row.queue, statistics: statsOf(row.queue) ?? NO_STATS } })),
   );
 
-  /** Narrows the task table, or one task's list of jobs. */
+  /** Narrows one task's list of jobs. */
   let query = $state('');
-  /** The task table's Status filter (the prototype's `view.status`). */
-  let statusFilter = $state('all');
-  /** The tasks the table shows: one feature's (`?feature=`), then the search and Status filters. */
-  const visibleRows = $derived(
-    rows.filter(
-      ({ queue, definition }) =>
-        (!featureFilter || featureFilter.queues.includes(definition.name)) &&
-        matchesQueueFilters(
-          owner === 'all' ? queue : { ...queue, statistics: statsOf(queue) ?? NO_STATS },
-          definition,
-          {
-            terms: searchTerms(query),
-            title: title(definition),
-            description: description(definition),
-            category: 'all',
-            status: statusFilter,
-          },
-        ),
-    ),
-  );
   const featureName = (name: QueueName) => $t(`frameleaf_work_feature_${featureOfQueue(name).id}` as Translations);
-  /** The whole row opens the task for a pointer; the task's name is the button a keyboard uses. */
-  const openFromRow = (event: MouseEvent, name: QueueName) => {
-    if (!(event.target instanceof Element) || !event.target.closest('button, a, input, select')) {
-      void open(name);
-    }
-  };
   let notice = $state('');
   let error = $state('');
   const hasMessages = $derived(
@@ -1299,11 +1274,57 @@
       onRetry={() => void queueManager.refresh()}
     />
   </KitPage>
-{:else}
+{:else if !selectedName}
   <!--
-    Advanced: the prototype's Jobs manager (`JobsManager.jsx`, embedded): every task with its queue and
-    how many run at once, or one task's screen with its Active, Waiting, Failed and History jobs.
+    Advanced, the list (approved design, 2026-11-12, FL-1486): what went wrong first, then each task with
+    why it is not running, the tools at the foot. Recent work is in Activity.
   -->
+  <KitPage>
+    {@render views()}
+    <section class="jobs-manager" aria-label={$t('frameleaf_jobs_label')} bind:this={main}>
+      {@render messages()}
+      {#if owner !== 'all'}
+        <p class="jm-scope">
+          <Icon icon={mdiAccountMultipleOutline} size="15px" aria-hidden={true} />
+          {$t('frameleaf_jobs_account_scope', { values: { name: ownerName } })}
+        </p>
+      {/if}
+      {#if queuesUnavailable}
+        <InlineError message={$t('frameleaf_jobs_queues_load_failed')} onRetry={() => void queueManager.refresh()} />
+      {:else}
+        {#key featureFilter?.id}
+          <JobsAdvancedList
+            rows={overviewRows}
+            unknown={countsLoading ? 'all' : owner === 'all' ? undefined : failedStats}
+            refreshToken={overviewToken}
+            initialQuery={featureFilter ? $t(`frameleaf_work_feature_${featureFilter.id}` as Translations) : ''}
+            {pendingConcurrency}
+            canChangeWorkers={!!draft}
+            {title}
+            {featureName}
+            {workersOf}
+            careHref={commandCenterUrl('care')}
+            activityHref={Route.activity()}
+            onOpen={(name, next) => void open(name, next)}
+            onCommand={(command, row) => request(command, row)}
+            onPauseAll={() => request('pause-all')}
+            onResumeAll={() => request('resume-all')}
+            onConcurrency={() => (concurrencyOpen = true)}
+            onEnrichment={openEnrichmentTasks}
+            onCreate={() => (createOpen = true)}
+            onChanged={() => {
+              jobsReload++;
+              void queueManager.refresh();
+            }}
+          />
+        {/key}
+      {/if}
+      <!-- FL-164: Frameleaf Cloud backup and restore work, with pause, resume and cancel -->
+      <CloudBackgroundWork />
+    </section>
+  </KitPage>
+{:else}
+  <!-- Advanced: one task's screen with its Active, Waiting, Failed and History jobs. -->
   <KitPage>
     {@render views()}
     <section class="jobs-manager" aria-label={$t('frameleaf_jobs_label')} bind:this={main}>
@@ -1341,12 +1362,6 @@
             <Button onclick={() => request('resume-all')}>
               <Icon icon={mdiPlay} size="1rem" aria-hidden={true} />
               {$t('frameleaf_jobs_resume_paused', { values: { count: pausedQueues.length } })}
-            </Button>
-          {/if}
-          {#if !selectedName && pausable.length > 0}
-            <Button onclick={() => request('pause-all')}>
-              <Icon icon={mdiPause} size="1rem" aria-hidden={true} />
-              {$t('frameleaf_bgwork_pause_all')}
             </Button>
           {/if}
           {#if draft}
@@ -1397,173 +1412,13 @@
             bind:value={query}
           />
         </label>
-        {#if !selectedName}
-          <label>
-            <span>{$t('frameleaf_bgwork_feature')}</span>
-            <select
-              value={featureFilter?.id ?? 'all'}
-              onchange={(event) => {
-                const value = event.currentTarget.value;
-                showView('advanced', value === 'all' ? undefined : (value as WorkFeatureId));
-              }}
-            >
-              <option value="all">{$t('frameleaf_bgwork_feature_all')}</option>
-              {#each WORK_FEATURES.filter((feature) => feature.queues.length > 0) as feature (feature.id)}
-                <option value={feature.id}>{$t(`frameleaf_work_feature_${feature.id}` as Translations)}</option>
-              {/each}
-            </select>
-          </label>
-          <label>
-            <span>{$t('frameleaf_jobs_status')}</span>
-            <select bind:value={statusFilter}>
-              <option value="all">{$t('frameleaf_jobs_status_all')}</option>
-              {#each JOB_QUEUE_STATUSES as value (value)}
-                <option {value}>{statusLabel(value)}</option>
-              {/each}
-            </select>
-          </label>
-        {/if}
       </div>
       <p class="jm-scope">
         <Icon icon={mdiAccountMultipleOutline} size="15px" aria-hidden={true} />
         {$t('frameleaf_jobs_account_scope', { values: { name: ownerName } })}
       </p>
 
-      {#if !selectedName}
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex (a scrollable region must be reachable by keyboard to scroll it) -->
-        <div class="jm-table-wrap" tabindex="0" role="region" aria-label={$t('frameleaf_jobs_queues_label')}>
-          <table class="jm-queues">
-            <thead>
-              <tr>
-                <th scope="col">{$t('frameleaf_bgwork_column_work')}</th>
-                <th scope="col">{$t('frameleaf_jobs_status')}</th>
-                <th scope="col">{$t('frameleaf_jobs_active_column')}</th>
-                <th scope="col">{$t('frameleaf_jobs_waiting_column')}</th>
-                <th scope="col">{$t('frameleaf_jobs_failed_column')}</th>
-                <th scope="col">{$t('frameleaf_bgwork_column_at_once')}</th>
-                <th scope="col"><span class="jm-sr">{$t('frameleaf_jobs_actions')}</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each visibleRows as row (row.definition.name)}
-                {@const { definition, queue } = row}
-                {@const rowCounts = jobCounts(statsOf(queue) ?? NO_STATS)}
-                {@const rowFollowUp = followUpOf(queue)}
-                {@const name = title(definition)}
-                <tr class="jm-row" onclick={(event) => openFromRow(event, definition.name)}>
-                  <th scope="row">
-                    <button type="button" class="jm-queue-name" onclick={() => void open(definition.name)}>
-                      <span class="jm-queue-icon"><Icon icon={definition.icon} size="17px" aria-hidden={true} /></span>
-                      <span>
-                        {name}
-                        <small>
-                          {featureName(definition.name)}{isFeatureOff(definition, flags)
-                            ? ` · ${$t('frameleaf_jobs_feature_off_short')}`
-                            : ''}
-                        </small>
-                      </span>
-                    </button>
-                  </th>
-                  <td>{@render queueStatus(jobQueueStatus(queue))}</td>
-                  <td>{@render changing(count(rowCounts.active, definition.name))}</td>
-                  <td>
-                    {@render changing(count(rowCounts.pending - rowFollowUp, definition.name))}
-                    {#if rowFollowUp}
-                      {@render followUpCount(rowFollowUp)}
-                    {/if}
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      class={rowCounts.failed ? 'jm-error-count' : 'jm-count'}
-                      disabled={!rowCounts.failed}
-                      onclick={() => void open(definition.name, 'failed')}
-                    >
-                      {count(rowCounts.failed, definition.name)}
-                    </button>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      class="jm-workers"
-                      disabled={!draft}
-                      aria-label={$t('frameleaf_bgwork_at_once_aria', {
-                        values: { name, count: workersOf(definition.name) },
-                      })}
-                      onclick={() => (concurrencyOpen = true)}
-                    >
-                      <strong>{workersOf(definition.name)}</strong>
-                      {#if isFixed(definition.name)}
-                        <span>{$t('frameleaf_jobs_fixed')}</span>
-                      {:else if isPendingConcurrency(definition.name)}
-                        <span class="jm-pending">{$t('frameleaf_jobs_pending')}</span>
-                      {/if}
-                    </button>
-                  </td>
-                  <td class="jm-row-actions">
-                    <button
-                      type="button"
-                      class="jm-icon-button"
-                      disabled={!definition.canPause}
-                      title={definition.canPause
-                        ? queue.isPaused
-                          ? $t('frameleaf_jobs_resume_queue')
-                          : $t('frameleaf_jobs_pause_queue')
-                        : $t('frameleaf_jobs_pause_unavailable')}
-                      aria-label={queue.isPaused
-                        ? $t('frameleaf_jobs_resume_named', { values: { name } })
-                        : $t('frameleaf_jobs_pause_named', { values: { name } })}
-                      onclick={() => request(queue.isPaused ? 'resume' : 'pause', row)}
-                    >
-                      <Icon icon={queue.isPaused ? mdiPlay : mdiPause} size="1rem" aria-hidden={true} />
-                    </button>
-                    <button
-                      type="button"
-                      class="jm-icon-button"
-                      aria-label={$t('frameleaf_jobs_open_queue', { values: { name } })}
-                      onclick={() => void open(definition.name)}
-                    >
-                      <Icon icon={mdiChevronRight} size="1rem" aria-hidden={true} />
-                    </button>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-          {#if queuesUnavailable}
-            <InlineError
-              message={$t('frameleaf_jobs_queues_load_failed')}
-              onRetry={() => void queueManager.refresh()}
-            />
-          {:else if visibleRows.length === 0 && !queuesPending}
-            <div class="jm-empty">
-              <Icon icon={mdiMagnify} size="28px" aria-hidden={true} />
-              <h3>{$t('frameleaf_bgwork_no_tasks')}</h3>
-              <p>{$t('frameleaf_bgwork_no_tasks_help')}</p>
-              <Button
-                onclick={() => {
-                  query = '';
-                  statusFilter = 'all';
-                  if (featureFilter) {
-                    showView('advanced');
-                  }
-                }}>{$t('frameleaf_jobs_clear_filters')}</Button
-              >
-            </div>
-          {/if}
-        </div>
-        <div class="jm-footer-note">
-          <span
-            >{$t('frameleaf_bgwork_tasks_shown', { values: { shown: visibleRows.length, total: rows.length } })}</span
-          >
-          <a class="button" href={commandCenterUrl('care')}>
-            <Icon icon={mdiShieldCheckOutline} size="1rem" aria-hidden={true} />
-            {$t('frameleaf_jobs_open_library_care')}
-          </a>
-        </div>
-        <!-- FL-164: Frameleaf Cloud backup and restore work, with pause, resume and cancel -->
-        <CloudBackgroundWork />
-      {:else if selected}
+      {#if selected}
         {@const { definition, queue } = selected}
         {@const queueCounts = jobCounts(statsOf(queue) ?? NO_STATS)}
         {@const blocked = blockedReason(selected)}
@@ -2002,8 +1857,7 @@
     line-height: 1.5;
   }
   .jobs-manager button,
-  .jobs-manager input,
-  .jobs-manager select {
+  .jobs-manager input {
     font: inherit;
   }
   /* The first page's own messages, above the kit's sections. */
@@ -2110,17 +1964,6 @@
     margin: var(--fl-space-6) 0 var(--fl-space-3);
     flex-wrap: wrap;
   }
-  .jm-filterbar > label:not(.jm-search) {
-    display: flex;
-    gap: var(--fl-space-2);
-    flex-direction: column;
-  }
-  .jm-filterbar > label > span {
-    font-size: 11px;
-    color: var(--fl-muted);
-    font-weight: 600;
-  }
-  .jobs-manager select,
   .jobs-manager input:not([type='checkbox']) {
     color: var(--fl-text);
     background: var(--fl-panel);
@@ -2129,9 +1972,6 @@
     min-height: var(--fl-control-height);
     padding: 0 var(--fl-space-3);
     outline-offset: var(--fl-focus-offset);
-  }
-  .jobs-manager select {
-    padding-inline-end: var(--fl-space-8);
   }
   .jm-search {
     display: flex;
@@ -2208,23 +2048,10 @@
     white-space: nowrap;
     text-align: end;
   }
-  .jm-row {
-    cursor: pointer;
-  }
-  .jm-queues td {
-    font-variant-numeric: var(--fl-numeric);
-  }
-  .jm-queues .jm-row-actions {
-    padding-block: var(--fl-space-1);
-  }
   .jm-row-actions > :global(* + *) {
     margin-inline-start: var(--fl-space-2);
   }
   .jm-icon-button,
-  .jm-queue-name,
-  .jm-workers,
-  .jm-count,
-  .jm-error-count,
   .jm-job-name {
     appearance: none;
     color: inherit;
@@ -2241,75 +2068,12 @@
     min-height: var(--fl-control-height);
     border-radius: var(--fl-radius-control);
   }
-  .jm-queue-name {
-    display: flex;
-    align-items: center;
-    gap: var(--fl-space-3);
-    min-width: 205px;
-    font-weight: 550;
-  }
   .jm-follow-up {
     display: block;
     font-size: 11px;
     font-weight: 400;
     color: var(--fl-muted);
     margin-top: 2px;
-  }
-  .jm-queue-name small {
-    display: block;
-    font-size: 11px;
-    color: var(--fl-muted);
-    font-weight: 400;
-    margin-top: 2px;
-  }
-  .jm-queue-icon {
-    flex: none;
-    height: 33px;
-    width: 33px;
-    display: grid;
-    place-items: center;
-    background: var(--fl-panel);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-    color: var(--fl-muted);
-  }
-  .jm-error-count {
-    color: var(--jm-red);
-    background: color-mix(in srgb, var(--jm-red) 13%, transparent);
-    border-radius: var(--fl-radius-pill);
-    padding: 2px var(--fl-space-2);
-    font-weight: 650;
-  }
-  .jm-count:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .jm-workers {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    white-space: nowrap;
-  }
-  .jm-workers span {
-    font-size: 11px;
-    color: var(--fl-muted);
-    font-weight: 400;
-  }
-  .jm-workers .jm-pending {
-    color: var(--jm-amber);
-  }
-  .jm-workers:disabled {
-    cursor: default;
-  }
-  .jm-footer-note {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    margin: var(--fl-space-3) 0 var(--fl-space-6);
-    gap: var(--fl-space-3);
-    color: var(--fl-muted);
-    font-size: 11px;
   }
   .jm-icon-button:hover:not(:disabled) {
     background: var(--fl-raised);
@@ -2664,13 +2428,6 @@
     }
     .jm-filterbar .jm-search {
       flex-basis: 100%;
-    }
-    .jm-filterbar > label:not(.jm-search) {
-      flex: 1;
-      min-width: 105px;
-    }
-    .jm-filterbar select {
-      width: 100%;
     }
     .jm-tabs {
       gap: 15px;

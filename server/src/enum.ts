@@ -687,6 +687,8 @@ export enum SystemMetadataKey {
   /** FL-363: the overnight run in progress, and the last few nights' results. */
   OvernightSequence = 'overnight-sequence',
   ProcessingReconcileLastRun = 'processing-reconcile-last-run',
+  /** FL-1486: when a person paused each queue (queue name to ISO time); the server's own pauses are not here */
+  QueuePausedAt = 'queue-paused-at',
   /** FL-363: the Overview items an administrator dismissed, so they stop counting as needing attention. */
   OverviewDismissed = 'overview-dismissed',
   /**

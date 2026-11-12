@@ -74,6 +74,8 @@ const ADMIN_ROUTES = new Set([
   'GET queues/:name',
   'GET queues/:name/jobs',
   'GET queues/:name/statistics',
+  // FL-1486: Background work › Advanced.
+  'GET queues/overview',
   'DELETE server/library-setup/progress',
   'GET server/library-setup/manager-access',
   'GET server/library-setup/progress',
@@ -112,6 +114,7 @@ const ADMIN_ROUTES = new Set([
   'POST queues/:name/jobs/:id/start',
   'POST queues/:name/jobs/retry-failed',
   'POST queues/:name/jobs/run-one',
+  'POST queues/problems',
   'POST server/library-setup/begin',
   'POST system-metadata/admin-onboarding',
   'POST system-metadata/frameleaf-setup/finish',

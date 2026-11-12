@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.2.17
+ * 1.2.18
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -16155,6 +16155,41 @@ export type QueueResponseDto = {
     isPaused: boolean;
     name: QueueName;
     statistics: QueueStatisticsDto;
+};
+export type QueueProblemDto = {
+    cause: QueueProblemCause;
+    /** Photos, videos or jobs with this problem that still need a look */
+    count: number;
+    /** One raw error message, from a job that may show it on a photo the caller may see; null when none may */
+    message: string | null;
+    /** The queues whose failed jobs have this problem */
+    queues: QueueName[];
+    unit: QueueProblemUnit;
+};
+export type QueueTaskDto = {
+    /** For quietHours: when it opens again */
+    closedUntil?: string;
+    name: QueueName;
+    /** For paused: when a person paused it; absent when the server did */
+    pausedAt?: string;
+    /** Why it is not running; null when nothing holds it */
+    reason: (QueueIdleReason) | null;
+    /** For waitingFor: the queue it waits for */
+    waitingFor?: QueueName;
+};
+export type QueueOverviewResponseDto = {
+    /** Failures by what went wrong, across every queue, most first */
+    problems: QueueProblemDto[];
+    /** One per queue */
+    tasks: QueueTaskDto[];
+};
+export type QueueProblemActionDto = {
+    action: QueueProblemAction;
+    cause: QueueProblemCause;
+};
+export type QueueProblemActionResponseDto = {
+    /** Jobs put back, or photos stopped */
+    count: number;
 };
 export type QueueUpdateDto = {
     /** Whether to pause the queue */
@@ -35017,6 +35052,34 @@ export function getQueues(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * What went wrong and why queues are not running
+ */
+export function getQueueOverview(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: QueueOverviewResponseDto;
+    }>("/queues/overview", {
+        ...opts
+    }));
+}
+/**
+ * Act on failed jobs with one problem
+ */
+export function actOnQueueProblem({ queueProblemActionDto }: {
+    queueProblemActionDto: QueueProblemActionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: QueueProblemActionResponseDto;
+    } | {
+        status: 400;
+    }>("/queues/problems", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: queueProblemActionDto
+    })));
+}
+/**
  * Retrieve a queue
  */
 export function getQueue({ name }: {
@@ -44262,6 +44325,31 @@ export enum PushUnavailableReason {
     NotConfigured = "not-configured",
     NotLinked = "not-linked",
     CloneSuspected = "clone-suspected"
+}
+export enum QueueProblemCause {
+    Drive = "drive",
+    Missing = "missing",
+    Damaged = "damaged",
+    Unsupported = "unsupported",
+    WriteDenied = "writeDenied",
+    MlUnavailable = "mlUnavailable",
+    TooLong = "tooLong",
+    Other = "other"
+}
+export enum QueueProblemUnit {
+    Photos = "photos",
+    Videos = "videos",
+    Jobs = "jobs"
+}
+export enum QueueIdleReason {
+    Paused = "paused",
+    QuietHours = "quietHours",
+    WaitingFor = "waitingFor",
+    FeatureOff = "featureOff"
+}
+export enum QueueProblemAction {
+    Retry = "retry",
+    Stop = "stop"
 }
 export enum QueueJobStatus {
     Active = "active",
