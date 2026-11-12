@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.2.15
+ * 1.2.16
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -2085,6 +2085,8 @@ export type AdminConfigFacesDto = {
     write?: boolean;
 };
 export type AdminConfigMetadataDto = {
+    /** When a file has no date of its own, use the one in its name (IMG_20230512_134501, a screenshot) */
+    dateFromFileName?: boolean;
     faces: AdminConfigFacesDto;
 };
 export type MetricsStatusDto = {
@@ -8694,6 +8696,35 @@ export type UserConfigDto = {
     theme: UserConfigThemeDto;
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
+};
+export type DateDoctorFindingDto = {
+    /** Asset ID */
+    assetId: string;
+    cause: DateFindingCause;
+    /** How sure the Doctor is, 0 to 1 */
+    confidence: number;
+    /** When the photo is dated now */
+    currentDate: string;
+    /** Its time zone now */
+    currentZone: string | null;
+    /** When it should be dated; null when there is nothing to go on */
+    proposedDate: string | null;
+    /** The time zone it should have */
+    proposedZone: string | null;
+};
+export type DateDoctorGroupDto = {
+    /** The camera, when the photos say */
+    camera: string | null;
+    /** The local day, YYYY-MM-DD */
+    day: string;
+    findings: DateDoctorFindingDto[];
+    /** Camera and local day */
+    groupKey: string;
+};
+export type DateDoctorFindingsResponseDto = {
+    groups: DateDoctorGroupDto[];
+    /** Findings in all groups */
+    total: number;
 };
 export type DesktopMemberApprovalDto = {
     enabled: boolean;
@@ -29140,6 +29171,26 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get the Date & Time Doctor findings
+ */
+export function getDateDoctorFindings(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DateDoctorFindingsResponseDto;
+    }>("/date-doctor/findings", {
+        ...opts
+    }));
+}
+/**
+ * Check dates again
+ */
+export function scanDateDoctor(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/date-doctor/scan", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Read desktop processing approval for a member account
  */
 export function readDesktopMemberApproval({ id }: {
@@ -42312,6 +42363,15 @@ export enum ClassificationReviewDecision {
 export enum Unit {
     Photo = "photo",
     Minute = "minute"
+}
+export enum DateFindingCause {
+    OffsetMismatch = "offset-mismatch",
+    GpsZoneMismatch = "gps-zone-mismatch",
+    MissingZone = "missing-zone",
+    BurstDrift = "burst-drift",
+    FilenameDate = "filename-date",
+    FutureDate = "future-date",
+    EpochDate = "epoch-date"
 }
 export enum DesktopEnrollmentPolicy {
     Administrators = "administrators",

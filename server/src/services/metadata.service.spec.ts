@@ -817,6 +817,72 @@ describe(MetadataService.name, () => {
       });
     });
 
+    describe('the date in the file name (FL-912)', () => {
+      const copiedAt = new Date('2024-03-10T09:00:00.000Z');
+      const stats = {
+        size: 123_456,
+        mtime: copiedAt,
+        mtimeMs: copiedAt.valueOf(),
+        birthtimeMs: copiedAt.valueOf(),
+      } as Stats;
+      const setup = (originalFileName: string) => {
+        const asset = AssetFactory.create({ originalFileName, fileCreatedAt: copiedAt });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.storage.stat.mockResolvedValue(stats);
+        return asset;
+      };
+
+      it('dates a file with no date of its own from its name, not from when it was copied', async () => {
+        const asset = setup('IMG_20230512_134501.jpg');
+        mockReadTags();
+        await sut.handleMetadataExtraction({ id: asset.id });
+        const date = new Date('2023-05-12T13:45:01.000Z');
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ dateTimeOriginal: date }) }),
+        );
+        expect(mocks.asset.update).toHaveBeenCalledWith(
+          expect.objectContaining({ id: asset.id, fileCreatedAt: date, localDateTime: date }),
+        );
+      });
+
+      it('dates a WhatsApp file at noon on the day in its name', async () => {
+        const asset = setup('IMG-20230512-WA0001.jpg');
+        mockReadTags();
+        await sut.handleMetadataExtraction({ id: asset.id });
+        expect(mocks.asset.update).toHaveBeenCalledWith(
+          expect.objectContaining({ localDateTime: new Date('2023-05-12T12:00:00.000Z') }),
+        );
+      });
+
+      it('leaves a file with an EXIF date as it is', async () => {
+        const asset = setup('IMG_20230512_134501.jpg');
+        mockReadTags({ DateTimeOriginal: '2022:01:01 00:00:00' });
+        await sut.handleMetadataExtraction({ id: asset.id });
+        expect(mocks.asset.update).toHaveBeenCalledWith(
+          expect.objectContaining({ localDateTime: new Date('2022-01-01T00:00:00.000Z') }),
+        );
+      });
+
+      it('uses the file date when metadata.dateFromFileName is off', async () => {
+        const asset = setup('IMG_20230512_134501.jpg');
+        mocks.systemMetadata.get.mockResolvedValue({ metadata: { dateFromFileName: false } });
+        mockReadTags();
+        await sut.handleMetadataExtraction({ id: asset.id });
+        expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ localDateTime: copiedAt }));
+      });
+
+      it('keeps both EXIF offsets for the Date & Time Doctor', async () => {
+        const asset = setup('DSC01234.JPG');
+        mockReadTags({ DateTimeOriginal: '2022:01:01 00:00:00', OffsetTimeOriginal: '+01:00', OffsetTime: '+02:00' });
+        await sut.handleMetadataExtraction({ id: asset.id });
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({
+            exif: expect.objectContaining({ offsetTimeOriginal: '+01:00', offsetTime: '+02:00' }),
+          }),
+        );
+      });
+    });
+
     it('reads a file date with no EXIF date in the zone stored for the item (FL-698)', async () => {
       // Saved at 11:08 p.m. on Oct 29 in Edmonton (UTC-6): the local date is Oct 29, not 5:08 a.m. on Oct 30.
       const savedAt = new Date('2026-10-30T05:08:00.000Z');
@@ -1985,6 +2051,8 @@ describe(MetadataService.name, () => {
             profileDescription: tags.ProfileDescription,
             projectionType: 'EQUIRECTANGULAR',
             timeZone: tags.zone,
+            offsetTimeOriginal: null,
+            offsetTime: null,
             rating: tags.Rating,
             country: null,
             state: null,

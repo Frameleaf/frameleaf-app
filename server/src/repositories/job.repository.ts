@@ -103,6 +103,9 @@ const REPEATABLE_JOBS = new Set<JobName>([
   // FL-1300: a scan rewrites its whole snapshot, and an apply resumes from the last change it committed.
   JobName.AlbumCleanupScan,
   JobName.AlbumCleanupApply,
+  // FL-912: a scan rewrites its owner's findings
+  JobName.DateDoctorScan,
+  JobName.DateDoctorScanQueueAll,
   JobName.DuplicateResolutionLifecycle,
   JobName.DatabaseBackup,
   JobName.AssetGenerateThumbnails,
@@ -1419,6 +1422,10 @@ export class JobRepository {
       case JobName.AlbumCleanupScan: {
         // One scan per person: opening Albums again while one is waiting asks for nothing new.
         return { deduplication: { id: albumCleanupScanKey(item.data.userId), keepLastIfActive: true } };
+      }
+      case JobName.DateDoctorScan: {
+        // One scan per owner: asking again while one waits asks for nothing new.
+        return { deduplication: { id: `${JobName.DateDoctorScan}:${item.data.userId}`, keepLastIfActive: true } };
       }
       case JobName.PartnerPropagate: {
         // recognition assigns a photo's faces one at a time; one waiting face copy per photo covers them all

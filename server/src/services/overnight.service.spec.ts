@@ -307,6 +307,23 @@ describe(OvernightService.name, () => {
     expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryScanQueueAll });
   });
 
+  it('checks dates once a week, in Check files on the weekly day or with Run now (FL-912)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const scan = { name: JobName.DateDoctorScanQueueAll, data: {} };
+    vi.setSystemTime(new Date('2026-10-19T00:00:00Z')); // a Monday
+    const monday = setup();
+    await monday.sut.handleStart();
+    expect(monday.stored.state?.nights[0].results.fileChecks).toBe('done');
+    expect(monday.mocks.job.queue).not.toHaveBeenCalledWith(scan);
+    await monday.sut.handleStart({ manual: true });
+    expect(monday.mocks.job.queue).toHaveBeenCalledWith(scan);
+
+    vi.setSystemTime(new Date('2026-10-18T00:00:00Z')); // the weekly day, Sunday
+    const sunday = setup();
+    await sunday.sut.handleStart();
+    expect(sunday.mocks.job.queue).toHaveBeenCalledWith(scan);
+  });
+
   it('keeps the nightly counts when the tidy-up does not run', async () => {
     const { sut, mocks } = setup({ steps: { cleanup: OvernightStepTiming.Manual } });
     await sut.handleStart();

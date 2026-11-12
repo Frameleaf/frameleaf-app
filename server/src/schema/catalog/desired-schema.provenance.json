@@ -1,14 +1,14 @@
 {
-  "sourceCommit": "38ea6d00c1357afe96790a15e857f1753354d875",
+  "sourceCommit": "a46e159dffbeb5e0528522efd20bd7f54b8e7777",
   "sourceHashes": {
-    "src/enum.ts": "6cd1d4a5c84e6b6d9026343c9a8c63f450e07201034a33827e5096cc3e3b3e23",
+    "src/enum.ts": "fa76dfeea9c3b498e9bfeec4d195c8d69fc75c82a7370ee33c3617bf59011b78",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/library-import/state-schema.ts": "b4d13d8e68b85c68a14257f56062df1f4efdd7a929918f21af225fa6b4998408",
-    "src/queue/schema.ts": "ed5886fe7f165674c174433a9e975d3be68f4e7bef0f72347bc15659071403c2",
+    "src/queue/schema.ts": "1b014aa94847a4279801107b584c86d80e465c03be233c578fa202d75d23281a",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "ed828687c4ccd1aec6a8dc9b3881262f22eb0ba299475e0544f2dd07abd4974a",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "fccbb1d610fe31b0724796ceef0000c22f184a71d72baa473ef09ec415e838a3",
+    "src/schema/index.ts": "c6c7a9aa1c72384910cfdb0a6af1976957f1bae0ec39d6ecf41653369cf6b5b7",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -33,10 +33,11 @@
     "src/schema/tables/asset-av.table.ts": "1e73b4e916068d3590704144b21a4819eb875ff1047531fd19b2640c2791050f",
     "src/schema/tables/asset-backup-deletion.table.ts": "e294b543c4291a6d3b2a686b58b6145713de8addb463a22f196d35f18ad9d8ad",
     "src/schema/tables/asset-best-photo-score.table.ts": "246f80b09b16c84ac8e37d04c76a62f16e093066e1b03174a4616c9c458c6109",
+    "src/schema/tables/asset-date-finding.table.ts": "8c5b8e8b22edc8629aa11e4d1c4f35cda435b914ec2f8f30d3c3a2db905090b9",
     "src/schema/tables/asset-document-edit.table.ts": "e20786febdd8281b20ae86e9f27540db3c01c7df80610e25822a1f1cec2d4360",
     "src/schema/tables/asset-edit-audit.table.ts": "31ec7ccf506f1d905bab785218246acad68f402e67d98711d89e52500a2dcc2b",
     "src/schema/tables/asset-edit.table.ts": "c59e9f658a075d8945723dbf0401ddecbf5b64dc328e35239386efb768ec8a7a",
-    "src/schema/tables/asset-exif.table.ts": "264a91506e3e25c2ed9757f322ec78604a8fd209a58e1b1f9fd9f4889c335d8b",
+    "src/schema/tables/asset-exif.table.ts": "7001a66c9ed10dbefbae46726e51e744ee9632a5f9136c38e9da22cbfa3ce92f",
     "src/schema/tables/asset-face-audit.table.ts": "b24df9a765cce0fd089496042f7c702c8c8b37b1eea134e4800abe03c46d3a1e",
     "src/schema/tables/asset-face.table.ts": "69c216f6f94873a74f53bd1ca80ec584188532d9c08af2306a70210a3e482c43",
     "src/schema/tables/asset-file.table.ts": "67d155381476c79d6d6a1b6f458baeea1216cbb891c73ec95bc9ac5ee7662cfe",
@@ -177,6 +178,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "9d3a4e17b66c87625ea05f11d06ce3d22202915a8f27915725a607fc3a630b8a",
-  "rawMetadataSha256": "0603935a4587532c81ecc63082850fa19d957025ba513abcb8d35a043ae004a9"
+  "dumpSha256": "a65235b66c9c1e629b7e052429841acef60859780f26c19858babaaafd9625bb",
+  "rawMetadataSha256": "813c56d35b1c3fb30ac5d367f1f13023ccdebf658028a4b130ee8d07799c602d"
 }
