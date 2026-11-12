@@ -951,6 +951,40 @@ describe(IntegrityService.name, () => {
     });
   });
 
+  describe('a batch that repeats a path (FL-1488)', () => {
+    it('reports the path once, for the last row, instead of failing the whole batch', async () => {
+      const { sut, ctx } = setup();
+      const integrity = ctx.get(IntegrityRepository);
+      const storage = ctx.getMock(StorageRepository);
+
+      const { result: owner } = await ctx.newUser();
+      const { result: first } = await ctx.newAsset({ ownerId: owner.id, originalPath: '/path/to/shared-1488' });
+      const { result: second } = await ctx.newAsset({ ownerId: owner.id, originalPath: '/path/to/other-1488' });
+
+      storage.stat.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+      await expect(
+        sut.handleMissingFiles({
+          items: [
+            { path: '/path/to/shared-1488', assetId: first.id, fileAssetId: null, reportId: null },
+            { path: '/path/to/other-1488', assetId: second.id, fileAssetId: null, reportId: null },
+            { path: '/path/to/shared-1488', assetId: second.id, fileAssetId: null, reportId: null },
+          ],
+        }),
+      ).resolves.toBe(JobStatus.Success);
+
+      const { items } = await integrity.getIntegrityReport({ limit: 100 }, IntegrityReport.MissingFile);
+      const reports = items
+        .filter(({ path }) => path.endsWith('-1488'))
+        .map(({ path, assetId }) => ({ path, assetId }))
+        .toSorted((a, b) => a.path.localeCompare(b.path));
+      expect(reports).toEqual([
+        { path: '/path/to/other-1488', assetId: second.id },
+        { path: '/path/to/shared-1488', assetId: second.id },
+      ]);
+    });
+  });
+
   describe('handleMissingRefresh', () => {
     it('should succeed', async () => {
       const { sut } = setup();
