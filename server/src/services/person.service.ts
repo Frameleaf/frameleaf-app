@@ -19,6 +19,7 @@ import type { PersonTable } from 'src/schema/tables/person.table.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { Chunked, OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AssetFaceBoxDto,
@@ -58,6 +59,7 @@ import {
 import {
   AssetVisibility,
   CacheControl,
+  FrameleafWorker,
   JobName,
   JobStatus,
   MlWorkload,
@@ -501,6 +503,39 @@ export class PersonService extends BaseService {
   private async requireIgnoredPerson(auth: AuthDto, personId: string) {
     await this.requirePerson(auth, Permission.PersonRead, personId);
     return [personId.toLowerCase(), personId.toLowerCase()];
+  }
+
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
+  async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
+    await this.findFacesAgainForNewModel(newConfig);
+  }
+
+  @OnEvent({ name: 'ConfigUpdate', workers: [FrameleafWorker.Microservices], server: true })
+  async onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>) {
+    await this.findFacesAgainForNewModel(newConfig);
+  }
+
+  /**
+   * FL-1493: embeddings from two face models do not compare, so a new model is only used by finding every
+   * face again. The model faces were last found with is remembered, which also catches a change made in a
+   * config file or by a restore, where no settings save happens. While face recognition is off nothing is
+   * remembered, so turning it on later still finds faces again. People and corrections are kept.
+   */
+  private async findFacesAgainForNewModel({ machineLearning }: SystemConfig) {
+    if (!isFacialRecognitionEnabled(machineLearning)) {
+      return;
+    }
+    const { modelName } = machineLearning.facialRecognition;
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.FaceModelState);
+    if (state?.modelName === modelName) {
+      return;
+    }
+    if (state) {
+      this.logger.log(`Face model changed from ${state.modelName} to ${modelName}: finding every face again`);
+      // queued before the model is remembered: a crash between the two queues it again, never loses it
+      await this.jobRepository.queue({ name: JobName.AssetDetectFacesQueueAll, data: { force: true } });
+    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.FaceModelState, { modelName });
   }
 
   /** A deleted account's merge-suggestion verdicts and face correction history go with it (FL-57). */
