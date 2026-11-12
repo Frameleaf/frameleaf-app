@@ -1,8 +1,10 @@
 import { defaults } from 'src/dtos/config.dto.js';
+import { TranscodeHardwareAcceleration } from 'src/enum.js';
 import {
   PeakAccumulator,
   decodeWaveformPeaks,
   encodeWaveformPeaks,
+  getFilmstripCardDecode,
   getFilmstripFrameCommand,
   getWaveformCommand,
   planFilmstrip,
@@ -85,6 +87,42 @@ describe('studio media', () => {
     expect(command.inputOptions).toEqual(['-ss', '1.500']);
     expect(command.outputOptions).toEqual(expect.arrayContaining(['-frames:v', '1', '-c:v', 'mjpeg']));
     expect(command.outputOptions.join(' ')).toContain('scale=-2:90');
+  });
+
+  describe('getFilmstripCardDecode', () => {
+    const stream = { index: 0, codecName: 'h264', pixelFormat: 'yuv420p', dvProfile: null } as never;
+    const ffmpeg = (accel: TranscodeHardwareAcceleration, extra = {}) => ({ ...defaults.ffmpeg, accel, ...extra });
+
+    it('reads with the card the playback copies use', () => {
+      expect(getFilmstripCardDecode(ffmpeg(TranscodeHardwareAcceleration.Qsv), stream)).toEqual(['-hwaccel', 'qsv']);
+      expect(getFilmstripCardDecode(ffmpeg(TranscodeHardwareAcceleration.Nvenc), stream)).toEqual(['-hwaccel', 'cuda']);
+      expect(
+        getFilmstripCardDecode(
+          ffmpeg(TranscodeHardwareAcceleration.Vaapi, { preferredHwDevice: 'renderD129' }),
+          stream,
+        ),
+      ).toEqual(['-hwaccel', 'vaapi', '-hwaccel_device', '/dev/dri/renderD129']);
+    });
+
+    it('reads with the processor when the card is off, card reading is off, or the card would change the picture', () => {
+      expect(getFilmstripCardDecode(ffmpeg(TranscodeHardwareAcceleration.Disabled), stream)).toEqual([]);
+      expect(
+        getFilmstripCardDecode(ffmpeg(TranscodeHardwareAcceleration.Vaapi, { accelDecode: false }), stream),
+      ).toEqual([]);
+      const prores = { index: 0, codecName: 'prores', pixelFormat: 'yuv422p10le', dvProfile: null } as never;
+      expect(getFilmstripCardDecode(ffmpeg(TranscodeHardwareAcceleration.Vaapi), prores)).toEqual([]);
+    });
+  });
+
+  it('puts the card decode before the seek', () => {
+    const command = getFilmstripFrameCommand(
+      defaults.ffmpeg,
+      { index: 0, colorTransfer: 'bt709', colorPrimaries: 'bt709' } as never,
+      1500,
+      90,
+      ['-hwaccel', 'vaapi'],
+    );
+    expect(command.inputOptions).toEqual(['-hwaccel', 'vaapi', '-ss', '1.500']);
   });
 
   it('decodes the first audio stream to 8 kHz s16le with the requested channels', () => {

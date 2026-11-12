@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
-import { AssetVisibility, CacheControl, JobStatus } from 'src/enum.js';
+import { AssetVisibility, CacheControl, JobStatus, TranscodeHardwareAcceleration } from 'src/enum.js';
 import { StudioMediaService, fillMissingFrames, getStudioMediaFolder } from 'src/services/studio-media.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
@@ -175,6 +175,36 @@ describe(StudioMediaService.name, () => {
         expect.arrayContaining([expect.stringMatching(/\.work-.*\/0\.jpg$/)]),
         expect.anything(),
       );
+    });
+
+    it('reads with the graphics card when playback copies use it, and with the processor if the card fails', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Vaapi } });
+      mocks.media.probe.mockResolvedValue(videoInfo(false));
+      mocks.media.transcode.mockRejectedValueOnce(new Error('Failed to initialise VAAPI connection'));
+      await sut.getFilmstrip(authStub.admin, assetId, { count: 4, height: 90 });
+
+      expect(mocks.media.transcode.mock.calls.map((call) => call[2].inputOptions)).toEqual([
+        ['-hwaccel', 'vaapi', '-ss', '1.250'],
+        ['-ss', '1.250'],
+      ]);
+    });
+
+    it('stops using the graphics card for the rest of a per-frame filmstrip after one frame fails', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { accel: TranscodeHardwareAcceleration.Qsv } });
+      mocks.media.probe.mockResolvedValue({
+        ...videoInfo(false),
+        format: { ...videoInfo(false).format, duration: 1200 },
+      });
+      mocks.media.transcode.mockResolvedValueOnce().mockRejectedValueOnce(new Error('qsv decode error'));
+      await sut.getFilmstrip(authStub.admin, assetId, { count: 4, height: 90 });
+
+      expect(mocks.media.transcode.mock.calls.map((call) => call[2].inputOptions)).toEqual([
+        ['-hwaccel', 'qsv', '-ss', '150.000'],
+        ['-hwaccel', 'qsv', '-ss', '450.000'],
+        ['-ss', '450.000'],
+        ['-ss', '750.000'],
+        ['-ss', '1050.000'],
+      ]);
     });
 
     it('serves the cached index and sprite without running ffmpeg', async () => {
