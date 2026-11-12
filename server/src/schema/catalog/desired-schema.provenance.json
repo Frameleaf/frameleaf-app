@@ -1,14 +1,14 @@
 {
-  "sourceCommit": "ac00816465a44bd8539e2e53d20a15ddc7ad5d59",
+  "sourceCommit": "c9080b1b18dc885cd35c2ce283f904f30dddba93",
   "sourceHashes": {
-    "src/enum.ts": "791d485ec6d22e34bbeb8316e4642df9ad02317d99fc0b97e333afd18e1b5355",
+    "src/enum.ts": "4a52bb1ffe62d741209fee24d89e0ab69d59d442657ea326fb887e45f789b96c",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/library-import/state-schema.ts": "b4d13d8e68b85c68a14257f56062df1f4efdd7a929918f21af225fa6b4998408",
     "src/queue/schema.ts": "a7562b1877064164778469c46c67f4f16c284d7d2e91d27df0e137ff4f587401",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "ed828687c4ccd1aec6a8dc9b3881262f22eb0ba299475e0544f2dd07abd4974a",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "61ab8a5797a116e9b7406e7a0e36c10ca13b98e8d0eeeec2ccb4b8311b6c9fd0",
+    "src/schema/index.ts": "0cc8d98c6787fdcef34f0ace5e8b81bdf78d6a47eef3c242c9cc39fe7849a8fa",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -60,6 +60,7 @@
     "src/schema/tables/asset-video-fingerprint.table.ts": "6eb73330cc4a52680d49b055a42ee7c8a9987dce91cb6b4a0310aa3040ccbec1",
     "src/schema/tables/asset-view.table.ts": "b5092f3fc59cf93d0ddc84186381f3fd50309d17434a3f32e1774b111fad2c73",
     "src/schema/tables/asset.table.ts": "c8f20a7c4ddabf79b592fa7208ff5bc113ea105378150887ce7720054350eac7",
+    "src/schema/tables/assistant-action.table.ts": "8bd089e65b410f597b795cf1b77830ae65d562061ccc335a83b2185c75c21b57",
     "src/schema/tables/backup-device.table.ts": "9daba89f4a60d835a39e787e59841ace98f2505a3261a6f5a3065e36c5a7b4d7",
     "src/schema/tables/backup-restore-report.table.ts": "a3a19775b34c67a7d2080a706261f56af46cd7a07052d8f81ff7c875a7b1bb16",
     "src/schema/tables/bookmark-tag.table.ts": "8f60c34f1bca9134da0663af0dbf5ad466b5375f1922d0fa08b9eae6b49c7a5b",
@@ -180,6 +181,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "04c167e574dcc9244f7c8e737764a530d205bf9a8f73299ed1759227318f2fb2",
-  "rawMetadataSha256": "e17a4082601aa06885b3b66995554d6361214491d93564dc9690130b3d75490d"
+  "dumpSha256": "ecc4bf60dca19b6b4d35bce537cf7c8c30e68c6898baf1482d17490113538e13",
+  "rawMetadataSha256": "f34c1324bfa43c8c90377bd4085d5f692f31788d18f432bc376e672394f37aaa"
 }

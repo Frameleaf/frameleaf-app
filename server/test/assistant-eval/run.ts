@@ -18,6 +18,7 @@ import { SearchRepository } from 'src/repositories/search.repository.js';
 import { SpeechRepository } from 'src/repositories/speech.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
+import { AssistantActionService } from 'src/services/assistant-action.service.js';
 import { AssistantService } from 'src/services/assistant.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { SPEECH_INDEX_VERSION, speechQuery, speechWindows } from 'src/utils/speech.js';
@@ -204,7 +205,11 @@ export async function run(database: Kysely<DB>, options: Mode) {
       planner.setup((await sut.getConfig({ withCache: false })).machineLearning);
     }
     const assistant = assistantForFixture(sut, speech, people, pets, planner, destination);
-    const app = await controllerSetup(AssistantController, [{ provide: AssistantService, useValue: assistant.sut }]);
+    // The eval only asks; the controller's action routes (FL-938) are never called here.
+    const app = await controllerSetup(AssistantController, [
+      { provide: AssistantService, useValue: assistant.sut },
+      { provide: AssistantActionService, useValue: {} },
+    ]);
     const eligible = new Set(assets.filter(({ locked, otherOwner }) => !locked && !otherOwner).map(({ key }) => key));
     const plannerCaseIds = new Set<string>();
     let protectedHits = 0;

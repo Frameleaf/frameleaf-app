@@ -24,6 +24,7 @@ import { AssetRestorationRepository } from 'src/repositories/asset-restoration.r
 import { AssetSourceRepository } from 'src/repositories/asset-source.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { AssistantActionRepository } from 'src/repositories/assistant-action.repository.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
 import { BackupRestoreReportRepository } from 'src/repositories/backup-restore-report.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
@@ -203,6 +204,7 @@ export const repositories = [
   ActivityRepository,
   AdminAuditRepository,
   AccountEventRepository,
+  AssistantActionRepository,
   AlbumRepository,
   AlbumSummaryRepository,
   AnalyticsRepository,

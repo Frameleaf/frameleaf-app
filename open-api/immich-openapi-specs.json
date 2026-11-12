@@ -21870,6 +21870,253 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assistant/actions": {
+      "get": {
+        "description": "The changes Frameleaf Assistant proposed to your library and what became of each, newest first. A confirmed change can be undone for 30 days.",
+        "operationId": "getAssistantActions",
+        "parameters": [
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "The id of the last action of the previous page",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "At most this many actions",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantActionListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your Frameleaf Assistant changes",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Beta"
+      },
+      "post": {
+        "description": "Work out what making an album, adding to one, tagging, favouriting or culling bursts would change for a frozen list of items, and store it as a proposal. Nothing in the library changes: the answer is the count, a sample of the items and what was left out. Locked items and other people’s items are always left out; no change deletes or trashes anything.",
+        "operationId": "proposeAssistantAction",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantActionProposeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantActionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Propose a Frameleaf Assistant change",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/assistant/actions/{id}/apply": {
+      "post": {
+        "description": "Carry out a proposal. Only the account that owns the proposal can confirm it, and only with `confirm: true`. The change runs as a background job listed in Activity; what each item was before is recorded so the change can be undone.",
+        "operationId": "applyAssistantAction",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantActionApplyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantActionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Confirm a Frameleaf Assistant change",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/assistant/actions/{id}/undo": {
+      "post": {
+        "description": "Put back what a confirmed change did, within 30 days. Each item is restored only if it is still as the change left it; anything changed since is left alone and reported in `undo.skipped`. An album the change made is removed only when it holds nothing else.",
+        "operationId": "undoAssistantAction",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantActionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo a Frameleaf Assistant change",
+        "tags": [
+          "Search"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Beta"
+      }
+    },
     "/assistant/ask": {
       "post": {
         "description": "Answer a question about the library with matching items and, for each one, why it matched. Plans with a planner model when one is installed and turned on, otherwise with the search rules.",
@@ -85990,6 +86237,366 @@
           "durationMs",
           "hasAudio",
           "version"
+        ],
+        "type": "object"
+      },
+      "AssistantActionApplyDto": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "description": "The person confirmed the proposal. Must be true",
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "type": "object"
+      },
+      "AssistantActionArgumentsDto": {
+        "additionalProperties": false,
+        "properties": {
+          "album": {
+            "description": "`add_to_album`: the album, by name",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "albumId": {
+            "description": "`add_to_album`: the album, by id, in place of its name",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "description": {
+            "description": "`create_album`: its description",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "name": {
+            "description": "`create_album`: the name of the new album",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tags": {
+            "description": "`tag`: the tags, by name. A name no tag has yet becomes a new tag when the change is confirmed",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "AssistantActionListResponseDto": {
+        "properties": {
+          "actions": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssistantActionResponseDto"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "description": "Whether an older page exists",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "actions",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "AssistantActionProposeDto": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "$ref": "#/components/schemas/AssistantActionArgumentsDto"
+          },
+          "assetIds": {
+            "description": "The items the person is looking at. The set is frozen here and never re-resolved",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "question": {
+            "description": "The question the change came from, as typed",
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "tool": {
+            "$ref": "#/components/schemas/AssistantActionTool"
+          }
+        },
+        "required": [
+          "assetIds",
+          "tool"
+        ],
+        "type": "object"
+      },
+      "AssistantActionResponseDto": {
+        "properties": {
+          "albumId": {
+            "description": "The album written to; null until a new album is made",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "albumName": {
+            "description": "The name of the album written to",
+            "nullable": true,
+            "type": "string"
+          },
+          "appliedAt": {
+            "description": "When it was confirmed",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "bursts": {
+            "description": "`cull`: how many bursts are thinned out",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "canUndo": {
+            "description": "Whether it can be undone now",
+            "type": "boolean"
+          },
+          "createdAt": {
+            "description": "When it was proposed",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "id": {
+            "description": "Action ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "keptAssetIds": {
+            "description": "`cull`: a few of the frames that are kept",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "description": "`create_album`, `add_to_album`, `tag`, `favourite` or `cull`. Plain string; new kinds may appear",
+            "type": "string"
+          },
+          "mediaOperationId": {
+            "description": "The background job applying the change",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "question": {
+            "description": "The question the change came from",
+            "nullable": true,
+            "type": "string"
+          },
+          "sampleAssetIds": {
+            "description": "A few of the items the change covers",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skipped": {
+            "description": "Items that were asked for and left out, and why",
+            "items": {
+              "$ref": "#/components/schemas/AssistantActionSkippedDto"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "`proposed`, `applied`, `undone` or `expired`. Plain string; new values may appear",
+            "type": "string"
+          },
+          "tags": {
+            "description": "The tags written",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "How many items the change covers",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "undo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssistantActionUndoDto"
+              }
+            ],
+            "description": "What undo did, once it was undone",
+            "nullable": true
+          },
+          "undoExpiresAt": {
+            "description": "Until when it can be undone",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "undoneAt": {
+            "description": "When it was undone",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "albumName",
+          "appliedAt",
+          "bursts",
+          "canUndo",
+          "createdAt",
+          "id",
+          "keptAssetIds",
+          "kind",
+          "mediaOperationId",
+          "question",
+          "sampleAssetIds",
+          "skipped",
+          "status",
+          "tags",
+          "total",
+          "undo",
+          "undoExpiresAt",
+          "undoneAt"
+        ],
+        "type": "object"
+      },
+      "AssistantActionSearchDto": {
+        "properties": {
+          "before": {
+            "description": "The id of the last action of the previous page",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "take": {
+            "description": "At most this many actions",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AssistantActionSkippedDto": {
+        "properties": {
+          "count": {
+            "description": "How many items",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "description": "Why items were left out: `not_found` (not yours, in the trash or gone), `locked` (Locked or hidden by a Locked rule), `already_done`, `kept` (the best of a burst), `not_in_burst`, `not_scored`, `not_applied` (the change never reached it), `changed_since` (changed after the change was applied) or `album_gone`. Plain string; new reasons may appear",
+            "type": "string"
+          },
+          "sampleAssetIds": {
+            "description": "A few of them",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "reason",
+          "sampleAssetIds"
+        ],
+        "type": "object"
+      },
+      "AssistantActionTool": {
+        "description": "The change to propose: make an album, add to an album, tag, favourite, or cull bursts",
+        "enum": [
+          "create_album",
+          "add_to_album",
+          "tag",
+          "favourite",
+          "cull"
+        ],
+        "type": "string"
+      },
+      "AssistantActionUndoDto": {
+        "properties": {
+          "albumRemoved": {
+            "description": "The album the change made was removed, because nothing else had changed in it",
+            "type": "boolean"
+          },
+          "mediaOperationIds": {
+            "description": "The background jobs putting the items back",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "restored": {
+            "description": "How many items are being put back exactly as they were",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped": {
+            "description": "What undo left alone, and why",
+            "items": {
+              "$ref": "#/components/schemas/AssistantActionSkippedDto"
+            },
+            "type": "array"
+          },
+          "tagsRemoved": {
+            "description": "Tags the change made that were removed again",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albumRemoved",
+          "mediaOperationIds",
+          "restored",
+          "skipped",
+          "tagsRemoved"
         ],
         "type": "object"
       },
