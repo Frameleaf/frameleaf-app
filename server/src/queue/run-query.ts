@@ -625,17 +625,21 @@ async function runSteps(
   around: Surroundings,
 ): Promise<Array<RunCounts & { queue: string }>> {
   const queueOf = await stageQueues(db, run.id, [...new Set(tasks.map((task) => task.name))]);
+  // Pending tasks waiting out a dependency are blocked, as the run's own stage totals count them (`aggregateRun`)
+  const { rows: deferred } = await sql<{ name: string; n: number }>`select name, count(*)::int n from job
+    where "runId" = ${run.id}::uuid and state = 'pending' and "dependencyReason" is not null group by name`.execute(db);
+  const deferredOf = new Map(deferred.map((row) => [row.name, row.n]));
   const holds = holdsOf(run.holds);
   const steps = new Map<string, RunCounts & { queue: string }>();
   for (const { name, state, n } of tasks) {
     const queue = queueOf.get(name);
     if (!queue) continue;
     const step = steps.get(queue) ?? { queue, ...zero() };
-    add(
-      step,
-      state === 'pending' || state === 'waiting' ? liveOutcome(name, holds, queueOf, around) : stateOutcome(state),
-      n,
-    );
+    const outcome =
+      state === 'pending' || state === 'waiting' ? liveOutcome(name, holds, queueOf, around) : stateOutcome(state);
+    const blocked = state === 'pending' && outcome === 'waiting' ? Math.min(n, deferredOf.get(name) ?? 0) : 0;
+    add(step, 'blocked', blocked);
+    add(step, outcome, n - blocked);
     steps.set(queue, step);
   }
   return [...steps.values()];

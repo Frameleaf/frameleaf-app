@@ -920,6 +920,25 @@ describe('what came in (FL-1459)', () => {
     expect(runs.find((row) => row.label === 'iPad')).toMatchObject({ itemCount: 1 });
   });
 
+  it('counts a photo once when its ingestion is retried', async () => {
+    const repository = jobs();
+    const ownerId = randomUUID();
+    const item = { name: JobName.AssetExtractMetadata, data: { id: randomUUID(), source: 'upload' } } as const;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await repository.queueUpload(item, { ownerId, origin: 'phone', label: 'Pixel 8', count: 1 });
+    }
+    expect((await listRuns(db, 25, 0)).map((row) => row.itemCount)).toEqual([1]);
+  });
+
+  it('counts a step waiting out a dependency as blocked, as the run does', async () => {
+    const repository = jobs();
+    await upload(repository, randomUUID(), 'Pixel 8');
+    await sql`update job set "dependencyReason" = 'source-unavailable'`.execute(db);
+    const [read] = await listRuns(db, 25, 0);
+    expect(read.steps).toEqual([expect.objectContaining({ blocked: 1, waiting: 0 })]);
+    expect(read.stageTotals).toMatchObject({ blocked: 1, waiting: 0 });
+  });
+
   it('starts a new run once the last one finished a while ago', async () => {
     const repository = jobs();
     const ownerId = randomUUID();

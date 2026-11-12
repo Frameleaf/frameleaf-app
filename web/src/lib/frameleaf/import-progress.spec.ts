@@ -146,4 +146,12 @@ describe('importProgress names uploads (FL-1459)', () => {
       upload: { name: 'Pixel 8' },
     });
   });
+
+  it('names no device when two large uploads share the counts', () => {
+    const one = scanRun({ id: 'upload-1', kind: 'upload', origin: 'phone', label: 'Pixel 8', itemCount: 1240 });
+    const two = scanRun({ id: 'upload-2', kind: 'upload', origin: 'phone', label: 'iPad', itemCount: 900 });
+    const line = importProgress(summary({ queues: [thumbnails()], durableRuns: [one, two] }), NOW);
+    expect(line?.upload).toBeUndefined();
+    expect(line?.ready).toBeDefined();
+  });
 });

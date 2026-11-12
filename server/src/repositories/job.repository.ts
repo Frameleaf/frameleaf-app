@@ -972,22 +972,28 @@ export class JobRepository {
       );
       const {
         rows: [open],
-      } = await sql<{ id: string }>`update job_run set "itemCount" = coalesce("itemCount", 0) + ${origin.count}
-        where id = (select id from job_run where "ownerId" = ${origin.ownerId}::uuid and origin = ${origin.origin}
-          and kind = ${UPLOAD_RUN_KIND} and label is not distinct from ${origin.label}
-          and "createdAt" > now() - interval '12 hours'
-          and ("finishedAt" is null or "finishedAt" > now() - interval '15 minutes')
-          order by "createdAt" desc limit 1)
-        returning id`.execute(tx);
+      } = await sql<{ id: string }>`select id from job_run where "ownerId" = ${origin.ownerId}::uuid
+        and origin = ${origin.origin} and kind = ${UPLOAD_RUN_KIND} and label is not distinct from ${origin.label}
+        and "createdAt" > now() - interval '12 hours'
+        and ("finishedAt" is null or "finishedAt" > now() - interval '15 minutes')
+        order by "createdAt" desc limit 1`.execute(tx);
       const runId = open?.id ?? randomUUID();
       if (!open) {
         await sql`insert into job_run(id, kind, selection, "enumerationDone", "ownerId", origin, label, "itemCount")
           values (${runId}::uuid, ${UPLOAD_RUN_KIND}, ${JSON.stringify(withNight({}))}::text::jsonb, true,
-            ${origin.ownerId}::uuid, ${origin.origin}, ${origin.label}, ${origin.count})`.execute(tx);
+            ${origin.ownerId}::uuid, ${origin.origin}, ${origin.label}, 0)`.execute(tx);
       }
       // The photo is the root of all its work, as a scanned photo is: the run counts photos
       const intent = runSubmission.run(runId, () => this.intent(item));
-      await this.store.enqueue([{ ...intent, rootItemKey: (item.data as { id: string }).id }], tx);
+      const inserted = await this.store.enqueue([{ ...intent, rootItemKey: (item.data as { id: string }).id }], tx);
+      // A retried ingestion queues the same photo again: only new work counts it, so a run never counts it twice
+      if (inserted > 0 && origin.count > 0) {
+        await sql`update job_run set "itemCount" = coalesce("itemCount", 0) + ${origin.count}
+          where id = ${runId}::uuid`.execute(tx);
+      } else if (inserted === 0 && !open) {
+        await sql`delete from job_run r where r.id = ${runId}::uuid
+          and not exists (select 1 from job where "runId" = r.id)`.execute(tx);
+      }
     });
   }
 
