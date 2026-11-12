@@ -826,6 +826,17 @@ export class AlbumService extends BaseService {
   }
 
   /**
+   * Adding to a locked album locks what is added, and only the owner's PIN undoes that. A connected app
+   * (or an AI agent steered by text in the library) must never be able to hide photos, so it cannot add
+   * to a locked album at all (FL-1422). Sessions, API keys and background work are unchanged.
+   */
+  private requireAppMayAddTo(auth: AuthDto, album: { isLocked: boolean }): void {
+    if (auth.oauthApp && album.isLocked) {
+      throw new ForbiddenException('Connected apps can’t add to a Locked album');
+    }
+  }
+
+  /**
    * An add never stops half-way because its lock failed: the items are already in the album, so the add's
    * own follow-up (covers, notifications, other albums) still runs, from what is actually locked, and the
    * hourly sweep locks what this missed.
@@ -974,6 +985,7 @@ export class AlbumService extends BaseService {
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto, sourceLinkId?: string): Promise<BulkIdResponseDto[]> {
     const album = await this.findOrFail(id, auth, { withAssets: false });
     await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
+    this.requireAppMayAddTo(auth, album);
 
     const { results, response } = await this.partnerOriginRepository.withOriginEdit('album', [id], [], () =>
       this.albumRepository.withMembershipWrite([id], async (tx, bulk) => {
@@ -1087,6 +1099,13 @@ export class AlbumService extends BaseService {
     if (allowedAssetIds.size === 0) {
       results.error = BulkIdErrorReason.NO_PERMISSION;
       return results;
+    }
+
+    // Checked for every target before anything is written, so one Locked album refuses the whole request.
+    if (auth.oauthApp) {
+      for (const albumId of allowedAlbumIds) {
+        this.requireAppMayAddTo(auth, await this.findOrFail(albumId, auth, { withAssets: false }));
+      }
     }
 
     const albumAssetValues: { albumId: string; assetId: string }[] = [];

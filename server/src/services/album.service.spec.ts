@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AlbumRepository } from 'src/repositories/album.repository.js';
 import { CreateAlbumDto } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
@@ -2499,6 +2500,99 @@ describe(AlbumService.name, () => {
       await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [asset.id] });
 
       expect(mocks.asset.lock).not.toHaveBeenCalled();
+    });
+
+    describe('connected apps (FL-1422)', () => {
+      const asApp = (owner: ReturnType<typeof UserFactory.create>): AuthDto => ({
+        ...AuthFactory.create(owner),
+        oauthApp: {
+          clientId: 'client',
+          clientName: 'Test app',
+          grantId: 'grant',
+          scopes: ['albums:write'],
+          resource: null,
+        },
+      });
+
+      it.each(['add', 'bulk-add'] as const)(
+        'refuses an app adding to a Locked album before anything is written or locked (%s)',
+        async (action) => {
+          const owner = UserFactory.create();
+          const [locked, open] = [
+            AlbumFactory.from({ isLocked: true }).owner(owner).build(),
+            AlbumFactory.from().owner(owner).build(),
+          ];
+          const asset = AssetFactory.create({ ownerId: owner.id });
+          mocks.access.album.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+          mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+          mocks.album.getById.mockImplementation((id) =>
+            Promise.resolve(getForAlbum(id === locked.id ? locked : open)),
+          );
+          mocks.album.getAssetIds.mockResolvedValue(new Set());
+          mocks.album.getUnlockedItemsInLockedAlbums.mockResolvedValue([{ assetId: asset.id, ownerId: owner.id }]);
+
+          const auth = asApp(owner);
+          const attempt =
+            action === 'add'
+              ? sut.addAssets(auth, locked.id, { ids: [asset.id] })
+              : // the unlocked album comes first: one Locked target still refuses the whole request
+                sut.addAssetsToAlbums(auth, { albumIds: [open.id, locked.id], assetIds: [asset.id] });
+          await expect(attempt).rejects.toBeInstanceOf(ForbiddenException);
+          await expect(attempt).rejects.toThrow('Connected apps can’t add to a Locked album');
+
+          expect(mocks.album.addAssetIds).not.toHaveBeenCalled();
+          expect(mocks.album.addAssetIdsToAlbums).not.toHaveBeenCalled();
+          expect(mocks.partnerOrigin.withOriginEdit).not.toHaveBeenCalled();
+          expect(mocks.album.getUnlockedItemsInLockedAlbums).not.toHaveBeenCalled();
+          expect(mocks.asset.lock).not.toHaveBeenCalled();
+          expect(mocks.event.emit).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each(['add', 'bulk-add'] as const)('still lets an app add to an unlocked album (%s)', async (action) => {
+        const owner = UserFactory.create();
+        const album = AlbumFactory.from().owner(owner).build();
+        const asset = AssetFactory.create({ ownerId: owner.id });
+        mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.album.getById.mockResolvedValue(getForAlbum(album));
+        mocks.album.getAssetIds.mockResolvedValue(new Set());
+
+        const auth = asApp(owner);
+        await (action === 'add'
+          ? sut.addAssets(auth, album.id, { ids: [asset.id] })
+          : sut.addAssetsToAlbums(auth, { albumIds: [album.id], assetIds: [asset.id] }));
+
+        expect(action === 'add' ? mocks.album.addAssetIds : mocks.album.addAssetIdsToAlbums).toHaveBeenCalledTimes(1);
+        expect(mocks.asset.lock).not.toHaveBeenCalled();
+      });
+
+      it.each(['add', 'bulk-add'] as const)(
+        'a signed-in person adding to a Locked album still locks what they add (%s)',
+        async (action) => {
+          const owner = UserFactory.create();
+          const album = AlbumFactory.from({ isLocked: true }).owner(owner).build();
+          const asset = AssetFactory.create({ ownerId: owner.id });
+          mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+          mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+          mocks.album.getById.mockResolvedValue(getForAlbum(album));
+          mocks.album.getAssetIds.mockResolvedValue(new Set());
+          mocks.album.getUnlockedItemsInLockedAlbums.mockResolvedValue([{ assetId: asset.id, ownerId: owner.id }]);
+          mocks.asset.findLockGroupIds.mockResolvedValue([asset.id]);
+          mocks.asset.lock.mockResolvedValue([asset.id]);
+
+          const auth = AuthFactory.create(owner);
+          await (action === 'add'
+            ? sut.addAssets(auth, album.id, { ids: [asset.id] })
+            : sut.addAssetsToAlbums(auth, { albumIds: [album.id], assetIds: [asset.id] }));
+
+          expect(mocks.album.getUnlockedItemsInLockedAlbums).toHaveBeenCalledWith({
+            albumId: album.id,
+            assetIds: [asset.id],
+          });
+          expect(mocks.asset.lock).toHaveBeenCalledWith([asset.id], AssetLockReason.Marked, owner.id);
+        },
+      );
     });
 
     it('tells partner copies about the lock even when the follow-up after it fails', async () => {

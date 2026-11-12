@@ -103,6 +103,50 @@ describe('/oauth/apps', () => {
     expect(keys.status).toBe(403);
   });
 
+  it('an app allowed to add to albums can’t lock a photo by adding it to a Locked album (FL-1422)', async () => {
+    const session = asBearerAuth(user.accessToken);
+    const asset = await utils.createAsset(user.accessToken);
+    const open = await utils.createAlbum(user.accessToken, { albumName: 'Open album' });
+    const locked = await utils.createAlbum(user.accessToken, { albumName: 'Locked album' });
+    const lock = await request(app).patch(`/albums/${locked.id}`).set(session).send({ isLocked: true });
+    expect(lock.status).toBe(200);
+    expect(lock.body.isLocked).toBe(true);
+
+    const { tokens } = await connect('albums:write');
+    const bearer = { Authorization: `Bearer ${tokens.access_token}` };
+
+    const one = await request(app)
+      .put(`/albums/${locked.id}/assets`)
+      .set(bearer)
+      .send({ ids: [asset.id] });
+    expect(one.status).toBe(403);
+    expect(one.body.message).toBe('Connected apps can’t add to a Locked album');
+
+    // one Locked album among the targets refuses the whole request, the unlocked album included
+    const many = await request(app)
+      .put('/albums/assets')
+      .set(bearer)
+      .send({ albumIds: [open.id, locked.id], assetIds: [asset.id] });
+    expect(many.status).toBe(403);
+
+    for (const album of [open, locked]) {
+      const { body } = await request(app).get(`/albums/${album.id}`).set(session);
+      expect(body.assetCount).toBe(0);
+    }
+    // an ordinary session can't read a Locked photo at all: the photo is still on the timeline
+    const after = await request(app).get(`/assets/${asset.id}`).set(session);
+    expect(after.status).toBe(200);
+    expect(after.body.visibility).toBe('timeline');
+
+    // the app's permission still works where nothing is locked
+    const allowed = await request(app)
+      .put(`/albums/${open.id}/assets`)
+      .set(bearer)
+      .send({ ids: [asset.id] });
+    expect(allowed.status).toBe(200);
+    expect(allowed.body).toEqual([{ id: asset.id, success: true }]);
+  });
+
   it('rotates refresh tokens and ends the grant when a used one comes back', async () => {
     const { clientId, tokens } = await connect();
     const refresh = (token: string) =>
