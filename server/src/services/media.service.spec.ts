@@ -5760,11 +5760,8 @@ describe(MediaService.name, () => {
         name: JobName.FileDelete,
         data: { files: ['/encoded/copy-own.mp4'] },
       });
-      // decided for this file and policy, so the overnight check does not queue the copy again
-      expect(mocks.asset.upsertJobStatus).toHaveBeenCalledExactlyOnceWith({
-        assetId: 'video-id',
-        transcodeSkippedFor: expect.stringContaining(`${asset.checksum.toString('hex')}:`),
-      });
+      // nothing is recorded on the copy: it converts its own once its source is gone
+      expect(mocks.asset.upsertJobStatus).not.toHaveBeenCalled();
       expect(mocks.media.transcode).not.toHaveBeenCalled();
     });
 

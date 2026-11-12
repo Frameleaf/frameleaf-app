@@ -1706,19 +1706,13 @@ export class MediaService extends BaseService {
     }
 
     // FL-1487: a partner copy plays its live source's converted video; the source's own job hands it over when
-    // it finishes. The copy is marked as decided for this file and policy, so the overnight check leaves it alone.
+    // it finishes. The overnight check leaves such a copy out (`selectionForUnfinished`) and picks it up again
+    // once its source is trashed or deleted, so nothing is recorded on the copy here.
     // ponytail: "Missing" by hand still queues copies whose source needed no conversion; each ends here at once.
     const sourceId = await this.partnerOriginRepository.getLiveSourceId(id);
     if (sourceId) {
       this.logger.verbose(`Video conversion skipped for asset ${id}: shares the files of ${sourceId}`);
-      const { ffmpeg } = await this.getConfig({ withCache: true });
       await this.shareFilesWithCopies(sourceId, [AssetFileType.EncodedVideo]);
-      await publishJobResult(() =>
-        this.assetRepository.upsertJobStatus({
-          assetId: asset.id,
-          transcodeSkippedFor: `${asset.checksum.toString('hex')}:${videoProcessingPolicy(ffmpeg)}`,
-        }),
-      );
       return JobStatus.Skipped;
     }
 

@@ -405,9 +405,11 @@ export class PartnerOriginRepository {
       }
       const { rows } = await sql<{ path: string }>`
         WITH RECURSIVE tree AS (
+          -- an origin row outlives a permanently deleted copy: only copies that still exist take files
           SELECT origin."assetId" AS id, 1 AS depth
           FROM public.asset_origin origin
           JOIN asset source ON source.id = origin."sourceAssetId"
+          JOIN asset recipient ON recipient.id = origin."assetId"
           WHERE origin."sourceAssetId" = ${assetId}::uuid
             AND source."deletedAt" IS NULL AND source.status = ${AssetStatus.Active}
           UNION ALL
@@ -415,6 +417,7 @@ export class PartnerOriginRepository {
           FROM tree
           JOIN asset parent ON parent.id = tree.id
           JOIN public.asset_origin origin ON origin."sourceAssetId" = parent.id
+          JOIN asset recipient ON recipient.id = origin."assetId"
           WHERE parent."deletedAt" IS NULL AND parent.status = ${AssetStatus.Active} AND tree.depth < ${MAX_LINEAGE_DEPTH}
         ),
         source_file AS (
