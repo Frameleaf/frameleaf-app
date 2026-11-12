@@ -127,10 +127,12 @@ describe('TakeoutSettingsSection', () => {
     const advanced = screen.getByText(en.frameleaf_takeout_page_advanced).closest('details')!;
     expect(advanced).toHaveAttribute('open');
 
-    // closed by hand, then another folder is chosen: it opens again
+    // closed by hand, then a folder is chosen again from the start dialog: it opens again
     await userEvent.click(screen.getByText(en.frameleaf_takeout_page_advanced));
     await waitFor(() => expect(advanced).not.toHaveAttribute('open'));
-    await userEvent.click(screen.getByRole('button', { name: en.change }));
+    // `goto` is mocked, so the address still says the start dialog is open
+    const startAgain = screen.getByRole('dialog', { name: en.frameleaf_takeout_title });
+    await userEvent.click(within(startAgain).getByRole('button', { name: en.frameleaf_takeout_folder_choose }));
     const again = screen.getByRole('dialog', { name: en.frameleaf_takeout_folder_chooser_title });
     await userEvent.click(
       within(again).getByRole('button', {
