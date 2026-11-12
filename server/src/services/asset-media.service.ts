@@ -556,6 +556,8 @@ export class AssetMediaService extends BaseService {
       quotaCharged?: boolean;
       ingestion?: { resourceId: string; token: string; ownerId: string };
       checkIngestion?: () => Promise<void>;
+      /** FL-1478: an importer names itself; otherwise the upload's own session, app or link does. */
+      origin?: { origin: RunOrigin; label: string | null };
     } = {},
   ) {
     if (options.quotaCharged && !options.ingestion) {
@@ -621,7 +623,7 @@ export class AssetMediaService extends BaseService {
       { name: JobName.AssetExtractMetadata, data: { id: asset.id, source: 'upload' } },
       {
         ownerId: asset.ownerId,
-        ...(await this.uploadOrigin(auth)),
+        ...(options.origin ?? (await this.uploadOrigin(auth))),
         count: asset.visibility === AssetVisibility.Hidden ? 0 : 1,
       },
     );
@@ -640,6 +642,7 @@ export class AssetMediaService extends BaseService {
     file: UploadFile,
     sidecarFile?: UploadFile,
     publication?: AssetUploadPublication,
+    origin?: { origin: RunOrigin; label: string | null },
   ): Promise<AssetMediaResponseDto> {
     let asset: Asset | undefined;
     try {
@@ -678,7 +681,7 @@ export class AssetMediaService extends BaseService {
           return created;
         });
         if (!original || asset.id !== id) throw new InternalServerErrorException('Upload was not published');
-        await this.finishUploadAsset(auth, dto, file, asset, undefined, { preparedOriginal: original });
+        await this.finishUploadAsset(auth, dto, file, asset, undefined, { preparedOriginal: original, origin });
         return { id: asset.id, status: AssetMediaStatus.CREATED };
       }
       const restored = await this.restoreLostOriginal(auth, dto, file);
@@ -703,7 +706,7 @@ export class AssetMediaService extends BaseService {
       } else {
         asset = await this.assetRepository.create(prepared.asset, prepared.lock);
       }
-      await this.finishUploadAsset(auth, dto, file, asset, sidecarFile);
+      await this.finishUploadAsset(auth, dto, file, asset, sidecarFile, { origin });
 
       return { id: asset.id, status: AssetMediaStatus.CREATED };
     } catch (error: any) {

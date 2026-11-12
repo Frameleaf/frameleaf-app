@@ -62,6 +62,8 @@ import {
 
 /** How often the worker looks for queued import jobs. */
 export const TAKEOUT_TICK_MS = 5000;
+/** FL-1478: the run a Google Photos import's photos join; Activity titles it "… from Google Photos". */
+const TAKEOUT_RUN_ORIGIN = { origin: 'import', label: 'Google Photos' } as const;
 /** The claim lease. Extended by every progress write and by a heartbeat while a large file copies. */
 export const TAKEOUT_LEASE_MS = 2 * 60_000;
 export const TAKEOUT_HEARTBEAT_MS = 30_000;
@@ -983,6 +985,10 @@ export class TakeoutWorkerService {
         originalName: item.name,
         size: digest.size,
       },
+      undefined,
+      undefined,
+      // FL-1478: Activity says these came from Google Photos, not from the owner's computer
+      TAKEOUT_RUN_ORIGIN,
     );
     if (response.status === AssetMediaStatus.DUPLICATE && /^0{8}-(?:0{4}-){3}0{12}$/.test(response.id)) {
       throw new TakeoutItemError('A matching photo exists but could not be read');

@@ -1,7 +1,7 @@
 import { QueueName, type DurableJobRun, type DurableRunningJobs } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import { durableRun } from '$lib/__mocks__/durable-runs.mock';
-import { arrivalSteps, buildArrivals } from '$lib/frameleaf/arrivals';
+import { arrivalSteps, buildArrivals, uploadRunTitle } from '$lib/frameleaf/arrivals';
 import { buildBackgroundWorkCards } from '$lib/frameleaf/background-work';
 
 const zero = { total: 0, completed: 0, failed: 0, needsAttention: 0, cancelled: 0, active: 0, retrying: 0 };
@@ -77,5 +77,14 @@ describe('arrivals (FL-1459)', () => {
 
   it("keeps an upload's own run off By feature: its work is on the queues' rows", () => {
     expect(buildBackgroundWorkCards(summary([upload({ active: 4, waiting: 10 })]))).toEqual([]);
+  });
+
+  it('FL-1478: titles an import’s photos by where they came from, not as a computer upload', () => {
+    const $t = ((key: string, options?: { values?: Record<string, unknown> }) =>
+      `${key}:${JSON.stringify(options?.values ?? {})}`) as never;
+    expect(uploadRunTitle(upload({ origin: 'import', label: 'Google Photos', itemCount: 180 }), $t)).toBe(
+      'frameleaf_activity_arrival_from:{"count":180,"name":"Google Photos"}',
+    );
+    expect(uploadRunTitle(upload({ kind: 'library_scan', origin: 'library', label: null }), $t)).toBeNull();
   });
 });

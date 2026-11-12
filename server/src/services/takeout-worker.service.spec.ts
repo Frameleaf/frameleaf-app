@@ -561,6 +561,10 @@ describe(TakeoutWorkerService.name, () => {
         expect.objectContaining({ user: expect.objectContaining({ id: ownerId }) }),
         expect.objectContaining({ filename: 'IMG_1.jpg', isFavorite: true, visibility: undefined }),
         expect.objectContaining({ originalName: 'IMG_1.jpg', size: 10 }),
+        undefined,
+        undefined,
+        // FL-1478: Activity names the import, not the owner's computer
+        { origin: 'import', label: 'Google Photos' },
       );
       expect(repository.itemAsset).toHaveBeenCalledWith(itemOf().id, assetId, 'created');
       expect(assets.update).toHaveBeenCalledWith(expect.anything(), assetId, {
@@ -586,6 +590,9 @@ describe(TakeoutWorkerService.name, () => {
       expect(assetMedia.uploadAsset).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ visibility: AssetVisibility.Locked }),
+        expect.anything(),
+        undefined,
+        undefined,
         expect.anything(),
       );
       expect(assets.lock).toHaveBeenCalledWith(expect.anything(), { ids: [assetId] });
