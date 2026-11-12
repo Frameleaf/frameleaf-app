@@ -158,6 +158,12 @@ export type AttentionProcessingFailuresDto = {
     /** Of those, files set aside after repeated tries; they are not tried again by themselves */
     setAside: number;
 };
+export type AttentionUnexplainedOriginalsDto = {
+    /** Originals that are gone with no record of a removal, across every account */
+    count: number;
+    /** When the first of them was found missing, or null when there are none */
+    since: string | null;
+};
 export type AttentionResponseDto = {
     /** When the checks were made */
     checkedAt: string;
@@ -171,6 +177,8 @@ export type AttentionResponseDto = {
     items: AttentionItemDto[];
     /** FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check. */
     processingFailures: AttentionProcessingFailuresDto;
+    /** FL-921: originals the nothing-lost ledger cannot account for. Only a count: no file is named. They add no item and change no check. */
+    unexplainedOriginals: AttentionUnexplainedOriginalsDto;
 };
 export type AttentionDismissDto = {
     /** True dismisses it; false brings it back */
@@ -2864,6 +2872,33 @@ export type IntegrityReportSummaryResponseDto = {
     checksum_mismatch: number;
     missing_file: number;
     untracked_file: number;
+};
+export type AssetLedgerMissingOwnerDto = {
+    /** Originals of that account that are missing */
+    count: number;
+    /** The account the originals belonged to */
+    ownerId: string;
+    /** When the first of them was found missing */
+    since: string;
+};
+export type AssetLedgerCountsDto = {
+    /** Originals in the library */
+    kept: number;
+    /** Originals that share an identical file; their own copy went to Unused files */
+    merged: number;
+    /** Originals that are gone with no record of a removal */
+    missing: number;
+    /** Originals somebody removed, or whose time in the Trash ran out */
+    removed: number;
+    /** Originals in the Trash */
+    trashed: number;
+};
+export type AssetLedgerAdminSummaryResponseDto = {
+    /** The accounts with originals the server cannot account for, most first. No file is named. */
+    missingByOwner: AssetLedgerMissingOwnerDto[];
+    states: AssetLedgerCountsDto;
+    /** Every original the server has accepted, for every account */
+    total: number;
 };
 export type LibraryFolderEntryDto = {
     name: string;
@@ -20399,6 +20434,36 @@ export type CloudBackupOwnerSetupResponseDto = {
     nextRunAt: string | null;
     target: CloudBackupTargetSetting;
 };
+export type AssetLedgerItemDto = {
+    /** When the server accepted it */
+    addedAt: string;
+    /** How it arrived, for example upload, library-scan, import, partner-copy, studio, recovered or unknown. More may be added. */
+    addedVia: string;
+    /** The id the original had, or has, in the library */
+    assetId: string;
+    /** Its content checksum, base64 */
+    checksum: string;
+    /** Its file name */
+    originalFileName: string;
+    /** Why, when there is a reason, for example deleted, trash-expired, library-removed, account-removed, identical-file, not-found or found. More may be added. */
+    reason: string | null;
+    state: AssetLedgerState;
+    /** When it came to be in this state */
+    stateAt: string;
+    /** The account that put it there; null when Frameleaf did */
+    stateBy: string | null;
+};
+export type AssetLedgerListResponseDto = {
+    /** The newest change first */
+    items: AssetLedgerItemDto[];
+    /** Pass as cursor for the next page; null on the last page */
+    nextCursor: string | null;
+};
+export type AssetLedgerSummaryResponseDto = {
+    states: AssetLedgerCountsDto;
+    /** Every original the server has accepted for this account */
+    total: number;
+};
 export type LocationScanBillingDto = {
     chargedMicros: number | null;
     checkedPhotos: number;
@@ -21065,6 +21130,14 @@ export type AssetFilmstripSpriteOptionsDto = {
     height?: number;
     /** The `version` from the filmstrip index. When given and the video changed since, 404 is returned */
     version?: string;
+};
+export type AssetLedgerQueryDto = {
+    /** The nextCursor of the previous page */
+    cursor?: string;
+    /** Items per page */
+    size?: number;
+    /** Only originals in this state */
+    state?: AssetLedgerState;
 };
 export type AssetMediaOptionsDto = {
     /** Cache version: the asset's current thumbhash. A matching thumbnail is served as immutable. */
@@ -24899,6 +24972,17 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: IntegrityReportSummaryResponseDto;
     }>("/admin/integrity/summary", {
+        ...opts
+    }));
+}
+/**
+ * Get the server’s nothing-lost totals
+ */
+export function getLedgerAdminSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetLedgerAdminSummaryResponseDto;
+    }>("/admin/ledger/summary", {
         ...opts
     }));
 }
@@ -39935,6 +40019,36 @@ export function getOwnSetupProgress(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List your originals and where they are now
+ */
+export function getLedger({ cursor, size, state }: {
+    cursor?: string;
+    size?: number;
+    state?: AssetLedgerState;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetLedgerListResponseDto;
+    }>(`/users/me/ledger${QS.query(QS.explode({
+        cursor,
+        size,
+        state
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get your nothing-lost totals
+ */
+export function getLedgerSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetLedgerSummaryResponseDto;
+    }>("/users/me/ledger/summary", {
+        ...opts
+    }));
+}
+/**
  * Remove your supporter key
  */
 export function deleteUserLicense(opts?: Oazapfts.RequestOpts) {
@@ -45339,6 +45453,13 @@ export enum CloudBackupOwnerSetupFirstRun {
     Running = "running",
     Done = "done",
     Failed = "failed"
+}
+export enum AssetLedgerState {
+    Kept = "kept",
+    Trashed = "trashed",
+    Removed = "removed",
+    Merged = "merged",
+    Missing = "missing"
 }
 export enum LocationBillingCurrency {
     Usd = "USD"
