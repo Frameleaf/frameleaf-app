@@ -237,7 +237,8 @@
     }
     return known;
   };
-  const day = (value: string) => new Date(value).toLocaleDateString($locale, { month: 'short', day: 'numeric' });
+  const day = (value: string) =>
+    new Date(value).toLocaleDateString($locale ?? undefined, { month: 'short', day: 'numeric' });
   const DAY = 86_400_000;
   const whyLine = (why: QueueTaskDto) => {
     switch (why.reason) {
@@ -253,7 +254,7 @@
         }
         return until.getTime() - Date.now() < DAY
           ? $t('frameleaf_jobs_adv_why_night_at', {
-              values: { time: until.toLocaleTimeString($locale, { hour: 'numeric', minute: '2-digit' }) },
+              values: { time: until.toLocaleTimeString($locale ?? undefined, { hour: 'numeric', minute: '2-digit' }) },
             })
           : $t('frameleaf_jobs_adv_why_night_on', { values: { date: day(why.closedUntil!) } });
       }
