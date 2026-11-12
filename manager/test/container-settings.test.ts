@@ -149,3 +149,67 @@ test('the Services card shows stored settings as text and reads them back unchan
     assert.deepEqual(parsed, services[id]);
   }
 });
+
+test('the rendered stack is readable for the Containers page, with passwords only as files', async () => {
+  const { directory, store, operations } = await fixture();
+  try {
+    assert.equal(await operations.renderedStack(), null);
+    operations.reconfigure(ServiceOverrides.parse({ 'frameleaf-server': { environment: { FRAMELEAF_LOG_LEVEL: 'debug' } } }), 'key-stack');
+    assert.equal((await settled(store)).state, 'complete');
+    const stack = (await operations.renderedStack()) as Record<string, any>;
+    const server = stack['frameleaf-server'];
+    assert.equal(server.environment.DB_HOSTNAME, 'database');
+    assert.equal(server.environment.FRAMELEAF_LOG_LEVEL, 'debug');
+    assert.equal(server.shm_size, '2gb');
+    assert.ok(server.volumes.some((v: { target: string }) => v.target === '/data'));
+    assert.equal(stack.database.volumes[0].target, '/var/lib/postgresql');
+    assert.ok(!JSON.stringify(stack).includes('"pw"'));
+    store.set('installation', null);
+    await assert.rejects(operations.renderedStack(), /no_installation/);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('settings added in Docker or Unraid are found; the image’s own variables and anonymous volumes are not', async () => {
+  const { changedOutsideManager, RESERVED_ENVIRONMENT } = await import('../src/compose.js');
+  for (const name of ['FRAMELEAF_MEDIA_LOCATION', 'FRAMELEAF_CONFIG_FILE', 'IMMICH_MEDIA_LOCATION', 'DB_PASSWORD']) assert.ok(RESERVED_ENVIRONMENT.test(name), name);
+  const service = { environment: { TZ: 'UTC', DB_HOSTNAME: 'database' }, volumes: [{ target: '/data' }, { target: '/run/frameleaf/manager-token' }] };
+  const container = {
+    Config: { Env: ['TZ=UTC', 'DB_HOSTNAME=database', 'PATH=/usr/bin', 'NODE_ENV=production', 'IMMICH_LOG_LEVEL=debug', 'DB_PORT=1'] },
+    Mounts: [
+      { Type: 'bind', Source: '/mnt/user/photos', Destination: '/data', RW: true },
+      { Type: 'bind', Source: '/mnt/user/scans', Destination: '/scans', RW: false },
+      { Type: 'volume', Source: '/var/lib/docker/volumes/x', Name: 'a'.repeat(64), Destination: '/tmp/anon', RW: true },
+      { Type: 'bind', Source: '/elsewhere', Destination: '/run/frameleaf/other', RW: true },
+    ],
+  };
+  assert.deepEqual(changedOutsideManager(service, container, ['PATH=/usr/bin', 'NODE_ENV=production']), {
+    environment: { IMMICH_LOG_LEVEL: 'debug' },
+    mounts: [{ source: '/mnt/user/scans', target: '/scans', readOnly: true }],
+  });
+  // A value changed in Docker is reported; one equal to Manager's or the image's is not.
+  assert.deepEqual(changedOutsideManager(service, { ...container, Config: { Env: ['TZ=Europe/London', 'PATH=/usr/bin'] }, Mounts: [] }, ['PATH=/usr/bin'])?.environment, { TZ: 'Europe/London' });
+  assert.equal(changedOutsideManager(service, { Config: { Env: ['TZ=UTC'] }, Mounts: [] }, []), null);
+});
+
+test('changedOutside reads the running containers of this installation only', async () => {
+  const { directory, store, operations } = await fixture();
+  try {
+    assert.deepEqual(await operations.changedOutside(), {});
+    operations.reconfigure(ServiceOverrides.parse({}), 'key-outside');
+    await settled(store);
+    const labels = (service: string, id = 'a'.repeat(12)) => ({ 'app.frameleaf.manager': id, 'com.docker.compose.service': service });
+    const docker = (operations as any).docker;
+    docker.inventory = () => Promise.resolve([
+      { Config: { Image: 'img', Env: ['TZ=UTC', 'FRAMELEAF_LOG_LEVEL=debug'], Labels: labels('frameleaf-server') }, Mounts: [] },
+      { Config: { Image: 'img', Env: ['FRAMELEAF_LOG_LEVEL=debug'], Labels: labels('frameleaf-server', 'b'.repeat(12)) }, Mounts: [] },
+    ]);
+    docker.imageEnvironment = () => Promise.resolve([]);
+    assert.deepEqual(await operations.changedOutside(), { 'frameleaf-server': { environment: { FRAMELEAF_LOG_LEVEL: 'debug' }, mounts: [] } });
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

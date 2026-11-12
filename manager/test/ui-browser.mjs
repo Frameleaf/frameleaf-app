@@ -428,7 +428,8 @@ await page.route('**/manager-api/**', async (route) => {
 const button = (name) => page.getByRole('button', { name, exact: true });
 const mainButton = (name) => page.locator('main').getByRole('button', { name, exact: true });
 const nav = async (name) => {
-  await page.getByRole('navigation', { name: 'Manager' }).getByRole('button', { name, exact: true }).click();
+  // A menu item may carry a count badge (Updates · 1).
+  await page.getByRole('navigation', { name: 'Manager' }).getByRole('button', { name: new RegExp(`^${name}( \\d+)?$`) }).click();
   await page.locator('main[aria-busy="false"]').waitFor();
   if (page.viewportSize().width <= 760) {
     await page.waitForFunction(() => {
@@ -471,7 +472,7 @@ try {
   await page.goto(origin);
   await check('full installed navigation, real counts, service states and themes', async () => {
     await page.getByRole('heading', { name: 'Family library', exact: true }).waitFor();
-    assert.equal(await page.getByRole('navigation', { name: 'Manager' }).getByRole('button').count(), 8);
+    assert.equal(await page.getByRole('navigation', { name: 'Manager' }).getByRole('button').count(), 9);
     assert.ok((await page.locator('.metric-grid').innerText()).includes('24,860'));
     await screenshot('overview-dark');
     await button('Toggle light or dark theme').click();
@@ -525,24 +526,34 @@ try {
     await mainButton('Stop stack').click();
     assert.equal(await page.locator('dialog').isVisible(), true);
     await button('Cancel').click();
-    // Advanced container settings: pre-filled from the installed stack, saved through a journaled restart.
-    await page.getByText('Frameleaf server: 1 variable · 1 folder · 4g memory', { exact: true }).waitFor();
-    await page.getByText('Advanced container settings', { exact: true }).click();
-    const installedEnvironment = page.getByLabel('Environment variables').first();
-    assert.equal(await installedEnvironment.inputValue(), 'TZ=America/Toronto');
-    assert.equal(await page.getByLabel('Extra folders').first().inputValue(), '/fixture/archive:/old-archive:ro');
-    await installedEnvironment.fill('TZ=UTC\nPOSTGRES_DB=nope');
+    // FL-1476: each service shows what was added to it and opens its tab on Containers.
+    await page.locator('.service-extra').getByText('1 setting · 1 folder · 4 GB memory', { exact: true }).waitFor();
+    await mainButton('Edit Frameleaf server settings').click();
+    await page.getByRole('heading', { name: 'Containers', exact: true }).waitFor();
+    assert.equal(await page.getByRole('tab', { selected: true }).innerText().then((t) => t.split('\n')[0].trim()), 'Frameleaf server');
+    // Settings are pre-filled from the installed stack and listed by what they do.
+    assert.equal(await page.locator('.cs-row').filter({ hasText: 'Time zone' }).locator('select').inputValue(), 'America/Toronto');
+    assert.equal(await page.locator('.cs-folder input').first().inputValue(), '/old-archive');
+    // Edit as text refuses Manager's own names line by line.
+    await mainButton('Edit as text').click();
+    await page.getByLabel('Settings as text').fill('TZ=UTC\nPOSTGRES_DB=nope');
+    await page.getByText('Line 2: Manager sets POSTGRES_DB itself', { exact: false }).waitFor();
+    await mainButton('Done').click();
+    assert.equal(await page.getByLabel('Settings as text').isVisible(), true);
+    await page.getByLabel('Settings as text').fill('TZ=UTC');
+    await mainButton('Done').click();
+    await page.locator('.cs-limits select').first().selectOption('');
+    await screenshot('containers');
     const before = requests.length;
-    await mainButton('Save and restart Frameleaf').click();
-    await page.getByText('POSTGRES_DB is set by Manager', { exact: true }).waitFor();
+    await mainButton('Review and save…').click();
+    const review = page.getByRole('dialog', { name: 'Save 2 changes?' });
+    await review.getByText('America/Toronto → UTC', { exact: true }).waitFor();
     assert.equal(requests.length, before);
-    await installedEnvironment.fill('TZ=UTC');
-    await page.getByLabel('Memory limit').first().fill('');
-    await screenshot('services-advanced');
-    await mainButton('Save and restart Frameleaf').click();
+    await review.getByRole('button', { name: 'Save and restart' }).click();
     await page.getByRole('heading', { name: 'Applying container settings' }).waitFor();
-    assert.deepEqual(requests.findLast((r) => r.path === 'container-settings').body.services, {
-      'frameleaf-server': { environment: { TZ: 'UTC' }, mounts: [{ source: '/fixture/archive', target: '/old-archive', readOnly: true }] },
+    assert.deepEqual(requests.findLast((r) => r.path === 'container-settings').body.services['frameleaf-server'], {
+      environment: { TZ: 'UTC' },
+      mounts: [{ source: '/fixture/archive', target: '/old-archive', readOnly: true }],
     });
     await mainButton('Resume safely').click();
     await mainButton('Continue').click();
@@ -660,18 +671,19 @@ try {
     await refresh();
   });
   await check('backups, protected downloads and installed restore review', async () => {
-    // A container setting left invalid on Services never blocks a restore, which sends none.
-    await nav('Services');
-    await page.getByText('Advanced container settings', { exact: true }).click();
-    await page.getByLabel('Environment variables').first().fill('POSTGRES_DB=nope');
+    // A container setting left invalid on Containers never blocks a restore, which sends none.
+    await nav('Containers');
+    await mainButton('Edit as text').click();
+    await page.getByLabel('Settings as text').fill('POSTGRES_DB=nope');
     await nav('Backups');
-    await mainButton('Export recovery key').click();
+    await page.getByText('Last recovery point', { exact: true }).waitFor();
+    await mainButton('Export key').click();
     await page.getByLabel('Current Manager password').fill('fixture proof password');
     const download = page.waitForEvent('download');
     await button('Download').click();
     await download;
     assert.ok(requests.some((r) => r.path === 'backup-key' && r.body.password === 'fixture proof password'));
-    await mainButton('Restore').click();
+    await mainButton('Restore…').click();
     await mainButton('Choose a recovery point').click();
     await mainButton('Check this server').click();
     await page.getByRole('heading', { name: '1 thing to fix before restoring' }).waitFor();
@@ -684,7 +696,7 @@ try {
     // Another recovery point's missing thumbnails folder is checked again, never kept with the photos unasked.
     snapshots = [snapshot, { id: 'e'.repeat(64), time: '2026-10-06T02:00:00Z' }];
     await nav('Backups');
-    await mainButton('Restore').first().click();
+    await mainButton('Restore…').first().click();
     await mainButton('Choose a recovery point').click();
     await page.getByRole('radio').last().check();
     await mainButton('Check this server').click();
@@ -708,17 +720,16 @@ try {
   });
   await check('eligible update notes, confirmation, interrupted operation, resume and activity', async () => {
     await nav('Updates');
-    assert.deepEqual(await page.getByLabel('Eligible release').locator('option').allInnerTexts(), [
-      'Select a release',
-      'frameleaf-v3.2.1-1 · ' + new Date('2026-10-07T01:00:00Z').toLocaleDateString(),
-    ]);
+    // FL-1476: the ready version leads, with its notes as text and the steps installing it takes.
+    await page.getByRole('heading', { name: '3.2.1-1 is ready', exact: true }).waitFor();
     assert.equal(await page.locator('.nav-badge').innerText(), '1');
-    await page.getByLabel('Eligible release').selectOption('frameleaf-v3.2.1-1');
-    const notes = await page.locator('main pre.log').innerText();
+    const notes = await page.locator('main .up-notes').innerText();
     assert.ok(notes.includes('<script>never execute</script>') && notes.includes('Full Changelog: compare'));
     assert.ok(!notes.includes('<!--') && !notes.includes('**'));
-    await mainButton('Verify and review update').click();
-    await mainButton('Update Frameleaf').click();
+    assert.equal(await page.locator('.up-steps li').count(), 4);
+    await mainButton('Review this update').click();
+    assert.equal(requests.findLast((r) => r.path === 'review-update').body.tag, 'frameleaf-v3.2.1-1');
+    await mainButton('Install 3.2.1-1').click();
     await page.locator('dialog').getByRole('button', { name: 'Update Frameleaf', exact: true }).click();
     await mainButton('Resume safely').waitFor();
     assert.equal(await page.locator('.nav-item.active > span').first().innerText(), 'Updates');

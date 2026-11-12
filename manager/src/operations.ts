@@ -19,7 +19,7 @@ import { rollbackCommonImport } from './common-import-lifecycle.js';
 import type { ImportPreparationSeal, ImportSourceAuthoritySeal } from './import-source-authority.js';
 import type { AutostartFile } from './unraid-autostart.js';
 import { containerNumber } from './dockerman.js';
-import { ApplicationConfig, checkServiceOverrides, detectAcceleration, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
+import { ApplicationConfig, changedOutsideManager, checkServiceOverrides, OVERRIDABLE_SERVICES, detectAcceleration, releaseImages, renderCompose, retuneDatabase, ServiceOverrides, STUDIO_WORKER_TARGET, storagePath } from './compose.js';
 import { atomicJson, copyVerified, fileHash } from './files.js';
 import { PostgresStorage } from './postgres-storage.js';
 import { toHost } from './host-paths.js';
@@ -2069,6 +2069,37 @@ export class Operations {
     if (kind === 'restart') await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
     await this.docker.compose(this.directory(), installation.project, kind === 'start' ? 'up' : kind);
     return true;
+  }
+  /**
+   * FL-1476: each service exactly as Manager last wrote it to compose.json (image, environment, folders, ports,
+   * limits, devices), so the Containers page can show what Manager sets beside what the administrator added.
+   * Passwords never appear: the stack carries them as files. Null before anything is rendered.
+   */
+  async renderedStack(): Promise<Record<string, unknown> | null> {
+    if (!this.installation()) throw new Refusal('no_installation');
+    const saved = await readFile(join(this.directory(), 'compose.json'), 'utf8').catch(() => null);
+    return saved ? (JSON.parse(saved).services ?? null) : null;
+  }
+  /**
+   * FL-1476: per container, what was added in Docker or Unraid since Manager last rendered the stack. Empty when
+   * Docker can't be read: the Containers page still opens, it just can't offer those changes back.
+   */
+  async changedOutside(): Promise<Partial<Record<(typeof OVERRIDABLE_SERVICES)[number], ReturnType<typeof changedOutsideManager>>>> {
+    const installation = this.installation();
+    if (!installation) throw new Refusal('no_installation');
+    const stack = (await this.renderedStack()) as Record<string, Parameters<typeof changedOutsideManager>[0]> | null;
+    if (!stack) return {};
+    const containers = await this.docker.inventory().catch(() => []);
+    const found: Partial<Record<(typeof OVERRIDABLE_SERVICES)[number], ReturnType<typeof changedOutsideManager>>> = {};
+    for (const container of containers) {
+      if (container.Config.Labels?.['app.frameleaf.manager'] !== installation.id) continue;
+      const name = container.Config.Labels['com.docker.compose.service'] as (typeof OVERRIDABLE_SERVICES)[number];
+      if (!OVERRIDABLE_SERVICES.includes(name) || !stack[name]) continue;
+      const image = await this.docker.imageEnvironment(container.Config.Image).catch(() => []);
+      const changes = changedOutsideManager(stack[name], container, image);
+      if (changes) found[name] = changes;
+    }
+    return found;
   }
   /** The advanced container settings the installed stack was last rendered with. */
   containerSettings(): { services: ServiceOverrides } {
