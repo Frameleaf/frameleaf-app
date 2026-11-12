@@ -1,16 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { constants, createReadStream, createWriteStream } from 'node:fs';
+import { type Dirent, constants, createReadStream, createWriteStream } from 'node:fs';
 import { type FileHandle, lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable, Transform, compose } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { crc32, createInflateRaw } from 'node:zlib';
+import { crc32, createGunzip, createInflateRaw } from 'node:zlib';
 import type { TakeoutSource } from 'src/repositories/takeout.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { getDiskUsage } from 'src/utils/disk-usage.js';
 import { tryPromise } from 'src/utils/promise.js';
+import { TakeoutTarEntry, TakeoutTarError, readTakeoutTar } from 'src/utils/takeout-tar.js';
 import {
   TAKEOUT_ZIP_MAX_DIRECTORY_BYTES,
   TakeoutZipEntry,
@@ -18,6 +19,7 @@ import {
   readTakeoutZipDirectory,
   takeoutZipDataOffset,
 } from 'src/utils/takeout-zip.js';
+import { isTakeoutExportFolder, takeoutFolderArchiveKind } from 'src/utils/takeout.js';
 
 /** Upload chunk size the web client uses and the server accepts at most. */
 export const TAKEOUT_CHUNK_BYTES = 8 * 1024 * 1024;
@@ -30,6 +32,14 @@ export const TAKEOUT_SIDECAR_MAX_BYTES = 4 * 1024 * 1024;
 export class TakeoutStagingError extends Error {}
 
 export type StagedDigest = { size: number; checksum: Buffer; legacyChecksum: Buffer };
+
+/** A file `walk` found, with the device and inode it saw so a later open can prove it is the same file. */
+export type WalkedFile = { filePath: string; size: number; dev: number; ino: number };
+
+/** What a folder holds for a Google Photos import: archives by kind, their bytes, or an unpacked export. */
+export type TakeoutFolderContents = { zip: number; tgz: number; bytes: number; unpacked: boolean };
+
+export type OpenArchive = { handle: FileHandle; source: TakeoutZipSource; close: () => Promise<void> };
 
 const UUID = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i;
 
@@ -135,6 +145,60 @@ export class TakeoutStagingRepository {
    * overlap the library's own storage. Throws `TakeoutStagingError` otherwise.
    */
   async resolveDirectory(root: string, relative: string): Promise<string> {
+    const resolved = await this.resolveInsideRoot(root, relative);
+    const storage = await realpath(StorageCore.getMediaLocation());
+    if (resolved === storage || storage.startsWith(resolved + path.sep) || resolved.startsWith(storage + path.sep)) {
+      throw new TakeoutStagingError('Choose a folder outside the library’s own storage');
+    }
+    return resolved;
+  }
+
+  /**
+   * A directory of a permitted root for the administrator's folder chooser: what it holds, and the
+   * folders directly inside it with what each of those holds. Hidden folders and links are left out.
+   * Only one level below is read, so a large tree stays quick to browse.
+   */
+  async listFolder(
+    root: string,
+    relative: string,
+  ): Promise<{ here: TakeoutFolderContents; folders: Array<TakeoutFolderContents & { name: string }> }> {
+    const directory = await this.resolveInsideRoot(root, relative);
+    const entries = await readdir(directory, { withFileTypes: true });
+    const folders = entries
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b));
+    return {
+      here: await this.folderContents(directory, entries),
+      folders: await Promise.all(
+        folders.map(async (name) => {
+          const child = path.join(directory, name);
+          // A folder the server cannot read is listed as holding nothing.
+          const childEntries = await readdir(child, { withFileTypes: true }).catch(() => []);
+          const contents = await this.folderContents(child, childEntries);
+          return { name, ...contents, unpacked: contents.unpacked || isTakeoutExportFolder(name) };
+        }),
+      ),
+    };
+  }
+
+  private async folderContents(directory: string, entries: Dirent[]): Promise<TakeoutFolderContents> {
+    const contents = { zip: 0, tgz: 0, bytes: 0, unpacked: false };
+    for (const entry of entries) {
+      if (entry.isDirectory() && isTakeoutExportFolder(entry.name)) {
+        contents.unpacked = true;
+      }
+      const kind = entry.isFile() ? takeoutFolderArchiveKind(entry.name) : undefined;
+      if (kind) {
+        contents[kind]++;
+        contents.bytes += (await lstat(path.join(directory, entry.name)).catch(() => ({ size: 0 }))).size;
+      }
+    }
+    return contents;
+  }
+
+  /** `relative` inside `root`: an existing real directory, reached without a link. */
+  private async resolveInsideRoot(root: string, relative: string): Promise<string> {
     if (relative.includes('\0') || path.isAbsolute(relative)) {
       throw new TakeoutStagingError('Choose a folder inside the permitted import location');
     }
@@ -154,10 +218,6 @@ export class TakeoutStagingRepository {
     const resolved = await realpath(candidate);
     if (resolved !== candidate) {
       throw new TakeoutStagingError('Choose a folder that is not reached through a link');
-    }
-    const storage = await realpath(StorageCore.getMediaLocation());
-    if (resolved === storage || storage.startsWith(resolved + path.sep) || resolved.startsWith(storage + path.sep)) {
-      throw new TakeoutStagingError('Choose a folder outside the library’s own storage');
     }
     return resolved;
   }
@@ -235,11 +295,26 @@ export class TakeoutStagingRepository {
    */
   async stageFile(
     directory: string,
-    file: { filePath: string; size: number; dev: number; ino: number },
+    file: WalkedFile,
     destination: string,
     signal: AbortSignal,
   ): Promise<StagedDigest> {
-    const { filePath, size: declared } = file;
+    const handle = await this.openFolderFile(directory, file);
+    const stream = handle.createReadStream({ autoClose: true });
+    try {
+      return await this.writeStaged(() => Promise.resolve(stream), file.size, destination, signal);
+    } finally {
+      // Closes the handle whether or not the copy got as far as reading it.
+      stream.destroy();
+    }
+  }
+
+  /**
+   * Open a file found by `walk`. It is reopened by its real path and must still be the plain file
+   * inside the directory that was walked. The caller closes the handle.
+   */
+  async openFolderFile(directory: string, file: WalkedFile): Promise<FileHandle> {
+    const { filePath } = file;
     const actual = await realpath(filePath);
     if (actual !== filePath || !actual.startsWith(directory + path.sep)) {
       throw new TakeoutStagingError('A file changed into a link while it was being read');
@@ -262,13 +337,7 @@ export class TakeoutStagingRepository {
       await handle.close();
       throw error;
     }
-    const stream = handle.createReadStream({ autoClose: true });
-    try {
-      return await this.writeStaged(() => Promise.resolve(stream), declared, destination, signal);
-    } finally {
-      // Closes the handle whether or not the copy got as far as reading it.
-      stream.destroy();
-    }
+    return handle;
   }
 
   /* ------------------------------------------------------------------ */
@@ -337,11 +406,20 @@ export class TakeoutStagingRepository {
   }
 
   /** Open a staged archive for reading its directory and entries. The caller closes it. */
-  async openArchive(archivePath: string): Promise<{ source: TakeoutZipSource; close: () => Promise<void> }> {
-    const handle = await open(archivePath, 'r');
+  async openArchive(archivePath: string): Promise<OpenArchive> {
+    return this.archiveOf(await open(archivePath, 'r'));
+  }
+
+  /** Open a ZIP archive found by `walk` in a server folder, read where it is. The caller closes it. */
+  async openFolderArchive(directory: string, file: WalkedFile): Promise<OpenArchive> {
+    return this.archiveOf(await this.openFolderFile(directory, file));
+  }
+
+  private async archiveOf(handle: FileHandle): Promise<OpenArchive> {
     try {
       const { size } = await handle.stat();
       return {
+        handle,
         source: {
           size,
           read: (position, length) => readRange(handle, position, Math.max(0, length)),
@@ -363,18 +441,17 @@ export class TakeoutStagingRepository {
    * declared size and the CRC must match, or the partial copy is removed and the entry refused.
    */
   async stageArchiveEntry(
-    archivePath: string,
-    source: TakeoutZipSource,
+    archive: OpenArchive,
     entry: TakeoutZipEntry,
     destination: string,
     signal: AbortSignal,
   ): Promise<StagedDigest> {
-    const start = await takeoutZipDataOffset(source, entry);
+    const start = await takeoutZipDataOffset(archive.source, entry);
     const openEntryNow = (): Readable => {
       const raw =
         entry.compressedSize === 0
           ? Readable.from([])
-          : createReadStream(archivePath, { start, end: start + entry.compressedSize - 1 });
+          : archive.handle.createReadStream({ start, end: start + entry.compressedSize - 1, autoClose: false });
       if (entry.compression === 'store') {
         return raw;
       }
@@ -383,6 +460,30 @@ export class TakeoutStagingRepository {
     // Deferred like an async function, so a synchronous failure to open still arrives as a rejection.
     const openEntry = () => tryPromise(openEntryNow);
     return this.writeStaged(openEntry, entry.uncompressedSize, destination, signal, entry.crc32);
+  }
+
+  /**
+   * The entries of a `.tgz` archive found by `walk` in a server folder, read in order where it is.
+   * Stage each with `stageTarEntry` before asking for the next one; the handle closes when the
+   * iteration ends.
+   */
+  async *readFolderTar(directory: string, file: WalkedFile): AsyncGenerator<TakeoutTarEntry> {
+    const handle = await this.openFolderFile(directory, file);
+    try {
+      yield* readTakeoutTar(compose(handle.createReadStream({ autoClose: false }), createGunzip()));
+    } catch (error) {
+      // A file that is not gzip, or is cut short, fails in zlib.
+      if ((error as NodeJS.ErrnoException)?.code?.startsWith('Z_')) {
+        throw new TakeoutTarError(`The archive is damaged or is not a .tgz archive: ${(error as Error).message}`);
+      }
+      throw error;
+    } finally {
+      await handle.close();
+    }
+  }
+
+  stageTarEntry(entry: TakeoutTarEntry, destination: string, signal: AbortSignal): Promise<StagedDigest> {
+    return this.writeStaged(() => tryPromise(() => entry.body()), entry.size, destination, signal);
   }
 
   /** Read a staged sidecar as JSON; undefined for anything that is not readable JSON of a sane size. */

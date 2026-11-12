@@ -188,6 +188,19 @@ export function takeoutEntryPath(entryName: string): TakeoutBoundary | undefined
   return { relativePath: relative.join('/'), folder, name };
 }
 
+/** An unpacked export's top folder: `Takeout`, or `Google Photos` in any of its languages. */
+export const isTakeoutExportFolder = (name: string) => name.toLowerCase() === 'takeout' || photoRoots.test(name);
+
+/** A Takeout archive sitting in a server folder, read in place instead of copied as a file. */
+export const takeoutFolderArchiveKind = (name: string): 'zip' | 'tgz' | undefined => {
+  if (/\.zip$/iu.test(name)) {
+    return 'zip';
+  }
+  if (/\.(?:tgz|tar\.gz)$/iu.test(name)) {
+    return 'tgz';
+  }
+};
+
 /** "Photos from 2019" and its translations: Google's automatic year folders, not albums. */
 export function isTakeoutYearFolder(folder: string) {
   return /^(?:(?:photos from|fotos (?:von|de)|photos de|foto del|bilder von|写真|사진)\s*)?(?:19|20)\d{2}(?:年|년)?$/iu.test(

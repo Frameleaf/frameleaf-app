@@ -24,6 +24,8 @@ import {
   TakeoutChunkQueryDto,
   TakeoutControlDto,
   TakeoutCreateDto,
+  TakeoutFolderQueryDto,
+  TakeoutFoldersResponseDto,
   TakeoutItemParamsDto,
   TakeoutItemQueryDto,
   TakeoutItemsResponseDto,
@@ -34,6 +36,7 @@ import {
   TakeoutParamsDto,
   TakeoutResolveDto,
   TakeoutResponseDto,
+  TakeoutRootParamsDto,
   TakeoutRootsResponseDto,
   TakeoutSourceResponseDto,
   TakeoutVerifyChunkDto,
@@ -87,6 +90,22 @@ export class TakeoutController {
   @Endpoint({ summary: 'List the permitted import locations', history: history() })
   getTakeoutRoots(): TakeoutRootsResponseDto {
     return this.service.roots();
+  }
+
+  @Get('roots/:rootId/folders')
+  @Authenticated({ admin: true })
+  @Endpoint({
+    summary: 'List the folders inside a permitted import location',
+    description:
+      'For choosing a server folder to import. Folders are read as they are; the ZIP and .tgz Takeout archives in them are read too.',
+    history: history(),
+  })
+  getTakeoutFolders(
+    @Auth() auth: AuthDto,
+    @Param() { rootId }: TakeoutRootParamsDto,
+    @Query() { path }: TakeoutFolderQueryDto,
+  ): Promise<TakeoutFoldersResponseDto> {
+    return this.service.folders(auth, rootId, path);
   }
 
   @Get(':id')
