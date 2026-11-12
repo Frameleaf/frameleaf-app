@@ -255,9 +255,29 @@
                   <button type="button" class="resource-button" onclick={() => browse(entry.path)}>{entry.name}</button>
                 </li>
               {:else}
-                <li class="resource-footnote">{$t('frameleaf_libraries_browse_empty')}</li>
+                {#if !managerUrl || !browsing.readable}
+                  <li class="resource-footnote">{$t('frameleaf_libraries_browse_empty')}</li>
+                {/if}
               {/each}
             </ul>
+            <!-- FL-1495: with Manager, Frameleaf sees a folder only once it is connected there, so /mnt can be empty. -->
+            {#if managerUrl && browsing.readable}
+              {#if browsing.folders.length === 0}
+                <Notice title={$t('frameleaf_libraries_browse_none_title')}
+                  >{$t('frameleaf_libraries_browse_none_body')}
+                  {#snippet action()}
+                    <a
+                      class="fl-control button primary"
+                      href={`${managerUrl}/#services`}
+                      target="_blank"
+                      rel="noopener noreferrer">{$t('frameleaf_move_open_manager')}</a
+                    >
+                  {/snippet}
+                </Notice>
+              {:else}
+                <p class="resource-footnote">{$t('frameleaf_libraries_browse_connected_only')}</p>
+              {/if}
+            {/if}
             {#if browsing.path !== '/' && browsing.readable}
               <button type="button" class="resource-button primary" onclick={() => choose(browsing!.path)}
                 >{$t('frameleaf_libraries_browse_use')}</button
