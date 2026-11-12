@@ -103,7 +103,7 @@
   ol {
     display: grid;
     gap: var(--fl-space-3);
-    padding-left: var(--fl-space-5);
+    padding-inline-start: var(--fl-space-5);
   }
   ol strong {
     font-weight: 600;
