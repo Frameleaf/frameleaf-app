@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chown, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MediaOperationDestination, MediaOperationKind, RenderWorkerAuditEvent, RenderWorkerStatus } from 'src/enum.js';
@@ -8,6 +8,12 @@ import { BUNDLED_RENDER_WORKER_APPROVAL } from 'src/utils/bundled-render-worker.
 import { STUDIO_ENGINE_REVISION } from 'src/utils/studio-commands.generated.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+
+// Only root may give a file to another group; the mode is still checked on the real file.
+vi.mock('node:fs/promises', async (original) => ({
+  ...(await original<typeof import('node:fs/promises')>()),
+  chown: vi.fn(),
+}));
 
 const bundled = (overrides: Partial<RenderWorker> = {}) =>
   ({
@@ -76,6 +82,18 @@ describe(BundledRenderWorkerService.name, () => {
     });
     expect((await stat(join(trustDir, 'enrolment.json'))).mode & 0o777).toBe(0o600);
     expect((await stat(trustDir)).mode & 0o077).toBe(0);
+  });
+
+  it('lets the machine-learning group read the enrolment a root server wrote', async () => {
+    // The ML container drops to an unprivileged user; a root-only file left its Studio worker waiting forever.
+    const root = vi.spyOn(process, 'getuid').mockReturnValue(0);
+    try {
+      await expect(sut.ensureEnrolment()).resolves.toBe('enrolled');
+    } finally {
+      root.mockRestore();
+    }
+    expect(chown).toHaveBeenCalledWith(expect.stringContaining('enrolment.json'), -1, 10_001);
+    expect((await stat(join(trustDir, 'enrolment.json'))).mode & 0o777).toBe(0o640);
   });
 
   it('rotates the secret of the existing bundled worker on every start instead of enrolling another', async () => {

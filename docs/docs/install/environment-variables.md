@@ -244,6 +244,8 @@ The `studio-worker` volume only works when both containers run on the same Docke
 - `FRAMELEAF_STUDIO_WORKER_MAX_INPUT_BYTES` (machine learning, default 8 GiB): the most media one export may read.
 - `FRAMELEAF_STUDIO_WORKER_TRUST_DIR` (both, default `/run/frameleaf/studio-worker`): where the enrolment volume is mounted.
 
+A server running as root shares the enrolment with group `10001`, which the machine learning container always keeps. If you run machine learning with your own `user:` while the server runs as root, add `group_add: ["10001"]` to it.
+
 ## Prometheus
 
 Telemetry and metrics export are permanently disabled in Frameleaf.
