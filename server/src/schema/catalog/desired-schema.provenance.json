@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "c7e15f317eac799de7a1cbb9465bee0cd04483b4",
+  "sourceCommit": "d867912a888e3b4378f74bb3b81024f04a418f82",
   "sourceHashes": {
     "src/enum.ts": "82725ef02665b2858ebcf5f058b372fb6f44234ca3f20f68a228cecfc95bd1ef",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -66,7 +66,7 @@
     "src/schema/tables/browser-extension-sign-in.table.ts": "514f30667dde04821cd6aab9d823c3e50f43e84125c84c9e203913deea1c3108",
     "src/schema/tables/capture-receipt.table.ts": "b0df1ab6d082a781201187df46054eed02eeebddbf69f8fb85e461e369d7c371",
     "src/schema/tables/classification-match.table.ts": "6e00d228ae79c90805e2806ae3209bf34734da217dc821bb4eb493a448dff20a",
-    "src/schema/tables/classification-rule.table.ts": "a3633fdf36b609c5a2c242337e8f0497276de173a5ab1b952fa2aadb1605e546",
+    "src/schema/tables/classification-rule.table.ts": "c0e071287fc194c50c12e398c8664e3fa2e04dd3194a7a500c1854614fb4019c",
     "src/schema/tables/cloud-backup-selection.table.ts": "6c72239fd0dab353350cb50351b8dac6b45cff33fc498e801cd338b352b1e762",
     "src/schema/tables/cloud-backup.table.ts": "907b9724b8b04a0800697b66b590030c53ad75c1dca1a354dc2efe674c7b0d0f",
     "src/schema/tables/cluster-group-request.table.ts": "028ade594e1de7cc3d12b4af20509ccc009a590fb92eafea72823dd4ea968dca",
@@ -179,6 +179,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "c3fa3c232ce71aaba927caa52a49ca92b21a52a688bbb4eef8e0bb7fe0af2b7f",
-  "rawMetadataSha256": "7d2595c0cd4004b7c72c8cc593a1cd48125212855f4146ed6475b033584b066e"
+  "dumpSha256": "59b54b321e0eab9b320b5d8ed86d2153df4e93fb8dad0740b39ce75259f9aa7d",
+  "rawMetadataSha256": "b753a29cb16e3902aa7bcf5d60b18eed5d0bd294ce838eeecb5354c05cecda32"
 }
