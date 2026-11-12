@@ -611,13 +611,23 @@ export class MediaHealthRepository {
         return;
       }
 
-      await trx
+      // FL-1472: only open problems. A fixed one keeps how it was fixed and when, so "Fixed for you" stays true
+      // and ages out; a scan that finds the file fine says so in each problem's history.
+      const settled = await trx
         .withSchema('public')
         .updateTable('asset_health')
         .set({ status: MediaHealthStatus.Resolved, severity: MediaHealthSeverity.Info, resolvedAt: new Date() })
         .where('category', 'in', categories)
         .where('assetId', '=', anyUuid(ids))
+        .where('resolvedAt', 'is', null)
+        // a person's dismissal stays theirs to undo
+        .where('dismissedAt', 'is', null)
+        .returning(['id', 'assetId'])
         .execute();
+      await this.appendSteps(
+        settled.map(({ id, assetId }) => ({ healthId: id, assetId, step: 'checked', outcome: 'ok' })),
+        trx,
+      );
     });
   }
   async trashCorruptIfUnchanged(input: {
@@ -1243,7 +1253,19 @@ export class MediaHealthRepository {
   async replaceRepairedOriginal(input: ReplaceRepairedOriginal): Promise<boolean> {
     return this.commitRelink({ ...input, candidateId: '', category: MediaHealthCategory.Corrupt }, true);
   }
-  private async commitRelink(input: RelinkManagedAsset | RelinkExternalAsset, repaired = false): Promise<boolean> {
+  /**
+   * FL-1472: the true original of a photo Library care repaired (`repaired` or `part-saved`) came back. It takes
+   * the repair's place, as long as its bytes are the ones the repair recorded as the original's
+   * (`originalChecksum`) and the photo still uses the repair. The damaged file stays where the repair kept it.
+   */
+  async restoreOriginalOverRepair(input: ReplaceRepairedOriginal): Promise<boolean> {
+    return this.commitRelink({ ...input, candidateId: '', category: MediaHealthCategory.Corrupt }, true, true);
+  }
+  private async commitRelink(
+    input: RelinkManagedAsset | RelinkExternalAsset,
+    repaired = false,
+    overRepair = false,
+  ): Promise<boolean> {
     const recoveredPath = path.normalize(input.originalPath);
     const external = 'expectedLibraryId' in input;
     return this.db.transaction().execute(async (trx) => {
@@ -1313,19 +1335,41 @@ export class MediaHealthRepository {
       // FL-69: a missing original relinks from `found`; confirmed damage is replaced from `corrupt_confirmed`.
       const category = input.category ?? MediaHealthCategory.Missing;
       const chosen = health?.resolution?.chosenCandidateId === input.candidateId;
+      // FL-1472: the true original replaces a repair only with the very bytes the repair recorded as the original's,
+      // and only while the photo still has the repair's bytes (wherever a move has put the file since)
+      const originalChecksum = health?.evidence?.originalChecksum;
+      const originalSha256 = health?.evidence?.originalSha256;
+      const uploaded = new Set([input.sha1.toString('hex'), input.sha256.toString('hex')]);
+      const sidecar = sidecars.rows[0];
+      const recordedSha256 =
+        sidecar && (sidecar.sha1.equals(asset.checksum) || sidecar.sha256.equals(asset.checksum))
+          ? sidecar.sha256
+          : undefined;
+      if (
+        overRepair &&
+        (!health ||
+          health.status !== MediaHealthStatus.Resolved ||
+          !['repaired', 'part-saved'].includes(health.evidence?.fixState as string) ||
+          health.evidence?.repairedChecksum !== asset.checksum.toString('hex') ||
+          [originalChecksum, originalSha256].every((value) => typeof value !== 'string' || !uploaded.has(value)))
+      ) {
+        return false;
+      }
       if (
         !health ||
         health.assetId !== asset.id ||
         health.category !== category ||
         !(
+          overRepair ||
           health.status ===
             (category === MediaHealthCategory.Missing ? MediaHealthStatus.Found : MediaHealthStatus.CorruptConfirmed) ||
           // a JPEG the decoder only suspects is damaged can be repaired too: its reviewer saw the result
           (repaired && health.status === MediaHealthStatus.CorruptSuspect)
         ) ||
-        health.resolvedAt ||
+        (health.resolvedAt && !overRepair) ||
         health.dismissedAt ||
-        health.originalPath !== asset.originalPath ||
+        // a repair is found by its bytes: a move since then changed only the photo's path
+        (!overRepair && health.originalPath !== asset.originalPath) ||
         (category === MediaHealthCategory.Missing && health.resolution?.autoRelinkable !== true && !chosen)
       ) {
         return false;
@@ -1482,13 +1526,30 @@ export class MediaHealthRepository {
             // FL-1337: a person's "don't repair this again" outlives the relink; the fix says how it left it
             ...(health.evidence?.autoRepairDeclined === true && { autoRepairDeclined: true }),
             ...input.evidence,
-            reason: repaired
-              ? 'repaired_damaged_file'
-              : category === MediaHealthCategory.Missing
-                ? 'candidate_relinked'
-                : 'recovered_from_verified_copy',
+            reason: overRepair
+              ? 'original_restored_over_repair'
+              : repaired
+                ? 'repaired_damaged_file'
+                : category === MediaHealthCategory.Missing
+                  ? 'candidate_relinked'
+                  : 'recovered_from_verified_copy',
             previousPath: asset.originalPath,
-            ...(category === MediaHealthCategory.Corrupt && { retainedPath: asset.originalPath }),
+            // the damaged file stays where its repair kept it; the repair's own file is the previous path
+            ...(category === MediaHealthCategory.Corrupt && {
+              retainedPath: overRepair ? health.evidence?.retainedPath : asset.originalPath,
+            }),
+            // FL-1472: what the original's bytes were, so its true original can still replace a repair later
+            ...(repaired &&
+              !overRepair && {
+                originalChecksum:
+                  typeof originalChecksum === 'string' ? originalChecksum : asset.checksum.toString('hex'),
+                // the original's SHA-256 as well, for an upload that only says that (a SHA-1 photo's), and only from
+                // digests that are the recorded original's, never the damaged file's
+                ...(typeof originalSha256 === 'string'
+                  ? { originalSha256 }
+                  : recordedSha256 && { originalSha256: recordedSha256.toString('hex') }),
+                repairedChecksum: checksum.toString('hex'),
+              }),
             ...(input.candidatePath && { candidatePath: path.normalize(input.candidatePath) }),
             ...(input.provenance && { provenance: input.provenance }),
           },

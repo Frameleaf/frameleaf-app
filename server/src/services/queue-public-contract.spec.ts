@@ -43,6 +43,7 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.LockedRewrap,
       JobName.LockedSweep,
       JobName.MediaHealthFixAsset,
+      JobName.MediaHealthPutBackUpload,
       JobName.WorkflowEventDispatch,
       JobName.WorkflowEventTrigger,
       JobName.MediaImport,

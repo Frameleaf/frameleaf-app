@@ -113,6 +113,7 @@ describe('resumable asset byte commit boundaries', () => {
         Promise.resolve(undefined),
       ),
       getUploadAssetIdByChecksum: vi.fn(() => Promise.resolve({ id: 'asset' })),
+      canSeeUploadResult: vi.fn(() => Promise.resolve(false)),
     };
     const storage = {
       checkDiskUsage: vi.fn().mockResolvedValue({ available: 1024 }),
@@ -352,7 +353,47 @@ describe('resumable asset byte commit boundaries', () => {
       ),
     ).toBe('saved-receipt');
     expect(commit).toHaveBeenCalledTimes(1);
-    expect(harness.media.restoreLostOriginal).not.toHaveBeenCalled();
+    // FL-1472: asked first, and no photo had these bytes lost or damaged
+    expect(harness.media.restoreLostOriginal).toHaveBeenCalledTimes(1);
+  });
+  it('puts a capture of a lost or damaged photo back under it instead of publishing a new asset (FL-1472)', async () => {
+    const harness = setup();
+    const captureAuth = { ...auth, apiKey: { id: 'capture-key', permissions: [] } };
+    harness.mutate({
+      state: 'verified',
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: createHash('sha256').update('abcd').digest(),
+      legacyChecksum: createHash('sha1').update('abcd').digest(),
+      metadata: {
+        ...harness.row().metadata,
+        publication: 'capture',
+        captureId: harness.row().id,
+        captureActor: 'key:capture-key',
+        libraryScope: 'design',
+      } as never,
+    });
+    harness.media.restoreLostOriginal.mockResolvedValue({ id: 'lost-asset', visible: true });
+    harness.uploads.publishRestored.mockImplementation(() => {
+      harness.mutate({ state: 'published', ingested: true, resultAssetId: 'lost-asset', resultStatus: 'created' });
+      return Promise.resolve(harness.row());
+    });
+    const commit = vi.fn(async (_tx, publish) => {
+      expect(await publish()).toEqual({ id: 'lost-asset', status: 'created' });
+      return 'saved-receipt';
+    });
+    await harness.service.commitCapture(
+      captureAuth,
+      harness.row().id,
+      harness.row().expectedChecksum.toString('hex'),
+      commit,
+    );
+    expect(harness.uploads.publishRestored).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'lost-asset',
+      true,
+    );
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
   });
 
   const folderAuth = { user: { id: 'owner' }, session: { id: 'photo-session' } } as AuthDto;
@@ -403,6 +444,43 @@ describe('resumable asset byte commit boundaries', () => {
       expect.anything(),
       expect.objectContaining({ originalPath: finalPath }),
     );
+  });
+
+  it('answers with the photo while Library care still has its put-back queued (FL-1472)', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'verified',
+      offset: 4,
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: harness.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+    });
+    harness.media.restoreLostOriginal.mockResolvedValue({ id: 'damaged-asset', visible: true });
+    // the damaged photo does not have these bytes yet, so no checksum lookup finds it
+    harness.media.getUploadAssetIdByChecksum.mockResolvedValue(undefined as never);
+    harness.media.canSeeUploadResult.mockResolvedValue(true);
+    await expect(harness.service.result(auth, harness.row().id)).resolves.toMatchObject({
+      result: { id: 'damaged-asset', status: AssetMediaStatus.CREATED },
+    });
+    expect(harness.media.canSeeUploadResult).toHaveBeenCalledWith(auth, 'damaged-asset');
+  });
+
+  it('answers a session that may not see the photo (it became Locked) with no id (FL-1472)', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'verified',
+      offset: 4,
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: harness.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+    });
+    harness.media.restoreLostOriginal.mockResolvedValue({ id: 'damaged-asset', visible: true });
+    harness.media.getUploadAssetIdByChecksum.mockResolvedValue(undefined as never);
+    // published as visible; Locked since, so this session's check by id says no
+    harness.media.canSeeUploadResult.mockResolvedValue(false);
+    await expect(harness.service.result(auth, harness.row().id)).resolves.toMatchObject({
+      result: { id: '00000000-0000-0000-0000-000000000000', status: AssetMediaStatus.CREATED },
+    });
   });
 
   it('rechecks source authority inside publication after media preparation', async () => {

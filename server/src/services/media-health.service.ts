@@ -90,6 +90,7 @@ import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -402,6 +403,7 @@ export class MediaHealthService {
     private systemMetadataRepository: SystemMetadataRepository,
     private cloudBackupService: CloudBackupService,
     private sessionRepository: SessionRepository,
+    private iCloudSyncRepository: ICloudSyncRepository,
   ) {
     this.logger.setContext(MediaHealthService.name);
   }
@@ -1842,19 +1844,59 @@ export class MediaHealthService {
         }
         // a day of waiting: carry on without Cloud Backup, naming no backup
         this.logger.log(`Library care stopped waiting for Cloud Backup to put back ${asset.id}`);
-        return 'none';
+        return this.askICloud(asset, finding);
       }
       case 'not-in-backup': {
         await this.mediaHealthRepository.appendSteps(
           this.stepsOf(finding, [{ step: 'checked-backups', outcome: 'not-found', facts: backupFacts(restore) }]),
         );
-        return 'none';
+        return this.askICloud(asset, finding);
       }
       default: {
         // no Cloud Backup is set up, or this photo is never restored from it: there is no backup to name
-        return 'none';
+        return this.askICloud(asset, finding);
       }
     }
+  }
+
+  /**
+   * FL-1472: a photo that came from iCloud Photos is asked for there, first in its connection's next run. That run
+   * starts now when the connection checks by itself and the provider asked for no back-off; otherwise it waits for
+   * the next sync. The history says so, and the run's answer follows it. Whatever comes of it, the fix carries on.
+   */
+  private async askICloud(asset: MediaHealthAsset, finding: MediaHealthFinding): Promise<'none'> {
+    let asked: Awaited<ReturnType<ICloudSyncRepository['requestRepair']>>;
+    try {
+      asked = await this.iCloudSyncRepository.requestRepair(asset.ownerId, asset.id);
+    } catch (error) {
+      this.logger.warn(`Library care could not ask iCloud Photos for ${asset.id}: ${getErrorMessage(error)}`);
+      return 'none';
+    }
+    if (asked.length === 0) {
+      return 'none';
+    }
+    const syncing: string[] = [];
+    if (!(await this.iCloudSyncRepository.ownerUploadsPaused(asset.ownerId))) {
+      for (const { connectionId, automatic, due } of asked) {
+        if (!automatic || !due) {
+          continue;
+        }
+        const queued = await this.iCloudSyncRepository.queueOperation(connectionId, asset.ownerId, {
+          trigger: 'manual',
+        });
+        if (queued.outcome === 'created' || queued.outcome === 'existing') {
+          syncing.push(connectionId);
+        }
+      }
+    }
+    // the ask is in the history before a worker is woken, so its answer always comes after it
+    await this.mediaHealthRepository.appendSteps(
+      this.stepsOf(finding, [{ step: 'asked-icloud', outcome: 'waiting', facts: { later: syncing.length === 0 } }]),
+    );
+    for (const id of syncing) {
+      await this.jobRepository.queue({ name: JobName.ICloudSync, data: { id } });
+    }
+    return 'none';
   }
 
   /**
@@ -1972,6 +2014,216 @@ export class MediaHealthService {
       },
     );
     return item.status === MediaOperationItemStatus.Ok;
+  }
+
+  /**
+   * FL-1472: a damaged photo's own bytes came in by upload. They take the damaged file's place as a found copy does
+   * (`putBackCopy`): published into Library care's folder, the photo relinked to it, and the damaged file kept
+   * beside it with Undo. Bytes that are the damaged file itself change nothing, and the finding stops asking for
+   * an upload, so phones do not send them again. The upload is removed once it is done with: it is only a copy.
+   */
+  @OnJob({ name: JobName.MediaHealthPutBackUpload, queue: QueueName.MediaHealth })
+  async handlePutBackUpload(job: JobOf<JobName.MediaHealthPutBackUpload>): Promise<JobStatus> {
+    // an attempt that throws keeps the upload, for the retry
+    const status = await this.putBackUpload(job);
+    // never a file the library uses: under the path's lock, a relink meanwhile may have made it someone's original
+    await this.physicalFileRepository
+      .deleteUnreferencedPath(job.path, () => this.storageRepository.unlink(job.path))
+      .catch((error: unknown) =>
+        this.logger.warn(`Library care kept the upload ${job.path}: ${getErrorMessage(error)}`),
+      );
+    return status;
+  }
+
+  private async putBackUpload({ id, path: upload, device }: JobOf<JobName.MediaHealthPutBackUpload>) {
+    const [asset] = await this.mediaHealthRepository.getAssets([id]);
+    if (!asset || asset.deletedAt || asset.isExternal || (await this.isEncryptedOriginal(asset))) {
+      return JobStatus.Skipped;
+    }
+    const findings = await this.mediaHealthRepository.getFindingsForAsset(asset.id);
+    const damaged = findings.find(
+      (finding) =>
+        finding.category === MediaHealthCategory.Corrupt &&
+        isOpenFinding(finding) &&
+        (finding.resolution as Record<string, unknown> | null)?.reuploadRecommended === true,
+    );
+    if (damaged) {
+      return this.putBackOverDamage(asset, damaged, upload, device);
+    }
+    const repaired = findings.find((finding) => {
+      const evidence = (finding.evidence ?? {}) as Record<string, unknown>;
+      return (
+        finding.category === MediaHealthCategory.Corrupt &&
+        finding.status === MediaHealthStatus.Resolved &&
+        !finding.dismissedAt &&
+        evidence.repairedChecksum === asset.checksum.toString('hex') &&
+        ['repaired', 'part-saved'].includes(evidence.fixState as string) &&
+        typeof evidence.originalChecksum === 'string'
+      );
+    });
+    return repaired ? this.putBackOverRepair(asset, repaired, upload, device) : JobStatus.Skipped;
+  }
+
+  /** The upload of a damaged photo's own bytes takes the damaged file's place, which is kept beside it. */
+  private async putBackOverDamage(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    upload: string,
+    device?: string,
+  ): Promise<JobStatus> {
+    const digests = await this.validateManagedCandidate(asset, upload);
+    if (!digests) {
+      return JobStatus.Skipped;
+    }
+    if (await this.matchesStoredChecksum(asset)) {
+      // the file there is these very bytes: an upload can do no better, so none is asked for again
+      await this.mediaHealthRepository.upsertFinding({
+        ...finding,
+        resolution: { ...(finding.resolution as Record<string, unknown> | null), reuploadRecommended: false },
+        expectedUpdateId: asset.updateId,
+      });
+      return JobStatus.Success;
+    }
+    const destination = await this.publishUpload(asset, finding, upload, digests, 'upload');
+    if (!destination) {
+      return JobStatus.Skipped;
+    }
+    const committed = await this.mediaHealthRepository.replaceRepairedOriginal(
+      await this.uploadRelink(asset, finding, destination, digests, device),
+    );
+    if (!committed) {
+      // left unreferenced in the hidden folder, where a later upload of the same photo reuses it
+      this.logger.log(`Library care left the upload of ${asset.id} unused: the photo or its finding changed`);
+      return JobStatus.Skipped;
+    }
+    const after = { originalPath: destination, checksum: digests.sha256.toString('hex') };
+    await this.retainDamagedOriginal(finding.id, (retainedPath) => ({
+      step: 'put-back',
+      outcome: 'ok',
+      facts: { uploaded: true },
+      undo: { kind: 'relink', previousPath: retainedPath, ...after },
+    }));
+    await this.queueRelinkJobs(asset.id);
+    return JobStatus.Success;
+  }
+
+  /**
+   * The true original of a photo Library care repaired came in: it takes the repair's place, with the bytes the
+   * repair recorded as the original's. The repair stays in Library care's folder, for Undo; the damaged file stays
+   * where the repair kept it.
+   */
+  private async putBackOverRepair(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    upload: string,
+    device?: string,
+  ): Promise<JobStatus> {
+    const { originalChecksum, originalSha256 } = finding.evidence as Record<string, unknown>;
+    let digests: FileDigests;
+    try {
+      digests = await this.cryptoRepository.hashFileDigests(upload);
+    } catch {
+      return JobStatus.Skipped;
+    }
+    const uploaded = new Set([digests.sha1.toString('hex'), digests.sha256.toString('hex')]);
+    if ([originalChecksum, originalSha256].every((value) => typeof value !== 'string' || !uploaded.has(value))) {
+      return JobStatus.Skipped;
+    }
+    const destination = await this.publishUpload(asset, finding, upload, digests, 'original');
+    if (!destination) {
+      return JobStatus.Skipped;
+    }
+    const relink = await this.uploadRelink(asset, finding, destination, digests, device);
+    const committed = await this.mediaHealthRepository.restoreOriginalOverRepair({
+      ...relink,
+      steps: [
+        ...(relink.steps ?? []),
+        {
+          step: 'put-back',
+          outcome: 'ok',
+          facts: { uploaded: true, overRepair: true },
+          undo: { kind: 'relink', previousPath: asset.originalPath },
+        },
+      ],
+    });
+    if (!committed) {
+      this.logger.log(`Library care left the original of ${asset.id} unused: the photo or its repair changed`);
+      return JobStatus.Skipped;
+    }
+    await this.queueRelinkJobs(asset.id);
+    return JobStatus.Success;
+  }
+
+  /**
+   * An upload Library care uses, decoded and published into its folder under a name fixed by the asset and finding
+   * (a repeat reuses it). Undefined when it does not decode or the drive is not there.
+   */
+  private async publishUpload(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    upload: string,
+    digests: FileDigests,
+    kind: 'upload' | 'original',
+  ): Promise<string | undefined> {
+    const decoded = await this.integrityService.validate({
+      path: upload,
+      originalFileName: asset.originalFileName,
+      type: asset.type,
+      expected: digests,
+      deep: true,
+    });
+    if (decoded.status !== 'healthy') {
+      this.logger.log(`Library care did not use the upload of ${asset.id}: ${decoded.status}`);
+      return;
+    }
+    const extension = path.extname(asset.originalFileName).toLowerCase();
+    const destination = this.libraryCarePath(
+      asset,
+      `${asset.id}-${finding.id}-${kind}${/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : ''}`,
+    );
+    if (!(await this.canReach(destination))) {
+      return;
+    }
+    await publishVerifiedCopy({
+      source: upload,
+      destination,
+      expected: digests,
+      hash: (filePath) => this.cryptoRepository.hashFileDigests(filePath),
+    });
+    return destination;
+  }
+
+  /** What relinking the photo to a published upload writes: it is found again, sent by a phone when one did. */
+  private async uploadRelink(
+    asset: MediaHealthAsset,
+    finding: MediaHealthFinding,
+    destination: string,
+    digests: FileDigests,
+    device?: string,
+  ): Promise<ReplaceRepairedOriginal> {
+    const stat = await this.storageRepository.stat(destination);
+    return {
+      assetId: asset.id,
+      ownerId: asset.ownerId,
+      healthId: finding.id,
+      expectedUpdateId: asset.updateId,
+      expectedChecksumAlgorithm: asset.checksumAlgorithm,
+      expectedOriginalPath: asset.originalPath,
+      expectedChecksum: asset.checksum,
+      originalPath: destination,
+      originalFileName: asset.originalFileName,
+      ...digests,
+      fileModifiedAt: stat.mtime,
+      provenance: {
+        recoveredBy: asset.ownerId,
+        automatic: true,
+        source: 'upload',
+        recoveredAt: new Date().toISOString(),
+      },
+      evidence: { fixState: 'found-again' satisfies FixState },
+      steps: device ? [{ step: 'asked-phones', outcome: 'ok', facts: { device } }] : [],
+      verifyCandidate: () => this.cryptoRepository.hashFileDigests(destination).catch((): undefined => {}),
+    };
   }
 
   /**

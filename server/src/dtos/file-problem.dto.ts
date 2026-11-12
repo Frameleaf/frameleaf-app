@@ -11,7 +11,7 @@ import { MediaHealthCategorySchema } from 'src/enum.js';
 const FIX_STATES =
   'How the fixes left it. Fixed for you: repaired, part-saved, found-again, restored. Needs you: missing, waiting-phone, cant-repair, couldnt-check, or null when no fix has looked at it yet. Left as they are: left-as-is.';
 const STEPS =
-  'What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed';
+  'What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, asked-icloud, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed';
 const OUTCOMES = 'How it went: ok, not-found, failed, waiting or info';
 
 const FactsSchema = z

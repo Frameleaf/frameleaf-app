@@ -575,6 +575,31 @@ describe(AssetMediaService.name, () => {
     });
   });
 
+  describe('repairedPhotoFor (FL-1472)', () => {
+    it('finds the owner’s own Locked repaired photo, for the owner’s restore', async () => {
+      mocks.asset.getRepairedByOriginal.mockResolvedValue('locked-repaired');
+      await expect(sut.repairedPhotoFor('owner-id', [file1])).resolves.toEqual({ id: 'locked-repaired' });
+      expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith('owner-id', [file1], {
+        lockedOwnerId: 'owner-id',
+      });
+    });
+  });
+
+  describe('canSeeUploadResult (FL-1472)', () => {
+    it('asks for the photo even when the session has no filters, so Locked media stays out', async () => {
+      mocks.asset.isVisibleToUploader.mockResolvedValue(false);
+      await expect(sut.canSeeUploadResult(authStub.user1, 'locked-asset')).resolves.toBe(false);
+      expect(mocks.asset.isVisibleToUploader).toHaveBeenCalledWith(authStub.user1.user.id, 'locked-asset', {});
+    });
+
+    it('never shows a shared link the photo', async () => {
+      await expect(sut.canSeeUploadResult({ ...authStub.user1, sharedLink: {} } as never, 'asset')).resolves.toBe(
+        false,
+      );
+      expect(mocks.asset.isVisibleToUploader).not.toHaveBeenCalled();
+    });
+  });
+
   describe('a lost original (media health)', () => {
     const lost = {
       id: 'lost-asset',
@@ -833,6 +858,100 @@ describe(AssetMediaService.name, () => {
         mocks.asset.create.mockResolvedValue(assetEntity);
         await sut.uploadAsset(authStub.admin, createDto, upload);
         expect(mocks.trash.restoreAll).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('a damaged original whose finding asks for a re-upload (FL-1472)', () => {
+      beforeEach(() => {
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+        mocks.asset.getReuploadWanted.mockResolvedValue(new Set([lost.id]));
+      });
+
+      it('accepts the file in the bulk upload check', async () => {
+        await expect(
+          sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
+        ).resolves.toEqual({ results: [{ id: '1', action: AssetUploadAction.ACCEPT }] });
+        expect(mocks.asset.getReuploadWanted).toHaveBeenCalledWith([lost.id]);
+      });
+
+      it('does not answer a checksum preflight with a duplicate', async () => {
+        mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue(lost.id);
+        await expect(sut.getUploadAssetIdByChecksum(authStub.admin, file1.toString('hex'))).resolves.toBeUndefined();
+      });
+
+      it('hands the upload to Library care, which puts it in the damaged file’s place', async () => {
+        await expect(sut.uploadAsset(authStub.admin, createDto, upload)).resolves.toEqual({
+          id: lost.id,
+          status: AssetMediaStatus.CREATED,
+        });
+        // moved first into the hidden Library care folder, which no clean-up touches before the job runs
+        const pending = vi.mocked(mocks.storage.rename).mock.calls[0];
+        expect(pending[0]).toBe(upload.originalPath);
+        expect(pending[1]).toMatch(/\/\.library-care\/lost-asset-pending-.+\.jpg$/);
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.MediaHealthPutBackUpload,
+          data: { id: lost.id, path: pending[1] },
+        });
+        expect(mocks.physicalFile.restoreLostOriginal).not.toHaveBeenCalled();
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+        // the job owns the upload now: it is not deleted here
+        expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+      });
+
+      it('still rejects the file when the damaged file is not asked to be replaced', async () => {
+        mocks.asset.getReuploadWanted.mockResolvedValue(new Set());
+        await expect(
+          sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
+        ).resolves.toMatchObject({ results: [{ id: '1', action: AssetUploadAction.REJECT, assetId: lost.id }] });
+      });
+    });
+
+    it('hands the true original of a repaired photo to Library care instead of creating a second photo (FL-1472)', async () => {
+      // the repair gave the photo a checksum of its own, so these bytes match nothing by checksum
+      mocks.asset.getByChecksums.mockResolvedValue([]);
+      mocks.asset.getRepairedByOriginal.mockResolvedValue('repaired-asset');
+      await expect(sut.uploadAsset(authStub.admin, createDto, upload)).resolves.toEqual({
+        id: 'repaired-asset',
+        status: AssetMediaStatus.CREATED,
+      });
+      // the owner's own Locked photos are looked for too; only the answer is filtered for the session
+      expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith(authStub.admin.user.id, [upload.checksum, file1], {
+        lockedOwnerId: authStub.admin.user.id,
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.MediaHealthPutBackUpload,
+        data: { id: 'repaired-asset', path: expect.stringContaining('/.library-care/repaired-asset-pending-') },
+      });
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('hashes for the SHA-1 only for an owner with a SHA-1-only repair (FL-1472)', async () => {
+      mocks.asset.getByChecksums.mockResolvedValue([]);
+      mocks.asset.hasSha1OnlyRepairs.mockResolvedValue(true);
+      const sha1 = Buffer.alloc(20, 4);
+      mocks.crypto.hashFileDigests.mockResolvedValue({ sha1, sha256: upload.checksum, sizeInBytes: 42 } as never);
+      mocks.asset.getRepairedByOriginal.mockResolvedValue('repaired-asset');
+      const { legacyChecksum: _legacy, ...sha256Only } = upload;
+
+      await expect(sut.uploadAsset(authStub.admin, createDto, sha256Only)).resolves.toMatchObject({
+        id: 'repaired-asset',
+      });
+      expect(mocks.asset.getRepairedByOriginal).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        [upload.checksum, sha1],
+        expect.anything(),
+      );
+    });
+
+    it('never answers for a hidden repaired photo with another one’s visibility (FL-1472)', async () => {
+      mocks.asset.getByChecksums.mockResolvedValue([]);
+      // unfiltered: the hidden photo; filtered for this session: a different, visible one
+      mocks.asset.getRepairedByOriginal.mockResolvedValueOnce('hidden-asset').mockResolvedValueOnce('other-asset');
+      const auth = { ...authStub.admin, user: { ...authStub.admin.user } };
+      vi.spyOn(sut as any, 'getDuplicateCheckOptions').mockReturnValue({ excludeNsfw: true });
+      await expect(sut.uploadAsset(auth, createDto, upload)).resolves.toEqual({
+        id: '00000000-0000-0000-0000-000000000000',
+        status: AssetMediaStatus.DUPLICATE,
       });
     });
 

@@ -270,7 +270,7 @@ describe('FL-653 Eagle import from a server folder', () => {
     let tags: { upsert: AnyMock; bulkTagAssets: AnyMock };
     let assets: { update: AnyMock };
     let sources: { addImported: AnyMock; setAddedDate: AnyMock };
-    let assetMedia: { uploadAsset: AnyMock };
+    let assetMedia: { uploadAsset: AnyMock; needsOriginal: AnyMock };
     let assetRepository: { getById: AnyMock };
     let worker: EagleImportWorkerService;
     let fingerprint: string;
@@ -307,6 +307,7 @@ describe('FL-653 Eagle import from a server folder', () => {
         Promise.resolve({ size, checksum: Buffer.from('aa', 'hex'), legacyChecksum: Buffer.from('bb', 'hex') }),
       );
       assetMedia = {
+        needsOriginal: vitest.fn().mockResolvedValue(false),
         uploadAsset: vitest.fn((_auth, dto: { filename: string }) =>
           Promise.resolve(
             dto.filename === 'already.png'

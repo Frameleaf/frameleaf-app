@@ -52,6 +52,7 @@ const KNOWN: Readonly<Record<string, readonly string[]>> = {
   'checked-backups': ['ok', 'not-found'],
   restored: ['ok'],
   'asked-phones': ['waiting', 'not-found', 'ok'],
+  'asked-icloud': ['waiting', 'not-found', 'ok'],
   'checked-on-phone': ['not-found'],
   repaired: ['ok'],
   'kept-damaged': ['info'],
@@ -80,6 +81,9 @@ const TONES: Readonly<Record<string, KitTone>> = {
   asked_phones_waiting: 'warn',
   asked_phones_not_found: 'off',
   asked_phones_ok: 'good',
+  asked_icloud_waiting: 'warn',
+  asked_icloud_not_found: 'off',
+  asked_icloud_ok: 'good',
   checked_on_phone_not_found: 'off',
   repaired_ok: 'good',
   put_back_ok: 'good',
@@ -263,6 +267,11 @@ export const stepWords = (
       }
       break;
     }
+    case 'asked-icloud': {
+      // FL-1472: a connection that only checks when asked gets it at its next sync
+      detail = outcome === 'waiting' && facts.later === true ? say('detail_later') : say('detail');
+      break;
+    }
     case 'checked-on-phone': {
       const device = text(facts.device);
       what = device ? say('what', { device }) : say('what_unnamed');
@@ -286,6 +295,11 @@ export const stepWords = (
         const by = text(facts.by);
         what = say('what_copied');
         detail = by ? say('detail_copied_by', { person: by }) : say('detail_copied');
+        break;
+      }
+      if (facts.overRepair === true) {
+        // FL-1472: the true original came back after Library care had repaired the damaged file
+        detail = say('detail_repaired');
         break;
       }
       detail =

@@ -9,6 +9,13 @@ import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
  */
 const json = (body: unknown, status = 200) => ({ status, contentType: 'application/json', json: body });
 
+/** One page of suggestions, as the server lists them. */
+const suggestionPage = (items: string[]) => ({
+  total: items.length,
+  items: items.map((assetId) => ({ assetId, kinds: ['screenshots'], automatic: false })),
+  nextPage: null,
+});
+
 const KINDS = ['memes', 'documents', 'screenshots', 'shop', 'chat', 'slides', 'notes', 'accidental'];
 
 const setupTidyUpMocks = async (context: BrowserContext) => {
@@ -38,11 +45,6 @@ const setupTidyUpMocks = async (context: BrowserContext) => {
     tidiedAway: server.archived.length,
     collectionId: server.on ? 'collection' : null,
   });
-  const page = (items: string[]) => ({
-    total: items.length,
-    items: items.map((assetId) => ({ assetId, kinds: ['screenshots'], automatic: false })),
-    nextPage: null,
-  });
 
   await context.route('**/api/tidy-up', (route) => route.fulfill(json(status())));
   await context.route('**/api/tidy-up/kinds/*', (route) => {
@@ -53,9 +55,9 @@ const setupTidyUpMocks = async (context: BrowserContext) => {
     return route.fulfill(json(kind('screenshots')));
   });
   await context.route('**/api/tidy-up/suggestions*', (route) =>
-    route.fulfill(json(page(server.on ? server.waiting : []))),
+    route.fulfill(json(suggestionPage(server.on ? server.waiting : []))),
   );
-  await context.route('**/api/tidy-up/tidied-away*', (route) => route.fulfill(json(page(server.archived))));
+  await context.route('**/api/tidy-up/tidied-away*', (route) => route.fulfill(json(suggestionPage(server.archived))));
   await context.route('**/api/tidy-up/decide', (route) => {
     const body = route.request().postDataJSON() as { assetIds: string[]; decision: string };
     server.decisions.push(body);

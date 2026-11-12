@@ -215,7 +215,12 @@ describe(PreservationWorkerService.name, () => {
       fail: vi.fn().mockResolvedValue('retrying'),
     };
     users = { get: vi.fn().mockResolvedValue({ id: ownerId }) };
-    assetMedia = { uploadAsset: vi.fn() };
+    assetMedia = {
+      uploadAsset: vi.fn(),
+      needsOriginal: vi.fn().mockResolvedValue(false),
+      restoreFromCopy: vi.fn().mockResolvedValue(undefined),
+      repairedPhotoFor: vi.fn().mockResolvedValue(undefined),
+    };
     assets = { update: vi.fn(), editAsset: vi.fn() };
     albums = { addAssets: vi.fn() };
     stacks = { create: vi.fn() };
@@ -905,6 +910,56 @@ describe(PreservationWorkerService.name, () => {
       expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
       expect(files.extractVerified).not.toHaveBeenCalled();
       expect(repository.updateRestoreItem).toHaveBeenCalledWith(item.id, { assetId: existing, match: 'existing' });
+    });
+
+    it('puts the archived original back under a photo whose own is lost or damaged (FL-1472)', async () => {
+      const existing = newUuid();
+      repository.findByChecksum.mockResolvedValue([
+        { id: existing, deletedAt: null, createdAt: new Date('2020-01-01') },
+      ]);
+      assetMedia.needsOriginal.mockResolvedValue(true);
+      assetMedia.restoreFromCopy.mockResolvedValue({ id: existing, visible: true, fileUsed: true });
+      const item = restoreItemOf();
+
+      const outcome = await worker().restoreItem(contextOf(), item);
+
+      expect(outcome).toBe('matched');
+      expect(files.extractVerified).toHaveBeenCalledTimes(1);
+      expect(assetMedia.restoreFromCopy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filename: expect.any(String) }),
+        expect.objectContaining({ originalPath: expect.any(String) }),
+      );
+      expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+      expect(repository.updateRestoreItem).toHaveBeenCalledWith(item.id, { assetId: existing, match: 'existing' });
+    });
+
+    it('puts the archived original back in a repaired photo’s place, never as a second photo (FL-1472)', async () => {
+      // a repaired photo has the repair's bytes as its checksum: nothing matches the archive's original
+      repository.findByChecksum.mockResolvedValue([]);
+      const repaired = newUuid();
+      assetMedia.needsOriginal.mockResolvedValue(true);
+      assetMedia.restoreFromCopy.mockResolvedValue({ id: repaired, visible: true, fileUsed: true });
+      const item = restoreItemOf();
+
+      expect(await worker().restoreItem(contextOf(), item)).toBe('matched');
+      expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+      expect(repository.updateRestoreItem).toHaveBeenCalledWith(item.id, { assetId: repaired, match: 'existing' });
+    });
+
+    it('fails, never matches, an item whose photo could not be put back (FL-1472)', async () => {
+      repository.findByChecksum.mockResolvedValue([
+        { id: newUuid(), deletedAt: null, createdAt: new Date('2020-01-01') },
+      ]);
+      assetMedia.needsOriginal.mockResolvedValue(true);
+      assetMedia.restoreFromCopy.mockResolvedValue(undefined);
+      const item = restoreItemOf();
+
+      expect(await worker().restoreItem(contextOf(), item)).toBe('failed');
+      expect(repository.updateRestoreItem).toHaveBeenCalledWith(
+        item.id,
+        expect.objectContaining({ state: 'failed', reasonKey: 'restore_failed' }),
+      );
     });
 
     it('refuses an original the library holds in the trash rather than adding it again', async () => {
@@ -1892,6 +1947,52 @@ describe(PreservationWorkerService.name, () => {
         expect(repository.findByChecksum).toHaveBeenCalledWith(ownerId, good.original.sha256, good.original.sha1);
         expect(repository.updateRestore).toHaveBeenCalledWith(restore.id, { status: 'ready' });
         expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+      });
+
+      it('matches an original to the photo Library care repaired, with its conflicts (FL-1472)', async () => {
+        const built = buildPackage(1);
+        useSource(built.entries);
+        const found = packageOf({ origin: 'upload', format: 'zip', status: 'ready' });
+        const restore = restoreFor(found);
+        repository.getRestoreById.mockResolvedValue(restore);
+        repository.getPackageById.mockResolvedValue(found);
+        const [entry] = built.index;
+        const items = [
+          restoreItemOf({
+            restoreId: restore.id,
+            sourceAssetId: entry.sourceAssetId,
+            state: 'pending',
+            entry,
+          } as never),
+        ];
+        repository.reviewWork.mockResolvedValueOnce(items).mockResolvedValue([]);
+        repository.countRestoreItems.mockResolvedValue({ total: 1, pending: 1 });
+        // the repair gave the photo bytes of its own: no checksum matches the archive's original
+        repository.findByChecksum.mockResolvedValue([]);
+        const repaired = newUuid();
+        assetMedia.repairedPhotoFor.mockResolvedValue({ id: repaired });
+        // the repaired photo's own details differ from the archive's: a conflict for the owner to decide
+        repository.getLibraryState.mockResolvedValue(library({ description: 'Mine now' }));
+
+        await sut.run({
+          operation: operationOf(MediaOperationKind.PreservationReview, { packageId: found.id, restoreId: restore.id }),
+          claimToken: newUuid(),
+        });
+
+        expect(assetMedia.repairedPhotoFor).toHaveBeenCalledWith(ownerId, [
+          Buffer.from(entry.original.sha256, 'hex'),
+          Buffer.from(entry.original.sha1, 'hex'),
+        ]);
+        expect(repository.getLibraryState).toHaveBeenCalledWith(repaired);
+        expect(repository.updateRestoreItem).toHaveBeenCalledWith(
+          items[0].id,
+          expect.objectContaining({
+            state: 'ready',
+            match: 'existing',
+            assetId: repaired,
+            conflicts: expect.arrayContaining([expect.anything()]),
+          }),
+        );
       });
 
       it('calls a restoration of a tampered manifest unreadable and writes nothing to the library', async () => {

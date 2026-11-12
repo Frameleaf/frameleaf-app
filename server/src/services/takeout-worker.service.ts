@@ -964,6 +964,7 @@ export class TakeoutWorkerService {
     const title = item.metadata.title;
     // Google's title is the name the photo was uploaded with; the export may have shortened it.
     const filename = title && path.extname(title).toLowerCase() === extension ? title : item.name;
+    const restoring = await this.assetMedia.needsOriginal(auth, digest);
     const response = await this.assetMedia.uploadAsset(
       auth,
       {
@@ -986,7 +987,8 @@ export class TakeoutWorkerService {
     if (response.status === AssetMediaStatus.DUPLICATE && /^0{8}-(?:0{4}-){3}0{12}$/.test(response.id)) {
       throw new TakeoutItemError('A matching photo exists but could not be read');
     }
-    const created = response.status === AssetMediaStatus.CREATED;
+    // FL-1472: bytes that put back a photo whose own file was lost, damaged or repaired match that photo
+    const created = response.status === AssetMediaStatus.CREATED && !restoring;
     if (created) {
       // Counted now, so the account's quota applies to the rest of this run as it goes.
       run.auth.user.quotaUsageInBytes += digest.size;

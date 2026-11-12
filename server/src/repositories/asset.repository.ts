@@ -39,6 +39,8 @@ import {
   ImageEnrichmentFilter,
   LibraryScope,
   LibraryViewScope,
+  MediaHealthCategory,
+  MediaHealthStatus,
   StudioExportVersionState,
   TimeBucketDateType,
 } from 'src/enum.js';
@@ -2537,6 +2539,87 @@ export class AssetRepository {
       .limit(1)
       .executeTakeFirst();
     return asset?.id;
+  }
+  /**
+   * FL-1472: of these photos, the ones whose original is damaged and whose open finding asks for a re-upload.
+   * An upload of their own bytes is not a duplicate: it takes the damaged file's place.
+   */
+  async getReuploadWanted(assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+    const { rows } = await sql<{ assetId: string }>`SELECT DISTINCT h."assetId" FROM public.asset_health h
+      WHERE h."assetId" = ANY(${assetIds}::uuid[]) AND h.category = 'corrupt'
+        AND h.status IN ('corrupt_confirmed', 'corrupt_suspect') AND h."resolvedAt" IS NULL AND h."dismissedAt" IS NULL
+        AND coalesce((h.resolution->>'reuploadRecommended')::boolean, false)`.execute(this.db);
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
+  /**
+   * FL-1472: the owner's photo Library care repaired whose true original has these bytes: the repair recorded them
+   * (`originalChecksum` or `originalSha256`), and the photo still has the repair's bytes. An upload of them puts the
+   * original back.
+   */
+  async getRepairedByOriginal(
+    ownerId: string,
+    checksums: Buffer[],
+    options: AssetChecksumOptions = {},
+  ): Promise<string | undefined> {
+    // from the findings, which are few: never a walk of the owner's whole library on every upload
+    const hexes = checksums.map((checksum) => checksum.toString('hex'));
+    const repaired = this.db
+      .selectFrom('asset_health')
+      .select(['asset_health.assetId', sql<string>`asset_health.evidence->>'repairedChecksum'`.as('repairedChecksum')])
+      .where('asset_health.category', '=', MediaHealthCategory.Corrupt)
+      .where('asset_health.status', '=', MediaHealthStatus.Resolved)
+      .where('asset_health.dismissedAt', 'is', null)
+      .where(sql<string>`asset_health.evidence->>'fixState'`, 'in', ['repaired', 'part-saved'])
+      .where((eb) =>
+        eb.or([
+          eb(sql<string>`asset_health.evidence->>'originalChecksum'`, 'in', hexes),
+          eb(sql<string>`asset_health.evidence->>'originalSha256'`, 'in', hexes),
+        ]),
+      );
+    const asset = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      // still the repair: the photo has the bytes the repair gave it, wherever a move has put its file since
+      .where(sql<boolean>`("asset"."id", encode("asset"."checksum", 'hex')) IN (${repaired})`)
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .where('asset.libraryId', 'is', null)
+      .where('asset.isExternal', '=', false)
+      .where('asset.deletedAt', 'is', null)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .limit(1)
+      .executeTakeFirst();
+    return asset?.id;
+  }
+  /**
+   * FL-1472: whether the owner has a repaired photo whose original is known only by its SHA-1 (no `originalSha256`
+   * on record), so an upload that only gives its SHA-256 must be hashed for its SHA-1 to find it.
+   */
+  async hasSha1OnlyRepairs(ownerId: string): Promise<boolean> {
+    const { rows } = await sql<{ found: boolean }>`SELECT EXISTS (SELECT 1 FROM public.asset_health h
+      JOIN public.asset a ON a.id = h."assetId"
+      WHERE a."ownerId" = ${ownerId}::uuid AND a."deletedAt" IS NULL AND h.category = 'corrupt' AND h.status = 'resolved'
+        AND h."dismissedAt" IS NULL AND h.evidence->>'fixState' IN ('repaired', 'part-saved')
+        AND length(h.evidence->>'originalChecksum') = 40 AND NOT h.evidence ? 'originalSha256') AS found`.execute(
+      this.db,
+    );
+    return !!rows[0]?.found;
+  }
+  /** FL-1472: whether one of the owner's photos is one this session may see, by its id (an upload's own result). */
+  async isVisibleToUploader(ownerId: string, assetId: string, options: AssetChecksumOptions = {}): Promise<boolean> {
+    const asset = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', asUuid(assetId))
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .where('asset.deletedAt', 'is', null)
+      .$call((qb) => withLockedOwnerScope(qb, options.lockedOwnerId))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .executeTakeFirst();
+    return !!asset;
   }
   /** FL-365: the uploaded originals a re-file into the folder layout checks (not in an added folder, not deleted). */
   async countUploadedOriginals(): Promise<number> {

@@ -226,6 +226,16 @@ export class AssetUploadResourceService {
         verified.state === 'verified'
           ? await this.media.prepareUploadAsset(auth, this.metadata(verified), this.file(verified))
           : undefined;
+      // FL-1472: a capture of a photo whose original is lost or damaged puts it back, as any upload does. Admission
+      // is checked again first, as an upload's is, so a capture cancelled meanwhile changes no photo.
+      if (prepared) {
+        await check();
+        await this.captures.assertNotCancelled(auth, id);
+        await this.sourceAdmission(auth, verified);
+      }
+      const restored = prepared
+        ? await this.media.restoreLostOriginal(auth, this.metadata(verified), this.file(verified))
+        : undefined;
       const result = await this.uploads.locked(id, auth.user.id, async (tx, current) => {
         await check(tx);
         await this.sourceAdmission(auth, current, tx);
@@ -233,7 +243,9 @@ export class AssetUploadResourceService {
         return commit(tx, async () => {
           if (published.state !== 'published') {
             if (published.state !== 'verified' || !prepared) throw new ConflictException('Capture upload is not ready');
-            published = await this.uploads.publish(tx, published, prepared);
+            published = restored
+              ? await this.uploads.publishRestored(tx, published, restored.id, restored.visible)
+              : await this.uploads.publish(tx, published, prepared);
           }
           if (!published.resultAssetId || !published.resultStatus)
             throw new ConflictException('Capture upload was not published');
@@ -312,10 +324,23 @@ export class AssetUploadResourceService {
       verified.state === 'verified'
         ? await this.media.prepareUploadAsset(auth, this.metadata(verified), this.file(verified))
         : undefined;
+    // FL-1472: a download of a photo whose original is lost or damaged puts it back, as any upload does. The import's
+    // authority is checked again first, as an upload's admission is, so a suppressed item changes no photo.
+    if (prepared) {
+      await check();
+    }
+    const restored = prepared
+      ? await this.media.restoreLostOriginal(auth, this.metadata(verified), this.file(verified))
+      : undefined;
     const assetId = await this.uploads.locked(id, user.id, async (tx, current) => {
       await check(tx);
       return this.mediaImports.publish(tx, authority, async () => {
-        const published = current.state === 'published' ? current : await this.uploads.publish(tx, current, prepared!);
+        const published =
+          current.state === 'published'
+            ? current
+            : restored
+              ? await this.uploads.publishRestored(tx, current, restored.id, restored.visible)
+              : await this.uploads.publish(tx, current, prepared!);
         return { id: published.resultAssetId!, status: published.resultStatus! };
       });
     });
@@ -966,10 +991,16 @@ export class AssetUploadResourceService {
       return { resource: resource.metadata.publication === 'live-photo' ? { ...resource, ingested: false } : resource };
     }
     const visible = await this.media.getUploadAssetIdByChecksum(auth, resource.verifiedChecksum!.toString('hex'));
+    // FL-1472: a put-back Library care still has queued is proven by the photo's id, not its bytes
+    const shown =
+      visible?.id === resource.resultAssetId ||
+      (resource.resultStatus === AssetMediaStatus.CREATED &&
+        !!resource.resultAssetId &&
+        (await this.media.canSeeUploadResult(auth, resource.resultAssetId)));
     return {
       resource,
       result: {
-        id: visible?.id === resource.resultAssetId ? visible.id : '00000000-0000-0000-0000-000000000000',
+        id: shown ? resource.resultAssetId! : '00000000-0000-0000-0000-000000000000',
         status: resource.resultStatus as AssetMediaStatus,
         sha256: resource.verifiedChecksum!.toString('hex'),
       },

@@ -178,6 +178,7 @@ describe(TakeoutWorkerService.name, () => {
     assetMedia = {
       bulkUploadCheck: vi.fn().mockResolvedValue({ results: [{ id: 'sha256' }, { id: 'sha1' }] }),
       uploadAsset: vi.fn().mockResolvedValue({ id: assetId, status: AssetMediaStatus.CREATED }),
+      needsOriginal: vi.fn().mockResolvedValue(false),
     };
     assets = { lock: vi.fn(), update: vi.fn(), fillMissingMetadata: vi.fn().mockResolvedValue(true) };
     albums = {
@@ -526,6 +527,18 @@ describe(TakeoutWorkerService.name, () => {
       expect(repository.itemCreating).not.toHaveBeenCalled();
       expect(staging.remove).not.toHaveBeenCalled();
       expect(assetMedia.uploadAsset).not.toHaveBeenCalled();
+    });
+
+    it('matches a photo whose lost or damaged file its copy puts back, and never overwrites its details (FL-1472)', async () => {
+      pending = [[itemOf()]];
+      assetMedia.needsOriginal.mockResolvedValue(true);
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(assetMedia.uploadAsset).toHaveBeenCalled();
+      expect(repository.itemAsset).toHaveBeenCalledWith(itemOf().id, assetId, 'matched');
+      expect(assets.update).not.toHaveBeenCalled();
+      expect(albums.addAssets).toHaveBeenCalledWith(expect.anything(), 'album-1', { ids: [assetId] });
     });
 
     it('copies a new photo into the library, applies its metadata and restores its album', async () => {

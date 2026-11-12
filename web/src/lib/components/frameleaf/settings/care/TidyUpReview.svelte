@@ -274,19 +274,27 @@
     if (open < 0 || event.metaKey || event.ctrlKey || event.altKey) {
       return;
     }
-    const key = event.key.toLowerCase();
-    if (event.key === 'Escape') {
-      open = -1;
-    } else if (event.key === 'ArrowRight') {
-      step(1);
-    } else if (event.key === 'ArrowLeft') {
-      step(-1);
-    } else if (tab === 'waiting' && key === 'k') {
-      void decideOpen(true);
-    } else if (tab === 'waiting' && key === 'a') {
-      void decideOpen(false);
-    } else {
-      return;
+    switch (event.key) {
+      case 'Escape': {
+        open = -1;
+        break;
+      }
+      case 'ArrowRight': {
+        step(1);
+        break;
+      }
+      case 'ArrowLeft': {
+        step(-1);
+        break;
+      }
+      default: {
+        // K keeps the photo, A archives it, while suggestions are being reviewed
+        const key = event.key.toLowerCase();
+        if (tab !== 'waiting' || (key !== 'k' && key !== 'a')) {
+          return;
+        }
+        void decideOpen(key === 'k');
+      }
     }
     event.preventDefault();
   };

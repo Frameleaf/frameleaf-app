@@ -11,6 +11,7 @@ export type FileStepKey =
   | 'checked-backups'
   | 'restored'
   | 'asked-phones'
+  | 'asked-icloud'
   | 'checked-on-phone'
   | 'repaired'
   | 'kept-damaged'

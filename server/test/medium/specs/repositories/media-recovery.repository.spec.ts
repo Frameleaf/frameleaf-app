@@ -163,14 +163,24 @@ describe(MediaRecoveryRepository.name, () => {
       await sql<{
         status: string;
         resolvedAt: Date;
+        evidence: object;
         resolution: object;
       }>`SELECT * FROM public.asset_health WHERE "assetId" = ${context.assetId}::uuid`.execute(db)
     ).rows[0];
     expect(finding).toMatchObject({
       status: 'resolved',
+      // FL-1472: fixed for its owner, and its history says iCloud Photos had the original
+      evidence: { fixState: 'found-again' },
       resolution: { previousPath: '/managed/missing.jpg', previousEvidence: { reason: 'original_missing' } },
     });
     expect(finding.resolvedAt).not.toBeNull();
+    expect(
+      (
+        await sql`SELECT step, outcome FROM public.asset_health_step WHERE "assetId" = ${context.assetId}::uuid`.execute(
+          db,
+        )
+      ).rows,
+    ).toEqual([{ step: 'asked-icloud', outcome: 'ok' }]);
     const resource = (
       await sql<{
         status: string;

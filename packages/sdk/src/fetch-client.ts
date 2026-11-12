@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.2.16
+ * 1.2.17
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -11482,7 +11482,7 @@ export type FileProblemLineDto = {
     };
     /** How it went: ok, not-found, failed, waiting or info */
     outcome: string;
-    /** What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed */
+    /** What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, asked-icloud, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed */
     step: string;
 };
 export type FileProblemRowDto = {
@@ -11531,7 +11531,7 @@ export type FileStepDto = {
     };
     /** How it went: ok, not-found, failed, waiting or info */
     outcome: string;
-    /** What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed */
+    /** What happened: added, imported, moved, not-on-drive, wont-open, checked, looked-where-moving, searched-copy, checked-backups, restored, asked-phones, asked-icloud, checked-on-phone, repaired, kept-damaged, put-back, unsupported, undone, kept-as-is or removed */
     step: string;
 };
 export type FileProblemDto = {

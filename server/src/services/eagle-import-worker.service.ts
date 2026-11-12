@@ -414,6 +414,7 @@ export class EagleImportWorkerService {
       throw error;
     }
     const name = eagleFileName(item);
+    const restoring = await this.assetMedia.needsOriginal(auth, digest);
     const response = await this.assetMedia.uploadAsset(
       auth,
       {
@@ -434,7 +435,8 @@ export class EagleImportWorkerService {
     if (response.status === AssetMediaStatus.DUPLICATE && NIL_UUID.test(response.id)) {
       throw new EagleItemError('A matching file is in the library but can’t be reached');
     }
-    const created = response.status === AssetMediaStatus.CREATED;
+    // FL-1472: bytes that put back a photo whose own file was lost, damaged or repaired match that photo
+    const created = response.status === AssetMediaStatus.CREATED && !restoring;
     if (created) {
       // Counted now, so the account's storage limit applies to the rest of this run.
       auth.user.quotaUsageInBytes += digest.size;

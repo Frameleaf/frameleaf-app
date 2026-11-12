@@ -452,6 +452,54 @@ describe('file steps in plain words (FL-1338)', () => {
       { what: 'Asked your phones', detail: 'A phone sent it back.', result: r('good', 'Found') },
     ],
     [
+      'asked iCloud, getting it now',
+      'asked-icloud',
+      'waiting',
+      { later: false },
+      {},
+      {
+        what: 'Asked iCloud Photos',
+        detail: 'Frameleaf is getting it from iCloud Photos now.',
+        result: r('warn', 'Waiting'),
+      },
+    ],
+    [
+      'asked iCloud, at its next sync',
+      'asked-icloud',
+      'waiting',
+      { later: true },
+      {},
+      {
+        what: 'Asked iCloud Photos',
+        detail: 'Frameleaf gets it from iCloud Photos the next time it syncs.',
+        result: r('warn', 'Waiting'),
+      },
+    ],
+    [
+      'iCloud sent it back',
+      'asked-icloud',
+      'ok',
+      {},
+      {},
+      {
+        what: 'Asked iCloud Photos',
+        detail: 'iCloud Photos had the original. Your library uses it now.',
+        result: r('good', 'Found'),
+      },
+    ],
+    [
+      'iCloud did not have it',
+      'asked-icloud',
+      'not-found',
+      {},
+      {},
+      {
+        what: 'Asked iCloud Photos',
+        detail: 'iCloud Photos couldn’t send it back.',
+        result: r('off', 'Not in iCloud'),
+      },
+    ],
+    [
       'checked on a phone',
       'checked-on-phone',
       'not-found',
@@ -573,6 +621,18 @@ describe('file steps in plain words (FL-1338)', () => {
       {
         what: 'Put it back',
         detail: 'A copy of the original takes the changed file’s place. The changed file is kept beside it.',
+        result: r('good', 'Found again'),
+      },
+    ],
+    [
+      'the true original took a repair’s place',
+      'put-back',
+      'ok',
+      { uploaded: true, overRepair: true },
+      corruptCategory,
+      {
+        what: 'Put it back',
+        detail: 'The original came back and takes the repair’s place. The repair and the damaged file are kept.',
         result: r('good', 'Found again'),
       },
     ],

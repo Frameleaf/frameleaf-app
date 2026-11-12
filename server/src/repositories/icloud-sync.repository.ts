@@ -119,6 +119,9 @@ export type ICloudRecord = {
   fields?: Record<string, unknown>;
   deleted?: boolean;
 };
+/** FL-1472: the item's library photo has an open missing or damaged file problem (`r` is the resource). */
+const hasOpenFileProblem = sql`EXISTS (SELECT 1 FROM public.asset_health h WHERE h."assetId" = r."assetId"
+  AND h.category IN ('missing', 'corrupt') AND h."resolvedAt" IS NULL AND h."dismissedAt" IS NULL)`;
 @Injectable()
 export class ICloudSyncRepository {
   constructor(
@@ -273,6 +276,54 @@ export class ICloudSyncRepository {
       );
     });
   }
+  /**
+   * FL-1472: Library care asks iCloud for a photo whose file is missing or damaged. Each current iCloud item it came
+   * from goes back in line, first in the next run, failed or held for review included (the run checks it as it did
+   * the first time). Items another run holds, edits, audits and reviews that still hold a staged file are left as they
+   * are. Returns the connections that were asked: whether each checks by itself, and is free to (no back-off the
+   * provider asked for).
+   */
+  async requestRepair(
+    ownerId: string,
+    assetId: string,
+  ): Promise<{ connectionId: string; automatic: boolean; due: boolean }[]> {
+    return this.active(async (db) => {
+      const { rows } = await sql<{ connectionId: string; automatic: boolean; due: boolean }>`WITH asked AS (
+          UPDATE public.icloud_resource r SET source = r.source || '{"repairRequested":true}'::jsonb,
+            status = CASE WHEN r.status IN ('pending','retry') THEN r.status ELSE 'pending' END,
+            attempts = CASE WHEN r.status IN ('failed','needs-review') THEN 0 ELSE r.attempts END,
+            "expectedTarget" = CASE WHEN r.status = 'finalized' THEN NULL ELSE r."expectedTarget" END,
+            "promotedPath" = CASE WHEN r.status = 'finalized' THEN NULL ELSE r."promotedPath" END,
+            "nextAttemptAt" = NULL, "updatedAt" = now()
+          FROM public.icloud_connection c
+          WHERE c.id = r."connectionId" AND c.state = 'connected' AND r."ownerId" = ${ownerId}::uuid AND r."assetId" = ${assetId}::uuid
+            AND r."auditRequestId" IS NULL AND NOT coalesce(r.verification ? 'auditValidationInputs', false)
+            AND r.role NOT LIKE 'edited-%' AND coalesce((r.source->>'current')::boolean, true)
+            AND r.status IN ('pending','retry','finalized','failed','needs-review')
+            AND (r.status <> 'needs-review' OR r."stagingPath" IS NULL)
+            AND (r."leaseExpiresAt" IS NULL OR r."leaseExpiresAt" < now())
+          RETURNING r."connectionId", coalesce((c.config->>'automatic')::boolean, false) AS automatic,
+            coalesce(c."nextRunAt" <= now(), true) AS due)
+        SELECT DISTINCT "connectionId", automatic, due FROM asked`.execute(db);
+      return rows;
+    });
+  }
+  /**
+   * FL-1472: the answer to Library care's ask, in the history of the photo's open problems: `ok` when the item
+   * brought the photo back, `not-found` when it ended without it. Only an asked item answers, once.
+   */
+  private async answerRepair(db: Kysely<DB>, resource: ICloudResource, outcome: 'ok' | 'not-found') {
+    if (resource.source?.repairRequested !== true || !resource.assetId) {
+      return;
+    }
+    await sql`UPDATE public.icloud_resource SET source = source - 'repairRequested' WHERE id = ${resource.id}::uuid`.execute(
+      db,
+    );
+    await sql`INSERT INTO public.asset_health_step ("healthId", "assetId", step, outcome, undo)
+      SELECT h.id, h."assetId", 'asked-icloud', ${outcome}, NULL FROM public.asset_health h
+      WHERE h."assetId" = ${resource.assetId}::uuid AND h.category IN ('missing', 'corrupt')
+        AND h."resolvedAt" IS NULL AND h."dismissedAt" IS NULL`.execute(db);
+  }
   async startRun(connection: ICloudConnection): Promise<void> {
     await this.active(async (db) => {
       await sql`SELECT id FROM public.icloud_connection WHERE id = ${connection.id}::uuid FOR UPDATE`.execute(db);
@@ -290,6 +341,12 @@ export class ICloudSyncRepository {
         );
         await sql`UPDATE public.icloud_resource SET status='pending',"expectedTarget"=NULL,"promotedPath"=NULL
           WHERE "connectionId"=${connection.id}::uuid AND status='finalized' AND "auditRequestId" IS NULL`.execute(db);
+        // FL-1472: an item that failed or waits for review is tried again while its library photo is missing or
+        // damaged; the run checks it as it did the first time
+        await sql`UPDATE public.icloud_resource r SET status='pending',attempts=0,"nextAttemptAt"=NULL
+          WHERE r."connectionId"=${connection.id}::uuid AND r.status IN ('failed','needs-review') AND r."auditRequestId" IS NULL
+            AND (r.status <> 'needs-review' OR r."stagingPath" IS NULL)
+            AND NOT coalesce(r.verification ? 'auditValidationInputs',false) AND ${hasOpenFileProblem}`.execute(db);
       }
     });
   }
@@ -478,7 +535,8 @@ export class ICloudSyncRepository {
           AND NOT coalesce(verification ? 'auditValidationInputs',false)
           AND (status='committed' OR coalesce((source->>'current')::boolean,true))
           AND ("leaseExpiresAt" IS NULL OR "leaseExpiresAt"<now()) AND ("nextAttemptAt" IS NULL OR "nextAttemptAt"<=now())
-          ORDER BY CASE WHEN status='committed' THEN 0 ELSE 1 END,"createdAt",id FOR UPDATE SKIP LOCKED LIMIT 1`
+          ORDER BY CASE WHEN status='committed' THEN 0 WHEN coalesce((source->>'repairRequested')::boolean,false) THEN 1 ELSE 2 END,
+            "createdAt",id FOR UPDATE SKIP LOCKED LIMIT 1`
             .execute(db)
             .then(({ rows }) => rows[0]);
         if (!candidate || candidate.status === 'committed' || !candidate.role.startsWith('edited-')) {
@@ -628,6 +686,9 @@ export class ICloudSyncRepository {
       const terminal =
         ['finalized', 'needs-review', 'preserve-trashed', 'unsupported', 'failed'].includes(status) ||
         (status === 'retry' && current.attempts >= 7);
+      if (terminal && status !== 'finalized') {
+        await this.answerRepair(db, current, 'not-found');
+      }
       const release = terminal && (!current.stagingPath || !!cleanup);
       if (terminal && current.stagingPath && cleanup) await cleanup(current);
       const { rows } = await sql<{
@@ -1005,7 +1066,8 @@ export class ICloudSyncRepository {
             VALUES (${connection.id}::uuid,${connection.ownerId}::uuid,${libraryKey},${library}::jsonb,
               ${resource.sourceAssetId},${resource.recordId},${resource.resourceKey},${resource.role},${resource.fingerprint},${{ ...resource.source, ...(mediaKinds.length > 0 && { mediaKinds }), current: true }}::jsonb,${resource.expectedSize})
             ON CONFLICT ("connectionId","libraryKey","sourceAssetId","resourceKey",fingerprint) WHERE "auditRequestId" IS NULL
-            DO UPDATE SET source = excluded.source || CASE WHEN public.icloud_resource.source ? '_sync' THEN jsonb_build_object('_sync',public.icloud_resource.source->'_sync') ELSE '{}'::jsonb END, "updatedAt" = now()`.execute(
+            DO UPDATE SET source = excluded.source || CASE WHEN public.icloud_resource.source ? '_sync' THEN jsonb_build_object('_sync',public.icloud_resource.source->'_sync') ELSE '{}'::jsonb END
+              || CASE WHEN public.icloud_resource.source ? 'repairRequested' THEN jsonb_build_object('repairRequested',public.icloud_resource.source->'repairRequested') ELSE '{}'::jsonb END, "updatedAt" = now()`.execute(
             db,
           );
         }
@@ -1142,7 +1204,9 @@ export class ICloudSyncRepository {
       }
       await cleanup();
       await sql`UPDATE public.icloud_resource SET status='finalized',"reservedBytes"=0,"leaseToken"=NULL,
-        "leaseExpiresAt"=NULL,"lastError"=NULL,"updatedAt"=now() WHERE id=${resource.id}::uuid`.execute(db);
+        "leaseExpiresAt"=NULL,"lastError"=NULL,source=source - 'repairRequested',"updatedAt"=now() WHERE id=${resource.id}::uuid`.execute(
+        db,
+      );
       // FL-296: the item's source identity, so a device knows the server has it; the item's claim
       // goes with its last resource
       await recordSyncIdentity(db, resource.id);

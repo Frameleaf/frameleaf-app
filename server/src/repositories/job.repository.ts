@@ -165,6 +165,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   // FL-1337: every write checks the asset and finding it read are unchanged, and a repair, relink or
   // kept file is published under a name fixed by the asset and finding, so a re-run reuses its own
   JobName.MediaHealthFixAsset,
+  // FL-1472: the copy is published under a name fixed by the asset and finding, and the relink checks both
+  JobName.MediaHealthPutBackUpload,
 ]);
 /**
  * Requests that are repeatable although their job name is not (the rest of that job's work is unaudited).
