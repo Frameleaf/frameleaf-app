@@ -115,6 +115,8 @@ export class AssetMediaController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<AssetMediaResponseDto> {
     const { file, sidecarFile } = getFiles(files);
+    // FL-813: what the account deleted and asked not to have uploaded again is refused (409 deleted_by_owner)
+    await this.service.refuseDeletedUpload(auth, file, sidecarFile);
     const responseDto = await this.service.uploadAsset(auth, dto, file, sidecarFile);
 
     if (responseDto.status === AssetMediaStatus.DUPLICATE) {

@@ -4086,6 +4086,15 @@ export type AlbumsResponse = {
     /** Whether albums a partner shared appear in the album list */
     showPartnerAlbums: boolean;
 };
+export type BackupSkipDeletedResponse = {
+    /** Whether photos and videos you permanently delete are refused when uploaded again */
+    enabled: boolean;
+    /** When it was turned on; only items deleted from then on are refused (null while off) */
+    since: string | null;
+};
+export type BackupPreferencesResponse = {
+    skipDeleted: BackupSkipDeletedResponse;
+};
 export type CastResponse = {
     /** Whether an administrator has turned casting off for this user */
     adminDisabled: boolean;
@@ -4247,6 +4256,7 @@ export type TrashPreferencesResponse = {
 };
 export type UserPreferencesResponseDto = {
     albums: AlbumsResponse;
+    backup?: BackupPreferencesResponse;
     cast: CastResponse;
     clients?: ClientsResponse;
     cloudProcessing?: CloudProcessingResponse;
@@ -4290,6 +4300,13 @@ export type AlbumsUpdate = {
 };
 export type AvatarUpdate = {
     color?: UserAvatarColor;
+};
+export type BackupSkipDeletedUpdate = {
+    /** Whether photos and videos you permanently delete from now on are refused when a phone or app uploads them again */
+    enabled?: boolean;
+};
+export type BackupPreferencesUpdate = {
+    skipDeleted?: BackupSkipDeletedUpdate;
 };
 export type CastUpdate = {
     /** Administrator only: turn casting off for this user. Accepted only by the admin user preferences endpoint; ignored when a user updates their own preferences */
@@ -4445,6 +4462,7 @@ export type TrashPreferencesUpdate = {
 export type UserPreferencesUpdateDto = {
     albums?: AlbumsUpdate;
     avatar?: AvatarUpdate;
+    backup?: BackupPreferencesUpdate;
     cast?: CastUpdate;
     clients?: ClientsUpdate;
     cloudProcessing?: CloudProcessingUpdate;
@@ -6240,6 +6258,8 @@ export type AssetBulkUploadCheckResult = {
     action: AssetUploadAction;
     /** Existing asset ID if duplicate */
     assetId?: string;
+    /** True when the account permanently deleted this item and asked for deleted items not to be uploaded again: an upload would be refused with 409 deleted_by_owner. Sent with action reject and no reason */
+    deletedByOwner?: boolean;
     /** Client-side identifier echoed from the request to match results to inputs */
     id: string;
     /** Whether existing asset is trashed */
@@ -20711,6 +20731,30 @@ export type LockedRulesCountResponseDto = {
     /** Your videos the draft would keep Locked */
     videos: number;
 };
+export type UploadSkipItemDto = {
+    /** The deleted file, as the hex digest of its bytes (SHA-256; SHA-1 for items stored before it) */
+    checksum: string;
+    /** When it was last permanently deleted */
+    deletedAt: string;
+    /** Whether it was Locked when it was deleted */
+    wasLocked: boolean;
+};
+export type UploadSkipListResponseDto = {
+    /** Whether deleted items are refused when uploaded again */
+    enabled: boolean;
+    /** This page of the list, latest deletion first */
+    items: UploadSkipItemDto[];
+    /** How many items the whole list holds for this session */
+    total: number;
+};
+export type UploadSkipAllowDto = {
+    /** Items from the list to allow again, by checksum */
+    checksums: string[];
+};
+export type UploadSkipAllowResponseDto = {
+    /** How many of them were on the list and may now be uploaded again */
+    allowed: number;
+};
 export type CreateProfileImageDto = {
     /** ID of the photo the image was copied from, if any. A Locked photo is refused. */
     assetId?: string;
@@ -23098,6 +23142,12 @@ export type TrashItemsDto = {
     size?: number;
     sort?: TrashItemSort;
     "type"?: AssetTypeEnum;
+};
+export type UploadSkipListDto = {
+    /** Items per page */
+    limit?: number;
+    /** Items to pass over, latest deletion first */
+    offset?: number;
 };
 export type UserAdminSearchDto = {
     /** User ID filter */
@@ -40400,6 +40450,38 @@ export function countLockedRules({ lockedRulesDraftDto }: {
         ...opts,
         method: "POST",
         body: lockedRulesDraftDto
+    })));
+}
+/**
+ * List what I deleted that is not uploaded again
+ */
+export function getUploadSkips({ limit, offset }: {
+    limit?: number;
+    offset?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UploadSkipListResponseDto;
+    }>(`/users/me/upload-skips${QS.query(QS.explode({
+        limit,
+        offset
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Allow items I deleted to be uploaded again
+ */
+export function allowUploadSkips({ uploadSkipAllowDto }: {
+    uploadSkipAllowDto: UploadSkipAllowDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UploadSkipAllowResponseDto;
+    }>("/users/me/upload-skips/allow", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: uploadSkipAllowDto
     })));
 }
 /**

@@ -70,6 +70,79 @@ describe(UserService.name, () => {
     });
   });
 
+  describe('what I deleted is not uploaded again (FL-813)', () => {
+    const since = '2026-11-01T10:00:00.000Z';
+    const checksum = Buffer.alloc(32, 7);
+    const deletedAt = new Date('2026-11-02T08:00:00.000Z');
+    const turnOn = () =>
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { backup: { skipDeleted: { enabled: true, since } } } },
+      ] as UserMetadataItem[]);
+
+    it('lists nothing and allows nothing while it is off', async () => {
+      mocks.user.getMetadata.mockResolvedValue([]);
+      await expect(sut.getUploadSkips(authStub.admin, { limit: 50, offset: 0 })).resolves.toEqual({
+        enabled: false,
+        items: [],
+        total: 0,
+      });
+      await expect(sut.allowUploadSkips(authStub.admin, { checksums: [checksum.toString('hex')] })).resolves.toEqual({
+        allowed: 0,
+      });
+      expect(mocks.asset.getUploadSkipList).not.toHaveBeenCalled();
+      expect(mocks.asset.allowUploadSkips).not.toHaveBeenCalled();
+    });
+
+    it('lists my deletions since it was turned on, without the Locked ones until the session is unlocked', async () => {
+      turnOn();
+      mocks.asset.getUploadSkipList.mockResolvedValue({
+        items: [{ checksum, deletedAt, wasLocked: false }],
+        total: 1,
+      });
+
+      await expect(sut.getUploadSkips(authStub.admin, { limit: 20, offset: 40 })).resolves.toEqual({
+        enabled: true,
+        items: [{ checksum: checksum.toString('hex'), deletedAt: deletedAt.toISOString(), wasLocked: false }],
+        total: 1,
+      });
+      expect(mocks.asset.getUploadSkipList).toHaveBeenLastCalledWith(authStub.admin.user.id, new Date(since), {
+        limit: 20,
+        offset: 40,
+        includeLocked: false,
+      });
+
+      await sut.getUploadSkips(authStub.adminWithElevatedPermission, { limit: 20, offset: 0 });
+      expect(mocks.asset.getUploadSkipList).toHaveBeenLastCalledWith(authStub.admin.user.id, new Date(since), {
+        limit: 20,
+        offset: 0,
+        includeLocked: true,
+      });
+    });
+
+    it('allows again only what this session can see on my own list', async () => {
+      turnOn();
+      mocks.asset.allowUploadSkips.mockResolvedValue(1);
+
+      await expect(
+        sut.allowUploadSkips(authStub.admin, { checksums: [checksum.toString('hex').toUpperCase()] }),
+      ).resolves.toEqual({ allowed: 1 });
+      expect(mocks.asset.allowUploadSkips).toHaveBeenLastCalledWith(
+        authStub.admin.user.id,
+        [checksum],
+        new Date(since),
+        { includeLocked: false },
+      );
+
+      await sut.allowUploadSkips(authStub.adminWithElevatedPermission, { checksums: [checksum.toString('hex')] });
+      expect(mocks.asset.allowUploadSkips).toHaveBeenLastCalledWith(
+        authStub.admin.user.id,
+        [checksum],
+        new Date(since),
+        { includeLocked: true },
+      );
+    });
+  });
+
   describe('updateMe', () => {
     it.each([false, true])('rejects a conflicting email before writing, deleted=%s', async (deleted) => {
       const existing = UserFactory.create({ email: 'used@example.com', deletedAt: deleted ? new Date() : null });
