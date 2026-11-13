@@ -253,7 +253,7 @@ describe('Library care landing (FL-366)', () => {
     expect(await hero().findByText('4 files need attention')).toBeInTheDocument();
     expect(screen.getByText('2 missing files')).toBeInTheDocument();
     expect(screen.getByText('1 damaged file')).toBeInTheDocument();
-    expect(screen.getByText('1 stray file')).toBeInTheDocument();
+    expect(screen.getByText('1 file not in a library')).toBeInTheDocument();
   });
 
   it('says a library that was never checked is not checked yet, and can start a check', async () => {

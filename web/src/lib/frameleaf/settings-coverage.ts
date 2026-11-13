@@ -341,17 +341,17 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     file: 'src/routes/admin/system-settings/AuthSettings.svelte',
     evidence: 'connectedApps?.allowRegistration',
   },
-  // FL-1537: kept by the server; the switches arrive with the Photos found on the drive page (FL-1533)
+  // FL-1533: Library care › Photos found on the drive › What Frameleaf does by itself
   {
     pattern: 'libraryCare.putBackFoundFiles',
-    kind: 'api-only',
-    file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/care/FoundFiles.svelte',
     evidence: 'libraryCare.putBackFoundFiles',
   },
   {
     pattern: 'libraryCare.clearGonePreviews',
-    kind: 'api-only',
-    file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/care/FoundFiles.svelte',
     evidence: 'libraryCare.clearGonePreviews',
   },
   {

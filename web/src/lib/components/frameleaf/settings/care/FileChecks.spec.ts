@@ -1,4 +1,5 @@
 import {
+  FoundFileOutcome,
   IntegrityCheckOneResult,
   IntegrityCheckOutcome,
   IntegrityFindingKind,
@@ -154,8 +155,8 @@ describe('File checks (FL-366)', () => {
   });
 
   it('removes one finding from the list without touching its file', async () => {
-    sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(0, 0, 2));
-    paths(IntegrityReport.UntrackedFile, ['/data/upload/a/IMG_1.JPG', '/data/upload/a/IMG_2.JPG']);
+    sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(2, 0, 0));
+    paths(IntegrityReport.MissingFile, ['/data/upload/a/IMG_1.JPG', '/data/upload/a/IMG_2.JPG']);
     sdkMock.dismissIntegrityReport.mockResolvedValue(undefined as never);
     newStore();
     render(FileChecks, { pollMs: 60_000 });
@@ -163,7 +164,6 @@ describe('File checks (FL-366)', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Remove IMG_1.JPG from the list' }));
     expect(sdkMock.dismissIntegrityReport).toHaveBeenCalledWith({ id: 'f0' });
     expect(sdkMock.deleteIntegrityReport).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Delete these 2 files from the drive…' })).toBeInTheDocument();
   });
 
   it('says a drive is unplugged when the server cannot reach the folder the missing files are in (FL-520)', async () => {
@@ -217,7 +217,7 @@ describe('File checks (FL-366)', () => {
     expect(goto).toHaveBeenCalledWith(expect.stringContaining('area=backups&section=restore&files=missing'));
   });
 
-  it('names a photo by the file name it came with, and a stray file by its path (FL-737)', async () => {
+  it('names a photo by the file name it came with, never the name it is stored under (FL-737)', async () => {
     sdkMock.getIntegrityReportSummary.mockResolvedValue(counts(1, 0, 1));
     sdkMock.getIntegrityReport.mockImplementation(({ $type }) =>
       Promise.resolve({
@@ -235,8 +235,8 @@ describe('File checks (FL-366)', () => {
     expect(await screen.findByText('beach-1.jpg')).toBeInTheDocument();
     expect(screen.queryByText('0bfb7144.jpg')).not.toBeInTheDocument();
     expect(screen.queryByText('/data/upload/u/0b/fb/')).not.toBeInTheDocument();
-    expect(screen.getByText('extra.jpg')).toBeInTheDocument();
-    expect(screen.getByText('/data/upload/u/ab/cd/')).toBeInTheDocument();
+    // FL-1533: a file that is in no library is no longer listed here by its path
+    expect(screen.queryByText('extra.jpg')).not.toBeInTheDocument();
   });
 
   it('opens Missing files and Damaged files scanning just the photos these checks found (FL-737)', async () => {
@@ -343,6 +343,67 @@ describe('File checks (FL-366)', () => {
     expect(screen.getByText('1,200 files read · took 2 seconds')).toBeInTheDocument();
   });
 
+  it('shows what became of the files that were in no library, as pictures, and opens their page (FL-1533)', async () => {
+    sdkMock.getFoundFilesSummary.mockResolvedValue({
+      back: 2,
+      added: 9,
+      spare: 3,
+      spareSizeInBytes: 14_000_000,
+      needs: 1,
+      left: 0,
+      tidied: { previews: 0, previewSizeInBytes: 0, sidecars: 0 },
+      groups: [],
+    });
+    sdkMock.getFoundFiles.mockResolvedValue({
+      items: [
+        {
+          id: 'f1',
+          fileName: 'IMG_7731.JPG',
+          path: '/data/upload/u/3f/9a/IMG_7731.JPG',
+          sizeInBytes: 1,
+          outcome: FoundFileOutcome.Added,
+          reason: null,
+          ownerId: 'u',
+          assetId: 'asset-1',
+          viewable: true,
+          sortedAt: ran,
+        },
+        // another account's photo is never asked for
+        {
+          id: 'f2',
+          fileName: 'IMG_9002.jpg',
+          path: '/data/upload/v/91/be/IMG_9002.jpg',
+          sizeInBytes: 1,
+          outcome: FoundFileOutcome.Added,
+          reason: null,
+          ownerId: 'v',
+          assetId: 'asset-2',
+          viewable: false,
+          sortedAt: ran,
+        },
+      ],
+      nextCursor: null,
+    });
+    const store = newStore();
+    const { container } = render(FileChecks, { pollMs: 60_000 });
+
+    expect(await screen.findByRole('heading', { name: '15 files weren’t in a library' })).toBeInTheDocument();
+    expect(screen.getByText('11 are photos again')).toBeInTheDocument();
+    expect(
+      screen.getByText(/2 had gone missing and are back in their place\. 9 were new and joined the library\./),
+    ).toBeInTheDocument();
+    expect(screen.getByText('3 are spare copies')).toBeInTheDocument();
+    expect(screen.getByText('1 needs a decision')).toBeInTheDocument();
+    expect(container.querySelectorAll(':scope .found-strip img')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /Delete these/ })).not.toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'See the photos' }));
+    expect(goto).toHaveBeenCalledWith(expect.stringContaining('section=found-files'));
+
+    await fireEvent.click(screen.getByRole('switch', { name: 'Put found photos back by themselves' }));
+    expect(store.draft.libraryCare?.putBackFoundFiles).toBe(false);
+  });
+
   it('one switch per check writes every setting that check is made of', async () => {
     const store = newStore();
     render(FileChecks, { pollMs: 60_000 });
@@ -350,10 +411,10 @@ describe('File checks (FL-366)', () => {
     await fireEvent.click(await screen.findByRole('switch', { name: 'Look for Missing files' }));
     expect(store.draft.integrityChecks.missingFiles.enabled).toBe(false);
     expect(store.draft.libraryCare?.healthScan).toBe(false);
-    // Stray files still needs the reference audit.
+    // Files not in a library still needs the reference audit.
     expect(store.draft.libraryCare?.integrityAudit).toBe(true);
 
-    await fireEvent.click(screen.getByRole('switch', { name: 'Look for Stray files' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'Look for Files not in a library' }));
     expect(store.draft.integrityChecks.untrackedFiles.enabled).toBe(false);
     expect(store.draft.libraryCare?.integrityAudit).toBe(false);
 
