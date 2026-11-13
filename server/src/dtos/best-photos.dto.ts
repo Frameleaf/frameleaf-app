@@ -3,7 +3,8 @@ import z from 'zod';
 import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
 import { stringToBool } from 'src/validation.js';
 
-export const BEST_PHOTO_SCORE_VERSION = 1;
+// 2: the score is calibrated so 1–3% of photos reach BEST_PHOTOS_MIN_SCORE (version 1 topped out at 0.89)
+export const BEST_PHOTO_SCORE_VERSION = 2;
 
 /**
  * A photo is marked as a Best Photo from this score up. The same threshold as the Best Photos card on

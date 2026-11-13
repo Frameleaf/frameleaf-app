@@ -1,5 +1,5 @@
 import { vitest } from 'vitest';
-import { BEST_PHOTO_SCORE_VERSION } from 'src/dtos/best-photos.dto.js';
+import { BEST_PHOTOS_MIN_SCORE, BEST_PHOTO_SCORE_VERSION } from 'src/dtos/best-photos.dto.js';
 import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
@@ -20,7 +20,18 @@ describe(BestPhotosService.name, () => {
     upsertScore: vitest.fn(),
   };
   const jobRepository = { queueSelection: vitest.fn(), guardAssetSource: vitest.fn() };
-  const mediaRepository = { scoreThumbnailCandidate: vitest.fn(), transcode: vitest.fn() };
+  const mediaRepository = { measureImageQuality: vitest.fn(), transcode: vitest.fn() };
+  /** Preview statistics as sharp reports them; the defaults are an ordinary, well-exposed photo. */
+  const quality = (
+    overrides: Partial<{ mean: number; contrast: number; entropy: number; sharpness: number }> = {},
+  ) => ({
+    mean: 115,
+    contrast: 60,
+    entropy: 7.3,
+    sharpness: 2.3,
+    thumbnailScore: 220,
+    ...overrides,
+  });
   const configRepository = { getEnv: vitest.fn() };
   const systemMetadataRepository = newSystemMetadataRepositoryMock();
 
@@ -60,7 +71,7 @@ describe(BestPhotosService.name, () => {
 
     expect(jobRepository.guardAssetSource).toHaveBeenCalledExactlyOnceWith('asset-1');
     expect(assetJobRepository.getForBestPhotoScoring).not.toHaveBeenCalled();
-    expect(mediaRepository.scoreThumbnailCandidate).not.toHaveBeenCalled();
+    expect(mediaRepository.measureImageQuality).not.toHaveBeenCalled();
     expect(mediaRepository.transcode).not.toHaveBeenCalled();
     expect(bestPhotosRepository.upsertScore).not.toHaveBeenCalled();
   });
@@ -85,15 +96,15 @@ describe(BestPhotosService.name, () => {
       });
 
       await expect(sut.handleScore({ id: 'asset-1' })).rejects.toBeInstanceOf(LockedKeyUnavailableError);
-      expect(mediaRepository.scoreThumbnailCandidate).not.toHaveBeenCalled();
+      expect(mediaRepository.measureImageQuality).not.toHaveBeenCalled();
       expect(logger.warn).not.toHaveBeenCalled();
 
       locked.loadKey();
       let read: Buffer | undefined;
-      mediaRepository.scoreThumbnailCandidate.mockImplementation(async (path: string) => {
+      mediaRepository.measureImageQuality.mockImplementation(async (path: string) => {
         expect(path).not.toBe(previewFile);
         read = await import('node:fs/promises').then((fs) => fs.readFile(path));
-        return 100;
+        return quality();
       });
       await expect(sut.handleScore({ id: 'asset-1' })).resolves.toBe(JobStatus.Success);
       expect(read).toEqual(plain);
@@ -118,7 +129,9 @@ describe(BestPhotosService.name, () => {
       faceCount: 1,
     };
     assetJobRepository.getForBestPhotoScoring.mockResolvedValue(asset);
-    mediaRepository.scoreThumbnailCandidate.mockResolvedValueOnce(150).mockResolvedValueOnce(-30);
+    mediaRepository.measureImageQuality
+      .mockResolvedValueOnce(quality({ sharpness: 6 }))
+      .mockResolvedValueOnce(quality({ sharpness: 0.5, contrast: 3, entropy: 1, thumbnailScore: -30 }));
 
     await expect(sut.handleScore({ id: asset.id })).resolves.toBe(JobStatus.Success);
     expect(jobRepository.guardAssetSource).toHaveBeenCalledExactlyOnceWith(asset.id);
@@ -143,6 +156,53 @@ describe(BestPhotosService.name, () => {
         frameMetadata: null,
       }),
     );
+  });
+
+  describe('calibration', () => {
+    const photo = {
+      id: 'asset-1',
+      ownerId: 'user-1',
+      type: AssetType.Image,
+      status: AssetStatus.Active,
+      deletedAt: null,
+      visibility: AssetVisibility.Timeline,
+      originalFileName: 'IMG_0001.JPG',
+      width: 4032,
+      height: 3024,
+      previewFile: '/preview.jpg',
+      faceCount: 0,
+    };
+    const scoreOf = async (stats: ReturnType<typeof quality>, asset = photo) => {
+      assetJobRepository.getForBestPhotoScoring.mockResolvedValue(asset);
+      mediaRepository.measureImageQuality.mockResolvedValue(stats);
+      await sut.handleScore({ id: asset.id });
+      return bestPhotosRepository.upsertScore.mock.lastCall![0];
+    };
+
+    it('lets a crisp, well-exposed 12 MP photo with no people reach the Best Photos threshold', async () => {
+      // the 99th percentile of measured library photos
+      const { score } = await scoreOf(quality({ sharpness: 6.2, contrast: 75, entropy: 7.6 }));
+      expect(score).toBeGreaterThanOrEqual(BEST_PHOTOS_MIN_SCORE);
+    });
+
+    it('keeps an ordinary photo (the median of measured library photos) below the threshold', async () => {
+      const { score } = await scoreOf(quality());
+      expect(score).toBeLessThan(BEST_PHOTOS_MIN_SCORE);
+      expect(score).toBeGreaterThan(0.6);
+    });
+
+    it('never ranks a flat, single-colour image near the top', async () => {
+      const flat = quality({ mean: 87, contrast: 0, entropy: 0, sharpness: 0, thumbnailScore: -53 });
+      const { score, technicalScore } = await scoreOf(flat, { ...photo, width: 1, height: 1 });
+      expect(score).toBeLessThan(0.2);
+      // Tidy up's Accidental shots (technicalScore below 0.1–0.22) still finds it
+      expect(technicalScore).toBeLessThan(0.1);
+    });
+
+    it('keeps technicalScore on its version 1 scale for an ordinary photo, so Tidy up leaves it alone', async () => {
+      const { technicalScore } = await scoreOf(quality({ sharpness: 1, contrast: 30 }));
+      expect(technicalScore).toBeGreaterThan(0.9);
+    });
   });
 
   describe('video scoring', () => {
@@ -173,16 +233,16 @@ describe(BestPhotosService.name, () => {
       assetJobRepository.getForBestPhotoScoring.mockResolvedValue(videoAsset);
       assetJobRepository.getForVideoDuplicateFrameJob.mockResolvedValue(videoJob(60_000));
       mediaRepository.transcode.mockResolvedValue(void 0);
-      mediaRepository.scoreThumbnailCandidate
-        .mockResolvedValueOnce(10)
-        .mockResolvedValueOnce(80)
-        .mockResolvedValueOnce(50)
-        .mockResolvedValueOnce(20)
-        .mockResolvedValueOnce(5);
+      mediaRepository.measureImageQuality
+        .mockResolvedValueOnce(quality({ sharpness: 1.5 }))
+        .mockResolvedValueOnce(quality({ sharpness: 5 }))
+        .mockResolvedValueOnce(quality({ sharpness: 3 }))
+        .mockResolvedValueOnce(quality({ sharpness: 2 }))
+        .mockResolvedValueOnce(quality({ sharpness: 1 }));
 
       await expect(sut.handleScore({ id: videoAsset.id })).resolves.toBe(JobStatus.Success);
 
-      // 60s clip sampled at 10s/20s/30s/40s/50s; best raw score (80) is at 20s
+      // 60s clip sampled at 10s/20s/30s/40s/50s; the sharpest frame is at 20s
       expect(mediaRepository.transcode).toHaveBeenCalledTimes(5);
       expect(bestPhotosRepository.upsertScore).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -190,11 +250,13 @@ describe(BestPhotosService.name, () => {
           ownerId: videoAsset.ownerId,
           scoreVersion: BEST_PHOTO_SCORE_VERSION,
           bestFrameTimestampMs: 20_000,
-          frameScore: (80 + 40) / 220,
+          frameScore: expect.closeTo(0.5 * 0.8 + 0.2 + 0.15 * (40 / 45) + 0.15 * (2.3 / 2.5), 6),
           frameMetadata: expect.objectContaining({
             durationMs: 60_000,
             sampledFrameCount: 5,
-            frames: expect.arrayContaining([expect.objectContaining({ timestampMs: 20_000, thumbnailScore: 80 })]),
+            frames: expect.arrayContaining([
+              expect.objectContaining({ timestampMs: 20_000, frameScore: expect.any(Number) }),
+            ]),
           }),
         }),
       );
@@ -236,15 +298,15 @@ describe(BestPhotosService.name, () => {
         .mockResolvedValueOnce(void 0)
         .mockResolvedValueOnce(void 0)
         .mockResolvedValueOnce(void 0);
-      mediaRepository.scoreThumbnailCandidate
-        .mockResolvedValueOnce(10)
-        .mockResolvedValueOnce(60)
-        .mockResolvedValueOnce(20)
-        .mockResolvedValueOnce(5);
+      mediaRepository.measureImageQuality
+        .mockResolvedValueOnce(quality({ sharpness: 1.5 }))
+        .mockResolvedValueOnce(quality({ sharpness: 4 }))
+        .mockResolvedValueOnce(quality({ sharpness: 2 }))
+        .mockResolvedValueOnce(quality({ sharpness: 1 }));
 
       await expect(sut.handleScore({ id: videoAsset.id })).resolves.toBe(JobStatus.Success);
 
-      // frame at 20s failed to extract; best of the remaining (60) is at 30s
+      // frame at 20s failed to extract; the sharpest of the rest is at 30s
       expect(bestPhotosRepository.upsertScore).toHaveBeenCalledWith(
         expect.objectContaining({
           bestFrameTimestampMs: 30_000,

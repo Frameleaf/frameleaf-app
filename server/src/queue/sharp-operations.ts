@@ -59,6 +59,14 @@ export type HdrRenditionOutput = {
   histogram?: boolean;
 };
 
+export type ImageQualityStats = {
+  mean: number;
+  contrast: number;
+  entropy: number;
+  sharpness: number;
+  thumbnailScore: number;
+};
+
 export type ThumbnailOutput = {
   path: string;
   options: Pick<GenerateThumbnailOptions, 'format' | 'quality' | 'progressive' | 'size'>;
@@ -1115,20 +1123,24 @@ export class SharpOperations {
     return orientation && orientation >= 5 ? { width: height, height: width } : { width, height };
   }
 
-  async scoreThumbnailCandidate(input: string): Promise<number> {
+  /** Brightness (0-255 mean), contrast (mean channel stdev), greyscale entropy and Laplacian sharpness, plus
+   * the thumbnail-candidate score built from them. Every value is finite: libvips reports a NaN stdev for a
+   * 1x1 image, and a NaN Best Photos score sorts above every real score in Postgres. */
+  async measureImageQuality(input: string): Promise<ImageQualityStats> {
     const stats = await sharp(input, { limitInputPixels: this.maxPixels }).stats();
     const channels = stats.channels.slice(0, 3);
-    const mean = channels.reduce((sum, channel) => sum + channel.mean, 0) / channels.length;
-    const contrast = channels.reduce((sum, channel) => sum + channel.stdev, 0) / channels.length;
-    const { entropy = 0, sharpness = 0 } = stats as typeof stats & { entropy?: number; sharpness?: number };
+    const finite = (value: number) => (Number.isFinite(value) ? value : 0);
+    const mean = finite(channels.reduce((sum, channel) => sum + channel.mean, 0) / channels.length);
+    const contrast = finite(channels.reduce((sum, channel) => sum + channel.stdev, 0) / channels.length);
+    const entropy = finite(stats.entropy);
+    const sharpness = finite(stats.sharpness);
 
     const exposureScore = 40 - Math.abs(mean - 128) / 4;
     const blackFramePenalty = mean < 18 ? (18 - mean) * 12 : 0;
     const blownFramePenalty = mean > 245 ? (mean - 245) * 6 : 0;
     const flatFramePenalty = contrast < 4 ? (4 - contrast) * 12 : 0;
     const logoLikePenalty = entropy < 1.2 && contrast < 12 ? 35 : 0;
-
-    return (
+    const thumbnailScore =
       exposureScore +
       contrast * 1.5 +
       entropy * 14 +
@@ -1136,7 +1148,12 @@ export class SharpOperations {
       blackFramePenalty -
       blownFramePenalty -
       flatFramePenalty -
-      logoLikePenalty
-    );
+      logoLikePenalty;
+
+    return { mean, contrast, entropy, sharpness, thumbnailScore };
+  }
+
+  async scoreThumbnailCandidate(input: string): Promise<number> {
+    return (await this.measureImageQuality(input)).thumbnailScore;
   }
 }

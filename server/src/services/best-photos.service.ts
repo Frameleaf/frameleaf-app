@@ -27,6 +27,7 @@ import { isLockedKeyUnavailable, makeWorkDirFor, withPlainCopy } from 'src/utils
 import { ThumbnailConfig } from 'src/utils/media.js';
 
 type BestPhotoScoringAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForBestPhotoScoring']>>>;
+type ImageQuality = Awaited<ReturnType<MediaRepository['measureImageQuality']>>;
 
 /** Asset row joined with best_photo_score columns. Derived from the repository
  * return type so a schema change to `asset_best_photo_score` trips the
@@ -38,13 +39,23 @@ const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, v
 const isScreenshotLike = (fileName: string) =>
   /\b(screen ?shot|screen capture|scan|document|receipt|invoice)\b/i.test(fileName);
 
-// Subject-score heuristic constants. The aim is a mild bump for assets with
-// recognizable subjects (faces) without letting a single group photo dominate
-// the leaderboard. Three faces is the inflection point where additional faces
-// stop adding signal — beyond that we're usually in "crowd" territory which
-// doesn't make for a good "best photo".
-const FACE_COUNT_CAP = 3;
-const PER_FACE_WEIGHT = 0.08;
+// Subject bump for recognizable people: up to two faces count, so a crowd
+// shot does not outrank a portrait. A photo with no faces can still reach
+// BEST_PHOTOS_MIN_SCORE on image quality alone.
+const FACE_COUNT_CAP = 2;
+const PER_FACE_WEIGHT = 0.2;
+
+/** Image quality 0–1 from the preview's statistics. Ranges were measured on 2026-11-13 over 301 library
+ * photos and 29 full-size camera files at preview size: sharpness 1 is the 10th percentile and 6 the 99th,
+ * contrast 20–65 and entropy 5–7.5 span ordinary photos, and brightness is fine within 45 of mid-grey.
+ * With 12 MP originals about 1–3% of photos clear BEST_PHOTOS_MIN_SCORE, the rest spread below it.
+ * ponytail: a hand-tuned technical heuristic, not an aesthetic model; replace with a learned aesthetic
+ * score over the visual search embedding when one ships. */
+const imageQualityOf = ({ mean, contrast, entropy, sharpness }: ImageQuality) =>
+  0.5 * clamp((sharpness - 1) / 5) +
+  0.2 * clamp(1 - Math.max(0, Math.abs(mean - 120) - 45) / 60) +
+  0.15 * clamp((contrast - 20) / 45) +
+  0.15 * clamp((entropy - 5) / 2.5);
 
 // Video frame sampling. Videos are scored by extracting a handful of frames
 // (via the same ffmpeg thumbnail path used for video previews) and running
@@ -147,10 +158,8 @@ export class BestPhotosService {
 
   private async scoreImageAsset(asset: BestPhotoScoringAsset): Promise<BestPhotoScoreUpsert> {
     // FL-721: an encrypted Locked preview is read through a plain copy
-    const thumbnailScore = await withPlainCopy(asset.previewFile!, (path) =>
-      this.mediaRepository.scoreThumbnailCandidate(path),
-    );
-    return this.buildScoreUpsert(asset, thumbnailScore, asset.width, asset.height);
+    const quality = await withPlainCopy(asset.previewFile!, (path) => this.mediaRepository.measureImageQuality(path));
+    return this.buildScoreUpsert(asset, quality, asset.width, asset.height);
   }
 
   /** Samples frames across the video, scores each with the image scorer, and
@@ -201,8 +210,8 @@ export class BestPhotosService {
     timestamps: number[],
     thumbnailConfig: Parameters<typeof ThumbnailConfig.create>[0],
   ): Promise<BestPhotoScoreUpsert | null> {
-    let best: { timestamp: number; thumbnailScore: number } | null = null;
-    const sampledFrames: Array<{ timestampMs: number; thumbnailScore: number }> = [];
+    let best: { timestamp: number; quality: ImageQuality; frameScore: number } | null = null;
+    const sampledFrames: Array<{ timestampMs: number; frameScore: number }> = [];
     // FL-721 M6: frames of an encrypted video (a plain copy) stay in the RAM-backed Locked folder
     const tempDir = await makeWorkDirFor(video.originalPath, 'best-photos');
     try {
@@ -216,10 +225,11 @@ export class BestPhotosService {
             video.format,
           );
           await this.mediaRepository.transcode(video.originalPath, framePath, command);
-          const thumbnailScore = await this.mediaRepository.scoreThumbnailCandidate(framePath);
-          sampledFrames.push({ timestampMs: Math.round(timestamp * 1000), thumbnailScore });
-          if (!best || thumbnailScore > best.thumbnailScore) {
-            best = { timestamp, thumbnailScore };
+          const quality = await this.mediaRepository.measureImageQuality(framePath);
+          const frameScore = imageQualityOf(quality);
+          sampledFrames.push({ timestampMs: Math.round(timestamp * 1000), frameScore });
+          if (!best || frameScore > best.frameScore) {
+            best = { timestamp, quality, frameScore };
           }
         } catch (error: any) {
           // A frame can fail to extract when its start_time lands in the
@@ -240,7 +250,7 @@ export class BestPhotosService {
 
     const upsert = this.buildScoreUpsert(
       asset,
-      best.thumbnailScore,
+      best.quality,
       asset.width ?? video.videoStream.width,
       asset.height ?? video.videoStream.height,
     );
@@ -248,7 +258,7 @@ export class BestPhotosService {
     return {
       ...upsert,
       bestFrameTimestampMs: Math.round(best.timestamp * 1000),
-      frameScore: clamp((best.thumbnailScore + 40) / 220),
+      frameScore: best.frameScore,
       frameMetadata: {
         durationMs: video.format.duration,
         sampledFrameCount: timestamps.length,
@@ -276,23 +286,30 @@ export class BestPhotosService {
 
   private buildScoreUpsert(
     asset: BestPhotoScoringAsset,
-    thumbnailScore: number,
+    quality: ImageQuality,
     width: number | null,
     height: number | null,
   ): BestPhotoScoreUpsert {
-    const normalizedThumbnailScore = clamp((thumbnailScore + 40) / 220);
+    const { thumbnailScore } = quality;
+    const imageQuality = imageQualityOf(quality);
     const pixels = Math.max(0, (width ?? 0) * (height ?? 0));
-    const resolutionScore = clamp((Math.sqrt(pixels) - 700) / 3300);
     const tinyPenalty = pixels > 0 && pixels < 500_000 ? 0.2 : 0;
     const screenshotPenalty = isScreenshotLike(asset.originalFileName) ? 0.2 : 0;
 
-    const technicalScore = clamp(normalizedThumbnailScore * 0.75 + resolutionScore * 0.25 - tinyPenalty);
-    const subjectScore = clamp(0.5 + Math.min(asset.faceCount, FACE_COUNT_CAP) * PER_FACE_WEIGHT - screenshotPenalty);
-    const aestheticScore = clamp(normalizedThumbnailScore * 0.85 + subjectScore * 0.15 - screenshotPenalty);
+    // technicalScore keeps its version 1 formula: Tidy up's "Accidental shots" cutoffs (0.1–0.22) are set
+    // against it, and it only falls that low for black, blank or tiny frames.
+    const normalizedThumbnailScore = clamp((thumbnailScore + 40) / 220);
+    const technicalScore = clamp(
+      normalizedThumbnailScore * 0.75 + clamp((Math.sqrt(pixels) - 700) / 3300) * 0.25 - tinyPenalty,
+    );
+
+    // 8 MP and up counts as full resolution: a 12 MP phone photo is not a lesser photo than a 24 MP one.
+    const resolutionScore = clamp((Math.sqrt(pixels) - 700) / 2100);
+    const subjectScore = clamp(0.6 + Math.min(asset.faceCount, FACE_COUNT_CAP) * PER_FACE_WEIGHT - screenshotPenalty);
+    const aestheticScore = clamp(imageQuality - screenshotPenalty);
     const diversityScore = 0.5;
 
-    // scoreVersion 1 is a local deterministic heuristic. Future versions can use ML-service hooks.
-    const score = clamp(0.45 * aestheticScore + 0.3 * technicalScore + 0.15 * subjectScore + 0.1 * diversityScore);
+    const score = clamp(0.75 * aestheticScore + 0.1 * resolutionScore + 0.15 * subjectScore - tinyPenalty);
 
     return {
       assetId: asset.id,
@@ -307,6 +324,11 @@ export class BestPhotosService {
       metadata: {
         thumbnailScore,
         normalizedThumbnailScore,
+        imageQuality,
+        brightness: quality.mean,
+        contrast: quality.contrast,
+        entropy: quality.entropy,
+        sharpness: quality.sharpness,
         resolutionScore,
         pixels,
         faceCount: asset.faceCount,
