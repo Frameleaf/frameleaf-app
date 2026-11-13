@@ -133,7 +133,7 @@ export class PhotographyBulkService {
       const batch = record.bulkGalleries?.find((batch) => batch.id === batchId);
       const row = batch?.rows.find((row) => row.id === id);
       if (!batch || !row) throw new NotFoundException('Gallery unavailable');
-      if (['failed', 'ready', 'mail-queued', 'draft'].includes(row.status)) {
+      if (['failed', 'ready', 'draft'].includes(row.status)) {
         const retryPublication = row.error === 'publication-failed';
         row.status = 'queued';
         row.error = null;

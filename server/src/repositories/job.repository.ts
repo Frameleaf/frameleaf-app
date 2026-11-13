@@ -1310,6 +1310,7 @@ export class JobRepository {
 
   /** FL-930: `queueAll` committed with the caller's transaction, from a request (never from queued work). */
   async queueAllInTransaction(tx: Transaction<DB>, items: JobItem[]): Promise<void> {
+    if (items.length === 0) return;
     if (queueExecution.getStore() || runAdmission.getStore()) {
       throw new Error('Queued work and run admission queue through their own transaction');
     }

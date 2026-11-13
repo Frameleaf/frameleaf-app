@@ -50,6 +50,22 @@ describe(JobRepository.name, () => {
     }
   });
 
+  it('does not require request-only admission for an empty transactional batch inside queued work', async () => {
+    await expect(
+      queueExecution.run(context(), () => sut.queueAllInTransaction({} as never, [])),
+    ).resolves.toBeUndefined();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('still refuses nonempty request-only transactional batches inside queued work', async () => {
+    await expect(
+      queueExecution.run(context(), () =>
+        sut.queueAllInTransaction({} as never, [{ name: JobName.AssetDetectFaces, data: { id: 'asset' } }]),
+      ),
+    ).rejects.toThrow('Queued work and run admission queue through their own transaction');
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
   it('retains delay and latest-pending deduplication options', async () => {
     await sut.queue({ name: JobName.ICloudSync, data: { id: 'account' } });
     expect(enqueue.mock.calls[0][0][0].options).toEqual({

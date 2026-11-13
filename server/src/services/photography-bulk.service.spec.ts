@@ -1,9 +1,33 @@
 import { randomUUID } from 'node:crypto';
 import { PhotographyBulkCreateDto } from 'src/dtos/photography-bulk.dto.js';
+import { PhotographyBulkService } from 'src/services/photography-bulk.service.js';
 import { bulkInvitation } from 'src/utils/photography-bulk.js';
 
 const row = { title: 'Portrait', clientName: 'Morgan', clientEmail: 'morgan@example.test' };
 const input = { requestId: randomUUID(), templateId: randomUUID(), rows: [row] };
+
+it('does not queue another gallery invitation when a sent bulk row is retried', async () => {
+  const batch = { id: input.requestId, rows: [{ ...row, id: randomUUID(), status: 'mail-queued', error: null }] };
+  const repository = {
+    mutateStudio: vi.fn(async (_owner: string, _revision: unknown, change: any) => ({
+      result: await change({ bulkGalleries: [batch] }, {}),
+    })),
+    get: vi.fn().mockResolvedValue(undefined),
+  };
+  const jobs = { queueInTransaction: vi.fn() };
+  const service = new PhotographyBulkService(
+    repository as never,
+    {} as never,
+    {} as never,
+    jobs as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  const result = await service.retry({ user: { id: randomUUID() }, session: {} } as never, batch.id, batch.rows[0].id);
+  expect(result.rows[0].status).toBe('mail-queued');
+  expect(jobs.queueInTransaction).not.toHaveBeenCalled();
+});
 
 it('bounds a bulk request and refuses mixed or relative photo sources', () => {
   expect(PhotographyBulkCreateDto.schema.parse(input)).toEqual(input);
