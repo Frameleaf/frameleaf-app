@@ -72,8 +72,6 @@ import { LockedEncryptionService } from 'src/services/locked-encryption.service.
 import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { collectAllMetadata } from 'src/utils/all-metadata.js';
-import { withPlainCopy } from 'src/utils/locked-read.js';
-import { getOriginalLocationPolicy, OriginalLocationPolicy } from 'src/utils/partner-location.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone, getAssetDateTimeUpdates, withDateTimeOffset } from 'src/utils/date.js';
@@ -81,6 +79,7 @@ import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { fontFactsFromName, isBrowserFont } from 'src/utils/font-file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, isLockedRow } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
@@ -88,6 +87,7 @@ import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPoli
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
+import { OriginalLocationPolicy, getOriginalLocationPolicy } from 'src/utils/partner-location.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
 

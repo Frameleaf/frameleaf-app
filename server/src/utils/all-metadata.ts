@@ -18,7 +18,7 @@ export const collectAllMetadata = (
   for (const { name, values } of sources) {
     for (const [qualified, raw] of Object.entries(values)) {
       const parts = qualified.split(':');
-      if (parts.length < 2 || raw == null) continue;
+      if (parts.length < 2 || raw === null || raw === undefined) continue;
       const [family, ...rest] = parts;
       const tag = rest.at(-1)!;
       if (hiddenGroups.has(family) || fileDetails.has(tag) || (shared && creditDetails.has(tag))) continue;
@@ -46,5 +46,5 @@ export const collectAllMetadata = (
     }
   }
 
-  return { groups: [...groups.values()], truncated };
+  return { groups: groups.values().toArray(), truncated };
 };
