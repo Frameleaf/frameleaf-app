@@ -1269,7 +1269,15 @@ export class MetadataService extends BaseService {
     }
 
     return {
-      tags: { ...mediaTags, ...videoResult?.tags, ...sidecarTags },
+      tags: {
+        ...mediaTags,
+        ...videoResult?.tags,
+        ...sidecarTags,
+        ...(sidecarTags &&
+          ['TagsList', 'HierarchicalSubject', 'Subject', 'Keywords'].some((name) => name in sidecarTags) && {
+            TagsList: this.getTagList(sidecarTags),
+          }),
+      },
       originalTags,
       cameraEvidence,
       audio: videoResult?.audio,
@@ -1333,7 +1341,7 @@ export class MetadataService extends BaseService {
         return converted + tag.slice(start);
       });
     }
-    const keywords = exifTags.Keywords;
+    const keywords = exifTags.Subject ?? exifTags.Keywords;
     return keywords ? (Array.isArray(keywords) ? keywords : [keywords]).map(String) : [];
   }
 

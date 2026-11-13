@@ -20,7 +20,7 @@ import type { DB } from 'src/schema/index.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
 import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { Asset, AuthSharedLink, type LockableProperty } from 'src/database.js';
+import { Asset, AuthSharedLink, lockableProperties, type LockableProperty } from 'src/database.js';
 import {
   AssetBulkUploadCheckResponseDto,
   AssetMediaResponseDto,
@@ -560,7 +560,16 @@ export class AssetMediaService extends BaseService {
       if ('GPSLatitude' in tags && 'GPSLongitude' in tags)
         properties.push('latitude', 'longitude', 'city', 'state', 'country');
       if ('Rating' in tags) properties.push('rating');
-      if ('TagsList' in tags || 'Subject' in tags || 'Keywords' in tags) properties.push('tags');
+      if (['TagsList', 'HierarchicalSubject', 'Subject', 'Keywords'].some((key) => key in tags))
+        properties.push('tags');
+      const creditFields: Record<string, string[]> = {
+        title: ['Title', 'ObjectName', 'XPTitle'],
+        artist: ['Creator', 'Artist', 'ByLine'],
+        copyright: ['Rights', 'Copyright', 'CopyrightNotice'],
+      };
+      for (const property of lockableProperties) {
+        if (creditFields[property]?.some((key) => key in tags)) properties.push(property);
+      }
 
       await this.databaseRepository.withAssetSidecarLock(id, async (tx) => {
         const assets = new AssetRepository(tx);
