@@ -147,7 +147,7 @@
       id,
       photographyCampaignScheduleDto: {
         expectedRevision: revision,
-        ...(when ? { scheduledFor: new Date(when).toISOString() } : {}),
+        ...(when && { scheduledFor: new Date(when).toISOString() }),
       },
     });
     if (disposed || current !== generation) {

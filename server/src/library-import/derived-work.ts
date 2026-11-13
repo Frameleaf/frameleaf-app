@@ -193,7 +193,7 @@ export async function prepareLibraryImportWork(
             : intent.name === JobName.AssetEncodeVideo
               ? assets.where('mapped.type', '=', 'VIDEO')
               : assets;
-        if (!runs[0]) await insertRunJobs(tx, runId, intent, selected);
+        if (!runs[0]) await insertRunJobs<DB>(tx, runId, intent, selected);
         // Independently compare both directions; held work is never silently repaired.
         const expected = sql`select p.id::text as "itemKey",coalesce(to_jsonb(p)->>'rootItemKey',p.id::text) as "rootItemKey",
           ${JSON.stringify(intent.data)}::text::jsonb || coalesce(to_jsonb(p)->'data','{}'::jsonb) || jsonb_build_object('id',p.id) as data

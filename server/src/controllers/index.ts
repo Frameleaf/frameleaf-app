@@ -1,4 +1,3 @@
-import { PhotographyCampaignController } from 'src/controllers/photography-campaign.controller.js';
 import { AccountEventAdminController, AccountEventController } from 'src/controllers/account-event.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumCleanupController } from 'src/controllers/album-cleanup.controller.js';
@@ -113,6 +112,7 @@ import {
 } from 'src/controllers/photo-locations.controller.js';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
+import { PhotographyCampaignController } from 'src/controllers/photography-campaign.controller.js';
 import { PhotographyWorkflowController } from 'src/controllers/photography-workflow.controller.js';
 import { PhotographyWorkspaceController } from 'src/controllers/photography-workspace.controller.js';
 import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';

@@ -1,4 +1,3 @@
-import { PhotographyCampaignRepository } from 'src/repositories/photography-campaign.repository.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
@@ -116,6 +115,7 @@ import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PhotoLocationsRepository } from 'src/repositories/photo-locations.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
+import { PhotographyCampaignRepository } from 'src/repositories/photography-campaign.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';

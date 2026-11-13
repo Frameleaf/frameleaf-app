@@ -1,4 +1,4 @@
-import { Kysely, SelectQueryBuilder, sql } from 'kysely';
+import { Kysely, type QueryExecutorProvider, SelectQueryBuilder, sql } from 'kysely';
 import { v5 } from 'uuid';
 import { JobName } from 'src/enum.js';
 import { digest } from 'src/immich-import/adapters.js';
@@ -34,13 +34,13 @@ export const importDerivedRunId = (sourceFingerprint: string, configFingerprint:
  * holds name starts held (`availableAt = 'infinity'`); setup changes holds under the run's FOR UPDATE, so reading them
  * FOR SHARE keeps an older view from re-holding work a concurrent release just let go.
  */
-export async function insertRunJobs(
-  db: Kysely<any>,
+export async function insertRunJobs<Database>(
+  db: Kysely<Database>,
   runId: string,
   intent: QueueIntent,
   selection: SelectQueryBuilder<any, any, { id: string }>,
 ) {
-  const insert = async (tx: Kysely<any>) => {
+  const insert = async (tx: QueryExecutorProvider) => {
     await sql`insert into job_queue(name) values (${intent.queue}) on conflict do nothing`.execute(tx);
     const {
       rows: [run],

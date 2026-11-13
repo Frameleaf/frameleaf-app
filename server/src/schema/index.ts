@@ -1,8 +1,3 @@
-import {
-  PhotographyCampaignTable,
-  PhotographyContactTable,
-  PhotographyCampaignDeliveryTable,
-} from 'src/schema/tables/photography-campaign.table.js';
 import { Database, Extensions, Generated, Int8 } from '@frameleaf/sql-tools';
 import type { QueueDatabase } from 'src/queue/table-types.js';
 import {
@@ -216,6 +211,11 @@ import {
   PhotoSourceTable,
 } from 'src/schema/tables/photo-source.table.js';
 import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
+import {
+  PhotographyCampaignDeliveryTable,
+  PhotographyCampaignTable,
+  PhotographyContactTable,
+} from 'src/schema/tables/photography-campaign.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
