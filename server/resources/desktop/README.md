@@ -26,7 +26,7 @@ What the source changes, in `sessions/ort.py`, `native_device.py`, `native_ort.p
 - OpenVINO can qualify. It was always reported `native_device_execution_evidence_required` because only CUDA could qualify without a device collector. The runtime now states `openvinoDevices` among its facts where it has that provider, and a report needs one of OpenVINO's graphics devices (`GPU…`) there; on the processor or an NPU it stays incompatible. The server requires the same and accepts `onnxruntime-openvino` as the package that provides `ort`.
 - CUDA and, on Windows, OpenVINO libraries are loaded from the wheels a desktop runtime carries (`onnxruntime.preload_dlls`, `add_openvino_libs_to_path`), since a desktop has no system installation of them.
 
-Only the CoreML twins have been qualified on hardware (Apple Silicon). The CUDA and OpenVINO twins are unverified on NVIDIA and Intel hardware. The server's request-time checks (`binding.check`: staged files, preprocessing, runtime facts) still run before and after every prediction on every provider.
+Only the CoreML twins have been qualified on hardware (Apple Silicon). The CUDA and OpenVINO twins are unverified on NVIDIA and Intel hardware. Desktop builds no Windows OpenVINO runtime: `onnxruntime-openvino` 1.24.1 on Windows needs the OpenVINO 2025.4 libraries it was built with, the lock has only `openvino` 2026.4.1, and with those its provider library does not load (Windows error 127, seen in Desktop CI). The server's request-time checks (`binding.check`: staged files, preprocessing, runtime facts) still run before and after every prediction on every provider.
 
 ## Cloud pins (`model-pins.json`)
 
