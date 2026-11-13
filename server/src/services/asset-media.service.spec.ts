@@ -1592,18 +1592,36 @@ describe(AssetMediaService.name, () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
       mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
       mocks.asset.create.mockResolvedValueOnce(asset);
+      const directory = await mkdtemp(join(tmpdir(), 'fl-xmp-'));
+      try {
+        const originalPath = join(directory, 'asset.xmp');
+        const contents =
+          '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description/></rdf:RDF>';
+        await writeFile(originalPath, contents);
+        const sidecar = { ...fileStub.photoSidecar, originalPath, size: Buffer.byteLength(contents) };
 
-      await expect(sut.uploadAsset(authStub.user1, createDto, fileStub.photo, fileStub.photoSidecar)).resolves.toEqual({
-        status: AssetMediaStatus.CREATED,
-        id: asset.id,
-      });
+        await expect(sut.uploadAsset(authStub.user1, createDto, fileStub.photo, sidecar)).resolves.toEqual({
+          status: AssetMediaStatus.CREATED,
+          id: asset.id,
+        });
+        expect(mocks.storage.utimes).toHaveBeenCalledWith(
+          originalPath,
+          expect.any(Date),
+          new Date(createDto.fileModifiedAt),
+        );
+        expect(mocks.asset.update).not.toHaveBeenCalled();
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
 
-      expect(mocks.storage.utimes).toHaveBeenCalledWith(
-        fileStub.photoSidecar.originalPath,
-        expect.any(Date),
-        new Date(createDto.fileModifiedAt),
+    it('rejects sidecar replacement by a different user before reading or writing bytes', async () => {
+      const asset = AssetFactory.create({ ownerId: authStub.user1.user.id });
+      mocks.asset.getById.mockResolvedValueOnce(getForAsset(asset));
+      await expect(sut.replaceSidecar(authStub.admin, asset.id, Buffer.from('unused'), false)).rejects.toBeInstanceOf(
+        ForbiddenException,
       );
-      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.database.withAssetSidecarLock).not.toHaveBeenCalled();
     });
   });
 

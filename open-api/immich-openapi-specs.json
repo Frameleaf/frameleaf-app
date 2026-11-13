@@ -17608,6 +17608,69 @@
         "x-immich-state": "Beta"
       }
     },
+    "/assets/uploads/{id}/sidecar": {
+      "put": {
+        "operationId": "attachAssetUploadSidecar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "sidecarData": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sidecarData"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Attach XMP to a resumable photo upload",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.upload"
+      }
+    },
     "/assets/{id}": {
       "get": {
         "description": "Retrieve detailed information about a specific asset.",
@@ -21063,6 +21126,72 @@
         ],
         "x-immich-permission": "asset.edit.create",
         "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/sidecar": {
+      "put": {
+        "operationId": "replaceAssetSidecar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "sidecarData": {
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "useFileValues": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "sidecarData"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Replace the photo XMP sidecar",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
       }
     },
     "/assets/{id}/sources": {

@@ -954,6 +954,9 @@ importers:
       sanitize-filename:
         specifier: ^1.6.4
         version: 1.6.4
+      saxes:
+        specifier: ^6.0.0
+        version: 6.0.0
       semver:
         specifier: ^7.8.5
         version: 7.8.5
@@ -24703,7 +24706,6 @@ snapshots:
   saxes@6.0.0:
     dependencies:
       xmlchars: 2.2.0
-    optional: true
 
   scheduler@0.28.0: {}
 
@@ -26508,8 +26510,7 @@ snapshots:
 
   xmlbuilder@11.0.1: {}
 
-  xmlchars@2.2.0:
-    optional: true
+  xmlchars@2.2.0: {}
 
   xmlhttprequest-ssl@2.1.2: {}
 
