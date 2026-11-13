@@ -38,7 +38,7 @@ export async function adoptMigrationRenames(db, migrationFolder, options = {}) {
   const migrations = await createMigrationProvider(migrationFolder, options).getMigrations();
   const names = Object.keys(migrations);
   const renames = await readRenames(migrationFolder, names);
-  if (renames.length) await adoptRenamedMigrations(db, names, renames);
+  if (renames.length) await adoptRenamedMigrations(db, names, renames, migrations);
 }
 
 async function readRenames(migrationFolder, names) {
@@ -54,8 +54,8 @@ async function readRenames(migrationFolder, names) {
   return renames;
 }
 
-// Renames only adopt already-executed bodies; the strict migrator still validates and runs the canonical chain.
-async function adoptRenamedMigrations(db, names, renames) {
+// Complete a validated old prefix and adopt unchanged renamed bodies atomically before strict migration.
+async function adoptRenamedMigrations(db, names, renames, migrations) {
   const { rows: present } =
     await sql`SELECT to_regclass('public.frameleaf_migrations') IS NOT NULL AS present`.execute(
       db,
@@ -72,14 +72,25 @@ async function adoptRenamedMigrations(db, names, renames) {
     const aliases = new Map(renames);
     const changed = rows.filter(({ name }) => aliases.has(name));
     if (!changed.length) return;
-    const adopted = rows.map(({ name }) => aliases.get(name) ?? name).sort();
-    if (adopted.some((name, index) => name !== names[index]))
-      throw new Error('Cannot adopt noncanonical migration RENAMES history');
-    const canonicalRows = new Map(
-      rows.map((row) => [aliases.get(row.name) ?? row.name, row]),
-    );
     if (rows.some((row) => !Number.isFinite(Date.parse(row.timestamp))))
       throw new Error('Cannot adopt invalid migration timestamp');
+    const previousNames = new Map(renames.map(([from, to]) => [to, from]));
+    const historical = names.map((name) => previousNames.get(name) ?? name).sort();
+    // Match Kysely's actual timestamp/name ordering before executing any compatibility DDL.
+    const executed = rows.toSorted((a, b) => a.timestamp === b.timestamp ? a.name.localeCompare(b.name) : Date.parse(a.timestamp) - Date.parse(b.timestamp))
+      .map(({ name }) => previousNames.get(name) ?? name);
+    if (executed.some((name, index) => name !== historical[index]))
+      throw new Error('Cannot adopt noncanonical migration RENAMES history');
+    const canonicalRows = new Map(rows.map((row) => [aliases.get(row.name) ?? row.name, row]));
+    const lastApplied = Math.max(...[...canonicalRows.keys()].map((name) => names.indexOf(name)));
+    for (const [index, name] of names.slice(0, lastApplied + 1).entries()) {
+      if (canonicalRows.has(name)) continue;
+      // An old prefix may stop at the campaign before FoundFile; complete its pending predecessor atomically.
+      await migrations[name].up(tx);
+      const timestamp = canonicalRows.get(names[index - 1])?.timestamp ?? rows[0].timestamp;
+      await sql`INSERT INTO public.frameleaf_migrations (name, timestamp) VALUES (${name}, ${timestamp})`.execute(tx);
+      canonicalRows.set(name, { name, timestamp });
+    }
     for (const row of changed.sort((a, b) =>
       aliases.get(a.name).localeCompare(aliases.get(b.name)),
     )) {
