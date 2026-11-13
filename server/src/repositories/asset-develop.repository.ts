@@ -170,6 +170,7 @@ export class AssetDevelopRepository {
     masterPath?: string | null;
     batchReturn?: BatchReturnAdmission;
     styleBatchId?: string;
+    importChecksum?: string;
   }): Promise<AssetDevelopRevision> {
     // Serialised per asset: two saves racing for the same next number would otherwise collide on
     // the (assetId, revision) unique key and one of them would fail.
@@ -235,6 +236,13 @@ export class AssetDevelopRepository {
             currentRevisionId,
           });
         }
+      }
+      if (input.importChecksum) {
+        const prior = await sql<AssetDevelopRevision>`SELECT * FROM ${TABLE}
+          WHERE "assetId" = ${input.assetId}::uuid AND "ownerId" = ${input.ownerId}::uuid
+            AND kind = 'recipe' AND software = ${input.software ?? null}
+            AND recipe->'imported'->>'checksum' = ${input.importChecksum}`.execute(trx);
+        if (prior.rows[0]) return prior.rows[0];
       }
       if (input.styleBatchId) {
         const prior = await sql<AssetDevelopRevision>`SELECT * FROM ${TABLE}

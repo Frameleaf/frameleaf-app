@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { developLabel } from '$lib/frameleaf/develop-label';
   /**
    * The photography workspace: a photographer's shoots, each linked to an album they own, with
    * culling, client workflow, presentation and publishing.
@@ -1336,7 +1337,7 @@
                       </p>{/if}{#each versions.revisions as version (version.revision)}<p>
                         {version.label === 'My style'
                           ? $t('frameleaf_photography_style_label')
-                          : (version.label ??
+                          : (developLabel(version, $t) ??
                             $t('frameleaf_photography_version_number', {
                               values: { number: version.revision },
                             }))}{version.isCurrent ? ` · ${$t('frameleaf_photography_version_current')}` : ''}

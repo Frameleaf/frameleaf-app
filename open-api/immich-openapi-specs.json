@@ -83204,6 +83204,88 @@
           {
             "type": "object",
             "properties": {
+              "imported": {
+                "description": "Preserved external XMP settings and approximated colour controls",
+                "type": "object",
+                "properties": {
+                  "lightroom": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "darktable": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "checksum": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "curve": {
+                    "minItems": 2,
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1,
+                          "format": "double",
+                          "description": "Input"
+                        },
+                        "y": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1,
+                          "format": "double",
+                          "description": "Output"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "hsl": {
+                    "minItems": 8,
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "hue": {
+                          "default": 0,
+                          "description": "Hue adjustment",
+                          "type": "number",
+                          "minimum": -100,
+                          "maximum": 100,
+                          "format": "double"
+                        },
+                        "saturation": {
+                          "default": 0,
+                          "description": "Saturation adjustment",
+                          "type": "number",
+                          "minimum": -100,
+                          "maximum": 100,
+                          "format": "double"
+                        },
+                        "luminance": {
+                          "default": 0,
+                          "description": "Luminance adjustment",
+                          "type": "number",
+                          "minimum": -100,
+                          "maximum": 100,
+                          "format": "double"
+                        }
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
               "version": {
                 "type": "number",
                 "enum": [
@@ -105730,6 +105812,88 @@
             "minimum": -100,
             "type": "number"
           },
+          "imported": {
+            "additionalProperties": false,
+            "description": "Preserved external XMP settings and approximated colour controls",
+            "properties": {
+              "checksum": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "curve": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "description": "Input",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Output",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "darktable": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "hsl": {
+                "items": {
+                  "properties": {
+                    "hue": {
+                      "default": 0,
+                      "description": "Hue adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "luminance": {
+                      "default": 0,
+                      "description": "Luminance adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "saturation": {
+                      "default": 0,
+                      "description": "Saturation adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "lightroom": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
           "masks": {
             "default": [],
             "description": "Selective adjustments, applied in order after the global develop",
@@ -105992,6 +106156,88 @@
             "maximum": 100,
             "minimum": -100,
             "type": "number"
+          },
+          "imported": {
+            "additionalProperties": false,
+            "description": "Preserved external XMP settings and approximated colour controls",
+            "properties": {
+              "checksum": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "curve": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "description": "Input",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Output",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "darktable": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "hsl": {
+                "items": {
+                  "properties": {
+                    "hue": {
+                      "default": 0,
+                      "description": "Hue adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "luminance": {
+                      "default": 0,
+                      "description": "Luminance adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "saturation": {
+                      "default": 0,
+                      "description": "Saturation adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "lightroom": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            },
+            "type": "object"
           },
           "masks": {
             "default": [],
@@ -106256,6 +106502,88 @@
             "minimum": -100,
             "type": "number"
           },
+          "imported": {
+            "additionalProperties": false,
+            "description": "Preserved external XMP settings and approximated colour controls",
+            "properties": {
+              "checksum": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "curve": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "description": "Input",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Output",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "darktable": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "hsl": {
+                "items": {
+                  "properties": {
+                    "hue": {
+                      "default": 0,
+                      "description": "Hue adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "luminance": {
+                      "default": 0,
+                      "description": "Luminance adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "saturation": {
+                      "default": 0,
+                      "description": "Saturation adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "lightroom": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
           "masks": {
             "default": [],
             "description": "Selective adjustments, applied in order after the global develop",
@@ -106518,6 +106846,88 @@
             "maximum": 100,
             "minimum": -100,
             "type": "number"
+          },
+          "imported": {
+            "additionalProperties": false,
+            "description": "Preserved external XMP settings and approximated colour controls",
+            "properties": {
+              "checksum": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "curve": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "description": "Input",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Output",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "darktable": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "hsl": {
+                "items": {
+                  "properties": {
+                    "hue": {
+                      "default": 0,
+                      "description": "Hue adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "luminance": {
+                      "default": 0,
+                      "description": "Luminance adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "saturation": {
+                      "default": 0,
+                      "description": "Saturation adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "lightroom": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            },
+            "type": "object"
           },
           "masks": {
             "default": [],
@@ -111764,6 +112174,88 @@
             "maximum": 100,
             "minimum": -100,
             "type": "number"
+          },
+          "imported": {
+            "additionalProperties": false,
+            "description": "Preserved external XMP settings and approximated colour controls",
+            "properties": {
+              "checksum": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "curve": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "description": "Input",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Output",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "darktable": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "hsl": {
+                "items": {
+                  "properties": {
+                    "hue": {
+                      "default": 0,
+                      "description": "Hue adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "luminance": {
+                      "default": 0,
+                      "description": "Luminance adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "saturation": {
+                      "default": 0,
+                      "description": "Saturation adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "lightroom": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            },
+            "type": "object"
           },
           "keyFrame": {
             "$ref": "#/components/schemas/AssetDevelopKeyFrame",
@@ -172772,6 +173264,17 @@
           "cloudProcessing": {
             "$ref": "#/components/schemas/CloudProcessingResponse"
           },
+          "develop": {
+            "properties": {
+              "importXmpEdits": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "importXmpEdits"
+            ],
+            "type": "object"
+          },
           "display": {
             "$ref": "#/components/schemas/DisplayPreferencesResponse"
           },
@@ -172922,6 +173425,14 @@
           },
           "cloudProcessing": {
             "$ref": "#/components/schemas/CloudProcessingUpdate"
+          },
+          "develop": {
+            "properties": {
+              "importXmpEdits": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
           },
           "display": {
             "$ref": "#/components/schemas/DisplayPreferencesUpdate"

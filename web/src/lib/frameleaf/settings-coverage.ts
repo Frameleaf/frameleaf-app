@@ -1678,6 +1678,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: "'display.hourCycle'",
   },
   {
+    pattern: 'develop.importXmpEdits',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: 'develop.importXmpEdits',
+  },
+  {
     pattern: 'download.archiveSize',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',

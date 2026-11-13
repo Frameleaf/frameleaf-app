@@ -30,6 +30,7 @@ export type AccountPreferencesDraft = {
   'folders.sidebarWeb': boolean;
   /** Clients (photography studios) is opt-in; on, it sits in the top bar. */
   'clients.enabled': boolean;
+  'develop.importXmpEdits': boolean;
   'memories.enabled': boolean;
   'memories.sidebarWeb': boolean;
   /** Seconds; `null` while the field is empty. */
@@ -131,6 +132,7 @@ export const SECTION_KEYS: Record<AccountPreferencesSection, readonly AccountPre
   preferences: [
     'albums.defaultAssetOrder',
     'download.archiveSize',
+    'develop.importXmpEdits',
     'download.includeEmbeddedVideos',
     'purchase.showSupportBadge',
     'purchase.hideBuyButtonUntil',
@@ -161,6 +163,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'folders.enabled': true,
   'folders.sidebarWeb': true,
   'clients.enabled': false,
+  'develop.importXmpEdits': true,
   'memories.enabled': true,
   'memories.sidebarWeb': true,
   'memories.duration': 5,
@@ -202,6 +205,7 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'folders.enabled': preferences.folders.enabled,
   'folders.sidebarWeb': preferences.folders.sidebarWeb,
   'clients.enabled': preferences.clients?.enabled ?? false,
+  'develop.importXmpEdits': preferences.develop?.importXmpEdits ?? true,
   'memories.enabled': preferences.memories.enabled,
   'memories.sidebarWeb': preferences.memories.sidebarWeb,
   'memories.duration': preferences.memories.duration,

@@ -264,6 +264,24 @@ export class AssetDevelopService {
     return this.toRevisionDto(revision);
   }
 
+  async createImportedVersion(assetId: string, recipe: AssetDevelopRecipe, checksum: string, software: string) {
+    const asset = await this.requireEditableStill(assetId);
+    const envelope = developEnvelope(recipe);
+    const revision = await this.assetDevelopRepository.create({
+      assetId,
+      ownerId: asset.ownerId,
+      recipe: envelope,
+      recipeVersion: envelope.version,
+      importChecksum: checksum,
+      requireRenderable: true,
+      label: `From ${software}`,
+      software,
+      status: AssetDevelopRevisionStatus.Saved,
+    });
+    if (revision.status === AssetDevelopRevisionStatus.Saved) await this.queueRender(revision, asset.originalFileName);
+    return revision;
+  }
+
   async createStyleVersion(auth: AuthDto, assetId: string, batchId: string, recipe: AssetDevelopRecipe) {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
@@ -695,7 +713,11 @@ export class AssetDevelopService {
         if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
         if (!(external && (await this.assetDevelopRepository.publishBatchRendered(revision, publication)))) {
           await this.assetDevelopRepository.update(revision.id, publication);
-          if (!revision.styleBatchId) await this.assetDevelopRepository.setCurrent(revision.assetId, id);
+          if (
+            !revision.styleBatchId &&
+            !(revision.recipe.imported && ['Lightroom', 'darktable'].includes(revision.software ?? ''))
+          )
+            await this.assetDevelopRepository.setCurrent(revision.assetId, id);
         }
         if (!external) {
           const accepted = new Set([

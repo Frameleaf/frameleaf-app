@@ -459,7 +459,32 @@ export const AssetDevelopKeyframeSchema = z
   .meta({ id: 'AssetDevelopKeyFrame' });
 
 /** The recipe fields without the whole-recipe checks, for `.pick` and the envelope's shape. */
+export const ImportedDevelopSettingsSchema = z
+  .object({
+    lightroom: z.record(z.string(), z.unknown()).optional(),
+    darktable: z.record(z.string(), z.unknown()).optional(),
+    checksum: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+    curve: NativeCurveSchema.optional(),
+    hsl: z
+      .array(
+        z.object({
+          hue: bipolar('Hue adjustment'),
+          saturation: bipolar('Saturation adjustment'),
+          luminance: bipolar('Luminance adjustment'),
+        }),
+      )
+      .length(8)
+      .optional(),
+  })
+  .strict();
+
 export const KnownAssetDevelopRecipeFields = z.object({
+  imported: ImportedDevelopSettingsSchema.optional().describe(
+    'Preserved external XMP settings and approximated colour controls',
+  ),
   version: z.literal(ASSET_DEVELOP_RECIPE_VERSION).meta({ format: 'double' }).describe('Recipe contract version'),
   exposure: z
     .number()

@@ -108,6 +108,7 @@
   // bring back deleted photos" FL-556.
   const albums = createOwnPreferencesDraft([
     'albums.defaultAssetOrder',
+    'develop.importXmpEdits',
     'search.includeArchived',
     'search.classic',
     'trash.reuploadUntil',
@@ -316,6 +317,14 @@
     </Section>
 
     <Section title={$t('frameleaf_prefs_look_safety')}>
+      <Row label={$t('frameleaf_develop_import_setting')} help={$t('frameleaf_develop_import_description')}>
+        <Switch
+          label={$t('frameleaf_develop_import_setting')}
+          checked={albums.draft['develop.importXmpEdits']}
+          onChange={(value) => albums.set('develop.importXmpEdits', value)}
+        />
+      </Row>
+
       <Row label={$t('frameleaf_prefs_look_ask_delete')} help={$t('frameleaf_prefs_look_ask_delete_help')}>
         <Switch
           label={$t('frameleaf_prefs_look_ask_delete')}

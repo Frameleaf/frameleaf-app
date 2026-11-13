@@ -128,6 +128,7 @@ export const PREFERENCES_CHANGED_MESSAGE =
  */
 const getDefaultPreferences = (): FrameleafUserPreferences => {
   return {
+    develop: { importXmpEdits: true },
     notifications: { locale: 'en', devices: [] },
     albums: {
       defaultAssetOrder: AssetOrder.Desc,

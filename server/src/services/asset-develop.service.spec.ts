@@ -1168,6 +1168,22 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('handleRender', () => {
+    it.each(['Lightroom', 'darktable', null])(
+      'preserves the current version only for automatic %s imports',
+      async (software) => {
+        const revision = revisionStub({
+          assetId: asset.id,
+          status: AssetDevelopRevisionStatus.Queued,
+          software,
+          recipe: { ...defaultDevelopRecipe(), imported: { checksum: 'a'.repeat(64), lightroom: {} } },
+        });
+        developRepository.get.mockResolvedValue(revision);
+        await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Success);
+        if (software) expect(developRepository.setCurrent).not.toHaveBeenCalled();
+        else expect(developRepository.setCurrent).toHaveBeenCalledWith(asset.id, revision.id);
+      },
+    );
+
     it('renders a style version while keeping the existing current version', async () => {
       const revision = revisionStub({
         assetId: asset.id,

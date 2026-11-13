@@ -215,6 +215,7 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   },
   'download.includeEmbeddedVideos': { label: 'frameleaf_prefs_downloads_motion_label' },
   // ACCOUNT-P2, P3, P5: the account preferences added to Downloads, Look & playback and People & sharing.
+  'develop.importXmpEdits': { label: 'frameleaf_develop_import_setting' },
   'download.includeSidecar': { label: 'frameleaf_prefs_downloads_details' },
   'search.includeArchived': { label: 'frameleaf_prefs_look_archived' },
   // FL-918: Look & playback › Search.
@@ -261,6 +262,7 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
 /** The page a personal preference lives on, by the first part of its path. */
 const PREFERENCE_PAGES: Record<string, { area: SettingsAreaId; section: string }> = {
   albums: { area: 'preferences', section: 'app-settings' },
+  develop: { area: 'preferences', section: 'app-settings' },
   download: { area: 'preferences', section: 'download-settings' },
   emailNotifications: { area: 'notifications', section: 'email-preferences' },
   notifications: { area: 'preferences', section: 'app-settings' },

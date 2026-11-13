@@ -1,0 +1,1 @@
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"><rdf:Description crs:CameraProfile="Custom camera profile" crs:ProcessVersion="15.4"><crs:LocalCorrections><rdf:Seq><rdf:li>opaque mask data</rdf:li></rdf:Seq></crs:LocalCorrections></rdf:Description></rdf:RDF>
