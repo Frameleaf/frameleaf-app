@@ -1392,6 +1392,13 @@
         <label
           ><input
             type="checkbox"
+            checked={draft.config.selfieSearch ?? false}
+            onchange={(event) => (draft!.config.selfieSearch = event.currentTarget.checked)}
+          />{$t('frameleaf_clients_selfie_enable')}</label
+        >
+        <label
+          ><input
+            type="checkbox"
             checked={draft.config.reminders?.selection ?? false}
             onchange={(event) =>
               (draft!.config.reminders = {

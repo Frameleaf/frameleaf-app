@@ -1,4 +1,4 @@
-import { defaults, getBaseUrl, type PhotographyBulkDto } from '@frameleaf/sdk';
+import { defaults, getBaseUrl, type PhotographyBulkDto, type PhotographySelfieSearchDto } from '@frameleaf/sdk';
 import { codeForStatus, PhotographyError } from './errors';
 
 export type Watermark = {
@@ -57,6 +57,7 @@ export type WorkflowConfig = {
   expiresAt: string | null;
   turnaroundDays: number;
   /** Approved design (2026-11-04): what the client reads first, which photographs they see, and how many they may choose. */
+  selfieSearch?: boolean;
   welcomeMessage?: string;
   proofCollection?: 'eligible' | 'selected';
   maxSelections?: number | null;
@@ -249,6 +250,7 @@ export type GuestPhoto = {
   outputs?: (DeliveryOutput & Pick<GuestPhoto, 'canDownload' | 'blockedReason'>)[];
 };
 export type GuestGallery = {
+  selfieSearch?: boolean;
   revision: string;
   title: string;
   /** The shoot's date (YYYY-MM-DD), for the cover. */
@@ -440,6 +442,48 @@ export async function galleryRequest<T>(
 ): Promise<T> {
   const response = await galleryFetch(id, session, path, method, body, options);
   return response.status === 204 ? (undefined as T) : response.json();
+}
+/** A guest selfie uses multipart and carries only the gallery's short-lived session. */
+export async function searchGallerySelfie(
+  id: string,
+  session: string,
+  file: Blob,
+  signal?: AbortSignal,
+): Promise<PhotographySelfieSearchDto> {
+  const body = new FormData();
+  body.append('file', file, 'selfie.jpg');
+  const response = await (defaults.fetch ?? fetch)(
+    `${getBaseUrl()}/photography/galleries/${encodeURIComponent(id)}/selfie-search`,
+    {
+      method: 'POST',
+      headers: new Headers({ Accept: 'application/json', 'X-Photography-Session': session }),
+      credentials: 'omit',
+      cache: 'no-store',
+      body,
+      signal,
+    },
+  );
+  if (!response.ok) {
+    const error = (await response.json().catch(() => null)) as { code?: string; retryAfter?: number } | null;
+    if (response.status === 429) {
+      const seconds = Number(error?.retryAfter ?? response.headers.get('Retry-After'));
+      throw new PhotographyError('wait', 429, Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : 60);
+    }
+    if ([401, 403, 410].includes(response.status)) {
+      throw new PhotographyError('access_ended', response.status);
+    }
+    switch (error?.code) {
+      case 'selfie_no_face':
+      case 'selfie_multiple_faces':
+      case 'selfie_invalid_image': {
+        throw new PhotographyError(error.code, response.status);
+      }
+      default: {
+        throw new PhotographyError('selfie_unavailable', response.status);
+      }
+    }
+  }
+  return response.json();
 }
 export type GallerySession = { session: string; expiresAt: string };
 /** The invitation is good but its gallery asks for a password; the studio's look comes with it. */

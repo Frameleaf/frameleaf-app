@@ -933,3 +933,16 @@
   white-space: pre-wrap;
   font-style: italic;
 }
+
+.pc-selfie-results {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 24px 0;
+  border-bottom: 1px solid currentColor;
+}
+.pc-selfie-results p {
+  margin: 0;
+  flex: 1 1 180px;
+}

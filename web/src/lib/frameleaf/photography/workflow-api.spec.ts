@@ -1,5 +1,6 @@
 import {
   galleryFile,
+  searchGallerySelfie,
   galleryLogo,
   galleryMedia,
   galleryRequest,
@@ -93,5 +94,42 @@ it('throws a code for every refusal, never a sentence', async () => {
   wrongType();
   await expect(watermarkPreview({} as never, 'portrait', 'light')).rejects.toMatchObject({
     code: 'watermark_preview',
+  });
+});
+
+it('sends a selfie as multipart with scoped authentication and cancellation', async () => {
+  transport.fetch.mockResolvedValue(Response.json({ captureIds: ['capture'] }));
+  const signal = new AbortController().signal;
+  const file = new File(['selfie'], 'selfie.jpg', { type: 'image/jpeg' });
+  expect(await searchGallerySelfie('shoot', 'scoped', file, signal)).toEqual({ captureIds: ['capture'] });
+  const [url, options] = transport.fetch.mock.calls[0];
+  expect(url).toBe('/custom-api/photography/galleries/shoot/selfie-search');
+  expect(options.headers.get('X-Photography-Session')).toBe('scoped');
+  expect(options.headers.has('Authorization')).toBe(false);
+  expect(options.headers.has('Content-Type')).toBe(false);
+  expect(options.credentials).toBe('omit');
+  expect(options.cache).toBe('no-store');
+  expect(options.signal).toBe(signal);
+  expect(options.body.get('file')).toMatchObject({ size: file.size, type: file.type });
+  expect(await options.body.get('file').text()).toBe('selfie');
+});
+it('keeps selfie error codes and rate-limit delay without exposing response text', async () => {
+  transport.fetch.mockResolvedValueOnce(
+    Response.json({ code: 'selfie_no_face', message: 'private detail' }, { status: 400 }),
+  );
+  await expect(searchGallerySelfie('shoot', 'scoped', new Blob())).rejects.toMatchObject({
+    code: 'selfie_no_face',
+    status: 400,
+  });
+  transport.fetch.mockResolvedValueOnce(Response.json({ code: 'rate_limited', retryAfter: 12 }, { status: 429 }));
+  await expect(searchGallerySelfie('shoot', 'scoped', new Blob())).rejects.toMatchObject({
+    code: 'wait',
+    status: 429,
+    retryAfter: 12,
+  });
+  transport.fetch.mockResolvedValueOnce(Response.json({ code: 'secret_operator_details' }, { status: 503 }));
+  await expect(searchGallerySelfie('shoot', 'scoped', new Blob())).rejects.toMatchObject({
+    code: 'selfie_unavailable',
+    status: 503,
   });
 });
