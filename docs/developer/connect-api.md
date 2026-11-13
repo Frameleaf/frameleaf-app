@@ -28,16 +28,16 @@ Disconnect through `POST /api/oauth/apps/revoke` with `client_id` and the last s
 
 All routes below are relative to `/api/connect`.
 
-| Method and route | Behavior |
-| --- | --- |
-| `GET capabilities` | Protocol version, stable server ID, display name, granted scopes and policy, policy revision, current album targets, effective transfer limits and MIME types by workspace. |
-| `GET albums` | Readable and writable owned targets, with `id`, `name`, `workspace`, `canRead` and `canWrite`. |
-| `GET assets` | Search authorized image/video assets using `q`, `albumId`, `type`, `page` and `size`. Pages start at 1; size defaults to 50 and cannot exceed 100. Counts use the same authorization filter as results. |
-| `GET assets/:id` | Narrow asset metadata or 404. |
-| `POST albums/:id/assets` | Add `assetIds` (1–100) to a currently writable target. Every source asset must also be readable. Returns per-asset results. |
-| `POST assets/:id/tags` | Add `tags` (1–20). The asset must be readable and belong to a currently writable destination. Returns `tagIds`. |
+| Method and route         | Behavior                                                                                                                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET capabilities`       | Protocol version, stable server ID, display name, granted scopes and policy, policy revision, current album targets, effective transfer limits and MIME types by workspace.                             |
+| `GET albums`             | Readable and writable owned targets, with `id`, `name`, `workspace`, `canRead` and `canWrite`.                                                                                                          |
+| `GET assets`             | Search authorized image/video assets using `q`, `albumId`, `type`, `page` and `size`. Pages start at 1; size defaults to 50 and cannot exceed 100. Counts use the same authorization filter as results. |
+| `GET assets/:id`         | Narrow asset metadata or 404.                                                                                                                                                                           |
+| `POST albums/:id/assets` | Add `assetIds` (1–100) to a currently writable target. Every source asset must also be readable. Returns per-asset results.                                                                             |
+| `POST assets/:id/tags`   | Add `tags` (1–20). The asset must be readable and belong to a currently writable destination. Returns `tagIds`.                                                                                         |
 
-Asset metadata contains `id`, `type`, `title`, `description`, `width`, `height`, `duration`, `createdAt` and `updatedAt`. Duration is milliseconds. The current Library has no separate asset title, so `title` is null; `description` is the caption. Responses omit EXIF, location, people, owner details, storage paths and original filenames. Asset ordering is capture time descending, then ID descending.
+Asset metadata contains `id`, `type`, `title`, `description`, `width`, `height`, `duration`, `createdAt` and `updatedAt`. Duration is milliseconds. This Connect protocol version returns `title` as null; `description` is the caption. Responses omit EXIF, location, people, owner details, storage paths and original filenames. Asset ordering is capture time descending, then ID descending.
 
 `connection.grantId` and `connection.libraryUserId` identify only the currently authenticated grant and its Library owner. Managed connectors use these IDs to bind downstream consent; they do not expose another account or permit selecting an owner.
 

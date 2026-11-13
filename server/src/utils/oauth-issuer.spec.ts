@@ -2,7 +2,11 @@ import type { Request } from 'express';
 import { oauthIssuer } from 'src/utils/oauth-issuer.js';
 
 const request = (values: Record<string, unknown> = {}) =>
-  ({ headers: { host: 'LIBRARY.example:443', 'x-forwarded-proto': 'https' }, secure: false, ...values }) as Request;
+  ({
+    headers: { host: 'LIBRARY.example:443', 'x-forwarded-proto': 'https' },
+    secure: false,
+    ...values,
+  }) as unknown as Request;
 
 describe('OAuth issuer transport and canonical origin', () => {
   it('canonicalizes default ports without treating forwarded HTTPS as trusted assistant transport', () => {
