@@ -22483,5 +22483,9 @@
   "zero_to_clear_rating": "druk op 0 om de sterwaardering te verwijderen",
   "zoom_image": "Inzoomen",
   "zoom_in": "Inzoomen",
-  "zoom_out": "Uitzoomen"
+  "zoom_out": "Uitzoomen",
+  "frameleaf_all_metadata": "Alle metadata",
+  "frameleaf_all_metadata_error": "Kan metadata niet laden",
+  "frameleaf_all_metadata_truncated": "Sommige tags waren te groot om weer te geven.",
+  "frameleaf_all_metadata_more": "Meer tags tonen"
 }

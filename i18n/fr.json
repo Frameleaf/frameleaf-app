@@ -22479,5 +22479,9 @@
   "zero_to_clear_rating": "Appuyez sur 0 pour effacer la notation du média",
   "zoom_image": "Zoomer",
   "zoom_in": "Zoom avant",
-  "zoom_out": "Zoom arrière"
+  "zoom_out": "Zoom arrière",
+  "frameleaf_all_metadata": "Toutes les métadonnées",
+  "frameleaf_all_metadata_error": "Impossible de charger les métadonnées",
+  "frameleaf_all_metadata_truncated": "Certaines balises étaient trop volumineuses pour être affichées.",
+  "frameleaf_all_metadata_more": "Afficher plus de balises"
 }

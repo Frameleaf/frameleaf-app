@@ -22481,5 +22481,9 @@
   "zero_to_clear_rating": "presione 0 para borrar la calificación del recurso",
   "zoom_image": "Acercar imagen",
   "zoom_in": "Acercar",
-  "zoom_out": "Alejar"
+  "zoom_out": "Alejar",
+  "frameleaf_all_metadata": "Todos los metadatos",
+  "frameleaf_all_metadata_error": "No se pudieron cargar los metadatos",
+  "frameleaf_all_metadata_truncated": "Algunas etiquetas eran demasiado grandes para mostrarlas.",
+  "frameleaf_all_metadata_more": "Mostrar más etiquetas"
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import DetailPanelAllMetadata from '$lib/components/asset-viewer/DetailPanelAllMetadata.svelte';
   import DetailPanelCameraIdentification from '$lib/components/asset-viewer/DetailPanelCameraIdentification.svelte';
   import DetailPanelDate from '$lib/components/asset-viewer/DetailPanelDate.svelte';
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
@@ -160,6 +161,9 @@
     -->
   <ViewerDetailRows {asset} {isOwner} />
   <DetailPanelCameraIdentification {asset} {isOwner} />
+  {#if !asset.isOffline && (!authManager.isSharedLink || asset.hasMetadata !== false)}
+    {#key asset.id}<DetailPanelAllMetadata {asset} />{/key}
+  {/if}
 
   <!-- FL-707 item 13: people, rating, then the description (once, with its AI evidence) and the
        sensitive-content check, after when, where, file and camera. -->

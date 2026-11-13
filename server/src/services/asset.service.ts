@@ -1,4 +1,11 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -13,6 +20,7 @@ import { AssetFontResponseDto } from 'src/dtos/asset-font.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseDto, SanitizedAssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
+  AssetAllMetadataResponseDto,
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
   AssetCopyDto,
@@ -63,6 +71,9 @@ import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
+import { collectAllMetadata } from 'src/utils/all-metadata.js';
+import { withPlainCopy } from 'src/utils/locked-read.js';
+import { getOriginalLocationPolicy, OriginalLocationPolicy } from 'src/utils/partner-location.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone, getAssetDateTimeUpdates, withDateTimeOffset } from 'src/utils/date.js';
@@ -1325,6 +1336,48 @@ export class AssetService extends BaseService {
 
   dismissProcessingFailures(auth: AuthDto, dto: ProcessingFailureActionDto) {
     return this.assetJobRepository.updateProcessingFailures(auth, dto);
+  }
+
+  private readonly allMetadataCache = new Map<string, { expiresAt: number; data: AssetAllMetadataResponseDto }>();
+
+  async getAllMetadata(auth: AuthDto, id: string): Promise<AssetAllMetadataResponseDto> {
+    if (getOriginalLocationPolicy({ auth, purpose: 'download' }) !== OriginalLocationPolicy.Serve) {
+      throw new ForbiddenException('This shared link hides metadata');
+    }
+    await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
+
+    const asset = await this.assetRepository.getById(id, { files: true });
+    if (!asset || (isLockedRow(asset) && getLockedOwnerId(auth) !== asset.ownerId)) {
+      throw new ForbiddenException('Asset metadata is unavailable');
+    }
+
+    const { sidecarFile } = getAssetFiles(asset.files ?? []);
+    const paths = [{ name: 'Original', path: asset.originalPath }];
+    if (sidecarFile) paths.push({ name: 'Sidecar', path: sidecarFile.path });
+
+    const stamps = await Promise.all(paths.map(({ path }) => this.storageRepository.stat(path)));
+    const key = JSON.stringify([
+      asset.checksum,
+      !!auth.sharedLink,
+      paths.map(({ path }, index) => [path, stamps[index].ino, stamps[index].size, stamps[index].ctimeMs]),
+    ]);
+    const now = Date.now();
+    const cached = this.allMetadataCache.get(key);
+    if (cached && cached.expiresAt > now) return cached.data;
+
+    const sources = await Promise.all(
+      paths.map(async ({ name, path }) => ({
+        name,
+        values: await withPlainCopy(path, (plain) => this.metadataRepository.readAllTags(plain)),
+      })),
+    );
+    const data = collectAllMetadata(sources, !!auth.sharedLink);
+    this.allMetadataCache.delete(key);
+    this.allMetadataCache.set(key, { expiresAt: now + 60 * 60 * 1000, data });
+    if (this.allMetadataCache.size > 16) {
+      this.allMetadataCache.delete(this.allMetadataCache.keys().next().value!);
+    }
+    return data;
   }
 
   async getMetadata(auth: AuthDto, id: string): Promise<AssetMetadataResponseDto[]> {

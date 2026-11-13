@@ -22484,5 +22484,9 @@
   "zero_to_clear_rating": "naciśnij 0, aby wyczyścić ocenę zasobu",
   "zoom_image": "Powiększ obraz",
   "zoom_in": "Przybliż",
-  "zoom_out": "Oddal"
+  "zoom_out": "Oddal",
+  "frameleaf_all_metadata": "Wszystkie metadane",
+  "frameleaf_all_metadata_error": "Nie udało się wczytać metadanych",
+  "frameleaf_all_metadata_truncated": "Niektóre znaczniki były zbyt duże, aby je wyświetlić.",
+  "frameleaf_all_metadata_more": "Pokaż więcej znaczników"
 }

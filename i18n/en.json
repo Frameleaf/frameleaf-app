@@ -22187,5 +22187,9 @@
   "zero_to_clear_rating": "press 0 to clear asset rating",
   "zoom_image": "Zoom Image",
   "zoom_in": "Zoom in",
-  "zoom_out": "Zoom out"
+  "zoom_out": "Zoom out",
+  "frameleaf_all_metadata": "All metadata",
+  "frameleaf_all_metadata_error": "Could not load metadata",
+  "frameleaf_all_metadata_truncated": "Some tags were too large to display.",
+  "frameleaf_all_metadata_more": "Show more tags"
 }

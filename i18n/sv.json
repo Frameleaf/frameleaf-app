@@ -22473,5 +22473,9 @@
   "zero_to_clear_rating": "Tryck 0 för att rensa betygsättningen",
   "zoom_image": "Zooma bild",
   "zoom_in": "Zooma in",
-  "zoom_out": "Zooma ut"
+  "zoom_out": "Zooma ut",
+  "frameleaf_all_metadata": "Alla metadata",
+  "frameleaf_all_metadata_error": "Det gick inte att läsa in metadata",
+  "frameleaf_all_metadata_truncated": "Vissa taggar var för stora för att visas.",
+  "frameleaf_all_metadata_more": "Visa fler taggar"
 }

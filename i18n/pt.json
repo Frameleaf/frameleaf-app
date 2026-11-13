@@ -22483,5 +22483,9 @@
   "zero_to_clear_rating": "Carregue no 0 para retirar a classificação",
   "zoom_image": "Ampliar/Reduzir imagem",
   "zoom_in": "Aumentar zoom",
-  "zoom_out": "Diminuir zoom"
+  "zoom_out": "Diminuir zoom",
+  "frameleaf_all_metadata": "Todos os metadados",
+  "frameleaf_all_metadata_error": "Não foi possível carregar os metadados",
+  "frameleaf_all_metadata_truncated": "Algumas etiquetas eram grandes demais para serem exibidas.",
+  "frameleaf_all_metadata_more": "Mostrar mais etiquetas"
 }

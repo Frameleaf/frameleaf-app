@@ -22483,5 +22483,9 @@
   "zero_to_clear_rating": "Trykk 0 for å fjerne vurdering",
   "zoom_image": "Zoom Bilde",
   "zoom_in": "Zoom inn",
-  "zoom_out": "Zoom ut"
+  "zoom_out": "Zoom ut",
+  "frameleaf_all_metadata": "Alle metadata",
+  "frameleaf_all_metadata_error": "Kunne ikke laste inn metadata",
+  "frameleaf_all_metadata_truncated": "Noen merker var for store til å vises.",
+  "frameleaf_all_metadata_more": "Vis flere merker"
 }

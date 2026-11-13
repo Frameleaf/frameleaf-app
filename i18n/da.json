@@ -22462,5 +22462,9 @@
   "zero_to_clear_rating": "Tryk på 0 for at fjerne fil vurderingen",
   "zoom_image": "Zoom billede",
   "zoom_in": "Zoom ind",
-  "zoom_out": "Zoom ud"
+  "zoom_out": "Zoom ud",
+  "frameleaf_all_metadata": "Alle metadata",
+  "frameleaf_all_metadata_error": "Metadata kunne ikke indlæses",
+  "frameleaf_all_metadata_truncated": "Nogle mærker var for store til at blive vist.",
+  "frameleaf_all_metadata_more": "Vis flere mærker"
 }

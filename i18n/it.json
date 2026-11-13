@@ -22483,5 +22483,9 @@
   "zero_to_clear_rating": "Premi 0 per eliminare la valutazione",
   "zoom_image": "Ingrandisci immagine",
   "zoom_in": "Ingrandisci",
-  "zoom_out": "Riduci"
+  "zoom_out": "Riduci",
+  "frameleaf_all_metadata": "Tutti i metadati",
+  "frameleaf_all_metadata_error": "Impossibile caricare i metadati",
+  "frameleaf_all_metadata_truncated": "Alcuni tag erano troppo grandi per essere visualizzati.",
+  "frameleaf_all_metadata_more": "Mostra altri tag"
 }
