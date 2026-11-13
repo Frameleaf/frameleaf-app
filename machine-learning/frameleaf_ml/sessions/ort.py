@@ -398,6 +398,8 @@ class OrtSession:
         previous_cache = self._coreml_cache
         self.session = session
         self._coreml_cache, self._coreml_shape = cache, signature
+        # The specialized session loaded the derived model again: prove it against its source again.
+        self.source_model_path = self._source_model_path
         if previous_cache is not None:
             previous_cache.cleanup()
 
@@ -440,6 +442,10 @@ class OrtSession:
                     options = {"arena_extend_strategy": "kSameAsRequested"}
                 case "CUDAExecutionProvider":
                     options = {"arena_extend_strategy": "kSameAsRequested", "device_id": settings.device_id}
+                    if native:
+                        # onnxruntime turns TF32 on by default: on cards that have it, convolutions and matrix
+                        # products keep 10 bits of mantissa. Native fixtures need float32 accuracy, as on CoreML.
+                        options["use_tf32"] = "0"
                 case "nv_tensorrt_rtx":
                     trt_rtx_dir = runtime_cache_dir(self.model_path) / "trt-rtx"
                     trt_rtx_dir.mkdir(parents=True, exist_ok=True)
