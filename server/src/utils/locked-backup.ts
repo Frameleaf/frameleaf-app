@@ -114,7 +114,25 @@ export async function sealedFileOwnerKeyId(path: string): Promise<string | null>
   if (!(await isLockedFile(path).catch(() => false))) {
     return null;
   }
-  return (await lockedFileOwnerKeyId(path).catch(() => null)) ?? unreadableLockedKeyId(path);
+  return sealedOwnerKeyIdOrUnreadable(path);
+}
+
+/**
+ * The owner key id of a file already known to start like an encrypted one. Only a header that does not
+ * parse makes it `unreadableLockedKeyId` (reported, FL-1500). A filesystem error (the drive went away, the
+ * file was replaced mid-run) says nothing about the header, so it is thrown and the run fails safe rather
+ * than skip the missing-key check for a file that may well be sealed.
+ */
+export async function sealedOwnerKeyIdOrUnreadable(path: string): Promise<string> {
+  try {
+    const { keyIds } = await readHeader(path);
+    return keyIds[0]?.toString('hex') ?? unreadableLockedKeyId(path);
+  } catch (error) {
+    if (typeof (error as NodeJS.ErrnoException | null)?.code === 'string') {
+      throw error;
+    }
+    return unreadableLockedKeyId(path);
+  }
 }
 
 /**
