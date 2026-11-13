@@ -100,6 +100,17 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('lets the shared search wait longer under the same key while a scheduled scan runs (FL-1534)', async () => {
+    await sut.queue({
+      name: JobName.MediaHealthLocateMissing,
+      data: { userId: 'owner', pending: true, delay: 600_000 },
+    });
+
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { delay: 600_000, deduplication: { id: 'MediaHealthLocateMissing:pending:owner', keepLastIfActive: true } },
+    ]);
+  });
+
   it('keeps one shared search per owner for the fixes waiting on it, and feeds each fix under its own key (FL-1337)', async () => {
     const managedSearch = { cursor: [{ path: '/data/library' }], matches: {} };
     await sut.queue({ name: JobName.MediaHealthLocateMissing, data: { userId: 'owner', pending: true } });

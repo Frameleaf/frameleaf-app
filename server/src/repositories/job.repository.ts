@@ -1561,7 +1561,7 @@ export class JobRepository {
         // under no key, so a later request can never overwrite where it was.
         return item.data.pending && !item.data.ids
           ? {
-              delay: FIX_SEARCH_DELAY_MS,
+              delay: item.data.delay ?? FIX_SEARCH_DELAY_MS,
               deduplication: {
                 id: `${JobName.MediaHealthLocateMissing}:pending:${item.data.userId}`,
                 keepLastIfActive: true,

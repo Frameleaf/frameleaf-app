@@ -500,9 +500,13 @@ export interface IMediaHealthLocateJob extends IBaseJob {
   pending?: boolean;
   /** FL-1337: which shared search a step carries on: the job that started it claimed its findings as this. */
   searchId?: string;
+  /** FL-1534: how long the owner's shared search waits before it looks again for a scan that is still running. */
+  delay?: number;
   managedSearch?: {
     cursor: Array<{ path: string; after?: string }>;
     matches: Record<string, Record<string, Array<'sha1' | 'sha256'>>>;
+    /** FL-1534: files the walk already passed that the step had no reading budget left for. */
+    pending?: string[];
   };
 }
 

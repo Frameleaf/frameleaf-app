@@ -226,6 +226,27 @@ const notUnchecked = sql<boolean>`(asset_health.category <> 'corrupt'
   OR (asset_health.evidence->>'fixState') IS DISTINCT FROM 'couldnt-check')`;
 /** A search id as a claim names it: compared as a uuid, so the job's primary key is used. */
 const UUID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+/** FL-1534: every photo after `after` up to and including `to`, in id order; `to` null runs to the end. */
+type ScanSlice = { after: string | null; to: string | null };
+
+/** A photo's original and what its records say the file holds (`stored`: the digests of a read, if any). */
+export type OriginalDigests = {
+  originalPath: string;
+  checksum: Buffer;
+  checksumAlgorithm: ChecksumAlgorithm;
+  sha1: Buffer | null;
+  sha256: Buffer | null;
+  sizeInBytes: number | null;
+};
+
+/** An incremental scan's photos: those changed since then and, FL-1534, those in the night's share. */
+const changedOrInSlice = (changedSince: Date, slice?: ScanSlice) =>
+  slice
+    ? sql<boolean>`(asset."updatedAt" > ${changedSince} OR (${
+        slice.after ? sql<boolean>`asset.id > ${slice.after}::uuid` : sql<boolean>`true`
+      } AND ${slice.to ? sql<boolean>`asset.id <= ${slice.to}::uuid` : sql<boolean>`true`}))`
+    : sql<boolean>`asset."updatedAt" > ${changedSince}`;
+
 @Injectable()
 export class MediaHealthRepository {
   constructor(
@@ -1128,18 +1149,20 @@ export class MediaHealthRepository {
     limit: number;
     /** An incremental scan (FL-69): only assets changed since then. */
     changedSince?: Date;
+    /** FL-1534: with `changedSince`, the share of the library that is read as well, changed or not. */
+    slice?: ScanSlice;
     /** FL-737: a scan of chosen photos, whoever owns them (the service checked they may be scanned). */
     assetIds?: string[];
   }): Promise<MediaHealthAsset[]> {
     return this.scanAssetQuery(options.assetIds ? { assetIds: options.assetIds } : { ownerId: options.ownerId })
       .$if(!!options.afterId, (qb) => qb.where('asset.id', '>', asUuid(options.afterId!)))
-      .$if(!!options.changedSince, (qb) => qb.where('asset.updatedAt', '>', options.changedSince!))
+      .$if(!!options.changedSince, (qb) => qb.where(changedOrInSlice(options.changedSince!, options.slice)))
       .orderBy('asset.id', 'asc')
       .limit(options.limit)
       .execute();
   }
   /** How many assets an owner's scan covers, for its progress. */
-  async countScanAssets(ownerId: string, changedSince?: Date): Promise<number> {
+  async countScanAssets(ownerId: string, changedSince?: Date, slice?: ScanSlice): Promise<number> {
     const row = await this.db
       .withSchema('public')
       .selectFrom('asset')
@@ -1147,9 +1170,45 @@ export class MediaHealthRepository {
       .where('asset.deletedAt', 'is', null)
       .where('asset.status', '!=', sql.lit(AssetStatus.Deleted))
       .where('asset.ownerId', '=', asUuid(ownerId))
-      .$if(!!changedSince, (qb) => qb.where('asset.updatedAt', '>', changedSince!))
+      .$if(!!changedSince, (qb) => qb.where(changedOrInSlice(changedSince!, slice)))
       .executeTakeFirst();
     return Number(row?.count ?? 0);
+  }
+  /**
+   * FL-1534: the last photo of a share of `count` of the owner's photos that starts after `after`, in id
+   * order. Null when fewer than `count` are left: the share then runs to the end.
+   */
+  async getScanSliceEnd(ownerId: string, after: string | null, count: number): Promise<string | null> {
+    const row = await this.db
+      .withSchema('public')
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.status', '!=', sql.lit(AssetStatus.Deleted))
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .$if(!!after, (qb) => qb.where('asset.id', '>', asUuid(after!)))
+      .orderBy('asset.id', 'asc')
+      .offset(Math.max(0, count - 1))
+      .limit(1)
+      .executeTakeFirst();
+    return row?.id ?? null;
+  }
+  /**
+   * FL-1534: the photos whose original is one of these files, with the digests their records hold. A search
+   * for a missing original reads them from here, not from the drive.
+   */
+  async getOriginalDigestsByPaths(paths: string[]): Promise<OriginalDigests[]> {
+    if (paths.length === 0) {
+      return [];
+    }
+    const result = await sql<OriginalDigests>`
+      SELECT asset."originalPath", asset.checksum, asset."checksumAlgorithm",
+        stored.sha1, stored.sha256, stored."sizeInBytes"::float8 AS "sizeInBytes"
+      FROM public.asset asset
+      LEFT JOIN public.asset_checksum stored ON stored."assetId" = asset.id
+      WHERE asset."originalPath" = ANY(${paths}::text[])
+    `.execute(this.db);
+    return result.rows;
   }
   private scanAssetQuery(options: { assetIds?: string[]; ownerId?: string }) {
     return this.db

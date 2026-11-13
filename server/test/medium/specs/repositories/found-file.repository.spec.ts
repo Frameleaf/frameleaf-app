@@ -80,6 +80,43 @@ describe(FoundFileRepository.name, () => {
     expect(rows[0].steps.map(({ step }) => step)).toEqual(['found', 'back']);
   });
 
+  it('remembers what a search read, and keeps what is known of a file that has not changed (FL-1534)', async () => {
+    const sut = new FoundFileRepository(defaultDatabase);
+    const fresh = `/data/upload/${randomUUID()}/IMG_0003.jpg`;
+    const sorted = `/data/upload/${randomUUID()}/IMG_0004.jpg`;
+    const read = {
+      sizeInBytes: 10,
+      modifiedAt: file(fresh).modifiedAt,
+      sha1: Buffer.alloc(20, 3),
+      sha256: Buffer.alloc(32, 4),
+    };
+
+    // a file nothing was known about is remembered as only read
+    await sut.remember({ path: fresh, ...read });
+    const [remembered] = await sut.getByPaths([fresh]);
+    expect(remembered).toMatchObject({ outcome: 'read', reason: null, ownerId: null, assetId: null, steps: [] });
+    expect(Number(remembered.sizeInBytes)).toBe(10);
+    expect(new Date(remembered.modifiedAt).getTime()).toBe(read.modifiedAt.getTime());
+    expect(Buffer.from(remembered.sha1!).equals(read.sha1)).toBe(true);
+
+    // a file that was sorted, and is the same file still, keeps what was done with it
+    await sut.upsert(file(sorted));
+    await sut.remember({ path: sorted, ...read });
+    const [kept] = await sut.getByPaths([sorted]);
+    expect(kept).toMatchObject({ outcome: 'spare', reason: null });
+    expect(kept.assetId).not.toBeNull();
+    expect(kept.steps).toHaveLength(2);
+    expect(Buffer.from(kept.sha1!).equals(file(sorted).sha1)).toBe(true);
+
+    // once it changed, what was known was about another file: it starts again as only read
+    await sut.remember({ path: sorted, ...read, sizeInBytes: 11 });
+    const [changed] = await sut.getByPaths([sorted]);
+    expect(changed).toMatchObject({ outcome: 'read', assetId: null, previousPath: null, steps: [] });
+    expect(Number(changed.sizeInBytes)).toBe(11);
+    expect(Buffer.from(changed.sha1!).equals(read.sha1)).toBe(true);
+    expect(await sut.getByPaths([sorted])).toHaveLength(1);
+  });
+
   it('asks the database nothing for no paths', async () => {
     await expect(new FoundFileRepository(defaultDatabase).getByPaths([])).resolves.toEqual([]);
   });

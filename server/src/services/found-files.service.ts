@@ -184,7 +184,17 @@ export class FoundFilesService {
       // FL-1537: a person undid what was done with this file, or left it; it is not offered again
       return 'skipped';
     }
-    const steps: FoundFileStep[] = unchanged ? [...known.steps] : [{ step: 'found', at: at() }];
+    // FL-1534: a search for a missing original read this file already; it is sorted now, from what it read
+    const readBySearch = unchanged && known.outcome === 'read';
+    const steps: FoundFileStep[] =
+      unchanged && !readBySearch
+        ? [...known.steps]
+        : [
+            { step: 'found', at: at() },
+            ...(readBySearch
+              ? [{ step: 'read', at: new Date(known.sortedAt).toISOString(), outcome: 'ok' } satisfies FoundFileStep]
+              : []),
+          ];
     const owner = owners.find(({ folders }) => folders.some((folder) => isPathWithin(folder, path)));
     const about = { path, sizeInBytes: settled.size, modifiedAt: settled.mtime, ownerId: owner?.id ?? null };
 
@@ -635,7 +645,7 @@ export class FoundFilesService {
 
   private async find(id: string): Promise<FoundFileListed> {
     const file = await this.foundFileRepository.get(id);
-    if (!file || file.outcome === 'tidied') {
+    if (!file || file.outcome === 'tidied' || file.outcome === 'read') {
       throw new NotFoundException('Found file not found');
     }
     return file;
