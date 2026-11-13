@@ -143,6 +143,7 @@ import { DevelopStyleProfileTable } from 'src/schema/tables/develop-style-profil
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
+import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import {
   ICloudEditAliasTable,
@@ -386,6 +387,7 @@ export class ImmichDatabase {
     DateFixBatchTable,
     DateFixItemTable,
     AssetLedgerTable,
+    FoundFileTable,
     BookmarkTagTable,
     AssetSourceTable,
     AccountEventTable,
@@ -723,6 +725,7 @@ export interface DB extends QueueDatabase {
   date_fix_batch: DateFixBatchTable;
   date_fix_item: DateFixItemTable;
   asset_ledger: AssetLedgerTable;
+  found_file: FoundFileTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;

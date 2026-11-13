@@ -2548,6 +2548,14 @@ export class AssetRepository {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .execute();
   }
+  /** FL-1532: every account's photos with one of these checksums, for a file in a folder no account owns. */
+  getByChecksumsForAnyOwner(checksums: Buffer[]) {
+    return this.db
+      .selectFrom('asset')
+      .select(['id', 'checksum', 'deletedAt', 'status', 'originalPath', 'libraryId', 'isExternal'])
+      .where('checksum', 'in', checksums)
+      .execute();
+  }
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.BUFFER, { excludeNsfw: true }] })
   async getUploadAssetIdByChecksum(
     ownerId: string,

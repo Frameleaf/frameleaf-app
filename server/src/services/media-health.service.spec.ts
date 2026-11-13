@@ -2079,6 +2079,76 @@ describe(MediaHealthService.name, () => {
       );
     });
 
+    describe('placeUntrackedFile (FL-1532)', () => {
+      const digests = { sha1: Buffer.alloc(20, 1), sha256: Buffer.alloc(32, 2), sizeInBytes: 10 };
+      const mtime = new Date('2026-11-01T10:00:00.000Z');
+      const orphan = '/data/upload/gone-account/ab/cd/IMG_0001.jpg';
+      const lost = {
+        id: 'lost-asset',
+        checksum: digests.sha256,
+        deletedAt: null,
+        status: 'active',
+        originalPath: '/data/library/taylor/2020/08/IMG_3310.jpg',
+        libraryId: null,
+        isExternal: false,
+      };
+
+      it('never adds a file in a folder no account owns', async () => {
+        vi.mocked(mocks.asset.getByChecksumsForAnyOwner).mockResolvedValue([]);
+
+        await expect(sut.placeUntrackedFile(null, orphan, mtime, digests)).resolves.toEqual({ outcome: 'no-owner' });
+
+        expect(mocks.asset.getByChecksums).not.toHaveBeenCalled();
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+      });
+
+      it('puts a file in a folder no account owns back under any account’s photo that lost it', async () => {
+        vi.mocked(mocks.asset.getByChecksumsForAnyOwner).mockResolvedValue([lost] as never);
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+        vi.mocked(mocks.physicalFile.restoreLostOriginal).mockResolvedValue(true);
+
+        await expect(sut.placeUntrackedFile(null, orphan, mtime, digests)).resolves.toEqual({
+          outcome: 'back',
+          assetId: 'lost-asset',
+          previousPath: lost.originalPath,
+        });
+
+        expect(mocks.physicalFile.restoreLostOriginal).toHaveBeenCalledWith(
+          expect.objectContaining({
+            assetId: 'lost-asset',
+            expectedOriginalPath: lost.originalPath,
+            originalPath: orphan,
+            reason: 'restored_from_untracked_file',
+          }),
+        );
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+      });
+
+      it('calls a file a spare copy when the photo with the same contents still has its own file', async () => {
+        vi.mocked(mocks.asset.getByChecksumsForAnyOwner).mockResolvedValue([lost] as never);
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+
+        await expect(sut.placeUntrackedFile(null, orphan, mtime, digests)).resolves.toEqual({
+          outcome: 'spare',
+          assetId: 'lost-asset',
+        });
+
+        expect(mocks.physicalFile.restoreLostOriginal).not.toHaveBeenCalled();
+      });
+
+      it('says an account has no room, counting what the same pass already added', async () => {
+        vi.mocked(mocks.asset.getByChecksums).mockResolvedValue([]);
+        vi.mocked(mocks.forkSchema.hasAssetChecksum).mockResolvedValue(false);
+        const owner = { id: 'user-1', quotaSizeInBytes: 100, quotaUsageInBytes: 50 };
+
+        await expect(sut.placeUntrackedFile(owner, '/data/upload/user-1/a.jpg', mtime, digests, 45)).resolves.toEqual({
+          outcome: 'over-limit',
+        });
+
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('does not restore an untracked path when either digest already belongs to the user', async () => {
       vi.mocked(mediaHealthRepository.streamAssets).mockReturnValue(
         // eslint-disable-next-line require-yield
