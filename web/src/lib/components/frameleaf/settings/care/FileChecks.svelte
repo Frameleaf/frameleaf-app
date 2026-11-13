@@ -27,6 +27,9 @@
    * anything, so they are not shown. `?report=<type>` opens one check's
    * path-by-path list (Details for support).
    *
+   * FL-1537: `libraryCare.putBackFoundFiles` and `libraryCare.clearGonePreviews` are kept by the server
+   * and on by default; their switches come with the Photos found on the drive page (FL-1533).
+   *
    * "When a check finds a problem" holds the `libraryCare.autoRepair` switch and opens Damaged and missing
    * files (FL-1338), where the same switch sits beside the one that asks phones for missing photos.
    */

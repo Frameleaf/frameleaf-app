@@ -341,6 +341,19 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     file: 'src/routes/admin/system-settings/AuthSettings.svelte',
     evidence: 'connectedApps?.allowRegistration',
   },
+  // FL-1537: kept by the server; the switches arrive with the Photos found on the drive page (FL-1533)
+  {
+    pattern: 'libraryCare.putBackFoundFiles',
+    kind: 'api-only',
+    file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
+    evidence: 'libraryCare.putBackFoundFiles',
+  },
+  {
+    pattern: 'libraryCare.clearGonePreviews',
+    kind: 'api-only',
+    file: 'src/lib/components/frameleaf/settings/care/FileChecks.svelte',
+    evidence: 'libraryCare.clearGonePreviews',
+  },
   {
     pattern: 'libraryCare.healthScanCronExpression',
     // FL-363: the overnight schedule starts the checks; this stored start no longer does

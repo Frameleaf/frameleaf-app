@@ -619,6 +619,9 @@
   "libraryCare.checksumScan": {
     "type": "boolean"
   },
+  "libraryCare.clearGonePreviews": {
+    "type": "boolean"
+  },
   "libraryCare.duplicateReview": {
     "type": "boolean"
   },
@@ -638,6 +641,9 @@
     "type": "boolean"
   },
   "libraryCare.manualMetadata": {
+    "type": "boolean"
+  },
+  "libraryCare.putBackFoundFiles": {
     "type": "boolean"
   },
   "libraryCare.rawRecovery": {

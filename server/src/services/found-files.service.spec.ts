@@ -41,13 +41,46 @@ const remembered = (patch: Partial<FoundFile> = {}): FoundFile =>
 const setup = () => {
   StorageCore.setMediaLocation('/data');
   const logger = { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), debug: vi.fn() };
-  const found = { getByPaths: vi.fn().mockResolvedValue([]), upsert: vi.fn().mockResolvedValue(undefined) };
+  const found = {
+    getByPaths: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn().mockResolvedValue(undefined),
+    get: vi.fn(),
+    list: vi.fn().mockResolvedValue([]),
+    counts: vi.fn().mockResolvedValue([]),
+    needsGroups: vi.fn().mockResolvedValue([]),
+    delete: vi.fn().mockResolvedValue(undefined),
+    existingAssetIds: vi.fn().mockResolvedValue(new Set()),
+    assetsWithoutSidecar: vi.fn().mockResolvedValue([]),
+  };
+  const asset = {
+    getById: vi.fn(),
+    updateAll: vi.fn().mockResolvedValue(undefined),
+    upsertFile: vi.fn().mockResolvedValue(undefined),
+    getByChecksumsForAnyOwner: vi.fn().mockResolvedValue([]),
+  };
+  const physical = {
+    revertRestoredOriginal: vi.fn().mockResolvedValue(true),
+    deleteUnreferencedPath: vi.fn(async (_path: string, unlink: () => Promise<void>) => {
+      await unlink();
+    }),
+  };
+  const job = { queue: vi.fn().mockResolvedValue(undefined) };
+  const integrity = {
+    deleteUntrackedByPaths: vi.fn().mockResolvedValue(undefined),
+    getTrackedPaths: vi.fn().mockResolvedValue([]),
+  };
+  const mediaIntegrity = { validate: vi.fn().mockResolvedValue({ status: 'healthy' }) };
   const mediaHealth = {
+    careSettings: vi.fn().mockResolvedValue({ putBackFoundFiles: true, clearGonePreviews: true }),
     settledUntrackedFile: vi.fn().mockResolvedValue({ key: '1:2:10', size: 10, mtime }),
     placeUntrackedFile: vi.fn().mockResolvedValue({ outcome: 'added', assetId: 'new-asset' }),
   };
   const crypto = { hashFileDigests: vi.fn().mockResolvedValue({ sha1, sha256, sizeInBytes: 10 }) };
-  const storage = { stat: vi.fn().mockResolvedValue(stat()) };
+  const storage = {
+    stat: vi.fn().mockResolvedValue(stat()),
+    unlink: vi.fn().mockResolvedValue(undefined),
+    checkFileExists: vi.fn().mockResolvedValue(false),
+  };
   const user = {
     getList: vi
       .fn()
@@ -64,13 +97,32 @@ const setup = () => {
     crypto as never,
     storage as never,
     user as never,
+    asset as never,
+    physical as never,
+    job as never,
+    integrity as never,
+    mediaIntegrity as never,
   );
   const sort = async (paths: string[]) => {
     const placed: string[] = [];
     await sut.onUntrackedFound({ paths, placed });
     return placed;
   };
-  return { sut, sort, found, mediaHealth, crypto, storage, user, logger };
+  return {
+    sut,
+    sort,
+    found,
+    mediaHealth,
+    crypto,
+    storage,
+    user,
+    logger,
+    asset,
+    physical,
+    job,
+    integrity,
+    mediaIntegrity,
+  };
 };
 
 describe(FoundFilesService.name, () => {
@@ -86,6 +138,7 @@ describe(FoundFilesService.name, () => {
       mtime,
       { sha1, sha256, sizeInBytes: 10 },
       0,
+      { checkOpens: true },
     );
     expect(found.upsert).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
@@ -149,6 +202,7 @@ describe(FoundFilesService.name, () => {
       mtime,
       { sha1, sha256, sizeInBytes: 10 },
       0,
+      { checkOpens: true },
     );
     // the same file with the same answer writes nothing
     expect(found.upsert).not.toHaveBeenCalled();
@@ -186,7 +240,9 @@ describe(FoundFilesService.name, () => {
 
     await expect(sort([orphan])).resolves.toEqual([]);
 
-    expect(mediaHealth.placeUntrackedFile).toHaveBeenCalledWith(null, orphan, mtime, expect.anything(), 0);
+    expect(mediaHealth.placeUntrackedFile).toHaveBeenCalledWith(null, orphan, mtime, expect.anything(), 0, {
+      checkOpens: true,
+    });
     expect(found.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'needs', reason: 'no-owner', ownerId: null, assetId: null }),
     );
@@ -204,6 +260,7 @@ describe(FoundFilesService.name, () => {
       mtime,
       expect.anything(),
       0,
+      { checkOpens: true },
     );
   });
 
@@ -220,6 +277,7 @@ describe(FoundFilesService.name, () => {
       mtime,
       expect.anything(),
       10,
+      { checkOpens: true },
     );
   });
 
@@ -310,5 +368,315 @@ describe(FoundFilesService.name, () => {
     await expect(sort([photo, second])).resolves.toEqual([second]);
 
     expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
+  describe('FL-1537', () => {
+    const OTHER = '9d2f0c1e-5b6a-4c7d-8e9f-0a1b2c3d4e5f';
+    const ID = '0194d6a5-7a6e-7c2a-9cb4-0a1c2d3e4f50';
+    const auth = { user: { id: USER } } as never;
+    const listed = (patch: Record<string, unknown> = {}) =>
+      ({ ...remembered(), id: ID, effectiveOwnerId: USER, ...patch }) as never;
+
+    it('never sorts again a file a person chose to leave', async () => {
+      const { sort, found, mediaHealth, crypto } = setup();
+      found.getByPaths.mockResolvedValue([remembered({ outcome: 'left' })]);
+      expect(await sort([photo])).toEqual([]);
+      expect(crypto.hashFileDigests).not.toHaveBeenCalled();
+      expect(mediaHealth.placeUntrackedFile).not.toHaveBeenCalled();
+      expect(found.upsert).not.toHaveBeenCalled();
+    });
+
+    it('reads and remembers a file but holds it back while putting back is switched off', async () => {
+      const { sort, found, mediaHealth } = setup();
+      mediaHealth.careSettings.mockResolvedValue({ putBackFoundFiles: false, clearGonePreviews: true });
+      expect(await sort([photo])).toEqual([]);
+      expect(mediaHealth.placeUntrackedFile).not.toHaveBeenCalled();
+      expect(found.upsert).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ outcome: 'needs', reason: 'asked', sha256 }),
+      );
+    });
+
+    it('lists a file that does not decode as one that won’t open', async () => {
+      const { sort, found, mediaHealth } = setup();
+      mediaHealth.placeUntrackedFile.mockResolvedValue({ outcome: 'wont-open' });
+      expect(await sort([photo])).toEqual([]);
+      expect(found.upsert).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'needs', reason: 'wont-open' }));
+    });
+
+    describe('tidying', () => {
+      const GONE = '11111111-2222-4333-8444-555555555555';
+      const HERE = '66666666-7777-4888-9999-aaaaaaaaaaaa';
+      const gone = `/data/thumbs/${USER}/11/11/${GONE}_preview.jpeg`;
+      const video = `/data/encoded-video/${USER}/11/11/${GONE}.mp4`;
+      const here = `/data/thumbs/${USER}/66/66/${HERE}_thumbnail.webp`;
+
+      it('clears the previews of photos that are gone, and keeps every other file', async () => {
+        const { sort, found, storage, physical } = setup();
+        found.existingAssetIds.mockResolvedValue(new Set([HERE]));
+        const unknown = `/data/thumbs/${USER}/notes.txt`;
+        // named after a person, not a photo: a face picture is never taken for a photo's preview
+        const face = `/data/thumbs/${USER}/11/11/${GONE}.jpeg`;
+        expect(await sort([gone, video, here, unknown, face])).toEqual([gone, video]);
+        expect(physical.deleteUnreferencedPath).toHaveBeenCalledTimes(2);
+        expect(storage.unlink.mock.calls.map(([path]) => path)).toEqual([gone, video]);
+        expect(found.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({ path: gone, outcome: 'tidied', reason: 'preview', assetId: GONE }),
+        );
+      });
+
+      it('keeps a preview that was written moments ago: its photo may still be arriving', async () => {
+        const { sort, storage, mediaHealth } = setup();
+        mediaHealth.settledUntrackedFile.mockResolvedValue(null);
+        expect(await sort([gone])).toEqual([]);
+        expect(storage.unlink).not.toHaveBeenCalled();
+      });
+
+      it('clears nothing when clearing previews is switched off', async () => {
+        const { sort, storage, mediaHealth } = setup();
+        mediaHealth.careSettings.mockResolvedValue({ putBackFoundFiles: true, clearGonePreviews: false });
+        expect(await sort([gone, video])).toEqual([]);
+        expect(storage.unlink).not.toHaveBeenCalled();
+      });
+
+      it('joins an XMP file to the photo of the same name that has none', async () => {
+        const { sort, found, asset, job, storage } = setup();
+        const xmp = `${photo}.xmp`;
+        const lone = `/data/upload/${USER}/3f/9a/other.jpg.xmp`;
+        found.assetsWithoutSidecar.mockResolvedValue([{ id: 'asset-1', originalPath: photo }]);
+        expect(await sort([xmp, lone])).toEqual([xmp]);
+        expect(found.assetsWithoutSidecar).toHaveBeenCalledWith([photo, lone.slice(0, -4)]);
+        expect(asset.upsertFile).toHaveBeenCalledExactlyOnceWith({ assetId: 'asset-1', type: 'sidecar', path: xmp });
+        expect(job.queue).toHaveBeenCalledWith({ name: 'SidecarCheck', data: { id: 'asset-1' } });
+        expect(found.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({ path: xmp, outcome: 'tidied', reason: 'sidecar' }),
+        );
+        expect(storage.unlink).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('review', () => {
+      it('adds up the outcomes, what was tidied and the groups that wait', async () => {
+        const { sut, found } = setup();
+        found.counts.mockResolvedValue([
+          { outcome: 'back', reason: null, count: 3, sizeInBytes: 30 },
+          { outcome: 'spare', reason: null, count: 2, sizeInBytes: 20 },
+          { outcome: 'needs', reason: 'no-owner', count: 4, sizeInBytes: 40 },
+          { outcome: 'needs', reason: 'wont-open', count: 1, sizeInBytes: 1 },
+          { outcome: 'tidied', reason: 'preview', count: 9, sizeInBytes: 90 },
+          { outcome: 'tidied', reason: 'sidecar', count: 5, sizeInBytes: 5 },
+        ]);
+        found.needsGroups.mockResolvedValue([
+          { reason: 'no-owner', ownerId: null, folder: '/data/upload/5b2e', count: 4, sizeInBytes: 40 },
+        ]);
+        await expect(sut.getSummary()).resolves.toEqual({
+          back: 3,
+          added: 0,
+          spare: 2,
+          spareSizeInBytes: 20,
+          needs: 5,
+          left: 0,
+          tidied: { previews: 9, previewSizeInBytes: 90, sidecars: 5 },
+          groups: [{ reason: 'no-owner', ownerId: null, folder: '/data/upload/5b2e', count: 4, sizeInBytes: 40 }],
+        });
+      });
+
+      it('marks another account’s file as not to be shown, and refuses to send it', async () => {
+        const { sut, found } = setup();
+        found.list.mockResolvedValue([
+          listed(),
+          listed({ effectiveOwnerId: OTHER }),
+          listed({ effectiveOwnerId: null }),
+        ]);
+        const { items } = await sut.list(auth, { outcome: 'spare' });
+        expect(items.map(({ viewable }) => viewable)).toEqual([true, false, true]);
+
+        found.get.mockResolvedValue(listed({ effectiveOwnerId: OTHER }));
+        await expect(sut.getFile(auth, ID)).rejects.toThrow('another account');
+        await expect(sut.undo(auth, ID)).rejects.toThrow('another account');
+        found.get.mockResolvedValue(listed());
+        await expect(sut.getFile(auth, ID)).resolves.toEqual(expect.objectContaining({ path: photo }));
+      });
+
+      it('does not list a tidied file as a found file', async () => {
+        const { sut, found } = setup();
+        found.get.mockResolvedValue(listed({ outcome: 'tidied', reason: 'preview' }));
+        await expect(sut.get(auth, ID)).rejects.toThrow('not found');
+      });
+    });
+
+    describe('undo', () => {
+      it('points a photo that was put back at its old path again and leaves the file alone', async () => {
+        const { sut, found, physical, storage } = setup();
+        found.get.mockResolvedValue(listed({ outcome: 'back', previousPath: '/data/library/taylor/IMG_3310.jpg' }));
+        await sut.undo(auth, ID);
+        expect(physical.revertRestoredOriginal).toHaveBeenCalledExactlyOnceWith({
+          assetId: 'asset-1',
+          foundPath: photo,
+          previousPath: '/data/library/taylor/IMG_3310.jpg',
+        });
+        expect(found.upsert).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            path: photo,
+            outcome: 'left',
+            steps: expect.arrayContaining([expect.objectContaining({ step: 'undone', facts: { was: 'back' } })]),
+          }),
+        );
+        expect(found.upsert.mock.calls[0][0]).not.toHaveProperty('id');
+        expect(storage.unlink).not.toHaveBeenCalled();
+      });
+
+      it('says so when the photo has changed since', async () => {
+        const { sut, found, physical } = setup();
+        found.get.mockResolvedValue(listed({ outcome: 'back', previousPath: '/data/library/taylor/IMG_3310.jpg' }));
+        physical.revertRestoredOriginal.mockResolvedValue(false);
+        await expect(sut.undo(auth, ID)).rejects.toThrow('changed since');
+        expect(found.upsert).not.toHaveBeenCalled();
+      });
+
+      it('takes an added photo out of the library and keeps its file on the drive', async () => {
+        const { sut, found, asset, job, storage } = setup();
+        found.get.mockResolvedValue(listed({ outcome: 'added' }));
+        asset.getById.mockResolvedValue({ id: 'asset-1', originalPath: photo });
+        await sut.undo(auth, ID);
+        expect(asset.updateAll).toHaveBeenCalledWith(['asset-1'], expect.objectContaining({ status: 'deleted' }));
+        expect(job.queue).toHaveBeenCalledExactlyOnceWith({
+          name: 'AssetDelete',
+          data: { id: 'asset-1', deleteOnDisk: false },
+        });
+        expect(found.upsert).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: photo, outcome: 'left' }));
+        expect(storage.unlink).not.toHaveBeenCalled();
+      });
+
+      it('leaves the file alone where the photo’s file was moved to', async () => {
+        const { sut, found, asset } = setup();
+        const moved = '/data/library/taylor/2018/08/IMG_7731.JPG';
+        found.get.mockResolvedValue(listed({ outcome: 'added' }));
+        asset.getById.mockResolvedValue({ id: 'asset-1', originalPath: moved });
+        await sut.undo(auth, ID);
+        expect(found.upsert.mock.calls.map(([row]) => [row.path, row.outcome])).toEqual([
+          [moved, 'left'],
+          [photo, 'left'],
+        ]);
+      });
+
+      it('has nothing to undo for a spare copy', async () => {
+        const { sut, found } = setup();
+        found.get.mockResolvedValue(listed({ outcome: 'spare' }));
+        await expect(sut.undo(auth, ID)).rejects.toThrow('Nothing was done');
+      });
+    });
+
+    describe('decisions', () => {
+      const orphan = '/data/upload/5b2e/3f/9a/IMG_0001.jpg';
+      const waiting = (patch: Record<string, unknown> = {}) =>
+        listed({ path: orphan, outcome: 'needs', reason: 'no-owner', ownerId: null, assetId: null, ...patch });
+
+      it('needs the folder and the account for files no account owns', async () => {
+        const { sut } = setup();
+        await expect(sut.resolve({ reason: 'no-owner' })).rejects.toThrow('Choose the folder');
+        await expect(sut.resolve({ reason: 'no-owner', folder: '/data/upload/5b2e', ownerId: OTHER })).rejects.toThrow(
+          'not on this server',
+        );
+      });
+
+      it('adds a folder’s files to the chosen account without reading them again', async () => {
+        const { sut, found, mediaHealth, crypto, integrity } = setup();
+        found.list.mockResolvedValue([waiting()]);
+        const result = await sut.resolve({ reason: 'no-owner', folder: '/data/upload/5b2e', ownerId: USER });
+        expect(found.list).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: 'needs', reason: 'no-owner', folder: '/data/upload/5b2e' }),
+        );
+        expect(crypto.hashFileDigests).not.toHaveBeenCalled();
+        expect(mediaHealth.placeUntrackedFile).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ id: USER }),
+          orphan,
+          mtime,
+          { sha1, sha256, sizeInBytes: 10 },
+          0,
+          { ignoreQuota: false, checkOpens: true },
+        );
+        expect(found.upsert).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            path: orphan,
+            outcome: 'added',
+            reason: null,
+            ownerId: USER,
+            assetId: 'new-asset',
+          }),
+        );
+        expect(integrity.deleteUntrackedByPaths).toHaveBeenCalledWith([orphan]);
+        expect(result).toEqual({ back: 0, added: 1, spare: 0, waiting: 0, skipped: 0, nextCursor: null });
+      });
+
+      it('adds over an account’s storage limit only when told to', async () => {
+        const { sut, found, mediaHealth } = setup();
+        found.list.mockResolvedValue([waiting({ reason: 'over-limit', ownerId: USER })]);
+        await sut.resolve({ reason: 'over-limit', ownerId: USER });
+        expect(mediaHealth.placeUntrackedFile.mock.calls[0][5]).toEqual({ ignoreQuota: true, checkOpens: true });
+      });
+
+      it('skips a file that changed since it was read', async () => {
+        const { sut, found, mediaHealth, storage } = setup();
+        found.list.mockResolvedValue([waiting()]);
+        storage.stat.mockResolvedValue(stat({ size: 11 }));
+        const result = await sut.resolve({ reason: 'no-owner', folder: '/data/upload/5b2e', ownerId: USER });
+        expect(mediaHealth.placeUntrackedFile).not.toHaveBeenCalled();
+        expect(result.skipped).toBe(1);
+      });
+    });
+
+    describe('deleting spare copies', () => {
+      const original = '/data/library/taylor/2019/03/IMG_2041.jpg';
+      const copy = { id: 'asset-1', deletedAt: null, status: 'active', originalPath: original };
+
+      it('deletes a copy once the photo it copies is read again and opens', async () => {
+        const { sut, found, asset, mediaIntegrity, storage, integrity } = setup();
+        found.list.mockResolvedValue([listed()]);
+        asset.getByChecksumsForAnyOwner.mockResolvedValue([copy]);
+        const result = await sut.deleteSpares({});
+        expect(mediaIntegrity.validate).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ path: original, deep: true, expected: { sha1, sha256, sizeInBytes: 10 } }),
+        );
+        expect(storage.unlink).toHaveBeenCalledExactlyOnceWith(photo);
+        expect(found.delete).toHaveBeenCalledWith(ID);
+        expect(integrity.deleteUntrackedByPaths).toHaveBeenCalledWith([photo]);
+        expect(result).toEqual({ deleted: 1, freedBytes: 10, kept: 0, nextCursor: null });
+      });
+
+      it.each([
+        [
+          'the photo it copies does not open',
+          (mocks: ReturnType<typeof setup>) => mocks.mediaIntegrity.validate.mockResolvedValue({ status: 'corrupt' }),
+        ],
+        [
+          'no photo in a library has its contents',
+          (mocks: ReturnType<typeof setup>) => mocks.asset.getByChecksumsForAnyOwner.mockResolvedValue([]),
+        ],
+        [
+          'the only photo with its contents is in the Trash',
+          (mocks: ReturnType<typeof setup>) =>
+            mocks.asset.getByChecksumsForAnyOwner.mockResolvedValue([
+              { ...copy, deletedAt: new Date(), status: 'trashed' },
+            ]),
+        ],
+        [
+          'a photo uses this very file now',
+          (mocks: ReturnType<typeof setup>) => mocks.integrity.getTrackedPaths.mockResolvedValue([{ path: photo }]),
+        ],
+        [
+          'the copy changed since it was read',
+          (mocks: ReturnType<typeof setup>) => mocks.storage.stat.mockResolvedValue(stat({ size: 11 })),
+        ],
+      ])('keeps a copy when %s', async (_name, arrange) => {
+        const mocks = setup();
+        mocks.found.list.mockResolvedValue([listed()]);
+        mocks.asset.getByChecksumsForAnyOwner.mockResolvedValue([copy]);
+        arrange(mocks);
+        const result = await mocks.sut.deleteSpares({});
+        expect(mocks.storage.unlink).not.toHaveBeenCalled();
+        expect(mocks.found.delete).not.toHaveBeenCalled();
+        expect(result).toEqual({ deleted: 0, freedBytes: 0, kept: 1, nextCursor: null });
+      });
+    });
   });
 });

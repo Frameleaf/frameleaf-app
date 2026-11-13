@@ -189,6 +189,8 @@ const ORIGINAL_TRANSFER_ROUTES = new Set([
   'GET memories/exports/:id/download',
   // the flagged file itself, usually an original
   'GET admin/integrity/report/:id/file',
+  // FL-1537: a photo found on the drive, sent whole for its picture
+  'GET admin/found-files/files/:id/file',
   // FL-1337: the damaged original a repair kept
   'GET media-health/files/:id/kept-file',
   // can stream a full-resolution edited master or restored result (the viewer's own full-size view

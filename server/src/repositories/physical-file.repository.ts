@@ -929,6 +929,66 @@ export class PhysicalFileRepository {
     });
   }
 
+  /**
+   * FL-1537: undoes `restoreLostOriginal` for a file found on the drive. Every record that followed the
+   * found file points at the path the photo had before again, so the photo is missing as it was and the
+   * found file is in nobody's library. No file is touched. False when the photo has moved on since
+   * (deleted, moved by the storage template, or pointed elsewhere).
+   */
+  async revertRestoredOriginal(input: { assetId: string; foundPath: string; previousPath: string }): Promise<boolean> {
+    const found = normalize(input.foundPath);
+    return this.db.transaction().execute(async (trx) => {
+      for (const path of [input.previousPath, found].sort()) {
+        await lockFilePath(trx, path);
+      }
+      const asset = await trx
+        .selectFrom('asset')
+        .select(['id', 'originalPath', 'libraryId', 'isExternal', 'physicalOriginalFileId', 'status'])
+        .where('id', '=', asUuid(input.assetId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !asset ||
+        asset.status === AssetStatus.Deleted ||
+        asset.originalPath !== found ||
+        asset.libraryId ||
+        asset.isExternal
+      ) {
+        return false;
+      }
+      // a file path has one record: when another record took the old path meanwhile, this is not undone
+      const taken = await trx
+        .selectFrom('physical_file')
+        .select('id')
+        .where('path', '=', input.previousPath)
+        .executeTakeFirst();
+      if (taken && taken.id !== asset.physicalOriginalFileId) {
+        return false;
+      }
+      if (asset.physicalOriginalFileId) {
+        await trx
+          .updateTable('physical_file')
+          .set({ path: input.previousPath })
+          .where('id', '=', asset.physicalOriginalFileId)
+          .where('path', '=', found)
+          .execute();
+      }
+      await trx
+        .updateTable('asset')
+        .set({
+          originalPath: input.previousPath,
+          libraryPath: sql`CASE WHEN id = ${asset.id}::uuid THEN ${libraryPathOnRelink(input.previousPath, true)}
+            ELSE ${libraryPathOnRelink(input.previousPath, false)} END`,
+        })
+        .where('originalPath', '=', found)
+        .where('libraryId', 'is', null)
+        .where('isExternal', '=', false)
+        .where('status', '!=', AssetStatus.Deleted)
+        .execute();
+      return true;
+    });
+  }
+
   getPhysicalFile(id: string, kysely: Kysely<DB> = this.db): Promise<PhysicalFile | undefined> {
     return kysely.selectFrom('physical_file').selectAll().where('id', '=', asUuid(id)).executeTakeFirst();
   }

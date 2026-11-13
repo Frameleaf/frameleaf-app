@@ -57,6 +57,7 @@ import { DuplicateController } from 'src/controllers/duplicate.controller.js';
 import { EagleImportController } from 'src/controllers/eagle-import.controller.js';
 import { EnrichmentController } from 'src/controllers/enrichment.controller.js';
 import { FaceController } from 'src/controllers/face.controller.js';
+import { FoundFileAdminController } from 'src/controllers/found-file-admin.controller.js';
 import { FrameleafAuthController } from 'src/controllers/frameleaf-auth.controller.js';
 import {
   FrameleafLibraryMoveAdminController,
@@ -261,6 +262,7 @@ export const controllers = [
   DuplicateReviewController,
   EnrichmentController,
   FaceController,
+  FoundFileAdminController,
   IntegrityAdminController,
   JobController,
   LibraryController,

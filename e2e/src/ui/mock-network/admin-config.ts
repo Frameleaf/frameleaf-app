@@ -436,6 +436,8 @@ export const adminConfigDefaults = {
     manualMetadata: true,
     autoRepair: true,
     askPhones: true,
+    putBackFoundFiles: true,
+    clearGonePreviews: true,
   },
   // FL-422: Edited masters and AI restoration.
   editing: {
