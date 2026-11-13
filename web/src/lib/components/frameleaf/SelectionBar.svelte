@@ -5,6 +5,7 @@
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
   import BulkDateDialog from '$lib/components/frameleaf/BulkDateDialog.svelte';
   import DateFixDialog from '$lib/components/frameleaf/DateFixDialog.svelte';
+  import BulkCreditsDialog from './BulkCreditsDialog.svelte';
   import BulkDescriptionDialog from '$lib/components/frameleaf/BulkDescriptionDialog.svelte';
   import BulkLocationDialog from '$lib/components/frameleaf/BulkLocationDialog.svelte';
   import BulkOperationStatus from '$lib/components/frameleaf/BulkOperationStatus.svelte';
@@ -753,6 +754,8 @@
     bind:open={dialogOpen}
     onSubmit={(payload) => submitDialog('change-description', payload)}
   />
+{:else if dialog === 'change-credits'}
+  <BulkCreditsDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('change-credits', payload)} />
 {:else if dialog === 'change-location'}
   <BulkLocationDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('change-location', payload)} />
 {:else if dialog === 'tag'}

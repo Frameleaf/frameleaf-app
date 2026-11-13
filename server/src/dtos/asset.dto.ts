@@ -2,6 +2,7 @@ import { DateTime } from 'luxon';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
+import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { BulkIdsSchema } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
 import {
@@ -63,6 +64,9 @@ const UpdateAssetBaseSchema = z
           .getExtensions(),
       }),
     description: z.string().optional().describe('Asset description'),
+    title: z.string().trim().max(500).nullable().optional().describe('Asset title'),
+    artist: z.string().trim().max(500).nullable().optional().describe('Artist credit'),
+    copyright: z.string().trim().max(500).nullable().optional().describe('Copyright notice'),
   })
   .refine(
     (data) =>
@@ -241,7 +245,10 @@ const AssetMetadataRouteParamsSchema = z
 
 export const AssetMetadataUpsertItemSchema = z
   .object({
-    key: z.string().describe('Metadata key'),
+    key: z
+      .string()
+      .refine((key) => key !== PHOTOGRAPHY_INTAKE_CREDITS_KEY, 'Metadata key is reserved')
+      .describe('Metadata key'),
     value: z.record(z.string(), z.unknown()).describe('Metadata value (object)'),
   })
   .meta({ id: 'AssetMetadataUpsertItemDto' });
@@ -255,7 +262,10 @@ const AssetMetadataUpsertSchema = z
 const AssetMetadataBulkUpsertItemSchema = z
   .object({
     assetId: z.uuidv4().describe('Asset ID'),
-    key: z.string().describe('Metadata key'),
+    key: z
+      .string()
+      .refine((key) => key !== PHOTOGRAPHY_INTAKE_CREDITS_KEY, 'Metadata key is reserved')
+      .describe('Metadata key'),
     value: z.record(z.string(), z.unknown()).describe('Metadata value (object)'),
   })
   .meta({ id: 'AssetMetadataBulkUpsertItemDto' });
@@ -269,7 +279,10 @@ const AssetMetadataBulkUpsertSchema = z
 const AssetMetadataBulkDeleteItemSchema = z
   .object({
     assetId: z.uuidv4().describe('Asset ID'),
-    key: z.string().describe('Metadata key'),
+    key: z
+      .string()
+      .refine((key) => key !== PHOTOGRAPHY_INTAKE_CREDITS_KEY, 'Metadata key is reserved')
+      .describe('Metadata key'),
   })
   .meta({ id: 'AssetMetadataBulkDeleteItemDto' });
 

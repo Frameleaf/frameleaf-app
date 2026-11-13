@@ -301,7 +301,8 @@ export type Session = {
 export type Exif = Omit<
   Selectable<AssetExifTable>,
   'updatedAt' | 'updateId' | 'lockedProperties' | 'offsetTimeOriginal' | 'offsetTime' | keyof CaptureDetails
->;
+> &
+  Partial<Pick<Selectable<AssetExifTable>, 'title' | 'artist' | 'copyright'>>;
 
 export type Person = {
   createdAt: Date;
@@ -668,6 +669,9 @@ export const columns = {
 export type LockableProperty = (typeof lockableProperties)[number];
 export const lockableProperties = [
   'description',
+  'title',
+  'artist',
+  'copyright',
   'dateTimeOriginal',
   'latitude',
   'longitude',

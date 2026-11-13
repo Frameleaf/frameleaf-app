@@ -372,6 +372,8 @@ const searchFilterBranchShape = {
   model: StringPatternFilterSchema,
   lensModel: StringPatternFilterSchema,
   description: StringPatternFilterSchema,
+  title: StringPatternFilterSchema,
+  artist: StringPatternFilterSchema,
   originalFileName: StringPatternFilterSchema,
   originalPath: StringPatternFilterSchema,
   ocr: StringSimilarityFilterSchema,

@@ -97,6 +97,11 @@ export interface ImmichTags extends Omit<Tags, TagsWithWrongTypes> {
 }
 
 export type SidecarTags = Partial<Tags> & {
+  'XMP-dc:Title'?: string | null;
+  'XMP-dc:Creator'?: string | null;
+  'XMP-dc:Rights'?: string | null;
+  'XMP-tiff:Artist'?: string | null;
+  'XMP-tiff:Copyright'?: string | null;
   'XMP-mwg-rs:RegionInfo'?: ImmichTags['RegionInfo'] | null;
   'XMP-iptcExt:PersonInImage'?: string[] | null;
 };
