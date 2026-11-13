@@ -13,13 +13,19 @@ import type {
   FoundFilesSummaryResponseDto,
 } from 'src/dtos/found-file.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { FoundFileOutcome, FoundFileReason, FoundFileStep } from 'src/schema/tables/found-file.table.js';
+import type { FoundFileStep } from 'src/schema/tables/found-file.table.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, CacheControl, FrameleafWorker, JobName, StorageFolder } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
-import { type FoundFile, type FoundFileListed, FoundFileRepository } from 'src/repositories/found-file.repository.js';
+import {
+  type FoundFile,
+  type FoundFileListed,
+  type FoundFileOutcome,
+  type FoundFileReason,
+  FoundFileRepository,
+} from 'src/repositories/found-file.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';

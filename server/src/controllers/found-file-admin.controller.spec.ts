@@ -2,11 +2,11 @@ import request from 'supertest';
 import { FoundFileAdminController } from 'src/controllers/found-file-admin.controller.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FoundFilesService } from 'src/services/found-files.service.js';
-import { ControllerContext, automock, controllerSetup, mockBaseService } from 'test/utils.js';
+import { ControllerContext, automock, controllerSetup } from 'test/utils.js';
 
 describe(FoundFileAdminController.name, () => {
   let ctx: ControllerContext;
-  const service = mockBaseService(FoundFilesService);
+  const service = automock(FoundFilesService, { args: [{ setContext: () => {} }], strict: false });
   const id = '0194d6a5-7a6e-7c2a-9cb4-0a1c2d3e4f50';
   const owner = '9d2f0c1e-5b6a-4c7d-8e9f-0a1b2c3d4e5f';
 

@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type {
-  FoundFileOutcome,
-  FoundFileReason,
+  FoundFileOutcome as SortedOutcome,
+  FoundFileReason as SortedReason,
   FoundFileStep,
   FoundFileTable,
 } from 'src/schema/tables/found-file.table.js';
@@ -11,7 +11,18 @@ import { AssetFileType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { asUuid } from 'src/utils/database.js';
 
-export type FoundFile = Selectable<FoundFileTable>;
+/**
+ * FL-1537: `outcome` and `reason` are text columns, and these are the values the review adds to them.
+ * They are declared here, not on the table: the table's file is part of the captured schema, and no
+ * column changed. `left`: a person undid what was done, or chose to leave the file; it is not sorted
+ * again while it stays the same file. `tidied`: a file Frameleaf makes itself, cleared (`preview`) or
+ * joined to its photo (`sidecar`). `asked`: putting found photos back is switched off, so it waits.
+ */
+export type FoundFileOutcome = SortedOutcome | 'left' | 'tidied';
+export type FoundFileReason = SortedReason | 'asked' | 'preview' | 'sidecar';
+
+export type FoundFile = Omit<Selectable<FoundFileTable>, 'outcome'> & { outcome: FoundFileOutcome };
+export type FoundFileWrite = Omit<Insertable<FoundFileTable>, 'outcome'> & { outcome: FoundFileOutcome };
 /** A found file with the account it belongs to: its folder's, else its photo's. */
 export type FoundFileListed = FoundFile & { effectiveOwnerId: string | null };
 
@@ -46,14 +57,17 @@ export class FoundFileRepository {
       .selectFrom('found_file')
       .selectAll()
       .where(sql<boolean>`"path" = any(${paths}::text[])`)
-      .execute();
+      .execute() as Promise<FoundFile[]>;
   }
 
   /** What was learned about the file at this path replaces what was known about it. */
-  async upsert(file: Insertable<FoundFileTable>): Promise<void> {
+  async upsert(file: FoundFileWrite): Promise<void> {
     // A JSON array has to be sent as JSON text: the driver would send a JavaScript array as a Postgres
     // array, and JSON cast straight to jsonb would be stored as one JSON string (see jsonb-cast.spec.ts).
-    const row = { ...file, steps: sql<FoundFileStep[]>`${JSON.stringify(file.steps ?? [])}::text::jsonb` };
+    const row = {
+      ...(file as Insertable<FoundFileTable>),
+      steps: sql<FoundFileStep[]>`${JSON.stringify(file.steps ?? [])}::text::jsonb`,
+    };
     const { path: _path, ...changes } = row;
     await this.db
       .insertInto('found_file')
@@ -72,20 +86,22 @@ export class FoundFileRepository {
 
   /** FL-1537: one found file. */
   get(id: string): Promise<FoundFileListed | undefined> {
-    return this.listed().where('found_file.id', '=', asUuid(id)).executeTakeFirst();
+    return this.listed().where('found_file.id', '=', asUuid(id)).executeTakeFirst() as Promise<
+      FoundFileListed | undefined
+    >;
   }
 
   /** FL-1537: a page of the found files with one outcome, oldest first. */
   list({ outcome, reason, folder, ownerId, cursor, size }: FoundFileFilter): Promise<FoundFileListed[]> {
     return this.listed()
-      .where('found_file.outcome', '=', outcome)
+      .where('found_file.outcome', '=', outcome as SortedOutcome)
       .$if(!!reason, (qb) => qb.where('found_file.reason', '=', reason!))
       .$if(!!ownerId, (qb) => qb.where('found_file.ownerId', '=', asUuid(ownerId!)))
       .$if(!!folder, (qb) => qb.where(sql<boolean>`starts_with(found_file."path", ${folder + '/'})`))
       .$if(!!cursor, (qb) => qb.where('found_file.id', '>', asUuid(cursor!)))
       .orderBy('found_file.id')
       .limit(size)
-      .execute();
+      .execute() as Promise<FoundFileListed[]>;
   }
 
   /** FL-1537: how many files, and how many bytes, each outcome and reason holds. */

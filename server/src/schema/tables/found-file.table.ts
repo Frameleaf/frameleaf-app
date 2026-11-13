@@ -3,23 +3,11 @@ import type { Generated, Int8, Timestamp } from '@frameleaf/sql-tools';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 
 /** What a file that was on the drive but in nobody's library turned out to be. */
-/**
- * `left` (FL-1537): a person undid what was done, or chose to leave the file; it is not sorted again
- * while it stays the same file. `tidied`: a file Frameleaf makes itself, cleared or joined to its photo.
- */
-export const FOUND_FILE_OUTCOMES = ['back', 'added', 'spare', 'needs', 'left', 'tidied'] as const;
+export const FOUND_FILE_OUTCOMES = ['back', 'added', 'spare', 'needs'] as const;
 export type FoundFileOutcome = (typeof FOUND_FILE_OUTCOMES)[number];
 
 /** Why a found file waits for a person. Text, not an enum: new reasons are added without a schema change. */
-export type FoundFileReason =
-  | 'no-owner'
-  | 'wont-open'
-  | 'over-limit'
-  /** FL-1537: putting found photos back by themselves is switched off, so this one waits to be asked. */
-  | 'asked'
-  /** FL-1537, with `tidied`: a preview whose photo is gone, or an XMP file joined to its photo. */
-  | 'preview'
-  | 'sidecar';
+export type FoundFileReason = 'no-owner' | 'wont-open' | 'over-limit';
 
 /** One thing Frameleaf did with a found file, oldest first. */
 export type FoundFileStep = { step: string; at: string; outcome?: string; facts?: Record<string, unknown> };
