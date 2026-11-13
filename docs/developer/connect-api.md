@@ -22,6 +22,8 @@ Supported scopes are `library:read`, `library:download`, `albums:write`, `tags:w
 
 Send access tokens only in the Authorization bearer header. Refresh tokens rotate on every refresh: serialize refresh operations and replace both tokens together. Reuse of a spent refresh token revokes the grant. Refresh does not expand policy, scope or resource. A person can narrow a grant through Settings; the next request uses the new policy. Expanded access requires new consent.
 
+Disconnect through `POST /api/oauth/apps/revoke` with `client_id` and the last stored refresh token. Revocation accepts a consumed refresh token for the same grant, including when a rotation response was lost. This does not permit using that token for another refresh. Unknown tokens still receive the standard success response without revealing grant information.
+
 ## Read and additive-write endpoints
 
 All routes below are relative to `/api/connect`.

@@ -620,6 +620,40 @@ describe(OAuthAppService.name, () => {
   });
 
   describe('revoke (RFC 7009)', () => {
+    it('revokes the same grant with a consumed refresh token after a lost rotation response', async () => {
+      const client = repo.addClient([CLAUDE_REDIRECT]);
+      const { tokens } = await connect(client);
+      const other = await connect(client);
+      const rotated = await sut.token({
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refresh_token,
+        client_id: client.id,
+      });
+      await sut.revoke({ token: tokens.refresh_token, client_id: randomUUID() });
+      await expect(sut.validateAccessToken(rotated.access_token, null)).resolves.toBeDefined();
+      await sut.revoke({ token: tokens.refresh_token, client_id: client.id });
+      await expect(sut.validateAccessToken(rotated.access_token, null)).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(sut.validateAccessToken(other.tokens.access_token, null)).resolves.toBeDefined();
+      await expect(
+        sut.token({
+          grant_type: 'refresh_token',
+          refresh_token: rotated.refresh_token,
+          client_id: client.id,
+        }),
+      ).rejects.toThrow();
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: AccountEventAction.AppDisconnected, detail: 'app-signed-out' }),
+      );
+    });
+
+    it('allows revocation with an expired current access token', async () => {
+      const client = repo.addClient([CLAUDE_REDIRECT]);
+      const { tokens } = await connect(client);
+      repo.grants[0].accessExpiresAt = new Date(Date.now() - 1) as never;
+      await sut.revoke({ token: tokens.access_token, client_id: client.id });
+      expect(repo.grants[0].revokedAt).not.toBeNull();
+    });
+
     it('lets an app sign itself out with either token', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT]);
       const { tokens } = await connect(client);

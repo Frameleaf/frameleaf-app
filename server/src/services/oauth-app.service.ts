@@ -268,10 +268,12 @@ export class OAuthAppService extends BaseService {
       throw oauthError('invalid_request', 'The token to revoke is missing');
     }
     const hash = this.cryptoRepository.hashSha256(token);
+    // A lost rotation response leaves the app holding a consumed refresh token.
     const grant = token.startsWith(OAUTH_ACCESS_TOKEN_PREFIX)
       ? await this.oauthAppRepository.getByAccessToken(hash)
       : token.startsWith(OAUTH_REFRESH_TOKEN_PREFIX)
-        ? await this.oauthAppRepository.getByRefreshToken(hash)
+        ? ((await this.oauthAppRepository.getByRefreshToken(hash)) ??
+          (await this.oauthAppRepository.getBySpentRefreshToken(hash)))
         : undefined;
     const clientId = text(body.client_id);
     if (!grant || (clientId !== undefined && clientId !== grant.clientId)) {
