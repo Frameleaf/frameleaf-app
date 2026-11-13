@@ -1,11 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { constants } from 'node:fs';
 import { basename } from 'node:path';
+import type { Readable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
   FoundFileDetailResponseDto,
   FoundFileListDto,
   FoundFileListResponseDto,
   FoundFileResponseDto,
+  FoundFilesArchiveDto,
   FoundFilesDeleteSpareDto,
   FoundFilesDeleteSpareResponseDto,
   FoundFilesResolveDto,
@@ -36,7 +39,7 @@ import { MediaHealthService, type UntrackedPlacement } from 'src/services/media-
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
 import { fileIdentity, moveFileWithin } from 'src/utils/file-trash.js';
-import { FileDownloadResponse } from 'src/utils/file.js';
+import { FileDownloadResponse, nextArchiveName } from 'src/utils/file.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
 import { isPathWithin } from 'src/utils/media-health-roots.js';
 import { getErrorMessage } from 'src/utils/media-health.js';
@@ -73,6 +76,24 @@ const MADE_FOR_ASSET: [StorageFolder, RegExp][] = [
 /** How many files one request decides or deletes; the caller asks again with the cursor it is given. */
 const DECIDE_BATCH = 50;
 const DELETE_BATCH = 25;
+
+/**
+ * FL-1579: how many `photo.xmp` names one question to the database carries (it tries each with every
+ * ending), and the endings a photo or video has, as cameras write them: lower case and upper case.
+ */
+const STEM_BATCH = 200;
+const ASSET_ENDINGS = [...Object.keys(mimeTypes.image), ...Object.keys(mimeTypes.video)].flatMap((ending) => [
+  ending,
+  ending.toUpperCase(),
+]);
+
+/**
+ * FL-1579: the files that won't open, sent as one archive.
+ * ponytail: the list is gathered before the first byte is sent, a page at a time, and stops at this
+ * many files; a group larger than that is downloaded in part. Stream the pages if one ever is.
+ */
+const ARCHIVE_PAGE = 500;
+const ARCHIVE_LIMIT = 5000;
 
 const now = () => new Date().toISOString();
 
@@ -340,18 +361,14 @@ export class FoundFilesService {
       }
     }
 
-    // ponytail: only `photo.jpg.xmp` beside `photo.jpg`, the name Frameleaf and Immich write. `photo.xmp`
-    // needs a search by name without its ending; add it if such files turn up in the list.
-    const beside = new Map(sidecars.map((path) => [path.slice(0, -'.xmp'.length), path]));
-    for (const asset of await this.foundFileRepository.assetsWithoutSidecar(beside.keys().toArray())) {
-      const path = beside.get(asset.originalPath)!;
+    const join = async (asset: { id: string }, path: string) => {
       try {
         if (await isLockedPath(path)) {
-          continue;
+          return;
         }
         const settled = await this.mediaHealthService.settledUntrackedFile(path);
         if (!settled) {
-          continue;
+          return;
         }
         await this.assetRepository.upsertFile({ assetId: asset.id, type: AssetFileType.Sidecar, path });
         await this.jobRepository.queue({ name: JobName.SidecarCheck, data: { id: asset.id } });
@@ -360,6 +377,33 @@ export class FoundFilesService {
       } catch (error) {
         executionSignal()?.throwIfAborted();
         this.logger.warn(`Could not join the XMP file ${path} to its photo: ${getErrorMessage(error)}`);
+      }
+    };
+
+    // `photo.jpg.xmp` beside `photo.jpg`, the name Frameleaf and Immich write
+    const beside = new Map(sidecars.map((path) => [path.slice(0, -'.xmp'.length), path]));
+    const taken = new Set<string>();
+    for (const asset of await this.foundFileRepository.assetsWithoutSidecar(beside.keys().toArray())) {
+      taken.add(asset.originalPath);
+      await join(asset, beside.get(asset.originalPath)!);
+    }
+
+    // FL-1579: `photo.xmp` beside `photo.jpg`, the name other programs write. It says nothing of the
+    // photo's ending, so it is joined only when exactly one photo in the folder has that name and has no
+    // XMP file of its own; with two (`photo.jpg` and `photo.mov`) nobody can say whose it is.
+    const stems = beside
+      .keys()
+      .filter((stem) => !taken.has(stem) && !mimeTypes.isAsset(stem))
+      .toArray();
+    for (let index = 0; index < stems.length; index += STEM_BATCH) {
+      const named = Map.groupBy(
+        await this.foundFileRepository.assetsNamed(stems.slice(index, index + STEM_BATCH), ASSET_ENDINGS),
+        ({ stem }) => stem,
+      );
+      for (const [stem, assets] of named) {
+        if (assets.length === 1 && !assets[0].hasSidecar) {
+          await join(assets[0], beside.get(stem)!);
+        }
       }
     }
     if (cleared > 0 || joined > 0) {
@@ -425,6 +469,8 @@ export class FoundFilesService {
   async undo(auth: AuthDto, id: string): Promise<FoundFileDetailResponseDto> {
     const file = await this.find(id);
     this.requireViewable(auth, file);
+    /** FL-1579: where the file is now, when the photo it became was moved to its dated folder since. */
+    let movedTo: string | undefined;
     if (file.outcome === 'back' && file.assetId && file.previousPath) {
       const reverted = await this.physicalFileRepository.revertRestoredOriginal({
         assetId: file.assetId,
@@ -451,6 +497,7 @@ export class FoundFilesService {
           outcome: 'left',
           steps: [...file.steps, { step: 'undone', at: now(), facts: { was: 'added' } }],
         });
+        movedTo = asset.originalPath;
       }
       if (asset) {
         // out of the library for good, and its file is kept: only what Frameleaf made from it goes
@@ -466,7 +513,101 @@ export class FoundFilesService {
       reason: null,
       steps: [...file.steps, { step: 'undone', at: now(), facts: { was: file.outcome } }],
     });
+    // the answer is the file that is left on the drive, which is the one that can be sorted again
+    const [moved] = movedTo ? await this.foundFileRepository.getByPaths([movedTo]) : [];
+    return this.get(auth, moved?.id ?? id);
+  }
+
+  /**
+   * FL-1579: sort a file that was left alone again, at a person's word. It is placed as a file found
+   * for the first time would be, from the contents that were read: back under a photo that is missing,
+   * added as a new photo, a spare copy, or waiting. Asked for by hand, so it does not wait for the
+   * switch that puts found photos back by themselves.
+   */
+  async sortAgain(auth: AuthDto, id: string): Promise<FoundFileDetailResponseDto> {
+    const file = await this.find(id);
+    this.requireViewable(auth, file);
+    if (file.outcome !== 'left') {
+      throw new BadRequestException('Only a file that was left alone can be sorted again');
+    }
+    const settled = await this.unchanged(file);
+    if (!settled || !file.sha1 || !file.sha256 || (await isLockedPath(file.path))) {
+      // a file that changed is a new file to the nightly check, which sorts it by itself
+      throw new BadRequestException('The file has changed or is gone since it was read');
+    }
+    const was = file.assetId ? await this.assetRepository.getById(file.assetId) : undefined;
+    if (was?.status === AssetStatus.Deleted) {
+      // taken out a moment ago and not gone yet: sorted now, the file would be called a copy of it
+      throw new BadRequestException('The photo this file was is still leaving the library. Try again in a moment');
+    }
+    const owner = file.ownerId ? await this.userRepository.get(file.ownerId, {}) : undefined;
+    const placement = await this.mediaHealthService.placeUntrackedFile(
+      owner ?? null,
+      file.path,
+      settled.mtime,
+      { sha1: file.sha1, sha256: file.sha256, sizeInBytes: settled.size },
+      0,
+      { checkOpens: true },
+    );
+    const { outcome, reason } = OUTCOME[placement.outcome];
+    const previousPath = placement.outcome === 'back' ? placement.previousPath : null;
+    await this.foundFileRepository.upsert({
+      ...this.remembered(file),
+      outcome,
+      reason,
+      assetId: 'assetId' in placement ? (placement.assetId ?? null) : null,
+      previousPath,
+      steps: [
+        ...file.steps,
+        { step: 'again', at: now() },
+        { step: placement.outcome, at: now(), ...(previousPath && { facts: { previousPath } }) },
+      ],
+    });
+    if (outcome === 'back' || outcome === 'added') {
+      await this.integrityRepository.deleteUntrackedByPaths([file.path]);
+    }
     return this.get(auth, id);
+  }
+
+  /**
+   * FL-1579: the files that won't open, as they are, in one archive: a group's (an account's, or a
+   * folder's that no account uses), or all of them. Only files the person asking may see are sent, so
+   * another account's are left out, as are files that cannot be read at all and sealed Locked files.
+   */
+  async downloadWontOpen(auth: AuthDto, dto: FoundFilesArchiveDto): Promise<Readable> {
+    const names = new Map<string, number>();
+    const entries: { path: string; name: string }[] = [];
+    let cursor: string | undefined;
+    do {
+      const files = await this.foundFileRepository.list({
+        outcome: 'needs',
+        reason: 'wont-open',
+        folder: dto.folder,
+        ownerId: dto.ownerId,
+        cursor,
+        size: ARCHIVE_PAGE,
+      });
+      for (const file of files) {
+        if (
+          entries.length < ARCHIVE_LIMIT &&
+          this.viewable(auth, file) &&
+          (await this.storageRepository.checkFileExists(file.path, constants.R_OK)) &&
+          !(await isLockedPath(file.path))
+        ) {
+          entries.push({ path: file.path, name: nextArchiveName(names, basename(file.path)) });
+        }
+      }
+      cursor = files.length === ARCHIVE_PAGE && entries.length < ARCHIVE_LIMIT ? files.at(-1)!.id : undefined;
+    } while (cursor);
+    if (entries.length === 0) {
+      throw new NotFoundException('None of these files can be downloaded');
+    }
+    const zip = this.storageRepository.createZipStream();
+    for (const { path, name } of entries) {
+      zip.addFile(path, name);
+    }
+    void zip.finalize().catch((error: Error) => zip.stream.destroy(error));
+    return zip.stream;
   }
 
   /**

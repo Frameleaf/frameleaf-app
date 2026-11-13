@@ -3,13 +3,13 @@
    * One found file's story (FL-1533, the prototype's `Story` in `care/found-files.jsx`): its picture,
    * where it was found, every step Frameleaf took with it, and Undo. A file put back under a missing
    * photo can be undone, an added photo can be taken out of the library, and a spare copy can be
-   * deleted after the server has checked the photo it copies. Another account's file shows no picture
-   * and offers nothing but Done.
+   * deleted after the server has checked the photo it copies. A file that was left alone after an Undo
+   * can be sorted again (FL-1579). Another account's file shows no picture and offers nothing but Done.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { foundFileUrl, foundPicture } from '$lib/components/frameleaf/settings/care/found-files';
+  import { foundFileUrl, foundPicture, sortedAgainWords } from '$lib/components/frameleaf/settings/care/found-files';
   import Facts, { type Fact } from '$lib/components/frameleaf/settings/kit/Facts.svelte';
   import HistoryList from '$lib/components/frameleaf/settings/kit/HistoryList.svelte';
   import HistoryRow from '$lib/components/frameleaf/settings/kit/HistoryRow.svelte';
@@ -25,6 +25,7 @@
     FoundFileOutcome,
     FoundFileReason,
     getFoundFile,
+    sortFoundFileAgain,
     undoFoundFile,
     type FoundFileDetailResponseDto,
     type FoundFileStepDto,
@@ -42,8 +43,11 @@
   }: {
     id: string;
     users: { id: string; name: string }[];
-    /** Something was changed: the list is out of date, and this is what to say. */
-    onDone: (message: string) => void;
+    /**
+     * Something was changed: the list is out of date, and this is what to say. `left` is the file an
+     * Undo left alone, which the page offers to sort again.
+     */
+    onDone: (message: string, left?: { id: string; name: string }) => void;
     onClose: () => void;
   } = $props();
 
@@ -126,6 +130,7 @@
     'wont-open': { what: 'frameleaf_found_step_wont_open', tone: 'warn', result: 'frameleaf_found_now_needs' },
     decided: { what: 'frameleaf_found_step_decided' },
     undone: { what: 'frameleaf_found_step_undone', detail: 'frameleaf_found_step_undone_detail' },
+    again: { what: 'frameleaf_found_step_again' },
   };
   const told = $derived.by(() => {
     if (!file) {
@@ -152,11 +157,16 @@
       : undefined,
   );
 
-  const finish = (message: string) => {
-    onDone(message);
+  type Done = string | { message: string; left: { id: string; name: string } };
+  const finish = (done: Done) => {
+    if (typeof done === 'string') {
+      onDone(done);
+    } else {
+      onDone(done.message, done.left);
+    }
     open = false;
   };
-  const run = async (action: () => Promise<string>) => {
+  const run = async (action: () => Promise<Done>) => {
     working = true;
     failure = '';
     try {
@@ -170,10 +180,20 @@
   const undo = () =>
     run(async () => {
       const was = file!.outcome;
-      await undoFoundFile({ id });
-      return was === FoundFileOutcome.Back
-        ? $t('frameleaf_found_undone_back', { values: { name: file!.fileName } })
-        : $t('frameleaf_found_undone_added', { values: { name: file!.fileName } });
+      // the answer is the file that is left on the drive: the one to sort again, if asked
+      const left = await undoFoundFile({ id });
+      return {
+        message:
+          was === FoundFileOutcome.Back
+            ? $t('frameleaf_found_undone_back', { values: { name: file!.fileName } })
+            : $t('frameleaf_found_undone_added', { values: { name: file!.fileName } }),
+        left: { id: left.id, name: left.fileName },
+      };
+    });
+  const sortAgain = () =>
+    run(async () => {
+      const sorted = await sortFoundFileAgain({ id });
+      return $t(sortedAgainWords(sorted.outcome), { values: { name: file!.fileName } });
     });
   const deleteCopy = () =>
     run(async () => {
@@ -267,6 +287,8 @@
             {$t('frameleaf_found_copy_delete')}
           </Button>
         {/if}
+      {:else if file.outcome === FoundFileOutcome.Left}
+        <Button disabled={working} onclick={() => void sortAgain()}>{$t('frameleaf_found_again')}</Button>
       {:else if file.outcome === FoundFileOutcome.Needs}
         <a class="download" href={foundFileUrl(file.id)} download={file.fileName}>{$t('frameleaf_found_download')}</a>
       {/if}

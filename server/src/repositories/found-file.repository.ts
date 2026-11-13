@@ -183,4 +183,34 @@ export class FoundFileRepository {
       )
       .execute();
   }
+
+  /**
+   * FL-1579: the photos whose file is one of `stems` plus a photo or video ending (`…/photo` for
+   * `…/photo.jpg`), each with the stem it matched and whether it has an XMP file of its own. For an XMP
+   * named `photo.xmp`, which says nothing of its photo's ending.
+   *
+   * ponytail: every stem is tried with every ending as an exact path, because the only index on
+   * `asset."originalPath"` is a plain btree, which a search by the start of a path cannot use under the
+   * database's collation. That is stems × endings index lookups per call (about 100,000 for 500 stems),
+   * so callers send a few hundred stems at a time; and an ending written in mixed case (`.Jpg`) is not
+   * found. A `text_pattern_ops` index on the path would lift both, at the price of a schema change.
+   */
+  async assetsNamed(
+    stems: string[],
+    endings: string[],
+  ): Promise<{ id: string; originalPath: string; stem: string; hasSidecar: boolean }[]> {
+    if (stems.length === 0 || endings.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ id: string; originalPath: string; stem: string; hasSidecar: boolean }>`
+      SELECT a.id, a."originalPath", s.stem,
+        EXISTS (
+          SELECT 1 FROM asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.Sidecar}
+        ) AS "hasSidecar"
+      FROM unnest(${stems}::text[]) AS s(stem)
+      CROSS JOIN unnest(${endings}::text[]) AS e(ending)
+      JOIN asset a ON a."originalPath" = s.stem || e.ending
+      WHERE a."deletedAt" IS NULL`.execute(this.db);
+    return rows;
+  }
 }

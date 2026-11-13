@@ -191,6 +191,8 @@ const ORIGINAL_TRANSFER_ROUTES = new Set([
   'GET admin/integrity/report/:id/file',
   // FL-1537: a photo found on the drive, sent whole for its picture
   'GET admin/found-files/files/:id/file',
+  // FL-1579: the found files that won't open, as they are, in one archive
+  'GET admin/found-files/wont-open/archive',
   // FL-1337: the damaged original a repair kept
   'GET media-health/files/:id/kept-file',
   // can stream a full-resolution edited master or restored result (the viewer's own full-size view

@@ -51,6 +51,7 @@ const setup = () => {
     delete: vi.fn().mockResolvedValue(undefined),
     existingAssetIds: vi.fn().mockResolvedValue(new Set()),
     assetsWithoutSidecar: vi.fn().mockResolvedValue([]),
+    assetsNamed: vi.fn().mockResolvedValue([]),
   };
   const asset = {
     getById: vi.fn(),
@@ -80,8 +81,10 @@ const setup = () => {
     stat: vi.fn().mockResolvedValue(stat()),
     unlink: vi.fn().mockResolvedValue(undefined),
     checkFileExists: vi.fn().mockResolvedValue(false),
+    createZipStream: vi.fn(),
   };
   const user = {
+    get: vi.fn().mockResolvedValue({ id: USER, storageLabel: 'taylor', quotaSizeInBytes: null, quotaUsageInBytes: 0 }),
     getList: vi
       .fn()
       .mockResolvedValue([{ id: USER, storageLabel: 'taylor', quotaSizeInBytes: null, quotaUsageInBytes: 0 }]),
@@ -452,6 +455,58 @@ describe(FoundFilesService.name, () => {
         );
         expect(storage.unlink).not.toHaveBeenCalled();
       });
+
+      describe('FL-1579: an XMP file named photo.xmp', () => {
+        const folder = `/data/upload/${USER}/3f/9a`;
+        const xmp = `${folder}/IMG_7731.xmp`;
+        const stem = `${folder}/IMG_7731`;
+
+        it('is joined to the one photo in its folder with that name', async () => {
+          const { sort, found, asset, job } = setup();
+          found.assetsNamed.mockResolvedValue([{ id: 'asset-1', originalPath: photo, stem, hasSidecar: false }]);
+          expect(await sort([xmp])).toEqual([xmp]);
+          const [stems, endings] = found.assetsNamed.mock.calls[0];
+          expect(stems).toEqual([stem]);
+          expect(endings).toEqual(expect.arrayContaining(['.jpg', '.JPG', '.heic', '.MOV']));
+          expect(asset.upsertFile).toHaveBeenCalledExactlyOnceWith({ assetId: 'asset-1', type: 'sidecar', path: xmp });
+          expect(job.queue).toHaveBeenCalledWith({ name: 'SidecarCheck', data: { id: 'asset-1' } });
+          expect(found.upsert).toHaveBeenCalledWith(
+            expect.objectContaining({ path: xmp, outcome: 'tidied', reason: 'sidecar', assetId: 'asset-1' }),
+          );
+        });
+
+        it('is left alone when two photos in the folder have that name', async () => {
+          const { sort, found, asset } = setup();
+          found.assetsNamed.mockResolvedValue([
+            { id: 'asset-1', originalPath: photo, stem, hasSidecar: false },
+            { id: 'asset-2', originalPath: `${stem}.MOV`, stem, hasSidecar: false },
+          ]);
+          expect(await sort([xmp])).toEqual([]);
+          expect(asset.upsertFile).not.toHaveBeenCalled();
+        });
+
+        it('is left alone when the photo has an XMP file of its own', async () => {
+          const { sort, found, asset } = setup();
+          found.assetsNamed.mockResolvedValue([{ id: 'asset-1', originalPath: photo, stem, hasSidecar: true }]);
+          expect(await sort([xmp])).toEqual([]);
+          expect(asset.upsertFile).not.toHaveBeenCalled();
+        });
+
+        it('is not looked for when photo.jpg.xmp was joined, or the name already ends like a photo', async () => {
+          const { sort, found } = setup();
+          const full = `${photo}.xmp`;
+          const lone = `${folder}/other.jpg.xmp`;
+          found.assetsWithoutSidecar.mockResolvedValue([{ id: 'asset-1', originalPath: photo }]);
+          expect(await sort([full, lone])).toEqual([full]);
+          expect(found.assetsNamed).not.toHaveBeenCalled();
+        });
+
+        it('asks the database a few hundred names at a time', async () => {
+          const { sort, found } = setup();
+          await sort(Array.from({ length: 450 }, (_, index) => `${folder}/IMG_${index}.xmp`));
+          expect(found.assetsNamed.mock.calls.map(([stems]) => stems.length)).toEqual([200, 200, 50]);
+        });
+      });
     });
 
     describe('review', () => {
@@ -563,6 +618,171 @@ describe(FoundFilesService.name, () => {
         const { sut, found } = setup();
         found.get.mockResolvedValue(listed({ outcome: 'spare' }));
         await expect(sut.undo(auth, ID)).rejects.toThrow('Nothing was done');
+      });
+
+      it('FL-1579: answers with the file that is left on the drive when the photo’s file was moved', async () => {
+        const { sut, found, asset } = setup();
+        const moved = '/data/library/taylor/2018/08/IMG_7731.JPG';
+        const MOVED_ID = '0194d6a5-7a6e-7c2a-9cb4-0a1c2d3e4f77';
+        found.get.mockImplementation((id: string) =>
+          Promise.resolve(
+            id === MOVED_ID ? listed({ id: MOVED_ID, path: moved, outcome: 'left' }) : listed({ outcome: 'added' }),
+          ),
+        );
+        found.getByPaths.mockResolvedValue([remembered({ id: MOVED_ID, path: moved, outcome: 'left' })]);
+        asset.getById.mockResolvedValue({ id: 'asset-1', originalPath: moved });
+        await expect(sut.undo(auth, ID)).resolves.toEqual(expect.objectContaining({ id: MOVED_ID, path: moved }));
+        expect(found.getByPaths).toHaveBeenCalledWith([moved]);
+      });
+    });
+
+    describe('FL-1579: sorting a left file again', () => {
+      const left = (patch: Record<string, unknown> = {}) =>
+        listed({ outcome: 'left', steps: [{ step: 'undone', at: '2026-11-12T04:00:00.000Z' }], ...patch });
+
+      it('places the file as a new one would be, from the contents that were read, and says so', async () => {
+        const { sut, found, mediaHealth, crypto, integrity, user } = setup();
+        found.get.mockResolvedValue(left({ assetId: null }));
+        await sut.sortAgain(auth, ID);
+        expect(crypto.hashFileDigests).not.toHaveBeenCalled();
+        expect(user.get).toHaveBeenCalledWith(USER, {});
+        expect(mediaHealth.placeUntrackedFile).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ id: USER }),
+          photo,
+          mtime,
+          { sha1, sha256, sizeInBytes: 10 },
+          0,
+          { checkOpens: true },
+        );
+        expect(found.upsert).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            path: photo,
+            outcome: 'added',
+            reason: null,
+            assetId: 'new-asset',
+            steps: [
+              expect.objectContaining({ step: 'undone' }),
+              expect.objectContaining({ step: 'again' }),
+              expect.objectContaining({ step: 'added' }),
+            ],
+          }),
+        );
+        expect(found.upsert.mock.calls[0][0]).not.toHaveProperty('id');
+        expect(integrity.deleteUntrackedByPaths).toHaveBeenCalledExactlyOnceWith([photo]);
+      });
+
+      it('puts it back under the photo that is missing again, with where that photo pointed', async () => {
+        const { sut, found, mediaHealth } = setup();
+        found.get.mockResolvedValue(left());
+        mediaHealth.placeUntrackedFile.mockResolvedValue({
+          outcome: 'back',
+          assetId: 'asset-1',
+          previousPath: '/data/library/taylor/IMG_3310.jpg',
+        });
+        await sut.sortAgain(auth, ID);
+        expect(found.upsert).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            outcome: 'back',
+            assetId: 'asset-1',
+            previousPath: '/data/library/taylor/IMG_3310.jpg',
+          }),
+        );
+      });
+
+      it('lets a file that still cannot be added wait, and keeps it on the list of files in no library', async () => {
+        const { sut, found, mediaHealth, integrity } = setup();
+        found.get.mockResolvedValue(left({ assetId: null }));
+        mediaHealth.placeUntrackedFile.mockResolvedValue({ outcome: 'over-limit' });
+        await sut.sortAgain(auth, ID);
+        expect(found.upsert).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ outcome: 'needs', reason: 'over-limit', assetId: null }),
+        );
+        expect(integrity.deleteUntrackedByPaths).not.toHaveBeenCalled();
+      });
+
+      it('is only for a file that was left alone', async () => {
+        const { sut, found, mediaHealth } = setup();
+        found.get.mockResolvedValue(listed({ outcome: 'spare' }));
+        await expect(sut.sortAgain(auth, ID)).rejects.toThrow('left alone');
+        expect(mediaHealth.placeUntrackedFile).not.toHaveBeenCalled();
+      });
+
+      it('refuses another account’s file', async () => {
+        const { sut, found, mediaHealth } = setup();
+        found.get.mockResolvedValue(left({ effectiveOwnerId: OTHER }));
+        await expect(sut.sortAgain(auth, ID)).rejects.toThrow('another account');
+        expect(mediaHealth.placeUntrackedFile).not.toHaveBeenCalled();
+      });
+
+      it('refuses a file that changed since it was read', async () => {
+        const { sut, found, storage, mediaHealth } = setup();
+        found.get.mockResolvedValue(left());
+        storage.stat.mockResolvedValue(stat({ size: 11 }));
+        await expect(sut.sortAgain(auth, ID)).rejects.toThrow('changed or is gone');
+        expect(mediaHealth.placeUntrackedFile).not.toHaveBeenCalled();
+      });
+
+      it('waits while the photo it was is still leaving the library', async () => {
+        const { sut, found, asset, mediaHealth } = setup();
+        found.get.mockResolvedValue(left());
+        asset.getById.mockResolvedValue({ id: 'asset-1', status: 'deleted' });
+        await expect(sut.sortAgain(auth, ID)).rejects.toThrow('still leaving');
+        expect(mediaHealth.placeUntrackedFile).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('FL-1579: downloading the files that won’t open', () => {
+      const broken = (name: string, patch: Record<string, unknown> = {}) =>
+        listed({
+          id: name,
+          path: `/data/upload/${USER}/3f/9a/${name}`,
+          outcome: 'needs',
+          reason: 'wont-open',
+          assetId: null,
+          ...patch,
+        });
+      const zip = () => {
+        const archive = {
+          stream: { destroy: vi.fn() },
+          addFile: vi.fn(),
+          finalize: vi.fn().mockResolvedValue(undefined),
+        };
+        return archive;
+      };
+
+      it('sends the files the person asking may see, each under a name of its own', async () => {
+        const { sut, found, storage } = setup();
+        const archive = zip();
+        storage.createZipStream.mockReturnValue(archive);
+        storage.checkFileExists.mockResolvedValue(true);
+        found.list.mockResolvedValue([
+          broken('a.jpg'),
+          broken('theirs.jpg', { effectiveOwnerId: OTHER }),
+          broken('a.jpg', { path: `/data/upload/${USER}/00/11/a.jpg` }),
+          broken('nobody.jpg', { effectiveOwnerId: null }),
+        ]);
+        await expect(sut.downloadWontOpen(auth, { ownerId: USER })).resolves.toBe(archive.stream);
+        expect(found.list).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ outcome: 'needs', reason: 'wont-open', ownerId: USER, folder: undefined }),
+        );
+        expect(archive.addFile.mock.calls).toEqual([
+          [`/data/upload/${USER}/3f/9a/a.jpg`, 'a.jpg'],
+          [`/data/upload/${USER}/00/11/a.jpg`, 'a+1.jpg'],
+          [`/data/upload/${USER}/3f/9a/nobody.jpg`, 'nobody.jpg'],
+        ]);
+        expect(archive.finalize).toHaveBeenCalledOnce();
+        // the file check never asks about another account's file
+        expect(storage.checkFileExists.mock.calls.map(([path]) => path)).not.toContain(
+          `/data/upload/${USER}/3f/9a/theirs.jpg`,
+        );
+      });
+
+      it('leaves out a file that cannot be read, and says so when none can be sent', async () => {
+        const { sut, found, storage } = setup();
+        storage.checkFileExists.mockResolvedValue(false);
+        found.list.mockResolvedValue([broken('a.jpg')]);
+        await expect(sut.downloadWontOpen(auth, {})).rejects.toThrow('None of these files');
+        expect(storage.createZipStream).not.toHaveBeenCalled();
       });
     });
 

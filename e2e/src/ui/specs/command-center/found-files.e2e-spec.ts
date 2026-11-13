@@ -5,8 +5,8 @@ import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 /**
  * FL-1533: Library care › Photos found on the drive against a mocked server (FL-1537). The page opens
  * from File checks, shows the found photos as pictures with a lock for another account's, a folder's
- * files are given to an account, a put-back is undone from the photo's story, and the spare copies are
- * deleted after being asked about.
+ * files are given to an account, a put-back is undone from the photo's story and the file is sorted
+ * again from the line that says so (FL-1579), and the spare copies are deleted after being asked about.
  */
 const json = (body: unknown, status = 200) => ({ status, contentType: 'application/json', json: body });
 const picture = (colour: string) => ({
@@ -55,8 +55,10 @@ const setupFoundFilesMocks = async (context: BrowserContext, me: string) => {
       }),
     ),
     left: 0,
+    leftFiles: [] as ReturnType<typeof file>[],
     resolved: [] as unknown[],
     undone: [] as string[],
+    again: [] as string[],
     deletes: 0,
   };
   const summary = () => ({
@@ -88,7 +90,18 @@ const setupFoundFilesMocks = async (context: BrowserContext, me: string) => {
     server.back = server.back.filter((item) => item.id !== id);
     server.added = server.added.filter((item) => item.id !== id);
     server.left++;
+    server.leftFiles.push({ ...found, outcome: 'left' });
     return route.fulfill(json({ ...found, outcome: 'left', previousPath: null, steps: [] }));
+  });
+  // FL-1579: a file that was left alone goes back where it was when it is sorted again
+  await context.route('**/api/admin/found-files/files/*/sort-again', (route) => {
+    const id = route.request().url().split('/').at(-2)!;
+    const found = server.leftFiles.find((item) => item.id === id)!;
+    server.again.push(found.fileName);
+    server.leftFiles = server.leftFiles.filter((item) => item.id !== id);
+    server.left--;
+    server.back.push({ ...found, outcome: 'back' });
+    return route.fulfill(json({ ...found, outcome: 'back', previousPath: null, steps: [] }));
   });
   await context.route('**/api/admin/found-files/files/*', (route) => {
     const id = route.request().url().split('/').at(-1)!;
@@ -177,6 +190,14 @@ test.describe('Photos found on the drive (FL-1533)', () => {
     await expect(page.getByText(/listed as missing again/)).toBeVisible();
     expect(server.undone).toEqual(['IMG_3310.jpg']);
     await expect(lists.getByRole('button', { name: 'Put back · 1' })).toBeVisible();
+
+    // FL-1579: the line that says it was undone offers to sort the file again.
+    await shot(page, '3b-undone');
+    await page.getByRole('button', { name: 'Sort it again' }).click();
+    await expect(page.getByText('IMG_3310.jpg is back under the photo that was missing.')).toBeVisible();
+    expect(server.again).toEqual(['IMG_3310.jpg']);
+    await expect(lists.getByRole('button', { name: 'Put back · 2' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sort it again' })).toHaveCount(0);
 
     // Spare copies are deleted only after being asked about.
     await lists.getByRole('button', { name: 'Spare copies · 2' }).click();

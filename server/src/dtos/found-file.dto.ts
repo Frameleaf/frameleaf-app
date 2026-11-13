@@ -90,7 +90,7 @@ const FoundFileListResponseSchema = z
 
 const FoundFileStepSchema = z
   .object({
-    step: z.string().describe('What was done: found, read, back, added, spare, undone, …'),
+    step: z.string().describe('What was done: found, read, back, added, spare, undone, again, …'),
     at: dateTime,
     outcome: z.string().optional(),
     facts: z.record(z.string(), z.unknown()).optional(),
@@ -144,6 +144,13 @@ const FoundFilesDeleteSpareResponseSchema = z
   })
   .meta({ id: 'FoundFilesDeleteSpareResponseDto' });
 
+const FoundFilesArchiveSchema = z
+  .object({
+    folder: z.string().min(1).optional().describe('Only the files in this folder no account uses'),
+    ownerId: z.uuidv4().optional().describe('Only the files in this account’s folders'),
+  })
+  .meta({ id: 'FoundFilesArchiveDto' });
+
 export class FoundFilesSummaryResponseDto extends createZodDto(FoundFilesSummaryResponseSchema) {}
 export class FoundFileListDto extends createZodDto(FoundFileListSchema) {}
 export class FoundFileResponseDto extends createZodDto(FoundFileResponseSchema) {}
@@ -153,3 +160,4 @@ export class FoundFilesResolveDto extends createZodDto(FoundFilesResolveSchema) 
 export class FoundFilesResolveResponseDto extends createZodDto(FoundFilesResolveResponseSchema) {}
 export class FoundFilesDeleteSpareDto extends createZodDto(FoundFilesDeleteSpareSchema) {}
 export class FoundFilesDeleteSpareResponseDto extends createZodDto(FoundFilesDeleteSpareResponseSchema) {}
+export class FoundFilesArchiveDto extends createZodDto(FoundFilesArchiveSchema) {}
