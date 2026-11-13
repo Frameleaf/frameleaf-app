@@ -14,13 +14,12 @@ import sanitize from 'sanitize-filename';
 import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { RunOrigin } from 'src/queue/types.js';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
 import type { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import type { DB } from 'src/schema/index.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
 import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { Asset, AuthSharedLink, lockableProperties, type LockableProperty } from 'src/database.js';
+import { Asset, AuthSharedLink, type LockableProperty, lockableProperties } from 'src/database.js';
 import {
   AssetBulkUploadCheckResponseDto,
   AssetMediaResponseDto,
@@ -51,6 +50,7 @@ import {
 } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess, requireUploadsNotPaused } from 'src/utils/access.js';
 import { asUploadRequest, getAssetFiles } from 'src/utils/asset.util.js';
@@ -68,9 +68,8 @@ import {
 import { hasFontSignature } from 'src/utils/font-file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
-import { isLockedRow } from 'src/utils/locked.js';
-import { MAX_XMP_BYTES, validateXmp } from 'src/utils/xmp-sidecar.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import { LIBRARY_CARE_FOLDER } from 'src/utils/media-health-roots.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview.js';
@@ -82,6 +81,7 @@ import {
 } from 'src/utils/partner-location.js';
 import { getPreferences, isTrashReuploadOpen, uploadSkipSince } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
+import { MAX_XMP_BYTES, validateXmp } from 'src/utils/xmp-sidecar.js';
 
 /** How long a finished document PDF may take to download before the response is ended. */
 const DOCUMENT_REVIEW_HOLD = 5 * 60 * 1000;
@@ -577,7 +577,7 @@ export class AssetMediaService extends BaseService {
         const { sidecarFile } = getAssetFiles(asset.files ?? []);
         if (sidecarFile) await copyFile(sidecarFile.path, backup);
         await assets.upsertFile({ assetId: id, path: next, type: AssetFileType.Sidecar }, tx);
-        if (properties.length) await assets.unlockProperties(id, properties, tx);
+        if (properties.length > 0) await assets.unlockProperties(id, properties, tx);
         await this.jobRepository.queueInTransaction(tx, {
           name: JobName.AssetExtractMetadata,
           data: { id, replacementSidecar: next },

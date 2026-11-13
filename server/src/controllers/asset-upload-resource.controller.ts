@@ -8,6 +8,7 @@ import {
   HttpCode,
   Options,
   Param,
+  ParseFilePipe,
   Patch,
   Post,
   Put,
@@ -15,10 +16,8 @@ import {
   Res,
   UploadedFile,
   UseInterceptors,
-  ParseFilePipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { MAX_XMP_BYTES } from 'src/utils/xmp-sidecar.js';
 import { ApiBody, ApiConsumes, ApiHeader, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -37,6 +36,7 @@ import { AssetUploadDirectService } from 'src/services/asset-upload-direct.servi
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { assetUploadRequestHeaders, writeAssetUploadHeaders } from 'src/utils/asset-upload-response.js';
 import { writeInformation } from 'src/utils/response.js';
+import { MAX_XMP_BYTES } from 'src/utils/xmp-sidecar.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Assets)

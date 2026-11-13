@@ -17,7 +17,6 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { MediaDownloadedFile } from 'src/repositories/media-downloader.repository.js';
 import type { DB } from 'src/schema/index.js';
 import type { UploadFile } from 'src/types.js';
-import { validateXmp } from 'src/utils/xmp-sidecar.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
@@ -52,6 +51,7 @@ import {
 import { captureActor } from 'src/utils/capture.js';
 import { parseCloudIdentifier } from 'src/utils/icloud-identity.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { validateXmp } from 'src/utils/xmp-sidecar.js';
 
 type UploadAdmissionCheck = (tx?: Transaction<DB>) => Promise<void>;
 
@@ -887,13 +887,12 @@ export class AssetUploadResourceService {
           return current;
         }
         const sidecar = this.sidecarPath(id);
-        const sidecarExists = await stat(sidecar).then(
-          (entry) => entry.isFile(),
-          (error: NodeJS.ErrnoException) => {
+        const sidecarExists = await stat(sidecar)
+          .then((entry) => entry.isFile())
+          .catch((error: NodeJS.ErrnoException) => {
             if (error.code === 'ENOENT') return false;
             throw error;
-          },
-        );
+          });
         return restored
           ? this.uploads.publishRestored(tx, current, restored.id, restored.visible)
           : this.uploads.publish(tx, current, prepared, sidecarExists ? { sidecarPath: sidecar } : undefined);
