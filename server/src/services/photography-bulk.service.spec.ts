@@ -19,7 +19,7 @@ it('bounds database reads while displaying 100 completed gallery invitations', a
       peak = Math.max(peak, ++active);
       await Promise.resolve();
       active--;
-      return undefined;
+      return;
     }),
   };
   const service = new PhotographyBulkService(
