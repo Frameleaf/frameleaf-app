@@ -2,7 +2,9 @@ import { pairXmpSidecars, rememberDroppedPath } from '$lib/utils/xmp-pairing';
 
 const file = (name: string, folder = '') => {
   const asset = new File([], name);
-  if (folder) Object.defineProperty(asset, 'webkitRelativePath', { value: `${folder}/${name}` });
+  if (folder) {
+    Object.defineProperty(asset, 'webkitRelativePath', { value: `${folder}/${name}` });
+  }
   return asset;
 };
 
