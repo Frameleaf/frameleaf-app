@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { createPrivateKey, randomUUID, sign } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { digest, Refusal } from '../src/contracts.js';
+import { digest, Refusal, sha256 } from '../src/contracts.js';
 import { Store } from '../src/store.js';
 import {
   NativeService,
   validateNativePorts,
 } from '../src/runtime/native-service.js';
+import {
+  NATIVE_TLS_GRACE_MS,
+  nativeTlsRotationMessage,
+} from '../src/runtime/native-installation.js';
 import type { NativeRuntime } from '../src/runtime/native.js';
 
 const unavailable = async () => {
@@ -35,6 +41,43 @@ const runtime = {
   cleanupCheckpoint: unavailable,
 } as unknown as NativeRuntime;
 
+type Identity = { certificatePem: string; privateKeyPem: string };
+/** A self-signed identity like the one Desktop mints: `ec` is P-256, as rcgen generates. */
+function identity(root: string, kind: 'ec' | 'rsa' = 'ec'): Identity {
+  const name = join(root, randomUUID());
+  if (kind === 'ec')
+    execFileSync('openssl', ['ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', `${name}.sec1`], { stdio: 'ignore' });
+  else execFileSync('openssl', ['genrsa', '-out', `${name}.sec1`, '2048'], { stdio: 'ignore' });
+  execFileSync('openssl', ['pkcs8', '-topk8', '-nocrypt', '-in', `${name}.sec1`, '-out', `${name}.key`], { stdio: 'ignore' });
+  execFileSync(
+    'openssl',
+    ['req', '-x509', '-new', '-key', `${name}.key`, '-out', `${name}.crt`, '-days', '30', '-subj', '/CN=Frameleaf Manager'],
+    { stdio: 'ignore' },
+  );
+  return {
+    certificatePem: readFileSync(`${name}.crt`, 'utf8'),
+    privateKeyPem: readFileSync(`${name}.key`, 'utf8'),
+  };
+}
+/** The handover Desktop sends: the outgoing key signs the hash of the certificate that replaces it. */
+function handover(from: Identity, to: Identity, operationId = randomUUID(), installationId = 'a'.repeat(12)) {
+  return {
+    operationId,
+    previousCertificatePem: from.certificatePem,
+    signature: sign(
+      'sha256',
+      Buffer.from(
+        nativeTlsRotationMessage(
+          installationId,
+          operationId,
+          sha256(from.certificatePem),
+          sha256(to.certificatePem),
+        ),
+      ),
+      createPrivateKey(from.privateKeyPem),
+    ).toString('base64'),
+  };
+}
 async function fixture(run: (f: { root: string; store: Store; bootstrap: any; settings: () => string }) => Promise<void>) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'frameleaf-native-installation-')));
   const store = new Store(join(root, 'manager'));
@@ -56,7 +99,7 @@ async function fixture(run: (f: { root: string; store: Store; bootstrap: any; se
     },
     controllerSha256: 'e'.repeat(64),
     backupEngine: { executable: join(root, 'backup-engine'), sha256: 'f'.repeat(64) },
-    tls: { certificatePem: 'synthetic certificate', privateKeyPem: 'synthetic private key' },
+    tls: identity(root),
     name: 'Native library',
     release: 'frameleaf-v3.0.0-1',
     password: 'synthetic native database password',
@@ -156,6 +199,119 @@ test('a package transition and a port change combine, and an applied transition 
   });
 });
 
+for (const kind of ['ec', 'rsa'] as const)
+  test(`a rotated ${kind} certificate is accepted only with a handover signed by the certificate it replaces`, async () => {
+    await fixture(async ({ root, store, settings, ...rest }) => {
+      const bootstrap = { ...rest.bootstrap, tls: identity(root, kind) };
+      start(store, bootstrap);
+      const next = identity(root, kind),
+        stranger = identity(root, kind);
+      const rotated = { ...bootstrap, tls: next };
+      const before = settings();
+      const good = handover(bootstrap.tls, next);
+      for (const tlsRotation of [
+        undefined,
+        // Signed by a key that is not the stored certificate's.
+        { ...handover(stranger, next), previousCertificatePem: bootstrap.tls.certificatePem },
+        // A real handover, but from a certificate this store never accepted.
+        handover(stranger, next),
+        // A handover to some other certificate, or for another operation or installation.
+        handover(bootstrap.tls, stranger),
+        { ...good, operationId: randomUUID() },
+        handover(bootstrap.tls, next, randomUUID(), 'b'.repeat(12)),
+        { ...good, signature: Buffer.from('not a signature').toString('base64') },
+        { ...good, previousCertificatePem: 'not a certificate' },
+      ]) {
+        assert.throws(() => start(store, { ...rotated, tlsRotation }), /native_installation_changed/);
+        assert.equal(settings(), before);
+      }
+      for (const malformed of [{ ...good, extra: true }, { ...good, signature: '***' }, { ...good, operationId: 'x' }])
+        assert.throws(() => start(store, { ...rotated, tlsRotation: malformed }));
+      assert.equal(settings(), before);
+      start(store, { ...rotated, tlsRotation: good });
+      assert.equal(stored(store).descriptor.tlsCertificatePemSha256, sha256(next.certificatePem));
+      assert.equal(stored(store).fingerprint, digest(stored(store).descriptor));
+      // Idempotent: with the handover resent, and without it once it is applied.
+      const after = settings();
+      start(store, { ...rotated, tlsRotation: good });
+      start(store, rotated);
+      assert.equal(settings(), after);
+      for (const secret of [next.privateKeyPem, bootstrap.tls.privateKeyPem, bootstrap.password])
+        assert.ok(!after.includes(secret));
+    });
+  });
+test('the replaced certificate still starts Manager during the grace period, and only then', async (t) => {
+  await fixture(async ({ root, store, bootstrap, settings }) => {
+    start(store, bootstrap);
+    const original = stored(store).fingerprint;
+    const next = identity(root);
+    const rotated = { ...bootstrap, tls: next, tlsRotation: handover(bootstrap.tls, next) };
+    const began = Date.now();
+    t.mock.timers.enable({ apis: ['Date'], now: began });
+    start(store, rotated);
+    assert.deepEqual(
+      { previous: store.get<any>('native-tls-rotation').previous, until: store.get<any>('native-tls-rotation').until },
+      { previous: sha256(bootstrap.tls.certificatePem), until: began + NATIVE_TLS_GRACE_MS },
+    );
+    // A Desktop that rolled back presents the certificate it had: accepted, and current again.
+    t.mock.timers.setTime(began + NATIVE_TLS_GRACE_MS - 1);
+    start(store, bootstrap);
+    assert.equal(stored(store).fingerprint, original);
+    assert.equal(store.get('native-tls-rotation'), null);
+    // Going forward again needs the handover again; the grace period never moves a store forward.
+    const { tlsRotation, ...unsigned } = rotated;
+    assert.throws(() => start(store, unsigned), /native_installation_changed/);
+    start(store, rotated);
+    // Once the period has passed the replaced certificate is refused and nothing is rewritten.
+    t.mock.timers.setTime(began + 2 * NATIVE_TLS_GRACE_MS);
+    const before = settings();
+    assert.throws(() => start(store, bootstrap), /native_installation_changed/);
+    assert.equal(settings(), before);
+    start(store, rotated);
+    // A certificate that was never this store's is refused at any time.
+    assert.throws(() => start(store, { ...bootstrap, tls: identity(root) }), /native_installation_changed/);
+  });
+});
+test('a rotation waits for an idle store, combines with a port change, and survives a second rotation', async () => {
+  await fixture(async ({ root, store, bootstrap, settings }) => {
+    start(store, bootstrap);
+    const second = identity(root),
+      third = identity(root);
+    const rotated = { ...ports(bootstrap, 54400, 2290), tls: second, tlsRotation: handover(bootstrap.tls, second) };
+    const before = settings();
+    const { operation } = store.start('backup', 'synthetic-active', {});
+    assert.throws(() => start(store, rotated), /operation_in_progress/);
+    assert.equal(settings(), before);
+    operation.state = 'complete';
+    store.save(operation);
+    start(store, rotated);
+    assert.equal(stored(store).descriptor.installation.apiPort, 2290);
+    start(store, { ...rotated, tls: third, tlsRotation: handover(second, third) });
+    assert.equal(store.get<any>('native-tls-rotation').previous, sha256(second.certificatePem));
+    // The first certificate is two rotations old: its grace ended when the second was replaced.
+    assert.throws(() => start(store, ports(bootstrap, 54400, 2290)), /native_installation_changed/);
+    // A handover against an empty store is not a first start.
+    const empty = new Store(join(root, 'empty'));
+    try {
+      assert.throws(() => start(empty, rotated), /native_installation_changed/);
+      assert.equal(empty.get('native-installation'), null);
+    } finally {
+      empty.close();
+    }
+  });
+});
+test('the handover text is the one Desktop signs', () => {
+  // The same vector is asserted in Frameleaf Desktop's manager_tls tests.
+  assert.equal(
+    nativeTlsRotationMessage(
+      'a'.repeat(12),
+      '11111111-1111-4111-8111-111111111111',
+      sha256('previous certificate'),
+      sha256('next certificate'),
+    ),
+    '["frameleaf-manager/tls-rotation/v1","aaaaaaaaaaaa","11111111-1111-4111-8111-111111111111","2bc7e50b728123932b06aab01b3da0ca6252a1d098a6acddb0cb49d7259736b1","dd63fac2b87aa649854359fe02d928d097ca45fcb5d85aaa472d064cb67ad69b"]',
+  );
+});
 test('neither configured port may be the one Manager itself serves on', () => {
   const origin = 'https://127.0.0.1:19443';
   validateNativePorts({ databasePort: 54400, apiPort: 2290 }, origin);

@@ -5,7 +5,8 @@
   "type": "module",
   "frameleaf": {
     "nativeCapabilities": [
-      "ports"
+      "ports",
+      "tls-rotation"
     ]
   },
   "engines": {

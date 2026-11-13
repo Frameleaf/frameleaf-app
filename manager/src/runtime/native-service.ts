@@ -38,6 +38,7 @@ import {
 import { approveNativeUpdate } from './native-update-approval.js';
 import {
   admitNativeInstallation,
+  NativeTlsRotation,
   NativeTransition,
 } from './native-installation.js';
 const path = z
@@ -107,6 +108,8 @@ const Bootstrap = Configuration.extend({
     .max(256)
     .regex(/^[^\r\n\0]+$/),
   installationTransition: NativeTransition.optional(),
+  // A new TLS certificate, handed over by the key of the one this store last accepted.
+  tlsRotation: NativeTlsRotation.optional(),
   // Only the installed qualification supervisor may opt in through bootstrap.
   mediaMoveQualification: z.strictObject({
     manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -463,6 +466,7 @@ export class NativeService {
       backupKey,
       tls,
       installationTransition,
+      tlsRotation,
       mediaMoveQualification,
       ...configuration
     } = bootstrap;
@@ -494,7 +498,7 @@ export class NativeService {
         const parsed = Binding.safeParse(value);
         return parsed.success ? parsed.data : null;
       },
-      { transition: installationTransition },
+      { transition: installationTransition, rotation: tlsRotation },
     );
     if (
       store.get<{ fingerprint: string }>('native-installation')?.fingerprint !==
