@@ -26,7 +26,12 @@ import {
 import {
   prepareNativeRestoreReview,
   nativeRestoreReviewStatus,
+  NativeRestoreReviewSchema,
 } from './native-restore-review.js';
+import {
+  crossPackageRestoreAdmission,
+  NativeRestoreSources,
+} from './native-cross-package.js';
 import { nativeListener } from './native-listener.js';
 import {
   NativeHost,
@@ -109,6 +114,8 @@ const Bootstrap = Configuration.extend({
     .max(256)
     .regex(/^[^\r\n\0]+$/),
   installationTransition: Transition.optional(),
+  // Present only when the installed controller restores backups taken by an earlier package.
+  crossPackageRestore: NativeRestoreSources.optional(),
   // Only the installed qualification supervisor may opt in through bootstrap.
   mediaMoveQualification: z.strictObject({
     manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -510,8 +517,10 @@ export class NativeService {
       tls,
       installationTransition,
       mediaMoveQualification,
+      crossPackageRestore,
       ...configuration
     } = bootstrap;
+    this.restoreSources = crossPackageRestore;
     this.backupPassword = async () => backupKey;
     const descriptor = {
       ...configuration,
@@ -614,6 +623,26 @@ export class NativeService {
     });
   }
   private readonly manifestSha256: string;
+  private readonly restoreSources?: NativeRestoreSources;
+  /** Whether a reviewed backup from another package is one this package restores. */
+  private restoresAcrossPackages(reviewId: string): boolean {
+    const review = NativeRestoreReviewSchema.safeParse(
+      this.store.get(`native-restore-review:${reviewId}`),
+    );
+    return (
+      review.success &&
+      crossPackageRestoreAdmission(
+        review.data.recovery,
+        {
+          release: this.recoveryContext.release,
+          sourceRevision: this.recoveryContext.installation.sourceRevision,
+          // The Postgres major this Manager's own checkpoints carry.
+          postgresMajor: '19',
+        },
+        this.restoreSources,
+      ) === 'supported'
+    );
+  }
   ready(origin: string) {
     nativeListener(origin);
     return {
@@ -751,7 +780,7 @@ export class NativeService {
       throw new Refusal('native_restore_review_expired');
     if (review.state !== 'prepared')
       throw new Refusal('native_restore_review_not_ready');
-    if (review.requiresRuntimeChange)
+    if (review.requiresRuntimeChange && !this.restoresAcrossPackages(reviewId))
       throw new Refusal('native_restore_runtime_change_required');
     return this.lifecycle.restore(reviewId, key);
   }
