@@ -654,6 +654,8 @@ export function untestedNotice(kind: string, version: string | null | undefined,
 export const UNTESTED_VERSION_LOSS = 'SOURCE_VERSION_UNTESTED';
 // Every reader names its losses <APP>_<WHAT>; the <WHAT> part means the same thing for every app.
 const lossTexts: Record<string, (app: string) => string> = {
+  IDENTICAL_ORIGINALS_MERGED: () =>
+    'Photos that were in the library more than once came across as one photo, in every album the copies were in. A merged copy’s own description, tags and favourite did not come across.',
   SOURCE_METADATA_ARCHIVED: (app) => `Some ${app}-only details and settings won't come across.`,
   SHARING_RESTRICTED: () => 'Shared links and sharing between accounts won’t come across. You can share again in Frameleaf.',
   PEOPLE_ARCHIVED: () => 'Named people and face groups won’t come across. Frameleaf finds faces again on its own.',
