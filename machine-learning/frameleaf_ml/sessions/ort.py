@@ -398,6 +398,8 @@ class OrtSession:
         previous_cache = self._coreml_cache
         self.session = session
         self._coreml_cache, self._coreml_shape = cache, signature
+        # The specialized session loaded the derived model again: prove it against its source again.
+        self.source_model_path = self._source_model_path
         if previous_cache is not None:
             previous_cache.cleanup()
 

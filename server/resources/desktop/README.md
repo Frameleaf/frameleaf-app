@@ -28,6 +28,20 @@ What the source changes, in `sessions/ort.py`, `native_device.py`, `native_ort.p
 
 Only the CoreML twins have been qualified on hardware (Apple Silicon). The CUDA and OpenVINO twins are unverified on NVIDIA and Intel hardware. Desktop builds no Windows OpenVINO runtime: `onnxruntime-openvino` 1.24.1 on Windows needs the OpenVINO 2025.4 libraries it was built with, the lock has only `openvino` 2026.4.1, and with those its provider library does not load (Windows error 127, seen in Desktop CI). The server's request-time checks (`binding.check`: staged files, preprocessing, runtime facts) still run before and after every prediction on every provider.
 
+## Epoch 15: the runtime source that works on every provider
+
+Epoch 15 re-points the 60 epoch 14 twins from runtime source `c2203495` to `4da8e509` (`4da8e50954ff08be437db51a0872ce5da0e8ba06`, the head of `aj/fl-1509-runtime-source`: `c2203495` plus two commits). No pack was ever built or signed from `c2203495`, so its profiles are not kept beside the new ones; everything before them is unchanged, and so are the model keys, fixtures and reference outputs (no file of the preprocessing identity changes).
+
+What the two commits fix:
+
+- Faces on CoreML. After CoreML shape specialization the face recognizer's batch-axis copy was not proven against its approved model again, so the session named the copy's digest and the device collector refused every run (fail closed, processor used). The proof is repeated.
+- CUDA on Windows. `onnxruntime_providers_cuda.dll` of onnxruntime-gpu 1.29.0 imports `cudaKernelSetAttributeForDevice`, `cudaLibraryGetKernel`, `cudaLibraryLoadData` and `cudaLibraryUnload` from `cudart64_12.dll`, which `nvidia-cuda-runtime-cu12` 12.6.77 (the version the torch build pins) does not export: Windows error 127 at load. The same functions are missing on Linux, where the failure would only show when they are first called.
+- OpenVINO on Windows. `onnxruntime_providers_openvino.dll` of onnxruntime-openvino 1.24.1 is built for OpenVINO 2025.4.1 and imports 40 functions that `openvino.dll` 2026.4.1 does not export.
+
+`pyproject.toml` gains two extras for desktop runtime packs, `desktop-cuda` and `desktop-openvino`, which lock what each provider library was built against (CUDA runtime 12.9.79; on Windows `openvino` 2025.4.1, whose metadata is restated without its numpy cap because only its native libraries are used). No existing pin moves. `runtime-profiles.json` names those extras for `cuda-ort` and `openvino-ort`.
+
+Checked from the import and export tables of the locked Windows files: with these versions every import of both provider libraries is satisfied. Not run on NVIDIA or Intel hardware.
+
 ## Cloud pins (`model-pins.json`)
 
 A model Frameleaf Cloud may run for smart search or faces must be exactly the model this server would run (FL-455): the server compares the Cloud catalogue entry and every result with its release pin. A qualified profile above is that pin. A model the mirror serves but no signed runtime has qualified yet is pinned in `model-pins.json` instead: the same model name, snapshot revision, every model file with its size and SHA-256 (hashed from the bytes `models.frameleaf.cloud` serves), request entries, the current runtime's preprocessing identity and the producer model key, with no fixture or reference output. Epoch 1 pins `ViT-B-32__openai` (image encoder, 512 dimensions; the text tower is listed for the server) and `antelopev2` (512 dimensions). A pin only lets the Cloud identity guard match and ingest; it never issues a desktop challenge, and a catalogue profile for the same model comes first. To promote a pin, qualify the model as described above with the same preprocessing identity and append the profile; the model key, and so the stored producer keys, stay the same.

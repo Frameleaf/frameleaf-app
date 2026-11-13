@@ -16,7 +16,7 @@ const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.epoch).toBe(15);
   expect(catalogue.profiles).toHaveLength(162);
   expect(
     createHash('sha256')
@@ -407,7 +407,7 @@ it('selects current-main CoreML profiles with distinct preprocessing while prese
 
 it('selects exact current CPU and CoreML profiles while preserving all historical bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.epoch).toBe(15);
   expect(catalogue.profiles).toHaveLength(162);
   expect(
     createHash('sha256')
@@ -444,7 +444,7 @@ it('selects exact current CPU and CoreML profiles while preserving all historica
 
 it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.epoch).toBe(15);
   expect(catalogue.profiles).toHaveLength(162);
   expect(
     createHash('sha256')
@@ -470,7 +470,7 @@ it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps 
 
 it('epoch 13 qualifies every selectable model the desktop runtimes can run and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.epoch).toBe(15);
   expect(catalogue.profiles).toHaveLength(162);
   expect(
     createHash('sha256')
@@ -528,9 +528,9 @@ it('epoch 13 qualifies every selectable model the desktop runtimes can run and k
   }
 });
 
-it('epoch 14 appends a twin of every f2c451a6 profile for the verified-bytes runtime and keeps every prior binding', () => {
+it('epoch 14 appended a twin of every f2c451a6 profile; epoch 15 names the runtime source that works on every provider', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.epoch).toBe(15);
   expect(catalogue.profiles).toHaveLength(162);
   expect(
     createHash('sha256')
@@ -538,7 +538,7 @@ it('epoch 14 appends a twin of every f2c451a6 profile for the verified-bytes run
       .digest('hex'),
   ).toBe('3f080358db3bfd856755e7f48b43e057cea1c0ce67e6cde15c4441eac347e2f3');
   const previous = 'f2c451a6bf71ca3f3aec986e07f0852937268e2f';
-  const source = 'c2203495fa2400e369604347557473d81f0b9b6b';
+  const source = '4da8e50954ff08be437db51a0872ce5da0e8ba06';
   const originals = catalogue.profiles.slice(0, 102).filter((p) => p.runtimeSourceRevision === previous);
   const twins = catalogue.profiles.slice(102);
   expect(originals).toHaveLength(60);
