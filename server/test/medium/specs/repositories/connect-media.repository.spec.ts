@@ -119,6 +119,22 @@ const commit = async (f: Awaited<ReturnType<typeof fixture>>, id: string) =>
   );
 
 describe('Connect media real transactions on the canonical migration chain', () => {
+  it('uploads into an explicit destination without permission to create more albums', async () => {
+    const f = await fixture();
+    const policy = { ...f.grant.accessPolicy!, writeWorkspaces: [] };
+    await db.updateTable('oauth_grant').set({ accessPolicy: policy }).where('id', '=', f.grant.id).execute();
+    f.auth.oauthApp!.accessPolicy = policy;
+    const id = await stage(f);
+    const receipt = await commit(f, id);
+    expect(receipt.assetId).toBeTruthy();
+    await expect(
+      f.repo.createAlbum(f.auth, { requestId: randomUUID(), name: 'Not allowed', workspace: 'design' }),
+    ).rejects.toThrow();
+    await expect(
+      f.repo.start(f.auth, { ...f.dto, workspace: 'photo', requestId: randomUUID() }, 1000),
+    ).rejects.toThrow();
+  });
+
   it('installs durable media receipts, hashed tickets and optional provenance', async () => {
     await expectCanonicalTables(db, ['connect_receipt', 'connect_rendition_ticket', 'connect_provenance']);
   });

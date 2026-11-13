@@ -76,6 +76,25 @@ const fixture = () => {
 };
 
 describe('Connect media delivery and terminal state', () => {
+  it('advertises upload types for selected destinations without album-creation permission', async () => {
+    const f = fixture();
+    const result = await f.service.capabilities(
+      {
+        ...auth,
+        user: { ...auth.user, quotaSizeInBytes: null },
+        oauthApp: {
+          ...auth.oauthApp!,
+          scopes: ['boards:upload'],
+          accessPolicy: { ...auth.oauthApp!.accessPolicy!, writableAlbumIds: [id], writeWorkspaces: [] },
+        },
+      },
+      null,
+    );
+    expect(result.acceptedUploadTypes.design).toContain('image/png');
+    expect(result.maxUploadBytes).toBe(1000);
+    expect(result.acceptedUploadTypes.photo).toEqual([]);
+  });
+
   it('serves the existing preview preserving MIME but hiding filenames and disabling persistent caching', async () => {
     const f = fixture();
     const result = await f.service.rendition(auth, assetId, 'preview', 'relay');

@@ -66,7 +66,7 @@ export class ConnectMediaRepository {
   ) {
     const policy = requireConnectPolicy(auth);
     requireConnectScope(auth, workspace === 'photo' ? 'photos:upload' : 'boards:upload');
-    if (!policy.writeWorkspaces.includes(workspace) || !policy.writableAlbumIds.includes(albumId)) throw unavailable();
+    if (!policy.writableAlbumIds.includes(albumId)) throw unavailable();
     const album = await tx
       .selectFrom('album')
       .select('id')

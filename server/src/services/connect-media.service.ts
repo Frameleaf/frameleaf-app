@@ -46,15 +46,11 @@ export class ConnectMediaService {
       auth.user.quotaSizeInBytes === null
         ? Number.MAX_SAFE_INTEGER
         : Math.max(0, auth.user.quotaSizeInBytes - auth.user.quotaUsageInBytes);
-    const policy = requireConnectPolicy(auth);
+    requireConnectPolicy(auth);
     const scopes = auth.oauthApp!.scopes;
     const acceptedUploadTypes = {
-      photo:
-        scopes.includes('photos:upload') && policy.writeWorkspaces.includes('photo') ? CONNECT_UPLOAD_TYPES.photo : [],
-      design:
-        scopes.includes('boards:upload') && policy.writeWorkspaces.includes('design')
-          ? CONNECT_UPLOAD_TYPES.design
-          : [],
+      photo: scopes.includes('photos:upload') ? CONNECT_UPLOAD_TYPES.photo : [],
+      design: scopes.includes('boards:upload') ? CONNECT_UPLOAD_TYPES.design : [],
     };
     const maxUploadBytes =
       acceptedUploadTypes.photo.length + acceptedUploadTypes.design.length > 0 ? Math.min(limits.maxSize, quota) : 0;
