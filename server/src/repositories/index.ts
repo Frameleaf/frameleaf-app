@@ -1,6 +1,3 @@
-import { ConnectEventRepository } from 'src/repositories/connect-event.repository.js';
-import { ConnectMediaRepository } from 'src/repositories/connect-media.repository.js';
-import { ConnectRepository } from 'src/repositories/connect.repository.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
@@ -43,6 +40,9 @@ import { CloudBackupSelectionRepository } from 'src/repositories/cloud-backup-se
 import { CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { ConnectEventRepository } from 'src/repositories/connect-event.repository.js';
+import { ConnectMediaRepository } from 'src/repositories/connect-media.repository.js';
+import { ConnectRepository } from 'src/repositories/connect.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';

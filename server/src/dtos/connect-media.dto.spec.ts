@@ -30,6 +30,8 @@ describe('Connect upload trust boundary', () => {
     { size: 0 },
     { sha256: 'invalid' },
     { filename: '../secret.png' },
+    { filename: 'page\0.png' },
+    { filename: 'page\u{1F}.png' },
     { contentType: 'text/html' },
     { contentType: 'image/jpeg' },
     { workspace: 'photo', filename: 'page.pdf', contentType: 'application/pdf' },

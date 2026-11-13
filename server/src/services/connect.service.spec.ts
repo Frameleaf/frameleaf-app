@@ -2,8 +2,8 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { ConnectService } from 'src/services/connect.service.js';
-import { newTestService } from 'test/utils.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { newTestService } from 'test/utils.js';
 
 const albumId = randomUUID();
 const assetId = randomUUID();

@@ -12,28 +12,28 @@ import type { AuthUser } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import {
-  OAuthAppAdminClientDto,
   OAuthAppAccessPolicyDto,
-  OAuthAppCreateClientDto,
+  OAuthAppAdminClientDto,
   OAuthAppAuthorizeDto,
   OAuthAppAuthorizeResponseDto,
   OAuthAppAuthorizeStartDto,
   OAuthAppAuthorizeStartResponseDto,
   OAuthAppClientDto,
+  OAuthAppCreateClientDto,
   OAuthAppGrantDto,
 } from 'src/dtos/oauth-app.dto.js';
 import { AccountEventAction } from 'src/enum.js';
 import { toAccountEventVia } from 'src/repositories/account-event.repository.js';
 import { ConnectRepository } from 'src/repositories/connect.repository.js';
+import { OAuthAppRepository, OAuthClient } from 'src/repositories/oauth-app.repository.js';
+import { BaseService } from 'src/services/base.service.js';
+import { isCodeChallenge, verifierMatches } from 'src/utils/browser-extension-sign-in.js';
 import {
   CONNECT_PATH,
   CONNECT_SCOPES,
   ConnectAccessPolicySchema,
   isConnectResource,
 } from 'src/utils/connect-policy.js';
-import { OAuthAppRepository, OAuthClient } from 'src/repositories/oauth-app.repository.js';
-import { BaseService } from 'src/services/base.service.js';
-import { isCodeChallenge, verifierMatches } from 'src/utils/browser-extension-sign-in.js';
 import {
   MCP_PATH,
   OAUTH_ACCESS_TOKEN_PREFIX,
@@ -518,9 +518,9 @@ export class OAuthAppService extends BaseService {
   async createClient(auth: AuthDto, dto: OAuthAppCreateClientDto) {
     this.requireSession(auth);
     if (!auth.user.isAdmin) throw new ForbiddenException();
-    const redirectUris = dto.redirectUris.map(checkRegisteredRedirectUri);
+    const redirectUris = dto.redirectUris.map((uri) => checkRegisteredRedirectUri(uri));
     const name = cleanClientName(dto.name);
-    if (!name || !redirectUris.length || redirectUris.includes(null))
+    if (!name || redirectUris.length === 0 || redirectUris.includes(null))
       throw requestError('invalid_redirect_uri', 'Invalid app return address');
     const client = await this.oauthAppRepository.createClient(
       { name, redirectUris: redirectUris as string[], logoUri: null, dynamic: false, createdById: auth.user.id },

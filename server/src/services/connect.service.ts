@@ -45,7 +45,7 @@ export class ConnectService extends BaseService {
     requireConnectScope(auth, 'library:read');
     if (
       dto.albumId &&
-      !(await this.connectRepository.albums(auth)).some((album) => album.id === dto.albumId && album.canRead)
+      (await this.connectRepository.albums(auth)).every((album) => !(album.id === dto.albumId && album.canRead))
     )
       throw new ForbiddenException('Album is not readable');
     return this.connectRepository.search(auth, dto);
@@ -84,7 +84,7 @@ export class ConnectService extends BaseService {
       for (const name of new Set(dto.tags)) {
         const tag = await this.tagService.create(current, { name });
         const results = await this.tagService.addAssets(current, tag.id, { ids: [id] });
-        if (!results.every((result) => result.success || result.error === 'duplicate'))
+        if (results.some((result) => !(result.success || result.error === 'duplicate')))
           throw new ForbiddenException('Asset could not be tagged');
         tagIds.push(tag.id);
       }

@@ -15,8 +15,8 @@ import { ApiCustomExtension, MetadataKey, Permission, RequestQuery } from 'src/e
 import { type FrameleafRequest, requestSecurityAddress, requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService, LoginDetails } from 'src/services/auth.service.js';
-import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
 import { CONNECT_PATH } from 'src/utils/connect-policy.js';
+import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
 import { oauthIssuer } from 'src/utils/oauth-issuer.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 

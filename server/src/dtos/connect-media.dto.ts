@@ -40,7 +40,9 @@ export class ConnectUploadStartDto extends createZodDto(
         .string()
         .min(1)
         .max(255)
-        .regex(/^[^/\\\x00-\x1f]+$/),
+        // Control characters and path separators cannot be upload filenames.
+        // eslint-disable-next-line no-control-regex
+        .regex(/^[^/\\\u{00}-\u{1F}]+$/u),
       size: z.int().min(1).max(Number.MAX_SAFE_INTEGER),
       sha256,
       contentType: z.enum(['image/jpeg', 'image/png', 'application/pdf', 'video/mp4']),

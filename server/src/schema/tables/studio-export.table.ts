@@ -1,4 +1,3 @@
-import { connect_event_studio_published } from 'src/schema/tables/connect-event.table.js';
 import { Check, Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Trigger, Unique } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
@@ -11,6 +10,7 @@ import {
   StudioExportVersionState,
 } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { connect_event_studio_published } from 'src/schema/tables/connect-event.table.js';
 import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { StudioProjectTable } from 'src/schema/tables/studio-project.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';

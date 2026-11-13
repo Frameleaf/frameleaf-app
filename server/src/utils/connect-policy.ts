@@ -23,7 +23,7 @@ const albumIds = z
   .refine((ids) => new Set(ids).size === ids.length);
 export const ConnectAccessPolicySchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(1).meta({ type: 'integer', format: 'int32' }),
     readAlbumIds: albumIds,
     allLibraryRead: z.boolean(),
     writableAlbumIds: albumIds,

@@ -76,6 +76,7 @@ import { SignInSecurityService } from 'src/services/sign-in-security.service.js'
 import { isGranted } from 'src/utils/access.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { CONFIRMATION_REQUIRED, sessionIsConfirmedRecently, signInIsRecent } from 'src/utils/confirmed-recently.js';
+import { CONNECT_PATH, isConnectResource, requireConnectPolicy } from 'src/utils/connect-policy.js';
 import { identityDirectory, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { mailSealKey, openMailSecret, sealMailSecret } from 'src/utils/frameleaf-mail.js';
 import { type SetupClient, whileClaimable } from 'src/utils/frameleaf-setup-gate.js';
@@ -92,7 +93,6 @@ import {
 } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
-import { CONNECT_PATH, isConnectResource, requireConnectPolicy } from 'src/utils/connect-policy.js';
 import { MCP_PATH, isOAuthAccessToken } from 'src/utils/oauth-apps.js';
 import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';

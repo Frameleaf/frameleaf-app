@@ -1,22 +1,22 @@
-import type { Request } from 'express';
-import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
-import { ConnectMediaService } from 'src/services/connect-media.service.js';
 import { Body, Controller, Get, Header, Param, Post, Query, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
   ConnectAddAssetsDto,
   ConnectAddTagsDto,
-  ConnectSearchDto,
-  ConnectAssetDto,
   ConnectAlbumsDto,
+  ConnectAssetDto,
   ConnectAssetsDto,
   ConnectCapabilitiesDto,
+  ConnectSearchDto,
   ConnectTagResultDto,
 } from 'src/dtos/connect.dto.js';
-import { BulkIdResponseDto } from 'src/dtos/asset-ids.response.dto.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
+import { ConnectMediaService } from 'src/services/connect-media.service.js';
 import { ConnectService } from 'src/services/connect.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 

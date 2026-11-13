@@ -7,8 +7,8 @@ import {
   HttpCode,
   HttpStatus,
   Options,
-  Patch,
   Param,
+  Patch,
   Post,
   Query,
   Redirect,
@@ -20,15 +20,15 @@ import type { Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
-  OAuthAppAdminClientDto,
   OAuthAppAccessPolicyDto,
-  OAuthAppCreateClientDto,
-  OAuthAppCreateClientResponseDto,
   OAuthAppAccessPolicyResponseDto,
+  OAuthAppAdminClientDto,
   OAuthAppAuthorizeDto,
   OAuthAppAuthorizeResponseDto,
   OAuthAppAuthorizeStartDto,
   OAuthAppAuthorizeStartResponseDto,
+  OAuthAppCreateClientDto,
+  OAuthAppCreateClientResponseDto,
   OAuthAppGrantDto,
 } from 'src/dtos/oauth-app.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';

@@ -195,16 +195,25 @@ describe('Connect media real transactions on the canonical migration chain', () 
   it.each(['revoke', 'narrow', 'quota'] as const)('rechecks live %s after bytes are staged', async (change) => {
     const f = await fixture();
     const id = await stage(f);
-    if (change === 'revoke')
-      await db.updateTable('oauth_grant').set({ revokedAt: new Date() }).where('id', '=', f.grant.id).execute();
-    else if (change === 'narrow')
-      await db
-        .updateTable('oauth_grant')
-        .set({ accessPolicy: { ...f.grant.accessPolicy!, writableAlbumIds: [] } })
-        .where('id', '=', f.grant.id)
-        .execute();
-    else if (change === 'quota')
-      await db.updateTable('user').set({ quotaSizeInBytes: 5 }).where('id', '=', f.user.id).execute();
+    switch (change) {
+      case 'revoke': {
+        await db.updateTable('oauth_grant').set({ revokedAt: new Date() }).where('id', '=', f.grant.id).execute();
+        break;
+      }
+      case 'narrow': {
+        await db
+          .updateTable('oauth_grant')
+          .set({ accessPolicy: { ...f.grant.accessPolicy!, writableAlbumIds: [] } })
+          .where('id', '=', f.grant.id)
+          .execute();
+        break;
+      }
+      case 'quota': {
+        await db.updateTable('user').set({ quotaSizeInBytes: 5 }).where('id', '=', f.user.id).execute();
+        break;
+      }
+      // No default
+    }
     await expect(commit(f, id)).rejects.toThrow();
     expect(await db.selectFrom('asset').select('id').where('ownerId', '=', f.user.id).execute()).toHaveLength(0);
     expect(
@@ -329,16 +338,26 @@ describe('Connect media real transactions on the canonical migration chain', () 
         await expect(
           competing.transaction().execute(async (tx) => {
             await sql`set local lock_timeout = '300ms'`.execute(tx);
-            if (change === 'membership') await new AlbumRepository(tx).removeAssetIds(source.id, [asset.id]);
-            else if (change === 'owner')
-              await tx
-                .updateTable('album_user')
-                .set({ role: AlbumUserRole.Editor })
-                .where('albumId', '=', source.id)
-                .where('userId', '=', f.user.id)
-                .execute();
-            else if (change === 'ancestor')
-              await tx.updateTable('album').set({ isLocked: true }).where('id', '=', parent.id).execute();
+            switch (change) {
+              case 'membership': {
+                await new AlbumRepository(tx).removeAssetIds(source.id, [asset.id]);
+                break;
+              }
+              case 'owner': {
+                await tx
+                  .updateTable('album_user')
+                  .set({ role: AlbumUserRole.Editor })
+                  .where('albumId', '=', source.id)
+                  .where('userId', '=', f.user.id)
+                  .execute();
+                break;
+              }
+              case 'ancestor': {
+                await tx.updateTable('album').set({ isLocked: true }).where('id', '=', parent.id).execute();
+                break;
+              }
+              // No default
+            }
           }),
         ).rejects.toThrow(/lock timeout/);
       } finally {

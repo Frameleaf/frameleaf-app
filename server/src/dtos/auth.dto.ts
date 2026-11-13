@@ -1,6 +1,6 @@
-import type { ConnectAccessPolicy } from 'src/utils/connect-policy.js';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import type { ConnectAccessPolicy } from 'src/utils/connect-policy.js';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AuthApiKey, AuthSession, AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import { AuthCookie, UserMetadataKey } from 'src/enum.js';

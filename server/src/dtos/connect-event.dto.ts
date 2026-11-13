@@ -16,7 +16,7 @@ const event = z.object({
   deliveryId: z.uuid(),
   occurredAt: z.string(),
   subject: z.object({ kind: z.literal('asset'), id: z.uuid(), name: z.null() }),
-  detail: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  detail: z.record(z.string(), z.union([z.string(), z.number().meta({ format: 'double' }), z.boolean(), z.null()])),
 });
 export class ConnectEventPageDto extends createZodDto(
   z.object({ items: z.array(event), nextCursor: z.string().nullable(), hasMore: z.boolean(), bounded: z.boolean() }),

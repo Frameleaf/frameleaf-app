@@ -146,9 +146,21 @@ describe('Connect media delivery and terminal state', () => {
     'denies a ticket that is %s without serving bytes',
     async (condition) => {
       const f = fixture();
-      if (condition === 'expired') f.repository.ticket.mockRejectedValue(new Error('ticket expired'));
-      else if (condition === 'revoked') f.oauth.validatePreviewGrant.mockRejectedValue(new Error('grant revoked'));
-      else if (condition === 'private') f.connect.requireReadableAssets.mockRejectedValue(new Error('asset private'));
+      switch (condition) {
+        case 'expired': {
+          f.repository.ticket.mockRejectedValue(new Error('ticket expired'));
+          break;
+        }
+        case 'revoked': {
+          f.oauth.validatePreviewGrant.mockRejectedValue(new Error('grant revoked'));
+          break;
+        }
+        case 'private': {
+          f.connect.requireReadableAssets.mockRejectedValue(new Error('asset private'));
+          break;
+        }
+        // No default
+      }
       await expect(f.service.ticket('opaque', 'relay')).rejects.toThrow();
       expect(f.media.viewThumbnail).not.toHaveBeenCalled();
       expect(f.media.downloadOriginal).not.toHaveBeenCalled();

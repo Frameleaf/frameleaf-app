@@ -21,9 +21,8 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
-import { ConnectUploadCommitDto } from 'src/dtos/connect-media.dto.js';
-import { ConnectMediaRepository } from 'src/repositories/connect-media.repository.js';
 import { LivePhotoUploadCommitDto } from 'src/dtos/asset-upload-resource.dto.js';
+import { ConnectUploadCommitDto } from 'src/dtos/connect-media.dto.js';
 import { FrameleafWorker, LibraryScope, Permission, StorageFolder } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import {
@@ -32,6 +31,7 @@ import {
 } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CaptureRepository } from 'src/repositories/capture.repository.js';
+import { ConnectMediaRepository } from 'src/repositories/connect-media.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaDownloadError } from 'src/repositories/media-downloader.repository.js';

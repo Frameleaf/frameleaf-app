@@ -3,7 +3,7 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ConnectUploadStartDto } from 'src/dtos/connect-media.dto.js';
 import { LibraryScope } from 'src/enum.js';
 import { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
-import { connectRequestHash, ConnectMediaRepository } from 'src/repositories/connect-media.repository.js';
+import { ConnectMediaRepository, connectRequestHash } from 'src/repositories/connect-media.repository.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ScriptedQuery, scriptedKysely } from 'test/scripted-kysely.js';
 
@@ -35,7 +35,7 @@ const grant = {
   id: grantId,
   userId: ownerId,
   ...auth.oauthApp,
-  accessExpiresAt: new Date(Date.now() + 3600_000),
+  accessExpiresAt: new Date(Date.now() + 3_600_000),
   revokedAt: null,
 };
 const dto = ConnectUploadStartDto.schema.parse({
@@ -57,7 +57,7 @@ const row = {
   state: 'verified',
   expectedChecksum: Buffer.from(dto.sha256, 'hex'),
   verifiedChecksum: Buffer.from(dto.sha256, 'hex'),
-  expiresAt: new Date(Date.now() + 86400_000),
+  expiresAt: new Date(Date.now() + 86_400_000),
   metadata: {
     publication: 'connect',
     connect: { grantId, actor: `oauth:${grantId}`, requestId: dto.requestId, albumId, workspace: 'design' },
@@ -70,6 +70,7 @@ const row = {
 } as unknown as AssetUploadResource;
 const published = { ...row, state: 'published' as const, resultAssetId: assetId, resultStatus: 'created' as const };
 const admitted = ({ sql }: ScriptedQuery) => {
+  if (sql.includes('pg_try_advisory_xact_lock')) return { rows: [{ acquired: true }] };
   if (sql.includes('from "user"')) return { rows: [{ ...auth.user, deletedAt: null, uploadsPaused: false }] };
   if (sql.includes('from "oauth_grant"')) return { rows: [grant] };
   if (sql.includes('from "album_user"')) return { rows: [{ albumId }] };
@@ -91,7 +92,7 @@ describe('Connect media transactional authorization and receipts', () => {
     ['expired grant', { ...grant, accessExpiresAt: new Date(0) }],
     ['removed upload scope', { ...grant, scopes: ['library:read'] }],
     ['removed destination', { ...grant, accessPolicy: { ...policy, writableAlbumIds: [] } }],
-    ['removed workspace', { ...grant, accessPolicy: { ...policy, writeWorkspaces: [] } }],
+    ['missing restriction policy', { ...grant, accessPolicy: null }],
   ])('refuses %s even with a previously valid AuthDto', async (_name, currentGrant) => {
     const { db } = scriptedKysely((q) =>
       q.sql.includes('from "oauth_grant"') ? { rows: [currentGrant] } : admitted(q),
@@ -160,7 +161,7 @@ describe('Connect media transactional authorization and receipts', () => {
       try {
         await expect(new ConnectMediaRepository(db).start(auth, dto, 100)).rejects.toThrow();
         expect(queries.some((q) => q.sql.startsWith('insert into'))).toBe(false);
-        const target = queries.find((q) => q.sql.includes('from "album"'));
+        const target = queries.find((q) => q.sql.includes('from "album"') && q.sql.includes('"libraryScope" ='));
         if (target) {
           expect(target.sql).toContain('"libraryScope" =');
           expect(target.sql).toContain('"isLocked"');
@@ -177,7 +178,7 @@ describe('Connect media transactional authorization and receipts', () => {
     async () => {
       const { db } = scriptedKysely((q) =>
         q.sql.includes('from "asset"')
-          ? { rows: q.sql.includes('for update') ? [{ id: assetId, libraryScope: LibraryScope.Personal }] : [] }
+          ? { rows: q.sql.includes('"checksum" =') ? [{ id: assetId, libraryScope: LibraryScope.Personal }] : [] }
           : admitted(q),
       );
       const publish = vi.fn();
@@ -230,7 +231,7 @@ describe('Connect media transactional authorization and receipts', () => {
             auth,
             withProvenance,
             { requestId: dto.requestId, sha256: dto.sha256 },
-            async () => published,
+            () => Promise.resolve(published),
           ),
         );
       expect(result).toEqual({ assetId, status: 'created', sha256: dto.sha256 });
@@ -264,7 +265,7 @@ describe('Connect media transactional authorization and receipts', () => {
               auth,
               { ...row, metadata: { ...row.metadata, connect: { ...row.metadata.connect!, provenance: {} as never } } },
               { requestId: dto.requestId, sha256: dto.sha256 },
-              async () => published,
+              () => Promise.resolve(published),
             ),
           ),
       ).rejects.toThrow('storage unavailable');

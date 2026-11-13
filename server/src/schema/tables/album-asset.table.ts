@@ -1,4 +1,3 @@
-import { connect_event_album_added } from 'src/schema/tables/connect-event.table.js';
 import {
   AfterDeleteTrigger,
   CreateDateColumn,
@@ -12,6 +11,7 @@ import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { album_asset_delete_audit, media_import_collection_removed } from 'src/schema/functions.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { connect_event_album_added } from 'src/schema/tables/connect-event.table.js';
 
 @Trigger({
   name: 'connect_event_album_added',

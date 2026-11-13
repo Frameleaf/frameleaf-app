@@ -1,5 +1,7 @@
+import z from 'zod';
 import { ConnectAccessPolicySchema, isPolicyNarrowing, requireConnectPolicy } from 'src/utils/connect-policy.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+
 const album = '01000000-0000-4000-8000-000000000001';
 const other = '01000000-0000-4000-8000-000000000002';
 const policy = {
@@ -11,6 +13,16 @@ const policy = {
 };
 
 describe('Connect consent policy', () => {
+  it('publishes an integer policy version for OpenAPI clients', () => {
+    const document = z.toJSONSchema(ConnectAccessPolicySchema, { target: 'openapi-3.0', io: 'input' });
+    const definitions = document.definitions as Record<string, typeof document>;
+    const schema = document.$ref ? definitions[document.$ref.slice('#/definitions/'.length)] : document;
+    expect(schema.properties?.version).toMatchObject({
+      type: 'integer',
+      format: 'int32',
+      enum: [1],
+    });
+  });
   it.each([
     { ...policy, version: 2 },
     { ...policy, allLibraryRead: undefined },

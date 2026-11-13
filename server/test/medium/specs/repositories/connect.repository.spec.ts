@@ -193,23 +193,39 @@ describe('Connect query privacy', () => {
       await expect(
         competing.transaction().execute(async (tx) => {
           await sql`set local lock_timeout = '300ms'`.execute(tx);
-          if (change === 'membership') await new AlbumRepository(tx).removeAssetIds(album.id, [asset.id]);
-          else if (change === 'direct membership')
-            await tx
-              .deleteFrom('album_asset')
-              .where('albumId', '=', album.id)
-              .where('assetId', '=', asset.id)
-              .execute();
-          else if (change === 'source owner' || change === 'target owner')
-            await tx
-              .updateTable('album_user')
-              .set({ role: AlbumUserRole.Editor })
-              .where('albumId', '=', change === 'source owner' ? album.id : outside.id)
-              .where('userId', '=', auth.user.id)
-              .execute();
-          else if (change === 'ancestor privacy')
-            await tx.updateTable('album').set({ isLocked: true }).where('id', '=', album.id).execute();
-          else if (change === 'hierarchy') await new AlbumRepository(tx).reparentIn(tx, album.id, null);
+          switch (change) {
+            case 'membership': {
+              await new AlbumRepository(tx).removeAssetIds(album.id, [asset.id]);
+              break;
+            }
+            case 'direct membership': {
+              await tx
+                .deleteFrom('album_asset')
+                .where('albumId', '=', album.id)
+                .where('assetId', '=', asset.id)
+                .execute();
+              break;
+            }
+            case 'source owner':
+            case 'target owner': {
+              await tx
+                .updateTable('album_user')
+                .set({ role: AlbumUserRole.Editor })
+                .where('albumId', '=', change === 'source owner' ? album.id : outside.id)
+                .where('userId', '=', auth.user.id)
+                .execute();
+              break;
+            }
+            case 'ancestor privacy': {
+              await tx.updateTable('album').set({ isLocked: true }).where('id', '=', album.id).execute();
+              break;
+            }
+            case 'hierarchy': {
+              await new AlbumRepository(tx).reparentIn(tx, album.id, null);
+              break;
+            }
+            // No default
+          }
         }),
       ).rejects.toThrow(/lock timeout/);
     } finally {
@@ -235,25 +251,37 @@ describe('Connect query privacy', () => {
       const competing = await connectCompetitor(database);
       const barrier = publicationBarrier();
       const writer = competing.transaction().execute(async (tx) => {
-        if (kind === 'album') await tx.selectFrom('album').select('id').where('id', '=', album.id).forShare().execute();
-        else if (kind === 'owner')
-          await tx
-            .selectFrom('album_user')
-            .select('albumId')
-            .where('albumId', '=', album.id)
-            .where('userId', '=', auth.user.id)
-            .forUpdate()
-            .execute();
-        else if (kind === 'asset')
-          await tx.selectFrom('asset').select('id').where('id', '=', asset.id).forUpdate().execute();
-        else if (kind === 'membership')
-          await tx
-            .selectFrom('album_asset')
-            .select('assetId')
-            .where('albumId', '=', album.id)
-            .where('assetId', '=', asset.id)
-            .forUpdate()
-            .execute();
+        switch (kind) {
+          case 'album': {
+            await tx.selectFrom('album').select('id').where('id', '=', album.id).forShare().execute();
+            break;
+          }
+          case 'owner': {
+            await tx
+              .selectFrom('album_user')
+              .select('albumId')
+              .where('albumId', '=', album.id)
+              .where('userId', '=', auth.user.id)
+              .forUpdate()
+              .execute();
+            break;
+          }
+          case 'asset': {
+            await tx.selectFrom('asset').select('id').where('id', '=', asset.id).forUpdate().execute();
+            break;
+          }
+          case 'membership': {
+            await tx
+              .selectFrom('album_asset')
+              .select('assetId')
+              .where('albumId', '=', album.id)
+              .where('assetId', '=', asset.id)
+              .forUpdate()
+              .execute();
+            break;
+          }
+          // No default
+        }
         await barrier.hold();
         await lockAlbumHierarchy(tx);
       });

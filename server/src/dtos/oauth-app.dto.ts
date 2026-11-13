@@ -1,6 +1,6 @@
-import { ConnectAccessPolicySchema } from 'src/utils/connect-policy.js';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { ConnectAccessPolicySchema } from 'src/utils/connect-policy.js';
 
 /**
  * FL-803 (E3-03): connected apps. The OAuth protocol endpoints themselves (authorize redirect,

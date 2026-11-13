@@ -1,18 +1,3 @@
-import {
-  ConnectReceiptTable,
-  ConnectRenditionTicketTable,
-  ConnectProvenanceTable,
-} from 'src/schema/tables/connect-media.table.js';
-import {
-  ConnectEventStreamTable,
-  ConnectEventTable,
-  ConnectAssetReadyTable,
-  ConnectEventCursorTable,
-  connect_event_append,
-  connect_event_asset_ready,
-  connect_event_album_added,
-  connect_event_studio_published,
-} from 'src/schema/tables/connect-event.table.js';
 import { Database, Extensions, Generated, Int8 } from '@frameleaf/sql-tools';
 import type { QueueDatabase } from 'src/queue/table-types.js';
 import {
@@ -142,6 +127,21 @@ import {
 } from 'src/schema/tables/cloud-backup.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
+import {
+  ConnectAssetReadyTable,
+  ConnectEventCursorTable,
+  ConnectEventStreamTable,
+  ConnectEventTable,
+  connect_event_album_added,
+  connect_event_append,
+  connect_event_asset_ready,
+  connect_event_studio_published,
+} from 'src/schema/tables/connect-event.table.js';
+import {
+  ConnectProvenanceTable,
+  ConnectReceiptTable,
+  ConnectRenditionTicketTable,
+} from 'src/schema/tables/connect-media.table.js';
 import { DateFixBatchTable, DateFixItemTable } from 'src/schema/tables/date-fix.table.js';
 import { DesktopClipIndexTable, DesktopClipProducerTable } from 'src/schema/tables/desktop-clip-index.table.js';
 import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';

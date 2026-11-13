@@ -1,14 +1,14 @@
-import { AssetType } from 'src/enum.js';
-import { ConnectAccessPolicySchema } from 'src/utils/connect-policy.js';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { AssetType } from 'src/enum.js';
+import { ConnectAccessPolicySchema } from 'src/utils/connect-policy.js';
 
 export class ConnectSearchDto extends createZodDto(
   z
     .object({
       q: z.string().max(200).optional(),
       albumId: z.uuid().optional(),
-      page: z.coerce.number().int().min(1).max(100000).default(1),
+      page: z.coerce.number().int().min(1).max(100_000).default(1),
       size: z.coerce.number().int().min(1).max(100).default(50),
       type: z.enum([AssetType.Image, AssetType.Video]).optional(),
     })
@@ -56,9 +56,9 @@ export const ConnectAssetSchema = z
     type: z.enum([AssetType.Image, AssetType.Video]),
     title: z.string().nullable(),
     description: z.string().nullable(),
-    width: z.number().nullable(),
-    height: z.number().nullable(),
-    duration: z.number().nullable(),
+    width: z.number().meta({ format: 'double' }).nullable(),
+    height: z.number().meta({ format: 'double' }).nullable(),
+    duration: z.number().meta({ format: 'double' }).nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
@@ -79,7 +79,7 @@ export class ConnectTagResultDto extends createZodDto(
 export class ConnectCapabilitiesDto extends createZodDto(
   z
     .object({
-      protocolVersion: z.literal(1),
+      protocolVersion: z.literal(1).meta({ type: 'integer', format: 'int32' }),
       server: z.object({ id: z.string(), name: z.string() }),
       displayIdentity: z.object({ name: z.string() }),
       connection: z.object({ grantId: z.uuid(), libraryUserId: z.uuid() }),
@@ -88,12 +88,12 @@ export class ConnectCapabilitiesDto extends createZodDto(
       policyRevision: z.int(),
       albums: z.array(ConnectAlbumSchema),
       limits: z.object({
-        maxPageSize: z.literal(100),
-        maxUploadBytes: z.number(),
-        maxAppendBytes: z.number(),
-        uploadExpiresAfterSeconds: z.number(),
-        receiptWindowSeconds: z.number(),
-        renditionTicketSeconds: z.number(),
+        maxPageSize: z.literal(100).meta({ type: 'integer', format: 'int32' }),
+        maxUploadBytes: z.number().meta({ format: 'double' }),
+        maxAppendBytes: z.number().meta({ format: 'double' }),
+        uploadExpiresAfterSeconds: z.number().meta({ format: 'double' }),
+        receiptWindowSeconds: z.number().meta({ format: 'double' }),
+        renditionTicketSeconds: z.number().meta({ format: 'double' }),
         originalsAllowed: z.boolean(),
       }),
       supportedTypes: z.object({
