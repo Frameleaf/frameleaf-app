@@ -249,6 +249,7 @@ it('saves the welcome message, reminders, selection limit and proof collection w
     target: { value: 'Take your time.' },
   });
   await fireEvent.click(screen.getByRole('checkbox', { name: 'Selection reminder' }));
+  await fireEvent.click(screen.getByRole('checkbox', { name: 'Let guests find their photos with a selfie' }));
   await fireEvent.change(screen.getByRole('spinbutton', { name: 'Maximum client selections' }), {
     target: { value: '25' },
   });
@@ -262,6 +263,7 @@ it('saves the welcome message, reminders, selection limit and proof collection w
       expect.objectContaining({
         config: expect.objectContaining({
           welcomeMessage: 'Take your time.',
+          selfieSearch: true,
           reminders: { selection: true, paymentAndExpiry: false },
           maxSelections: 25,
           proofCollection: 'selected',
