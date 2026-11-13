@@ -297,6 +297,9 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST server/identity/challenge': { bucket: 'server-identity-challenge', limit: 120, windowSeconds: 60 },
   // FL-702: a studio website's public inquiry form and gallery-link request
   'POST photography/studios/:site/inquiries': RATE_LIMITS.studioInquiry,
+  // FL-1083: bearer-token opt-out links are public and bounded per address.
+  'GET photography/unsubscribe/:token': { bucket: 'photography-unsubscribe', limit: 60, windowSeconds: 60 },
+  'POST photography/unsubscribe/:token': { bucket: 'photography-unsubscribe', limit: 60, windowSeconds: 60 },
 };
 
 const isAdminPermission = (permission: AuthenticatedOptions['permission']) =>
@@ -354,6 +357,18 @@ describe('controllers', () => {
     const undeclared = routes.filter((route) => route.auth === undefined).map((route) => route.label);
 
     expect(undeclared).toEqual([]);
+  });
+
+  it('keeps campaign management signed in and token opt-out public', () => {
+    const campaignRoutes = routes.filter((route) => route.path.startsWith('photography/campaigns'));
+    expect(campaignRoutes.length).toBeGreaterThan(0);
+    expect(campaignRoutes.filter((route) => route.auth?.public)).toEqual([]);
+    const optOutRoutes = routes.filter((route) => route.path === 'photography/unsubscribe/:token');
+    expect(optOutRoutes.map((route) => route.id).toSorted()).toEqual([
+      'GET photography/unsubscribe/:token',
+      'POST photography/unsubscribe/:token',
+    ]);
+    expect(optOutRoutes.every((route) => route.auth?.public)).toBe(true);
   });
 
   it('should only allow shared link access to expected routes', () => {

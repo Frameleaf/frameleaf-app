@@ -28,6 +28,7 @@ describe('public queue job compatibility (FL-283)', () => {
     const internal = new Set<JobName>([
       JobName.PhotographyWorkflowRender,
       JobName.PhotographyBulkGallery,
+      JobName.PhotographyCampaignSend,
       JobName.AssetWarmFilmstrip,
       JobName.AssetVideoFingerprintQueueAll,
       JobName.AssetVideoFingerprint,

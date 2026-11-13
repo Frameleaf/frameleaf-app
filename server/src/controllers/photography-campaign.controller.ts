@@ -78,6 +78,7 @@ export class PhotographyCampaignController {
     return this.service.cancel(auth, id);
   }
   @Get('unsubscribe/:token')
+  @Authenticated({ public: true })
   @RateLimited({ bucket: 'photography-unsubscribe', limit: 60, windowSeconds: 60 })
   @ApiOperation({ operationId: 'photographyUnsubscribePage' })
   async unsubscribePage(@Param('token') token: string, @Query('locale') locale = 'en', @Res() response: Response) {
@@ -86,6 +87,7 @@ export class PhotographyCampaignController {
     response.type('html').send(await this.service.unsubscribe(token, locale, false));
   }
   @Post('unsubscribe/:token')
+  @Authenticated({ public: true })
   @RateLimited({ bucket: 'photography-unsubscribe', limit: 60, windowSeconds: 60 })
   @ApiOperation({ operationId: 'photographyUnsubscribe' })
   async unsubscribe(@Param('token') token: string, @Query('locale') locale = 'en', @Res() response: Response) {
