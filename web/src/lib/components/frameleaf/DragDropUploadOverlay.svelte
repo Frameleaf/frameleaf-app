@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { rememberDroppedPath } from '$lib/utils/xmp-pairing';
   import { getAlbumInfo, type AlbumResponseDto } from '@frameleaf/sdk';
   import { libraryUploadScope, searchContextFor } from '$lib/frameleaf/search-context';
   import { page } from '$app/state';
@@ -189,7 +190,9 @@
           entriesToCheckForSubDirectories.push(entry);
         }
       } else if (isFileSystemFileEntry(currentEntry)) {
-        allFiles.push(await getFileFromFileSystemEntry(currentEntry));
+        const file = await getFileFromFileSystemEntry(currentEntry);
+        rememberDroppedPath(file, currentEntry.fullPath);
+        allFiles.push(file);
       }
     }
 

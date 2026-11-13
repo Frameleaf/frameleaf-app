@@ -24,7 +24,7 @@ import { generateId } from '$lib/utils/generate-id';
 import { uploadInParts } from '$lib/utils/parallel-upload';
 import { asQueryString } from '$lib/utils/shared-links';
 import { handleError } from './handle-error';
-import { pairXmpSidecars } from './xmp-pairing';
+import { pairXmpSidecars, uploadRelativePath } from './xmp-pairing';
 
 const PARALLEL_UPLOAD_THRESHOLD = 64 * 2 ** 20;
 export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
@@ -154,7 +154,7 @@ export const fileUploadHandler = async ({
   for (const file of originals) {
     const name = file.name.toLowerCase();
     // a folder brings its operating system's files along: leave them out quietly, not as "unsupported"
-    if (file.webkitRelativePath && isSystemFile(name)) {
+    if (uploadRelativePath(file).includes('/') && isSystemFile(name)) {
       continue;
     }
     if (accepts(file)) {

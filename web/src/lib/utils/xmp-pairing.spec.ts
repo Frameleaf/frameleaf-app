@@ -1,4 +1,4 @@
-import { pairXmpSidecars } from '$lib/utils/xmp-pairing';
+import { pairXmpSidecars, rememberDroppedPath } from '$lib/utils/xmp-pairing';
 
 const file = (name: string, folder = '') => {
   const asset = new File([], name);
@@ -23,6 +23,19 @@ describe('XMP upload pairing', () => {
     );
     expect([...result.unmatched]).toEqual([extra]);
     expect(result.originals).toEqual([raw, rawOther]);
+  });
+
+  it('uses a dropped folder path when File.webkitRelativePath is empty', () => {
+    const raw = file('IMG.CR3');
+    const wrongFolder = file('IMG.xmp');
+    const correctFolder = file('IMG.xmp');
+    rememberDroppedPath(raw, '/trip/south/IMG.CR3');
+    rememberDroppedPath(wrongFolder, '/trip/north/IMG.xmp');
+    rememberDroppedPath(correctFolder, '/trip/south/IMG.xmp');
+
+    const result = pairXmpSidecars([raw, wrongFolder, correctFolder], () => true);
+    expect(result.pairs.get(raw)).toBe(correctFolder);
+    expect([...result.unmatched]).toEqual([wrongFolder]);
   });
 
   it('reports ambiguous same-stem files without uploading them as originals', () => {
