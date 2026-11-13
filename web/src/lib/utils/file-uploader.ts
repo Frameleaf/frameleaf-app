@@ -1,5 +1,6 @@
 import {
   AssetMediaStatus,
+  AssetRejectReason,
   AssetUploadAction,
   AssetVisibility,
   LibraryScope,
@@ -357,13 +358,16 @@ async function fileUploader(
           { signal },
         );
         assertCurrent();
+        // A duplicate with no id is one this session may not see (Locked, not unlocked): still not sent again
         const checkUploadResult = results.find(
-          (result) => result.action === AssetUploadAction.Reject && result.assetId,
+          (result) =>
+            result.action === AssetUploadAction.Reject &&
+            (result.assetId || result.reason === AssetRejectReason.Duplicate),
         );
-        if (checkUploadResult?.assetId) {
+        if (checkUploadResult) {
           responseData = {
             status: AssetMediaStatus.Duplicate,
-            id: checkUploadResult.assetId,
+            id: checkUploadResult.assetId ?? '',
             isTrashed: checkUploadResult.isTrashed,
           };
         }

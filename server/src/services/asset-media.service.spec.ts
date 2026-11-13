@@ -330,6 +330,27 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.getUploadAssetIdByChecksum).toHaveBeenCalledWith(authStub.admin.user.id, file1);
     });
 
+    it('answers a Locked duplicate as hidden before the file is sent', async () => {
+      mocks.asset.getByChecksums.mockResolvedValue([
+        {
+          id: 'locked-asset',
+          checksum: file1,
+          deletedAt: null,
+          status: AssetStatus.Active,
+          originalPath: '/data/upload/locked-asset',
+          libraryId: null,
+          isExternal: false,
+        },
+      ]);
+      await expect(sut.getUploadAssetIdByChecksum(authStub.admin, file1.toString('hex'))).resolves.toEqual({
+        id: '00000000-0000-0000-0000-000000000000',
+        status: AssetMediaStatus.DUPLICATE,
+      });
+      expect(mocks.asset.getByChecksums).toHaveBeenCalledWith(authStub.admin.user.id, [file1], {
+        lockedOwnerId: authStub.admin.user.id,
+      });
+    });
+
     it('should find an existing asset', async () => {
       mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue('asset-id');
       await expect(sut.getUploadAssetIdByChecksum(authStub.admin, file1.toString('hex'))).resolves.toEqual({
@@ -2800,12 +2821,66 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getByChecksums.mockResolvedValue([]);
 
       await sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] });
-      expect(mocks.asset.getByChecksums).toHaveBeenLastCalledWith(authStub.admin.user.id, [file1]);
+      expect(mocks.asset.getByChecksums).toHaveBeenNthCalledWith(1, authStub.admin.user.id, [file1]);
+      mocks.asset.getByChecksums.mockClear();
 
       const elevated = authStub.adminWithElevatedPermission;
       await sut.bulkUploadCheck(elevated, { assets: [{ id: '1', checksum: file1.toString('hex') }] });
       expect(mocks.asset.getByChecksums).toHaveBeenLastCalledWith(elevated.user.id, [file1], {
         lockedOwnerId: elevated.user.id,
+      });
+    });
+
+    describe('a duplicate this session may not see', () => {
+      const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
+      const locked = {
+        id: 'locked-asset',
+        checksum: file1,
+        deletedAt: null,
+        status: AssetStatus.Active,
+        originalPath: '/data/upload/locked-asset',
+        libraryId: null,
+        isExternal: false,
+      };
+      const check = (auth = authStub.admin) =>
+        sut.bulkUploadCheck(auth, { assets: [{ id: '1', checksum: file1.toString('hex') }] });
+
+      it('rejects a Locked duplicate without naming it, so the file is not sent again', async () => {
+        mocks.asset.getByChecksums.mockImplementation((_userId, _checksums, options) =>
+          Promise.resolve(options?.lockedOwnerId ? [locked] : []),
+        );
+
+        await expect(check()).resolves.toEqual({
+          results: [{ id: '1', action: AssetUploadAction.REJECT, reason: AssetRejectReason.DUPLICATE }],
+        });
+        expect(mocks.asset.getByChecksums).toHaveBeenLastCalledWith(authStub.admin.user.id, [file1], {
+          lockedOwnerId: authStub.admin.user.id,
+        });
+      });
+
+      it('accepts it when its original is gone, so the upload can repair it', async () => {
+        mocks.asset.getByChecksums.mockImplementation((_userId, _checksums, options) =>
+          Promise.resolve(options?.lockedOwnerId ? [locked] : []),
+        );
+        mocks.storage.checkFileExists.mockResolvedValue(false);
+
+        await expect(check()).resolves.toEqual({ results: [{ id: '1', action: AssetUploadAction.ACCEPT }] });
+      });
+
+      it('does not look again for the unlocked owner, who already sees it', async () => {
+        await check(authStub.adminWithElevatedPermission);
+        expect(mocks.asset.getByChecksums).toHaveBeenCalledTimes(1);
+      });
+
+      it('leaves a visible Trash match the upload brings back alone', async () => {
+        const trashed = { ...locked, deletedAt: new Date(), status: AssetStatus.Trashed };
+        mocks.asset.getByChecksums.mockResolvedValue([trashed]);
+        mocks.user.getMetadata.mockResolvedValue([
+          { key: UserMetadataKey.Preferences, value: { trash: { reuploadUntil: '2999-01-01T00:00:00.000Z' } } },
+        ] as never);
+
+        await expect(check()).resolves.toEqual({ results: [{ id: '1', action: AssetUploadAction.ACCEPT }] });
+        expect(mocks.asset.getByChecksums).toHaveBeenCalledTimes(1);
       });
     });
 
