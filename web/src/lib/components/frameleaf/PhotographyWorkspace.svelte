@@ -351,7 +351,7 @@
                   : (active?.name ?? $t('frameleaf_photography_shoots')),
   );
   const subtitle = $derived(
-    section === 'settings'
+    section === 'settings' || section === 'campaigns'
       ? ''
       : section === 'branding'
         ? $t('frameleaf_photography_branding_lead')
