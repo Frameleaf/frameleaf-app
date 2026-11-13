@@ -624,7 +624,7 @@ var UpdateDateColumn = (options = {}) => {
 var ORDER_FILENAME = "ORDER";
 var isEqual = (a, b) => a.length === b.length && a.every((item, i) => b[i] === item);
 var findDuplicates = (names) => [...new Set(names.filter((name, index) => names.indexOf(name) !== index))];
-var computeOrder = (fileNames) => fileNames.filter((name) => name !== ORDER_FILENAME).map((name) => parse$1(name).name).toSorted();
+var computeOrder = (fileNames) => fileNames.filter((name) => name !== ORDER_FILENAME && name !== "RENAMES").map((name) => parse$1(name).name).toSorted();
 var parseOrder = (content) => content.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
 var findPrefixViolation = (base, current) => {
 	if (base.length > current.length) return `${ORDER_FILENAME} has fewer entries (${current.length}) than the baseline (${base.length}); migrations cannot be removed`;
