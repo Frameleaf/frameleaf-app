@@ -534,6 +534,16 @@ export class IntegrityService extends BaseService {
     }
 
     if (untrackedFiles.size > 0) {
+      // FL-1532: photos among them are read once and put back by themselves. Whatever is in a library
+      // after that is no longer a finding.
+      const placed: string[] = [];
+      await this.eventRepository.emit('IntegrityUntrackedFound', { paths: [...untrackedFiles], placed });
+      for (const path of placed) {
+        untrackedFiles.delete(path);
+      }
+    }
+
+    if (untrackedFiles.size > 0) {
       await this.integrityRepository.create(
         [...untrackedFiles].map((path) => ({
           type: IntegrityReport.UntrackedFile,

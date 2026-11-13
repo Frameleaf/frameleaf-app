@@ -72,6 +72,7 @@ import { DuplicateService } from 'src/services/duplicate.service.js';
 import { EagleImportWorkerService } from 'src/services/eagle-import-worker.service.js';
 import { EagleImportService } from 'src/services/eagle-import.service.js';
 import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
+import { FoundFilesService } from 'src/services/found-files.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
@@ -389,6 +390,7 @@ export const services = [
   AlbumCleanupService,
   DateDoctorService,
   AssetLedgerService,
+  FoundFilesService,
   AlbumMergeService,
   SharedSpaceService,
   SmartAlbumService,

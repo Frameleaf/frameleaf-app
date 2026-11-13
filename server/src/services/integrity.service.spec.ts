@@ -325,6 +325,52 @@ describe(IntegrityService.name, () => {
     });
   });
 
+  describe('handleUntrackedFiles', () => {
+    const orphan = '/data/upload/orphan.mov';
+    const photo = '/data/upload/user-1/IMG_0001.jpg';
+
+    it('hands untracked files over to be sorted and reports only the ones that stay out of every library', async () => {
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([{ path: '/data/upload/tracked.jpg' }] as never);
+      mocks.event.emit.mockImplementation(((name: string, payload: { placed: string[] }) => {
+        if (name === 'IntegrityUntrackedFound') {
+          payload.placed.push(photo);
+        }
+        return Promise.resolve();
+      }) as never);
+
+      await sut.handleUntrackedFiles({ type: 'asset', paths: ['/data/upload/tracked.jpg', orphan, photo] });
+
+      expect(mocks.event.emit).toHaveBeenCalledExactlyOnceWith('IntegrityUntrackedFound', {
+        paths: [orphan, photo],
+        placed: [photo],
+      });
+      expect(mocks.integrityReport.create).toHaveBeenCalledExactlyOnceWith([
+        { type: IntegrityReport.UntrackedFile, path: orphan },
+      ]);
+    });
+
+    it('reports nothing when every untracked file was put in a library', async () => {
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
+      mocks.event.emit.mockImplementation(((_name: string, payload: { placed: string[] }) => {
+        payload.placed.push(photo);
+        return Promise.resolve();
+      }) as never);
+
+      await sut.handleUntrackedFiles({ type: 'asset', paths: [photo] });
+
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+    });
+
+    it('asks for nothing to be sorted when every file is tracked', async () => {
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([{ path: photo }] as never);
+
+      await sut.handleUntrackedFiles({ type: 'asset', paths: [photo] });
+
+      expect(mocks.event.emit).not.toHaveBeenCalled();
+      expect(mocks.integrityReport.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleUntrackedRefresh', () => {
     beforeEach(() => {
       mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);

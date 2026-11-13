@@ -59,6 +59,7 @@ import { EagleImportRepository } from 'src/repositories/eagle-import.repository.
 import { EagleLibraryRepository } from 'src/repositories/eagle-library.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { FoundFileRepository } from 'src/repositories/found-file.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
@@ -303,6 +304,7 @@ export const repositories = [
   AlbumCleanupRepository,
   DateDoctorRepository,
   AssetLedgerRepository,
+  FoundFileRepository,
   AlbumMergeRepository,
   StackRepository,
   StudioPreviewRepository,
