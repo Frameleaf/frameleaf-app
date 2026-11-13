@@ -50,7 +50,7 @@
   };
 </script>
 
-<Button variant="tertiary" onclick={begin}>{$t('frameleaf_xmp_replace')}</Button>
+<Button variant="ghost" onclick={begin}>{$t('frameleaf_xmp_replace')}</Button>
 {#if status === 'saved'}<p role="status">{$t('frameleaf_xmp_saved')}</p>{/if}
 
 <Dialog
@@ -73,7 +73,7 @@
     {/if}
   </div>
   {#snippet actions()}
-    <Button variant="secondary" disabled={busy} onclick={() => (open = false)}>{$t('cancel')}</Button>
+    <Button variant="outline" disabled={busy} onclick={() => (open = false)}>{$t('cancel')}</Button>
     <Button disabled={busy || !files?.length} onclick={replace}>{$t('frameleaf_xmp_replace')}</Button>
   {/snippet}
 </Dialog>

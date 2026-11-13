@@ -54,7 +54,6 @@ export interface ImmichTags extends Omit<Tags, TagsWithWrongTypes> {
   TagsList?: StringOrNumber[];
   HierarchicalSubject?: StringOrNumber[];
   Keywords?: StringOrNumber | StringOrNumber[];
-  Subject?: StringOrNumber | StringOrNumber[];
   ISO?: number | number[];
 
   // Type is wrong, can also be number.
