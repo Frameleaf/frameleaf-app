@@ -300,6 +300,55 @@ test('a rotation waits for an idle store, combines with a port change, and survi
     }
   });
 });
+test('a certificate alone is renewed, and taken back, beside an unfinished operation; a port or package still waits', async () => {
+  await fixture(async ({ root, store, bootstrap, settings }) => {
+    start(store, bootstrap);
+    const original = stored(store).fingerprint;
+    const next = identity(root);
+    const rotated = { ...bootstrap, tls: next, tlsRotation: handover(bootstrap.tls, next) };
+    // A failed operation keeps the store until it is resumed, and resuming needs Manager started.
+    const { operation } = store.start('backup', 'synthetic-unfinished', {});
+    operation.state = 'failed';
+    store.save(operation);
+    // The handover is still judged on its own: nothing that would be refused idle is admitted.
+    const before = settings();
+    const stranger = identity(root);
+    for (const refused of [
+      { ...bootstrap, tls: next },
+      { ...bootstrap, tls: next, tlsRotation: handover(stranger, next) },
+      { ...bootstrap, tls: next, tlsRotation: { ...handover(bootstrap.tls, next), operationId: randomUUID() } },
+    ])
+      assert.throws(() => start(store, refused), /native_installation_changed/);
+    assert.equal(settings(), before);
+    // With a port, a package transition or anything else changed, it waits as before.
+    assert.throws(() => start(store, { ...rotated, name: 'different' }), /operation_in_progress/);
+    assert.throws(() => start(store, ports(rotated, 54400, 2290)), /operation_in_progress/);
+    assert.throws(() => start(store, ports(bootstrap, 54400, 2290)), /operation_in_progress/);
+    assert.throws(
+      () =>
+        start(store, {
+          ...rotated,
+          installation: { ...bootstrap.installation, manifestSha256: '9'.repeat(64) },
+          installationTransition: { operationId: randomUUID(), fromFingerprint: original },
+        }),
+      /operation_in_progress/,
+    );
+    assert.equal(settings(), before);
+    // The renewal alone is admitted, and the operation is untouched and still holds the store.
+    start(store, rotated);
+    assert.equal(stored(store).descriptor.tlsCertificatePemSha256, sha256(next.certificatePem));
+    assert.equal(store.get<any>('native-tls-rotation').previous, sha256(bootstrap.tls.certificatePem));
+    assert.deepEqual(store.locked(), operation);
+    // So is a Desktop that rolled back to the certificate it replaced, within the grace period.
+    start(store, bootstrap);
+    assert.equal(stored(store).fingerprint, original);
+    assert.equal(store.get('native-tls-rotation'), null);
+    assert.deepEqual(store.locked(), operation);
+    start(store, rotated);
+    start(store, rotated);
+    assert.throws(() => start(store, ports(rotated, 54400, 2290)), /operation_in_progress/);
+  });
+});
 test('the handover text is the one Desktop signs', () => {
   // The same vector is asserted in Frameleaf Desktop's manager_tls tests.
   assert.equal(
