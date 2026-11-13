@@ -87,7 +87,9 @@
     }
     if (tag && ['Keywords', 'Subject', 'HierarchicalSubject'].includes(tag)) {
       const ids = (asset.tags ?? []).filter((tag) => tag.name === value || tag.value === value).map((tag) => tag.id);
-      if (ids.length) return Route.search({ tagIds: ids });
+      if (ids.length > 0) {
+        return Route.search({ tagIds: ids });
+      }
     }
   };
 </script>
