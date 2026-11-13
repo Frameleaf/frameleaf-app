@@ -155,15 +155,44 @@ describe('capture server boundary', () => {
   ])('refuses unsafe address %s', (url) => {
     expect(() => normalizeServerAddress(url)).toThrow();
   });
-  it('allows HTTP only for explicit loopback development', () => {
+  it('allows HTTP only when it is switched on', () => {
     expect(() => normalizeServerAddress('http://localhost:2283')).toThrow();
+    expect(() => normalizeServerAddress('http://192.168.1.10:2283')).toThrow();
     expect(normalizeServerAddress('http://127.0.0.1:2283', true)).toBe(
       'http://127.0.0.1:2283',
     );
-    expect(() =>
-      normalizeServerAddress('http://localhost.evil.test', true),
-    ).toThrow();
-    expect(() => normalizeServerAddress('http://192.168.1.10', true)).toThrow();
+  });
+  // FL-1498: a Library at home is usually reached over plain http
+  it.each([
+    'http://localhost:2283',
+    'http://[::1]:2283',
+    'http://10.0.0.5:2283',
+    'http://172.16.0.1',
+    'http://172.31.255.254',
+    'http://192.168.1.10:2283',
+    'http://169.254.10.10',
+    'http://[fd12:3456:789a::1]:2283',
+    'http://[fe80::1]:2283',
+    'http://tower:2283',
+    'http://nas.local:2283',
+    'http://frameleaf.lan',
+    'http://photos.home.arpa',
+    'http://photos.internal',
+  ])('allows HTTP at home address %s when switched on', (url) => {
+    expect(normalizeServerAddress(url, true)).toBe(url);
+  });
+  it.each([
+    'http://photos.example',
+    'http://localhost.evil.test',
+    'http://nas.local.evil.test',
+    'http://8.8.8.8',
+    'http://172.32.0.1',
+    'http://172.15.0.1',
+    'http://192.169.1.10',
+    'http://11.0.0.1',
+    'http://[2001:db8::1]',
+  ])('still refuses HTTP at public address %s', (url) => {
+    expect(() => normalizeServerAddress(url, true)).toThrow();
   });
   it('uses the generated contract with no cookies, referrer or redirect forwarding', async () => {
     const fetch = vi.fn().mockResolvedValue(json(capabilities));

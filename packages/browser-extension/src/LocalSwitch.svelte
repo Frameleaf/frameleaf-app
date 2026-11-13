@@ -9,7 +9,7 @@
   <span>
     <strong>Allow a local server without HTTPS</strong>
     <small
-      >For a server on this computer only (localhost). Anywhere else needs
+      >For a server on this computer or your home network. Anywhere else needs
       HTTPS.</small
     >
   </span>
