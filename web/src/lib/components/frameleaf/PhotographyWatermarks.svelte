@@ -4,6 +4,7 @@
    * the default for proofs, web previews and exports, and the branding mark proofs and web previews
    * carry when no preset is chosen. Branding shows the result and leads here.
    */
+  import { newRequestKey } from '$lib/frameleaf/request-key';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import { AssetMediaSize } from '@frameleaf/sdk';
@@ -76,7 +77,7 @@
     if (!draft || (draft.brand.watermarkPresets?.length ?? 0) >= 30) {
       return;
     }
-    const id = crypto.randomUUID();
+    const id = newRequestKey();
     draft.brand.watermarkPresets!.push({
       id,
       name: proof ? $t('frameleaf_photography_preset_proof_name') : $t('frameleaf_photography_preset_signature_name'),

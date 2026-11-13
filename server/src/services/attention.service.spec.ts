@@ -5,6 +5,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { ATTENTION_KINDS, ATTENTION_REASONS } from 'src/dtos/attention.dto.js';
 import { QueueName, SystemMetadataKey } from 'src/enum.js';
 import { AttentionService } from 'src/services/attention.service.js';
+import { UPGRADE_FINGERPRINT_KEY } from 'src/utils/library-fingerprint.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 
 const GB = 1_000_000_000;
@@ -67,6 +68,8 @@ const setup = () => {
   const counts = { fixed: 0, needsYou: 0, since: null as Date | null, latest: null as Date | null };
   const failures = { count: 0, setAside: 0 };
   const assetJob = { countProcessingFailures: vi.fn().mockImplementation(() => Promise.resolve({ ...failures })) };
+  const missing: Array<{ ownerId: string; count: number; since: Date }> = [];
+  const ledger = { missingByOwner: vi.fn().mockImplementation(() => Promise.resolve([...missing])) };
   const mediaHealth = { fileProblemCounts: vi.fn().mockImplementation(() => Promise.resolve({ ...counts })) };
   const sut = new AttentionService(
     mocks.logger as never,
@@ -77,6 +80,7 @@ const setup = () => {
     mocks.buddy as never,
     mediaHealth as never,
     assetJob as never,
+    ledger as never,
   );
   // The configuration is handed over as it is, as in the backup schedule's spec.
   const settings = { current: config as object };
@@ -84,7 +88,7 @@ const setup = () => {
   const useConfig = (next: object) => {
     settings.current = next;
   };
-  return { sut, mocks, metadata, config, useConfig, mediaHealth, counts, assetJob, failures };
+  return { sut, mocks, metadata, config, useConfig, mediaHealth, counts, assetJob, failures, ledger, missing };
 };
 
 describe(AttentionService.name, () => {
@@ -112,7 +116,45 @@ describe(AttentionService.name, () => {
       dismissed: [],
       fileProblems: { fixed: 0, needsYou: 0, since: null, latest: null },
       processingFailures: { count: 0, setAside: 0 },
+      unexplainedOriginals: { count: 0, since: null },
+      upgradeCheck: { state: 'none', reason: null, checkedAt: null, fromVersion: null, toVersion: null },
     });
+  });
+
+  it('says how the library check after the last upgrade came out in a field of its own (FL-954)', async () => {
+    const { sut, mocks, metadata } = setup();
+    const latest = {
+      fromVersion: '1.4.0',
+      toVersion: '1.4.1',
+      checkedAt: daysAgo(1),
+      state: 'attention',
+      findings: [{ reason: 'drive-missing', path: '/mnt/photos' }],
+    };
+    metadata[UPGRADE_FINGERPRINT_KEY] = { latest };
+
+    const response = await sut.getAttention(admin);
+
+    expect(response.upgradeCheck).toEqual({
+      state: 'attention',
+      reason: 'upgrade-check-failed',
+      checkedAt: daysAgo(1),
+      fromVersion: '1.4.0',
+      toVersion: '1.4.1',
+    });
+    // not an attention item: nothing is added, no check changes, and the reasons stay as they were
+    expect(response.items).toEqual([]);
+    expect(response.checks.every((check) => check.state === 'ok')).toBe(true);
+    expect(ATTENTION_REASONS).not.toContain('upgrade-check-failed');
+
+    metadata[UPGRADE_FINGERPRINT_KEY] = { latest: { ...latest, state: 'ok', findings: [] } };
+    await expect(sut.getAttention(admin)).resolves.toMatchObject({ upgradeCheck: { state: 'ok', reason: null } });
+
+    mocks.metadata.get.mockImplementation((key: SystemMetadataKey) =>
+      key === UPGRADE_FINGERPRINT_KEY
+        ? Promise.reject(new Error('connection terminated'))
+        : Promise.resolve(metadata[key]),
+    );
+    await expect(sut.getAttention(admin)).resolves.toMatchObject({ upgradeCheck: { state: 'none', reason: null } });
   });
 
   it('counts the files Frameleaf could not process in a field of its own, never as a new kind or reason (FL-862)', async () => {
@@ -137,6 +179,28 @@ describe(AttentionService.name, () => {
     ]);
     expect(response.items).toEqual([]);
     expect(response.checks.every((check) => check.state === 'ok')).toBe(true);
+  });
+
+  it('counts the originals the ledger cannot account for in a field of its own, with no item or check (FL-921)', async () => {
+    const { sut, missing } = setup();
+    missing.push(
+      { ownerId: 'owner-1', count: 3, since: new Date('2026-11-10T02:00:00Z') },
+      { ownerId: 'owner-2', count: 1, since: new Date('2026-11-08T02:00:00Z') },
+    );
+
+    const response = await sut.getAttention(admin);
+    expect(response.unexplainedOriginals).toEqual({ count: 4, since: '2026-11-08T02:00:00.000Z' });
+    expect(response.items).toEqual([]);
+    expect(response.checks.every((check) => check.state === 'ok')).toBe(true);
+  });
+
+  it('still answers when the ledger cannot be read', async () => {
+    const { sut, mocks, ledger } = setup();
+    ledger.missingByOwner.mockRejectedValueOnce(new Error('connection terminated'));
+
+    const response = await sut.getAttention(admin);
+    expect(response.unexplainedOriginals).toEqual({ count: 0, since: null });
+    expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('cannot account for'));
   });
 
   it('still answers when the files it could not process cannot be counted', async () => {

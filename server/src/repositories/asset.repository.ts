@@ -47,6 +47,13 @@ import {
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
+import {
+  type AssetLedgerAddedVia,
+  type AssetLedgerReason,
+  recordLedgerAccountRemoved,
+  recordLedgerAdded,
+  recordLedgerRemoved,
+} from 'src/repositories/asset-ledger.repository.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -949,6 +956,9 @@ export class AssetRepository {
   /**
    * Creates an asset. With `lock` (FL-34, an upload into the Locked view) its lock record is written
    * in the same transaction, so the asset is never listed unlocked, not even for a moment.
+   *
+   * FL-921: its nothing-lost ledger row is written in that transaction too. Unless `addedVia` says
+   * otherwise, an asset of a library came from a scan and any other was uploaded by its owner.
    */
   async create(
     asset: Insertable<AssetTable>,
@@ -957,12 +967,15 @@ export class AssetRepository {
       lockedBy: string | null;
     },
     kysely?: Transaction<DB>,
+    addedVia?: AssetLedgerAddedVia,
   ) {
     const execute = async (tx: Kysely<DB>) => {
       const result = await tx.insertInto('asset').values(asset).returningAll().executeTakeFirstOrThrow();
       if (lock) {
         await this.lockIn(tx, [result.id], lock.reason, lock.lockedBy);
       }
+      const via = addedVia ?? (result.libraryId ? 'library-scan' : 'upload');
+      await recordLedgerAdded(tx, [result.id], via, via === 'upload' ? 'owner' : null);
       return result;
     };
     return kysely ? execute(kysely) : this.inTransaction(execute);
@@ -973,8 +986,11 @@ export class AssetRepository {
       return [];
     }
     return this.inTransaction(async (tx) => {
-      const ids = await tx.insertInto('asset').values(assets).returning('id').execute();
-      return ids.map(({ id }) => id);
+      const rows = await tx.insertInto('asset').values(assets).returning('id').execute();
+      const ids = rows.map(({ id }) => id);
+      // FL-921: one statement for the whole batch; this is the library scan's insert
+      await recordLedgerAdded(tx, ids, 'library-scan');
+      return ids;
     });
   }
   /**
@@ -1604,6 +1620,8 @@ export class AssetRepository {
         .where((eb) => eb.or([eb('ownerId', '=', asUuid(ownerId)), eb('primaryAssetId', '=', anyUuid(ids))]))
         .execute();
       await tx.deleteFrom('asset').where('ownerId', '=', ownerId).execute();
+      // FL-921: one statement for the whole account
+      await recordLedgerAccountRemoved(tx, ownerId);
       return assets.map(
         ({
           id,
@@ -2026,12 +2044,14 @@ export class AssetRepository {
       id: string;
     },
     release?: AssetFileRelease,
+    /** FL-921: who removed it and why, for the nothing-lost ledger, when the caller knows. */
+    ledger?: { by?: string | null; reason?: AssetLedgerReason },
   ): Promise<RemovedAsset | undefined> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.db
           .transaction()
-          .execute((tx) => this.removeOnce(tx, asset.id, release, attempt < REMOVE_ATTEMPTS));
+          .execute((tx) => this.removeOnce(tx, asset.id, release, attempt < REMOVE_ATTEMPTS, ledger));
       } catch (error) {
         if (!(error instanceof RemovalLocksChanged) || attempt >= REMOVE_ATTEMPTS) {
           throw error;
@@ -2044,6 +2064,7 @@ export class AssetRepository {
     id: string,
     release: AssetFileRelease | undefined,
     restartOnChange: boolean,
+    ledger?: { by?: string | null; reason?: AssetLedgerReason },
   ): Promise<RemovedAsset | undefined> {
     const lockedPaths = new Set<string>();
     const lockPaths = async (paths: string[]) => {
@@ -2104,6 +2125,8 @@ export class AssetRepository {
       .where('pathType', 'in', [...ASSET_MOVE_PATH_TYPES] as AssetMovePathType[])
       .execute();
     await tx.deleteFrom('asset').where('id', '=', asUuid(id)).execute();
+    // FL-921: the row and its ledger entry change together, so a removal is never read as a loss
+    await recordLedgerRemoved(tx, id, ledger);
     // the version and develop paths are the ones actually deleted, not the ones read beforehand
     const removed: RemovedAsset = {
       originalPath: lockedAsset.originalPath,
@@ -2540,6 +2563,133 @@ export class AssetRepository {
       .executeTakeFirst();
     return asset?.id;
   }
+
+  /**
+   * FL-813: the owner's skip list. Every item they permanently deleted since they turned "don't upload
+   * deleted items again" on, by its bytes, unless they allowed it again after that deletion or the library
+   * holds those bytes again (in the Trash included, so the FL-556 bring-back window and duplicate answers
+   * come first). Other owners' deletions never count.
+   */
+  private uploadSkips(ownerId: string, since: Date, { includeLocked = true } = {}) {
+    return (
+      this.db
+        .selectFrom('asset_backup_deletion as deletion')
+        .where('deletion.ownerId', '=', asUuid(ownerId))
+        .where('deletion.deletedAt', '>=', since)
+        .where('deletion.checksum', 'is not', null)
+        // a library folder's path digest is not the file's bytes
+        .where('deletion.checksumAlgorithm', 'in', ['sha256', 'sha1'])
+        .$if(!includeLocked, (qb) => qb.where('deletion.wasLocked', '=', false))
+        .where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('asset_upload_skip_exception as allowed')
+                .select(sql.lit(1).as('exists'))
+                .whereRef('allowed.ownerId', '=', 'deletion.ownerId')
+                .whereRef('allowed.checksum', '=', 'deletion.checksum')
+                .whereRef('allowed.createdAt', '>=', 'deletion.deletedAt'),
+            ),
+          ),
+        )
+        .where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('asset')
+                .select(sql.lit(1).as('exists'))
+                .whereRef('asset.ownerId', '=', 'deletion.ownerId')
+                .whereRef('asset.checksum', '=', 'deletion.checksum'),
+            ),
+          ),
+        )
+    );
+  }
+
+  /** FL-813: which of these bytes are on the owner's skip list. */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.BUFFER], DummyValue.DATE] })
+  async getUploadSkipped(ownerId: string, checksums: Buffer[], since: Date): Promise<Buffer[]> {
+    if (checksums.length === 0) {
+      return [];
+    }
+    const rows = await this.uploadSkips(ownerId, since)
+      .select('deletion.checksum')
+      .distinct()
+      .where('deletion.checksum', 'in', checksums)
+      .execute();
+    return rows.flatMap(({ checksum }) => (checksum ? [checksum] : []));
+  }
+
+  /**
+   * FL-813: a page of the owner's skip list, latest deletion first, one row per file. Items deleted while
+   * Locked are left out (and not counted) unless `includeLocked`.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.DATE, { limit: 50, offset: 0, includeLocked: false }] })
+  async getUploadSkipList(
+    ownerId: string,
+    since: Date,
+    { limit, offset, includeLocked }: { limit: number; offset: number; includeLocked: boolean },
+  ) {
+    const items = await this.uploadSkips(ownerId, since, { includeLocked })
+      .select((eb) => [
+        'deletion.checksum',
+        eb.fn.max('deletion.deletedAt').as('deletedAt'),
+        sql<boolean>`bool_or(deletion."wasLocked")`.as('wasLocked'),
+      ])
+      .groupBy('deletion.checksum')
+      .orderBy('deletedAt', 'desc')
+      .orderBy('deletion.checksum')
+      .limit(limit)
+      .offset(offset)
+      .execute();
+    const { total } = await this.uploadSkips(ownerId, since, { includeLocked })
+      .select(sql<string>`count(distinct deletion.checksum)`.as('total'))
+      .executeTakeFirstOrThrow();
+    return {
+      items: items.flatMap(({ checksum, deletedAt, wasLocked }) =>
+        checksum ? [{ checksum, deletedAt: new Date(deletedAt as unknown as string | Date), wasLocked }] : [],
+      ),
+      total: Number(total),
+    };
+  }
+
+  /**
+   * FL-813: "Allow again". Of these bytes, the ones on the owner's skip list may be uploaded again; anything
+   * else is ignored. Answers how many were allowed. The time is the clock's, not the transaction's, so it is
+   * never earlier than a deletion this statement saw.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.BUFFER], DummyValue.DATE, { includeLocked: false }] })
+  async allowUploadSkips(
+    ownerId: string,
+    checksums: Buffer[],
+    since: Date,
+    { includeLocked }: { includeLocked: boolean },
+  ): Promise<number> {
+    if (checksums.length === 0) {
+      return 0;
+    }
+    const rows = await this.db
+      .insertInto('asset_upload_skip_exception')
+      .columns(['ownerId', 'checksum', 'createdAt'])
+      .expression(
+        this.uploadSkips(ownerId, since, { includeLocked })
+          .select([
+            'deletion.ownerId',
+            sql<Buffer>`deletion.checksum`.as('checksum'),
+            sql<Date>`clock_timestamp()`.as('createdAt'),
+          ])
+          .where('deletion.checksum', 'in', checksums)
+          // one row per file, however often it was deleted
+          .groupBy(['deletion.ownerId', 'deletion.checksum']),
+      )
+      .onConflict((oc) =>
+        oc.columns(['ownerId', 'checksum']).doUpdateSet((eb) => ({ createdAt: eb.ref('excluded.createdAt') })),
+      )
+      .returning('checksum')
+      .execute();
+    return rows.length;
+  }
+
   /**
    * FL-1472: of these photos, the ones whose original is damaged and whose open finding asks for a re-upload.
    * An upload of their own bytes is not a duplicate: it takes the damaged file's place.

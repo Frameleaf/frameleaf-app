@@ -15,6 +15,7 @@ import { ArchiveOperationService } from 'src/services/archive-operation.service.
 import { AssetAnnotationService } from 'src/services/asset-annotation.service.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
+import { AssetLedgerService } from 'src/services/asset-ledger.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetPaletteService } from 'src/services/asset-palette.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
@@ -22,6 +23,7 @@ import { AssetSourceService } from 'src/services/asset-source.service.js';
 import { AssetUploadDirectService } from 'src/services/asset-upload-direct.service.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { AssistantActionService } from 'src/services/assistant-action.service.js';
 import { AssistantService } from 'src/services/assistant.service.js';
 import { AttentionService } from 'src/services/attention.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
@@ -204,6 +206,7 @@ import { TidyUpService } from 'src/services/tidy-up.service.js';
 import { TimelineService } from 'src/services/timeline.service.js';
 import { TranscodingService } from 'src/services/transcoding.service.js';
 import { TrashService } from 'src/services/trash.service.js';
+import { UpgradeCheckService } from 'src/services/upgrade-check.service.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { UtilitiesService } from 'src/services/utilities.service.js';
@@ -296,6 +299,7 @@ export const services = [
   ActivityService,
   AlbumService,
   AssistantService,
+  AssistantActionService,
   AlbumSuggestionService,
   ApiService,
   AssetDevelopService,
@@ -304,6 +308,7 @@ export const services = [
   AssetRestorationService,
   AssetService,
   AttentionService,
+  UpgradeCheckService,
   LibraryProgressService,
   OvernightService,
   AuthService,
@@ -383,6 +388,7 @@ export const services = [
   AlbumDateHealService,
   AlbumCleanupService,
   DateDoctorService,
+  AssetLedgerService,
   AlbumMergeService,
   SharedSpaceService,
   SmartAlbumService,

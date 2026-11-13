@@ -7,6 +7,7 @@
    * existing `?isOpen=` and `?open=oauth` links still land on it.
    */
   import ApiKeysSection from '$lib/components/frameleaf/access/ApiKeysSection.svelte';
+  import AccountActivity from '$lib/components/frameleaf/settings/security/AccountActivity.svelte';
   import ConnectedAppsSection from '$lib/components/frameleaf/access/ConnectedAppsSection.svelte';
   import DevicesSection from '$lib/components/frameleaf/access/DevicesSection.svelte';
   import FrameleafAccountSection from '$lib/components/frameleaf/access/FrameleafAccountSection.svelte';
@@ -75,6 +76,9 @@
 {:else if section === 'connected-apps'}
   <!-- FL-860: apps you allowed through OAuth (FL-803), and how to connect an AI assistant. -->
   <ConnectedAppsSection />
+{:else if section === 'account-activity'}
+  <!-- FL-824: your own sign-ins and account changes, newest first (FL-808). -->
+  <AccountActivity />
 {:else if section === 'download-settings'}
   <DownloadSettings />
 {:else if section === 'cloud-processing'}

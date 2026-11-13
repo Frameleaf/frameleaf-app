@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { newRequestKey } from '$lib/frameleaf/request-key';
   import type { VideoSettings } from '$lib/frameleaf/video-edit';
 
   /** Copy adjustments / Paste adjustments works across clips for the life of the page. */
@@ -181,7 +182,7 @@
 
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
   const round = (value: number, places = 2) => Math.round(value * 10 ** places) / 10 ** places;
-  const newId = () => crypto.randomUUID().slice(0, 8);
+  const newId = () => newRequestKey().slice(0, 8);
 
   /* Source and draft ------------------------------------------------------- */
   const playbackUrl = getAssetPlaybackUrl({ id: asset.id, cacheKey: asset.thumbhash, edited: false });

@@ -3220,6 +3220,12 @@ export enum AccountEventAction {
   AppDenied = 'app-denied',
   /** FL-803: an app used its access; written at most once an hour per app. `detail` is the scopes. */
   AppUsed = 'app-used',
+  /**
+   * FL-938: you confirmed a change Frameleaf Assistant proposed, or undid one. `subject` is the album
+   * or tags it wrote to (the account's name otherwise); `detail` is the kind of change and how many items.
+   */
+  AssistantActionApplied = 'assistant-action-applied',
+  AssistantActionUndone = 'assistant-action-undone',
 }
 
 /**

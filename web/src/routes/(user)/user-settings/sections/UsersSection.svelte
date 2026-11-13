@@ -7,7 +7,8 @@
    * Open ›) with "Add a person" on the list; then "Space for new people".
    *
    * One person (`?user=<id>`) opens in place of the list with "‹ Users" (`UserDetail`); "Add a person"
-   * (`?new=1`) is a page of its own (`AddPerson`, FL-516). The old `/admin/users` addresses only
+   * (`?new=1`) is a page of its own (`AddPerson`, FL-516). FL-824: "What's been happening" opens the
+   * household Activity log (`?show=activity`, with `&who=<id>` for one person) in place of the list. The old `/admin/users` addresses only
    * redirect here. Accounts being removed stay in the list, so they can still be opened and restored.
    *
    * "Space for new people" (FL-516) is one space every new account starts with, however it is made
@@ -33,6 +34,14 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import AddPerson from '$lib/components/frameleaf/settings/people/AddPerson.svelte';
   import SpacePicker from '$lib/components/frameleaf/settings/people/SpacePicker.svelte';
+  import HouseholdActivity from '$lib/components/frameleaf/settings/security/HouseholdActivity.svelte';
+  import {
+    ACTIVITY_KEPT_DAYS,
+    activityDay,
+    activityTime,
+    daysAgo,
+    type ActivityEvent,
+  } from '$lib/frameleaf/account-activity';
   import { gibWords, spaceWords } from '$lib/components/frameleaf/settings/people/space';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
@@ -49,13 +58,14 @@
   import { requestServerInfo } from '$lib/utils/auth';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import {
+    getAccountActivityAdmin,
     getServerStatistics,
     searchUsersAdmin,
     type UsageByUserDto,
     type UserAdminResponseDto,
   } from '@frameleaf/sdk';
   import { CommandPaletteDefaultProvider, Icon } from '@frameleaf/ui';
-  import { mdiAccountGroupOutline, mdiAccountPlusOutline, mdiChevronRight, mdiHarddisk } from '@mdi/js';
+  import { mdiAccountGroupOutline, mdiAccountPlusOutline, mdiChevronRight, mdiHarddisk, mdiHistory } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -64,6 +74,12 @@
   const selectedId = $derived(page.url.searchParams.get('user'));
   const selected = $derived(selectedId && UUID_REGEX.test(selectedId) ? selectedId : undefined);
   const creating = $derived(page.url.searchParams.get('new') === '1');
+  // FL-824: the household Activity log, for everyone or one person.
+  const showingLog = $derived(page.url.searchParams.get('show') === 'activity');
+  const logWhoId = $derived(page.url.searchParams.get('who'));
+  const logWho = $derived(logWhoId && UUID_REGEX.test(logWhoId) ? logWhoId : undefined);
+  /** The newest thing that happened on anyone's account, for the Activity log row; the list works without it. */
+  let latestActivity = $state<ActivityEvent | null>();
 
   let users: UserAdminResponseDto[] = $state([]);
   /** Everyone's photos and videos together, for "Space used"; the list works without it. */
@@ -110,6 +126,30 @@
       .catch(() => {
         // "Space used" is left out rather than failing the account list.
       });
+    void (async () => {
+      try {
+        const { events } = await getAccountActivityAdmin({ take: 1 });
+        latestActivity = events[0] ?? null;
+      } catch {
+        // The Activity log row says how long activity is kept instead.
+      }
+    })();
+  });
+
+  const latestActivityWords = $derived.by(() => {
+    if (!latestActivity) {
+      return;
+    }
+    const now = new Date();
+    const time = activityTime(latestActivity.createdAt, $locale);
+    const days = daysAgo(latestActivity.createdAt, now);
+    return days <= 0
+      ? $t('frameleaf_account_activity_log_row_latest_today', { values: { time } })
+      : days === 1
+        ? $t('frameleaf_account_activity_log_row_latest_yesterday', { values: { time } })
+        : $t('frameleaf_account_activity_log_row_latest_on', {
+            values: { day: activityDay($t, latestActivity.createdAt, now, $locale) },
+          });
   });
 
   const onUpdate = async (user: UserAdminResponseDto) => {
@@ -280,7 +320,7 @@
   // Opening a person or the Add page shows it from its top, wherever the list was scrolled to.
   let pageElement: HTMLElement | undefined = $state();
   $effect(() => {
-    if ((selected || creating) && pageElement) {
+    if ((selected || creating || showingLog) && pageElement) {
       pageElement.scrollIntoView?.({ block: 'start', behavior: motionScrollBehavior() });
     }
   });
@@ -369,6 +409,19 @@
       <UserDetail id={selected} />
     </div>
   {/key}
+{:else if showingLog}
+  <div class="person" bind:this={pageElement}>
+    <PageHeading
+      overline={$t('frameleaf_users_eyebrow')}
+      title={$t('frameleaf_account_activity_log_title')}
+      description={$t('frameleaf_account_activity_log_description')}
+      back={{ href: Route.users(), label: $t('frameleaf_settings_area_users') }}
+    />
+    <HouseholdActivity
+      who={logWho}
+      onWho={(who) => void goto(Route.activityLog({ who }), { replaceState: true, reset: false })}
+    />
+  </div>
 {:else if creating}
   <div class="person" bind:this={pageElement}>
     <PageHeading
@@ -407,6 +460,28 @@
           {/each}
         </ItemList>
       </Section>
+
+      <!-- FL-824: the household Activity log (prototype People.jsx "What's been happening"). -->
+      {#if !alone}
+        <Section title={$t('frameleaf_account_activity_log_section')}>
+          <ItemList>
+            <Item
+              icon={mdiHistory}
+              name={$t('frameleaf_account_activity_log_title')}
+              detail={$t('frameleaf_account_activity_log_row_detail')}
+              tone={latestActivityWords ? 'good' : 'off'}
+              status={latestActivityWords}
+              note={$t('frameleaf_account_activity_log_row_note', { values: { days: ACTIVITY_KEPT_DAYS } })}
+            >
+              {#snippet action()}
+                <Button label={$t('frameleaf_account_activity_log_open')} onclick={() => void goto(Route.activityLog())}
+                  >{$t('frameleaf_security_who_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
+                >
+              {/snippet}
+            </Item>
+          </ItemList>
+        </Section>
+      {/if}
 
       {#if settingsDraft}
         <Section title={$t('frameleaf_userpage_new_space_title')}>

@@ -437,14 +437,45 @@ describe(LibraryService.name, () => {
         ],
         truncated: false,
         readable: true,
+        nothingConnected: false,
         defaultExclusionPatterns: expect.arrayContaining(['**/.DS_Store', '**/@eaDir/**', '**/#recycle/**']),
       });
+    });
+
+    it('says nothing is connected only for an empty folder on the server’s own disk (FL-1495)', async () => {
+      const disks = (folder: number) =>
+        mocks.storage.stat.mockImplementation((path) => Promise.resolve({ dev: path === '/' ? 1 : folder } as never));
+
+      // /mnt before anything is connected: empty, and part of the server's own files
+      disks(1);
+      mocks.storage.readdirWithTypes.mockResolvedValue([]);
+      await expect(sut.browseFolders({ path: '/mnt' })).resolves.toMatchObject({ folders: [], nothingConnected: true });
+
+      // an empty folder inside a connected one is another disk: only empty
+      disks(2);
+      await expect(sut.browseFolders({ path: '/mnt/user/new' })).resolves.toMatchObject({
+        folders: [],
+        nothingConnected: false,
+      });
+
+      // files but no folders
+      disks(1);
+      mocks.storage.readdirWithTypes.mockResolvedValue([dirent('IMG_0001.jpg', false)]);
+      await expect(sut.browseFolders({ path: '/srv' })).resolves.toMatchObject({
+        folders: [],
+        nothingConnected: false,
+      });
+
+      // the disk cannot be told: say nothing about Manager
+      mocks.storage.readdirWithTypes.mockResolvedValue([]);
+      mocks.storage.stat.mockRejectedValue(new Error('EIO'));
+      await expect(sut.browseFolders({ path: '/mnt' })).resolves.toMatchObject({ nothingConnected: false });
     });
 
     it('starts at the top, says when a folder cannot be read, and refuses a relative path', async () => {
       mocks.storage.readdirWithTypes.mockRejectedValue(new Error('EACCES'));
       await expect(sut.browseFolders({})).resolves.toEqual(
-        expect.objectContaining({ path: '/', parent: null, readable: false, folders: [] }),
+        expect.objectContaining({ path: '/', parent: null, readable: false, nothingConnected: false, folders: [] }),
       );
       await expect(sut.browseFolders({ path: '/photos/../etc' })).rejects.toThrow();
       await expect(sut.browseFolders({ path: 'photos' })).rejects.toThrow();

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { newRequestKey } from '$lib/frameleaf/request-key';
   import { locale } from '$lib/stores/preferences.store';
   /**
    * iCloud Photos (FL-68), ported from the `ICloudPanel` of the design template's
@@ -250,7 +251,7 @@
     const choice = {
       enabled: weeklyEnabled,
       includeProtected: weeklyEnabled && weeklyProtected,
-      requestKey: crypto.randomUUID(),
+      requestKey: newRequestKey(),
     };
     const current = () =>
       weeklyMounted &&

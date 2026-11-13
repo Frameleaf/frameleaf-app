@@ -12,6 +12,7 @@ import {
 } from 'src/dtos/attention.dto.js';
 import { QueueName, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { AssetLedgerRepository } from 'src/repositories/asset-ledger.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -19,6 +20,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { upgradeCheckSummary } from 'src/services/upgrade-check.service.js';
 import { isNewerRelease } from 'src/services/version.service.js';
 import {
   type BackupPlaceFacts,
@@ -35,6 +37,7 @@ import { effectiveBackupSchedule } from 'src/utils/backup-sequence.js';
 import { getConfig } from 'src/utils/config.js';
 import { isValidDatabaseRoutineBackupName } from 'src/utils/database-backups.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { UPGRADE_FINGERPRINT_KEY, type UpgradeFingerprintState } from 'src/utils/library-fingerprint.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { quietHoursHolds } from 'src/utils/overnight.js';
 import { serverTimeZone } from 'src/utils/server-time-zone.js';
@@ -62,6 +65,7 @@ export class AttentionService {
     private buddyRepository: BuddyBackupRepository,
     private mediaHealthRepository: MediaHealthRepository,
     private assetJobRepository: AssetJobRepository,
+    private assetLedgerRepository: AssetLedgerRepository,
   ) {
     this.logger.setContext(AttentionService.name);
   }
@@ -77,7 +81,17 @@ export class AttentionService {
     const now = new Date();
     const config = await this.readConfig();
     // The three counts never throw (each has its own fallback), so they are read alongside the checks.
-    const [backup, storage, work, version, dismissed, fileProblems, processingFailures] = await Promise.all([
+    const [
+      backup,
+      storage,
+      work,
+      version,
+      dismissed,
+      fileProblems,
+      processingFailures,
+      unexplainedOriginals,
+      upgradeCheck,
+    ] = await Promise.all([
       this.check('backup', () => this.backup(config, now)),
       this.check('storage', () => this.storage(config)),
       this.check('work', () => this.work(config)),
@@ -85,6 +99,8 @@ export class AttentionService {
       this.dismissed(),
       this.fileProblems(auth),
       this.processingFailures(auth),
+      this.unexplainedOriginals(),
+      this.upgradeCheck(),
     ]);
     const results: Record<AttentionKind, SignalResult> = { backup, storage, work, version };
     return {
@@ -94,7 +110,23 @@ export class AttentionService {
       dismissed,
       fileProblems,
       processingFailures,
+      unexplainedOriginals,
+      upgradeCheck,
     };
+  }
+
+  /**
+   * FL-954: the library check after the last upgrade, in short. A field of its own, so the kinds and
+   * reasons native apps decode stay as they are. It adds no item and changes no check.
+   */
+  private async upgradeCheck(): Promise<AttentionResponseDto['upgradeCheck']> {
+    try {
+      const state = await this.systemMetadataRepository.get(UPGRADE_FINGERPRINT_KEY);
+      return upgradeCheckSummary(state as UpgradeFingerprintState | null);
+    } catch (error) {
+      this.logger.warn(`Could not read the library check after the last upgrade for what needs attention: ${error}`);
+      return upgradeCheckSummary(null);
+    }
   }
 
   /**
@@ -132,6 +164,26 @@ export class AttentionService {
     } catch (error) {
       this.logger.warn(`Could not count the files Frameleaf could not process for what needs attention: ${error}`);
       return { count: 0, setAside: 0 };
+    }
+  }
+
+  /**
+   * FL-921: originals that are gone with no record of a removal, from the nightly pass over the nothing-lost
+   * ledger. A count across every account, which names no file. It adds no item and changes no check.
+   */
+  private async unexplainedOriginals(): Promise<AttentionResponseDto['unexplainedOriginals']> {
+    try {
+      const owners = await this.assetLedgerRepository.missingByOwner();
+      return {
+        count: owners.reduce((sum, { count }) => sum + count, 0),
+        since:
+          owners.length === 0
+            ? null
+            : new Date(Math.min(...owners.map(({ since }) => new Date(since).getTime()))).toISOString(),
+      };
+    } catch (error) {
+      this.logger.warn(`Could not count the originals the ledger cannot account for: ${error}`);
+      return { count: 0, since: null };
     }
   }
 

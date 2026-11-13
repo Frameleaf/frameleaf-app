@@ -614,6 +614,18 @@
           "synchronize": true
         },
         {
+          "name": "asset_backup_deletion_ownerId_checksum_idx",
+          "definition": "CREATE INDEX \"asset_backup_deletion_ownerId_checksum_idx\" ON public.asset_backup_deletion USING btree (\"ownerId\", checksum)",
+          "tableName": "asset_backup_deletion",
+          "columnNames": [
+            "ownerId",
+            "checksum"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_backup_deletion_livePhotoVideoId_idx",
           "definition": "CREATE INDEX \"asset_backup_deletion_livePhotoVideoId_idx\" ON public.asset_backup_deletion USING btree (\"livePhotoVideoId\")",
           "tableName": "asset_backup_deletion",
@@ -52873,6 +52885,405 @@
           ],
           "onUpdate": "NO ACTION",
           "onDelete": "NO ACTION",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_upload_skip_exception",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_upload_skip_exception",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "checksum",
+          "tableName": "asset_upload_skip_exception",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_upload_skip_exception",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_upload_skip_exception_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", checksum)",
+          "tableName": "asset_upload_skip_exception",
+          "columnNames": [
+            "ownerId",
+            "checksum"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_upload_skip_exception_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_upload_skip_exception",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "assistant_action",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "assistant_action",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "assistant_action",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "question",
+          "tableName": "assistant_action",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "kind",
+          "tableName": "assistant_action",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "status",
+          "tableName": "assistant_action",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "plan",
+          "tableName": "assistant_action",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "mediaOperationId",
+          "tableName": "assistant_action",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "createdAlbumId",
+          "tableName": "assistant_action",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "before",
+          "tableName": "assistant_action",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "undo",
+          "tableName": "assistant_action",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "assistant_action",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "appliedAt",
+          "tableName": "assistant_action",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "undoneAt",
+          "tableName": "assistant_action",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "assistant_action_mediaOperationId_idx",
+          "definition": "CREATE INDEX \"assistant_action_mediaOperationId_idx\" ON public.assistant_action USING btree (\"mediaOperationId\")",
+          "tableName": "assistant_action",
+          "columnNames": [
+            "mediaOperationId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "assistant_action_userId_createdAt_idx",
+          "definition": "CREATE INDEX \"assistant_action_userId_createdAt_idx\" ON public.assistant_action USING btree (\"userId\", \"createdAt\")",
+          "tableName": "assistant_action",
+          "columnNames": [
+            "userId",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "assistant_action_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "assistant_action",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "assistant_action_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "assistant_action",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "assistant_action_mediaOperationId_fkey",
+          "definition": "FOREIGN KEY (\"mediaOperationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "assistant_action",
+          "columnNames": [
+            "mediaOperationId"
+          ],
+          "referenceTableName": "media_operation",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_ledger",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_ledger",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_ledger",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "checksum",
+          "tableName": "asset_ledger",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "originalFileName",
+          "tableName": "asset_ledger",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "addedAt",
+          "tableName": "asset_ledger",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "addedVia",
+          "tableName": "asset_ledger",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "state",
+          "tableName": "asset_ledger",
+          "nullable": false,
+          "isArray": false,
+          "default": "'kept'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "stateAt",
+          "tableName": "asset_ledger",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "stateBy",
+          "tableName": "asset_ledger",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "reason",
+          "tableName": "asset_ledger",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_ledger_missing_idx",
+          "definition": "CREATE INDEX asset_ledger_missing_idx ON public.asset_ledger USING btree (\"ownerId\") WHERE (state = 'missing'::text)",
+          "tableName": "asset_ledger",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "where": "(state = 'missing'::text)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_ledger_owner_state_idx",
+          "definition": "CREATE INDEX asset_ledger_owner_state_idx ON public.asset_ledger USING btree (\"ownerId\", state, \"stateAt\", \"assetId\")",
+          "tableName": "asset_ledger",
+          "columnNames": [
+            "ownerId",
+            "state",
+            "stateAt",
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_ledger_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "asset_ledger",
+          "columnNames": [
+            "assetId"
+          ],
           "synchronize": true
         }
       ],

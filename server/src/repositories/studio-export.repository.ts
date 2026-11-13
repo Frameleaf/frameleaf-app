@@ -17,6 +17,7 @@ import {
   StudioExportVersionState,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { recordLedgerAdded } from 'src/repositories/asset-ledger.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DerivativePrivacyRepository, LockedSourceRow } from 'src/repositories/derivative-privacy.repository.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
@@ -1290,6 +1291,7 @@ export class StudioExportRepository {
         visibility: AssetVisibility.Timeline,
       })
       .execute();
+    await recordLedgerAdded(tx, [assetId], 'studio', 'owner');
     await tx.insertInto('asset_exif').values({ assetId, fileSizeInByte: input.sizeInBytes }).execute();
     await this.privacy.install(tx, assetId, privacy);
     return assetId;

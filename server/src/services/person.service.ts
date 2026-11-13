@@ -1759,8 +1759,10 @@ export class PersonService extends BaseService {
       }
 
       if (!face.faceSearch?.embedding) {
-        this.logger.warn(`Face ${id} does not have an embedding`);
-        return JobStatus.Failed;
+        // An imported face has no embedding until detection finds it again. There is nothing to
+        // recognise yet, and nothing went wrong: the nightly run picks the face up once it has one.
+        this.logger.debug(`Face ${id} has no embedding yet, skipping`);
+        return JobStatus.Skipped;
       }
 
       if (face.personGroupId && !force) {

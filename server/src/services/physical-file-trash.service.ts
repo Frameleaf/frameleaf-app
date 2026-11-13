@@ -165,6 +165,7 @@ export class PhysicalFileTrashService extends BaseService {
             },
             current.wasLocked === false ? undefined : { reason: AssetLockReason.Marked, lockedBy: owner.id },
             trx,
+            'recovered',
           );
           await this.assetRepository.upsertExif(
             {

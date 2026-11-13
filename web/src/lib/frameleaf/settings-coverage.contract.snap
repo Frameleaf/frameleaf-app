@@ -1172,6 +1172,9 @@
       "amber"
     ]
   },
+  "preferences.backup.skipDeleted.enabled": {
+    "type": "boolean"
+  },
   "preferences.cast.adminDisabled": {
     "type": "boolean"
   },

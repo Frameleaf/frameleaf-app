@@ -1,6 +1,7 @@
 import { cancelAssetDevelopRender, getAssetDevelop, saveAssetDevelop } from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
+import { newRequestKey } from '$lib/frameleaf/request-key';
 import { initialNativeRecipe, isNativeRecipe, proposeNativeMask, type NativeRecipe } from './native-develop';
 
 export const NATIVE_SYNC_FIELDS = [
@@ -81,7 +82,7 @@ export async function syncNativeRecipes(
             throw new Error(get(t)('frameleaf_photography_sync_brush_masks'));
           }
           const mask = clone(original);
-          mask.id = crypto.randomUUID();
+          mask.id = newRequestKey();
           if (['subject', 'sky', 'background'].includes(mask.kind)) {
             const artifact = await proposeNativeMask(assetId, mask.kind === 'sky' ? 'sky' : 'subject', options.signal);
             mask.artifact = artifact.id;

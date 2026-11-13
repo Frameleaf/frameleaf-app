@@ -1,4 +1,5 @@
 <script module lang="ts">
+  import { newRequestKey } from '$lib/frameleaf/request-key';
   import { TOAST_ACTION_TIMEOUT_MS, toastUndo } from '$lib/frameleaf/toast';
 
   type Tags = import('$lib/frameleaf/face-tags').DraftFace[];
@@ -431,7 +432,7 @@
       return;
     }
     const next: DraftFace = {
-      id: `${NEW_FACE}${crypto.randomUUID()}`,
+      id: `${NEW_FACE}${newRequestKey()}`,
       personId: '',
       box,
       stored: false,
@@ -560,7 +561,7 @@
           : $t('frameleaf_face_tagger_error_name', { values: { max: MAX_PERSON_NAME } });
       return;
     }
-    const person = { id: `${NEW_PERSON}${crypto.randomUUID()}`, name: result.name };
+    const person = { id: `${NEW_PERSON}${newRequestKey()}`, name: result.name };
     addedPeople = [...addedPeople, person];
     choose(person);
     newName = '';

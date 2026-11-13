@@ -203,6 +203,13 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     trash: {
       reuploadUntil: '',
     },
+    // FL-813: off until the person asks for it
+    backup: {
+      skipDeleted: {
+        enabled: false,
+        since: '',
+      },
+    },
     cast: {
       gCastEnabled: false,
       adminDisabled: false,
@@ -317,12 +324,14 @@ export const restrictPreferencesUpdate = (
   // account owner's private choices.
   // FL-556: so is letting uploads bring photos back from the Trash.
   // FL-1484: and whether their photos may use Frameleaf Cloud.
+  // FL-813: and whether what they deleted may be uploaded again.
   const {
     privacy: _privacy,
     savedSearches: _savedSearches,
     lockedPin: _lockedPin,
     trash: _trash,
     cloudProcessing: _cloudProcessing,
+    backup: _backup,
     ...ownerOnly
   } = dto;
   const allowed =
@@ -331,7 +340,8 @@ export const restrictPreferencesUpdate = (
       dto.savedSearches !== undefined ||
       dto.lockedPin !== undefined ||
       dto.trash !== undefined ||
-      dto.cloudProcessing !== undefined)
+      dto.cloudProcessing !== undefined ||
+      dto.backup !== undefined)
       ? ownerOnly
       : dto;
 
@@ -414,6 +424,7 @@ export const mergePreferences = (
       throw new BadRequestException('Saved search names must be unique, including any kept Locked');
     }
   }
+  const skippedDeleted = { ...preferences.backup.skipDeleted };
   for (const key of getKeysDeep(update)) {
     set(preferences, key, get(update, key));
   }
@@ -422,8 +433,28 @@ export const mergePreferences = (
   if (Date.parse(preferences.trash.reuploadUntil) > latest) {
     preferences.trash.reuploadUntil = new Date(latest).toISOString();
   }
+  // FL-813: the server keeps the time it was turned on, so turning it on never reaches back to earlier
+  // deletions, and turning it off and on again starts afresh.
+  const skipDeleted = preferences.backup.skipDeleted;
+  if (!skipDeleted.enabled) {
+    skipDeleted.since = '';
+  } else if (!skippedDeleted.enabled || Number.isNaN(Date.parse(skippedDeleted.since))) {
+    skipDeleted.since = new Date().toISOString();
+  } else {
+    skipDeleted.since = skippedDeleted.since;
+  }
 
   return preferences;
+};
+
+/**
+ * FL-813: the time from which this account's permanent deletions keep their bytes from being uploaded
+ * again, or undefined while the account has not asked for that.
+ */
+export const uploadSkipSince = (preferences: Pick<UserPreferences, 'backup'>): Date | undefined => {
+  const { enabled, since } = preferences.backup.skipDeleted;
+  const time = Date.parse(since);
+  return enabled && !Number.isNaN(time) ? new Date(time) : undefined;
 };
 
 /** FL-556: how long uploads may bring photos back from the Trash once an account allows it. */

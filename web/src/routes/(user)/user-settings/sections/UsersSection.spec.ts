@@ -1,4 +1,9 @@
-import { getServerStatistics, searchUsersAdmin, type UserAdminResponseDto } from '@frameleaf/sdk';
+import {
+  getAccountActivityAdmin,
+  getServerStatistics,
+  searchUsersAdmin,
+  type UserAdminResponseDto,
+} from '@frameleaf/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -29,6 +34,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   searchUsersAdmin: vi.fn(),
   getServerStatistics: vi.fn(),
+  getAccountActivityAdmin: vi.fn(),
 }));
 vi.mock('./UserDetail.svelte', async () => ({
   default: (await import('../../../../test-data/components/MockText.svelte')).default,
@@ -58,6 +64,7 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
   beforeEach(() => {
     vi.mocked(searchUsersAdmin).mockResolvedValue([] as UserAdminResponseDto[]);
     vi.mocked(getServerStatistics).mockResolvedValue({ photos: 0, videos: 0, usage: 0, usageByUser: [] } as never);
+    vi.mocked(getAccountActivityAdmin).mockResolvedValue({ events: [], hasMore: false });
     state.goto.mockReset().mockResolvedValue(undefined);
     Element.prototype.scrollIntoView = vi.fn();
   });
@@ -122,6 +129,74 @@ describe('Users manager (FL-71, AccountsLibraries.jsx)', () => {
     expect(screen.queryByRole('heading', { level: 1, name: 'Users' })).toBeNull();
     await waitFor(() =>
       expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' }),
+    );
+  });
+
+  it('links the household Activity log with the latest thing that happened (FL-824)', async () => {
+    state.url = new URL('http://localhost/user-settings?area=users&section=accounts');
+    vi.mocked(searchUsersAdmin).mockResolvedValue([
+      person({}),
+      person({ id: 'b1', name: 'Taylor', email: 'taylor@example.test', isAdmin: true }),
+    ]);
+    vi.mocked(getAccountActivityAdmin).mockResolvedValue({
+      events: [{ id: 'e1', action: 'signed-in', source: 'account', userId: id, createdAt: new Date().toISOString() }],
+      hasMore: false,
+    } as never);
+    render(UsersSection);
+
+    expect(await screen.findByRole('heading', { name: 'What’s been happening' })).toBeInTheDocument();
+    expect(screen.getByText('Activity log')).toBeInTheDocument();
+    expect(await screen.findByText(/^Latest: today, /)).toBeInTheDocument();
+    expect(screen.getByText('Kept for 400 days')).toBeInTheDocument();
+    expect(getAccountActivityAdmin).toHaveBeenCalledWith({ take: 1 });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open Activity log' }));
+    expect(state.goto).toHaveBeenLastCalledWith('/user-settings?area=users&section=accounts&show=activity');
+  });
+
+  it('opens the Activity log in place of the list, for everyone or one person (FL-824)', async () => {
+    state.url = new URL(`http://localhost/user-settings?area=users&section=accounts&show=activity&who=${id}`);
+    vi.mocked(searchUsersAdmin).mockResolvedValue([
+      person({}),
+      person({ id: 'b1', name: 'Taylor', email: 'taylor@example.test', isAdmin: true }),
+    ]);
+    vi.mocked(getAccountActivityAdmin).mockResolvedValue({
+      events: [
+        {
+          id: 'e1',
+          action: 'password-changed',
+          source: 'account',
+          userId: id,
+          subject: 'Jamie',
+          detail: null,
+          deviceType: null,
+          deviceOS: null,
+          via: null,
+          actorId: null,
+          actorName: null,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      hasMore: false,
+    } as never);
+    render(UsersSection);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Activity log' })).toBeInTheDocument();
+    expect(
+      screen.getByText('What has happened on everyone’s accounts. Only administrators see this page.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute(
+      'href',
+      '/user-settings?area=users&section=accounts',
+    );
+    expect(await screen.findByText('Jamie changed their password')).toBeInTheDocument();
+    expect(getAccountActivityAdmin).toHaveBeenCalledWith({ before: undefined, take: 50, userId: id });
+    expect(screen.getByRole('combobox', { name: 'Whose activity' })).toHaveValue(id);
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Whose activity' }), 'everyone');
+    expect(state.goto).toHaveBeenLastCalledWith(
+      '/user-settings?area=users&section=accounts&show=activity',
+      expect.objectContaining({ replaceState: true }),
     );
   });
 

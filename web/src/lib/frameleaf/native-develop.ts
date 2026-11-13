@@ -1,6 +1,7 @@
 import { defaults, getBaseUrl, type AssetDevelopRecipeDto } from '@frameleaf/sdk';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
+import { newRequestKey } from '$lib/frameleaf/request-key';
 
 export type NativeTone = {
   exposureEV: number;
@@ -58,7 +59,7 @@ export const nativePreset = (recipe: NativeRecipe): NativeRecipe => {
   return { ...adjustments, masks: recipe.masks?.filter((mask) => mask.kind === 'radial' || mask.kind === 'linear') };
 };
 export const newNativeMask = (kind: NativeMask['kind'], artifact?: string): NativeMask => ({
-  id: crypto.randomUUID(),
+  id: newRequestKey(),
   name: null,
   kind,
   coordinates: 'sensor-active',

@@ -79,6 +79,7 @@ import {
   AssetHealthTable,
 } from 'src/schema/tables/asset-health.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
+import { AssetLedgerTable } from 'src/schema/tables/asset-ledger.table.js';
 import {
   AssetLocalEffectCursorTable,
   AssetLocalEffectStreamTable,
@@ -96,9 +97,11 @@ import { AssetProcessingFailureTable } from 'src/schema/tables/asset-processing-
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
+import { AssetUploadSkipExceptionTable } from 'src/schema/tables/asset-upload-skip-exception.table.js';
 import { AssetVideoFingerprintTable } from 'src/schema/tables/asset-video-fingerprint.table.js';
 import { AssetViewTable } from 'src/schema/tables/asset-view.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { AssistantActionTable } from 'src/schema/tables/assistant-action.table.js';
 import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
 import { BackupRestoreReportTable } from 'src/schema/tables/backup-restore-report.table.js';
 import { BookmarkTagTable } from 'src/schema/tables/bookmark-tag.table.js';
@@ -358,6 +361,7 @@ export class ImmichDatabase {
     PushDeviceTable,
     PushDeviceActivityTable,
     AssetBackupDeletionTable,
+    AssetUploadSkipExceptionTable,
     BackupReconciliationTable,
     AssetPaletteTable,
     AssetPaletteSwatchTable,
@@ -380,9 +384,11 @@ export class ImmichDatabase {
     AssetDateFindingTable,
     DateFixBatchTable,
     DateFixItemTable,
+    AssetLedgerTable,
     BookmarkTagTable,
     AssetSourceTable,
     AccountEventTable,
+    AssistantActionTable,
     ActivityTable,
     AdminAuditEventTable,
     AlbumAssetTable,
@@ -639,10 +645,12 @@ export interface DB extends QueueDatabase {
   icloud_edit_decision: ICloudEditDecisionTable;
   backup_device: BackupDeviceTable;
   asset_backup_deletion: AssetBackupDeletionTable;
+  asset_upload_skip_exception: AssetUploadSkipExceptionTable;
   backup_reconciliation: BackupReconciliationTable;
   frameleaf_migrations: { timestamp: string; name: string };
 
   account_event: AccountEventTable;
+  assistant_action: AssistantActionTable;
   activity: ActivityTable;
   admin_audit_event: AdminAuditEventTable;
 
@@ -712,6 +720,7 @@ export interface DB extends QueueDatabase {
   asset_date_finding: AssetDateFindingTable;
   date_fix_batch: DateFixBatchTable;
   date_fix_item: DateFixItemTable;
+  asset_ledger: AssetLedgerTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;

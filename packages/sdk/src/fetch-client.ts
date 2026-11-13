@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.2.18
+ * 1.2.19
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -158,6 +158,23 @@ export type AttentionProcessingFailuresDto = {
     /** Of those, files set aside after repeated tries; they are not tried again by themselves */
     setAside: number;
 };
+export type AttentionUnexplainedOriginalsDto = {
+    /** Originals that are gone with no record of a removal, across every account */
+    count: number;
+    /** When the first of them was found missing, or null when there are none */
+    since: string | null;
+};
+export type UpgradeCheckSummaryDto = {
+    /** When the check ran */
+    checkedAt: string | null;
+    /** The version before the upgrade */
+    fromVersion: string | null;
+    /** Set when the state is attention */
+    reason: (UpgradeCheckReason) | null;
+    state: UpgradeCheckState;
+    /** The version the upgrade installed */
+    toVersion: string | null;
+};
 export type AttentionResponseDto = {
     /** When the checks were made */
     checkedAt: string;
@@ -171,6 +188,10 @@ export type AttentionResponseDto = {
     items: AttentionItemDto[];
     /** FL-862: photos and videos Frameleaf could not process that still wait on a decision, for the files the reader may see. They add no item and change no check. */
     processingFailures: AttentionProcessingFailuresDto;
+    /** FL-921: originals the nothing-lost ledger cannot account for. Only a count: no file is named. They add no item and change no check. */
+    unexplainedOriginals: AttentionUnexplainedOriginalsDto;
+    /** FL-954: how the library check after the last upgrade came out. A field of its own: it adds no item and changes no check. */
+    upgradeCheck: UpgradeCheckSummaryDto;
 };
 export type AttentionDismissDto = {
     /** True dismisses it; false brings it back */
@@ -2865,6 +2886,33 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
+export type AssetLedgerMissingOwnerDto = {
+    /** Originals of that account that are missing */
+    count: number;
+    /** The account the originals belonged to */
+    ownerId: string;
+    /** When the first of them was found missing */
+    since: string;
+};
+export type AssetLedgerCountsDto = {
+    /** Originals in the library */
+    kept: number;
+    /** Originals that share an identical file; their own copy went to Unused files */
+    merged: number;
+    /** Originals that are gone with no record of a removal */
+    missing: number;
+    /** Originals somebody removed, or whose time in the Trash ran out */
+    removed: number;
+    /** Originals in the Trash */
+    trashed: number;
+};
+export type AssetLedgerAdminSummaryResponseDto = {
+    /** The accounts with originals the server cannot account for, most first. No file is named. */
+    missingByOwner: AssetLedgerMissingOwnerDto[];
+    states: AssetLedgerCountsDto;
+    /** Every original the server has accepted, for every account */
+    total: number;
+};
 export type LibraryFolderEntryDto = {
     name: string;
     path: string;
@@ -2874,6 +2922,8 @@ export type LibraryFolderBrowseResponseDto = {
     defaultExclusionPatterns: string[];
     /** Its folders, sorted by name; hidden, system and NAS folders are left out */
     folders: LibraryFolderEntryDto[];
+    /** Whether nothing is connected here: the folder holds nothing at all and is on the server’s own disk */
+    nothingConnected: boolean;
     /** The folder above it; null at the top */
     parent: string | null;
     /** The folder that was listed */
@@ -3928,6 +3978,48 @@ export type TrashEveryoneResponseDto = {
     /** Whether the trash is on */
     trashEnabled: boolean;
 };
+export type UpgradeCheckCountDto = {
+    /** Rows now */
+    after: number | null;
+    /** Rows before the upgrade; null when it was not there */
+    before: number | null;
+    /** What was counted, for example asset or person */
+    name: string;
+};
+export type UpgradeCheckFindingDto = {
+    /** Photos and videos now; null for a drive that is not mounted */
+    after: number | null;
+    /** When the newest photo was added, now */
+    afterAt: string | null;
+    /** Photos and videos before the upgrade: in the library, in the folder, or on the drive */
+    before: number | null;
+    /** When the newest photo was added, before the upgrade */
+    beforeAt: string | null;
+    /** The external library the folder belongs to, when it is one */
+    name: string | null;
+    /** The folder of the drive, or the folder that is empty now */
+    path: string | null;
+    reason: UpgradeCheckFindingReason;
+};
+export type UpgradeCheckResponseDto = {
+    /** Photos and videos after it */
+    assetsAfter: number | null;
+    /** Photos and videos before the upgrade */
+    assetsBefore: number | null;
+    /** When the check ran */
+    checkedAt: string | null;
+    /** Row counts of the key tables, before and after */
+    counts: UpgradeCheckCountDto[];
+    /** Each difference found, a drive that is not mounted first */
+    findings: UpgradeCheckFindingDto[];
+    /** The version before the upgrade */
+    fromVersion: string | null;
+    /** Set when the state is attention */
+    reason: (UpgradeCheckReason) | null;
+    state: UpgradeCheckState;
+    /** The version the upgrade installed */
+    toVersion: string | null;
+};
 export type UserLicense = {
     /** Activation date */
     activatedAt: string;
@@ -4085,6 +4177,15 @@ export type AlbumsResponse = {
     defaultAssetOrder: AssetOrder;
     /** Whether albums a partner shared appear in the album list */
     showPartnerAlbums: boolean;
+};
+export type BackupSkipDeletedResponse = {
+    /** Whether photos and videos you permanently delete are refused when uploaded again */
+    enabled: boolean;
+    /** When it was turned on; only items deleted from then on are refused (null while off) */
+    since: string | null;
+};
+export type BackupPreferencesResponse = {
+    skipDeleted: BackupSkipDeletedResponse;
 };
 export type CastResponse = {
     /** Whether an administrator has turned casting off for this user */
@@ -4247,6 +4348,7 @@ export type TrashPreferencesResponse = {
 };
 export type UserPreferencesResponseDto = {
     albums: AlbumsResponse;
+    backup?: BackupPreferencesResponse;
     cast: CastResponse;
     clients?: ClientsResponse;
     cloudProcessing?: CloudProcessingResponse;
@@ -4290,6 +4392,13 @@ export type AlbumsUpdate = {
 };
 export type AvatarUpdate = {
     color?: UserAvatarColor;
+};
+export type BackupSkipDeletedUpdate = {
+    /** Whether photos and videos you permanently delete from now on are refused when a phone or app uploads them again */
+    enabled?: boolean;
+};
+export type BackupPreferencesUpdate = {
+    skipDeleted?: BackupSkipDeletedUpdate;
 };
 export type CastUpdate = {
     /** Administrator only: turn casting off for this user. Accepted only by the admin user preferences endpoint; ignored when a user updates their own preferences */
@@ -4445,6 +4554,7 @@ export type TrashPreferencesUpdate = {
 export type UserPreferencesUpdateDto = {
     albums?: AlbumsUpdate;
     avatar?: AvatarUpdate;
+    backup?: BackupPreferencesUpdate;
     cast?: CastUpdate;
     clients?: ClientsUpdate;
     cloudProcessing?: CloudProcessingUpdate;
@@ -6240,6 +6350,8 @@ export type AssetBulkUploadCheckResult = {
     action: AssetUploadAction;
     /** Existing asset ID if duplicate */
     assetId?: string;
+    /** True when the account permanently deleted this item and asked for deleted items not to be uploaded again: an upload would be refused with 409 deleted_by_owner. Sent with action reject and no reason */
+    deletedByOwner?: boolean;
     /** Client-side identifier echoed from the request to match results to inputs */
     id: string;
     /** Whether existing asset is trashed */
@@ -7328,6 +7440,96 @@ export type AssetWaveformResponseDto = {
     hasAudio: boolean;
     /** Changes whenever the video changes */
     version: string;
+};
+export type AssistantActionSkippedDto = {
+    /** How many items */
+    count: number;
+    /** Why items were left out: `not_found` (not yours, in the trash or gone), `locked` (Locked or hidden by a Locked rule), `already_done`, `kept` (the best of a burst), `not_in_burst`, `not_scored`, `not_applied` (the change never reached it), `changed_since` (changed after the change was applied) or `album_gone`. Plain string; new reasons may appear */
+    reason: string;
+    /** A few of them */
+    sampleAssetIds: string[];
+};
+export type AssistantActionUndoDto = {
+    /** The album the change made was removed, because nothing else had changed in it */
+    albumRemoved: boolean;
+    /** The background jobs putting the items back */
+    mediaOperationIds: string[];
+    /** How many items are being put back exactly as they were */
+    restored: number;
+    /** What undo left alone, and why */
+    skipped: AssistantActionSkippedDto[];
+    /** Tags the change made that were removed again */
+    tagsRemoved: string[];
+};
+export type AssistantActionResponseDto = {
+    /** The album written to; null until a new album is made */
+    albumId: string | null;
+    /** The name of the album written to */
+    albumName: string | null;
+    /** When it was confirmed */
+    appliedAt: string | null;
+    /** `cull`: how many bursts are thinned out */
+    bursts: number | null;
+    /** Whether it can be undone now */
+    canUndo: boolean;
+    /** When it was proposed */
+    createdAt: string;
+    /** Action ID */
+    id: string;
+    /** `cull`: a few of the frames that are kept */
+    keptAssetIds: string[];
+    /** `create_album`, `add_to_album`, `tag`, `favourite` or `cull`. Plain string; new kinds may appear */
+    kind: string;
+    /** The background job applying the change */
+    mediaOperationId: string | null;
+    /** The question the change came from */
+    question: string | null;
+    /** A few of the items the change covers */
+    sampleAssetIds: string[];
+    /** Items that were asked for and left out, and why */
+    skipped: AssistantActionSkippedDto[];
+    /** `proposed`, `applied`, `undone` or `expired`. Plain string; new values may appear */
+    status: string;
+    /** The tags written */
+    tags: string[];
+    /** How many items the change covers */
+    total: number;
+    /** What undo did, once it was undone */
+    undo: (AssistantActionUndoDto) | null;
+    /** Until when it can be undone */
+    undoExpiresAt: string | null;
+    /** When it was undone */
+    undoneAt: string | null;
+};
+export type AssistantActionListResponseDto = {
+    /** Newest first */
+    actions: AssistantActionResponseDto[];
+    /** Whether an older page exists */
+    hasMore: boolean;
+};
+export type AssistantActionArgumentsDto = {
+    /** `add_to_album`: the album, by name */
+    album?: string;
+    /** `add_to_album`: the album, by id, in place of its name */
+    albumId?: string;
+    /** `create_album`: its description */
+    description?: string;
+    /** `create_album`: the name of the new album */
+    name?: string;
+    /** `tag`: the tags, by name. A name no tag has yet becomes a new tag when the change is confirmed */
+    tags?: string[];
+};
+export type AssistantActionProposeDto = {
+    arguments?: AssistantActionArgumentsDto;
+    /** The items the person is looking at. The set is frozen here and never re-resolved */
+    assetIds: string[];
+    /** The question the change came from, as typed */
+    question?: string;
+    tool: AssistantActionTool;
+};
+export type AssistantActionApplyDto = {
+    /** The person confirmed the proposal. Must be true */
+    confirm: true;
 };
 export type AssistantAskDto = {
     /** Language of the question */
@@ -20399,6 +20601,36 @@ export type CloudBackupOwnerSetupResponseDto = {
     nextRunAt: string | null;
     target: CloudBackupTargetSetting;
 };
+export type AssetLedgerItemDto = {
+    /** When the server accepted it */
+    addedAt: string;
+    /** How it arrived, for example upload, library-scan, import, partner-copy, studio, recovered or unknown. More may be added. */
+    addedVia: string;
+    /** The id the original had, or has, in the library */
+    assetId: string;
+    /** Its content checksum, base64 */
+    checksum: string;
+    /** Its file name */
+    originalFileName: string;
+    /** Why, when there is a reason, for example deleted, trash-expired, library-removed, account-removed, identical-file, not-found or found. More may be added. */
+    reason: string | null;
+    state: AssetLedgerState;
+    /** When it came to be in this state */
+    stateAt: string;
+    /** The account that put it there; null when Frameleaf did */
+    stateBy: string | null;
+};
+export type AssetLedgerListResponseDto = {
+    /** The newest change first */
+    items: AssetLedgerItemDto[];
+    /** Pass as cursor for the next page; null on the last page */
+    nextCursor: string | null;
+};
+export type AssetLedgerSummaryResponseDto = {
+    states: AssetLedgerCountsDto;
+    /** Every original the server has accepted for this account */
+    total: number;
+};
 export type LocationScanBillingDto = {
     chargedMicros: number | null;
     checkedPhotos: number;
@@ -20620,6 +20852,30 @@ export type LockedRulesCountResponseDto = {
     photos: number;
     /** Your videos the draft would keep Locked */
     videos: number;
+};
+export type UploadSkipItemDto = {
+    /** The deleted file, as the hex digest of its bytes (SHA-256; SHA-1 for items stored before it) */
+    checksum: string;
+    /** When it was last permanently deleted */
+    deletedAt: string;
+    /** Whether it was Locked when it was deleted */
+    wasLocked: boolean;
+};
+export type UploadSkipListResponseDto = {
+    /** Whether deleted items are refused when uploaded again */
+    enabled: boolean;
+    /** This page of the list, latest deletion first */
+    items: UploadSkipItemDto[];
+    /** How many items the whole list holds for this session */
+    total: number;
+};
+export type UploadSkipAllowDto = {
+    /** Items from the list to allow again, by checksum */
+    checksums: string[];
+};
+export type UploadSkipAllowResponseDto = {
+    /** How many of them were on the list and may now be uploaded again */
+    allowed: number;
 };
 export type CreateProfileImageDto = {
     /** ID of the photo the image was copied from, if any. A Locked photo is refused. */
@@ -21066,6 +21322,14 @@ export type AssetFilmstripSpriteOptionsDto = {
     /** The `version` from the filmstrip index. When given and the video changed since, 404 is returned */
     version?: string;
 };
+export type AssetLedgerQueryDto = {
+    /** The nextCursor of the previous page */
+    cursor?: string;
+    /** Items per page */
+    size?: number;
+    /** Only originals in this state */
+    state?: AssetLedgerState;
+};
 export type AssetMediaOptionsDto = {
     /** Cache version: the asset's current thumbhash. A matching thumbnail is served as immutable. */
     c?: string;
@@ -21112,6 +21376,12 @@ export type AssetWaveformOptionsDto = {
     /** Peak pairs to return per channel (default 1000); fewer are returned for very short audio */
     buckets?: number;
     channels?: AssetWaveformChannelMode;
+};
+export type AssistantActionSearchDto = {
+    /** The id of the last action of the previous page */
+    before?: string;
+    /** At most this many actions */
+    take?: number;
 };
 export type BackupDevicePageDto = {
     limit?: number;
@@ -23002,6 +23272,12 @@ export type TrashItemsDto = {
     size?: number;
     sort?: TrashItemSort;
     "type"?: AssetTypeEnum;
+};
+export type UploadSkipListDto = {
+    /** Items per page */
+    limit?: number;
+    /** Items to pass over, latest deletion first */
+    offset?: number;
 };
 export type UserAdminSearchDto = {
     /** User ID filter */
@@ -24903,6 +25179,17 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get the server’s nothing-lost totals
+ */
+export function getLedgerAdminSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetLedgerAdminSummaryResponseDto;
+    }>("/admin/ledger/summary", {
+        ...opts
+    }));
+}
+/**
  * Browse folders on the server
  */
 export function browseLibraryFolders({ path }: {
@@ -25633,6 +25920,17 @@ export function getTrashEveryone({ days }: {
     }>(`/admin/trash/everyone${QS.query(QS.explode({
         days
     }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get the library check after the last upgrade
+ */
+export function getUpgradeCheck(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UpgradeCheckResponseDto;
+    }>("/admin/upgrade-check", {
         ...opts
     }));
 }
@@ -28269,6 +28567,68 @@ export function getAssetWaveform({ buckets, channels, id, key, slug }: {
         slug
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * List your Frameleaf Assistant changes
+ */
+export function getAssistantActions({ before, take }: {
+    before?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssistantActionListResponseDto;
+    }>(`/assistant/actions${QS.query(QS.explode({
+        before,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Propose a Frameleaf Assistant change
+ */
+export function proposeAssistantAction({ assistantActionProposeDto }: {
+    assistantActionProposeDto: AssistantActionProposeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssistantActionResponseDto;
+    }>("/assistant/actions", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assistantActionProposeDto
+    })));
+}
+/**
+ * Confirm a Frameleaf Assistant change
+ */
+export function applyAssistantAction({ id, assistantActionApplyDto }: {
+    id: string;
+    assistantActionApplyDto: AssistantActionApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssistantActionResponseDto;
+    }>(`/assistant/actions/${encodeURIComponent(id)}/apply`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assistantActionApplyDto
+    })));
+}
+/**
+ * Undo a Frameleaf Assistant change
+ */
+export function undoAssistantAction({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssistantActionResponseDto;
+    }>(`/assistant/actions/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -39935,6 +40295,36 @@ export function getOwnSetupProgress(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List your originals and where they are now
+ */
+export function getLedger({ cursor, size, state }: {
+    cursor?: string;
+    size?: number;
+    state?: AssetLedgerState;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetLedgerListResponseDto;
+    }>(`/users/me/ledger${QS.query(QS.explode({
+        cursor,
+        size,
+        state
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get your nothing-lost totals
+ */
+export function getLedgerSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetLedgerSummaryResponseDto;
+    }>("/users/me/ledger/summary", {
+        ...opts
+    }));
+}
+/**
  * Remove your supporter key
  */
 export function deleteUserLicense(opts?: Oazapfts.RequestOpts) {
@@ -40242,6 +40632,38 @@ export function countLockedRules({ lockedRulesDraftDto }: {
         ...opts,
         method: "POST",
         body: lockedRulesDraftDto
+    })));
+}
+/**
+ * List what I deleted that is not uploaded again
+ */
+export function getUploadSkips({ limit, offset }: {
+    limit?: number;
+    offset?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UploadSkipListResponseDto;
+    }>(`/users/me/upload-skips${QS.query(QS.explode({
+        limit,
+        offset
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Allow items I deleted to be uploaded again
+ */
+export function allowUploadSkips({ uploadSkipAllowDto }: {
+    uploadSkipAllowDto: UploadSkipAllowDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UploadSkipAllowResponseDto;
+    }>("/users/me/upload-skips/allow", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: uploadSkipAllowDto
     })));
 }
 /**
@@ -40634,6 +41056,14 @@ export enum QueueName {
     IntegrityCheck = "integrityCheck",
     Editor = "editor",
     PetRecognition = "petRecognition"
+}
+export enum UpgradeCheckReason {
+    UpgradeCheckFailed = "upgrade-check-failed"
+}
+export enum UpgradeCheckState {
+    None = "none",
+    Ok = "ok",
+    Attention = "attention"
 }
 export enum State {
     Pending = "pending",
@@ -41656,6 +42086,12 @@ export enum RenderWorkerAuditEvent {
     Revoked = "revoked",
     Updated = "updated",
     DeviceLost = "device_lost"
+}
+export enum UpgradeCheckFindingReason {
+    DriveMissing = "drive-missing",
+    PhotosFewer = "photos-fewer",
+    NewestEarlier = "newest-earlier",
+    FolderEmpty = "folder-empty"
 }
 export enum Kind2 {
     Individual = "individual"
@@ -42698,6 +43134,13 @@ export enum AssetMediaSize {
 export enum AssetWaveformChannelMode {
     Mono = "mono",
     All = "all"
+}
+export enum AssistantActionTool {
+    CreateAlbum = "create_album",
+    AddToAlbum = "add_to_album",
+    Tag = "tag",
+    Favourite = "favourite",
+    Cull = "cull"
 }
 export enum AssistantMediaType {
     Image = "IMAGE",
@@ -45339,6 +45782,13 @@ export enum CloudBackupOwnerSetupFirstRun {
     Running = "running",
     Done = "done",
     Failed = "failed"
+}
+export enum AssetLedgerState {
+    Kept = "kept",
+    Trashed = "trashed",
+    Removed = "removed",
+    Merged = "merged",
+    Missing = "missing"
 }
 export enum LocationBillingCurrency {
     Usd = "USD"

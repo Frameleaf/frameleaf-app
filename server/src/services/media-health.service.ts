@@ -4914,22 +4914,27 @@ export class MediaHealthService {
 
         let asset: Awaited<ReturnType<AssetRepository['create']>> | undefined;
         try {
-          asset = await this.assetRepository.create({
-            ownerId: userId,
-            libraryId: null,
-            checksum: digests.sha256,
-            checksumAlgorithm: ChecksumAlgorithm.sha256File,
-            originalPath: path.normalize(candidatePath),
-            fileCreatedAt: settled.mtime,
-            fileModifiedAt: settled.mtime,
-            localDateTime: settled.mtime,
-            type: mimeTypes.assetType(candidatePath),
-            isFavorite: false,
-            duration: null,
-            visibility: AssetVisibility.Timeline,
-            livePhotoVideoId: null,
-            originalFileName: path.basename(candidatePath),
-          });
+          asset = await this.assetRepository.create(
+            {
+              ownerId: userId,
+              libraryId: null,
+              checksum: digests.sha256,
+              checksumAlgorithm: ChecksumAlgorithm.sha256File,
+              originalPath: path.normalize(candidatePath),
+              fileCreatedAt: settled.mtime,
+              fileModifiedAt: settled.mtime,
+              localDateTime: settled.mtime,
+              type: mimeTypes.assetType(candidatePath),
+              isFavorite: false,
+              duration: null,
+              visibility: AssetVisibility.Timeline,
+              livePhotoVideoId: null,
+              originalFileName: path.basename(candidatePath),
+            },
+            undefined,
+            undefined,
+            'recovered',
+          );
           await this.assetRepository.upsertExif({
             exif: { assetId: asset.id, fileSizeInByte: digests.sizeInBytes },
             lockedPropertiesBehavior: 'override',
