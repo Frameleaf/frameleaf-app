@@ -120,7 +120,7 @@ describe('face recognition inside a queue claim', () => {
         .executeTakeFirstOrThrow();
       return face.personGroupId;
     };
-    return { start, personOf, faces, user };
+    return { start, personOf, faces, user, ctx };
   };
 
   const recognise = async (embedded: boolean) => {
@@ -144,9 +144,24 @@ describe('face recognition inside a queue claim', () => {
 
   // Recognising people runs several faces at once; two faces of one new person must not each start a person of their own.
   it('gives two faces of one new person the same person when they are recognised at the same time', async () => {
-    const { start, personOf, faces, user } = await setup(true);
+    const { start, personOf, faces, user, ctx } = await setup(true);
+    // Both faces finish their first search, finding nobody, before either may go on to create a person: the race
+    // this guards against, every run.
+    const search = ctx.get(SearchRepository);
+    const searchFaces = search.searchFaces.bind(search);
+    const bothSearched = Promise.withResolvers<void>();
+    let searched = 0;
+    vi.spyOn(search, 'searchFaces').mockImplementation(async (options) => {
+      const matches = await searchFaces(options);
+      if (!options.hasPerson) {
+        if (++searched === 2) bothSearched.resolve();
+        await bothSearched.promise;
+      }
+      return matches;
+    });
     const [first, second] = [await start(faces[0]), await start(faces[1])];
     expect(await Promise.all([first(), second()])).toEqual([true, true]);
+    expect(searched).toBe(2);
 
     const [a, b] = [await personOf(faces[0]), await personOf(faces[1])];
     expect(a).not.toBeNull();
