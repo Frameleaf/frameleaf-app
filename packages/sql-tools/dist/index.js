@@ -6,8 +6,8 @@ import { Graph, depthFirstSearch, hasCycle } from "graph-data-structure";
 import { createHash } from "node:crypto";
 import { Kysely, sql } from "kysely";
 import { Migrator as Migrator$1 } from "kysely/migration";
-import { createMigrationProvider } from "./canonical-provider.js";
-export { createMigrationProvider } from "./canonical-provider.js";
+import { adoptMigrationRenames, createMigrationProvider } from "./canonical-provider.js";
+export { adoptMigrationRenames, createMigrationProvider } from "./canonical-provider.js";
 import { PostgresJSDialect } from "kysely-postgres-js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
@@ -719,6 +719,7 @@ var Migrator = class {
 		return this.#db;
 	}
 	async runMigrations() {
+		await adoptMigrationRenames(this.#db, this.#migrationsFolder);
 		const { error, results } = await this.#migrator.migrateToLatest();
 		for (const result of results ?? []) if (result.status === "Success") console.log(`Migration "${result.migrationName}" succeeded`);
 		else if (result.status === "Error") console.warn(`Migration "${result.migrationName}" failed`);
@@ -729,6 +730,7 @@ var Migrator = class {
 		console.log("Finished running migrations");
 	}
 	async #revertLastMigration() {
+		await adoptMigrationRenames(this.#db, this.#migrationsFolder);
 		console.debug("Reverting last migration");
 		const { error, results } = await this.#migrator.migrateDown();
 		for (const result of results ?? []) if (result.status === "Success") console.log(`Reverted migration "${result.migrationName}"`);

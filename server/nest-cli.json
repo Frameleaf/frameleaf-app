@@ -18,6 +18,9 @@
         "include": "schema/migrations/ORDER"
       },
       {
+        "include": "schema/migrations/RENAMES"
+      },
+      {
         "include": "schema/catalog/*.json"
       },
       {
