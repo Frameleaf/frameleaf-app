@@ -34435,9 +34435,9 @@ export function photographyFile({ xPhotographySession, captureId, id, kind }: {
         })
     }));
 }
-export function photographySelfieSearch({ id, xPhotographySession, body }: {
-    id: string;
+export function photographySelfieSearch({ xPhotographySession, id, body }: {
     xPhotographySession: string;
+    id: string;
     body: {
         file: Blob;
     };
