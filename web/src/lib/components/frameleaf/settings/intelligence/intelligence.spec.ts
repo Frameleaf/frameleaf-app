@@ -265,10 +265,8 @@ describe('Faces & identity', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Save and start now' }));
     expect(saveKeys).toHaveBeenCalledWith(['machineLearning']);
-    expect(sdkMock.runQueueCommandLegacy).toHaveBeenCalledWith({
-      name: 'faceDetection',
-      queueCommandDto: { command: 'start', force: true },
-    });
+    // the server finds faces again when the model is saved (FL-1493); the page does not queue it too
+    expect(sdkMock.runQueueCommandLegacy).not.toHaveBeenCalled();
   });
 });
 

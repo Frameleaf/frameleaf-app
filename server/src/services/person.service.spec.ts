@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { QueueExecution } from 'src/queue/types.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
+import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { mapFaces, mapPerson } from 'src/dtos/person.dto.js';
 import {
@@ -1890,6 +1891,60 @@ describe(PersonService.name, () => {
     it('should skip the cleanup during a database handoff', async () => {
       mocks.person.deleteForkPeopleData.mockRejectedValue(new ConflictException('handoff'));
       await expect(sut.onUserDelete(UserFactory.create({ id: 'user-1' }))).resolves.toBeUndefined();
+    });
+  });
+
+  describe('face model change', () => {
+    const config = (modelName: string, enabled = true) =>
+      ({ machineLearning: { enabled, facialRecognition: { enabled, modelName } } }) as SystemConfig;
+    const findEverythingAgain = { name: JobName.AssetDetectFacesQueueAll, data: { force: true } };
+
+    it('finds every face again when the saved model differs from the one faces were found with', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ modelName: 'buffalo_l' });
+
+      await sut.onConfigUpdate({ newConfig: config('antelopev2'), oldConfig: config('buffalo_l') });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith(findEverythingAgain);
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.FaceModelState, {
+        modelName: 'antelopev2',
+      });
+    });
+
+    it('finds every face again at start-up when a config file or a restore changed the model', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ modelName: 'buffalo_l' });
+
+      await sut.onConfigInit({ newConfig: config('antelopev2') });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith(findEverythingAgain);
+    });
+
+    it('does nothing while the model is the one faces were found with', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ modelName: 'buffalo_l' });
+
+      await sut.onConfigUpdate({ newConfig: config('buffalo_l'), oldConfig: config('buffalo_l') });
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    });
+
+    it('only remembers the model on a server that has none remembered yet', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null);
+
+      await sut.onConfigInit({ newConfig: config('buffalo_l') });
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.FaceModelState, {
+        modelName: 'buffalo_l',
+      });
+    });
+
+    it('waits while face recognition is off, so turning it on later still finds faces again', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ modelName: 'buffalo_l' });
+
+      await sut.onConfigUpdate({ newConfig: config('antelopev2', false), oldConfig: config('buffalo_l') });
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
     });
   });
 

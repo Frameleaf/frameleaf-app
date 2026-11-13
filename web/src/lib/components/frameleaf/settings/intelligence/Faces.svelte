@@ -47,9 +47,6 @@
     LibraryProgressFeature,
     LibraryRedoQueue,
     LibraryRedoWhen,
-    QueueCommand,
-    QueueName,
-    runQueueCommandLegacy,
     type LibraryProgressResponseDto,
   } from '@frameleaf/sdk';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -116,9 +113,9 @@
     }
   };
 
-  // A new face model is only used by finding every face again: the server does nothing when it is
-  // saved, and grouping again would only re-sort what the old model found. Face detection isn't one
-  // of the redo queues, so there is no "tonight" here.
+  // A new face model is only used by finding every face again, and grouping again would only re-sort
+  // what the old model found. The server starts that itself when the model is saved (FL-1493), however
+  // it was changed, so there is no "tonight" here.
   const modelChanged = $derived(faces.modelName !== saved.modelName);
   const modelRereadTitle = $derived(
     facesProgress && regroupTime
@@ -130,10 +127,6 @@
   const saveAndFindFaces = async () => {
     try {
       if (await settingsDraft.saveKeys(['machineLearning'])) {
-        await runQueueCommandLegacy({
-          name: QueueName.FaceDetection,
-          queueCommandDto: { command: QueueCommand.Start, force: true },
-        });
         said = $t('frameleaf_intel_redo_said_now');
       }
     } catch (error) {

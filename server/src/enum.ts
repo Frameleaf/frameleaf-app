@@ -549,6 +549,8 @@ export enum SystemMetadataKey {
   MediaLocation = 'MediaLocation',
   ReverseGeocodingState = 'reverse-geocoding-state',
   FacialRecognitionState = 'facial-recognition-state',
+  /** FL-1493: the face model the library's faces were last found with. */
+  FaceModelState = 'face-model-state',
   /** FL-1383, FL-1384: when the nightly people care last did its one-time and catch-up work. */
   PeopleCareState = 'people-care-state',
   MemoriesState = 'memories-state',
