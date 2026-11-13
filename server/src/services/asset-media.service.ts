@@ -7,7 +7,8 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { copyFile, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import type { Transaction } from 'kysely';
@@ -18,7 +19,7 @@ import type { DB } from 'src/schema/index.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
 import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { Asset, AuthSharedLink } from 'src/database.js';
+import { Asset, AuthSharedLink, type LockableProperty, lockableProperties } from 'src/database.js';
 import {
   AssetBulkUploadCheckResponseDto,
   AssetMediaResponseDto,
@@ -49,9 +50,10 @@ import {
 } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess, requireUploadsNotPaused } from 'src/utils/access.js';
-import { asUploadRequest } from 'src/utils/asset.util.js';
+import { asUploadRequest, getAssetFiles } from 'src/utils/asset.util.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
@@ -67,6 +69,7 @@ import { hasFontSignature } from 'src/utils/font-file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedPath, makeWorkDir, withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import { LIBRARY_CARE_FOLDER } from 'src/utils/media-health-roots.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview.js';
@@ -78,6 +81,7 @@ import {
 } from 'src/utils/partner-location.js';
 import { getPreferences, isTrashReuploadOpen, uploadSkipSince } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
+import { MAX_XMP_BYTES, validateXmp } from 'src/utils/xmp-sidecar.js';
 
 /** How long a finished document PDF may take to download before the response is ended. */
 const DOCUMENT_REVIEW_HOLD = 5 * 60 * 1000;
@@ -530,6 +534,65 @@ export class AssetMediaService extends BaseService {
   }
 
   /** Upload policy and asset values shared by multipart and verified resumable publication. */
+  async replaceSidecar(auth: AuthDto, id: string, data: Buffer, useFileValues: boolean): Promise<void> {
+    if (auth.sharedLink) throw new ForbiddenException('Only the owner can replace a sidecar');
+    const check = (asset: Awaited<ReturnType<AssetRepository['getById']>>) => {
+      if (!asset || asset.ownerId !== auth.user.id || asset.deletedAt || isLockedRow(asset)) {
+        throw new ForbiddenException('Only the owner of an unlocked asset can replace its sidecar');
+      }
+      if (asset.type !== AssetType.Image || asset.isOffline) {
+        throw new BadRequestException('An XMP sidecar requires an available photo');
+      }
+      return asset;
+    };
+    check(await this.assetRepository.getById(id));
+    validateXmp(data);
+    const directory = StorageCore.getNestedFolder(StorageFolder.Upload, auth.user.id, id);
+    const next = path.join(directory, `${id}-${randomUUID()}.xmp`);
+    const backup = `${next}.bak`;
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(next, data, { flag: 'wx', mode: 0o600 });
+    try {
+      const tags = useFileValues ? await this.metadataRepository.readTags(next) : {};
+      const properties: LockableProperty[] = [];
+      if ('Description' in tags || 'ImageDescription' in tags) properties.push('description');
+      if ('DateTimeOriginal' in tags || 'CreateDate' in tags) properties.push('dateTimeOriginal', 'timeZone');
+      if ('GPSLatitude' in tags && 'GPSLongitude' in tags)
+        properties.push('latitude', 'longitude', 'city', 'state', 'country');
+      if ('Rating' in tags) properties.push('rating');
+      if (['TagsList', 'HierarchicalSubject', 'Subject', 'Keywords'].some((key) => key in tags))
+        properties.push('tags');
+      const creditFields: Record<string, string[]> = {
+        title: ['Title', 'ObjectName', 'XPTitle'],
+        artist: ['Creator', 'Artist', 'ByLine'],
+        copyright: ['Rights', 'Copyright', 'CopyrightNotice'],
+      };
+      for (const property of lockableProperties) {
+        if (creditFields[property]?.some((key) => key in tags)) properties.push(property);
+      }
+
+      await this.databaseRepository.withAssetSidecarLock(id, async (tx) => {
+        const assets = new AssetRepository(tx);
+        const asset = check(await assets.getById(id, { files: true }));
+        const { sidecarFile } = getAssetFiles(asset.files ?? []);
+        if (sidecarFile) await copyFile(sidecarFile.path, backup);
+        await assets.upsertFile({ assetId: id, path: next, type: AssetFileType.Sidecar }, tx);
+        if (properties.length > 0) await assets.unlockProperties(id, properties, tx);
+        await this.jobRepository.queueInTransaction(tx, {
+          name: JobName.AssetExtractMetadata,
+          data: { id, replacementSidecar: next },
+        });
+      });
+    } catch (error) {
+      // Once published, a retry must never remove bytes the asset references.
+      const current = await this.assetRepository.getById(id, { files: true });
+      if (current && getAssetFiles(current.files ?? []).sidecarFile?.path !== next) {
+        await Promise.all([rm(next, { force: true }), rm(backup, { force: true })]);
+      }
+      throw error;
+    }
+  }
+
   async prepareUploadAsset(auth: AuthDto, dto: AssetMediaCreateDto, file: UploadFile) {
     await this.requireAccess({
       auth,
@@ -702,11 +765,15 @@ export class AssetMediaService extends BaseService {
   ): Promise<AssetMediaResponseDto> {
     let asset: Asset | undefined;
     try {
+      if (publication && (sidecarFile || dto.livePhotoVideoId)) {
+        throw new BadRequestException('Guarded publication requires an independent original without a sidecar');
+      }
+      if (sidecarFile) {
+        if (sidecarFile.size > MAX_XMP_BYTES) throw new BadRequestException('An XMP sidecar is limited to 1 MiB');
+        validateXmp(await readFile(sidecarFile.originalPath));
+      }
       const prepared = await this.prepareUploadAsset(auth, dto, file);
       if (publication) {
-        if (sidecarFile || prepared.asset.livePhotoVideoId) {
-          throw new BadRequestException('Guarded publication requires an independent original without a sidecar');
-        }
         const id = this.cryptoRepository.randomUUID();
         const expected = { checksum: file.checksum, sizeInBytes: file.size };
         const checks = this.uploadOriginalChecks(id, file);

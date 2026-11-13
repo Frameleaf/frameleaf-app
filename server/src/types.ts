@@ -422,6 +422,7 @@ export interface IEntityJob extends IBaseJob {
   source?: JobSource;
   notify?: boolean;
   reconcileUnfinished?: boolean;
+  replacementSidecar?: string;
 }
 
 export interface IGenerateThumbnailsJob extends IEntityJob {
@@ -928,6 +929,10 @@ export type JobItem =
   | { name: JobName.IntegrityDeleteReportType; data: IIntegrityDeleteReportTypeJob }
   | { name: JobName.IntegrityDeleteReports; data: IIntegrityDeleteReportsJob }
   | { name: JobName.PhotographyWorkflowRender; data: IEntityJob & IDelayedJob }
+  | {
+      name: JobName.PhotographyBulkGallery;
+      data: IEntityJob & IDelayedJob & { ownerId: string; batchId: string; retryPublication?: boolean };
+    }
 
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }

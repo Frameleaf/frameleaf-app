@@ -154,6 +154,7 @@ import {
   DevelopBatchReturnTable,
   DevelopBatchTable,
 } from 'src/schema/tables/develop-batch.table.js';
+import { DevelopStyleProfileTable } from 'src/schema/tables/develop-style-profile.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
@@ -595,6 +596,7 @@ export class ImmichDatabase {
     WorkflowLogDetailTable,
     WorkflowRunStepTable,
     DevelopBatchTable,
+    DevelopStyleProfileTable,
     SpeechSettingsTable,
     SpeechTranscriptTable,
     SpeechWindowTable,
@@ -896,6 +898,7 @@ export interface DB extends QueueDatabase {
 
   develop_export: DevelopExportTable;
   develop_batch: DevelopBatchTable;
+  develop_style_profile: DevelopStyleProfileTable;
   speech_settings: SpeechSettingsTable;
   speech_transcript: SpeechTranscriptTable;
   speech_window: SpeechWindowTable;

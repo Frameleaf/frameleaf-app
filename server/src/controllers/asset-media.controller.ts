@@ -9,12 +9,15 @@ import {
   Param,
   ParseFilePipe,
   Post,
+  Put,
   Query,
   Req,
   Res,
+  UploadedFile,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiHeader, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { type NextFunction, type Request, type Response } from 'express';
 import type { UploadFiles } from 'src/types.js';
@@ -45,6 +48,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type AssetMediaRedirectResponse, AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { FileDownloadResponse, sendFile } from 'src/utils/file.js';
+import { MAX_XMP_BYTES } from 'src/utils/xmp-sidecar.js';
 import { FileNotEmptyValidator, UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Assets)
@@ -124,6 +128,28 @@ export class AssetMediaController {
     }
 
     return responseDto;
+  }
+
+  @Put(':id/sidecar')
+  @Authenticated({ permission: Permission.AssetUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseInterceptors(FileInterceptor('sidecarData', { limits: { files: 1, fileSize: MAX_XMP_BYTES } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['sidecarData'],
+      properties: { sidecarData: { type: 'string', format: 'binary' }, useFileValues: { type: 'boolean' } },
+    },
+  })
+  @Endpoint({ summary: 'Replace the photo XMP sidecar', history: new HistoryBuilder().added('v3') })
+  async replaceAssetSidecar(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @UploadedFile(new ParseFilePipe()) file: Express.Multer.File,
+    @Body('useFileValues') useFileValues?: string,
+  ): Promise<void> {
+    await this.service.replaceSidecar(auth, id, file.buffer, useFileValues === 'true');
   }
 
   @Get(':id/edit-versions/:versionId/download')

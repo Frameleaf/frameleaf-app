@@ -54,6 +54,7 @@ type Range = { offset: number; size: number };
 
 export type ParallelUploadInput = {
   file: File;
+  sidecarFile?: File;
   /** SHA-256 of the whole file, hex. */
   sha256: string;
   metadata: Record<string, unknown>;
@@ -95,7 +96,7 @@ export const splitRange = ({ offset, size }: Range, partSize: number): Range[] =
  * Uploads `file` in parallel parts. Returns undefined when the server cannot take parts
  * (an older server), so the caller falls back to the single-request upload.
  */
-export async function uploadInParts({ file, sha256, metadata, signal, onProgress }: ParallelUploadInput) {
+export async function uploadInParts({ file, sidecarFile, sha256, metadata, signal, onProgress }: ParallelUploadInput) {
   const base = getBaseUrl() + '/assets/uploads';
   const options = await fetch(base, { method: 'OPTIONS', signal });
   const maxParallel = headerNumber(options.headers.get('Upload-Parts'), 'max-parallel');
@@ -131,6 +132,18 @@ export async function uploadInParts({ file, sha256, metadata, signal, onProgress
   }
   const url = new URL(location, globalThis.location.href).toString();
   try {
+    if (sidecarFile) {
+      const body = new FormData();
+      body.append('sidecarData', sidecarFile);
+      const response = await fetch(`${url}/sidecar`, { method: 'PUT', body, signal });
+      if ([404, 405].includes(response.status)) {
+        await fetch(url, { method: 'DELETE' }).catch(() => {});
+        return;
+      }
+      if (!response.ok) {
+        throw new ApiError(response.statusText, response.status, await response.text());
+      }
+    }
     return await sendParts(url, file, signal, partSize, parallel, onProgress);
   } catch (error) {
     // The web app cannot resume after a reload, so free the slot (the server allows a few incomplete uploads).

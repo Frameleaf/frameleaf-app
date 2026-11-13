@@ -21,6 +21,7 @@ export enum UploadState {
 export type UploadAsset = {
   id: string;
   file: File;
+  sidecarFile?: File;
   assetId?: string;
   isTrashed?: boolean;
   albumId?: string;

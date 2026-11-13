@@ -64,7 +64,36 @@ describe('PhotographyWorkspace', () => {
     vi.mocked(loadWorkflowSummaries).mockResolvedValue({ galleries: [] });
     vi.mocked(ratePhoto).mockResolvedValue();
     sdkMock.getAllAlbums.mockResolvedValue([]);
+    sdkMock.getDevelopStyle.mockResolvedValue({ availableEdits: 50, learnedEdits: null, trainedAt: null });
     sdkMock.getAssetDevelop.mockResolvedValue({ revisions: [] } as never);
+  });
+
+  it('opens style settings when the studio has not learned a style', async () => {
+    await open();
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply my style' }));
+    expect(await screen.findByRole('button', { name: 'Learn my style' })).toBeEnabled();
+    expect(sdkMock.applyDevelopStyle).not.toHaveBeenCalled();
+  });
+
+  it('applies a learned style to the selected photos and can undo that batch', async () => {
+    sdkMock.getDevelopStyle.mockResolvedValue({ availableEdits: 60, learnedEdits: 60, trainedAt: null });
+    sdkMock.applyDevelopStyle.mockResolvedValue({
+      batchId: 'style-batch',
+      versions: [{ id: 'version' }] as never,
+      failed: 0,
+    });
+    sdkMock.undoDevelopStyle.mockResolvedValue({ removed: 1, remaining: 0 });
+    await open();
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Select one.CR3' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply my style' }));
+    await waitFor(() =>
+      expect(sdkMock.applyDevelopStyle).toHaveBeenCalledWith({
+        id: 'shoot',
+        developStyleApplyDto: { batchId: expect.any(String), assetIds: ['one'] },
+      }),
+    );
+    await fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+    expect(sdkMock.undoDevelopStyle).toHaveBeenCalledWith({ id: 'style-batch' });
   });
 
   it("calls it a shoot everywhere: the rail groups a shoot's pages under its name, then the Studio pages", async () => {

@@ -30,6 +30,7 @@ it('retains private no-store through the actual Express/shared-file send path', 
     const controller = new PhotographyWorkspaceController(
       service as unknown as PhotographyWorkspaceService,
       {} as LoggingRepository,
+      {} as never,
     );
     const app = express();
     app.get('/logo', (_req, res, next) => {

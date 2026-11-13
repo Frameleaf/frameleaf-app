@@ -51,6 +51,7 @@ import { DesktopDeviceController } from 'src/controllers/desktop-device.controll
 import { DesktopOfflineAlbumController } from 'src/controllers/desktop-offline-album.controller.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { DevelopBatchController } from 'src/controllers/develop-batch.controller.js';
+import { DevelopStyleController } from 'src/controllers/develop-style.controller.js';
 import { DocumentController } from 'src/controllers/document.controller.js';
 import { DownloadController } from 'src/controllers/download.controller.js';
 import { DuplicateAdminController } from 'src/controllers/duplicate-admin.controller.js';
@@ -196,6 +197,7 @@ export const controllers = [
   AssetSourceController,
   BookmarkController,
   DevelopBatchController,
+  DevelopStyleController,
   DesktopDeviceController,
   DesktopOfflineAlbumController,
   PhotoSourceController,

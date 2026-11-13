@@ -2497,6 +2497,18 @@ describe(MetadataService.name, () => {
       expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ duration: 500 }));
     });
 
+    it('uses sidecar rating and XMP subject ahead of embedded keywords', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ Rating: 2, TagsList: ['Embedded'] }, { Rating: 5, Subject: ['Sidecar'] });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ rating: 5, tags: ['Sidecar'] }) }),
+      );
+    });
+
     it('should prefer Duration from exif over sidecar', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.webp' }).file({ type: AssetFileType.Sidecar }).build();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
