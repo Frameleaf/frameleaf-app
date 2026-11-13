@@ -49,7 +49,7 @@ const claude = {
 };
 const replace = vi.fn();
 
-const render_ = (value: typeof request | null = request) =>
+const render_ = (value: (typeof request & { resource?: string }) | null = request) =>
   render(Page, { data: { request: value, meta: { title: '' } } as never });
 
 beforeEach(() => {
@@ -58,6 +58,7 @@ beforeEach(() => {
   vi.stubGlobal('location', {
     ...location,
     host: 'photos.taylor.home',
+    origin: 'https://photos.taylor.home',
     replace,
     pathname: '/auth/allow-app',
     search: '?client_id=x',
@@ -81,6 +82,14 @@ describe('Allow an app (FL-860)', () => {
     expect(screen.getByRole('list', { name: en.frameleaf_apps_allow_can_title })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: en.frameleaf_apps_allow_allow })).toHaveClass('primary');
     expect(startOAuthAppAuthorization).toHaveBeenCalledWith({ oAuthAppAuthorizeStartDto: request });
+  });
+
+  it('explains the result data and revocation for the official assistant resource', async () => {
+    vi.mocked(startOAuthAppAuthorization).mockResolvedValue({ ...claude, scopes: ['library:read'] });
+    render_({ ...request, scope: 'library:read', resource: 'https://photos.taylor.home/api/mcp/assistant' });
+
+    expect(await screen.findByText(en.frameleaf_apps_allow_assistant_read)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_apps_access_library_read)).not.toBeInTheDocument();
   });
 
   it('gives an app Frameleaf hasn’t checked a warning and no highlighted Allow', async () => {

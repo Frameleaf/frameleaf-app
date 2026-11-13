@@ -39,6 +39,11 @@ const factsSchema = z.strictObject({
     )
     .max(64),
   totalMemoryBytes: integer.positive(),
+  // What OpenVINO can run on ("CPU", "GPU.0", "NPU"); a runtime states it only where it has that provider.
+  openvinoDevices: z
+    .array(z.string().regex(/^[ -~]{1,64}$/))
+    .max(16)
+    .optional(),
   deviceEvidence: desktopDeviceFactsSchema.optional(),
 });
 const state = z.enum(['ready-cpu', 'ready-accelerator', 'ready-mixed']);
@@ -140,12 +145,15 @@ export class DesktopQualificationReceipt {
             item.targets.includes(`${platform}-${architecture}`)
           ),
       ) ||
-      ![facts.packages.onnxruntime, facts.packages['onnxruntime-gpu']].includes(facts.ort)
+      // each provider's runtime ships onnxruntime under its own package name
+      ![facts.packages.onnxruntime, facts.packages['onnxruntime-gpu'], facts.packages['onnxruntime-openvino']].includes(
+        facts.ort,
+      )
     )
       throw invalid();
     const provider = report.provider;
-    // OpenVINO (Intel graphics and NPUs) qualifies like CUDA: a plain accelerator report with no signed
-    // device collector; CoreML keeps its signed-collector proof and stays macOS-only.
+    // OpenVINO (Intel graphics) qualifies like CUDA: a plain accelerator report with no signed device
+    // collector, from a computer that has the device; CoreML keeps its signed-collector proof and stays macOS-only.
     if (
       ![
         'CPUExecutionProvider',
@@ -184,7 +192,13 @@ export class DesktopQualificationReceipt {
     }
     const expectedState =
       provider === 'CPUExecutionProvider' ? 'ready-cpu' : mixed ? 'ready-mixed' : 'ready-accelerator';
-    if (report.state !== expectedState || (provider === 'CUDAExecutionProvider' && facts.gpus.length === 0))
+    if (
+      report.state !== expectedState ||
+      (provider === 'CUDAExecutionProvider' && facts.gpus.length === 0) ||
+      // OpenVINO also runs on the processor, which is no accelerator: it needs one of its graphics devices
+      (provider === 'OpenVINOExecutionProvider' &&
+        !facts.openvinoDevices?.some((device) => device.toUpperCase().startsWith('GPU')))
+    )
       throw invalid();
     return new DesktopQualificationReceipt(
       sha(canonicalJson(report)),

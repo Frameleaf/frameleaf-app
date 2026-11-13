@@ -155,6 +155,12 @@ To get started, you can simply run `locust --web-host 127.0.0.1` and open `local
 
 Note that in Locust's jargon, concurrency is measured in `users`, and each user runs one task at a time. To achieve a particular per-endpoint concurrency, multiply that number by the number of endpoints to be queried. For example, if there are 3 endpoints and you want each of them to receive 8 requests at a time, you should set the number of users to 24.
 
+# Aesthetic head qualification
+
+Run `python scripts/qualify-aesthetic-head.py HEAD.json FIXTURE.json` in the ML environment to evaluate a candidate before adding it to the model mirror. Use 500 or more held-out photos with human ratings and their current Library v1 aesthetic scores. Export only the approved numeric data for the qualification host.
+
+The head and fixture both name the admitted `producerModelKey`. The head's `layers` list contains dense `weights` in input-by-output order and a `bias` array per layer, with ReLU between layers and one final logit. The fixture's `samples` list contains each photo's unique `id`, numeric `embedding`, `v1` score, and human `rating`. Keep training and evaluation photos separate. The script reports the Spearman improvement and content hashes and exits unsuccessfully below an improvement of 0.15.
+
 # Facial Recognition
 
 ## Acknowledgements

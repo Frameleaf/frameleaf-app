@@ -362,6 +362,8 @@ export class PhotographyWorkflowService {
     return {
       ownerId: auth.user.id,
       albumId: shoot.albumId,
+      defaultArtist: shoot.defaultArtist,
+      defaultCopyright: shoot.defaultCopyright,
       initial: this.initial(
         shoot.name,
         stored?.value.brand ?? {
@@ -425,6 +427,8 @@ export class PhotographyWorkflowService {
             eligible: true,
             exclusion: null,
             rating: asset.rating,
+            artist: asset.artist ?? null,
+            copyright: asset.copyright ?? null,
             processing:
               asset.baseProofReady === undefined
                 ? capture.processing
@@ -451,6 +455,8 @@ export class PhotographyWorkflowService {
             camera: null,
             capturedAt: null,
             rating: null,
+            artist: null,
+            copyright: null,
             isRaw: null,
             proofRevisionId: null,
             approvedRevisionId: null,
@@ -823,7 +829,21 @@ export class PhotographyWorkflowService {
     const owner = await this.owner(auth, id);
     const assets = await this.repository.assets(owner.ownerId, owner.albumId);
     if (assets.length > 10_000) throw new BadRequestException('Split shoots larger than 10000 files into albums');
-    return this.mutate(auth, id, dto.expectedRevision, async (value) => {
+    return this.mutate(auth, id, dto.expectedRevision, async (value, tx) => {
+      const knownAssets = new Set(value.captures.flatMap((capture) => capture.assetIds));
+      if (owner.defaultArtist || owner.defaultCopyright) {
+        const inserted = await this.repository.addIntakeCreditDefaults(
+          tx,
+          owner.ownerId,
+          owner.albumId,
+          assets.filter((asset) => !knownAssets.has(asset.id)).map((asset) => asset.id),
+          { artist: owner.defaultArtist || undefined, copyright: owner.defaultCopyright || undefined },
+        );
+        await this.jobs.queueAllInTransaction(
+          tx,
+          inserted.map(({ assetId }) => ({ name: JobName.AssetExtractMetadata, data: { id: assetId } })),
+        );
+      }
       this.captureIds(value, dto.expandCaptureIds);
       value.expandedAssetIds = [
         ...new Set([

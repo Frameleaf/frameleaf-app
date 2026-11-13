@@ -5196,6 +5196,34 @@ describe(MediaHealthService.name, () => {
         expect(mocks.storage.unlink).not.toHaveBeenCalledWith(upload);
       });
 
+      it.each(['timeout', 'transient'] as const)(
+        'keeps the upload for the retry when its check does not finish (%s, FL-1506)',
+        async (status) => {
+          await damagedOnDisk(Buffer.from('changed on the drive'));
+          ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+            status,
+            reason: 'validation_busy',
+          });
+
+          await expect(sut.handlePutBackUpload({ id: 'asset-1', path: upload })).rejects.toThrow('could not check');
+
+          expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+          expect(mediaHealthRepository.replaceRepairedOriginal).not.toHaveBeenCalled();
+        },
+      );
+
+      it('uses checksum-exact bytes in a format the server cannot decode (FL-1506)', async () => {
+        await damagedOnDisk(Buffer.from('changed on the drive'));
+        ((sut as any).integrityService.validate as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          status: 'unsupported',
+          reason: 'unsupported_format',
+        });
+
+        await expect(sut.handlePutBackUpload({ id: 'asset-1', path: upload })).resolves.toBe(JobStatus.Success);
+
+        expect(mediaHealthRepository.replaceRepairedOriginal).toHaveBeenCalled();
+      });
+
       it('keeps the upload for the retry when an attempt fails', async () => {
         await damagedOnDisk(Buffer.from('changed on the drive'));
         vi.mocked(mocks.storage.stat).mockRejectedValueOnce(new Error('drive went away'));
