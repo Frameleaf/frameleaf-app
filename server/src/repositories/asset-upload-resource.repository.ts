@@ -52,7 +52,7 @@ export class AssetUploadResourceRepository {
       maxSize?: number;
     },
   ) {
-    return this.db.transaction().execute(async (tx) => {
+    const create = async (tx: Kysely<DB>) => {
       await this.ready(tx);
       const owner = await tx
         .selectFrom('user')
@@ -125,7 +125,8 @@ export class AssetUploadResourceRepository {
         .executeTakeFirst();
       if (!created) throw new ConflictException('Capture upload UUID unavailable');
       return created;
-    });
+    };
+    return this.db.isTransaction ? create(this.db) : this.db.transaction().execute(create);
   }
   async get(id: string, ownerId: string) {
     await this.ready(this.db);
@@ -212,7 +213,9 @@ export class AssetUploadResourceRepository {
         // Media import authority locks the owner for update inside this transaction; a shared lock taken
         // here would be upgraded, and two imports for one owner would then deadlock.
         const exclusive =
-          ids.length > 1 || hasEditConfiguration(tx) || rows.some((row) => row.metadata.publication === 'media-import');
+          ids.length > 1 ||
+          hasEditConfiguration(tx) ||
+          rows.some((row) => ['media-import', 'connect'].includes(row.metadata.publication ?? ''));
         const owner = await tx
           .selectFrom('user')
           .select('id')

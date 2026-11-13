@@ -21,6 +21,8 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
+import { ConnectUploadCommitDto } from 'src/dtos/connect-media.dto.js';
+import { ConnectMediaRepository } from 'src/repositories/connect-media.repository.js';
 import { LivePhotoUploadCommitDto } from 'src/dtos/asset-upload-resource.dto.js';
 import { FrameleafWorker, LibraryScope, Permission, StorageFolder } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -74,6 +76,7 @@ export class AssetUploadResourceService {
     private sources: PhotoSourceRepository,
     private captures: CaptureRepository,
     private mediaImports: MediaImportRepository,
+    private connectMedia: ConnectMediaRepository = undefined!,
   ) {}
 
   async limits() {
@@ -107,6 +110,10 @@ export class AssetUploadResourceService {
     resource: Pick<AssetUploadResource, 'metadata' | 'expectedChecksum' | 'expectedSize'>,
     tx?: Transaction<DB>,
   ) {
+    if (resource.metadata.publication === 'connect') {
+      await this.connectMedia.assertUpload(auth, resource, tx);
+      return;
+    }
     if (resource.metadata.publication === 'media-import') throw new NotFoundException('Upload unavailable');
     if (resource.metadata.publication === 'capture') {
       if (resource.metadata.captureActor !== captureActor(auth)) throw new NotFoundException('Capture unavailable');
@@ -258,6 +265,39 @@ export class AssetUploadResourceService {
         });
       });
       // Existing ingestion/expiry recovery owns jobs and byte cleanup after the complete receipt transaction commits.
+      await this.finalize(auth, id, check);
+      return result;
+    });
+  }
+
+  async commitConnect(auth: AuthDto, id: string, dto: ConnectUploadCommitDto) {
+    return this.withStreamAdmission(auth, id, async (check) => {
+      const row = await this.finalize(auth, id, check);
+      const currentAuth = await this.connectMedia.assertUpload(auth, row);
+      if (row.metadata.connect?.requestId !== dto.requestId || row.expectedChecksum.toString('hex') !== dto.sha256) {
+        throw new ConflictException('Connect operation unavailable');
+      }
+      let prepared: Awaited<ReturnType<AssetMediaService['prepareUploadAsset']>> | undefined;
+      if (row.state === 'verified') {
+        const head = await this.storage.readFile(row.finalPath!, { buffer: Buffer.alloc(32), length: 32 });
+        const valid =
+          row.contentType === 'image/jpeg'
+            ? head.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
+            : row.contentType === 'image/png'
+              ? head.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+              : row.contentType === 'application/pdf'
+                ? head.subarray(0, 5).toString() === '%PDF-'
+                : row.contentType === 'video/mp4' && head.subarray(4, 8).toString() === 'ftyp';
+        if (!valid) throw new BadRequestException('Upload content does not match its media type');
+        prepared = await this.media.prepareUploadAsset(currentAuth, this.metadata(row), this.file(row));
+      }
+      const result = await this.uploads.locked(id, auth.user.id, async (tx, resource) => {
+        await check(tx);
+        return this.connectMedia.commit(tx, auth, resource, dto, async () => {
+          if (!prepared) throw new ConflictException('Connect upload is not ready');
+          return this.uploads.publish(tx, resource, prepared);
+        });
+      });
       await this.finalize(auth, id, check);
       return result;
     });
@@ -842,7 +882,8 @@ export class AssetUploadResourceService {
     if (row.state === 'rejected') {
       throw new BadRequestException('Upload representation was rejected');
     }
-    if (row.state === 'verified' && ['capture', 'media-import'].includes(row.metadata.publication ?? '')) return row;
+    if (row.state === 'verified' && ['capture', 'media-import', 'connect'].includes(row.metadata.publication ?? ''))
+      return row;
     if (row.state === 'verified' && row.metadata.publication !== 'live-photo') {
       await check();
       await this.refuseDeleted(auth, [row]);
@@ -1112,6 +1153,7 @@ export class AssetUploadResourceService {
   async cancel(auth: AuthDto, id: string) {
     await this.owner(auth);
     await this.uploads.locked(id, auth.user.id, async (tx, row) => {
+      await this.sourceAdmission(auth, row, tx);
       if (row.state === 'published') {
         throw new ConflictException('A published asset cannot be cancelled through its upload resource');
       }
@@ -1121,6 +1163,7 @@ export class AssetUploadResourceService {
         .where('id', '=', id)
         .execute();
     });
+    await this.sweepFolder(id, async () => {});
   }
 
   @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
@@ -1168,7 +1211,7 @@ export class AssetUploadResourceService {
           await this.ingest({ user }, row);
         } else if (
           row.metadata.sourceIdentity?.kind !== 'folder' &&
-          !['capture', 'media-import'].includes(row.metadata.publication ?? '')
+          !['capture', 'media-import', 'connect'].includes(row.metadata.publication ?? '')
         ) {
           // Folder publication resumes through the desktop's live photo session, never a background actor.
           await this.withStreamAdmission({ user }, row.id, (check) => this.finalize({ user }, row.id, check));

@@ -91,6 +91,14 @@ describe('logging interceptor redaction (FL-81)', () => {
     );
   });
 
+  it('masks opaque Connect tickets and all media search query values', () => {
+    expect(redactLogUrl('/api/connect/renditions/private-ticket?variant=preview')).toBe(
+      '/api/connect/renditions/********?********',
+    );
+    expect(redactLogUrl('/connect/assets?q=private-title')).toBe('/connect/assets?********');
+    expect(requestLogPath('/api/%63onnect/renditions/private-ticket')).toBe('/api/connect/renditions/********');
+  });
+
   it('keeps the rest of the cast, render-worker and gallery routes readable', () => {
     for (const url of [
       '/api/cast',
@@ -213,6 +221,9 @@ describe('logging interceptor redaction (FL-81)', () => {
 
 describe('secret request body exclusion', () => {
   it.each([
+    '/api/connect/uploads',
+    '/api/connect/albums',
+    '/api/connect/assets/asset/tags',
     '/api/admin/cloud/backup/check',
     '/api/admin/cloud/backup/setup',
     '/api/admin/cloud/backup/key/unlock',

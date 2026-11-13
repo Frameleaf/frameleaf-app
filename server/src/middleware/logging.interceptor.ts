@@ -36,11 +36,12 @@ const redactUrlQuery = (url: string) => {
 
 /** CLD-004: routes whose query string is never recorded, whatever its parameters are called. */
 const DIRECT_UPLOAD_ROUTE = /^\/(?:api\/)?assets\/uploads\/[^/]+\/direct\/?(?:[?#]|$)/i;
-const QUERYLESS_ROUTES = /^\/(?:api\/)?(?:link|admin\/license|license|users\/me\/license|mcp\/preview)(?:[/?#]|$)/i;
+const QUERYLESS_ROUTES =
+  /^\/(?:api\/)?(?:link|admin\/license|license|users\/me\/license|mcp\/preview|connect)(?:[/?#]|$)/i;
 
 // Secret routes can carry numeric key maps, opaque recovery packages or a credential named `value`.
 const BODYLESS_ROUTES =
-  /^\/(?:api\/)?(?:mcp|admin\/(?:cloud\/backup\/(?:check|setup|escrow|key(?:\/.*)?)|buddy-backup\/key(?:\/.*)?|config\/credentials\/[^/]+))\/?$/i;
+  /^\/(?:api\/)?(?:connect(?:\/.*)?|mcp|admin\/(?:cloud\/backup\/(?:check|setup|escrow|key(?:\/.*)?)|buddy-backup\/key(?:\/.*)?|config\/credentials\/[^/]+))\/?$/i;
 
 /**
  * Routes that carry a bearer secret in the path itself: a cast URL's signed token, a render worker's
@@ -48,6 +49,7 @@ const BODYLESS_ROUTES =
  * (FL-788). The segment is masked like a query parameter would be.
  */
 const PATH_SECRET_ROUTES = [
+  /^(\/(?:api\/)?connect\/renditions\/)[^/?#]+/i,
   /^(\/(?:api\/)?cast\/)[^/?#]+/i,
   /^(\/(?:api\/)?render-workers\/operations\/[^/?#]+\/inputs\/)[^/?#]+/i,
   /^(\/(?:api\/)?photography\/galleries\/[^/?#]+\/zip\/)[^/?#]+/i,
