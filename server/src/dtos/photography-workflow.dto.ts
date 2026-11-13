@@ -83,6 +83,7 @@ export const PhotographyConfigSchema = z.strictObject({
     .enum(['eligible', 'selected'])
     .optional()
     .describe('Which captures a full proof publication includes: every eligible one, or those rated 4 or more'),
+  selfieSearch: z.boolean().optional().describe('Let a guest use a selfie to find photographs in this gallery'),
   maxSelections: z
     .int()
     .min(1)
@@ -457,6 +458,7 @@ export class PhotographyGalleryDto extends createZodDto(
     presentation: PhotographyConfigSchema.shape.presentation,
     brand: PublicBrandSchema,
     checkoutAvailable: z.boolean(),
+    selfieSearch: z.boolean().optional(),
     publishedGenerationId: Id.nullable(),
     chapters: z.array(PhotographyChapterSchema),
     date: z.string().nullable().describe("The shoot's date (YYYY-MM-DD), or null when the shoot is not found"),
@@ -499,6 +501,7 @@ export class PhotographyGalleryDto extends createZodDto(
     welcomeMessage: z.string().describe("The studio's welcome for this gallery; empty for none"),
   }),
 ) {}
+export class PhotographySelfieSearchDto extends createZodDto(z.object({ captureIds: Ids })) {}
 export class PhotographyCheckoutDto extends createZodDto(z.object({ url: z.string() })) {}
 export class PhotographyZipResponseDto extends createZodDto(
   z.object({ id: Id, status: z.literal('ready'), url: z.string() }),

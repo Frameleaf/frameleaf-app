@@ -13713,6 +13713,7 @@ export type PhotographyGalleryDto = {
         "number": number;
         recipientId: string;
     }[];
+    selfieSearch?: boolean;
     title: string;
     /** The studio's welcome for this gallery; empty for none */
     welcomeMessage: string;
@@ -13744,6 +13745,9 @@ export type PhotographyOrderAcceptDto = {
 };
 export type PhotographyCheckoutDto = {
     url: string;
+};
+export type PhotographySelfieSearchDto = {
+    captureIds: string[];
 };
 export type PhotographyGallerySessionDto = {
     password?: string;
@@ -13902,6 +13906,8 @@ export type PhotographyStudioPresetsDto = {
                 selection: boolean;
             };
             selectionDeadline: string | null;
+            /** Let a guest use a selfie to find photographs in this gallery */
+            selfieSearch?: boolean;
             terms: string;
             title: string;
             turnaroundDays: number;
@@ -14046,6 +14052,8 @@ export type PhotographyPresetSaveDto = {
             selection: boolean;
         };
         selectionDeadline: string | null;
+        /** Let a guest use a selfie to find photographs in this gallery */
+        selfieSearch?: boolean;
         terms: string;
         title: string;
         turnaroundDays: number;
@@ -14635,6 +14643,8 @@ export type PhotographyWorkflowDto = {
             selection: boolean;
         };
         selectionDeadline: string | null;
+        /** Let a guest use a selfie to find photographs in this gallery */
+        selfieSearch?: boolean;
         terms: string;
         title: string;
         turnaroundDays: number;
@@ -14833,6 +14843,8 @@ export type PhotographyWorkflowDto = {
                 selection: boolean;
             };
             selectionDeadline: string | null;
+            /** Let a guest use a selfie to find photographs in this gallery */
+            selfieSearch?: boolean;
             terms: string;
             title: string;
             turnaroundDays: number;
@@ -15036,6 +15048,8 @@ export type PhotographyWorkflowDto = {
                     selection: boolean;
                 };
                 selectionDeadline: string | null;
+                /** Let a guest use a selfie to find photographs in this gallery */
+                selfieSearch?: boolean;
                 terms: string;
                 title: string;
                 turnaroundDays: number;
@@ -15208,6 +15222,8 @@ export type PhotographyWorkflowConfigDto = {
             selection: boolean;
         };
         selectionDeadline: string | null;
+        /** Let a guest use a selfie to find photographs in this gallery */
+        selfieSearch?: boolean;
         terms: string;
         title: string;
         turnaroundDays: number;
@@ -15468,6 +15484,8 @@ export type PhotographyInvitationDto = {
                 selection: boolean;
             };
             selectionDeadline: string | null;
+            /** Let a guest use a selfie to find photographs in this gallery */
+            selfieSearch?: boolean;
             terms: string;
             title: string;
             turnaroundDays: number;
@@ -15666,6 +15684,8 @@ export type PhotographyInvitationDto = {
                     selection: boolean;
                 };
                 selectionDeadline: string | null;
+                /** Let a guest use a selfie to find photographs in this gallery */
+                selfieSearch?: boolean;
                 terms: string;
                 title: string;
                 turnaroundDays: number;
@@ -15869,6 +15889,8 @@ export type PhotographyInvitationDto = {
                         selection: boolean;
                     };
                     selectionDeadline: string | null;
+                    /** Let a guest use a selfie to find photographs in this gallery */
+                    selfieSearch?: boolean;
                     terms: string;
                     title: string;
                     turnaroundDays: number;
@@ -34412,6 +34434,25 @@ export function photographyFile({ xPhotographySession, captureId, id, kind }: {
             "X-Photography-Session": xPhotographySession
         })
     }));
+}
+export function photographySelfieSearch({ id, xPhotographySession, body }: {
+    id: string;
+    xPhotographySession: string;
+    body: {
+        file: Blob;
+    };
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographySelfieSearchDto;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/selfie-search`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    })));
 }
 /**
  * Exchanges an invitation for a gallery session. A valid invitation with a missing or wrong password answers 401 with passwordRequired and the studio brand; an invalid, expired, or revoked invitation answers 403.

@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, sql, type Transaction } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type {
@@ -102,7 +102,7 @@ export class PhotographyWorkflowRepository {
     albumId: string,
     expected: string | null | undefined,
     initial: PhotographyWorkflow,
-    change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
+    change: (value: PhotographyWorkflow, tx: Transaction<DB>) => Promise<T> | T,
   ) {
     return this.write(id, ownerId, albumId, expected, initial, change, false);
   }
@@ -118,7 +118,7 @@ export class PhotographyWorkflowRepository {
     albumId: string,
     expected: string | null | undefined,
     initial: PhotographyWorkflow,
-    change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
+    change: (value: PhotographyWorkflow, tx: Transaction<DB>) => Promise<T> | T,
   ) {
     return this.write(id, ownerId, albumId, expected, initial, change, true);
   }
@@ -128,7 +128,7 @@ export class PhotographyWorkflowRepository {
     albumId: string,
     expected: string | null | undefined,
     initial: PhotographyWorkflow,
-    change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
+    change: (value: PhotographyWorkflow, tx: Transaction<DB>) => Promise<T> | T,
     keepRevision: boolean,
   ): Promise<{
     row: WorkflowRow;
@@ -241,6 +241,18 @@ export class PhotographyWorkflowRepository {
     }
     return query.execute();
   }
+  async missingGalleryFaceDetection(assetIds: string[]) {
+    if (assetIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('asset')
+      .leftJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
+      .select('asset.id')
+      .where('asset.id', 'in', assetIds)
+      .where('asset_job_status.facesRecognizedAt', 'is', null)
+      .execute();
+    return rows.map(({ id }) => id);
+  }
+
   async logo(ownerId: string, id: string) {
     return this.db
       .selectFrom('asset')

@@ -45142,6 +45142,64 @@
         ]
       }
     },
+    "/photography/galleries/{id}/selfie-search": {
+      "post": {
+        "operationId": "photographySelfieSearch",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Photography-Session",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographySelfieSearchDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
     "/photography/galleries/{id}/session": {
       "post": {
         "description": "Exchanges an invitation for a gallery session. A valid invitation with a missing or wrong password answers 401 with passwordRequired and the studio brand; an invalid, expired, or revoked invitation answers 403.",
@@ -129194,6 +129252,9 @@
             },
             "type": "array"
           },
+          "selfieSearch": {
+            "type": "boolean"
+          },
           "title": {
             "type": "string"
           },
@@ -130430,6 +130491,10 @@
                     "nullable": true,
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                     "type": "string"
+                  },
+                  "selfieSearch": {
+                    "description": "Let a guest use a selfie to find photographs in this gallery",
+                    "type": "boolean"
                   },
                   "terms": {
                     "maxLength": 5000,
@@ -131668,6 +131733,10 @@
                           "nullable": true,
                           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                           "type": "string"
+                        },
+                        "selfieSearch": {
+                          "description": "Let a guest use a selfie to find photographs in this gallery",
+                          "type": "boolean"
                         },
                         "terms": {
                           "maxLength": 5000,
@@ -132925,6 +132994,10 @@
                               "nullable": true,
                               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                               "type": "string"
+                            },
+                            "selfieSearch": {
+                              "description": "Let a guest use a selfie to find photographs in this gallery",
+                              "type": "boolean"
                             },
                             "terms": {
                               "maxLength": 5000,
@@ -134340,6 +134413,10 @@
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                 "type": "string"
               },
+              "selfieSearch": {
+                "description": "Let a guest use a selfie to find photographs in this gallery",
+                "type": "boolean"
+              },
               "terms": {
                 "maxLength": 5000,
                 "type": "string"
@@ -135174,6 +135251,23 @@
         },
         "required": [
           "watermark"
+        ],
+        "type": "object"
+      },
+      "PhotographySelfieSearchDto": {
+        "properties": {
+          "captureIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "captureIds"
         ],
         "type": "object"
       },
@@ -136516,6 +136610,10 @@
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                       "type": "string"
                     },
+                    "selfieSearch": {
+                      "description": "Let a guest use a selfie to find photographs in this gallery",
+                      "type": "boolean"
+                    },
                     "terms": {
                       "maxLength": 5000,
                       "type": "string"
@@ -137445,6 +137543,10 @@
                 "nullable": true,
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                 "type": "string"
+              },
+              "selfieSearch": {
+                "description": "Let a guest use a selfie to find photographs in this gallery",
+                "type": "boolean"
               },
               "terms": {
                 "maxLength": 5000,
@@ -138608,6 +138710,10 @@
                 "nullable": true,
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                 "type": "string"
+              },
+              "selfieSearch": {
+                "description": "Let a guest use a selfie to find photographs in this gallery",
+                "type": "boolean"
               },
               "terms": {
                 "maxLength": 5000,
@@ -139846,6 +139952,10 @@
                       "nullable": true,
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                       "type": "string"
+                    },
+                    "selfieSearch": {
+                      "description": "Let a guest use a selfie to find photographs in this gallery",
+                      "type": "boolean"
                     },
                     "terms": {
                       "maxLength": 5000,
@@ -141103,6 +141213,10 @@
                           "nullable": true,
                           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                           "type": "string"
+                        },
+                        "selfieSearch": {
+                          "description": "Let a guest use a selfie to find photographs in this gallery",
+                          "type": "boolean"
                         },
                         "terms": {
                           "maxLength": 5000,

@@ -1,7 +1,7 @@
 import z from 'zod';
 
 const vector = z.array(z.number().finite()).length(512);
-const embedding = z
+export const FaceEmbeddingSchema = z
   .string()
   .max(65_536)
   .refine((value) => {
@@ -20,7 +20,7 @@ const schema = z
       .array(
         z.strictObject({
           boundingBox: z.strictObject({ x1: coordinate, y1: coordinate, x2: coordinate, y2: coordinate }),
-          embedding,
+          embedding: FaceEmbeddingSchema,
           score: z.number().finite().min(0).max(1),
         }),
       )

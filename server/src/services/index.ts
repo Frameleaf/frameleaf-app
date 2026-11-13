@@ -144,6 +144,7 @@ import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyReminderService } from 'src/services/photography-reminder.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
+import { PhotographySelfieService } from 'src/services/photography-selfie.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
@@ -254,6 +255,7 @@ export const services = [
   ICloudScheduledWorkerService,
   ICloudIdentityAdoptionService,
   PhotographyWorkspaceService,
+  PhotographySelfieService,
   PhotographyWorkflowService,
   PhotographySiteService,
   PhotographyReminderService,
