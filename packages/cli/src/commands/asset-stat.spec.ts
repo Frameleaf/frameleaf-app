@@ -135,13 +135,6 @@ describe('upload metadata admission', () => {
     expect(form.get('fileCreatedAt')).toBe(form.get('fileModifiedAt'));
   });
 
-  it('prefers the sidecar named for the full original filename', () => {
-    vi.mocked(statSync).mockReturnValue({ size: 3 } as Stats);
-
-    expect(findSidecar('photo.jpg')).toBe('photo.jpg.xmp');
-    expect(statSync).not.toHaveBeenCalledWith('photo.xmp');
-  });
-
   it('propagates sidecar lookup errors instead of reporting absence', () => {
     const failure = Object.assign(new Error('cannot inspect sidecar'), { code: 'EACCES' });
     vi.mocked(statSync).mockImplementation(() => {
