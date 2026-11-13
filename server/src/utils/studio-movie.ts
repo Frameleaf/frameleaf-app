@@ -11,6 +11,16 @@
  * Pure: no database, no Nest, no randomness beyond the seed the caller passes.
  */
 import { createHash } from 'node:crypto';
+import {
+  StudioGraphItem,
+  fittedTransform,
+  secondsToFrames,
+  studioGraphIds,
+  studioProjectGraph,
+  studioTrack,
+  timelineToSource,
+  transitionFramesFor,
+} from 'src/utils/studio-graph-build.js';
 
 /** The lengths the sheet offers, in seconds. */
 export const STUDIO_MOVIE_LENGTHS = [30, 60, 180] as const;
@@ -99,16 +109,7 @@ export const seededRandom = (seed: number) => {
 };
 
 /** An id in the UUID version 4 layout (protocol 4.1), drawn from `seed` and a counter. */
-export const studioMovieIds = (seed: string) => {
-  let counter = 0;
-  return () => {
-    const bytes = createHash('sha256').update(`${seed}:${counter++}`, 'utf8').digest().subarray(0, 16);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    const hex = bytes.toString('hex');
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-  };
-};
+export const studioMovieIds = studioGraphIds;
 
 /* ------------------------------------------------------------------ */
 /* Moments                                                             */
@@ -511,17 +512,9 @@ export type StudioMovieGraphOptions = {
 
 const FPS = STUDIO_MOVIE_FPS;
 /** Seconds to the nearest frame (protocol 3.3: halves towards positive infinity). */
-export const toFrames = (seconds: number) => Math.floor(seconds * FPS + 0.5);
-/** Protocol 12.2.4: timeline frames to source frames. */
-const toSource = (frames: number, sourceFps: number) => Math.floor((frames / FPS) * sourceFps + 0.5);
-/** Protocol 12.2.4: source frames to timeline frames. */
-const toTimeline = (frames: number, sourceFps: number) => Math.floor((frames / sourceFps) * FPS);
-
-/** The fitted transform of a still or video on the canvas (protocol 12.6.3, scale 1). */
-const fitted = (width: number, height: number) => {
-  const fit = Math.min(STUDIO_MOVIE_CANVAS.width / width, STUDIO_MOVIE_CANVAS.height / height);
-  return { x: 0, y: 0, width: width * fit, height: height * fit, rotation: 0 };
-};
+export const toFrames = (seconds: number) => secondsToFrames(seconds, FPS);
+const toSource = (frames: number, sourceFps: number) => timelineToSource(frames, FPS, sourceFps);
+const fitted = (width: number, height: number) => fittedTransform(STUDIO_MOVIE_CANVAS, width, height);
 
 type Region = { x: number; y: number; w: number; h: number };
 const FULL: Region = { x: 0, y: 0, w: 1, h: 1 };
@@ -587,40 +580,7 @@ const TITLE_STYLE = {
 
 const TRANSITION_PRESENTATION = { 'Cross dissolve': 'dissolve', 'Dip to black': 'dipToColorDissolve' } as const;
 
-const track = (id: string, name: string, kind: 'video' | 'audio', order: number) => ({
-  id,
-  name,
-  kind,
-  height: 100,
-  locked: false,
-  visible: true,
-  muted: false,
-  solo: false,
-  order,
-  syncLock: true,
-  volume: 0,
-  items: [],
-});
-
-type Item = Record<string, unknown> & { id: string; from: number; durationInFrames: number; type: string };
-
-/** The longest transition (in frames, up to half a second) the two shots' handles allow (12.2.6). */
-const transitionFrames = (left: Item, right: Item): number => {
-  const tail = (item: Item) =>
-    item.type === 'image'
-      ? Infinity
-      : toTimeline((item.sourceDuration as number) - (item.sourceEnd as number), item.sourceFps as number);
-  const head = (item: Item) =>
-    item.type === 'image' ? Infinity : toTimeline(item.sourceStart as number, item.sourceFps as number);
-  const limit = Math.min(left.durationInFrames, right.durationInFrames) - 1;
-  for (let frames = Math.min(TRANSITION_FRAMES, limit); frames >= 2; frames--) {
-    const before = Math.floor(frames * 0.5);
-    if (frames - before <= tail(left) && before <= head(right)) {
-      return frames;
-    }
-  }
-  return 0;
-};
+type Item = StudioGraphItem;
 
 /**
  * The movie as a Studio project graph in normal form (protocol 2.6). Tracks, top first: the title,
@@ -781,7 +741,7 @@ export const buildStudioMovieGraph = (options: StudioMovieGraphOptions) => {
       if (left.from + left.durationInFrames !== right.from) {
         continue;
       }
-      const frames = transitionFrames(left, right);
+      const frames = transitionFramesFor(left, right, FPS, TRANSITION_FRAMES);
       if (frames > 0) {
         transitions.push({
           id: nextId(),
@@ -804,38 +764,24 @@ export const buildStudioMovieGraph = (options: StudioMovieGraphOptions) => {
     .filter((frame) => frame > 0 && frame < lengthFrames)
     .map((frame) => ({ id: nextId(), frame, color: '#3B82F6' }));
 
-  return {
+  return studioProjectGraph({
     id: nextId(),
     name: options.name,
-    description: '',
-    createdAt: options.now,
-    updatedAt: options.now,
-    duration: round3(lengthFrames / FPS),
-    schemaVersion: 15,
-    metadata: {
-      width: STUDIO_MOVIE_CANVAS.width,
-      height: STUDIO_MOVIE_CANVAS.height,
-      fps: FPS,
-      frameRate: { num: FPS, den: 1 },
-    },
-    timeline: {
-      tracks: [
-        track(titleTrack, 'V1', 'video', 0),
-        track(shotTrack, 'V2', 'video', 1),
-        track(cameraTrack, 'A1', 'audio', 2),
-        track(musicTrack, 'A2', 'audio', 3),
-      ],
-      items,
-      masterBusDb: 0,
-      masterBusMuted: false,
-      currentFrame: 0,
-      zoomLevel: 1,
-      scrollPosition: 0,
-      ...(markers.length > 0 && { markers }),
-      ...(transitions.length > 0 && { transitions }),
-      ...(keyframes.length > 0 && { keyframes }),
-    },
-  };
+    now: options.now,
+    canvas: STUDIO_MOVIE_CANVAS,
+    rate: { num: FPS, den: 1 },
+    lengthFrames,
+    tracks: [
+      studioTrack(titleTrack, 'V1', 'video', 0),
+      studioTrack(shotTrack, 'V2', 'video', 1),
+      studioTrack(cameraTrack, 'A1', 'audio', 2),
+      studioTrack(musicTrack, 'A2', 'audio', 3),
+    ],
+    items,
+    markers,
+    transitions,
+    keyframes,
+  });
 };
 
 /* ------------------------------------------------------------------ */
