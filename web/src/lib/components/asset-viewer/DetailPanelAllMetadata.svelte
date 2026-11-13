@@ -80,7 +80,7 @@
   };
 </script>
 
-<Button variant="tertiary" onclick={load}>{$t('frameleaf_all_metadata')}</Button>
+<Button variant="ghost" onclick={load}>{$t('frameleaf_all_metadata')}</Button>
 
 <Dialog bind:open title={$t('frameleaf_all_metadata')} closeLabel={$t('close')} size="medium">
   {#if error}
@@ -113,7 +113,7 @@
       </section>
     {/each}
     {#if matchCount > pageSize}
-      <Button variant="tertiary" onclick={() => (pageSize += 100)}>{$t('frameleaf_all_metadata_more')}</Button>
+      <Button variant="ghost" onclick={() => (pageSize += 100)}>{$t('frameleaf_all_metadata_more')}</Button>
     {/if}
   {/if}
   {#snippet actions()}
@@ -123,7 +123,7 @@
           >{$t(copyStatus === 'copied' ? 'copied_to_clipboard' : 'errors.unable_to_copy_to_clipboard')}</span
         >
       {/if}
-      <Button variant="secondary" disabled={!matchCount} onclick={copy}>{$t('copy_to_clipboard')}</Button>
+      <Button variant="outline" disabled={!matchCount} onclick={copy}>{$t('copy_to_clipboard')}</Button>
     {/if}
   {/snippet}
 </Dialog>
