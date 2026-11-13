@@ -194,7 +194,7 @@ export class MediaHealthOperationService {
         total: snapshot.assetIds
           ? snapshot.assetIds.length
           : snapshot.changedSince
-            ? await this.mediaHealth.countScanAssets(snapshot.userId, snapshot.changedSince)
+            ? await this.mediaHealth.countScanAssets(snapshot.userId, snapshot.changedSince, snapshot.slice)
             : await this.mediaHealth.countScanAssets(snapshot.userId),
       };
     }

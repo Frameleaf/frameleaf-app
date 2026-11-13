@@ -63,6 +63,7 @@ describe(MediaHealthService.name, () => {
     queueOperation: ReturnType<typeof vi.fn>;
   };
   let recoveryRoots: Array<{ label: string; path: string }>;
+  let foundFileRepository: { getByPaths: ReturnType<typeof vi.fn>; remember: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mocks = getMocks();
@@ -76,6 +77,9 @@ describe(MediaHealthService.name, () => {
       getAssetChecksums: vi.fn(),
       getAssetPage: vi.fn().mockResolvedValue([]),
       countScanAssets: vi.fn().mockResolvedValue(0),
+      getScanSliceEnd: vi.fn().mockResolvedValue(null),
+      // no file a search comes across is a photo's original unless a spec says so
+      getOriginalDigestsByPaths: vi.fn().mockResolvedValue([]),
       getCandidatesByHealthIds: vi.fn(),
       getLatestRun: vi.fn(),
       getInternalAssetByOriginalPath: vi.fn(),
@@ -140,6 +144,9 @@ describe(MediaHealthService.name, () => {
       queueOperation: vi.fn().mockResolvedValue({ outcome: 'created' }),
     };
 
+    // nothing was read before unless a spec says so
+    foundFileRepository = { getByPaths: vi.fn().mockResolvedValue([]), remember: vi.fn().mockResolvedValue(undefined) };
+
     sut = new MediaHealthService(
       mocks.logger as never,
       mocks.asset as never,
@@ -163,6 +170,7 @@ describe(MediaHealthService.name, () => {
       cloudBackupService as never,
       mocks.session as never,
       iCloudSyncRepository as never,
+      foundFileRepository as never,
     );
     clearConfigCache();
     vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([]);
@@ -2483,7 +2491,7 @@ describe(MediaHealthService.name, () => {
             yield '/data/upload/user-3/later.jpg';
             cursor.length = 0;
           });
-        vi.mocked(mocks.storage.stat).mockResolvedValue({ size } as never);
+        vi.mocked(mocks.storage.stat).mockResolvedValue(settledStat({ size }) as never);
         vi.mocked(mocks.crypto.hashFileDigests)
           .mockResolvedValueOnce({ sha1, sha256: conflict ? Buffer.alloc(32, 8) : sha256, sizeInBytes: size })
           .mockResolvedValueOnce({
@@ -2526,15 +2534,7 @@ describe(MediaHealthService.name, () => {
         // Each step reads the search locations again; only the first starts a new walk from them.
         expect(mocks.user.getList).toHaveBeenCalledTimes(2);
         expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(2);
-        // An oversized final file yields before the walker can close its last directory frame.
-        if (size > 10 * 1024 ** 3) {
-          const finalJob = vi.mocked(mocks.job.queue).mock.calls.at(-1)![0];
-          vi.mocked(mocks.storage.walkWithCursor).mockImplementationOnce((cursor) => {
-            cursor.length = 0;
-            return (async function* () {})();
-          });
-          await sut.handleLocateMissing(JSON.parse(JSON.stringify(finalJob.data)));
-        }
+        // FL-1534: the reading budget is checked before the next read, so an oversized last file ends the walk
         expect(mediaHealthRepository.finishRun).toHaveBeenLastCalledWith(
           'run-1',
           expect.objectContaining({ status: 'completed', error: null }),
@@ -2551,7 +2551,7 @@ describe(MediaHealthService.name, () => {
           candidatePath: '/data/upload/user-2/found.jpg',
           status: MediaHealthStatus.Found,
         });
-        expect(mocks.job.queue).toHaveBeenCalledTimes(size > 10 * 1024 ** 3 ? 2 : 1);
+        expect(mocks.job.queue).toHaveBeenCalledTimes(1);
       },
     );
 
@@ -2585,7 +2585,7 @@ describe(MediaHealthService.name, () => {
           yield ['/data/upload/user-2/found.jpg'];
         })() as never,
       );
-      vi.mocked(mocks.storage.stat).mockResolvedValue({ size: 20 } as never);
+      vi.mocked(mocks.storage.stat).mockResolvedValue(settledStat({ size: 20 }) as never);
       vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue({
         sha1: publicSha1,
         sha256: Buffer.alloc(32, 9),
@@ -2698,7 +2698,7 @@ describe(MediaHealthService.name, () => {
             yield ['/external/photos/renamed.jpg', '/external/photos/renamed.xmp'];
           })() as never,
         );
-        vi.mocked(mocks.storage.stat).mockResolvedValue({ size: 10 } as never);
+        vi.mocked(mocks.storage.stat).mockResolvedValue(settledStat({ size: 10 }) as never);
         vi.mocked(mocks.crypto.hashFileDigests)
           .mockResolvedValueOnce({ sha1, sha256, sizeInBytes: 10 })
           .mockResolvedValueOnce({ sha1: Buffer.alloc(20, 9), sha256: Buffer.alloc(32, 9), sizeInBytes: 10 });
@@ -2774,7 +2774,7 @@ describe(MediaHealthService.name, () => {
             yield ['/external/b/found.jpg'];
           })() as never,
         );
-      vi.mocked(mocks.storage.stat).mockResolvedValue({ size: 20 } as never);
+      vi.mocked(mocks.storage.stat).mockResolvedValue(settledStat({ size: 20 }) as never);
       vi.mocked(mocks.crypto.hashFileDigests).mockResolvedValue({ sha1: sha1B, sha256: sha256B, sizeInBytes: 20 });
       vi.mocked(mocks.asset.getByLibraryIdAndOriginalPath).mockResolvedValue(undefined);
 
@@ -3426,36 +3426,39 @@ describe(MediaHealthService.name, () => {
       vi.useRealTimers();
     });
 
-    it('makes a scheduled scan full at least weekly, so files removed or damaged later are found (FL-69)', async () => {
+    it('reads a share of the library with each scheduled scan, carrying on where the last one stopped (FL-1534)', async () => {
       vi.useFakeTimers({ now: new Date('2026-09-25T02:00:00.000Z'), toFake: ['Date'] });
       care({ healthScan: true });
-      vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'recent' }, { id: 'stale' }, { id: 'no-full' }] as never);
+      vi.mocked(mocks.user.getList).mockResolvedValue([
+        { id: 'first-share' },
+        { id: 'next-share' },
+        { id: 'new-pass' },
+        { id: 'never' },
+      ] as never);
       vi.mocked(mediaHealthRepository.createRun).mockImplementation((category) =>
         Promise.resolve({ id: `run-${category}` } as never),
       );
-      const scan = (userId: string, createdAt: string, changedSince?: string) => ({
+      const scan = (userId: string, createdAt: string, extra: Record<string, unknown> = {}) => ({
         id: `op-${userId}-${createdAt}`,
-        snapshot: { mode: 'scan', userId, missingRunId: 'm', corruptRunId: 'c', ...(changedSince && { changedSince }) },
+        snapshot: { mode: 'scan', userId, missingRunId: 'm', corruptRunId: 'c', ...extra },
         createdAt: new Date(createdAt),
       });
+      const yesterday = '2026-09-24T02:00:00.000Z';
       const history: Record<string, unknown[]> = {
-        // Incremental yesterday, full three days ago: incremental from yesterday.
-        recent: [
-          scan('recent', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
-          scan('recent', '2026-09-22T02:00:00.000Z'),
+        // A full scan yesterday, and a scan of chosen photos since (FL-737), which says nothing of the rest.
+        'first-share': [
+          scan('first-share', '2026-09-24T09:00:00.000Z', { assetIds: ['a'] }),
+          scan('first-share', yesterday),
         ],
-        // Last full scan eight days ago: full, whatever the incremental ones since, and a scan of
-        // chosen photos (FL-737) is no full scan.
-        stale: [
-          {
-            ...scan('stale', '2026-09-24T09:00:00.000Z'),
-            snapshot: { mode: 'scan', userId: 'stale', missingRunId: 'm', corruptRunId: 'c', assetIds: ['a'] },
-          },
-          scan('stale', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z'),
-          scan('stale', '2026-09-17T02:00:00.000Z'),
+        // Yesterday's scan read a share up to photo `m`.
+        'next-share': [
+          scan('next-share', yesterday, { changedSince: '2026-09-23T02:00:00.000Z', slice: { after: 'f', to: 'm' } }),
         ],
-        // Only incremental scans in reach: full.
-        'no-full': [scan('no-full', '2026-09-24T02:00:00.000Z', '2026-09-23T02:00:00.000Z')],
+        // Yesterday's share ran to the end of the library: a pass is complete.
+        'new-pass': [
+          scan('new-pass', yesterday, { changedSince: '2026-09-23T02:00:00.000Z', slice: { after: 'm', to: null } }),
+        ],
+        never: [],
       };
       vi.mocked(mediaOperationRepository.list).mockImplementation(
         (options: any) =>
@@ -3465,16 +3468,66 @@ describe(MediaHealthService.name, () => {
               : { items: [], total: 0 },
           ) as never,
       );
+      // 2,800 photos, read once in four weeks: a hundred are due after one day
+      vi.mocked(mediaHealthRepository.countScanAssets).mockResolvedValue(2800);
+      vi.mocked(mediaHealthRepository.getScanSliceEnd).mockImplementation((_owner, after) =>
+        Promise.resolve(after === 'm' ? 'z' : 'h'),
+      );
 
-      await expect(sut.startScheduledScans()).resolves.toBe(3);
+      await expect(sut.startScheduledScans()).resolves.toBe(4);
 
       const snapshots = vi.mocked(mediaOperationRepository.create).mock.calls.map(([operation]) => operation.snapshot);
-      expect(snapshots[0]).toMatchObject({ userId: 'recent', changedSince: '2026-09-24T02:00:00.000Z' });
-      expect(snapshots[1]).toMatchObject({ userId: 'stale' });
-      expect(snapshots[1]).not.toHaveProperty('changedSince');
-      expect(snapshots[2]).toMatchObject({ userId: 'no-full' });
-      expect(snapshots[2]).not.toHaveProperty('changedSince');
+      expect(snapshots[0]).toMatchObject({
+        userId: 'first-share',
+        changedSince: yesterday,
+        slice: { after: null, to: 'h' },
+      });
+      expect(snapshots[1]).toMatchObject({
+        userId: 'next-share',
+        changedSince: yesterday,
+        slice: { after: 'm', to: 'z' },
+      });
+      expect(snapshots[2]).toMatchObject({
+        userId: 'new-pass',
+        changedSince: yesterday,
+        slice: { after: null, to: 'h' },
+      });
+      // an account that was never scanned is scanned in full, once
+      expect(snapshots[3]).toMatchObject({ userId: 'never' });
+      expect(snapshots[3]).not.toHaveProperty('changedSince');
+      expect(snapshots[3]).not.toHaveProperty('slice');
+      expect(mediaHealthRepository.getScanSliceEnd).toHaveBeenCalledWith('first-share', null, 100);
+      expect(mediaHealthRepository.getScanSliceEnd).toHaveBeenCalledWith('next-share', 'm', 100);
       vi.useRealTimers();
+    });
+
+    it('scans the night’s share as well as what changed, and counts both (FL-1534)', async () => {
+      care({ checksumScan: true });
+      vi.mocked(mediaHealthRepository.getAssetPage).mockResolvedValue([]);
+      const snapshot = {
+        mode: 'scan' as const,
+        userId: 'user-id',
+        missingRunId: 'm',
+        corruptRunId: 'c',
+        changedSince: '2026-09-20T02:00:00.000Z',
+        slice: { after: 'f', to: 'm' },
+      };
+
+      await sut.scanPage(snapshot, null, 25);
+      await sut.countScanAssets('user-id', snapshot.changedSince, snapshot.slice);
+
+      expect(mediaHealthRepository.getAssetPage).toHaveBeenCalledWith({
+        ownerId: 'user-id',
+        afterId: null,
+        limit: 25,
+        changedSince: new Date(snapshot.changedSince),
+        slice: { after: 'f', to: 'm' },
+      });
+      expect(mediaHealthRepository.countScanAssets).toHaveBeenCalledWith(
+        'user-id',
+        new Date(snapshot.changedSince),
+        snapshot.slice,
+      );
     });
 
     it.each([
@@ -7411,6 +7464,382 @@ describe(MediaHealthService.name, () => {
       expect(mediaHealthRepository.recordRemoved).toHaveBeenCalledWith(['asset-1', 'asset-2'], {
         by: owner.user.name,
       });
+    });
+  });
+
+  describe('a search for a missing original reads the drive once (FL-1534)', () => {
+    const sha1 = Buffer.alloc(20, 1);
+    const sha256 = Buffer.alloc(32, 2);
+    const other = { sha1: Buffer.alloc(20, 8), sha256: Buffer.alloc(32, 9) };
+    const found = '/data/upload/user-2/found.jpg';
+    const unrelated = '/data/upload/user-2/unrelated.jpg';
+
+    const missing = (...assets: Array<Record<string, unknown>>) => {
+      const list = assets.length > 0 ? assets : [{}];
+      vi.mocked(mediaHealthRepository.getByIds).mockResolvedValue(
+        list.map((_, index) => ({
+          id: `health-${index + 1}`,
+          assetId: `asset-${index + 1}`,
+          category: MediaHealthCategory.Missing,
+        })) as never,
+      );
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue(
+        list.map((asset, index) => ({
+          id: `asset-${index + 1}`,
+          ownerId: 'user-1',
+          checksum: sha1,
+          checksumAlgorithm: ChecksumAlgorithm.sha1File,
+          originalPath: `/data/upload/user-1/missing-${index + 1}.jpg`,
+          originalFileName: 'missing.jpg',
+          type: AssetType.Image,
+          isExternal: false,
+          libraryId: null,
+          ...asset,
+        })) as never,
+      );
+      vi.mocked(mocks.user.getList).mockResolvedValue([{ id: 'user-2', storageLabel: null }] as never);
+    };
+    const onDrive = (...files: string[]) =>
+      vi.mocked(mocks.storage.walk).mockImplementation(
+        () =>
+          (async function* () {
+            await Promise.resolve();
+            yield files;
+          })() as never,
+      );
+    const search = (ids = ['health-1']) => sut.handleLocateMissing({ runId: 'run-1', ids, userId: 'user-1' });
+    const lastCandidates = () => vi.mocked(mediaHealthRepository.replaceCandidates).mock.calls.at(-1)![1];
+
+    beforeEach(() => {
+      vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((file) =>
+        Promise.resolve({ ...(file === found ? { sha1, sha256 } : other), sizeInBytes: 10 }),
+      );
+    });
+
+    it('hashes no file on a second search over an unchanged drive', async () => {
+      missing();
+      onDrive(found, unrelated);
+      const stat = settledStat({ size: 10 });
+      vi.mocked(mocks.storage.stat).mockResolvedValue(stat as never);
+
+      await search();
+
+      // no size is recorded for the photo, so both files are read: once, and what was read is kept
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(2);
+      expect(foundFileRepository.remember).toHaveBeenCalledWith({
+        path: found,
+        sizeInBytes: 10,
+        modifiedAt: stat.mtime,
+        sha1,
+        sha256,
+      });
+      expect(foundFileRepository.remember).toHaveBeenCalledTimes(2);
+
+      foundFileRepository.getByPaths.mockResolvedValue([
+        { path: found, sizeInBytes: '10', modifiedAt: stat.mtime, sha1, sha256, outcome: 'read' },
+        { path: unrelated, sizeInBytes: '10', modifiedAt: stat.mtime, ...other, outcome: 'spare' },
+      ]);
+      await search();
+
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(2);
+      expect(lastCandidates()).toEqual([
+        expect.objectContaining({ candidatePath: found, status: MediaHealthStatus.Found }),
+      ]);
+    });
+
+    it('reads a remembered file again once its size or modified time changed', async () => {
+      missing();
+      onDrive(found);
+      const stat = settledStat({ size: 10 });
+      vi.mocked(mocks.storage.stat).mockResolvedValue(stat as never);
+      foundFileRepository.getByPaths.mockResolvedValue([
+        {
+          path: found,
+          sizeInBytes: '10',
+          modifiedAt: new Date(stat.mtime.getTime() - 1000),
+          ...other,
+          outcome: 'read',
+        },
+      ]);
+
+      await search();
+
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(1);
+      expect(lastCandidates()).toEqual([expect.objectContaining({ candidatePath: found })]);
+    });
+
+    it('does not remember a file that changed while it was read', async () => {
+      missing();
+      onDrive(found);
+      const stat = settledStat({ size: 10 });
+      vi.mocked(mocks.storage.stat)
+        .mockResolvedValueOnce(stat as never)
+        .mockResolvedValue({ ...stat, mtime: new Date(stat.mtime.getTime() + 1000) } as never);
+
+      await search();
+
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(1);
+      expect(foundFileRepository.remember).not.toHaveBeenCalled();
+    });
+
+    it('knows another photo’s original by that photo’s record, and never reads it', async () => {
+      missing();
+      onDrive(found, unrelated);
+      vi.mocked(mediaHealthRepository.getOriginalDigestsByPaths).mockResolvedValue([
+        {
+          originalPath: found,
+          checksum: sha1,
+          checksumAlgorithm: ChecksumAlgorithm.sha1File,
+          sha1: null,
+          sha256: null,
+          sizeInBytes: null,
+        },
+        {
+          originalPath: unrelated,
+          checksum: other.sha1,
+          checksumAlgorithm: ChecksumAlgorithm.sha1File,
+          sha1: other.sha1,
+          sha256: other.sha256,
+          sizeInBytes: 10,
+        },
+      ]);
+
+      await search();
+
+      expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+      expect(foundFileRepository.remember).not.toHaveBeenCalled();
+      expect(lastCandidates()).toEqual([
+        expect.objectContaining({
+          candidatePath: found,
+          status: MediaHealthStatus.Found,
+          evidence: expect.objectContaining({ algorithms: ['sha1'] }),
+        }),
+      ]);
+    });
+
+    it('leaves out an original whose record is of a file of another size', async () => {
+      missing();
+      onDrive(found);
+      vi.mocked(mediaHealthRepository.getOriginalDigestsByPaths).mockResolvedValue([
+        {
+          originalPath: found,
+          checksum: sha1,
+          checksumAlgorithm: ChecksumAlgorithm.sha1File,
+          sha1,
+          sha256,
+          sizeInBytes: 4096,
+        },
+      ]);
+
+      await search();
+
+      expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+      expect(lastCandidates()).toEqual([]);
+    });
+
+    it('keeps the size filter on for the others when one photo records nothing to find it by', async () => {
+      // the first photo's size is recorded; the second records a checksum of its path and no contents
+      missing({}, { checksum: Buffer.alloc(20, 5), checksumAlgorithm: ChecksumAlgorithm.sha1Path });
+      vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([
+        { assetId: 'asset-1', sha1, sha256, sizeInBytes: 10 },
+      ]);
+      onDrive(found, unrelated);
+      vi.mocked(mocks.storage.stat).mockImplementation(((file: string) =>
+        Promise.resolve(settledStat({ size: file === found ? 10 : 99 }))) as never);
+
+      await search(['health-1', 'health-2']);
+
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(1);
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledWith(found);
+    });
+
+    it('carries files it had no reading budget left for into the next step, and reads each once', async () => {
+      const size = 6 * 1024 ** 3;
+      missing();
+      vi.mocked(mediaHealthRepository.getAssetChecksums).mockResolvedValue([
+        { assetId: 'asset-1', sha1, sha256, sizeInBytes: size },
+      ]);
+      const files = ['/data/upload/user-2/a.mov', '/data/upload/user-2/b.mov', found];
+      onDrive(...files);
+      vi.mocked(mocks.storage.stat).mockResolvedValue(settledStat({ size }) as never);
+      vi.mocked(mocks.crypto.hashFileDigests).mockImplementation((file) =>
+        Promise.resolve({ ...(file === found ? { sha1, sha256 } : other), sizeInBytes: size }),
+      );
+
+      await search();
+
+      // two files spend the step's ten gigabytes; the third waits, and nothing is settled yet
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(2);
+      const queued = vi.mocked(mocks.job.queue).mock.calls.at(-1)![0];
+      expect(queued).toMatchObject({
+        name: JobName.MediaHealthLocateMissing,
+        data: { managedSearch: { cursor: [], pending: [found] } },
+      });
+
+      onDrive();
+      await sut.handleLocateMissing(JSON.parse(JSON.stringify(queued.data)));
+
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(3);
+      expect(mocks.crypto.hashFileDigests).toHaveBeenLastCalledWith(found);
+      expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+      expect(lastCandidates()).toEqual([
+        expect.objectContaining({ candidatePath: found, status: MediaHealthStatus.Found }),
+      ]);
+    });
+
+    it('waits for the account’s scheduled scan, so one search covers everything that scan finds', async () => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: 'op-scan',
+            status: MediaOperationStatus.Rendering,
+            createdAt: new Date(Date.now() - 60 * 60_000),
+            snapshot: { mode: 'scan', userId: 'user-1', missingRunId: 'm', corruptRunId: 'c', scheduled: true },
+          },
+        ],
+        total: 1,
+      } as never);
+
+      await expect(sut.handleLocateMissing({ userId: 'user-1', pending: true })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mediaHealthRepository.claimSearchPending).not.toHaveBeenCalled();
+      expect(mocks.storage.walkWithCursor).not.toHaveBeenCalled();
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.MediaHealthLocateMissing, data: { userId: 'user-1', pending: true, delay: 10 * 60_000 } },
+      ]);
+    });
+
+    it.each([
+      ['a scan a person started', { snapshot: { scheduled: false } }],
+      ['a scheduled scan somebody paused', { status: MediaOperationStatus.Paused }],
+      [
+        'a scheduled scan that has run for more than twelve hours',
+        { createdAt: new Date(Date.now() - 13 * 3_600_000) },
+      ],
+    ])('does not wait for %s', async (_, extra: Record<string, any>) => {
+      vi.mocked(mediaOperationRepository.list).mockResolvedValue({
+        items: [
+          {
+            id: 'op-scan',
+            status: MediaOperationStatus.Rendering,
+            createdAt: new Date(Date.now() - 60 * 60_000),
+            ...extra,
+            snapshot: {
+              mode: 'scan',
+              userId: 'user-1',
+              missingRunId: 'm',
+              corruptRunId: 'c',
+              scheduled: true,
+              ...extra.snapshot,
+            },
+          },
+        ],
+        total: 1,
+      } as never);
+      vi.mocked(mediaHealthRepository.claimSearchPending).mockResolvedValue([]);
+
+      await expect(sut.handleLocateMissing({ userId: 'user-1', pending: true })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mediaHealthRepository.claimSearchPending).toHaveBeenCalled();
+      expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+    });
+
+    it('leaves out of the search a file a person took back from its photo, while it is the same file', async () => {
+      missing();
+      onDrive(found);
+      const stat = settledStat({ size: 10 });
+      vi.mocked(mocks.storage.stat).mockResolvedValue(stat as never);
+      foundFileRepository.getByPaths.mockResolvedValue([
+        { path: found, sizeInBytes: '10', modifiedAt: stat.mtime, sha1, sha256, outcome: 'left' },
+      ]);
+
+      await search();
+
+      expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+      expect(lastCandidates()).toEqual([]);
+    });
+
+    describe('the scan’s last step and Undo', () => {
+      const file = '/data/upload/user-1/ab/cd/undone.jpg';
+      const stat = settledStat({ size: 10 });
+      const stray = (left: Record<string, unknown>) => {
+        vi.mocked(mocks.user.get).mockResolvedValue({
+          id: 'user-1',
+          storageLabel: null,
+          quotaSizeInBytes: null,
+          quotaUsageInBytes: 0,
+        } as never);
+        onDrive(file);
+        vi.mocked(mediaHealthRepository.getTrackedPaths).mockResolvedValue(new Set());
+        vi.mocked(mocks.storage.stat).mockResolvedValue(stat as never);
+        vi.mocked(mocks.asset.getByChecksums).mockResolvedValue([{ id: 'asset-9', originalPath: file }] as never);
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+        foundFileRepository.getByPaths.mockResolvedValue([
+          { path: file, sizeInBytes: '10', modifiedAt: stat.mtime, ...other, outcome: 'left', ...left },
+        ]);
+      };
+
+      it('neither reads nor places an unchanged file a person undid or chose to leave', async () => {
+        stray({});
+
+        await sut.restoreUntracked('user-1');
+
+        expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+        expect(mocks.asset.getByChecksums).not.toHaveBeenCalled();
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+        expect(foundFileRepository.remember).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['size', { sizeInBytes: '11' }],
+        ['modified time', { modifiedAt: new Date(stat.mtime.getTime() - 1000) }],
+      ])('treats a left file whose %s changed since as a new file', async (_, changed) => {
+        stray(changed);
+
+        await sut.restoreUntracked('user-1');
+
+        expect(mocks.crypto.hashFileDigests).toHaveBeenCalledWith(file);
+        expect(mocks.asset.getByChecksums).toHaveBeenCalled();
+        expect(foundFileRepository.remember).toHaveBeenCalledWith(expect.objectContaining({ path: file }));
+      });
+    });
+
+    it('brings back a stray photo it read before without reading it again', async () => {
+      const file = '/data/upload/user-1/ab/cd/stray.jpg';
+      const stat = settledStat({ size: 10 });
+      vi.mocked(mediaHealthRepository.streamAssets).mockReturnValue(
+        // eslint-disable-next-line require-yield
+        (async function* () {
+          await Promise.resolve();
+        })() as never,
+      );
+      vi.mocked(mocks.user.get).mockResolvedValue({
+        id: 'user-1',
+        storageLabel: null,
+        quotaSizeInBytes: null,
+        quotaUsageInBytes: 0,
+      } as never);
+      onDrive(file);
+      vi.mocked(mediaHealthRepository.getTrackedPaths).mockResolvedValue(new Set());
+      vi.mocked(mocks.storage.stat).mockResolvedValue(stat as never);
+      vi.mocked(mocks.asset.getByChecksums).mockResolvedValue([{ id: 'asset-9', originalPath: file }] as never);
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+
+      await sut.restoreUntracked('user-1');
+
+      // first time: read, and what was read is kept for the file it is
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(1);
+      expect(foundFileRepository.remember).toHaveBeenCalledWith(
+        expect.objectContaining({ path: file, sizeInBytes: 10, modifiedAt: stat.mtime }),
+      );
+
+      foundFileRepository.getByPaths.mockResolvedValue([
+        { path: file, sizeInBytes: '10', modifiedAt: stat.mtime, ...other, outcome: 'read' },
+      ]);
+      await sut.restoreUntracked('user-1');
+
+      expect(mocks.crypto.hashFileDigests).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.getByChecksums).toHaveBeenLastCalledWith('user-1', [other.sha1, other.sha256]);
     });
   });
 });

@@ -17,8 +17,11 @@ import { asUuid } from 'src/utils/database.js';
  * column changed. `left`: a person undid what was done, or chose to leave the file; it is not sorted
  * again while it stays the same file. `tidied`: a file Frameleaf makes itself, cleared (`preview`) or
  * joined to its photo (`sidecar`). `asked`: putting found photos back is switched off, so it waits.
+ *
+ * FL-1534: `read`: a search for a missing original read the file and its digests are kept, so no search
+ * reads it again while it stays the same file. It has not been sorted, and no review lists it.
  */
-export type FoundFileOutcome = SortedOutcome | 'left' | 'tidied';
+export type FoundFileOutcome = SortedOutcome | 'left' | 'tidied' | 'read';
 export type FoundFileReason = SortedReason | 'asked' | 'preview' | 'sidecar';
 
 export type FoundFile = Omit<Selectable<FoundFileTable>, 'outcome'> & { outcome: FoundFileOutcome };
@@ -74,6 +77,25 @@ export class FoundFileRepository {
       .values(row)
       .onConflict((oc) => oc.column('path').doUpdateSet({ ...changes, sortedAt: sql`now()` }))
       .execute();
+  }
+
+  /**
+   * FL-1534: keep the digests a search just read from this file. A file that is already remembered as it
+   * is now (same size, same modified time) keeps its row, with what was done with it; one that changed
+   * since starts again as only read.
+   */
+  async remember(file: { path: string; sizeInBytes: number; modifiedAt: Date; sha1: Buffer; sha256: Buffer }) {
+    const outcome: FoundFileOutcome = 'read';
+    await sql`
+      INSERT INTO found_file ("path", "sizeInBytes", "modifiedAt", sha1, sha256, outcome)
+      VALUES (${file.path}, ${file.sizeInBytes}, ${file.modifiedAt}, ${file.sha1}, ${file.sha256}, ${outcome})
+      ON CONFLICT ("path") DO UPDATE SET
+        "sizeInBytes" = excluded."sizeInBytes", "modifiedAt" = excluded."modifiedAt",
+        sha1 = excluded.sha1, sha256 = excluded.sha256, outcome = excluded.outcome,
+        reason = NULL, "ownerId" = NULL, "assetId" = NULL, "previousPath" = NULL,
+        steps = DEFAULT, "sortedAt" = now()
+      WHERE found_file."sizeInBytes" <> excluded."sizeInBytes" OR found_file."modifiedAt" <> excluded."modifiedAt"
+    `.execute(this.db);
   }
 
   private listed() {

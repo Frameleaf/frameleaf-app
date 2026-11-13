@@ -90,6 +90,7 @@ import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { FoundFileRepository } from 'src/repositories/found-file.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
@@ -199,11 +200,23 @@ export const LIBRARY_CARE_HEALTH_SCAN_CRON = 'libraryCareHealthScan';
 type DurableScan = { missingRunId: string; corruptRunId: string; operationId: string };
 
 /**
- * How often a scheduled scan is a full one (FL-69). An incremental scan only rechecks assets whose
- * record changed, so an original removed or damaged on disk later, with no change to its record,
- * would never be found; at least this often every asset's file is checked again.
+ * How long the scheduled scans take to read every original once (FL-69, FL-1534). An incremental scan
+ * only rechecks assets whose record changed, so an original removed or damaged on disk later, with no
+ * change to its record, would never be found. Each scheduled scan therefore also reads a share of the
+ * library, in id order, carrying on where the scan before stopped: the share that fell due since that
+ * scan, so every original is read once in this long and never the whole library in one night.
+ * ponytail: a fixed four weeks. Make it a Library care setting when someone needs another pace.
  */
-export const LIBRARY_CARE_FULL_SCAN_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+export const LIBRARY_CARE_FULL_SCAN_INTERVAL_MS = 4 * 7 * 24 * 60 * 60 * 1000;
+/**
+ * FL-1534: the fixes' shared search waits for the account's scheduled scan to finish, so everything that
+ * scan finds missing is looked for in one walk of storage. It looks again this often, and stops waiting
+ * for a scan that has been going for longer than `SEARCH_WAITS_FOR_SCAN_MS`.
+ */
+const SEARCH_AFTER_SCAN_DELAY_MS = 10 * 60_000;
+const SEARCH_WAITS_FOR_SCAN_MS = 12 * 60 * 60_000;
+/** FL-1534: files of a walk whose records are asked for in one go. */
+const LOOKUP_CHUNK = 200;
 
 /** Run states that mean "a job is still working on this". */
 const OPEN_RUN_STATES: ReadonlySet<string> = new Set(['running', 'paused', 'retrying']);
@@ -297,6 +310,61 @@ const BUSY_REASONS: ReadonlySet<string> = new Set([
 ]);
 
 type ManagedSearchProgress = NonNullable<JobOf<JobName.MediaHealthLocateMissing>['managedSearch']>;
+
+/** A file a search came across: where it is, and the size and modified time it has now. */
+type FileOnDisk = { path: string; size: number; mtime: Date };
+/** What is known of a file's contents: one digest from a photo's record, or both from a read. */
+type KnownDigests = { sha1?: Buffer; sha256?: Buffer };
+/** The digests a search looks for, by missing photo. */
+type SearchTargets = {
+  byAsset: Map<string, { asset: MediaHealthAsset; sha1: Buffer[]; sha256: Buffer[] }>;
+  sha1: Map<string, string[]>;
+  sha256: Map<string, string[]>;
+};
+
+/**
+ * FL-1534: whether a missing photo has to be looked for among files of every size: it records a digest
+ * to find it by, and no size that goes with that digest. One with no digest at all can be found by
+ * nothing, and one whose digests and size come from the same read has its size; neither widens the search.
+ */
+const hasUnknownSizeTarget = (
+  target: { asset: MediaHealthAsset; sha1: Buffer[]; sha256: Buffer[] } | undefined,
+  stored: { sha1: Buffer; sha256: Buffer } | undefined,
+) => {
+  if (!target || (target.sha1.length === 0 && target.sha256.length === 0)) {
+    return false;
+  }
+  if (!stored) {
+    return true;
+  }
+  const { checksum, checksumAlgorithm } = target.asset;
+  return checksumAlgorithm === ChecksumAlgorithm.sha1File
+    ? !checksum.equals(stored.sha1)
+    : checksumAlgorithm === ChecksumAlgorithm.sha256File
+      ? !checksum.equals(stored.sha256)
+      : false;
+};
+
+/** The missing photos a file with these digests is the original of, and by which digest. */
+const matchTargets = (targets: SearchTargets, digests: KnownDigests) =>
+  [
+    ...(digests.sha1 ? (targets.sha1.get(digests.sha1.toString('hex')) ?? []) : []).map((assetId) => ({
+      assetId,
+      algorithm: 'sha1' as const,
+    })),
+    ...(digests.sha256 ? (targets.sha256.get(digests.sha256.toString('hex')) ?? []) : []).map((assetId) => ({
+      assetId,
+      algorithm: 'sha256' as const,
+    })),
+  ].filter(({ assetId }) => {
+    const target = targets.byAsset.get(assetId);
+    // a digest the file is known by must be one the photo records, whenever the photo records any
+    return (
+      !!target &&
+      !(digests.sha1 && target.sha1.length > 0 && target.sha1.every((digest) => !digest.equals(digests.sha1!))) &&
+      !(digests.sha256 && target.sha256.length > 0 && target.sha256.every((digest) => !digest.equals(digests.sha256!)))
+    );
+  });
 
 /** One step of a search for originals (FL-69): what it covered, and where to carry on from. */
 export type MediaHealthLocateStep = {
@@ -414,6 +482,7 @@ export class MediaHealthService {
     private cloudBackupService: CloudBackupService,
     private sessionRepository: SessionRepository,
     private iCloudSyncRepository: ICloudSyncRepository,
+    private foundFileRepository: FoundFileRepository,
   ) {
     this.logger.setContext(MediaHealthService.name);
   }
@@ -467,9 +536,9 @@ export class MediaHealthService {
 
   /**
    * Start every account's scheduled health scan (FL-69). Incremental: an account whose last scan
-   * completed is scanned for what changed since that scan began; one never scanned, or whose last
-   * full scan is older than `LIBRARY_CARE_FULL_SCAN_INTERVAL_MS`, is scanned in full, so files
-   * removed or damaged without any change to their records are found too. Each is the same durable, checkpointed job as "Scan again", so an interrupted scan carries
+   * completed is scanned for what changed since that scan began, and (FL-1534) for the share of the
+   * library that fell due since, so files removed or damaged without any change to their records are
+   * found too, a share at a time. One never scanned is scanned in full. Each is the same durable, checkpointed job as "Scan again", so an interrupted scan carries
    * on from its checkpoint, and an account with a scan already open keeps it instead of getting a
    * second one (a scan somebody paused stays paused). Returns how many accounts have a scan.
    */
@@ -481,9 +550,9 @@ export class MediaHealthService {
     let scheduled = 0;
     for (const user of await this.userRepository.getList()) {
       try {
-        const changedSince = await this.incrementalScanStart(user.id);
+        const { changedSince, slice } = await this.scheduledScanScope(user.id);
         await this.mediaHealthRepository.withLibraryCareLock(user.id, () =>
-          this.admitDurableScan(user.id, { changedSince, scheduled: true }),
+          this.admitDurableScan(user.id, { changedSince, slice, scheduled: true }),
         );
         scheduled++;
       } catch (error) {
@@ -494,21 +563,36 @@ export class MediaHealthService {
   }
 
   /**
-   * Where the account's next scheduled scan starts from: the start of its last completed scan, or
-   * undefined for a full scan (never scanned, or no full scan completed within the interval).
+   * What the account's next scheduled scan covers: nothing here for a full scan (never scanned), else
+   * what changed since its last completed scan began, and the share of the library due since then
+   * (FL-1534). The share carries on after the last one read and is as large as the time since the last
+   * scan is of `LIBRARY_CARE_FULL_SCAN_INTERVAL_MS`, so the pace holds whatever the schedule is.
    */
-  private async incrementalScanStart(ownerId: string): Promise<string | undefined> {
-    const { lastScanAt, lastFullScanAt } = await this.lastCompletedScans(ownerId);
-    if (!lastScanAt || !lastFullScanAt) {
-      return undefined;
+  private async scheduledScanScope(
+    ownerId: string,
+  ): Promise<{ changedSince?: string; slice?: { after: string | null; to: string | null } }> {
+    const { lastScanAt, lastSlice } = await this.lastCompletedScans(ownerId);
+    if (!lastScanAt) {
+      return {};
     }
-    return Date.now() - new Date(lastFullScanAt).getTime() >= LIBRARY_CARE_FULL_SCAN_INTERVAL_MS
-      ? undefined
-      : lastScanAt;
+    const total = await this.mediaHealthRepository.countScanAssets(ownerId);
+    const due = Math.min(
+      1,
+      Math.max(0, Date.now() - new Date(lastScanAt).getTime()) / LIBRARY_CARE_FULL_SCAN_INTERVAL_MS,
+    );
+    // a share that reached the end completed a pass: the next one starts again from the beginning
+    const after = lastSlice?.to ?? null;
+    const to = await this.mediaHealthRepository.getScanSliceEnd(ownerId, after, Math.max(1, Math.ceil(total * due)));
+    return { changedSince: lastScanAt, slice: { after, to } };
   }
 
-  /** When the account's last completed scan, and its last completed full scan, were started. */
-  private async lastCompletedScans(ownerId: string): Promise<{ lastScanAt?: string; lastFullScanAt?: string }> {
+  /**
+   * When the account's last completed whole-library scan was started, and the share of the library the
+   * most recent of them read (FL-1534), if any did.
+   */
+  private async lastCompletedScans(
+    ownerId: string,
+  ): Promise<{ lastScanAt?: string; lastSlice?: { after: string | null; to: string | null } }> {
     const { items } = await this.mediaOperationRepository.list({
       ownerId,
       kind: MediaOperationKind.MediaHealth,
@@ -525,16 +609,18 @@ export class MediaHealthService {
         if (snapshot.mode !== 'scan' || snapshot.assetIds) {
           continue;
         }
-        const startedAt = asDateTimeString(operation.createdAt as unknown as Date);
-        lastScanAt ??= startedAt;
+        lastScanAt ??= asDateTimeString(operation.createdAt as unknown as Date);
+        if (snapshot.slice) {
+          return { lastScanAt, lastSlice: snapshot.slice };
+        }
         if (!snapshot.changedSince) {
-          return { lastScanAt, lastFullScanAt: startedAt };
+          // a full scan read everything: the shares start again from the beginning
+          return { lastScanAt };
         }
       } catch {
         // an unreadable snapshot is not a scan this can count from
       }
     }
-    // No full scan among the recent ones: the next one is full.
     return { lastScanAt };
   }
 
@@ -3893,6 +3979,7 @@ export class MediaHealthService {
     ownerId: string,
     options: {
       changedSince?: string;
+      slice?: { after: string | null; to: string | null };
       scheduled?: boolean;
       assetIds?: string[];
       resumeFrom?: MediaHealthScanResult;
@@ -3930,6 +4017,7 @@ export class MediaHealthService {
       missingRunId: missingRun.id,
       corruptRunId: corruptRun.id,
       ...(options.changedSince && { changedSince: options.changedSince }),
+      ...(options.changedSince && options.slice && { slice: options.slice }),
       ...(options.scheduled && { scheduled: true }),
       ...(options.assetIds && { assetIds: options.assetIds }),
     };
@@ -3994,10 +4082,19 @@ export class MediaHealthService {
     });
   }
 
-  /** Assets an owner's durable scan covers: all of them, or those changed since `changedSince`. */
-  countScanAssets(userId: string, changedSince?: string): Promise<number> {
+  /**
+   * Assets an owner's durable scan covers: all of them, or those changed since `changedSince` and those
+   * in the night's share (FL-1534).
+   */
+  countScanAssets(
+    userId: string,
+    changedSince?: string,
+    slice?: { after: string | null; to: string | null },
+  ): Promise<number> {
     return changedSince
-      ? this.mediaHealthRepository.countScanAssets(userId, new Date(changedSince))
+      ? slice
+        ? this.mediaHealthRepository.countScanAssets(userId, new Date(changedSince), slice)
+        : this.mediaHealthRepository.countScanAssets(userId, new Date(changedSince))
       : this.mediaHealthRepository.countScanAssets(userId);
   }
 
@@ -4016,6 +4113,7 @@ export class MediaHealthService {
       afterId,
       limit,
       ...(snapshot.changedSince && { changedSince: new Date(snapshot.changedSince) }),
+      ...(snapshot.changedSince && snapshot.slice && { slice: snapshot.slice }),
       ...(snapshot.assetIds && { assetIds: snapshot.assetIds }),
     });
     const { checksumScan } = await this.careSettings();
@@ -4114,6 +4212,17 @@ export class MediaHealthService {
     // next. It is background work for single photos, so it records no run of its own and never stands in
     // for the owner's last check.
     const pending = !!job.pending && !!job.userId;
+    if (pending && !job.ids && (await this.scheduledScanRunning(job.userId!))) {
+      // FL-1534: the night's scan is still finding what is missing. Nothing is claimed; the search is asked
+      // for again and walks storage once, for everything that scan found, when it is over.
+      await this.jobRepository.queueOutsideRun([
+        {
+          name: JobName.MediaHealthLocateMissing,
+          data: { userId: job.userId, pending: true, delay: SEARCH_AFTER_SCAN_DELAY_MS },
+        },
+      ]);
+      return JobStatus.Skipped;
+    }
     const searchId = pending ? (job.searchId ?? queueExecution.getStore()?.claim.id ?? randomUUID()) : undefined;
     const ids = job.ids ?? (pending ? await this.mediaHealthRepository.claimSearchPending(job.userId!, searchId!) : []);
     if (pending && ids.length === 0) {
@@ -4159,6 +4268,27 @@ export class MediaHealthService {
         await this.mediaHealthRepository.finishRun(run, { status: 'failed', error: getErrorMessage(error) });
       }
       throw error;
+    }
+  }
+
+  /**
+   * FL-1534: whether the account's scheduled scan is at work now. A scan somebody paused, or one that has
+   * been going for longer than `SEARCH_WAITS_FOR_SCAN_MS`, is not waited for.
+   * ponytail: a person's Try again during the scheduled scan waits for it too; tell the two apart on the
+   * job if that wait is ever felt.
+   */
+  private async scheduledScanRunning(ownerId: string): Promise<boolean> {
+    try {
+      const active = await this.activeJob(ownerId);
+      if (!active || active.status === MediaOperationStatus.Paused || active.pauseRequestedAt) {
+        return false;
+      }
+      const snapshot = parseMediaHealthSnapshot(active.snapshot);
+      const startedAt = new Date(active.createdAt as unknown as Date).getTime();
+      return snapshot.mode === 'scan' && !!snapshot.scheduled && Date.now() - startedAt < SEARCH_WAITS_FOR_SCAN_MS;
+    } catch {
+      // nothing to wait for that this can read
+      return false;
     }
   }
 
@@ -4883,10 +5013,12 @@ export class MediaHealthService {
     })) {
       const mediaPaths = batch.filter((candidatePath) => mimeTypes.isAsset(candidatePath));
       const tracked = await this.mediaHealthRepository.getTrackedPaths(mediaPaths);
-      for (const candidatePath of mediaPaths) {
-        if (tracked.has(candidatePath)) {
-          continue;
-        }
+      const untracked = mediaPaths.filter((candidatePath) => !tracked.has(candidatePath));
+      // FL-1534: a file read before is not read again while it is the same file
+      const remembered = new Map(
+        (await this.foundFileRepository.getByPaths(untracked)).map((file) => [file.path, file]),
+      );
+      for (const candidatePath of untracked) {
         if (await isLockedPath(candidatePath)) {
           // FL-721: a sealed Locked file is never brought back as a new photo of its ciphertext
           continue;
@@ -4896,18 +5028,36 @@ export class MediaHealthService {
         if (!settled) {
           continue;
         }
-        let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
-        try {
-          digests = await this.cryptoRepository.hashFileDigests(candidatePath);
-        } catch (error) {
-          this.logger.warn(`Skipping unreadable recovered file ${candidatePath}: ${getErrorMessage(error)}`);
+        const known = remembered.get(candidatePath);
+        const unchanged =
+          !!known &&
+          Number(known.sizeInBytes) === settled.size &&
+          new Date(known.modifiedAt).getTime() === settled.mtime.getTime();
+        if (unchanged && known.outcome === 'left') {
+          // a person undid what was done with this file, or left it: it is not sorted again while it is the same file
           continue;
         }
-        // the digests speak for the file only if it is still the same file, unchanged, that was read
-        const after = await fileIdentity(this.storageRepository, candidatePath);
-        if (!after || after.key !== settled.key || digests.sizeInBytes !== settled.size) {
-          this.logger.debug(`Skipping recovered file ${candidatePath}: it changed while it was read`);
-          continue;
+        let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
+        if (unchanged) {
+          if (!known.sha1 || !known.sha256) {
+            // it could not be read, and it is the same file: reading it again gives the same answer
+            continue;
+          }
+          digests = { sha1: known.sha1, sha256: known.sha256, sizeInBytes: settled.size };
+        } else {
+          try {
+            digests = await this.cryptoRepository.hashFileDigests(candidatePath);
+          } catch (error) {
+            this.logger.warn(`Skipping unreadable recovered file ${candidatePath}: ${getErrorMessage(error)}`);
+            continue;
+          }
+          // the digests speak for the file only if it is still the same file, unchanged, that was read
+          const after = await fileIdentity(this.storageRepository, candidatePath);
+          if (!after || after.key !== settled.key || digests.sizeInBytes !== settled.size) {
+            this.logger.debug(`Skipping recovered file ${candidatePath}: it changed while it was read`);
+            continue;
+          }
+          await this.remember({ path: candidatePath, size: settled.size, mtime: settled.mtime }, digests);
         }
         const placed = await this.placeUntrackedFile(user, candidatePath, settled.mtime, digests, importedBytes);
         if (placed.outcome === 'added') {
@@ -5163,6 +5313,142 @@ export class MediaHealthService {
     }
   }
 
+  /**
+   * FL-1534: what is already known of these files' contents, without reading any of them.
+   *
+   * A file that is a photo's original is known by the digests that photo's record holds; any other file by
+   * the digests remembered from the one time it was read, for as long as it keeps the size and modified
+   * time it had then. A path missing from the answer has to be read; one that maps to null is left out of
+   * the search: its record is of other bytes than the file holds now, it could not be read before, or a
+   * person undid what was done with it or chose to leave it.
+   */
+  private async knownDigests(files: FileOnDisk[]): Promise<Map<string, KnownDigests | null>> {
+    const known = new Map<string, KnownDigests | null>();
+    if (files.length === 0) {
+      return known;
+    }
+    const byPath = new Map(files.map((file) => [file.path, file]));
+    for (const original of await this.mediaHealthRepository.getOriginalDigestsByPaths(byPath.keys().toArray())) {
+      const file = byPath.get(original.originalPath);
+      if (!file || known.get(file.path)) {
+        continue;
+      }
+      // what a read of the file kept: both digests, and the size they are the digests of
+      const stored =
+        original.sha1 && original.sha256 && original.sizeInBytes !== null
+          ? { sha1: original.sha1, sha256: original.sha256, sameSize: original.sizeInBytes === file.size }
+          : undefined;
+      if (original.checksumAlgorithm === ChecksumAlgorithm.sha1File) {
+        const read = stored?.sha1.equals(original.checksum) ? stored : undefined;
+        // the record is of a file of another size than this one is now: it says nothing about this one
+        known.set(
+          file.path,
+          read && !read.sameSize ? null : { sha1: original.checksum, ...(read && { sha256: read.sha256 }) },
+        );
+      } else if (original.checksumAlgorithm === ChecksumAlgorithm.sha256File) {
+        const read = stored?.sha256.equals(original.checksum) ? stored : undefined;
+        known.set(
+          file.path,
+          read && !read.sameSize ? null : { sha256: original.checksum, ...(read && { sha1: read.sha1 }) },
+        );
+      } else if (stored?.sameSize) {
+        // an external library's original records a checksum of its path; a scan kept what it read
+        known.set(file.path, { sha1: stored.sha1, sha256: stored.sha256 });
+      }
+    }
+    const unknown = files.filter(({ path }) => !known.has(path));
+    for (const remembered of await this.foundFileRepository.getByPaths(unknown.map(({ path }) => path))) {
+      const file = byPath.get(remembered.path);
+      if (
+        !file ||
+        Number(remembered.sizeInBytes) !== file.size ||
+        new Date(remembered.modifiedAt).getTime() !== file.mtime.getTime()
+      ) {
+        continue;
+      }
+      // A file a person took back from a photo, or chose to leave, is no candidate while it is the same file:
+      // matched here, it could go back under that photo by itself and undo the person's Undo.
+      known.set(
+        file.path,
+        remembered.outcome !== 'left' && remembered.sha1 && remembered.sha256
+          ? { sha1: remembered.sha1, sha256: remembered.sha256 }
+          : null,
+      );
+    }
+    return known;
+  }
+
+  /** FL-1534: read a file's digests and remember them for the file it is, so it is not read again. */
+  private async readOnce(file: FileOnDisk): Promise<KnownDigests | undefined> {
+    let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
+    try {
+      digests = await this.cryptoRepository.hashFileDigests(file.path);
+    } catch (error) {
+      this.logger.debug(`Could not hash missing media candidate ${file.path}: ${getErrorMessage(error)}`);
+      return;
+    }
+    await this.rememberRead(file, digests);
+    return digests;
+  }
+
+  /**
+   * Keep what was read for the file that was read: only when it still has the size and modified time it
+   * had before the read. Remembering is a saving, never a condition: a failure here changes nothing else.
+   */
+  private async rememberRead(
+    file: FileOnDisk,
+    digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>,
+  ): Promise<void> {
+    try {
+      const after = await this.storageRepository.stat(file.path);
+      if (
+        after.size !== file.size ||
+        digests.sizeInBytes !== file.size ||
+        after.mtime.getTime() !== file.mtime.getTime()
+      ) {
+        return;
+      }
+    } catch {
+      // gone since it was read: nothing to remember
+      return;
+    }
+    await this.remember(file, digests);
+  }
+
+  /** Keep the digests of a file that is known to be the file that was read. */
+  private async remember(
+    file: FileOnDisk,
+    digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>,
+  ): Promise<void> {
+    try {
+      await this.foundFileRepository.remember({
+        path: file.path,
+        sizeInBytes: file.size,
+        modifiedAt: file.mtime,
+        sha1: digests.sha1,
+        sha256: digests.sha256,
+      });
+    } catch (error) {
+      this.logger.debug(`Could not remember what was read from ${file.path}: ${getErrorMessage(error)}`);
+    }
+  }
+
+  /** The files among `paths` a search has to know the contents of: those there, of a size it looks for. */
+  private async filesOfSize(paths: string[], wanted: (size: number) => boolean): Promise<FileOnDisk[]> {
+    const files: FileOnDisk[] = [];
+    for (const candidatePath of paths) {
+      try {
+        const stat = await this.storageRepository.stat(candidatePath);
+        if (wanted(stat.size)) {
+          files.push({ path: candidatePath, size: stat.size, mtime: stat.mtime });
+        }
+      } catch (error) {
+        this.logger.debug(`Could not stat missing media candidate ${candidatePath}: ${getErrorMessage(error)}`);
+      }
+    }
+    return files;
+  }
+
   private async locateExternalCandidates(assets: MediaHealthAsset[]): Promise<Map<string, CandidateValidation[]>> {
     const result = new Map<string, CandidateValidation[]>();
     if (assets.length === 0) {
@@ -5212,6 +5498,7 @@ export class MediaHealthService {
       }
     }
 
+    const targets: SearchTargets = { byAsset: targetByAsset, sha1: sha1Targets, sha256: sha256Targets };
     const assetsByLibrary = Map.groupBy(
       targetByAsset.values().map(({ asset }) => asset),
       ({ libraryId }) => libraryId!,
@@ -5226,17 +5513,9 @@ export class MediaHealthService {
           .map(({ id }) => storedByAsset.get(id)?.sizeInBytes)
           .filter((size): size is number => size !== undefined),
       );
-      const hasUnknownSize = libraryAssets.some((asset) => {
-        const sidecar = storedByAsset.get(asset.id);
-        if (!sidecar) {
-          return true;
-        }
-        return asset.checksumAlgorithm === ChecksumAlgorithm.sha1File
-          ? !asset.checksum.equals(sidecar.sha1)
-          : asset.checksumAlgorithm === ChecksumAlgorithm.sha256File
-            ? !asset.checksum.equals(sidecar.sha256)
-            : true;
-      });
+      const hasUnknownSize = libraryAssets.some((asset) =>
+        hasUnknownSizeTarget(targetByAsset.get(asset.id), storedByAsset.get(asset.id)),
+      );
       const originalPaths = new Set(libraryAssets.map(({ originalPath }) => originalPath));
       for await (const batch of this.storageRepository.walk({
         pathsToCrawl: library.importPaths,
@@ -5244,45 +5523,20 @@ export class MediaHealthService {
         includeHidden: false,
         take: 500,
       })) {
-        for (const candidatePath of batch) {
-          if (originalPaths.has(candidatePath)) {
+        // FL-1534: a file is read only when nothing on record says what it holds, and then once
+        const files = await this.filesOfSize(
+          batch.filter((candidatePath) => !originalPaths.has(candidatePath)),
+          (size) => hasUnknownSize || sizes.has(size),
+        );
+        const known = await this.knownDigests(files);
+        for (const file of files) {
+          const candidatePath = file.path;
+          const digests = known.has(candidatePath) ? known.get(candidatePath) : await this.readOnce(file);
+          if (!digests) {
             continue;
           }
-          let size: number;
-          try {
-            ({ size } = await this.storageRepository.stat(candidatePath));
-          } catch (error) {
-            this.logger.debug(`Could not stat external media candidate ${candidatePath}: ${getErrorMessage(error)}`);
-            continue;
-          }
-          if (!hasUnknownSize && !sizes.has(size)) {
-            continue;
-          }
-          let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
-          try {
-            digests = await this.cryptoRepository.hashFileDigests(candidatePath);
-          } catch (error) {
-            this.logger.debug(`Could not hash external media candidate ${candidatePath}: ${getErrorMessage(error)}`);
-            continue;
-          }
-          const matched = [
-            ...(sha1Targets.get(digests.sha1.toString('hex')) ?? []).map((assetId) => ({
-              assetId,
-              algorithm: 'sha1' as const,
-            })),
-            ...(sha256Targets.get(digests.sha256.toString('hex')) ?? []).map((assetId) => ({
-              assetId,
-              algorithm: 'sha256' as const,
-            })),
-          ];
-          for (const { assetId, algorithm } of matched) {
-            const target = targetByAsset.get(assetId);
-            if (
-              !target ||
-              target.asset.libraryId !== libraryId ||
-              (target.sha1.length > 0 && target.sha1.every((digest) => !digest.equals(digests.sha1))) ||
-              (target.sha256.length > 0 && target.sha256.every((digest) => !digest.equals(digests.sha256)))
-            ) {
+          for (const { assetId, algorithm } of matchTargets(targets, digests)) {
+            if (targetByAsset.get(assetId)?.asset.libraryId !== libraryId) {
               continue;
             }
             const candidates = result.get(assetId) ?? [];
@@ -5302,9 +5556,9 @@ export class MediaHealthService {
                 path: candidatePath,
                 reason: importedAssetId ? 'candidate_already_imported' : 'checksum_match',
                 algorithms: [algorithm],
-                // The file's own digests, as measured, for the review (FL-69).
-                sha1: digests.sha1.toString('hex'),
-                sha256: digests.sha256.toString('hex'),
+                // The file's own digests, as measured or as recorded, for the review (FL-69).
+                ...(digests.sha1 && { sha1: digests.sha1.toString('hex') }),
+                ...(digests.sha256 && { sha256: digests.sha256.toString('hex') }),
                 ...(importedAssetId && { assetId: importedAssetId }),
               },
               resolution: { autoRelinkable: !importedAssetId },
@@ -5332,17 +5586,6 @@ export class MediaHealthService {
     const stored = await this.mediaHealthRepository.getAssetChecksums(assets.map(({ id }) => id));
     const storedByAsset = new Map(stored.map((checksum) => [checksum.assetId, checksum]));
     const knownSizes = new Set(stored.map(({ sizeInBytes }) => sizeInBytes));
-    const hasUnknownSize = assets.some((asset) => {
-      const sidecar = storedByAsset.get(asset.id);
-      if (!sidecar) {
-        return true;
-      }
-      return asset.checksumAlgorithm === ChecksumAlgorithm.sha1File
-        ? !asset.checksum.equals(sidecar.sha1)
-        : asset.checksumAlgorithm === ChecksumAlgorithm.sha256File
-          ? !asset.checksum.equals(sidecar.sha256)
-          : true;
-    });
     const targetByAsset = new Map<string, { asset: MediaHealthAsset; sha1: Buffer[]; sha256: Buffer[] }>();
     const sha1Targets = new Map<string, string[]>();
     const sha256Targets = new Map<string, string[]>();
@@ -5400,67 +5643,67 @@ export class MediaHealthService {
       ]),
     );
     const originalPaths = new Set(assets.map(({ originalPath }) => originalPath));
+    const targets: SearchTargets = { byAsset: targetByAsset, sha1: sha1Targets, sha256: sha256Targets };
+    const hasUnknownSize = assets.some((asset) =>
+      hasUnknownSizeTarget(targetByAsset.get(asset.id), storedByAsset.get(asset.id)),
+    );
     let hashedBytes = 0;
+    // FL-1534: files an earlier step walked past with no reading budget left come first
+    const waiting = [...(progress.pending ?? [])];
+    const walk = this.storageRepository.walkWithCursor(progress.cursor, MANAGED_LOOKUP_MAX_ENTRIES);
+    let walked = false;
+    let spent = false;
 
-    for await (const candidatePath of this.storageRepository.walkWithCursor(
-      progress.cursor,
-      MANAGED_LOOKUP_MAX_ENTRIES,
-    )) {
-      if (originalPaths.has(candidatePath)) {
-        continue;
-      }
-      try {
-        const { size } = await this.storageRepository.stat(candidatePath);
-        if (!hasUnknownSize && !knownSizes.has(size)) {
-          continue;
+    while (!spent) {
+      const chunk = waiting.splice(0, LOOKUP_CHUNK);
+      while (chunk.length < LOOKUP_CHUNK && !walked) {
+        const next = await walk.next();
+        if (next.done) {
+          walked = true;
+        } else {
+          chunk.push(next.value);
         }
-        hashedBytes += size;
-      } catch (error) {
-        this.logger.debug(`Could not stat missing media candidate ${candidatePath}: ${getErrorMessage(error)}`);
-        continue;
       }
-      let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
-      try {
-        digests = await this.cryptoRepository.hashFileDigests(candidatePath);
-      } catch (error) {
-        this.logger.debug(`Could not hash missing media candidate ${candidatePath}: ${getErrorMessage(error)}`);
-        if (hashedBytes >= MANAGED_LOOKUP_MAX_BYTES) {
-          break;
-        }
-        continue;
-      }
-      const matched = [
-        ...(sha1Targets.get(digests.sha1.toString('hex')) ?? []).map((assetId) => ({
-          assetId,
-          algorithm: 'sha1' as const,
-        })),
-        ...(sha256Targets.get(digests.sha256.toString('hex')) ?? []).map((assetId) => ({
-          assetId,
-          algorithm: 'sha256' as const,
-        })),
-      ];
-      for (const { assetId, algorithm } of matched) {
-        const target = targetByAsset.get(assetId);
-        if (
-          !target ||
-          (target.sha1.length > 0 && target.sha1.every((digest) => !digest.equals(digests.sha1))) ||
-          (target.sha256.length > 0 && target.sha256.every((digest) => !digest.equals(digests.sha256)))
-        ) {
-          continue;
-        }
-        const byPath = matches.get(assetId) ?? new Map<string, Set<'sha1' | 'sha256'>>();
-        const algorithms = byPath.get(candidatePath) ?? new Set<'sha1' | 'sha256'>();
-        algorithms.add(algorithm);
-        byPath.set(candidatePath, algorithms);
-        matches.set(assetId, byPath);
-      }
-      // Finish a single file even if it exceeds the byte target, so large videos cannot stall the cursor.
-      if (hashedBytes >= MANAGED_LOOKUP_MAX_BYTES) {
+      if (chunk.length === 0) {
         break;
       }
+      // A photo with no recorded size is looked for among files of every size. With FL-1534 that reads
+      // only files nothing is known about yet, once: never a photo's original, never a file read before.
+      const files = await this.filesOfSize(
+        chunk.filter((candidatePath) => !originalPaths.has(candidatePath)),
+        (size) => hasUnknownSize || knownSizes.has(size),
+      );
+      const known = await this.knownDigests(files);
+      for (const [index, file] of files.entries()) {
+        let digests = known.get(file.path);
+        if (digests === null) {
+          continue;
+        }
+        if (!digests) {
+          // Finish a single file even if it exceeds the byte target, so large videos cannot stall the cursor.
+          if (hashedBytes >= MANAGED_LOOKUP_MAX_BYTES) {
+            waiting.unshift(...files.slice(index).map(({ path }) => path));
+            spent = true;
+            break;
+          }
+          hashedBytes += file.size;
+          digests = await this.readOnce(file);
+          if (!digests) {
+            continue;
+          }
+        }
+        for (const { assetId, algorithm } of matchTargets(targets, digests)) {
+          const byPath = matches.get(assetId) ?? new Map<string, Set<'sha1' | 'sha256'>>();
+          const algorithms = byPath.get(file.path) ?? new Set<'sha1' | 'sha256'>();
+          algorithms.add(algorithm);
+          byPath.set(file.path, algorithms);
+          matches.set(assetId, byPath);
+        }
+      }
     }
+    await walk.return(undefined);
 
-    const truncated = progress.cursor.length > 0;
+    const truncated = progress.cursor.length > 0 || waiting.length > 0;
     for (const [assetId, target] of targetByAsset) {
       const byPath = matches.get(assetId) ?? new Map<string, Set<'sha1' | 'sha256'>>();
       const sha1Paths = new Set([...byPath].filter(([, algorithms]) => algorithms.has('sha1')).map(([path]) => path));
@@ -5498,6 +5741,7 @@ export class MediaHealthService {
       continuation: truncated
         ? {
             cursor: progress.cursor,
+            ...(waiting.length > 0 && { pending: waiting }),
             matches: Object.fromEntries(
               [...matches].map(([assetId, byPath]) => [
                 assetId,

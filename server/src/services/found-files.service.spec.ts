@@ -208,6 +208,46 @@ describe(FoundFilesService.name, () => {
     expect(found.upsert).not.toHaveBeenCalled();
   });
 
+  it('sorts a file a search already read from what that search read, without reading it again (FL-1534)', async () => {
+    const { sort, found, mediaHealth, crypto } = setup();
+    found.getByPaths.mockResolvedValue([
+      remembered({
+        outcome: 'read',
+        ownerId: null,
+        assetId: null,
+        steps: [],
+        sortedAt: new Date('2026-11-12T03:40:00.000Z'),
+      }),
+    ]);
+    mediaHealth.placeUntrackedFile.mockResolvedValue({ outcome: 'added', assetId: 'new-asset' });
+
+    await expect(sort([photo])).resolves.toEqual([photo]);
+
+    expect(crypto.hashFileDigests).not.toHaveBeenCalled();
+    expect(found.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: photo,
+        outcome: 'added',
+        assetId: 'new-asset',
+        ownerId: USER,
+        sha1,
+        sha256,
+        steps: [
+          expect.objectContaining({ step: 'found' }),
+          { step: 'read', at: '2026-11-12T03:40:00.000Z', outcome: 'ok' },
+          expect.objectContaining({ step: 'added' }),
+        ],
+      }),
+    );
+  });
+
+  it('never shows a file that was only read by a search as a found file (FL-1534)', async () => {
+    const { sut, found } = setup();
+    found.get.mockResolvedValue({ ...remembered({ outcome: 'read' }), effectiveOwnerId: null });
+
+    await expect(sut.get({ user: { id: USER } } as never, 'found-1')).rejects.toThrow('Found file not found');
+  });
+
   it('puts a remembered spare copy back, without reading it, once the photo it copies goes missing', async () => {
     const { sort, found, mediaHealth, crypto } = setup();
     found.getByPaths.mockResolvedValue([remembered()]);
