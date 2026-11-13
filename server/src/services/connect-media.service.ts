@@ -1,9 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { extname } from 'node:path';
+import { rm, stat } from 'node:fs/promises';
 import { IncomingHttpHeaders } from 'node:http';
+import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
-import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   CONNECT_RECEIPT_SECONDS,
   CONNECT_TICKET_SECONDS,
@@ -14,16 +15,18 @@ import {
   ConnectUploadStartDto,
   ConnectUploadStateDto,
 } from 'src/dtos/connect-media.dto.js';
-import { CacheControl } from 'src/enum.js';
+import { CacheControl, Colorspace, ImageFormat } from 'src/enum.js';
 import { ConnectMediaRepository } from 'src/repositories/connect-media.repository.js';
-import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { ConnectService } from 'src/services/connect.service.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { requireConnectPolicy, requireConnectScope } from 'src/utils/connect-policy.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
+import { isLockedPath, makeWorkDir } from 'src/utils/locked-read.js';
 
 @Injectable()
 export class ConnectMediaService {
@@ -34,6 +37,7 @@ export class ConnectMediaService {
     private connect: ConnectService,
     private oauth: OAuthAppService,
     private authService: AuthService,
+    private images: MediaRepository,
   ) {}
 
   async capabilities(auth: AuthDto, via: FrameleafVia | null) {
@@ -136,15 +140,71 @@ export class ConnectMediaService {
         : await this.media.viewThumbnail(
             auth,
             id,
-            { size: variant === 'preview' ? AssetMediaSize.PREVIEW : AssetMediaSize.THUMBNAIL, edited: true },
+            { size: variant === 'thumbnail' ? AssetMediaSize.THUMBNAIL : AssetMediaSize.PREVIEW, edited: true },
             via,
           );
     if (!(file instanceof FileDownloadResponse)) throw new NotFoundException('Rendition unavailable');
+    if (variant === 'display') return this.display(auth, id, file, via);
     return new FileDownloadResponse({
       ...file,
       fileName: `${id}${extname(file.fileName ?? file.path)}`,
       cacheControl: CacheControl.None,
     });
+  }
+
+  private async display(auth: AuthDto, id: string, preview: FileDownloadResponse, via: FrameleafVia | null) {
+    let folder: string | undefined;
+    try {
+      try {
+        if (
+          !preview.contentType.startsWith('image/') ||
+          (await isLockedPath(preview.path)) ||
+          (await stat(preview.path)).size > 64 * 1024 * 1024
+        ) {
+          throw new NotFoundException('Display rendition unavailable');
+        }
+        const { width, height } = await this.images.getOrientedSize(preview.path);
+        if (width < 1 || height < 1 || width * height > 40_000_000) {
+          throw new NotFoundException('Display rendition unavailable');
+        }
+        folder = await makeWorkDir('connect-display', false);
+        const output = join(folder, 'display.jpg');
+        await this.images.generateThumbnail(
+          preview.path,
+          {
+            size: 1920,
+            fit: 'inside',
+            colorspace: Colorspace.Srgb,
+            format: ImageFormat.Jpeg,
+            quality: 80,
+            progressive: false,
+            processInvalidImages: false,
+          },
+          output,
+        );
+        const rendered = await this.images.getOrientedSize(output);
+        if (Math.max(rendered.width, rendered.height) > 1920 || (await stat(output)).size > 5 * 1024 * 1024) {
+          throw new NotFoundException('Display rendition exceeds its limit');
+        }
+        await this.readable(auth, id, 'display', via);
+        const directory = folder;
+        return new FileDownloadResponse({
+          path: output,
+          contentType: 'image/jpeg',
+          fileName: `${id}.jpg`,
+          cacheControl: CacheControl.None,
+          deliveryTimeout: 30_000,
+          release: () => rm(directory, { recursive: true, force: true }),
+        });
+      } finally {
+        await preview.release?.();
+      }
+    } catch (error) {
+      if (folder) {
+        await rm(folder, { recursive: true, force: true });
+      }
+      throw error;
+    }
   }
 
   async createTicket(auth: AuthDto, id: string, variant: ConnectRenditionDto['variant'], via: FrameleafVia | null) {

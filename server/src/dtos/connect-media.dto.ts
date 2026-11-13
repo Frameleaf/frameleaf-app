@@ -76,7 +76,7 @@ export class ConnectAlbumCreateDto extends createZodDto(
 ) {}
 export class ConnectRenditionDto extends createZodDto(
   z
-    .object({ variant: z.enum(['thumbnail', 'preview', 'original']) })
+    .object({ variant: z.enum(['thumbnail', 'preview', 'display', 'original']) })
     .strict()
     .meta({ id: 'ConnectRenditionDto' }),
 ) {}

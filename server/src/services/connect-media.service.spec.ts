@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm, truncate, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import sharp from 'sharp';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { CacheControl } from 'src/enum.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
 import { ConnectMediaService } from 'src/services/connect-media.service.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -65,6 +70,7 @@ const fixture = () => {
     connect as never,
     oauth as never,
     authService as never,
+    {} as never,
   );
   return { service, repository, uploads, media, connect, oauth, authService, resource };
 };
@@ -156,6 +162,119 @@ describe('Connect media delivery and terminal state', () => {
     );
     expect(f.uploads.commitConnect).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { width: 2400, height: 1600 },
+    { width: 8000, height: 2 },
+  ])(
+    'creates a bounded metadata-free display JPEG from a configured WebP preview %j and cleans it after delivery',
+    async ({ width, height }) => {
+      const folder = await mkdtemp(join(tmpdir(), 'connect-display-test-'));
+      const preview = join(folder, 'preview.webp');
+      await sharp({ create: { width, height, channels: 3, background: '#c02020' } })
+        .withMetadata({ orientation: 6 })
+        .webp()
+        .toFile(preview);
+      const before = await readFile(preview);
+      const f = fixture();
+      const readOnlyAuth = { ...auth, oauthApp: { ...auth.oauthApp!, scopes: ['library:read'] } };
+      f.oauth.validatePreviewGrant.mockResolvedValue(readOnlyAuth);
+      f.authService.authorizeConnectGrant.mockResolvedValue(readOnlyAuth);
+      f.media.viewThumbnail.mockResolvedValue(
+        new FileDownloadResponse({ path: preview, contentType: 'image/webp', cacheControl: CacheControl.None }),
+      );
+      Object.assign(f.service, { images: new MediaRepository({ setContext: vi.fn() } as never) });
+      let result: FileDownloadResponse | undefined;
+      try {
+        f.repository.ticket.mockResolvedValue({ grantId, assetId, variant: 'display' });
+        result = await f.service.ticket('opaque', 'relay');
+        const metadata = await sharp(result.path).metadata();
+        expect(metadata.format).toBe('jpeg');
+        expect(Math.max(metadata.width!, metadata.height!)).toBeLessThanOrEqual(1920);
+        expect(metadata.exif).toBeUndefined();
+        expect(metadata.xmp).toBeUndefined();
+        expect(metadata.iptc).toBeUndefined();
+        expect((await readFile(result.path)).length).toBeLessThanOrEqual(5 * 1024 * 1024);
+        expect(await readFile(preview)).toEqual(before);
+        expect(f.media.downloadOriginal).not.toHaveBeenCalled();
+        expect(f.authService.requireOriginalTransfer).not.toHaveBeenCalled();
+        expect(f.connect.requireReadableAssets).toHaveBeenCalledTimes(2);
+        expect(f.authService.authorizeConnectGrant).toHaveBeenCalledWith(
+          readOnlyAuth,
+          auth.oauthApp!.resource,
+          'relay',
+        );
+        await result.release?.();
+        await expect(readFile(result.path)).rejects.toMatchObject({ code: 'ENOENT' });
+      } finally {
+        await result?.release?.();
+        await rm(folder, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
+
+  it.each(['revoked', 'input-size', 'pixel-count', 'output-size', 'encode-failure', 'source-release-failure'] as const)(
+    'cleans display scratch and releases the source when %s prevents delivery',
+    async (condition) => {
+      const folder = await mkdtemp(join(tmpdir(), 'connect-display-failure-'));
+      const preview = join(folder, 'preview.webp');
+      await writeFile(preview, 'sanitized-preview');
+      if (condition === 'input-size') {
+        await truncate(preview, 64 * 1024 * 1024 + 1);
+      }
+      const f = fixture();
+      const release = vi.fn();
+      if (condition === 'source-release-failure') {
+        release.mockRejectedValue(new Error('release failed'));
+      }
+      f.media.viewThumbnail.mockResolvedValue(
+        new FileDownloadResponse({
+          path: preview,
+          contentType: 'image/webp',
+          cacheControl: CacheControl.None,
+          release,
+        }),
+      );
+      if (condition === 'revoked') {
+        f.connect.requireReadableAssets
+          .mockResolvedValueOnce(undefined)
+          .mockRejectedValueOnce(new Error('grant revoked'));
+      }
+      let output: string | undefined;
+      const images = {
+        getOrientedSize: vi
+          .fn()
+          .mockResolvedValue(
+            condition === 'pixel-count' ? { width: 40001, height: 1000 } : { width: 100, height: 100 },
+          ),
+        generateThumbnail: vi.fn(async (_input: string, _options: unknown, target: string) => {
+          output = target;
+          await writeFile(target, 'sanitized-output');
+          if (condition === 'output-size') {
+            await truncate(target, 5 * 1024 * 1024 + 1);
+          }
+          if (condition === 'encode-failure') {
+            throw new Error('encode failed');
+          }
+        }),
+      };
+      Object.assign(f.service, { images });
+      try {
+        await expect(f.service.rendition(auth, assetId, 'display', 'relay')).rejects.toThrow();
+        expect(release).toHaveBeenCalledOnce();
+        if (output) {
+          await expect(readFile(output)).rejects.toMatchObject({ code: 'ENOENT' });
+        }
+        if (condition === 'input-size' || condition === 'pixel-count') {
+          expect(images.generateThumbnail).not.toHaveBeenCalled();
+        }
+        expect(f.media.downloadOriginal).not.toHaveBeenCalled();
+      } finally {
+        await rm(folder, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('reports effective disk and account limits with the 30 day receipt window', async () => {
     const f = fixture();

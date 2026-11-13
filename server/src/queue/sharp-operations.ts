@@ -843,7 +843,10 @@ export class SharpOperations {
     }
 
     if (options.size !== undefined) {
-      pipeline = pipeline.resize(options.size, options.size, { fit: 'outside', withoutEnlargement: true });
+      pipeline = pipeline.resize(options.size, options.size, {
+        fit: options.fit ?? 'outside',
+        withoutEnlargement: true,
+      });
     }
     return pipeline;
   }

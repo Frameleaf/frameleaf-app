@@ -36,7 +36,7 @@ export class ConnectRenditionTicketTable {
   @PrimaryColumn({ type: 'bytea' }) tokenHash!: Buffer;
   @ForeignKeyColumn(() => OAuthGrantTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' }) grantId!: string;
   @ForeignKeyColumn(() => AssetTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' }) assetId!: string;
-  @Column({ type: 'text' }) variant!: 'thumbnail' | 'preview' | 'original';
+  @Column({ type: 'text' }) variant!: 'thumbnail' | 'preview' | 'display' | 'original';
   @Column({ type: 'timestamp with time zone', index: true }) expiresAt!: Timestamp;
 }
 
