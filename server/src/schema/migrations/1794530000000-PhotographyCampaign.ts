@@ -26,6 +26,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     SELECT DISTINCT ON (w."ownerId", lower(trim(r->>'email'))) w."ownerId", lower(trim(r->>'email')), coalesce(r->>'name',''), 'clients'
     FROM photography_workflow w CROSS JOIN LATERAL jsonb_array_elements(coalesce(w.value->'recipients','[]')) r
     WHERE coalesce(r->>'email','') ~ '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$'
+      AND NOT coalesce((r->>'revoked')::boolean,false)
     ON CONFLICT ("ownerId", email) DO NOTHING`.execute(db);
   await sql`INSERT INTO photography_contact ("ownerId", email, name, source)
     SELECT DISTINCT ON (s."ownerId", lower(trim(i->>'email'))) s."ownerId", lower(trim(i->>'email')), coalesce(i->>'name',''), 'leads'

@@ -54,6 +54,7 @@ export class MailApiError extends Error {
     readonly status: number | null,
     message: string,
     readonly retryAfterSeconds?: number,
+    readonly reasonCode?: string,
   ) {
     super(message);
     this.name = 'MailApiError';
@@ -386,8 +387,18 @@ export class EmailRepository {
       );
     }
     if (!response.ok) {
-      // both answer `{ error: { message } }`; only that short reason is kept
-      const body = (await response.json().catch(() => null)) as { error?: { message?: unknown } } | null;
+      // Keep the bounded message and structured refusal code, never a token or message payload.
+      const body = (await response.json().catch(() => null)) as {
+        error?: { message?: unknown; code?: unknown; errors?: unknown; details?: unknown };
+      } | null;
+      const details: unknown[] = [body?.error?.errors, body?.error?.details].flatMap((value) =>
+        Array.isArray(value) ? value : [],
+      );
+      const reasonCode =
+        details
+          .map((value) => (value && typeof value === 'object' && 'reason' in value ? value.reason : undefined))
+          .find((value): value is string => typeof value === 'string') ??
+        (typeof body?.error?.code === 'string' ? body.error.code : undefined);
       const reason = typeof body?.error?.message === 'string' ? `: ${body.error.message.slice(0, 300)}` : '';
       const retryAfter = response.headers.get('Retry-After');
       const seconds = retryAfter ? Number(retryAfter) : NaN;
@@ -401,6 +412,7 @@ export class EmailRepository {
         response.status,
         `${name} refused (${response.status})${reason}`,
         retryAfterSeconds,
+        reasonCode?.slice(0, 100),
       );
     }
     return response;

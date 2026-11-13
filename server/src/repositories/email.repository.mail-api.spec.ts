@@ -105,6 +105,28 @@ describe(`${EmailRepository.name} (Gmail and Microsoft)`, () => {
     expect(error).toMatchObject({ status: 401, message: 'Gmail refused (401): Invalid Credentials' });
   });
 
+  it.each([
+    [{ code: 'ErrorAccessDenied' }, MailSignInProvider.Microsoft, 'ErrorAccessDenied'],
+    [
+      { code: 403, errors: [{ reason: 'insufficientPermissions' }] },
+      MailSignInProvider.Gmail,
+      'insufficientPermissions',
+    ],
+    [
+      { code: 403, details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }] },
+      MailSignInProvider.Gmail,
+      'ACCESS_TOKEN_SCOPE_INSUFFICIENT',
+    ],
+  ] as const)(
+    'retains the structured provider refusal code for account recovery (%j)',
+    async (error, provider, reasonCode) => {
+      fetchMock.mockResolvedValue(Response.json({ error }, { status: 403 }));
+      await expect(
+        sut.sendEmailWithAccount({ ...message, account: { provider, accessToken: ACCESS } }),
+      ).rejects.toMatchObject({ status: 403, reasonCode });
+    },
+  );
+
   it('reports a provider that does not answer', async () => {
     fetchMock.mockRejectedValue(new Error('getaddrinfo ENOTFOUND'));
     await expect(

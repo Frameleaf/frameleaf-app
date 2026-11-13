@@ -1598,7 +1598,7 @@
   "campaign_audience": "Público",
   "campaign_clients": "Clientes",
   "campaign_configure": "Configure o e-mail e o endereço público antes de enviar.",
-  "campaign_confirm": "Confirme o público e a mensagem. Os contactos sem inscrição são excluídos.",
+  "campaign_confirm": "Confirme o público e a mensagem. Os contactos que cancelaram a inscrição são excluídos.",
   "campaign_date": "Data e hora. Deixe vazio para enviar agora.",
   "campaign_delivery_failed": "Falhou",
   "campaign_delivery_pending": "Pendente",

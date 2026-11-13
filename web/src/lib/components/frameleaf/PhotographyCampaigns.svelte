@@ -205,6 +205,7 @@
               onclick={() => {
                 preview = undefined;
                 confirm = false;
+                tested = false;
               }}>{$t('edit')}</Button
             >
             <Button

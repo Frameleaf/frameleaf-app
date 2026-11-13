@@ -19,9 +19,22 @@ import { PhotographyWorkspaceRepository } from 'src/repositories/photography-wor
 import { BaseService } from 'src/services/base.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { connectedSender } from 'src/utils/frameleaf-mail.js';
-import { readMailConnection, sendConnectedEmail, signInProviderOf } from 'src/utils/mail-connection.js';
+import {
+  MailNeedsSignInError,
+  readMailConnection,
+  sendConnectedEmail,
+  signInProviderOf,
+} from 'src/utils/mail-connection.js';
 import { localeOf } from 'src/utils/preferences.js';
 
+const authenticationReasons = new Set([
+  'autherror',
+  'insufficientpermissions',
+  'access_token_scope_insufficient',
+  'erroraccessdenied',
+  'invalidauthenticationtoken',
+  'insufficient_claims',
+]);
 const templates = {
   'print-sale': PrintSaleEmail,
   'review-request': ReviewRequestEmail,
@@ -187,7 +200,13 @@ export class PhotographyCampaignService extends BaseService {
           jobSignal()?.throwIfAborted();
           const contact = await this.campaigns.claim(row.id);
           if (!contact) break;
-          const message = await this.message(row, contact.unsubscribeToken);
+          let message: Awaited<ReturnType<PhotographyCampaignService['message']>>;
+          try {
+            message = await this.message(row, contact.unsubscribeToken);
+          } catch (error) {
+            await this.campaigns.finish(row.id, contact.id, 'pending');
+            throw error;
+          }
           // The durable claim precedes transport. An interrupted or ambiguous attempt stays visible for review.
           if (!message.delivery.ready) {
             await this.campaigns.finish(row.id, contact.id, 'pending');
@@ -204,7 +223,12 @@ export class PhotographyCampaignService extends BaseService {
             const retryAfter = error instanceof MailApiError ? error.retryAfterSeconds : undefined;
             const delay = Number.isFinite(retryAfter) ? Math.ceil(retryAfter!) : 60;
             await this.campaigns.pause(row.id, Math.max(60, Math.min(2_147_483_647, delay)));
-            if (error instanceof MailApiError && error.status === 429) {
+            const accountRefused =
+              error instanceof MailNeedsSignInError ||
+              (error instanceof MailApiError &&
+                (error.status === 401 ||
+                  (error.status === 403 && authenticationReasons.has(error.reasonCode?.toLowerCase() ?? ''))));
+            if (accountRefused || (error instanceof MailApiError && error.status === 429)) {
               await this.campaigns.finish(row.id, contact.id, 'pending');
             } else if (
               error instanceof MailApiError &&

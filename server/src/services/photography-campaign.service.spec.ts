@@ -4,6 +4,7 @@ import { PhotographyCampaignSaveDto } from 'src/dtos/photography-campaign.dto.js
 import { MailSignInProvider } from 'src/enum.js';
 import { MailApiError } from 'src/repositories/email.repository.js';
 import { PhotographyCampaignService } from 'src/services/photography-campaign.service.js';
+import { MailNeedsSignInError } from 'src/utils/mail-connection.js';
 import { factory } from 'test/small.factory.js';
 import { newTestService } from 'test/utils.js';
 
@@ -108,6 +109,46 @@ describe(PhotographyCampaignService.name, () => {
     expect(campaigns.sendIfEligible).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
   });
+  it('returns an untouched recipient to pending when preparing the message fails', async () => {
+    campaigns.due.mockResolvedValue([{ id: 'campaign', ownerId: auth.user.id }]);
+    campaigns.claim.mockResolvedValueOnce({ id: 'client', email: 'client@example.test' });
+    message.mockRejectedValueOnce(new Error('Metadata unavailable'));
+    await expect(sut.dispatch()).rejects.toThrow('Metadata unavailable');
+    expect(campaigns.finish).toHaveBeenCalledWith('campaign', 'client', 'pending');
+    expect(campaigns.sendIfEligible).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+  it.each([
+    [new MailApiError(MailSignInProvider.Gmail, 401, 'Authentication refused'), 'pending'],
+    [
+      new MailApiError(MailSignInProvider.Gmail, 403, 'Permission refused', undefined, 'insufficientPermissions'),
+      'pending',
+    ],
+    [
+      new MailApiError(MailSignInProvider.Microsoft, 403, 'Permission refused', undefined, 'ErrorAccessDenied'),
+      'pending',
+    ],
+    [new MailNeedsSignInError(MailSignInProvider.Gmail), 'pending'],
+    [new MailApiError(MailSignInProvider.Gmail, 403, 'Domain policy', undefined, 'domainPolicy'), 'failed'],
+    [new MailApiError(MailSignInProvider.Microsoft, 408, 'Timeout'), undefined],
+  ] as const)(
+    'classifies a confirmed account refusal without replaying ambiguous transport (%s)',
+    async (error, status) => {
+      campaigns.due.mockResolvedValue([{ id: 'campaign', ownerId: auth.user.id }]);
+      campaigns.claim.mockResolvedValueOnce({ id: 'client', email: 'client@example.test' });
+      campaigns.sendIfEligible.mockImplementationOnce(
+        async (_id: string, _contact: string, sendMail: () => Promise<unknown>) => {
+          await sendMail();
+          return true;
+        },
+      );
+      send.mockRejectedValueOnce(error);
+      await sut.dispatch();
+      if (status) expect(campaigns.finish).toHaveBeenCalledWith('campaign', 'client', status);
+      else expect(campaigns.finish).not.toHaveBeenCalled();
+      expect(campaigns.pause).toHaveBeenCalledWith('campaign', 60);
+    },
+  );
   it('rejects header injection and oversized custom messages', () => {
     const row = {
       name: 'Photos',

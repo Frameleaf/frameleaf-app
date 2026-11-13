@@ -71,6 +71,11 @@ it('tests only the selected campaign without scheduling a send', async () => {
   await fireEvent.click(await screen.findByRole('button', { name: 'Send test to me' }));
   await waitFor(() => expect(sdkMock.photographyTestCampaign).toHaveBeenCalledExactlyOnceWith({ id: campaign.id }));
   expect(sdkMock.photographyScheduleCampaign).not.toHaveBeenCalled();
+  expect(await screen.findByText('Test email sent to the studio.')).toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+  await fireEvent.submit(screen.getByLabelText('Subject').closest('form')!);
+  await screen.findByTitle('Preview');
+  expect(screen.queryByText('Test email sent to the studio.')).not.toBeInTheDocument();
 });
 
 it('keeps test and send disabled when email delivery is unavailable', async () => {
