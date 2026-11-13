@@ -36,7 +36,10 @@ async function fixture(
 ) {
   const root = await mkdtemp(join(tmpdir(), 'manager-desktop-api-')),
     store = new Store(root),
-    effects: string[] = [];
+    effects: string[] = [],
+    runtimeState: { value: { state: string; code?: string } } = {
+      value: { state: 'running' },
+    };
   const security = new Security(store, origin);
   await security.claim('Owner', password, '127.0.0.1');
   const session = await security.login(password),
@@ -117,7 +120,7 @@ async function fixture(
           checkpoint: async () => {
             throw new Refusal('native_checkpoint_unavailable');
           },
-          status: () => ({ state: 'running' }),
+          status: () => runtimeState.value as never,
           startRestorePreparation: async () => {
             throw new Refusal('native_restore_unavailable');
           },
@@ -249,6 +252,7 @@ async function fixture(
       browser,
       pair,
       signed,
+      runtimeState,
     });
   } finally {
     await new Promise<void>((resolve, reject) =>
@@ -893,4 +897,68 @@ test('native update approval requires update scope, recent authentication and ex
     },
     true,
   );
+});
+test('a paired Desktop reads the photo server running state, ports and capabilities bound to its nonce', async () => {
+  await fixture(async ({ call, pair, signed, runtimeState }) => {
+    const path = '/manager-api/desktop/runtime';
+    const grant = await pair();
+    const ask = async (body: string, headers = signed(grant, path, body)) =>
+      call(path, body, headers);
+    const nonce = randomUUID();
+    const body = JSON.stringify({ nonce });
+    const reply = await ask(body);
+    assert.equal(reply.status, 200);
+    assert.deepEqual(reply.body, {
+      protocolVersion: 1,
+      nonce,
+      installationId,
+      capabilities: ['runtime-status', 'ports', 'tls-rotation'],
+      ports: { manager: 9443, api: 2283, database: 54329 },
+      photoServer: { state: 'running' },
+    });
+    // Only the controller in photo-serving mode is `running`; maintenance and faults carry their code.
+    for (const value of [
+      { state: 'starting' },
+      { state: 'stopping' },
+      { state: 'stopped' },
+      { state: 'unknown', code: 'native_database_maintenance' },
+      { state: 'unknown', code: 'native_restore_maintenance' },
+      { state: 'unknown', code: 'native_owner_not_attached' },
+    ]) {
+      runtimeState.value = value;
+      const fresh = JSON.stringify({ nonce: randomUUID() });
+      assert.deepEqual((await ask(fresh)).body.photoServer, value);
+    }
+    // The nonce is part of the signed body: a reply cannot answer another request.
+    const other = JSON.stringify({ nonce: randomUUID() });
+    assert.equal((await ask(other, signed(grant, path, body))).status, 401);
+    for (const invalid of ['{}', '{"nonce":"x"}', JSON.stringify({ nonce, extra: 1 })])
+      assert.equal((await ask(invalid)).status, 400);
+    assert.equal((await call(path, body)).status, 401);
+    const stopOnly = await pair(['stop']);
+    assert.equal((await ask(body, signed(stopOnly, path, body))).status, 403);
+    // The existing status reply is unchanged: released Desktops refuse fields they do not know.
+    const status = '/manager-api/desktop/status';
+    assert.deepEqual(
+      Object.keys((await call(status, '{}', signed(grant, status))).body),
+      ['manager', 'installation', 'operations'],
+    );
+  }, true);
+});
+test('the runtime route is native only and package.json declares the same capabilities', async () => {
+  await fixture(async ({ call, pair, signed }) => {
+    const path = '/manager-api/desktop/runtime',
+      body = JSON.stringify({ nonce: randomUUID() });
+    const reply = await call(path, body, signed(await pair(), path, body));
+    assert.equal(reply.status, 409);
+    assert.equal(reply.body.code, 'native_runtime_status_unavailable');
+  });
+  const { NATIVE_CAPABILITIES } = await import(
+    '../src/runtime/native-installation.js'
+  );
+  const { readFile } = await import('node:fs/promises');
+  const declared = JSON.parse(
+    await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+  ).frameleaf.nativeCapabilities;
+  assert.deepEqual(declared, [...NATIVE_CAPABILITIES]);
 });

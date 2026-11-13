@@ -788,7 +788,7 @@ export class DatabaseRepository {
    * their queries through the transaction passed in: a holder that also needed a second pooled
    * connection could deadlock once the sidecar queue's concurrency reached the pool size.
    */
-  async withAssetSidecarLock<R>(assetId: string, callback: (kysely: Kysely<DB>) => Promise<R>): Promise<R> {
+  async withAssetSidecarLock<R>(assetId: string, callback: (kysely: Transaction<DB>) => Promise<R>): Promise<R> {
     return this.db.transaction().execute(async (trx) => {
       await sql`SELECT pg_advisory_xact_lock(-3, hashtext(${assetId})::int)`.execute(trx);
       return callback(trx);

@@ -954,9 +954,9 @@ export class PhotographyWorkflowService {
       this.sort(value);
     });
   }
-  async createRecipient(auth: AuthDto, id: string, input: PhotographyRecipientCreateDto) {
+  async createRecipient(auth: AuthDto, id: string, input: PhotographyRecipientCreateDto, bulkToken?: string) {
     const dto = PhotographyRecipientCreateDto.schema.parse(input);
-    const token = randomBytes(32).toString('hex');
+    const token = bulkToken ?? randomBytes(32).toString('hex');
     const recipientId = randomUUID();
     const passwordHash = dto.password ? await this.crypto.hashBcrypt(dto.password, 12) : null;
     const workflow = await this.mutate(auth, id, dto.expectedRevision, (value) => {

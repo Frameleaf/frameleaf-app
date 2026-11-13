@@ -9,7 +9,7 @@ import {
 import { type Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { readdir, rm, rmdir } from 'node:fs/promises';
+import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Readable } from 'node:stream';
@@ -51,6 +51,7 @@ import {
 import { captureActor } from 'src/utils/capture.js';
 import { parseCloudIdentifier } from 'src/utils/icloud-identity.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { validateXmp } from 'src/utils/xmp-sidecar.js';
 
 type UploadAdmissionCheck = (tx?: Transaction<DB>) => Promise<void>;
 
@@ -191,6 +192,32 @@ export class AssetUploadResourceService {
     const resource = await this.uploads.create(id, ownerId, { ...parsed, maxSize: limits.maxSize });
     resume(resource);
     return this.receive(auth, resource.id, input, 0, parsed.complete, parsed.size);
+  }
+
+  async attachUploadSidecar(auth: AuthDto, id: string, data: Buffer): Promise<void> {
+    const owner = await this.owner(auth);
+    validateXmp(data);
+    await this.withStreamAdmission(auth, id, async (check) => {
+      await this.uploads.locked(id, owner, async (tx, resource) => {
+        await check(tx);
+        if (resource.state !== 'receiving' || resource.offset !== 0 || resource.metadata.publication) {
+          throw new ConflictException('Attach the XMP sidecar before sending the photo parts');
+        }
+        const directory = this.folder(id);
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        const temporary = join(directory, `${randomUUID()}.xmp`);
+        try {
+          await writeFile(temporary, data, { flag: 'wx', mode: 0o600 });
+          await rename(temporary, this.sidecarPath(id));
+        } finally {
+          await rm(temporary, { force: true });
+        }
+      });
+    });
+  }
+
+  private sidecarPath(id: string) {
+    return join(this.folder(id), 'metadata.xmp');
   }
 
   async head(auth: AuthDto, id: string) {
@@ -859,9 +886,16 @@ export class AssetUploadResourceService {
         if (current.state === 'published') {
           return current;
         }
+        const sidecar = this.sidecarPath(id);
+        const sidecarExists = await stat(sidecar)
+          .then((entry) => entry.isFile())
+          .catch((error: NodeJS.ErrnoException) => {
+            if (error.code === 'ENOENT') return false;
+            throw error;
+          });
         return restored
           ? this.uploads.publishRestored(tx, current, restored.id, restored.visible)
-          : this.uploads.publish(tx, current, prepared);
+          : this.uploads.publish(tx, current, prepared, sidecarExists ? { sidecarPath: sidecar } : undefined);
       });
     }
     if (

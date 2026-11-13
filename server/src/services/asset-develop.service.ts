@@ -27,6 +27,7 @@ import {
   AssetDevelopFileKind,
   AssetDevelopFillGenerateDto,
   AssetDevelopPreviewDto,
+  type AssetDevelopRecipe,
   AssetDevelopResponseDto,
   AssetDevelopRevertDto,
   AssetDevelopRevisionKind,
@@ -261,6 +262,47 @@ export class AssetDevelopService {
       return this.queueRender(revision, asset.originalFileName);
     }
     return this.toRevisionDto(revision);
+  }
+
+  async createStyleVersion(auth: AuthDto, assetId: string, batchId: string, recipe: AssetDevelopRecipe) {
+    await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
+    const asset = await this.requireEditableStill(assetId);
+    if (asset.ownerId !== auth.user.id) throw new ForbiddenException('Photo is unavailable');
+    const revision = await this.assetDevelopRepository.create({
+      assetId,
+      ownerId: auth.user.id,
+      styleBatchId: batchId,
+      recipe,
+      recipeVersion: recipe.version,
+      requireRenderable: true,
+      label: 'My style',
+      status: AssetDevelopRevisionStatus.Saved,
+    });
+    return revision.status === AssetDevelopRevisionStatus.Saved
+      ? this.queueRender(revision, asset.originalFileName)
+      : this.toRevisionDto(revision);
+  }
+
+  async undoStyleBatch(auth: AuthDto, batchId: string) {
+    const revisions = await this.assetDevelopRepository.getStyleBatch(auth.user.id, batchId);
+    let removed = 0;
+    for (const revision of revisions) {
+      if (revision.isCurrent) continue;
+      if ([AssetDevelopRevisionStatus.Queued, AssetDevelopRevisionStatus.Rendering].includes(revision.status)) {
+        await this.cancel(auth, revision.assetId, revision.id);
+      }
+      const discarded = await this.assetDevelopRepository.discardStyleRevision(auth.user.id, revision);
+      if (!discarded) continue;
+      const files = [
+        discarded.masterPath,
+        discarded.previewPath,
+        discarded.hdrMasterPath,
+        discarded.hdrPreviewPath,
+      ].filter((file): file is string => !!file);
+      if (files.length > 0) await this.queueFileDelete([...new Set(files)]);
+      removed++;
+    }
+    return { removed, remaining: revisions.length - removed };
   }
 
   async render(auth: AuthDto, assetId: string, revisionId: string): Promise<AssetDevelopRevisionResponseDto> {
@@ -653,7 +695,7 @@ export class AssetDevelopService {
         if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
         if (!(external && (await this.assetDevelopRepository.publishBatchRendered(revision, publication)))) {
           await this.assetDevelopRepository.update(revision.id, publication);
-          await this.assetDevelopRepository.setCurrent(revision.assetId, id);
+          if (!revision.styleBatchId) await this.assetDevelopRepository.setCurrent(revision.assetId, id);
         }
         if (!external) {
           const accepted = new Set([

@@ -51,6 +51,7 @@ import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
 import { DevelopBatchRepository } from 'src/repositories/develop-batch.repository.js';
+import { DevelopStyleRepository } from 'src/repositories/develop-style.repository.js';
 import { DocumentRepository } from 'src/repositories/document.repository.js';
 import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateDecisionRepository } from 'src/repositories/duplicate-decision.repository.js';
@@ -176,6 +177,7 @@ export const repositories = [
   AssetSourceRepository,
   BookmarkRepository,
   DevelopBatchRepository,
+  DevelopStyleRepository,
   DesktopClipIndexRepository,
   DesktopDeviceRepository,
   PhotoSourceRepository,

@@ -9,7 +9,7 @@ import {
 import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
-import { AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
+import { AssetFileType, AssetType, AssetVisibility, LibraryScope } from 'src/enum.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -309,6 +309,7 @@ export class AssetUploadResourceRepository {
     options: {
       rejectDuplicate?: boolean;
       quotaCharged?: boolean;
+      sidecarPath?: string;
     } = {},
   ) {
     if (
@@ -369,6 +370,9 @@ export class AssetUploadResourceRepository {
       assetId = asset.id;
       if (resource.metadata.metadata?.length) {
         await assets.upsertMetadata(assetId, resource.metadata.metadata, tx);
+      }
+      if (options.sidecarPath) {
+        await assets.upsertFile({ assetId, path: options.sidecarPath, type: AssetFileType.Sidecar }, tx);
       }
       await assets.upsertExif({
         exif: { assetId, fileSizeInByte: resource.offset },

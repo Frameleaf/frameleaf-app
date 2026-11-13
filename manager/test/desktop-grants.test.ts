@@ -419,3 +419,48 @@ test('a backwards clock cannot extend a grant or its recent authentication', asy
     );
   });
 });
+test('a native Manager moved to another loopback port keeps its grants; every other origin change still revokes them', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'frameleaf-manager-grants-')),
+    store = new Store(root);
+  const loopback = 'https://127.0.0.1:9443';
+  try {
+    const security = new Security(store, loopback);
+    await security.claim('Owner', password, '127.0.0.1');
+    const grants = new DesktopGrants(store, security, true);
+    const { grant } = await paired(grants);
+    const moved = new DesktopGrants(
+      store,
+      new Security(store, 'https://127.0.0.1:19443'),
+      true,
+    );
+    assert.equal(moved.identity.id, grants.identity.id);
+    assert.equal(moved.identity.origin, 'https://127.0.0.1:19443');
+    assert.equal(moved.list().length, 1);
+    assert.equal(store.get('desktop-manager-identity-rotation'), null);
+    // The proof is signed over the origin, so the device signs for the new one from now on.
+    assert.equal(moved.authorize(proof(moved, grant), context).id, grant.id);
+    assert.throws(
+      () => moved.authorize(proof(grants, grant), context),
+      /desktop_grant_invalid/,
+    );
+    // Without the native runtime the same change is an ordinary origin change.
+    const docker = new DesktopGrants(store, new Security(store, loopback));
+    assert.deepEqual(docker.list(), []);
+    await paired(docker);
+    // Another host, another scheme or an unparseable stored origin is never carried.
+    for (const other of [
+      'https://[::1]:9443',
+      'https://localhost:9443',
+      'https://192.168.1.20:9443',
+      'http://127.0.0.1:9443',
+    ]) {
+      const next = new DesktopGrants(store, new Security(store, other), true);
+      assert.deepEqual(next.list(), [], other);
+      new DesktopGrants(store, new Security(store, loopback), true);
+      await paired(new DesktopGrants(store, new Security(store, loopback), true));
+    }
+  } finally {
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

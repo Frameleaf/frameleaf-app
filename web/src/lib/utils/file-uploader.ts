@@ -24,6 +24,7 @@ import { generateId } from '$lib/utils/generate-id';
 import { uploadInParts } from '$lib/utils/parallel-upload';
 import { asQueryString } from '$lib/utils/shared-links';
 import { handleError } from './handle-error';
+import { pairXmpSidecars, uploadRelativePath } from './xmp-pairing';
 
 const PARALLEL_UPLOAD_THRESHOLD = 64 * 2 ** 20;
 export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
@@ -106,7 +107,7 @@ export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
     multiple,
     // A directory picker ignores `accept`; fileUploadHandler still filters unsupported
     // files out of whatever the folder contains, so nothing unsupported gets uploaded.
-    extensions: directory || extensions.includes('*') ? undefined : extensions,
+    extensions: directory || extensions.includes('*') ? undefined : [...extensions, '.xmp'],
     directory,
   });
 
@@ -116,7 +117,7 @@ export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
   return fileUploadHandler({ files, albumId, isLockedAssets, libraryScope });
 };
 
-type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'assetFile' | 'checksums'> & {
+type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'assetFile' | 'checksums' | 'sidecarFile'> & {
   files: File[];
   /** Checksums already worked out for these files (by file), so they are not read twice. */
   checksums?: Map<File, UploadChecksums>;
@@ -143,22 +144,30 @@ export const fileUploadHandler = async ({
     sharedLink: authManager.isSharedLink,
     query: asQueryString(authManager.params),
   };
+  const accepts = (file: File) =>
+    extensions.includes('*') || extensions.some((extension) => file.name.toLowerCase().endsWith(extension));
+  const { pairs, unmatched, originals } = pairXmpSidecars(files, accepts);
+  for (const sidecar of unmatched) {
+    toastManager.warning(get(t)('frameleaf_xmp_unmatched', { values: { file: sidecar.name } }), { timeout: 10_000 });
+  }
   const promises = [];
-  for (const file of files) {
+  for (const file of originals) {
     const name = file.name.toLowerCase();
     // a folder brings its operating system's files along: leave them out quietly, not as "unsupported"
-    if (file.webkitRelativePath && isSystemFile(name)) {
+    if (uploadRelativePath(file).includes('/') && isSystemFile(name)) {
       continue;
     }
-    if (extensions.includes('*') || extensions.some((extension) => name.endsWith(extension))) {
+    if (accepts(file)) {
       const deviceAssetId = getDeviceAssetId(file);
-      uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId, isLockedAssets, libraryScope });
+      const sidecarFile = pairs.get(file);
+      uploadAssetsStore.addItem({ id: deviceAssetId, file, sidecarFile, albumId, isLockedAssets, libraryScope });
       promises.push(
         uploadExecutionQueue.addTask(() =>
           fileUploader(
             {
               deviceAssetId,
               assetFile: file,
+              sidecarFile,
               albumId,
               isLockedAssets,
               libraryScope,
@@ -191,9 +200,14 @@ export const fileUploadHandler = async ({
 export const retryFailedUploads = async () => {
   const failed = get(uploadAssetsStore).filter((item) => item.state === UploadState.ERROR);
   await Promise.all(
-    failed.map(({ id, file, albumId, isLockedAssets, libraryScope }) => {
+    failed.map(({ id, file, sidecarFile, albumId, isLockedAssets, libraryScope }) => {
       uploadAssetsStore.removeItem(id);
-      return fileUploadHandler({ files: [file], albumId, isLockedAssets, libraryScope });
+      return fileUploadHandler({
+        files: sidecarFile ? [file, sidecarFile] : [file],
+        albumId,
+        isLockedAssets,
+        libraryScope,
+      });
     }),
   );
 };
@@ -266,6 +280,7 @@ export async function hashUploadFile(file: File, signal: AbortSignal): Promise<U
 
 type FileUploaderParams = {
   assetFile: File;
+  sidecarFile?: File;
   albumId?: string;
   replaceAssetId?: string;
   libraryScope?: LibraryScope;
@@ -280,7 +295,16 @@ type FileUploaderParams = {
 
 // TODO: should probably use the @api SDK
 async function fileUploader(
-  { assetFile, deviceAssetId, albumId, isLockedAssets = false, libraryScope, checksums, onResult }: FileUploaderParams,
+  {
+    assetFile,
+    sidecarFile,
+    deviceAssetId,
+    albumId,
+    isLockedAssets = false,
+    libraryScope,
+    checksums,
+    onResult,
+  }: FileUploaderParams,
   context: UploadContext,
 ): Promise<string | undefined> {
   const fileCreatedAt = new Date(assetFile.lastModified).toISOString();
@@ -366,6 +390,7 @@ async function fileUploader(
       assertCurrent();
       const result = await uploadInParts({
         file: assetFile,
+        sidecarFile,
         sha256: fileSha256,
         metadata: {
           filename: assetFile.name,
@@ -392,6 +417,9 @@ async function fileUploader(
         formData.append('libraryScope', libraryScope);
       }
       formData.append('assetData', new File([assetFile], assetFile.name));
+      if (sidecarFile) {
+        formData.append('sidecarData', sidecarFile);
+      }
       if (isLockedAssets) {
         formData.append('visibility', AssetVisibility.Locked);
       }
