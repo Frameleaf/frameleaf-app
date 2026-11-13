@@ -27,6 +27,7 @@ import {
   AssetDevelopFileKind,
   AssetDevelopFillGenerateDto,
   AssetDevelopPreviewDto,
+  type AssetDevelopRecipe,
   AssetDevelopResponseDto,
   AssetDevelopRevertDto,
   AssetDevelopRevisionKind,
@@ -34,7 +35,6 @@ import {
   AssetDevelopRevisionStatus,
   AssetDevelopSaveDto,
   AssetDevelopSemanticMaskDto,
-  type AssetDevelopRecipe,
   type DarktableDevelopRecipe,
   type HdrAssetDevelopRecipe,
 } from 'src/dtos/asset-develop.dto.js';
@@ -299,7 +299,7 @@ export class AssetDevelopService {
         discarded.hdrMasterPath,
         discarded.hdrPreviewPath,
       ].filter((file): file is string => !!file);
-      if (files.length) await this.queueFileDelete([...new Set(files)]);
+      if (files.length > 0) await this.queueFileDelete([...new Set(files)]);
       removed++;
     }
     return { removed, remaining: revisions.length - removed };

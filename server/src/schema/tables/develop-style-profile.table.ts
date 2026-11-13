@@ -1,7 +1,7 @@
 import { Column, ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
 import type { Timestamp } from '@frameleaf/sql-tools';
-import { UserTable } from 'src/schema/tables/user.table.js';
 import type { StyleModel } from 'src/utils/develop-style.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table('develop_style_profile')
 export class DevelopStyleProfileTable {

@@ -222,7 +222,9 @@
       });
       styleBatch = { shootId, result };
       styleRequest = undefined;
-      if (inspecting) void inspect(inspecting);
+      if (inspecting) {
+        void inspect(inspecting);
+      }
     } catch {
       error = $t('frameleaf_photography_style_failed');
     } finally {
@@ -234,10 +236,14 @@
     styleBusy = true;
     try {
       const result = await undoDevelopStyle({ id: batchId });
-      if (!result.remaining) styleBatch = undefined;
-      if (result.remaining)
+      if (result.remaining === 0) {
+        styleBatch = undefined;
+      } else {
         message = $t('frameleaf_photography_style_remaining', { values: { count: result.remaining } });
-      if (inspecting) void inspect(inspecting);
+      }
+      if (inspecting) {
+        void inspect(inspecting);
+      }
     } catch {
       error = $t('frameleaf_photography_style_failed');
     } finally {
@@ -823,9 +829,13 @@
     const userId = authManager.user.id;
     try {
       const profile = await getDevelopStyle();
-      if (!disposed && authManager.user.id === userId) styleAvailable = profile.learnedEdits !== null;
+      if (!disposed && authManager.user.id === userId) {
+        styleAvailable = profile.learnedEdits !== null;
+      }
     } catch {
-      if (!disposed && authManager.user.id === userId) styleAvailable = false;
+      if (!disposed && authManager.user.id === userId) {
+        styleAvailable = false;
+      }
     }
   }
 
@@ -850,7 +860,9 @@
       styleBatch = undefined;
       styleRequest = undefined;
       styleAvailable = false;
-      if (authManager.authenticated) void loadStyle();
+      if (authManager.authenticated) {
+        void loadStyle();
+      }
       selected = [];
       compareOpen = false;
       batchOpen = false;
@@ -1287,7 +1299,7 @@
                       ? $t('frameleaf_photography_open_raw_editor_count', { values: { count: chosenRaw.length } })
                       : $t('frameleaf_photography_open_raw_editor')}</a
                   >{:else if photos.length > 0}<p class="phw-small">{$t('frameleaf_photography_no_raw_photos')}</p>{/if}
-                <Button disabled={styleBusy || !photos.length} onclick={() => applyStyle(active.id)}>
+                <Button disabled={styleBusy || photos.length === 0} onclick={() => applyStyle(active.id)}>
                   <Icon icon={mdiPaletteOutline} size="1rem" aria-hidden={true} />{$t(
                     'frameleaf_photography_style_apply',
                   )}

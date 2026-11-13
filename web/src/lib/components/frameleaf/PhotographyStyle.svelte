@@ -27,7 +27,7 @@
 <section class="phw-brand-main my-style" aria-busy={working}>
   <h2>{$t('frameleaf_photography_style_learn')}</h2>
   <p>{$t('frameleaf_photography_style_lead')}</p>
-  {#if style?.learnedEdits != null}
+  {#if style && style.learnedEdits !== null}
     <p>{$t('frameleaf_photography_style_learned', { values: { count: style.learnedEdits } })}</p>
     <Button
       disabled={working}
