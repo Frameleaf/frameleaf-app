@@ -29,6 +29,7 @@ const annotations = {
 const tools = [
   {
     name: 'search_library',
+    title: message('searchTitle'),
     description: message('searchDescription'),
     inputSchema: {
       type: 'object',
@@ -45,6 +46,7 @@ const tools = [
   },
   {
     name: 'list_albums',
+    title: message('listTitle'),
     description: message('listDescription'),
     inputSchema: {
       type: 'object',
@@ -55,6 +57,7 @@ const tools = [
   },
   {
     name: 'get_album',
+    title: message('albumTitle'),
     description: message('albumDescription'),
     inputSchema: {
       type: 'object',
