@@ -88,7 +88,9 @@ describe(McpService.name, () => {
 
     const { tools } = await client.listTools();
     expect(tools.map(({ name }) => name)).toEqual(['search_library', 'list_albums', 'get_album']);
+    expect(tools.map(({ title }) => title)).toEqual(['Search Library', 'List Albums', 'Get Album']);
     expect(tools.every(({ annotations }) => annotations?.readOnlyHint === true)).toBe(true);
+    expect(tools.every(({ annotations }) => annotations?.destructiveHint === false)).toBe(true);
     const result = await client.callTool({
       name: 'search_library',
       arguments: { city: 'Banff', takenFrom: '2026-07-01', takenBefore: '2026-08-01' },
@@ -144,6 +146,8 @@ describe(McpService.name, () => {
 
   it('denies a mutation with only the read scope and audits the denied tool', async () => {
     await connect('library:read');
+    const { tools } = await client.listTools();
+    expect(tools.every((tool) => !Object.hasOwn(tool, 'title'))).toBe(true);
 
     const result = await client.callTool({ name: 'add_to_album', arguments: { albumId, assetIds: [assetId] } });
 

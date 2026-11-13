@@ -2,6 +2,8 @@
 
 The adapter bridges a local MCP stdio client to Frameleaf Library over HTTPS. For installation and sign-in, see [Connect a local AI assistant](../../docs/docs/features/ai-assistants.md).
 
+Tool titles follow the computer's language and are returned by MCP `tools/list`. The MCPB 0.4 manifest schema permits only names and descriptions in its static tool metadata.
+
 ## Build the bundle
 
 With Node.js 22.15 or later and npm 10 or later, run the following. The HTTPS test uses the OpenSSL command-line tool.
