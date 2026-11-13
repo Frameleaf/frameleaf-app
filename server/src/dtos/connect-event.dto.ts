@@ -15,7 +15,7 @@ const event = z.object({
   event: z.enum(CONNECT_EVENT_TYPES),
   deliveryId: z.uuid(),
   occurredAt: z.string(),
-  subject: z.object({ kind: z.literal('asset'), id: z.uuid(), name: z.null() }),
+  subject: z.object({ kind: z.literal('asset').meta({ id: 'ConnectEventSubjectKind' }), id: z.uuid(), name: z.null() }),
   detail: z.record(z.string(), z.union([z.string(), z.number().meta({ format: 'double' }), z.boolean(), z.null()])),
 });
 export class ConnectEventPageDto extends createZodDto(

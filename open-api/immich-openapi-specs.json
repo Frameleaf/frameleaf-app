@@ -9236,6 +9236,54 @@
         ],
         "x-immich-permission": "adminSession.read",
         "x-immich-state": "Alpha"
+      },
+      "post": {
+        "operationId": "createOAuthAppClient",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthAppCreateClientDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthAppCreateClientResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Register a public app client",
+        "tags": [
+          "Authentication (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
       }
     },
     "/admin/oauth/apps/{id}": {
@@ -26469,6 +26517,1185 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/connect/albums": {
+      "get": {
+        "operationId": "getConnectAlbums",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectAlbumsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List authorized Connect albums",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createConnectAlbum",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectAlbumCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectAlbum"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create an authorized album with a retry receipt",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/albums/{id}/assets": {
+      "post": {
+        "operationId": "addConnectAlbumAssets",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectAddAssetsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BulkIdResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add readable assets to a writable album",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/assets": {
+      "get": {
+        "operationId": "searchConnectAssets",
+        "parameters": [
+          {
+            "name": "albumId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100000,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ConnectAssetType"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectAssetsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Search authorized Connect assets",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/assets/{id}": {
+      "get": {
+        "operationId": "getConnectAsset",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectAsset"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get authorized Connect asset metadata",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/assets/{id}/rendition": {
+      "get": {
+        "operationId": "getConnectRendition",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "variant",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "thumbnail",
+                "preview",
+                "display",
+                "original"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "video/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read an authorized rendition or permitted original",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/assets/{id}/rendition-ticket": {
+      "post": {
+        "operationId": "createConnectRenditionTicket",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectRenditionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectRenditionTicketDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a short-lived grant-bound rendition ticket",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/assets/{id}/tags": {
+      "post": {
+        "operationId": "addConnectAssetTags",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectAddTagsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectTagResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add tags to a writable readable asset",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/capabilities": {
+      "get": {
+        "operationId": "getConnectCapabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectCapabilitiesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get Connect capabilities",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/events": {
+      "get": {
+        "operationId": "getConnectEvents",
+        "parameters": [
+          {
+            "name": "albumId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "start",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "now"
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asset.ready",
+                "album.asset.added",
+                "studio.export.completed"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectEventPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Initialize or drain a durable Connect event checkpoint",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/events/latest": {
+      "get": {
+        "operationId": "getLatestConnectEvents",
+        "parameters": [
+          {
+            "name": "albumId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asset.ready",
+                "album.asset.added",
+                "studio.export.completed"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectEventPageDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read at most the newest 1000 authorized events across ten pages",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/events/sample": {
+      "get": {
+        "operationId": "getConnectEventSample",
+        "parameters": [
+          {
+            "name": "albumId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asset.ready",
+                "album.asset.added",
+                "studio.export.completed"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectEventSampleDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read one current event without changing a polling checkpoint",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/renditions/{ticket}": {
+      "get": {
+        "operationId": "getConnectTicketRendition",
+        "parameters": [
+          {
+            "name": "ticket",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "video/*": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Read a ticket rendition after current grant authorization",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/uploads": {
+      "post": {
+        "operationId": "startConnectUpload",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectUploadStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectUploadStateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start a private resumable Connect upload",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/uploads/{id}": {
+      "delete": {
+        "operationId": "cancelConnectUpload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectUploadStateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel unpublished staging, preserving committed media",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      },
+      "get": {
+        "operationId": "getConnectUpload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectUploadStateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get Connect upload state and its committed receipt",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      },
+      "head": {
+        "operationId": "headConnectUpload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Durable upload offset and completion state",
+            "headers": {
+              "Upload-Complete": {
+                "schema": {
+                  "enum": [
+                    "?0",
+                    "?1"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Upload-Length": {
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "Upload-Offset": {
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the durable Connect upload offset",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "appendConnectUpload",
+        "parameters": [
+          {
+            "name": "Upload-Complete",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "?0",
+                "?1"
+              ]
+            }
+          },
+          {
+            "name": "Upload-Draft-Interop-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "9"
+              ]
+            }
+          },
+          {
+            "name": "Upload-Offset",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/partial-upload": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectUploadStateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Append bytes at the durable offset without publishing",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
+    "/connect/uploads/{id}/commit": {
+      "post": {
+        "operationId": "commitConnectUpload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectUploadCommitDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectMediaReceiptDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Commit verified bytes to their authorized destination",
+        "tags": [
+          "Connect"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
+      }
+    },
     "/date-doctor/apply": {
       "post": {
         "description": "Give the photos their new dates and time zones, set as if by hand, and rewrite their sidecars. The original files never change. It can be undone for 30 days.",
@@ -40817,6 +42044,66 @@
         ],
         "x-immich-permission": "session.delete",
         "x-immich-state": "Alpha"
+      }
+    },
+    "/oauth/apps/grants/{id}/access-policy": {
+      "patch": {
+        "operationId": "narrowOAuthAppAccessPolicy",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectAccessPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthAppAccessPolicyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reduce a connected app’s access",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v1.2.21",
+            "state": "Added"
+          }
+        ]
       }
     },
     "/oauth/authorize": {
@@ -97107,6 +98394,917 @@
         ],
         "type": "object"
       },
+      "ConnectAccessPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "allLibraryRead": {
+            "type": "boolean"
+          },
+          "readAlbumIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "version": {
+            "enum": [
+              1
+            ],
+            "format": "int32",
+            "type": "integer"
+          },
+          "writableAlbumIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "writeWorkspaces": {
+            "items": {
+              "enum": [
+                "photo",
+                "design"
+              ],
+              "type": "string"
+            },
+            "maxItems": 2,
+            "type": "array"
+          }
+        },
+        "required": [
+          "allLibraryRead",
+          "readAlbumIds",
+          "version",
+          "writableAlbumIds",
+          "writeWorkspaces"
+        ],
+        "type": "object"
+      },
+      "ConnectAddAssetsDto": {
+        "additionalProperties": false,
+        "properties": {
+          "assetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "ConnectAddTagsDto": {
+        "additionalProperties": false,
+        "properties": {
+          "tags": {
+            "items": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[^/]+$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "tags"
+        ],
+        "type": "object"
+      },
+      "ConnectAlbum": {
+        "properties": {
+          "canRead": {
+            "type": "boolean"
+          },
+          "canWrite": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/ConnectAlbumWorkspace"
+          }
+        },
+        "required": [
+          "canRead",
+          "canWrite",
+          "id",
+          "name",
+          "workspace"
+        ],
+        "type": "object"
+      },
+      "ConnectAlbumCreateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "workspace": {
+            "enum": [
+              "photo",
+              "design"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "requestId",
+          "workspace"
+        ],
+        "type": "object"
+      },
+      "ConnectAlbumWorkspace": {
+        "enum": [
+          "photo",
+          "design",
+          "both"
+        ],
+        "type": "string"
+      },
+      "ConnectAlbumsDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectAlbum"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ConnectAsset": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "duration": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "height": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ConnectAssetType"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "width": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "createdAt",
+          "description",
+          "duration",
+          "height",
+          "id",
+          "title",
+          "type",
+          "updatedAt",
+          "width"
+        ],
+        "type": "object"
+      },
+      "ConnectAssetType": {
+        "enum": [
+          "IMAGE",
+          "VIDEO"
+        ],
+        "type": "string"
+      },
+      "ConnectAssetsDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectAsset"
+            },
+            "type": "array"
+          },
+          "page": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "size",
+          "total"
+        ],
+        "type": "object"
+      },
+      "ConnectCapabilitiesDto": {
+        "properties": {
+          "accessPolicy": {
+            "$ref": "#/components/schemas/ConnectAccessPolicy"
+          },
+          "albums": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectAlbum"
+            },
+            "type": "array"
+          },
+          "connection": {
+            "properties": {
+              "grantId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "libraryUserId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "grantId",
+              "libraryUserId"
+            ],
+            "type": "object"
+          },
+          "displayIdentity": {
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "limits": {
+            "properties": {
+              "maxAppendBytes": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxPageSize": {
+                "enum": [
+                  100
+                ],
+                "format": "int32",
+                "type": "integer"
+              },
+              "maxUploadBytes": {
+                "format": "double",
+                "type": "number"
+              },
+              "originalsAllowed": {
+                "type": "boolean"
+              },
+              "receiptWindowSeconds": {
+                "format": "double",
+                "type": "number"
+              },
+              "renditionTicketSeconds": {
+                "format": "double",
+                "type": "number"
+              },
+              "uploadExpiresAfterSeconds": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "maxPageSize",
+              "maxUploadBytes",
+              "maxAppendBytes",
+              "uploadExpiresAfterSeconds",
+              "receiptWindowSeconds",
+              "renditionTicketSeconds",
+              "originalsAllowed"
+            ],
+            "type": "object"
+          },
+          "policyRevision": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "protocolVersion": {
+            "enum": [
+              1
+            ],
+            "format": "int32",
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "server": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "supportedTypes": {
+            "properties": {
+              "read": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "upload": {
+                "properties": {
+                  "design": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "photo": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "photo",
+                  "design"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "read",
+              "upload"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "accessPolicy",
+          "albums",
+          "connection",
+          "displayIdentity",
+          "limits",
+          "policyRevision",
+          "protocolVersion",
+          "scopes",
+          "server",
+          "supportedTypes"
+        ],
+        "type": "object"
+      },
+      "ConnectEventPageDto": {
+        "properties": {
+          "bounded": {
+            "type": "boolean"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "deliveryId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "detail": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number",
+                        "format": "double"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ],
+                    "nullable": true
+                  },
+                  "type": "object"
+                },
+                "event": {
+                  "enum": [
+                    "asset.ready",
+                    "album.asset.added",
+                    "studio.export.completed"
+                  ],
+                  "type": "string"
+                },
+                "occurredAt": {
+                  "type": "string"
+                },
+                "subject": {
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "$ref": "#/components/schemas/ConnectEventSubjectKind"
+                    },
+                    "name": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "event",
+                "deliveryId",
+                "occurredAt",
+                "subject",
+                "detail"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "bounded",
+          "hasMore",
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "ConnectEventSampleDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "deliveryId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "detail": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number",
+                        "format": "double"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ],
+                    "nullable": true
+                  },
+                  "type": "object"
+                },
+                "event": {
+                  "enum": [
+                    "asset.ready",
+                    "album.asset.added",
+                    "studio.export.completed"
+                  ],
+                  "type": "string"
+                },
+                "occurredAt": {
+                  "type": "string"
+                },
+                "subject": {
+                  "properties": {
+                    "id": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "$ref": "#/components/schemas/ConnectEventSubjectKind"
+                    },
+                    "name": {
+                      "type": "null"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "event",
+                "deliveryId",
+                "occurredAt",
+                "subject",
+                "detail"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ConnectEventSubjectKind": {
+        "enum": [
+          "asset"
+        ],
+        "type": "string"
+      },
+      "ConnectMediaReceiptDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConnectReceiptStatus"
+          }
+        },
+        "required": [
+          "assetId",
+          "sha256",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ConnectProvenanceProvider": {
+        "enum": [
+          "canva"
+        ],
+        "type": "string"
+      },
+      "ConnectReceiptStatus": {
+        "enum": [
+          "created",
+          "duplicate"
+        ],
+        "type": "string"
+      },
+      "ConnectRenditionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "variant": {
+            "enum": [
+              "thumbnail",
+              "preview",
+              "display",
+              "original"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "variant"
+        ],
+        "type": "object"
+      },
+      "ConnectRenditionTicketDto": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "url"
+        ],
+        "type": "object"
+      },
+      "ConnectSearchDto": {
+        "additionalProperties": false,
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "maximum": 100000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "q": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "size": {
+            "default": 50,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ConnectAssetType"
+          }
+        },
+        "type": "object"
+      },
+      "ConnectTagResultDto": {
+        "properties": {
+          "tagIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tagIds"
+        ],
+        "type": "object"
+      },
+      "ConnectUploadCommitDto": {
+        "additionalProperties": false,
+        "properties": {
+          "requestId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "ConnectUploadContentType": {
+        "enum": [
+          "image/jpeg",
+          "image/png",
+          "application/pdf",
+          "video/mp4"
+        ],
+        "type": "string"
+      },
+      "ConnectUploadStartDto": {
+        "additionalProperties": false,
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ConnectUploadContentType"
+          },
+          "fileCreatedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "fileModifiedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "^[^/\\\\\\u{00}-\\u{1F}]+$",
+            "type": "string"
+          },
+          "provenance": {
+            "additionalProperties": false,
+            "properties": {
+              "entryLabel": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              "entryOrdinal": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "exportedAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                "type": "string"
+              },
+              "externalId": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "pageUrl": {
+                "format": "uri",
+                "maxLength": 2048,
+                "type": "string"
+              },
+              "provider": {
+                "$ref": "#/components/schemas/ConnectProvenanceProvider"
+              },
+              "title": {
+                "maxLength": 500,
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "externalId",
+              "title",
+              "exportedAt",
+              "entryLabel",
+              "entryOrdinal"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace": {
+            "enum": [
+              "photo",
+              "design"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "contentType",
+          "fileCreatedAt",
+          "fileModifiedAt",
+          "filename",
+          "requestId",
+          "sha256",
+          "size",
+          "workspace"
+        ],
+        "type": "object"
+      },
+      "ConnectUploadState": {
+        "enum": [
+          "receiving",
+          "finalizing",
+          "verified",
+          "published",
+          "rejected",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "ConnectUploadStateDto": {
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/ConnectMediaReceiptDto"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ConnectUploadState"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "id",
+          "offset",
+          "size",
+          "state"
+        ],
+        "type": "object"
+      },
       "ContributorCountResponseDto": {
         "properties": {
           "assetCount": {
@@ -123328,6 +125526,23 @@
         },
         "type": "object"
       },
+      "OAuthAppAccessPolicyResponseDto": {
+        "properties": {
+          "accessPolicy": {
+            "$ref": "#/components/schemas/ConnectAccessPolicy"
+          },
+          "policyRevision": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accessPolicy",
+          "policyRevision"
+        ],
+        "type": "object"
+      },
       "OAuthAppAdminClientDto": {
         "properties": {
           "activeUsers": {
@@ -123358,6 +125573,9 @@
       "OAuthAppAuthorizeDto": {
         "additionalProperties": false,
         "properties": {
+          "accessPolicy": {
+            "$ref": "#/components/schemas/ConnectAccessPolicy"
+          },
           "allow": {
             "description": "true for Allow, false for Deny",
             "type": "boolean"
@@ -123480,8 +125698,43 @@
       },
       "OAuthAppAuthorizeStartResponseDto": {
         "properties": {
+          "availableAlbums": {
+            "items": {
+              "properties": {
+                "canWrite": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "$ref": "#/components/schemas/ConnectAlbumWorkspace"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "workspace",
+                "canWrite"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "client": {
             "$ref": "#/components/schemas/OAuthAppClientDto"
+          },
+          "requiresAccessPolicy": {
+            "type": "boolean"
+          },
+          "resource": {
+            "nullable": true,
+            "type": "string"
           },
           "scopes": {
             "description": "The scopes the app asked for, all of which this server offers",
@@ -123492,7 +125745,10 @@
           }
         },
         "required": [
+          "availableAlbums",
           "client",
+          "requiresAccessPolicy",
+          "resource",
           "scopes"
         ],
         "type": "object"
@@ -123536,8 +125792,106 @@
         ],
         "type": "object"
       },
+      "OAuthAppCreateClientDto": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "preset": {
+            "enum": [
+              "make",
+              "zapier"
+            ],
+            "type": "string"
+          },
+          "redirectUris": {
+            "items": {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "redirectUris"
+        ],
+        "type": "object"
+      },
+      "OAuthAppCreateClientResponseDto": {
+        "properties": {
+          "clientId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "redirectUris": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tokenEndpointAuthMethod": {
+            "enum": [
+              "none"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientId",
+          "name",
+          "redirectUris",
+          "tokenEndpointAuthMethod"
+        ],
+        "type": "object"
+      },
       "OAuthAppGrantDto": {
         "properties": {
+          "accessPolicy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConnectAccessPolicy"
+              }
+            ],
+            "nullable": true
+          },
+          "availableAlbums": {
+            "items": {
+              "properties": {
+                "canWrite": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "$ref": "#/components/schemas/ConnectAlbumWorkspace"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "workspace",
+                "canWrite"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "client": {
             "$ref": "#/components/schemas/OAuthAppClientDto"
           },
@@ -123559,6 +125913,15 @@
             "nullable": true,
             "type": "string"
           },
+          "policyRevision": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "resource": {
+            "nullable": true,
+            "type": "string"
+          },
           "scopes": {
             "description": "What you allowed",
             "items": {
@@ -123568,11 +125931,15 @@
           }
         },
         "required": [
+          "accessPolicy",
+          "availableAlbums",
           "client",
           "createdAt",
           "id",
           "lastUsedAt",
           "lastUsedVia",
+          "policyRevision",
+          "resource",
           "scopes"
         ],
         "type": "object"

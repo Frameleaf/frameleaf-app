@@ -13,7 +13,7 @@ const workspace = z.enum(['photo', 'design']);
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const ConnectProvenanceSchema = z
   .object({
-    provider: z.literal('canva'),
+    provider: z.literal('canva').meta({ id: 'ConnectProvenanceProvider' }),
     externalId: z.string().min(1).max(200),
     title: z.string().max(500),
     exportedAt: z.iso.datetime({ offset: true }),
@@ -45,7 +45,9 @@ export class ConnectUploadStartDto extends createZodDto(
         .regex(/^[^/\\\u{00}-\u{1F}]+$/u),
       size: z.int().min(1).max(Number.MAX_SAFE_INTEGER),
       sha256,
-      contentType: z.enum(['image/jpeg', 'image/png', 'application/pdf', 'video/mp4']),
+      contentType: z
+        .enum(['image/jpeg', 'image/png', 'application/pdf', 'video/mp4'])
+        .meta({ id: 'ConnectUploadContentType' }),
       fileCreatedAt: z.iso.datetime({ offset: true }),
       fileModifiedAt: z.iso.datetime({ offset: true }),
       provenance: ConnectProvenanceSchema.optional(),
@@ -84,7 +86,11 @@ export class ConnectRenditionDto extends createZodDto(
 ) {}
 export class ConnectMediaReceiptDto extends createZodDto(
   z
-    .object({ assetId: z.uuid(), status: z.enum(['created', 'duplicate']), sha256 })
+    .object({
+      assetId: z.uuid(),
+      status: z.enum(['created', 'duplicate']).meta({ id: 'ConnectReceiptStatus' }),
+      sha256,
+    })
     .meta({ id: 'ConnectMediaReceiptDto' }),
 ) {}
 export class ConnectUploadStateDto extends createZodDto(
@@ -93,7 +99,9 @@ export class ConnectUploadStateDto extends createZodDto(
       id: z.uuid(),
       offset: z.int().min(0),
       size: z.int().min(1),
-      state: z.enum(['receiving', 'finalizing', 'verified', 'published', 'rejected', 'cancelled']),
+      state: z
+        .enum(['receiving', 'finalizing', 'verified', 'published', 'rejected', 'cancelled'])
+        .meta({ id: 'ConnectUploadState' }),
       expiresAt: z.iso.datetime(),
       receipt: ConnectMediaReceiptDto.schema.optional(),
     })

@@ -14,7 +14,7 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
-import { ApiBody, ApiConsumes, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiHeader, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -76,6 +76,15 @@ export class ConnectMediaController {
 
   @Head('uploads/:id')
   @Authenticated({ connect: true, permission: false })
+  @ApiResponse({
+    status: 204,
+    description: 'Durable upload offset and completion state',
+    headers: {
+      'Upload-Offset': { schema: { type: 'integer', minimum: 0 } },
+      'Upload-Length': { schema: { type: 'integer', minimum: 1 } },
+      'Upload-Complete': { schema: { type: 'string', enum: ['?0', '?1'] } },
+    },
+  })
   @Endpoint({
     history: new HistoryBuilder().added('v1.2.21'),
     operationId: 'headConnectUpload',
@@ -102,6 +111,9 @@ export class ConnectMediaController {
   @Patch('uploads/:id')
   @Authenticated({ connect: true, permission: false })
   @ApiConsumes('application/partial-upload')
+  @ApiHeader({ name: 'Upload-Draft-Interop-Version', required: true, schema: { type: 'string', enum: ['9'] } })
+  @ApiHeader({ name: 'Upload-Offset', required: true, schema: { type: 'integer', minimum: 0 } })
+  @ApiHeader({ name: 'Upload-Complete', required: true, schema: { type: 'string', enum: ['?0', '?1'] } })
   @ApiBody({ schema: { type: 'string', format: 'binary' } })
   @ApiResponse({ status: 200, type: ConnectUploadStateDto })
   @Endpoint({

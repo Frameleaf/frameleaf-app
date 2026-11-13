@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { ConnectAlbumWorkspaceSchema } from 'src/dtos/connect.dto.js';
 import { ConnectAccessPolicySchema } from 'src/utils/connect-policy.js';
 
 /**
@@ -49,7 +50,7 @@ const OAuthAppAuthorizeStartResponseSchema = z
       z.object({
         id: z.uuid(),
         name: z.string(),
-        workspace: z.enum(['photo', 'design', 'both']),
+        workspace: ConnectAlbumWorkspaceSchema,
         canWrite: z.boolean(),
       }),
     ),
@@ -87,7 +88,7 @@ const OAuthAppGrantSchema = z
       z.object({
         id: z.uuid(),
         name: z.string(),
-        workspace: z.enum(['photo', 'design', 'both']),
+        workspace: ConnectAlbumWorkspaceSchema,
         canWrite: z.boolean(),
       }),
     ),

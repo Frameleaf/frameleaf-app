@@ -3,6 +3,9 @@ import z from 'zod';
 import { AssetType } from 'src/enum.js';
 import { ConnectAccessPolicySchema } from 'src/utils/connect-policy.js';
 
+const assetType = z.enum([AssetType.Image, AssetType.Video]).meta({ id: 'ConnectAssetType' });
+export const ConnectAlbumWorkspaceSchema = z.enum(['photo', 'design', 'both']).meta({ id: 'ConnectAlbumWorkspace' });
+
 export class ConnectSearchDto extends createZodDto(
   z
     .object({
@@ -10,7 +13,7 @@ export class ConnectSearchDto extends createZodDto(
       albumId: z.uuid().optional(),
       page: z.coerce.number().int().min(1).max(100_000).default(1),
       size: z.coerce.number().int().min(1).max(100).default(50),
-      type: z.enum([AssetType.Image, AssetType.Video]).optional(),
+      type: assetType.optional(),
     })
     .strict()
     .meta({ id: 'ConnectSearchDto' }),
@@ -45,7 +48,7 @@ export const ConnectAlbumSchema = z
   .object({
     id: z.uuid(),
     name: z.string(),
-    workspace: z.enum(['photo', 'design', 'both']),
+    workspace: ConnectAlbumWorkspaceSchema,
     canRead: z.boolean(),
     canWrite: z.boolean(),
   })
@@ -53,7 +56,7 @@ export const ConnectAlbumSchema = z
 export const ConnectAssetSchema = z
   .object({
     id: z.uuid(),
-    type: z.enum([AssetType.Image, AssetType.Video]),
+    type: assetType,
     title: z.string().nullable(),
     description: z.string().nullable(),
     width: z.number().meta({ format: 'double' }).nullable(),

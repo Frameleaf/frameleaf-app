@@ -1,4 +1,10 @@
-import { authorizeOAuthApp, startOAuthAppAuthorization } from '@frameleaf/sdk';
+import {
+  authorizeOAuthApp,
+  ConnectAlbumWorkspace,
+  createAlbum,
+  LibraryScope,
+  startOAuthAppAuthorization,
+} from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +16,7 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   startOAuthAppAuthorization: vi.fn(),
   authorizeOAuthApp: vi.fn(),
+  createAlbum: vi.fn(),
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: {
@@ -46,6 +53,9 @@ const claude = {
     returnTo: 'claude.ai',
   },
   scopes: ['library:read', 'people:read'],
+  resource: null,
+  requiresAccessPolicy: false,
+  availableAlbums: [],
 };
 const replace = vi.fn();
 
@@ -66,6 +76,113 @@ beforeEach(() => {
 });
 
 describe('Allow an app (FL-860)', () => {
+  it('creates a selected write destination during consent without granting whole-library reading', async () => {
+    const connectRequest = {
+      ...request,
+      resource: 'https://photos.example.test/api/connect',
+      scope: 'library:read boards:upload',
+    };
+    vi.mocked(startOAuthAppAuthorization).mockResolvedValue({
+      ...claude,
+      scopes: ['library:read', 'boards:upload'],
+      resource: connectRequest.resource,
+      requiresAccessPolicy: true,
+      availableAlbums: [],
+    });
+    let finishCreation!: (value: Awaited<ReturnType<typeof createAlbum>>) => void;
+    vi.mocked(createAlbum).mockReturnValue(
+      new Promise((resolve) => {
+        finishCreation = resolve;
+      }),
+    );
+    const created = {
+      id: 'new-board',
+      albumName: 'Designs',
+      libraryScope: LibraryScope.Design,
+    } as Awaited<ReturnType<typeof createAlbum>>;
+    vi.mocked(authorizeOAuthApp).mockResolvedValue({ redirectUrl: `${REDIRECT}?code=c` });
+    render_(connectRequest);
+    await fireEvent.input(await screen.findByRole('textbox', { name: en.album_name }), {
+      target: { value: 'Designs' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: en.create_album }));
+    expect(screen.getByRole('button', { name: en.frameleaf_apps_allow_allow })).toBeDisabled();
+    finishCreation(created);
+    expect(await screen.findByRole('checkbox', { name: 'Write to Designs' })).toBeChecked();
+    expect(createAlbum).toHaveBeenCalledWith({
+      createAlbumDto: { albumName: 'Designs', libraryScope: LibraryScope.Design },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_apps_allow_allow }));
+    expect(authorizeOAuthApp).toHaveBeenCalledWith({
+      oAuthAppAuthorizeDto: {
+        ...connectRequest,
+        allow: true,
+        accessPolicy: {
+          version: 1,
+          allLibraryRead: false,
+          readAlbumIds: [],
+          writableAlbumIds: ['new-board'],
+          writeWorkspaces: [],
+        },
+      },
+    });
+  });
+
+  it('defaults Connect consent to selected albums and keeps write destinations separate', async () => {
+    const connectRequest = {
+      ...request,
+      resource: 'https://photos.example.test/api/connect',
+      scope: 'library:read boards:upload',
+    };
+    vi.mocked(startOAuthAppAuthorization).mockResolvedValue({
+      ...claude,
+      scopes: ['library:read', 'boards:upload'],
+      resource: connectRequest.resource,
+      requiresAccessPolicy: true,
+      availableAlbums: [
+        { id: 'read-album', name: 'Holiday', workspace: ConnectAlbumWorkspace.Photo, canWrite: true },
+        { id: 'write-album', name: 'Artwork', workspace: ConnectAlbumWorkspace.Design, canWrite: true },
+      ],
+    });
+    vi.mocked(authorizeOAuthApp).mockResolvedValue({ redirectUrl: `${REDIRECT}?code=c` });
+    render_(connectRequest);
+
+    const all = await screen.findByRole('checkbox', { name: 'Read my whole library' });
+    expect(all).not.toBeChecked();
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Read Holiday' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Write to Artwork' }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_apps_allow_allow }));
+
+    expect(authorizeOAuthApp).toHaveBeenCalledWith({
+      oAuthAppAuthorizeDto: {
+        ...connectRequest,
+        allow: true,
+        accessPolicy: {
+          version: 1,
+          allLibraryRead: false,
+          readAlbumIds: ['read-album'],
+          writableAlbumIds: ['write-album'],
+          writeWorkspaces: [],
+        },
+      },
+    });
+  });
+
+  it('does not send album permissions when Connect access is denied', async () => {
+    const connectRequest = { ...request, resource: 'https://photos.example.test/api/connect', scope: 'library:read' };
+    vi.mocked(startOAuthAppAuthorization).mockResolvedValue({
+      ...claude,
+      scopes: ['library:read'],
+      resource: connectRequest.resource,
+      requiresAccessPolicy: true,
+      availableAlbums: [],
+    });
+    vi.mocked(authorizeOAuthApp).mockResolvedValue({ redirectUrl: `${REDIRECT}?error=access_denied` });
+    render_(connectRequest);
+    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_apps_allow_deny }));
+    expect(authorizeOAuthApp).toHaveBeenCalledWith({ oAuthAppAuthorizeDto: { ...connectRequest, allow: false } });
+  });
+
   it('shows a verified app, your account, what it can do and that Locked is never possible', async () => {
     render_();
 
