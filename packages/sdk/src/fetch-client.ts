@@ -14243,6 +14243,31 @@ export type PhotographyRenditionPreviewDto = {
         "type"?: Type8;
     };
 };
+export type PhotographyBulkCreateDto = {
+    requestId: string;
+    rows: {
+        assetIds?: string[];
+        clientEmail: string;
+        clientName: string;
+        folderPath?: string;
+        title: string;
+    }[];
+    templateId: string;
+};
+export type PhotographyBulkDto = {
+    id: string;
+    rows: {
+        clientEmail: string;
+        clientName: string;
+        error: (PhotographyBulkError) | null;
+        id: string;
+        link: string | null;
+        password: string | null;
+        shootId: string | null;
+        status: PhotographyBulkStatus;
+        title: string;
+    }[];
+};
 export type PhotographyPhotosDto = {
     nextCursor: string | null;
     photos: {
@@ -15909,6 +15934,7 @@ export type PhotographyRecipientUpdateDto = {
     canDownload: boolean;
     canProof: boolean;
     captureIds: string[] | null;
+    email?: string;
     expectedRevision: string | null;
     expiresAt: string | null;
     revoked: boolean;
@@ -34616,6 +34642,40 @@ export function previewPhotographyWatermark({ photographyRenditionPreviewDto }: 
         body: photographyRenditionPreviewDto
     })));
 }
+export function photographyCreateBulk({ photographyBulkCreateDto }: {
+    photographyBulkCreateDto: PhotographyBulkCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyBulkDto;
+    }>("/photography/shoots/bulk", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyBulkCreateDto
+    })));
+}
+export function photographyGetBulk({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyBulkDto;
+    }>(`/photography/shoots/bulk/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+export function photographyRetryBulkRow({ id, rowId }: {
+    id: string;
+    rowId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyBulkDto;
+    }>(`/photography/shoots/bulk/${encodeURIComponent(id)}/rows/${encodeURIComponent(rowId)}/retry`, {
+        ...opts,
+        method: "POST"
+    }));
+}
 /**
  * Read a page of unlocked shoot photos
  */
@@ -44373,6 +44433,20 @@ export enum Background {
 export enum Orientation {
     Portrait = "portrait",
     Landscape = "landscape"
+}
+export enum PhotographyBulkError {
+    PhotosUnavailable = "photos-unavailable",
+    PublicationFailed = "publication-failed",
+    SetupFailed = "setup-failed",
+    EmailUnavailable = "email-unavailable"
+}
+export enum PhotographyBulkStatus {
+    Queued = "queued",
+    Publishing = "publishing",
+    Draft = "draft",
+    Ready = "ready",
+    MailQueued = "mail-queued",
+    Failed = "failed"
 }
 export enum Processing {
     Ready = "ready",

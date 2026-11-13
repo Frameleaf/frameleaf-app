@@ -1,7 +1,27 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Next, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Next,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Res,
+} from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import {
+  PhotographyBulkCreateDto,
+  PhotographyBulkDto,
+  PhotographyBulkIdDto,
+  PhotographyBulkRowIdDto,
+} from 'src/dtos/photography-bulk.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { PhotographyLogoVariantDto, PhotographyRenditionPreviewDto } from 'src/dtos/photography-rendition.dto.js';
 import {
@@ -17,6 +37,7 @@ import {
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhotographyBulkService } from 'src/services/photography-bulk.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -27,6 +48,7 @@ export class PhotographyWorkspaceController {
   constructor(
     private service: PhotographyWorkspaceService,
     private logger: LoggingRepository,
+    private bulk: PhotographyBulkService,
   ) {}
 
   @Get()
@@ -119,6 +141,33 @@ export class PhotographyWorkspaceController {
     const output = await this.service.previewWatermark(auth, dto);
     response.setHeader('Cache-Control', 'private, no-store');
     response.type('image/jpeg').send(output);
+  }
+
+  @Post('bulk')
+  @Authenticated()
+  @ApiOperation({ operationId: 'photographyCreateBulk' })
+  @ApiResponse({ status: 201, type: PhotographyBulkDto })
+  @Header('Cache-Control', 'private, no-store')
+  createBulk(@Auth() auth: AuthDto, @Body() dto: PhotographyBulkCreateDto) {
+    return this.bulk.create(auth, dto);
+  }
+
+  @Get('bulk/:id')
+  @Authenticated()
+  @ApiOperation({ operationId: 'photographyGetBulk' })
+  @ApiResponse({ status: 200, type: PhotographyBulkDto })
+  @Header('Cache-Control', 'private, no-store')
+  getBulk(@Auth() auth: AuthDto, @Param() { id }: PhotographyBulkIdDto) {
+    return this.bulk.get(auth, id);
+  }
+
+  @Post('bulk/:id/rows/:rowId/retry')
+  @Authenticated()
+  @ApiOperation({ operationId: 'photographyRetryBulkRow' })
+  @ApiResponse({ status: 201, type: PhotographyBulkDto })
+  @Header('Cache-Control', 'private, no-store')
+  retryBulkRow(@Auth() auth: AuthDto, @Param() { id, rowId }: PhotographyBulkRowIdDto) {
+    return this.bulk.retry(auth, id, rowId);
   }
 
   @Get(':id/photos')

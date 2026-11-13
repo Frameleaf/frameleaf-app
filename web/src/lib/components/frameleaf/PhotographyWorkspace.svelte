@@ -73,6 +73,7 @@
     shootTypeKeys,
   } from '$lib/components/frameleaf/PhotographyStatus.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import PhotographyBulkGalleries from '$lib/components/frameleaf/PhotographyBulkGalleries.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
@@ -182,6 +183,7 @@
   let compareOpen = $state(false);
   let batchOpen = $state(false);
   let newOpen = $state(false);
+  let bulkOpen = $state(false);
   let draft = $state(emptyDraft());
   let details = $state({ name: '', client: '', stage: shootStages[0] as Shoot['stage'] });
   let inspecting = $state<Photo | null>(null);
@@ -891,10 +893,14 @@
           />
         </span>
         <!-- A shoot's own page has no New shoot (approved design, 2026-11-04). -->
-        {#if section === 'shoots' && !active}<Button
-            variant="primary"
-            disabled={loading || busy || !!error}
-            onclick={startShoot}
+        {#if section === 'shoots' && !active}
+          <Button
+            disabled={loading || busy || !!error || !workspace.shoots.some((shoot) => !shoot.unavailable)}
+            onclick={() => (bulkOpen = true)}
+          >
+            {$t('frameleaf_photography_bulk_title')}
+          </Button>
+          <Button variant="primary" disabled={loading || busy || !!error} onclick={startShoot}
             ><Icon icon={mdiPlus} size="1rem" aria-hidden={true} />{$t('frameleaf_photography_new_shoot')}</Button
           >{:else if isShootSection(section) && workspace.shoots.length > 0}<select
             class="phw-shoot-picker"
@@ -1378,6 +1384,11 @@
     </div>
   </Dialog>
 
+  <PhotographyBulkGalleries
+    bind:open={bulkOpen}
+    shoots={workspace.shoots.filter((shoot) => !shoot.unavailable)}
+    onCreated={() => void reload()}
+  />
   <Dialog
     title={$t('frameleaf_photography_new_shoot')}
     closeLabel={$t('close')}

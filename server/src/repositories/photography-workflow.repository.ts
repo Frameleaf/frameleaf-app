@@ -1,12 +1,31 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, sql, type Transaction } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import type { PhotographyBulkRow } from 'src/dtos/photography-bulk.dto.js';
 import type {
   PhotographyInquiry,
   PhotographySite,
   PhotographyStudioPreset,
 } from 'src/dtos/photography-workflow.dto.js';
+import type { StoredShoot } from 'src/dtos/photography-workspace.dto.js';
+
+import {
+  AlbumUserRole,
+  AssetFileType,
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  UserMetadataKey,
+  UserStatus,
+} from 'src/enum.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { DB } from 'src/schema/index.js';
+import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
+import { hiddenByOwnerRules } from 'src/utils/database.js';
+import { displayPathSql } from 'src/utils/library-path.js';
+import { isNotLocked, lockedAssetIdExists } from 'src/utils/locked.js';
+import type { BulkGalleryBatch } from 'src/utils/photography-bulk.js';
 
 /** One site-owned copy of a portfolio photograph at each width (FL-702). */
 export type StudioSiteMedia = {
@@ -23,12 +42,8 @@ export type StudioRecord = {
   presets: PhotographyStudioPreset[];
   media?: Record<string, StudioSiteMedia>;
   inquiries?: PhotographyInquiry[];
+  bulkGalleries?: BulkGalleryBatch[];
 };
-import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
-import { AlbumUserRole, AssetFileType, AssetStatus, AssetType, UserStatus } from 'src/enum.js';
-import { DB } from 'src/schema/index.js';
-import { hiddenByOwnerRules } from 'src/utils/database.js';
-import { isNotLocked, lockedAssetIdExists } from 'src/utils/locked.js';
 
 export type WorkflowRow = {
   id: string;
@@ -352,7 +367,7 @@ export class PhotographyWorkflowRepository {
   async mutateStudio<T>(
     ownerId: string,
     expected: string | null | undefined,
-    change: (record: StudioRecord) => Promise<T> | T,
+    change: (record: StudioRecord, tx: Transaction<DB>) => Promise<T> | T,
   ) {
     return this.db.transaction().execute(async (tx) => {
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${ownerId},0))`.execute(tx);
@@ -375,7 +390,7 @@ export class PhotographyWorkflowRepository {
         throw new ConflictException('Studio settings changed; reload');
       const stored = rows[0]?.value;
       const record: StudioRecord = stored && 'site' in stored ? stored : { site: stored ?? null, presets: [] };
-      const result = await change(record);
+      const result = await change(record, tx);
       const encoded = JSON.stringify(record);
       if (Buffer.byteLength(encoded) > 20_000_000) throw new ConflictException('Studio settings storage limit reached');
       const revision = expected === undefined && rows[0] ? rows[0].revision : randomUUID();
@@ -384,6 +399,83 @@ export class PhotographyWorkflowRepository {
       );
       return { revision, record, result };
     });
+  }
+  async createBulkShoot(tx: Transaction<DB>, ownerId: string, id: string, row: PhotographyBulkRow) {
+    const owner = await tx
+      .selectFrom('user_metadata')
+      .select(['value', 'updateId'])
+      .where('userId', '=', ownerId)
+      .where('key', '=', UserMetadataKey.PhotographyWorkspace)
+      .forUpdate()
+      .executeTakeFirst();
+    const shoots = (owner?.value as { shoots?: StoredShoot[] } | undefined)?.shoots ?? [];
+    const existing = shoots.find((shoot) => shoot.id === id);
+    if (existing) return existing.albumId;
+    if (shoots.length >= 200) throw new ConflictException('Shoot limit reached');
+    const assets = await tx
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+      .select('asset.id')
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.status', '=', AssetStatus.Active)
+      .where('asset.type', '=', AssetType.Image)
+      .where('asset.isOffline', '=', false)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+      .where((eb) => eb.or([eb('asset_exif.rating', 'is', null), eb('asset_exif.rating', '!=', -1)]))
+      .where(isNotLocked())
+      .where(sql<boolean>`not ${hiddenByOwnerRules()}`)
+      .$if(!!row.assetIds, (query) => query.where('asset.id', 'in', row.assetIds!))
+      .$if(!!row.folderPath, (query) =>
+        query.where(
+          sql<string>`regexp_replace(${displayPathSql()}, '/[^/]*$', '')`,
+          '=',
+          row.folderPath!.replace(/\/$/, ''),
+        ),
+      )
+      .$if(!row.assetIds && !row.folderPath, (query) => query.where(sql<boolean>`false`))
+      .orderBy('asset.id')
+      .limit(1001)
+      .forShare('asset')
+      .execute();
+    if (
+      assets.length > 1000 ||
+      (row.assetIds && assets.length !== row.assetIds.length) ||
+      (row.folderPath && assets.length === 0)
+    ) {
+      return;
+    }
+    const album = await new AlbumRepository(tx).create(
+      { albumName: row.title, albumThumbnailAssetId: assets[0]?.id ?? null, parentId: null },
+      assets.map((asset) => asset.id),
+      [{ userId: ownerId, role: AlbumUserRole.Owner }],
+      ownerId,
+    );
+    const shoot: StoredShoot = {
+      id,
+      albumId: album.id,
+      name: row.title,
+      client: row.clientName,
+      type: 'Event',
+      date: new Date().toISOString().slice(0, 10),
+      stage: 'Imported',
+    };
+    const value = { shoots: [...shoots, shoot] };
+    const saved = await tx
+      .insertInto('user_metadata')
+      .values({ userId: ownerId, key: UserMetadataKey.PhotographyWorkspace, value })
+      .onConflict((oc) =>
+        oc
+          .columns(['userId', 'key'])
+          .doUpdateSet({
+            value: sql`user_metadata.value || ${JSON.stringify(value)}::text::jsonb`,
+          })
+          .where('user_metadata.updateId', '=', owner?.updateId ?? '00000000-0000-0000-0000-000000000000'),
+      )
+      .returning('updateId')
+      .executeTakeFirst();
+    if (!saved) throw new ConflictException('Shoots changed; retry the gallery');
+    return album.id;
   }
   /** FL-702: the whole studio record, for the site's photo copies and inquiries. */
   async studioRecord(ownerId: string) {

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
+import type { IEmailJob } from 'src/types.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
@@ -537,18 +538,19 @@ export class PhotographySiteService {
    * this server cannot send it: email is off, or it has no public address for the link. The invitation itself
    * is already saved, and the studio can still copy the link.
    */
-  async emailInvitation(
+  async prepareInvitationEmail(
     auth: AuthDto,
     invitation: {
       workflowId: string;
       token: string;
+      password?: string;
       email: string;
       recipientName: string;
       galleryTitle: string;
       welcomeMessage?: string;
       expiresAt: string | null;
     },
-  ): Promise<boolean> {
+  ): Promise<IEmailJob | undefined> {
     try {
       const { server, notifications, templates } = await getConfig(
         { configRepo: this.configRepository, metadataRepo: this.metadata, logger: this.logger },
@@ -556,7 +558,7 @@ export class PhotographySiteService {
       );
       const baseUrl = getExternalDomain(server);
       if (!notifications.smtp.enabled || !baseUrl) {
-        return false;
+        return;
       }
       const studioName = (await this.workspace.get(auth.user.id))?.value.brand?.name || auth.user.name;
       const { html, text } = await this.email.renderEmail({
@@ -568,19 +570,27 @@ export class PhotographySiteService {
           recipientName: invitation.recipientName,
           galleryTitle: invitation.galleryTitle,
           welcomeMessage: invitation.welcomeMessage,
+          password: invitation.password,
           link: `${baseUrl}/photography/gallery/${invitation.workflowId}#invitation=${invitation.token}`,
           expiresAt: invitation.expiresAt
             ? new Date(invitation.expiresAt).toLocaleDateString('en', { dateStyle: 'long' })
             : undefined,
         },
       });
-      await this.jobs.queue({
-        name: JobName.SendMail,
-        data: { to: invitation.email, subject: `${studioName} shared ${invitation.galleryTitle} with you`, html, text },
-      });
+      return { to: invitation.email, subject: `${studioName} shared ${invitation.galleryTitle} with you`, html, text };
+    } catch {
+      this.logger.warn('Gallery invitation email could not be prepared');
+    }
+  }
+
+  async emailInvitation(auth: AuthDto, invitation: Parameters<PhotographySiteService['prepareInvitationEmail']>[1]) {
+    const data = await this.prepareInvitationEmail(auth, invitation);
+    if (!data) return false;
+    try {
+      await this.jobs.queue({ name: JobName.SendMail, data });
       return true;
-    } catch (error) {
-      this.logger.warn(`Gallery invitation email not queued: ${error}`);
+    } catch {
+      this.logger.warn('Gallery invitation email could not be queued');
       return false;
     }
   }
