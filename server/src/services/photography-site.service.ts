@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
-import type { IEmailJob } from 'src/types.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { IEmailJob } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { mapNotification } from 'src/dtos/notification.dto.js';
 import {

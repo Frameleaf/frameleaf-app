@@ -2,20 +2,20 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { createHash, randomUUID } from 'node:crypto';
 import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DB } from 'src/schema/index.js';
+import type { JobOf } from 'src/types.js';
+import { OnJob } from 'src/decorators.js';
 import { PhotographyBulkCreateDto, type PhotographyBulkDto } from 'src/dtos/photography-bulk.dto.js';
 import { JobName, JobStatus, QueueName, UserStatus } from 'src/enum.js';
-import { OnJob } from 'src/decorators.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
-import type { DB } from 'src/schema/index.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
-import type { JobOf } from 'src/types.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
-import { bulkInvitation, type BulkGalleryBatch, type BulkGalleryRow } from 'src/utils/photography-bulk.js';
+import { type BulkGalleryBatch, type BulkGalleryRow, bulkInvitation } from 'src/utils/photography-bulk.js';
 
 type RowStatus = Pick<BulkGalleryRow, 'status' | 'error'>;
 
@@ -239,10 +239,10 @@ export class PhotographyBulkService {
     } else if (!row.recipientId) {
       await this.update(ownerId, batch.id, row.id, { recipientId: recipient.id });
     }
-    if (!workflow.captures.length)
+    if (workflow.captures.length === 0)
       workflow = await this.workflows.intake(auth, row.id, { expectedRevision: workflow.revision });
-    if (!workflow.captures.length) return { status: 'draft', error: null };
-    if (!workflow.captures.some((capture) => capture.eligible))
+    if (workflow.captures.length === 0) return { status: 'draft', error: null };
+    if (workflow.captures.every((capture) => !capture.eligible))
       return { status: 'failed', error: 'photos-unavailable' };
     if (!workflow.publication || (workflow.publication.status === 'failed' && retryPublication)) {
       workflow = await this.workflows.publish(auth, row.id, {

@@ -1,8 +1,8 @@
 import { type Kysely } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { AssetType, AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
-import type { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { newUuid } from 'test/small.factory.js';

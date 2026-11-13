@@ -16,13 +16,13 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   PhotographyBulkCreateDto,
   PhotographyBulkDto,
   PhotographyBulkIdDto,
   PhotographyBulkRowIdDto,
 } from 'src/dtos/photography-bulk.dto.js';
-import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { PhotographyLogoVariantDto, PhotographyRenditionPreviewDto } from 'src/dtos/photography-rendition.dto.js';
 import {
   PhotographyBrandDto,

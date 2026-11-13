@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Kysely, sql, type Transaction } from 'kysely';
+import { Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { PhotographyBulkRow } from 'src/dtos/photography-bulk.dto.js';
@@ -10,6 +10,8 @@ import type {
 } from 'src/dtos/photography-workflow.dto.js';
 import type { StoredShoot } from 'src/dtos/photography-workspace.dto.js';
 
+import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
+import type { BulkGalleryBatch } from 'src/utils/photography-bulk.js';
 import {
   AlbumUserRole,
   AssetFileType,
@@ -21,11 +23,9 @@ import {
 } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { DB } from 'src/schema/index.js';
-import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
 import { hiddenByOwnerRules } from 'src/utils/database.js';
 import { displayPathSql } from 'src/utils/library-path.js';
 import { isNotLocked, lockedAssetIdExists } from 'src/utils/locked.js';
-import type { BulkGalleryBatch } from 'src/utils/photography-bulk.js';
 
 /** One site-owned copy of a portfolio photograph at each width (FL-702). */
 export type StudioSiteMedia = {

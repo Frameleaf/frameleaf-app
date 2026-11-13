@@ -7,7 +7,9 @@ const input = { requestId: randomUUID(), templateId: randomUUID(), rows: [row] }
 
 it('bounds a bulk request and refuses mixed or relative photo sources', () => {
   expect(PhotographyBulkCreateDto.schema.parse(input)).toEqual(input);
-  expect(() => PhotographyBulkCreateDto.schema.parse({ ...input, rows: Array(201).fill(row) })).toThrow();
+  expect(() =>
+    PhotographyBulkCreateDto.schema.parse({ ...input, rows: Array.from({ length: 201 }, () => ({ ...row })) }),
+  ).toThrow();
   expect(() =>
     PhotographyBulkCreateDto.schema.parse({
       ...input,
@@ -23,8 +25,8 @@ it('bounds a bulk request and refuses mixed or relative photo sources', () => {
 });
 
 it('derives stable, separately scoped credentials without writing clear credentials into the batch', async () => {
-  const hmac = vi.fn(async (purpose: string, id: string) =>
-    purpose === 'token' ? Buffer.alloc(32, 4).toString('base64url') : 'distinct-password-' + id,
+  const hmac = vi.fn((purpose: string, id: string) =>
+    Promise.resolve(purpose === 'token' ? Buffer.alloc(32, 4).toString('base64url') : 'distinct-password-' + id),
   );
   const id = randomUUID();
   const invitation = await bulkInvitation(id, hmac);
