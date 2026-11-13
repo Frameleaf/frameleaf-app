@@ -2156,7 +2156,7 @@ export class MediaHealthService {
 
   /**
    * An upload Library care uses, decoded and published into its folder under a name fixed by the asset and finding
-   * (a repeat reuses it). Undefined when it does not decode or the drive is not there.
+   * (a repeat reuses it). Undefined when it does not decode; throws while that cannot be told.
    */
   private async publishUpload(
     asset: MediaHealthAsset,
@@ -2172,7 +2172,14 @@ export class MediaHealthService {
       expected: digests,
       deep: true,
     });
-    if (decoded.status !== 'healthy') {
+    // FL-1506: the caller removes the upload after any answer but a throw. A check that did not finish or a
+    // drive that is away says nothing about these bytes, so the job fails and keeps them for its retry.
+    if (decoded.status === 'timeout' || decoded.status === 'transient') {
+      throw new Error(`Library care could not check the upload of ${asset.id} yet: ${decoded.reason}`);
+    }
+    // A format this server cannot decode (some RAW): both callers already matched the bytes to the checksum
+    // on record, which is the proof that matters.
+    if (decoded.status !== 'healthy' && decoded.status !== 'unsupported') {
       this.logger.log(`Library care did not use the upload of ${asset.id}: ${decoded.status}`);
       return;
     }
@@ -2182,7 +2189,7 @@ export class MediaHealthService {
       `${asset.id}-${finding.id}-${kind}${/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : ''}`,
     );
     if (!(await this.canReach(destination))) {
-      return;
+      throw new Error(`Library care could not use the upload of ${asset.id} yet: its drive is not there`);
     }
     await publishVerifiedCopy({
       source: upload,
