@@ -263,6 +263,73 @@ def test_an_accelerator_report_needs_a_device_the_provider_can_have_used(
     assert accelerator_present(provider, facts) is present
 
 
+def test_native_cuda_sessions_keep_full_float32_precision(monkeypatch: pytest.MonkeyPatch) -> None:
+    from frameleaf_ml import native_ort
+
+    session = OrtSession.__new__(OrtSession)
+    session._providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    session.model_path = Path("model.onnx")
+    session.device_id = None
+    monkeypatch.setattr(native_ort, "_policy", None)
+    # A container keeps onnxruntime's default (TF32 on).
+    assert "use_tf32" not in session._provider_options_default[0]
+    monkeypatch.setattr(native_ort, "_policy", native_ort.NativeOrtPolicy("CUDAExecutionProvider", None))
+    # A native process is compared with a float32 reference.
+    assert session._provider_options_default[0]["use_tf32"] == "0"
+    assert "use_tf32" not in session._provider_options_default[1]
+
+
+def test_a_failed_qualification_says_why_on_stderr_and_in_its_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import sys
+
+    from frameleaf_ml import native_qualification
+
+    spec = {
+        "protocolVersion": 1,
+        "modelKey": "fixture",
+        "provider": "CUDAExecutionProvider",
+        "models": [{"name": "model", "task": "clip", "type": "textual", "artifacts": {"model.onnx": "a" * 64}}],
+        "entries": {"clip": {"textual": {"modelName": "model"}}},
+        "preprocessingSha256": "b" * 64,
+        "fixtureFile": "fixture.txt",
+        "fixtureKind": "text",
+        "fixtureSha256": "c" * 64,
+        "expectedOutput": {"clip": "[1.0]"},
+        "minMemoryBytes": 1,
+        "deadlineSeconds": 30,
+    }
+    (tmp_path / "spec.json").write_text(json.dumps(spec))
+    report = tmp_path / "report.json"
+    arguments = [
+        "qualify",
+        "--spec",
+        str(tmp_path / "spec.json"),
+        "--cache-dir",
+        str(tmp_path),
+        "--output",
+        str(report),
+    ]
+    monkeypatch.setattr(sys, "argv", arguments)
+    for failure, code, shown in [
+        (RuntimeError("CUDA failure 2: out of memory"), "native_qualification_failed", "RuntimeError: CUDA failure 2"),
+        (ValueError("native_output_value_mismatch"), "native_output_value_mismatch", "native_output_value_mismatch"),
+    ]:
+
+        async def fail(*args: object, **kwargs: object) -> dict[str, object]:
+            raise failure
+
+        monkeypatch.setattr(native_qualification, "qualify", fail)
+        with pytest.raises(SystemExit) as stopped:
+            native_qualification.main()
+        assert stopped.value.code == 1
+        assert json.loads(report.read_text())["reason"] == code
+        assert json.loads(report.read_text())["detail"] == f"{type(failure).__name__}: {failure}"
+        error = capsys.readouterr().err
+        assert shown in error and f"native qualification incompatible: {code}" in error
+
+
 def test_driver_changes_invalidate_fingerprint_without_using_free_memory() -> None:
     from frameleaf_ml.native_hardware import fingerprint
 

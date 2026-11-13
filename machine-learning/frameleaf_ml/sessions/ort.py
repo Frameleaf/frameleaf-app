@@ -404,6 +404,10 @@ class OrtSession:
                     options = {"arena_extend_strategy": "kSameAsRequested"}
                 case "CUDAExecutionProvider":
                     options = {"arena_extend_strategy": "kSameAsRequested", "device_id": settings.device_id}
+                    if native:
+                        # onnxruntime turns TF32 on by default: on cards that have it, convolutions and matrix
+                        # products keep 10 bits of mantissa. Native fixtures need float32 accuracy, as on CoreML.
+                        options["use_tf32"] = "0"
                 case "MIGraphXExecutionProvider":
                     migraphx_dir = runtime_cache_dir(self.model_path) / "migraphx"
                     # MIGraphX does not create the underlying folder and will crash if it does not exist
