@@ -421,6 +421,7 @@ export interface IEntityJob extends IBaseJob {
   source?: JobSource;
   notify?: boolean;
   reconcileUnfinished?: boolean;
+  replacementSidecar?: string;
 }
 
 export interface IGenerateThumbnailsJob extends IEntityJob {

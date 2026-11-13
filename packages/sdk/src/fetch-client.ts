@@ -27592,6 +27592,21 @@ export function getAssetUploadResourceResult({ id }: {
     }));
 }
 /**
+ * Attach XMP to a resumable photo upload
+ */
+export function attachAssetUploadSidecar({ id, body }: {
+    id: string;
+    body: {
+        sidecarData: Blob;
+    };
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/uploads/${encodeURIComponent(id)}/sidecar`, oazapfts.multipart({
+        ...opts,
+        method: "PUT",
+        body
+    })));
+}
+/**
  * Retrieve an asset
  */
 export function getAssetInfo({ id, key, slug }: {
@@ -28361,6 +28376,22 @@ export function rejectAssetRestoration({ id, restorationId }: {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Replace the photo XMP sidecar
+ */
+export function replaceAssetSidecar({ id, body }: {
+    id: string;
+    body: {
+        sidecarData: Blob;
+        useFileValues?: boolean;
+    };
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/sidecar`, oazapfts.multipart({
+        ...opts,
+        method: "PUT",
+        body
+    })));
 }
 /**
  * Retrieve private capture provenance for an owned asset

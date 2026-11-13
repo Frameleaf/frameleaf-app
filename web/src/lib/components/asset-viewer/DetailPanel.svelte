@@ -5,6 +5,7 @@
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
   import DetailPanelImageEnrichment from '$lib/components/asset-viewer/DetailPanelImageEnrichment.svelte';
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
+  import DetailPanelReplaceSidecar from '$lib/components/asset-viewer/DetailPanelReplaceSidecar.svelte';
   import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
   import DetailPanelClassification from '$lib/components/asset-viewer/DetailPanelClassification.svelte';
   import DetailPanelTags from '$lib/components/asset-viewer/DetailPanelTags.svelte';
@@ -23,6 +24,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetMediaSize,
+    AssetTypeEnum,
+    AssetVisibility,
     getAllAlbums,
     LibraryScope,
     getAssetInfo,
@@ -160,6 +163,9 @@
     -->
   <ViewerDetailRows {asset} {isOwner} />
   <DetailPanelCameraIdentification {asset} {isOwner} />
+  {#if isOwner && !authManager.isSharedLink && asset.type === AssetTypeEnum.Image && !asset.isOffline && asset.visibility !== AssetVisibility.Locked}
+    {#key asset.id}<DetailPanelReplaceSidecar {asset} />{/key}
+  {/if}
 
   <!-- FL-707 item 13: people, rating, then the description (once, with its AI evidence) and the
        sensitive-content check, after when, where, file and camera. -->

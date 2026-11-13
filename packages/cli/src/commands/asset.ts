@@ -504,7 +504,7 @@ export const findSidecar = (filepath: string): string | undefined => {
   const noExtension = path.join(assetPath.dir, assetPath.name);
 
   // XMP sidecars can come in two filename formats. For a photo named photo.ext, the filenames are photo.ext.xmp and photo.xmp
-  for (const sidecarPath of [`${noExtension}.xmp`, `${filepath}.xmp`]) {
+  for (const sidecarPath of [`${filepath}.xmp`, `${noExtension}.xmp`]) {
     try {
       statSync(sidecarPath);
       return sidecarPath;

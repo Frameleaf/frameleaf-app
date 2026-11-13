@@ -372,6 +372,9 @@ export class MetadataService extends BaseService {
     await withPlainCopy(asset.originalPath, (plainOriginal) =>
       this.extractMetadataFrom(data, asset, plainOriginal, metadata, reverseGeocoding, previous),
     );
+    if (data.replacementSidecar && !queueExecution.getStore()) {
+      await this.storageRepository.unlink(`${data.replacementSidecar}.bak`);
+    }
     // a Live Photo's extracted motion part is its own asset, sealed after its own extraction
     await this.queueLockedSeal([asset.id]);
   }
@@ -771,7 +774,7 @@ export class MetadataService extends BaseService {
   }
 
   @OnJob({ name: JobName.AssetMetadataPostprocess, queue: QueueName.MetadataExtraction })
-  async handleMetadataPostprocess({ id, source }: JobOf<JobName.AssetMetadataPostprocess>) {
+  async handleMetadataPostprocess({ id, source, replacementSidecar }: JobOf<JobName.AssetMetadataPostprocess>) {
     const asset = await this.assetRepository.getById(id);
     if (!asset) {
       return JobStatus.Skipped;
@@ -780,6 +783,7 @@ export class MetadataService extends BaseService {
     if (asset.libraryId && (await this.libraryRepository.get(asset.libraryId, true))?.deletedAt) {
       return JobStatus.Skipped;
     }
+    if (replacementSidecar) await this.storageRepository.unlink(`${replacementSidecar}.bak`);
     await this.eventRepository.emit('AssetMetadataExtracted', { assetId: id, userId: asset.ownerId, source });
     return JobStatus.Success;
   }
