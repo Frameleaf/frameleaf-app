@@ -123,3 +123,29 @@ def test_failed_specialization_retains_session_and_removes_temporary_cache(corem
         session.run(None, {"input": np.zeros((1, 3, 2, 4), dtype=np.float32)})
     assert session.session is original and not coreml.observer.calls
     assert not list((coreml.model.parent / "cache/coreml").iterdir())
+
+
+def test_specialization_proves_a_derived_model_against_its_source_again(coreml, monkeypatch):
+    import frameleaf_ml.sessions.ort as sessions
+
+    source = coreml.model.with_name("approved.onnx")
+    source.write_bytes(b"approved")
+    coreml.model.write_bytes(b"derived")
+    monkeypatch.setattr(sessions, "_same_model_but_for_declared_shapes", lambda derived, original: True)
+
+    class Bytes(coreml.factory):
+        def __init__(self, model, **options):
+            options.pop("disabled_optimizers", None)
+            super().__init__(model, **options)
+            self._model_bytes = model if isinstance(model, bytes) else None
+
+    monkeypatch.setattr(sessions.ort, "InferenceSession", Bytes)
+    coreml.options.add_session_config_entry = lambda self, key, value: None
+    session = OrtSession(coreml.model)
+    session.source_model_path = source
+    approved = sessions._read_model(source)[1]
+    assert session.model_sha256 == approved
+    session.run(None, {"input": np.zeros((1, 3, 2, 4), dtype=np.float32)})
+    # The specialized session read the derived file again; it must still name the approved model.
+    assert len(coreml.made) == 2 and session.model_sha256 == approved
+    assert coreml.observer.loaded == [approved]
