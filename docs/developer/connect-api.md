@@ -37,8 +37,12 @@ All routes below are relative to `/api/connect`.
 
 Asset metadata contains `id`, `type`, `title`, `description`, `width`, `height`, `duration`, `createdAt` and `updatedAt`. Duration is milliseconds. The current Library has no separate asset title, so `title` is null; `description` is the caption. Responses omit EXIF, location, people, owner details, storage paths and original filenames. Asset ordering is capture time descending, then ID descending.
 
+`connection.grantId` and `connection.libraryUserId` identify only the currently authenticated grant and its Library owner. Managed connectors use these IDs to bind downstream consent; they do not expose another account or permit selecting an owner.
+
 Capabilities expose a stable `server.id` for identity pinning and `policyRevision` for detecting consent changes. `limits` contains `maxPageSize`, `maxUploadBytes`, `maxAppendBytes`, `uploadExpiresAfterSeconds`, `receiptWindowSeconds`, `renditionTicketSeconds` and `originalsAllowed`. `supportedTypes.upload` lists accepted MIME types separately for `photo` and `design`. Treat these as current limits; a later upload or download can still be denied if quota, consent or connection policy changes.
 
 Album creation, resumable uploads, renditions, transfer tickets and the event feed use the same live grant and privacy boundary. Asset creation must retain the original file and publish a new asset rather than overwrite an existing original. Request identifiers and transfer receipts belong to the creating grant. Additive writes serialize with policy narrowing and revocation.
+
+Additive writes and uploads may return `409` while album hierarchy or access changes are in progress. Retry the same operation after a short delay; retain the request ID and payload for album creation and upload retries.
 
 Do not log authorization headers, OAuth codes, tokens, transfer URLs, filenames or media. Keep a failed consent, revoked grant, expired cursor and unavailable rendition distinguishable in client recovery flows.

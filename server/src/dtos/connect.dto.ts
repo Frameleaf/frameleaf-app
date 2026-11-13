@@ -82,6 +82,7 @@ export class ConnectCapabilitiesDto extends createZodDto(
       protocolVersion: z.literal(1),
       server: z.object({ id: z.string(), name: z.string() }),
       displayIdentity: z.object({ name: z.string() }),
+      connection: z.object({ grantId: z.uuid(), libraryUserId: z.uuid() }),
       scopes: z.array(z.string()),
       accessPolicy: ConnectAccessPolicySchema,
       policyRevision: z.int(),

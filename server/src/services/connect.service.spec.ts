@@ -42,6 +42,17 @@ describe('ConnectService additive writes', () => {
     return { sut, repo, albums, tags };
   };
 
+  it('binds connection identity only to the authenticated Library owner and grant', async () => {
+    const { sut } = setup();
+    Object.assign(sut, {
+      systemMetadataRepository: { get: vi.fn().mockResolvedValue({ id: 'stable-server' }) },
+      connectRepository: { albums: vi.fn().mockResolvedValue([]) },
+    });
+    const response = await sut.capabilities(auth);
+    expect(response.connection).toEqual({ grantId: auth.oauthApp!.grantId, libraryUserId: auth.user.id });
+    expect(response.displayIdentity).toEqual({ name: auth.user.name });
+  });
+
   it('refuses an unreadable source before an additive album write', async () => {
     const { sut, repo, albums } = setup();
     repo.requireReadableAssets.mockRejectedValue(new NotFoundException());

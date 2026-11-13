@@ -26,6 +26,7 @@ export class ConnectService extends BaseService {
         name: 'Frameleaf',
       },
       displayIdentity: { name: auth.user.name },
+      connection: { grantId: auth.oauthApp!.grantId, libraryUserId: auth.user.id },
       scopes: auth.oauthApp!.scopes,
       accessPolicy,
       policyRevision: auth.oauthApp!.policyRevision ?? 0,
