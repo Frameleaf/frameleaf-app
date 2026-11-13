@@ -13575,6 +13575,77 @@ export type PhotoSourceReceiptDto = {
     uploadResourceId: string;
     verifiedAt: string;
 };
+export type PhotographyCampaignListDto = {
+    clients: number;
+    items: {
+        audience: {
+            source: PhotographyCampaignAudienceSource;
+            workflowId?: string;
+        };
+        body: string;
+        failedCount: number;
+        id: string;
+        name: string;
+        pendingCount: number;
+        revision: string;
+        scheduledFor: string | null;
+        sentCount: number;
+        status: PhotographyCampaignStatus;
+        subject: string;
+        templateKey: PhotographyCampaignTemplate;
+        uncertainCount: number;
+        unsubscribedCount: number;
+    }[];
+    leads: number;
+    mailReady: boolean;
+    sender: string;
+};
+export type PhotographyCampaignSaveDto = {
+    audience: {
+        source: PhotographyCampaignAudienceSource;
+        workflowId?: string;
+    };
+    body: string;
+    name: string;
+    subject: string;
+    templateKey: PhotographyCampaignTemplate;
+};
+export type PhotographyCampaignDto = {
+    audience: {
+        source: PhotographyCampaignAudienceSource;
+        workflowId?: string;
+    };
+    body: string;
+    failedCount: number;
+    id: string;
+    name: string;
+    pendingCount: number;
+    revision: string;
+    scheduledFor: string | null;
+    sentCount: number;
+    status: PhotographyCampaignStatus;
+    subject: string;
+    templateKey: PhotographyCampaignTemplate;
+    uncertainCount: number;
+    unsubscribedCount: number;
+};
+export type PhotographyCampaignDeliveriesDto = {
+    items: {
+        email: string;
+        name: string;
+        status: PhotographyCampaignDeliveryStatus;
+    }[];
+};
+export type PhotographyCampaignPreviewDto = {
+    html: string;
+    recipients: number;
+    sender: string;
+    text: string;
+};
+export type PhotographyCampaignScheduleDto = {
+    expectedRevision: string;
+    scheduledFor?: string;
+};
 export type PhotographyGalleryDto = {
     brand: {
         background: string;
@@ -34574,6 +34645,79 @@ export function verifyPhotoSourceCopy({ id, itemId, runId, photoSourceVerifyDto 
         body: photoSourceVerifyDto
     })));
 }
+export function photographyCampaigns(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyCampaignListDto;
+    }>("/photography/campaigns", {
+        ...opts
+    }));
+}
+export function photographySaveCampaign({ id, photographyCampaignSaveDto }: {
+    id: string;
+    photographyCampaignSaveDto: PhotographyCampaignSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyCampaignDto;
+    }>(`/photography/campaigns/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographyCampaignSaveDto
+    })));
+}
+export function photographyCancelCampaign({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyCampaignDto;
+    }>(`/photography/campaigns/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+export function photographyCampaignDeliveries({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyCampaignDeliveriesDto;
+    }>(`/photography/campaigns/${encodeURIComponent(id)}/deliveries`, {
+        ...opts
+    }));
+}
+export function photographyPreviewCampaign({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyCampaignPreviewDto;
+    }>(`/photography/campaigns/${encodeURIComponent(id)}/preview`, {
+        ...opts
+    }));
+}
+export function photographyScheduleCampaign({ id, photographyCampaignScheduleDto }: {
+    id: string;
+    photographyCampaignScheduleDto: PhotographyCampaignScheduleDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyCampaignDto;
+    }>(`/photography/campaigns/${encodeURIComponent(id)}/schedule`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyCampaignScheduleDto
+    })));
+}
+export function photographyTestCampaign({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/campaigns/${encodeURIComponent(id)}/test`, {
+        ...opts,
+        method: "POST"
+    }));
+}
 export function photographyGallery({ xPhotographySession, id }: {
     xPhotographySession: string;
     id: string;
@@ -35159,6 +35303,27 @@ export function applyDevelopStyle({ id, developStyleApplyDto }: {
         method: "POST",
         body: developStyleApplyDto
     })));
+}
+export function photographyUnsubscribePage({ locale, token }: {
+    locale?: any;
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/unsubscribe/${encodeURIComponent(token)}${QS.query(QS.explode({
+        locale
+    }))}`, {
+        ...opts
+    }));
+}
+export function photographyUnsubscribe({ locale, token }: {
+    locale?: any;
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/unsubscribe/${encodeURIComponent(token)}${QS.query(QS.explode({
+        locale
+    }))}`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 export function photographyList(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -44555,6 +44720,30 @@ export enum PhotoSourceItemState {
 }
 export enum PhotoSourceStorage {
     Managed = "managed"
+}
+export enum PhotographyCampaignAudienceSource {
+    All = "all",
+    Clients = "clients",
+    Leads = "leads",
+    Shoot = "shoot"
+}
+export enum PhotographyCampaignStatus {
+    Draft = "draft",
+    Scheduled = "scheduled",
+    Completed = "completed",
+    Cancelled = "cancelled"
+}
+export enum PhotographyCampaignTemplate {
+    PrintSale = "print-sale",
+    ReviewRequest = "review-request",
+    MiniSession = "mini-session"
+}
+export enum PhotographyCampaignDeliveryStatus {
+    Pending = "pending",
+    Sent = "sent",
+    Failed = "failed",
+    Uncertain = "uncertain",
+    Unsubscribed = "unsubscribed"
 }
 export enum Mode2 {
     EditedDelivery = "edited-delivery",

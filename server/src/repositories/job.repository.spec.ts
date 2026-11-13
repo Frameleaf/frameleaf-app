@@ -454,6 +454,24 @@ describe(JobRepository.name, () => {
     });
   });
 
+  it('resumes campaign batches through their durable recipient ledger', async () => {
+    await sut.queue({ name: JobName.PhotographyCampaignSend });
+    expect(enqueue.mock.calls[0][0][0]).toMatchObject({
+      safeToRetry: true,
+      options: { deduplication: { id: JobName.PhotographyCampaignSend, keepLastIfActive: true } },
+    });
+  });
+  it('keeps XMP import retries and coalescing scoped to the asset', async () => {
+    await sut.queue({ name: JobName.DevelopImport, data: { id: 'asset', delay: 2500 } });
+    expect(enqueue.mock.calls[0][0][0]).toMatchObject({
+      safeToRetry: true,
+      options: {
+        delay: 2500,
+        deduplication: { id: 'DevelopImport:asset', keepLastIfActive: true },
+      },
+    });
+  });
+
   it('never automatically replays notification side effects and redacts sensitive history', async () => {
     await sut.queue({ name: JobName.SendMail, data: {} } as never);
     expect(enqueue.mock.calls[0][0][0]).toMatchObject({ safeToRetry: false, sensitive: true });

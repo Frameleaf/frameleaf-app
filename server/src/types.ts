@@ -706,6 +706,7 @@ export type JobItem =
 
   // Notifications
   | { name: JobName.NotificationsCleanup; data?: IBaseJob }
+  | { name: JobName.PhotographyCampaignSend; data?: IBaseJob }
 
   // Sidecar Scanning
   | { name: JobName.SidecarQueueAll; data: IBaseJob }

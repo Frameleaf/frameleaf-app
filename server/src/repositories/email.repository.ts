@@ -26,6 +26,7 @@ export type SendEmailOptions = {
   html: string;
   text: string;
   imageAttachments?: EmailImageAttachment[];
+  headers?: Record<string, string>;
   smtp: SmtpOptions;
 };
 
@@ -52,6 +53,8 @@ export class MailApiError extends Error {
     readonly provider: MailSignInProvider,
     readonly status: number | null,
     message: string,
+    readonly retryAfterSeconds?: number,
+    readonly reasonCode?: string,
   ) {
     super(message);
     this.name = 'MailApiError';
@@ -293,6 +296,7 @@ export class EmailRepository {
     text,
     smtp,
     imageAttachments,
+    headers,
   }: SendEmailOptions): Promise<SendEmailResponse> {
     this.logger.debug(`Sending email to ${to} with subject: ${subject}`);
     const transport = this.createTransport(smtp);
@@ -304,7 +308,7 @@ export class EmailRepository {
     }));
 
     try {
-      return await transport.sendMail({ to, from, replyTo, subject, html, text, attachments });
+      return await transport.sendMail({ to, from, replyTo, subject, html, text, attachments, headers });
     } finally {
       transport.close();
     }
@@ -322,6 +326,7 @@ export class EmailRepository {
     html,
     text,
     imageAttachments,
+    headers,
   }: Omit<SendEmailOptions, 'smtp'>): Promise<{ messageId: string; mime: Buffer }> {
     const attachments = imageAttachments?.map((attachment) => ({
       filename: attachment.filename,
@@ -329,7 +334,7 @@ export class EmailRepository {
       cid: attachment.cid,
     }));
     const transport = createTransport({ streamTransport: true, buffer: true, newline: 'windows' });
-    const info = await transport.sendMail({ to, from, replyTo, subject, html, text, attachments });
+    const info = await transport.sendMail({ to, from, replyTo, subject, html, text, attachments, headers });
     return { messageId: info.messageId, mime: info.message as Buffer };
   }
 
@@ -382,10 +387,33 @@ export class EmailRepository {
       );
     }
     if (!response.ok) {
-      // both answer `{ error: { message } }`; only that short reason is kept
-      const body = (await response.json().catch(() => null)) as { error?: { message?: unknown } } | null;
+      // Keep the bounded message and structured refusal code, never a token or message payload.
+      const body = (await response.json().catch(() => null)) as {
+        error?: { message?: unknown; code?: unknown; errors?: unknown; details?: unknown };
+      } | null;
+      const details: unknown[] = [body?.error?.errors, body?.error?.details].flatMap((value) =>
+        Array.isArray(value) ? value : [],
+      );
+      const reasonCode =
+        details
+          .map((value) => (value && typeof value === 'object' && 'reason' in value ? value.reason : undefined))
+          .find((value): value is string => typeof value === 'string') ??
+        (typeof body?.error?.code === 'string' ? body.error.code : undefined);
       const reason = typeof body?.error?.message === 'string' ? `: ${body.error.message.slice(0, 300)}` : '';
-      throw new MailApiError(account.provider, response.status, `${name} refused (${response.status})${reason}`);
+      const retryAfter = response.headers.get('Retry-After');
+      const seconds = retryAfter ? Number(retryAfter) : NaN;
+      const retryAfterSeconds = Number.isFinite(seconds)
+        ? Math.max(0, seconds)
+        : retryAfter
+          ? Math.max(0, (Date.parse(retryAfter) - Date.now()) / 1000)
+          : undefined;
+      throw new MailApiError(
+        account.provider,
+        response.status,
+        `${name} refused (${response.status})${reason}`,
+        retryAfterSeconds,
+        reasonCode?.slice(0, 100),
+      );
     }
     return response;
   }

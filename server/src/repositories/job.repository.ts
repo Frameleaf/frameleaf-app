@@ -101,6 +101,8 @@ const COMMITTED_EFFECT_JOBS = new Set<JobName>([
 ]);
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
+  // Campaign retries claim only untouched recipients from the durable delivery ledger.
+  JobName.PhotographyCampaignSend,
   JobName.MediaImport,
   JobName.PhotographyBulkGallery,
   JobName.DevelopImport,
@@ -1585,6 +1587,9 @@ export class JobRepository {
       }
       case JobName.WorkflowEventDispatch: {
         return { deduplication: { id: `${JobName.WorkflowEventDispatch}:${item.data.event.deliveryId}` } };
+      }
+      case JobName.PhotographyCampaignSend: {
+        return { deduplication: { id: item.name, keepLastIfActive: true } };
       }
       case JobName.DevelopImport:
       case JobName.PhotographyBulkGallery:

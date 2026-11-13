@@ -212,6 +212,11 @@ import {
   PhotoSourceTable,
 } from 'src/schema/tables/photo-source.table.js';
 import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
+import {
+  PhotographyCampaignDeliveryTable,
+  PhotographyCampaignTable,
+  PhotographyContactTable,
+} from 'src/schema/tables/photography-campaign.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
@@ -328,6 +333,9 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    PhotographyContactTable,
+    PhotographyCampaignTable,
+    PhotographyCampaignDeliveryTable,
     PhotoLocationEstimateTable,
     PhotoLocationScanTable,
     PhotoLocationScanItemTable,
@@ -629,6 +637,9 @@ export interface Migrations {
 }
 
 export interface DB extends QueueDatabase {
+  photography_campaign: PhotographyCampaignTable;
+  photography_contact: PhotographyContactTable;
+  photography_campaign_delivery: PhotographyCampaignDeliveryTable;
   desktop_clip_index: DesktopClipIndexTable;
   desktop_clip_producer: DesktopClipProducerTable;
   desktop_device: DesktopDeviceTable;
