@@ -347,6 +347,8 @@ describe(IntegrityService.name, () => {
       expect(mocks.integrityReport.create).toHaveBeenCalledExactlyOnceWith([
         { type: IntegrityReport.UntrackedFile, path: orphan },
       ]);
+      // a finding an earlier check wrote for the photo goes too
+      expect(mocks.integrityReport.deleteUntrackedByPaths).toHaveBeenCalledExactlyOnceWith([photo]);
     });
 
     it('reports nothing when every untracked file was put in a library', async () => {

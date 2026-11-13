@@ -541,6 +541,8 @@ export class IntegrityService extends BaseService {
       for (const path of placed) {
         untrackedFiles.delete(path);
       }
+      // an earlier check may have listed them
+      await this.integrityRepository.deleteUntrackedByPaths(placed);
     }
 
     if (untrackedFiles.size > 0) {
