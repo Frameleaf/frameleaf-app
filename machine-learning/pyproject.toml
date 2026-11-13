@@ -67,6 +67,17 @@ cuda = [
     "transformers==5.19.0",
 ]
 openvino = ["onnxruntime-openvino>=1.24.1,<2", "openvino-genai>=2026.4.1.0,<2027"]
+# Desktop runtime packs (no torch, no system CUDA or OpenVINO): the libraries each provider library was built
+# against, as wheels. onnxruntime-gpu 1.29.0 imports CUDA runtime functions (cudaLibraryLoadData and three more)
+# that the 12.6.77 runtime the torch build pins does not export, so its provider library cannot load with it;
+# cuBLAS 12.6.4.1 exports everything it imports and is the newest with a Windows wheel. onnxruntime-openvino
+# 1.24.1 is built for OpenVINO 2025.4.1 and its Windows wheel does not contain it.
+desktop-cuda = [
+    "onnxruntime-gpu[cuda,cudnn]==1.29.0",
+    "nvidia-cuda-runtime-cu12==12.9.79",
+    "nvidia-cublas-cu12==12.6.4.1",
+]
+desktop-openvino = ["onnxruntime-openvino==1.24.1", "openvino==2025.4.1 ; sys_platform == 'win32'"]
 armnn = ["onnxruntime>=1.31.0,<2"]
 rknn = ["onnxruntime>=1.31.0,<2", "rknn-toolkit-lite2>=2.5.0,<3"]
 rocm = ["onnxruntime-migraphx>=1.27.1,<2"]
@@ -74,7 +85,10 @@ rocm = ["onnxruntime-migraphx>=1.27.1,<2"]
 [tool.uv]
 compile-bytecode = true
 # CPU and CUDA wheels are mutually exclusive; other device images keep their existing stacks.
-conflicts = [[{extra = "cpu"}, {extra = "cuda"}]]
+conflicts = [
+    [{extra = "cpu"}, {extra = "cuda"}, {extra = "desktop-cuda"}, {extra = "desktop-openvino"}],
+    [{extra = "openvino"}, {extra = "desktop-openvino"}, {extra = "desktop-cuda"}],
+]
 
 # faster-whisper declares the plain `onnxruntime` wheel (for its Silero VAD), which would be installed
 # over onnxruntime-gpu, -openvino or -migraphx and break those images. Every device extra already
@@ -85,8 +99,19 @@ name = "faster-whisper"
 version = "1.2.1"
 requires-dist = ["ctranslate2>=4.0,<5", "huggingface-hub>=0.21", "tokenizers>=0.13,<1", "av>=11", "tqdm"]
 
+# A desktop OpenVINO runtime on Windows uses only the native libraries of the `openvino` wheel, which
+# onnxruntime-openvino loads; its Python bindings are never imported. Its metadata caps numpy below 2.4 for
+# those bindings, so it is restated here without that cap.
+[[tool.uv.dependency-metadata]]
+name = "openvino"
+version = "2025.4.1"
+requires-dist = ["openvino-telemetry>=2023.2.1", "packaging"]
+
 [tool.uv.sources]
-onnxruntime-gpu = {index = "onnxruntime-cuda12", extra = "cuda"}
+onnxruntime-gpu = [
+    {index = "onnxruntime-cuda12", extra = "cuda"},
+    {index = "onnxruntime-cuda12", extra = "desktop-cuda"},
+]
 torch = [
     {index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'linux' and platform_machine in 'x86_64 aarch64'"},
     {index = "pytorch-cuda", extra = "cuda", marker = "sys_platform == 'linux' and platform_machine in 'x86_64 aarch64'"},
