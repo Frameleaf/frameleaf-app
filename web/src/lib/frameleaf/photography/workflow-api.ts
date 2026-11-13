@@ -105,6 +105,8 @@ export type Capture = {
   capturedAt: string | null;
   offsetSeconds: number;
   photographer: string;
+  artist?: string | null;
+  copyright?: string | null;
   chapterId: string | null;
   position: number;
   withheld: boolean;

@@ -32,13 +32,14 @@ describe(McpService.name, () => {
   const searchFacets = vi.fn();
   const previewUrl = vi.fn((id: string) => Promise.resolve(`https://example.test/preview/${id}`));
   let hiddenContent: AuthDto['hiddenContent'];
+  let resource: string | null;
   const connect = async (...scopes: string[]) => {
     const oauthApp = {
       clientId: 'client',
       clientName: 'Test app',
       grantId: 'grant',
       scopes: [...scopes],
-      resource: null,
+      resource,
     };
     const auth: AuthDto = { user: authStub.admin.user, oauthApp, hiddenContent };
     server = sut.createServer(auth, previewUrl);
@@ -52,6 +53,7 @@ describe(McpService.name, () => {
   beforeEach(() => {
     vi.resetAllMocks();
     hiddenContent = undefined;
+    resource = null;
     ({ sut, mocks } = newTestService(McpService));
     Object.assign(sut, {
       assets: { get: getAsset },
@@ -65,6 +67,79 @@ describe(McpService.name, () => {
   afterEach(async () => {
     await client?.close();
     await server?.close();
+  });
+
+  it('offers only read-only official tools and filters dates in the capture calendar', async () => {
+    resource = 'https://photos.example.test/api/mcp/assistant';
+    searchMetadata.mockResolvedValue({
+      assets: {
+        items: [
+          { id: assetId, type: AssetType.Image, visibility: AssetVisibility.Timeline, originalFileName: 'trip.jpg' },
+          {
+            id: otherAssetId,
+            type: AssetType.Image,
+            visibility: AssetVisibility.Hidden,
+            originalFileName: 'hidden.jpg',
+          },
+        ],
+      },
+    });
+    await connect('library:read');
+
+    const { tools } = await client.listTools();
+    expect(tools.map(({ name }) => name)).toEqual(['search_library', 'list_albums', 'get_album']);
+    expect(tools.every(({ annotations }) => annotations?.readOnlyHint === true)).toBe(true);
+    const result = await client.callTool({
+      name: 'search_library',
+      arguments: { city: 'Banff', takenFrom: '2026-07-01', takenBefore: '2026-08-01' },
+    });
+    expect(result.structuredContent).toEqual({
+      data: [
+        {
+          id: assetId,
+          type: AssetType.Image,
+          fileName: 'trip.jpg',
+          url: `https://photos.example.test/photos/${assetId}`,
+        },
+      ],
+    });
+    expect(searchMetadata).toHaveBeenCalledWith(expect.anything(), {
+      size: 20,
+      filter: expect.objectContaining({
+        city: { eq: 'Banff' },
+        localDateTime: { gte: new Date('2026-07-01'), lt: new Date('2026-08-01') },
+      }),
+    });
+    expect((await client.callTool({ name: 'get_asset', arguments: { assetId } })).isError).toBe(true);
+    expect((await client.callTool({ name: 'search_library', arguments: { limit: 51 } })).isError).toBe(true);
+  });
+
+  it('requires album permission and omits locked albums and trashed photos in official results', async () => {
+    resource = 'https://photos.example.test/api/mcp/assistant';
+    const openAlbum = { id: albumId, albumName: 'Camping', description: 'Private caption' };
+    getAllAlbums.mockResolvedValue([openAlbum, { id: otherAlbumId, albumName: 'Private', isLocked: true }]);
+    getAlbum.mockResolvedValueOnce(openAlbum).mockResolvedValueOnce({ isLocked: true });
+    getAlbum.mockRejectedValueOnce(new ForbiddenException());
+    searchMetadata.mockResolvedValue({
+      assets: {
+        items: [
+          { id: assetId, type: AssetType.Image, visibility: AssetVisibility.Timeline },
+          { id: otherAssetId, type: AssetType.Image, visibility: AssetVisibility.Timeline, isTrashed: true },
+        ],
+      },
+    });
+    await connect('library:read');
+    expect((await client.callTool({ name: 'list_albums' })).structuredContent).toEqual({
+      data: [{ id: albumId, name: 'Camping', url: `https://photos.example.test/albums/${albumId}` }],
+    });
+    expect(getAllAlbums).toHaveBeenCalledWith(expect.anything(), { take: 20 }, { excludeLocked: true });
+    const result = await client.callTool({ name: 'get_album', arguments: { albumId } });
+    expect(result.structuredContent).toMatchObject({ data: { id: albumId, assets: [{ id: assetId }] } });
+    expect(JSON.stringify(result)).not.toContain(otherAssetId);
+    expect(JSON.stringify(result)).not.toContain('Private caption');
+    expect((await client.callTool({ name: 'get_album', arguments: { albumId: otherAlbumId } })).isError).toBe(true);
+    expect((await client.callTool({ name: 'get_album', arguments: { albumId: otherAlbumId } })).isError).toBe(true);
+    expect(searchMetadata).toHaveBeenCalledTimes(1);
   });
 
   it('denies a mutation with only the read scope and audits the denied tool', async () => {

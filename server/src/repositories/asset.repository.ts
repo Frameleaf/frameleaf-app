@@ -615,6 +615,9 @@ export class AssetRepository {
               ...removeUndefinedKeys(
                 {
                   description: ref('description'),
+                  title: ref('title'),
+                  artist: ref('artist'),
+                  copyright: ref('copyright'),
                   exifImageWidth: ref('exifImageWidth'),
                   exifImageHeight: ref('exifImageHeight'),
                   fileSizeInByte: ref('fileSizeInByte'),

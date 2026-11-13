@@ -1001,6 +1001,28 @@ test('a database move that fails before its intent cancels the update and restar
   }
 });
 
+test('an update whose safety backup fails is cancelled and the previous release starts again (FL-1501)', async () => {
+  const f = await databaseMoveFixture();
+  try {
+    f.operation.completed = ['download-images', 'stop-application'];
+    f.store.save(f.operation);
+    const operations = f.create();
+    (operations as any).backups = { initialize: async () => { throw new Error('restic: repository is locked'); } };
+    await (operations as any).applyUpdate(f.operation, f.review);
+    assert.equal(f.operation.receipts['database-move-intent'], undefined);
+    assert.equal((f.operation.receipts['cancellation-intent'] as any).kind, 'update');
+    assert.equal(f.operation.receipts['cancelled'], 'database_checkpoint_failed_rolled_back');
+    assert.deepEqual(f.composed, [['up']], 'the stopped application starts again');
+    assert.deepEqual(f.restored, []);
+    assert.deepEqual(await f.stackNow(), f.previousCompose);
+    assert.deepEqual(f.store.get<any>('installation'), f.current);
+    // cancelled, not failed: the lock every later automatic update needs is released
+    assert.ok(f.operation.completed.includes('cancel-restart-previous'));
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('a database move without room for the new folder changes nothing and restarts the previous release', async () => {
   const f = await databaseMoveFixture({ space: false });
   try {

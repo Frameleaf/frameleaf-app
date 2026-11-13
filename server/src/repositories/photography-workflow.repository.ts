@@ -23,6 +23,7 @@ import {
 } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { DB } from 'src/schema/index.js';
+import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { hiddenByOwnerRules } from 'src/utils/database.js';
 import { displayPathSql } from 'src/utils/library-path.js';
 import { isNotLocked, lockedAssetIdExists } from 'src/utils/locked.js';
@@ -117,7 +118,7 @@ export class PhotographyWorkflowRepository {
     albumId: string,
     expected: string | null | undefined,
     initial: PhotographyWorkflow,
-    change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
+    change: (value: PhotographyWorkflow, tx: Transaction<DB>) => Promise<T> | T,
   ) {
     return this.write(id, ownerId, albumId, expected, initial, change, false);
   }
@@ -133,7 +134,7 @@ export class PhotographyWorkflowRepository {
     albumId: string,
     expected: string | null | undefined,
     initial: PhotographyWorkflow,
-    change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
+    change: (value: PhotographyWorkflow, tx: Transaction<DB>) => Promise<T> | T,
   ) {
     return this.write(id, ownerId, albumId, expected, initial, change, true);
   }
@@ -143,7 +144,7 @@ export class PhotographyWorkflowRepository {
     albumId: string,
     expected: string | null | undefined,
     initial: PhotographyWorkflow,
-    change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
+    change: (value: PhotographyWorkflow, tx: Transaction<DB>) => Promise<T> | T,
     keepRevision: boolean,
   ): Promise<{
     row: WorkflowRow;
@@ -212,6 +213,47 @@ export class PhotographyWorkflowRepository {
       );
     });
   }
+  async addIntakeCreditDefaults(
+    tx: Transaction<DB>,
+    ownerId: string,
+    albumId: string,
+    ids: string[],
+    defaults: { artist?: string; copyright?: string },
+  ) {
+    if (ids.length === 0 || (!defaults.artist && !defaults.copyright)) return [];
+    const rows = await tx
+      .selectFrom('asset')
+      .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
+      .select('asset.id')
+      .where('asset.id', 'in', ids)
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.type', '=', AssetType.Image)
+      .where('asset.status', '=', AssetStatus.Active)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.isOffline', '=', false)
+      .where('album_asset.albumId', '=', albumId)
+      .where(isNotLocked())
+      .where(sql<boolean>`not ${hiddenByOwnerRules()}`)
+      .orderBy('asset.id')
+      .forUpdate('asset')
+      .execute();
+    if (rows.length === 0) return [];
+    // Metadata extraction may still be queued. Record defaults without touching the source EXIF.
+    // The next scan applies them only after reading the original and sidecar.
+    return tx
+      .insertInto('asset_metadata')
+      .values(
+        rows.map(({ id }) => ({
+          assetId: id,
+          key: PHOTOGRAPHY_INTAKE_CREDITS_KEY,
+          value: defaults,
+        })),
+      )
+      .onConflict((oc) => oc.columns(['assetId', 'key']).doNothing())
+      .returning('assetId')
+      .execute();
+  }
+
   async assets(ownerId: string, albumId: string, ids?: string[]) {
     let query = this.db
       .selectFrom('asset')
@@ -230,6 +272,8 @@ export class PhotographyWorkflowRepository {
         'asset.width',
         'asset.height',
         'asset_exif.make',
+        'asset_exif.artist',
+        'asset_exif.copyright',
         'asset_exif.model',
         'asset_exif.dateTimeOriginal',
         'asset_exif.rating',

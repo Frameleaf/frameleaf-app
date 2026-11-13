@@ -71,6 +71,7 @@ export class AssetExifFactory {
       offsetTimeOriginal: null,
       offsetTime: null,
       ...dto,
+      title: dto.title ?? null,
     });
   }
 

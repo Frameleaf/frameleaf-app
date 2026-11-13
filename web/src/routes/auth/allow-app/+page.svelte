@@ -48,6 +48,9 @@
   const DONE: Phase[] = ['allowed', 'denied', 'expired', 'invalid'];
 
   const request = $derived(data.request);
+  const official = $derived(
+    request?.resource === `${typeof location === 'undefined' ? '' : location.origin}/api/mcp/assistant`,
+  );
   const user = $derived(authManager.authenticated ? authManager.user : undefined);
   const host = typeof location === 'undefined' ? '' : location.host;
   const name = $derived(app?.client.name ?? '');
@@ -201,9 +204,15 @@
         <section aria-labelledby="allow-app-can">
           <h2 id="allow-app-can">{$t('frameleaf_apps_allow_can_title')}</h2>
           <ul aria-labelledby="allow-app-can">
-            {#each access.can as line (line)}
-              <li><Icon icon={mdiCheck} size="16" class="is-can" aria-hidden />{line}</li>
-            {/each}
+            {#if official}
+              <li>
+                <Icon icon={mdiCheck} size="16" class="is-can" aria-hidden />{$t('frameleaf_apps_allow_assistant_read')}
+              </li>
+            {:else}
+              {#each access.can as line (line)}
+                <li><Icon icon={mdiCheck} size="16" class="is-can" aria-hidden />{line}</li>
+              {/each}
+            {/if}
           </ul>
         </section>
         <section aria-labelledby="allow-app-cant">

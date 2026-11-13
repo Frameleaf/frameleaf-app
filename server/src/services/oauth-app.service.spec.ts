@@ -1,9 +1,15 @@
-import { ForbiddenException, HttpException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { OAuthAuthorizationCode, OAuthClient, OAuthGrant } from 'src/repositories/oauth-app.repository.js';
-import { AccountEventAction, Permission } from 'src/enum.js';
+import { AccountEventAction, Permission, SystemMetadataKey } from 'src/enum.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { OAUTH_ACCESS_TTL_SECONDS, OAUTH_CODE_TTL_SECONDS } from 'src/utils/oauth-apps.js';
@@ -184,13 +190,16 @@ describe(OAuthAppService.name, () => {
     const { dto, verifier } = request(client, overrides);
     const { redirectUrl } = await sut.authorize(me, { ...dto, allow: true } as never, ISSUER);
     const code = new URL(redirectUrl).searchParams.get('code')!;
-    const tokens = await sut.token({
-      grant_type: 'authorization_code',
-      code,
-      client_id: client.id,
-      redirect_uri: dto.redirectUri,
-      code_verifier: verifier,
-    });
+    const tokens = await sut.token(
+      {
+        grant_type: 'authorization_code',
+        code,
+        client_id: client.id,
+        redirect_uri: dto.redirectUri,
+        code_verifier: verifier,
+      },
+      ISSUER,
+    );
     return { tokens, code, verifier, dto };
   };
 
@@ -212,6 +221,90 @@ describe(OAuthAppService.name, () => {
     me = person('taylor');
     repo.users.set(me.user.id, me.user);
     mocks.user.get.mockImplementation((id: string) => Promise.resolve(repo.users.get(id) as never));
+  });
+
+  it('requires a Server licence for official authorization and refresh but accepts an offline licence', async () => {
+    const client = repo.addClient([LOCAL_REDIRECT]);
+    const resource = `${ISSUER}/api/mcp/assistant`;
+    const overrides = { resource, scope: 'library:read' };
+    const { dto } = request(client, overrides);
+    await expect(sut.authorize(me, { ...dto, allow: true } as never, ISSUER)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    let licensed = true;
+    mocks.systemMetadata.get.mockImplementation((key) =>
+      Promise.resolve(
+        key === SystemMetadataKey.FrameleafLicense && licensed
+          ? ({
+              key: { kind: 'server', source: 'file', claims: { lic_exp: null, exp: 0, ent: ['SUPPORTER_SERVER'] } },
+            } as never)
+          : null,
+      ),
+    );
+    const { tokens } = await connect(client, overrides);
+    await expect(sut.validateAccessToken(tokens.access_token, 'lan')).resolves.toMatchObject({
+      oauthApp: { resource },
+    });
+    licensed = false;
+    await expect(sut.validateAccessToken(tokens.access_token, 'lan')).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(
+      (
+        await oauthErrorOf(
+          sut.token({
+            grant_type: 'refresh_token',
+            client_id: client.id,
+            refresh_token: tokens.refresh_token,
+          }),
+        )
+      ).error,
+    ).toBe('invalid_grant');
+    await expect(connect(client)).resolves.toHaveProperty('tokens.access_token');
+  });
+
+  it('binds broker grants to the linked Frameleaf account', async () => {
+    const callback = 'https://mcp.frameleaf.cloud/oauth/library/callback/chatgpt';
+    const client = repo.addClient([callback], 'Untrusted client name');
+    const resource = `${ISSUER}/api/mcp/assistant`;
+    mocks.systemMetadata.get.mockImplementation((key) =>
+      Promise.resolve(
+        key === SystemMetadataKey.FrameleafLicense
+          ? ({ key: { kind: 'server', claims: { lic_exp: null, exp: 0, ent: ['SUPPORTER_SERVER'] } } } as never)
+          : null,
+      ),
+    );
+    mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: 'cloud-account' } as never);
+    const { tokens } = await connect(client, { resource, scope: 'library:read' });
+    expect(tokens).toHaveProperty('frameleaf_account_id', 'cloud-account');
+    await expect(sut.validateAccessToken(tokens.access_token, 'wan')).resolves.toMatchObject({
+      oauthApp: { clientName: 'ChatGPT' },
+    });
+    mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: 'other-account' } as never);
+    await expect(sut.validateAccessToken(tokens.access_token, 'wan')).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('refuses official tokens at a different origin and stops issuing them when MCP is disabled', async () => {
+    const client = repo.addClient([LOCAL_REDIRECT]);
+    const resource = `${ISSUER}/api/mcp/assistant`;
+    let enabled = true;
+    mocks.systemMetadata.get.mockImplementation((key) =>
+      Promise.resolve(
+        (key === SystemMetadataKey.FrameleafLicense
+          ? { key: { kind: 'server', source: 'file', claims: { lic_exp: null, exp: 0, ent: ['SUPPORTER_SERVER'] } } }
+          : { connectedApps: { allowMcp: enabled, allowRegistration: true } }) as never,
+      ),
+    );
+    expect(sut.getProtectedResourceMetadata(ISSUER, '/api/mcp/assistant')).toMatchObject({
+      resource,
+      scopes_supported: ['library:read'],
+    });
+    const { tokens } = await connect(client, { resource, scope: 'library:read' });
+    const refresh = { grant_type: 'refresh_token', client_id: client.id, refresh_token: tokens.refresh_token };
+    await expect(sut.token(refresh, 'https://other.example.test')).rejects.toThrow();
+    enabled = false;
+    await expect(sut.token(refresh, ISSUER)).rejects.toThrow();
+    await expect(sut.validateAccessToken(tokens.access_token, null)).rejects.toThrow();
+    enabled = true;
+    await expect(sut.token(refresh, ISSUER)).resolves.toHaveProperty('access_token');
   });
 
   describe('authorizeRedirect', () => {

@@ -379,6 +379,8 @@ export const PhotographyWorkflowViewSchema = z.object({
       checksum: z.string().nullable(),
       fileName: z.string().nullable(),
       camera: z.string().nullable(),
+      artist: z.string().nullable().optional(),
+      copyright: z.string().nullable().optional(),
       capturedAt: z.string().nullable(),
       offsetSeconds: z.int(),
       photographer: z.string(),

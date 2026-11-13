@@ -355,7 +355,13 @@ export class PhotographyWorkspaceService {
         continue;
       }
       await this.ownedAlbum(safeAuth, shoot.albumId);
-      shoots.push({ ...shoot, albumId: shoot.albumId });
+      const previous = stored?.value.shoots.find(({ id }) => id === shoot.id);
+      shoots.push({
+        defaultArtist: previous?.defaultArtist,
+        defaultCopyright: previous?.defaultCopyright,
+        ...shoot,
+        albumId: shoot.albumId,
+      });
       validateAlbumIds.push(shoot.albumId);
     }
     if (new Set(shoots.map(({ albumId }) => albumId)).size !== shoots.length) {
