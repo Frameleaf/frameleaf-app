@@ -1,0 +1,8 @@
+.frameleaf-media { position:absolute; inset:0; overflow:auto; padding:24px; box-sizing:border-box; }
+.frameleaf-toolbar,.frameleaf-pagination { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.frameleaf-toolbar input { flex:1; min-width:160px; }
+.frameleaf-acknowledgement { display:block; margin-block:12px; }
+.frameleaf-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:20px; margin-block:16px; }
+.frameleaf-card { border:1px solid #c3c4c7; padding:12px; }
+.frameleaf-card img { display:block; width:100%; object-fit:contain; }
+.frameleaf-card p { overflow-wrap:anywhere; }
