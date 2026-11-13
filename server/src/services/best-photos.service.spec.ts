@@ -23,7 +23,13 @@ describe(BestPhotosService.name, () => {
   const mediaRepository = { measureImageQuality: vitest.fn(), transcode: vitest.fn() };
   /** Preview statistics as sharp reports them; the defaults are an ordinary, well-exposed photo. */
   const quality = (
-    overrides: Partial<{ mean: number; contrast: number; entropy: number; sharpness: number }> = {},
+    overrides: Partial<{
+      mean: number;
+      contrast: number;
+      entropy: number;
+      sharpness: number;
+      thumbnailScore: number;
+    }> = {},
   ) => ({
     mean: 115,
     contrast: 60,
