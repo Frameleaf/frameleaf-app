@@ -1368,7 +1368,9 @@ export class AssetService extends BaseService {
     const sources = await Promise.all(
       paths.map(async ({ name, path }) => ({
         name,
-        values: await withPlainCopy(path, (plain) => this.metadataRepository.readAllTags(plain)),
+        values: await withPlainCopy(path, (plain) => this.metadataRepository.readAllTags(plain), {
+          viewerId: auth.sharedLink ? undefined : auth.user.id,
+        }),
       })),
     );
     const data = collectAllMetadata(sources, !!auth.sharedLink);

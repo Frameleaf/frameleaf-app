@@ -3533,6 +3533,10 @@
   "frameleaf_albums_upload": "Fotos hochladen",
   "frameleaf_albums_view_grid": "Rasteransicht",
   "frameleaf_albums_view_list": "Listenansicht",
+  "frameleaf_all_metadata": "Alle Metadaten",
+  "frameleaf_all_metadata_error": "Metadaten konnten nicht geladen werden",
+  "frameleaf_all_metadata_more": "Weitere Tags anzeigen",
+  "frameleaf_all_metadata_truncated": "Einige Tags waren zu groß für die Anzeige.",
   "frameleaf_analytics_about": "Zu diesen Zahlen",
   "frameleaf_analytics_about_text": "Der Datumsbereich gilt für Wachstum, Importe, Aufnahmen und Verarbeitung. Speicher, Kameras, Formate und Metadaten zeigen die Bibliothek, wie sie am {date} gelesen wurde. Elemente im Papierkorb zählen, bis sie gelöscht werden. Gesperrte Elemente werden hier nie gezählt. Die Speichernutzung bezieht sich immer auf den ganzen Server. Alles auf dieser Seite wird auf diesem Server berechnet und aufbewahrt. Es wird nichts irgendwohin gesendet.",
   "frameleaf_analytics_added_period": "In diesem Zeitraum hinzugefügt",
@@ -22481,9 +22485,5 @@
   "zero_to_clear_rating": "drücke 0 um die Dateibewertung zurückzusetzen",
   "zoom_image": "Bild vergrößern",
   "zoom_in": "Vergrößern",
-  "zoom_out": "Verkleinern",
-  "frameleaf_all_metadata": "Alle Metadaten",
-  "frameleaf_all_metadata_error": "Metadaten konnten nicht geladen werden",
-  "frameleaf_all_metadata_truncated": "Einige Tags waren zu groß für die Anzeige.",
-  "frameleaf_all_metadata_more": "Weitere Tags anzeigen"
+  "zoom_out": "Verkleinern"
 }

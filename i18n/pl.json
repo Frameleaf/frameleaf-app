@@ -3534,6 +3534,10 @@
   "frameleaf_albums_upload": "Prześlij zdjęcia",
   "frameleaf_albums_view_grid": "Widok siatki",
   "frameleaf_albums_view_list": "Widok listy",
+  "frameleaf_all_metadata": "Wszystkie metadane",
+  "frameleaf_all_metadata_error": "Nie udało się wczytać metadanych",
+  "frameleaf_all_metadata_more": "Pokaż więcej znaczników",
+  "frameleaf_all_metadata_truncated": "Niektóre znaczniki były zbyt duże, aby je wyświetlić.",
   "frameleaf_analytics_about": "O tych liczbach",
   "frameleaf_analytics_about_text": "Zakres dat dotyczy wzrostu, importów, zdjęć i przetwarzania. Miejsce na dane, aparaty, formaty i metadane pokazują bibliotekę odczytaną {date}. Elementy w Koszu są liczone do czasu ich usunięcia; zablokowane elementy nie są tu nigdy liczone. Użycie woluminu zawsze obejmuje cały serwer. Wszystko na tej stronie jest obliczane i przechowywane na tym serwerze; nic nie jest nigdzie wysyłane.",
   "frameleaf_analytics_added_period": "Dodano w tym okresie",
@@ -22484,9 +22488,5 @@
   "zero_to_clear_rating": "naciśnij 0, aby wyczyścić ocenę zasobu",
   "zoom_image": "Powiększ obraz",
   "zoom_in": "Przybliż",
-  "zoom_out": "Oddal",
-  "frameleaf_all_metadata": "Wszystkie metadane",
-  "frameleaf_all_metadata_error": "Nie udało się wczytać metadanych",
-  "frameleaf_all_metadata_truncated": "Niektóre znaczniki były zbyt duże, aby je wyświetlić.",
-  "frameleaf_all_metadata_more": "Pokaż więcej znaczników"
+  "zoom_out": "Oddal"
 }

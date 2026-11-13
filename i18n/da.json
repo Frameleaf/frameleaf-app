@@ -3527,6 +3527,10 @@
   "frameleaf_albums_upload": "Upload fotos",
   "frameleaf_albums_view_grid": "Gittervisning",
   "frameleaf_albums_view_list": "Listevisning",
+  "frameleaf_all_metadata": "Alle metadata",
+  "frameleaf_all_metadata_error": "Metadata kunne ikke indlæses",
+  "frameleaf_all_metadata_more": "Vis flere mærker",
+  "frameleaf_all_metadata_truncated": "Nogle mærker var for store til at blive vist.",
   "frameleaf_analytics_about": "Om disse tal",
   "frameleaf_analytics_about_text": "Datointervallet gælder for vækst, importer, optagelser og behandling. Lagerplads, kameraer, formater og metadata viser biblioteket, som det blev læst {date}. Elementer i papirkurven tælles, indtil de er slettet. Låste elementer tælles aldrig her. Brug af drevet dækker altid hele serveren. Alt på denne side beregnes og opbevares på denne server. Intet sendes nogen steder hen.",
   "frameleaf_analytics_added_period": "Tilføjet i denne periode",
@@ -22462,9 +22466,5 @@
   "zero_to_clear_rating": "Tryk på 0 for at fjerne fil vurderingen",
   "zoom_image": "Zoom billede",
   "zoom_in": "Zoom ind",
-  "zoom_out": "Zoom ud",
-  "frameleaf_all_metadata": "Alle metadata",
-  "frameleaf_all_metadata_error": "Metadata kunne ikke indlæses",
-  "frameleaf_all_metadata_truncated": "Nogle mærker var for store til at blive vist.",
-  "frameleaf_all_metadata_more": "Vis flere mærker"
+  "zoom_out": "Zoom ud"
 }

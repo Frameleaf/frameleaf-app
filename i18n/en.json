@@ -3436,6 +3436,10 @@
   "frameleaf_albums_upload": "Upload photos",
   "frameleaf_albums_view_grid": "Grid view",
   "frameleaf_albums_view_list": "List view",
+  "frameleaf_all_metadata": "All metadata",
+  "frameleaf_all_metadata_error": "Could not load metadata",
+  "frameleaf_all_metadata_more": "Show more tags",
+  "frameleaf_all_metadata_truncated": "Some tags were too large to display.",
   "frameleaf_analytics_about": "About these numbers",
   "frameleaf_analytics_about_text": "The date range applies to growth, imports, captures and processing. Storage, cameras, formats and metadata show the library as read on {date}. Items in Trash count until they are deleted; Locked items are never counted here. Volume usage always covers the whole server. Everything on this page is computed and kept on this server; nothing is sent anywhere.",
   "frameleaf_analytics_added_period": "Added in this period",
@@ -22187,9 +22191,5 @@
   "zero_to_clear_rating": "press 0 to clear asset rating",
   "zoom_image": "Zoom Image",
   "zoom_in": "Zoom in",
-  "zoom_out": "Zoom out",
-  "frameleaf_all_metadata": "All metadata",
-  "frameleaf_all_metadata_error": "Could not load metadata",
-  "frameleaf_all_metadata_truncated": "Some tags were too large to display.",
-  "frameleaf_all_metadata_more": "Show more tags"
+  "zoom_out": "Zoom out"
 }

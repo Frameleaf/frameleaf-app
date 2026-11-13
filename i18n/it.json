@@ -3533,6 +3533,10 @@
   "frameleaf_albums_upload": "Carica foto",
   "frameleaf_albums_view_grid": "Vista a griglia",
   "frameleaf_albums_view_list": "Vista a elenco",
+  "frameleaf_all_metadata": "Tutti i metadati",
+  "frameleaf_all_metadata_error": "Impossibile caricare i metadati",
+  "frameleaf_all_metadata_more": "Mostra altri tag",
+  "frameleaf_all_metadata_truncated": "Alcuni tag erano troppo grandi per essere visualizzati.",
   "frameleaf_analytics_about": "Informazioni su questi numeri",
   "frameleaf_analytics_about_text": "L’intervallo di date si applica a crescita, importazioni, scatti ed elaborazione. Spazio di archiviazione, fotocamere, formati e metadati mostrano la libreria così com’era al {date}. Gli elementi nel Cestino vengono contati finché non sono eliminati; gli elementi bloccati non vengono mai contati qui. L’utilizzo del volume riguarda sempre l’intero server. Tutto ciò che è in questa pagina viene calcolato e conservato su questo server; nulla viene inviato altrove.",
   "frameleaf_analytics_added_period": "Aggiunti in questo periodo",
@@ -22483,9 +22487,5 @@
   "zero_to_clear_rating": "Premi 0 per eliminare la valutazione",
   "zoom_image": "Ingrandisci immagine",
   "zoom_in": "Ingrandisci",
-  "zoom_out": "Riduci",
-  "frameleaf_all_metadata": "Tutti i metadati",
-  "frameleaf_all_metadata_error": "Impossibile caricare i metadati",
-  "frameleaf_all_metadata_truncated": "Alcuni tag erano troppo grandi per essere visualizzati.",
-  "frameleaf_all_metadata_more": "Mostra altri tag"
+  "zoom_out": "Riduci"
 }
