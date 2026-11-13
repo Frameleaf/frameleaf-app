@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { access } from 'node:fs/promises';
 import sharp from 'sharp';
@@ -73,7 +73,7 @@ it('does not process disabled, unauthorized, or over-limit searches', async () =
   await expect(service.search(workflow as never, rate as never, id, token, image)).rejects.toMatchObject({
     status: 429,
     response: expect.objectContaining({ code: 'rate_limited', retryAfter: 12 }),
-  } satisfies Partial<HttpException>);
+  });
   expect(detectFaces).not.toHaveBeenCalled();
 });
 
