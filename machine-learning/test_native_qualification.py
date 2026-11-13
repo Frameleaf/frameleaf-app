@@ -175,6 +175,94 @@ def test_verified_model_uses_one_fresh_hash_scan_for_receipt_and_approved_manife
         verify_models(spec, tmp_path / "cache", require_staged=require_staged)
 
 
+def test_openvino_devices_are_runtime_facts_only_where_the_provider_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    from frameleaf_ml import native_hardware, native_ort
+
+    monkeypatch.setattr(native_ort, "_policy", None)
+    assert "openvinoDevices" not in native_hardware.snapshot()["facts"]
+    monkeypatch.setattr(
+        native_hardware.ort, "get_available_providers", lambda: ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
+    )
+    devices = ["GPU.0", "CPU"]
+    monkeypatch.setattr(
+        native_hardware.ort.capi._pybind_state, "get_available_openvino_device_ids", lambda: devices, raising=False
+    )
+    first = native_hardware.snapshot()
+    assert first["facts"]["openvinoDevices"] == ["CPU", "GPU.0"]
+    devices.remove("GPU.0")
+    assert native_hardware.snapshot()["fingerprint"] != first["fingerprint"]
+    devices.append("x" * 65)
+    with pytest.raises(ValueError, match="native_openvino_device_report_invalid"):
+        native_hardware.snapshot()
+
+
+def test_native_backend_loads_the_device_libraries_its_runtime_carries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+    import types
+
+    from frameleaf_ml import native_ort
+
+    calls: list[object] = []
+    monkeypatch.setattr(native_ort.ort, "preload_dlls", lambda **options: calls.append(options), raising=False)
+    native_ort.load_device_libraries("CPUExecutionProvider")
+    native_ort.load_device_libraries("CoreMLExecutionProvider")
+    assert calls == []
+    native_ort.load_device_libraries("CUDAExecutionProvider")
+    assert calls == [{"directory": ""}]
+    # An onnxruntime too old to preload relies on the system loader, as before.
+    monkeypatch.delattr(native_ort.ort, "preload_dlls")
+    native_ort.load_device_libraries("CUDAExecutionProvider")
+
+    tool = types.ModuleType("onnxruntime.tools.add_openvino_win_libs")
+    tool.add_openvino_libs_to_path = lambda: calls.append("openvino")  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "onnxruntime.tools.add_openvino_win_libs", tool)
+    monkeypatch.setattr(native_ort.sys, "platform", "linux")
+    native_ort.load_device_libraries("OpenVINOExecutionProvider")
+    assert calls == [{"directory": ""}]
+    monkeypatch.setattr(native_ort.sys, "platform", "win32")
+    native_ort.load_device_libraries("OpenVINOExecutionProvider")
+    assert calls == [{"directory": ""}, "openvino"]
+
+    def missing() -> None:
+        raise SystemExit("Error: Please set the OPENVINO_LIB_PATHS environment variable.")
+
+    tool.add_openvino_libs_to_path = missing  # type: ignore[attr-defined]
+    with pytest.raises(ValueError, match="native_provider_unavailable"):
+        native_ort.load_device_libraries("OpenVINOExecutionProvider")
+
+    # The libraries are loaded when the backend is configured, before any session exists.
+    monkeypatch.setattr(native_ort, "_policy", None)
+    monkeypatch.setattr(native_ort.ort, "get_available_providers", lambda: ["CUDAExecutionProvider"])
+    monkeypatch.setattr(native_ort.ort, "preload_dlls", lambda **options: calls.append("configured"), raising=False)
+    native_ort.configure("CUDAExecutionProvider", tmp_path / "profiles")
+    assert calls[-1] == "configured"
+
+
+@pytest.mark.parametrize(
+    ("provider", "facts", "present"),
+    [
+        ("CPUExecutionProvider", {"gpus": []}, True),
+        ("CUDAExecutionProvider", {"gpus": []}, False),
+        ("CUDAExecutionProvider", {"gpus": [{"index": "0"}]}, True),
+        ("OpenVINOExecutionProvider", {"gpus": []}, False),
+        ("OpenVINOExecutionProvider", {"gpus": [], "openvinoDevices": ["CPU", "NPU"]}, False),
+        ("OpenVINOExecutionProvider", {"gpus": [{"index": "0"}], "openvinoDevices": ["CPU"]}, False),
+        ("OpenVINOExecutionProvider", {"gpus": [], "openvinoDevices": ["CPU", "GPU.0"]}, True),
+        ("OpenVINOExecutionProvider", {"gpus": [], "openvinoDevices": ["GPU"]}, True),
+        ("CoreMLExecutionProvider", {"gpus": [{"index": "0"}], "openvinoDevices": ["GPU"]}, False),
+        ("MIGraphXExecutionProvider", {"gpus": [{"index": "0"}]}, False),
+    ],
+)
+def test_an_accelerator_report_needs_a_device_the_provider_can_have_used(
+    provider: str, facts: dict[str, object], present: bool
+) -> None:
+    from frameleaf_ml.native_qualification import accelerator_present
+
+    assert accelerator_present(provider, facts) is present
+
+
 def test_driver_changes_invalidate_fingerprint_without_using_free_memory() -> None:
     from frameleaf_ml.native_hardware import fingerprint
 
