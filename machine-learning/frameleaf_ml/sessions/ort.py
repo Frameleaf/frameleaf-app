@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
+import onnx
 import onnxruntime as ort
 from numpy.typing import NDArray
 
@@ -35,6 +36,23 @@ def _read_model(path: Path) -> tuple[bytes, str] | None:
     if not 0 < len(data) <= _VERIFIED_MODEL_LIMIT:
         return None
     return data, hashlib.sha256(data).hexdigest()
+
+
+def _same_model_but_for_declared_shapes(derived: bytes, source: bytes) -> bool:
+    """Whether two models have the same nodes and weights, differing at most in the shapes they
+    declare for their inputs and outputs (a batch axis made symbolic)."""
+    try:
+        left, right = onnx.load_model_from_string(derived), onnx.load_model_from_string(source)
+        for mine, theirs in ((left.graph.input, right.graph.input), (left.graph.output, right.graph.output)):
+            if [item.name for item in mine] != [item.name for item in theirs]:
+                return False
+            for item, original in zip(mine, theirs, strict=True):
+                if item.type.tensor_type.elem_type != original.type.tensor_type.elem_type:
+                    return False
+                item.type.CopyFrom(original.type)
+        return bool(left == right)
+    except Exception:
+        return False
 
 
 MigraphxInputSignature = tuple[tuple[str, str, tuple[int, ...]], ...]
@@ -117,9 +135,10 @@ class OrtSession:
         device_id: str | None = None,
     ):
         self.model_path = Path(model_path)
-        self.source_model_path = self.model_path
-        # The SHA-256 of the bytes this session was created from, when it was created from memory.
+        # The SHA-256 of the approved model this session provably runs: of the bytes it was created
+        # from in memory, or of the model those bytes were derived from (see `source_model_path`).
         self.model_sha256: str | None = None
+        self._source_model_path = self.model_path
         native = current_policy()
         self._coreml_lock = (
             Lock()
@@ -210,6 +229,34 @@ class OrtSession:
             provider_options=provider_options,
             sess_options=options,
         )
+
+    @property
+    def source_model_path(self) -> Path:
+        return self._source_model_path
+
+    @source_model_path.setter
+    def source_model_path(self, path: Path) -> None:
+        """Name the approved model this session's model was derived from.
+
+        A model with a batch axis added is written to the runtime cache and loaded from there, so
+        the bytes in memory are not the approved file's. They stand for it only when they are that
+        file's model with nothing but declared input and output shapes changed, which is checked
+        here on the bytes themselves: those the session loaded and those of the approved file,
+        each read and hashed once. `model_sha256` then names the approved bytes. If it cannot be
+        shown, it is unset and the observer hashes the approved file around every run, as before.
+        """
+        self._source_model_path = Path(path)
+        if self.model_sha256 is None or self._source_model_path == self.model_path:
+            return
+        loaded, self.model_sha256 = self.model_sha256, None
+        derived, source = _read_model(self.model_path), _read_model(self._source_model_path)
+        if (
+            derived is not None
+            and source is not None
+            and derived[1] == loaded
+            and _same_model_but_for_declared_shapes(derived[0], source[0])
+        ):
+            self.model_sha256 = source[1]
 
     def get_inputs(self) -> Sequence[SessionNode]:
         inputs: Sequence[SessionNode] = self.session.get_inputs()
