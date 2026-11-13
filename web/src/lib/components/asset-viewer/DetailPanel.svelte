@@ -161,7 +161,7 @@
     -->
   <ViewerDetailRows {asset} {isOwner} />
   <DetailPanelCameraIdentification {asset} {isOwner} />
-  {#if !asset.isOffline && (!authManager.isSharedLink || asset.hasMetadata !== false)}
+  {#if !asset.isOffline && (!authManager.isSharedLink || asset.hasMetadata)}
     {#key asset.id}<DetailPanelAllMetadata {asset} />{/key}
   {/if}
 

@@ -31,7 +31,9 @@
   const displayed = $derived.by(() => {
     let left = pageSize;
     return filtered.flatMap(({ name, tags }) => {
-      if (left <= 0) return [];
+      if (left <= 0) {
+        return [];
+      }
       const shown = tags.slice(0, left);
       left -= shown.length;
       return [{ name, tags: shown }];
@@ -49,9 +51,13 @@
     pageSize = 100;
     try {
       const response = await getAssetAllMetadata({ id: asset.id, ...authManager.params });
-      if (current === request) result = response;
+      if (current === request) {
+        result = response;
+      }
     } catch {
-      if (current === request) error = true;
+      if (current === request) {
+        error = true;
+      }
     }
   };
 
@@ -69,11 +75,17 @@
   };
 
   const searchHref = (key: string, value: string) => {
-    if (authManager.isSharedLink || !value || value.length > 500) return;
+    if (authManager.isSharedLink || !value || value.length > 500) {
+      return;
+    }
     const tag = key.split(':').at(-1);
-    if (tag === 'Model') return Route.search({ filter: { model: { eq: value } } });
-    if (tag === 'LensModel') return Route.search({ filter: { lensModel: { eq: value } } });
-    if (tag === 'Keywords' || tag === 'Subject' || tag === 'HierarchicalSubject') {
+    if (tag === 'Model') {
+      return Route.search({ filter: { model: { eq: value } } });
+    }
+    if (tag === 'LensModel') {
+      return Route.search({ filter: { lensModel: { eq: value } } });
+    }
+    if (tag && ['Keywords', 'Subject', 'HierarchicalSubject'].includes(tag)) {
       const ids = (asset.tags ?? []).filter((tag) => tag.name === value || tag.value === value).map((tag) => tag.id);
       if (ids.length) return Route.search({ tagIds: ids });
     }
