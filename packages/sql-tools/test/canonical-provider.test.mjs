@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import { createMigrationProvider } from '../dist/canonical-provider.js';
-import { Migrator } from '../dist/index.js';
+import { Migrator, verifyOrder } from '../dist/index.js';
 
 for (const custom of [false, true]) {
   test(`canonical migrations load from encoded file paths (custom loader: ${custom})`, async () => {
@@ -51,6 +51,19 @@ test('schema generation imports encoded file paths before database comparison', 
     );
   } finally {
     await migrator.getDatabase().destroy();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('canonical ORDER verification ignores the compatibility manifest', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'frameleaf-migration-manifest-'));
+  const name = '2100000000001-RenamedFixture';
+  try {
+    await writeFile(join(root, `${name}.mjs`), 'export async function up() {}\n');
+    await writeFile(join(root, 'ORDER'), `${name}\n`);
+    await writeFile(join(root, 'RENAMES'), `2100000000000-OldFixture ${name}\n`);
+    assert.deepEqual(verifyOrder(root), []);
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

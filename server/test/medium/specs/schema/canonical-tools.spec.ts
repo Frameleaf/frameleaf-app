@@ -2,7 +2,7 @@ import { Migrator as CliMigrator, createMigrationProvider, schemaDiff, schemaFro
 import { Kysely, sql } from 'kysely';
 import { Migrator } from 'kysely/migration';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import postgres from 'postgres';
@@ -177,6 +177,43 @@ describe('canonical SQL tools on PostgreSQL', () => {
       expect(
         (await db.selectFrom('frameleaf_migrations').select('name').orderBy('name').execute()).map(({ name }) => name),
       ).toEqual([first, second]);
+      const third = '0000000000002-FixtureExistingTail';
+      const renamed = '0000000000003-FixtureRenamedChange';
+      const later = '0000000000004-FixtureLaterChange';
+      await writeFile(
+        join(folder, `${third}.js`),
+        "export async function up(db) { await db.insertInto('chain_probe').values({id: 2}).execute(); }",
+      );
+      await writeFile(
+        join(folder, `${later}.js`),
+        "export async function up(db) { await db.insertInto('chain_probe').values({id: 3}).execute(); }",
+      );
+      await writeFile(join(folder, 'ORDER'), `${first}\n${second}\n${third}\n${later}\n`);
+      expect((await runtime().migrateToLatest()).error).toBeUndefined();
+      await rename(join(folder, `${second}.js`), join(folder, `${renamed}.js`));
+      await writeFile(join(folder, 'ORDER'), `${first}\n${third}\n${renamed}\n${later}\n`);
+      await writeFile(join(folder, 'RENAMES'), `${second} ${renamed}\n`);
+      const adoptingCli = new CliMigrator({
+        connectionParams: { connectionType: 'url', url },
+        allowUnorderedMigrations: false,
+        migrationFolder: folder,
+      });
+      try {
+        await adoptingCli.runMigrations();
+      } finally {
+        await adoptingCli.destroy();
+      }
+      expect((await runtime().migrateToLatest()).results).toEqual([]);
+      expect(await db.selectFrom('chain_probe').selectAll().orderBy('id').execute()).toEqual([
+        { id: 1 },
+        { id: 2 },
+        { id: 3 },
+      ]);
+      expect(
+        (await db.selectFrom('frameleaf_migrations').select('name').orderBy('timestamp').orderBy('name').execute()).map(
+          ({ name }) => name,
+        ),
+      ).toEqual([first, third, renamed, later]);
     } finally {
       await rm(folder, { recursive: true, force: true });
     }
