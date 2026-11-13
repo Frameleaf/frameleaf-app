@@ -3929,6 +3929,7 @@
   "frameleaf_apps_allow_allowed_body": "A reencaminhá-lo de volta para {back}… Se nada acontecer, feche esta janela.",
   "frameleaf_apps_allow_allowed_note": "Remova o acesso quando quiser em Definições › O seu início de sessão e privacidade › Aplicações ligadas.",
   "frameleaf_apps_allow_allowed_title": "{name} pode utilizar a sua biblioteca",
+  "frameleaf_apps_allow_assistant_read": "Pesquise fotografias e navegue pelos álbuns. O assistente recebe os nomes dos ficheiros, as datas de captura, os nomes dos álbuns e as ligações dos resultados. Pode remover o acesso em Aplicações ligadas.",
   "frameleaf_apps_allow_body": "{name} quer ligar-se à sua biblioteca Frameleaf em {server}. Veja o que poderá fazer e depois escolha.",
   "frameleaf_apps_allow_can_title": "Poderá",
   "frameleaf_apps_allow_cant_title": "Não poderá",

@@ -3930,6 +3930,7 @@
   "frameleaf_apps_allow_allowed_body": "Wracamy do: {back}… Jeśli nic się nie dzieje, zamknij to okno.",
   "frameleaf_apps_allow_allowed_note": "Dostęp możesz w każdej chwili usunąć w Ustawienia › Twoje logowanie i prywatność › Połączone aplikacje.",
   "frameleaf_apps_allow_allowed_title": "{name} może korzystać z Twojej biblioteki",
+  "frameleaf_apps_allow_assistant_read": "Wyszukuj zdjęcia i przeglądaj albumy. Asystent otrzymuje nazwy pasujących plików, daty wykonania zdjęć, nazwy albumów i linki. Dostęp można odebrać w sekcji Połączone aplikacje.",
   "frameleaf_apps_allow_body": "{name} chce połączyć się z Twoją biblioteką Frameleaf pod adresem {server}. Sprawdź, co będzie mogła robić, a potem wybierz.",
   "frameleaf_apps_allow_can_title": "Będzie mogła",
   "frameleaf_apps_allow_cant_title": "Nie będzie mogła",

@@ -253,7 +253,11 @@ export class AlbumService extends BaseService {
     };
   }
 
-  async getAll(auth: AuthDto, { assetId, suppressedOnly, ...rest }: GetAlbumsDto): Promise<AlbumResponseDto[]> {
+  async getAll(
+    auth: AuthDto,
+    { assetId, suppressedOnly, ...rest }: GetAlbumsDto,
+    options?: { excludeLocked?: boolean },
+  ): Promise<AlbumResponseDto[]> {
     this.refreshCoversInBackground(auth.user.id);
 
     const ownerId = auth.user.id;
@@ -273,6 +277,7 @@ export class AlbumService extends BaseService {
       : await this.albumRepository.getAll(ownerId, {
           libraryScope: LibraryScope.Personal,
           ...rest,
+          ...options,
           ...(hidden.size > 0 ? { excludeIds: [...hidden] } : {}),
         });
     if (hidden.size > 0) {

@@ -70,6 +70,10 @@ export class OAuthGrantTable {
   @Column({ nullable: true })
   resource!: string | null;
 
+  /** Marketplace grants stay bound to the account that approved them. */
+  @Column({ nullable: true })
+  frameleafAccountId!: string | null;
+
   @Column({ type: 'bytea', unique: true })
   refreshTokenHash!: Buffer;
 
@@ -126,6 +130,10 @@ export class OAuthAuthorizationCodeTable {
 
   @Column({ nullable: true })
   resource!: string | null;
+
+  /** Marketplace grants stay bound to the account that approved them. */
+  @Column({ nullable: true })
+  frameleafAccountId!: string | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
