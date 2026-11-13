@@ -123,8 +123,8 @@ function handedOver(
  *   certificate's key, or names the certificate a rotation replaced within its grace period;
  * - the package fields, once, through the existing installation transition.
  *
- * Any change waits for a store with no operation in flight. Everything else is
- * `native_installation_changed`, as before.
+ * A changed port or package waits for a store with no operation in flight; a changed
+ * certificate alone does not. Everything else is `native_installation_changed`, as before.
  */
 export function admitNativeInstallation<D extends NativeDescriptor>(
   store: Store,
@@ -181,11 +181,22 @@ export function admitNativeInstallation<D extends NativeDescriptor>(
       store.db.exec('COMMIT');
       return;
     }
+    const source = stored.descriptor;
+    // An unfinished operation names the ports and the package, so neither changes under it.
+    // It does not name the certificate. A handover, or a return to the certificate a rotation
+    // replaced, is still judged on its own: a store that waited for the operation could never
+    // be started to finish it once the certificate it holds had expired.
+    const certificateOnly =
+      !(transition && !spent) &&
+      digest({
+        ...source,
+        tlsCertificatePemSha256: descriptor.tlsCertificatePemSha256,
+      }) === fingerprint;
     if (
+      !certificateOnly &&
       store.db.prepare('SELECT 1 FROM operations WHERE active=1 LIMIT 1').get()
     )
       throw new Refusal('operation_in_progress');
-    const source = stored.descriptor;
     // What the stored descriptor becomes before its ports and certificate are considered.
     let base: NativeDescriptor = source;
     if (transition && !spent) {
