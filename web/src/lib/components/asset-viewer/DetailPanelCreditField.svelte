@@ -52,21 +52,25 @@
 </script>
 
 {#if editing && isOwner}
-  <form
-    onsubmit={save}
-    onkeydown={(event) => {
-      if (event.key === 'Escape' && !saving) {
-        event.preventDefault();
-        event.stopPropagation();
-        close();
-      }
-    }}
-  >
+  <form onsubmit={save}>
     <label class="sr-only" for={inputId}>{label}</label>
-    <input id={inputId} bind:this={input} bind:value={draft} maxlength="500" disabled={saving} />
+    <input
+      id={inputId}
+      bind:this={input}
+      bind:value={draft}
+      maxlength="500"
+      disabled={saving}
+      onkeydown={(event) => {
+        if (event.key === 'Escape' && !saving) {
+          event.preventDefault();
+          event.stopPropagation();
+          close();
+        }
+      }}
+    />
     <div class="actions">
       <Button disabled={saving} onclick={close}>{$t('cancel')}</Button>
-      <Button variant="primary" type="submit" disabled={saving}>{$t('save')}</Button>
+      <Button type="submit" disabled={saving}>{$t('save')}</Button>
     </div>
   </form>
 {:else if isOwner}
