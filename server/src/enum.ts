@@ -2355,6 +2355,7 @@ export enum JobName {
   AssetPaletteExtract = 'AssetPaletteExtract',
   AssetPaletteQueueAll = 'AssetPaletteQueueAll',
   PhotographyWorkflowRender = 'PhotographyWorkflowRender',
+  PhotographyBulkGallery = 'PhotographyBulkGallery',
   AssetVideoEditGeneration = 'AssetVideoEditGeneration',
   AssetEncodeVideoQueueAll = 'AssetEncodeVideoQueueAll',
   AssetEncodeVideo = 'AssetEncodeVideo',
@@ -2550,6 +2551,7 @@ export const JobNameSchema = z
   .enum(JobName)
   .exclude([
     JobName.PhotographyWorkflowRender,
+    JobName.PhotographyBulkGallery,
     JobName.AssetWarmFilmstrip,
     JobName.AssetVideoFingerprintQueueAll,
     JobName.AssetVideoFingerprint,

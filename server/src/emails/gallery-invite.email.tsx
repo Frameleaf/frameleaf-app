@@ -13,6 +13,7 @@ export const GalleryInviteEmail = ({
   recipientName,
   galleryTitle,
   welcomeMessage,
+  password,
   link,
   expiresAt,
   showBranding,
@@ -52,6 +53,11 @@ export const GalleryInviteEmail = ({
       <Section className="flex justify-center my-6">
         <ImmichButton href={link}>{t('open_gallery')}</ImmichButton>
       </Section>
+      {password ? (
+        <Text>
+          {t('password')}: <strong>{password}</strong>
+        </Text>
+      ) : null}
       {expiresAt ? <Text className="text-xs">{t('gallery_link_expiry', { expiresAt })}</Text> : null}
       <Text className="text-xs">{t('gallery_link_privacy', { studioName })}</Text>
     </ImmichLayout>
