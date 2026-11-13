@@ -1,10 +1,26 @@
 <script lang="ts">
-  /** What just happened, said once at the top of the page after an action, until it is dismissed. */
+  /**
+   * What just happened, said once at the top of the page after an action, until it is dismissed. It can
+   * offer one thing to do about what it says (FL-1579: sorting a file again after an Undo).
+   */
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import { Icon } from '@frameleaf/ui';
   import { mdiCheckCircleOutline, mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
-  let { message, onDismiss }: { message: string; onDismiss: () => void } = $props();
+  let {
+    message,
+    onDismiss,
+    actionLabel,
+    onAction,
+    actionDisabled = false,
+  }: {
+    message: string;
+    onDismiss: () => void;
+    actionLabel?: string;
+    onAction?: () => void;
+    actionDisabled?: boolean;
+  } = $props();
 </script>
 
 <!-- The region stays in the page so a message that appears in it is announced. -->
@@ -13,6 +29,9 @@
     <div class="kit-said">
       <span class="icon" aria-hidden="true"><Icon icon={mdiCheckCircleOutline} size="20" /></span>
       <p>{message}</p>
+      {#if actionLabel && onAction}
+        <Button disabled={actionDisabled} onclick={onAction}>{actionLabel}</Button>
+      {/if}
       <button type="button" aria-label={$t('frameleaf_kit_dismiss')} onclick={onDismiss}>
         <Icon icon={mdiClose} size="16" aria-hidden />
       </button>
@@ -34,6 +53,8 @@
   .kit-said {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-auto-flow: column;
+    grid-auto-columns: auto;
     align-items: center;
     gap: var(--fl-space-3);
     padding: var(--fl-space-3) var(--fl-space-4);

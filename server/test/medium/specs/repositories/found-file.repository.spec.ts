@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { ChecksumAlgorithm } from 'src/enum.js';
+import { AssetFileType, ChecksumAlgorithm } from 'src/enum.js';
 import { FoundFileRepository } from 'src/repositories/found-file.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -225,6 +225,45 @@ it('FL-1537: undoing a put-back points the photo at its old path again, once', a
     await expect(read()).resolves.toEqual({ originalPath: lostPath, path: lostPath });
     // the photo no longer points at the found file: there is nothing left to undo
     await expect(undo()).resolves.toBe(false);
+  } finally {
+    await db.destroy();
+  }
+});
+
+it('FL-1579: finds the photos named like an XMP file without its ending, and whether they have one', async () => {
+  const db = await getKyselyDB('found_file_named');
+  const { ctx } = newMediumService(SyncService, { database: db, real: [], mock: [LoggingRepository] });
+  try {
+    const { user } = await ctx.newUser();
+    const folder = `/data/upload/${user.id}/3f/9a`;
+    const add = (name: string, patch: Record<string, unknown> = {}) =>
+      ctx.newAsset({ ownerId: user.id, originalPath: `${folder}/${name}`, ...patch }).then(({ asset }) => asset);
+    const one = await add('IMG_0001.jpg');
+    const upper = await add('IMG_0002.HEIC');
+    const live = await add('IMG_0003.heic');
+    const motion = await add('IMG_0003.mov');
+    const own = await add('IMG_0004.jpg');
+    await ctx.newAssetFile({ assetId: own.id, type: AssetFileType.Sidecar, path: `${folder}/IMG_0004.jpg.xmp` });
+    await add('IMG_0005.jpg', { deletedAt: new Date() });
+    // names that only start the same, or sit in another folder, are other photos
+    await add('IMG_00010.jpg');
+    await add('IMG_0001.jpg.png');
+    await ctx.newAsset({ ownerId: user.id, originalPath: `/data/upload/${user.id}/00/11/IMG_0001.jpg` });
+
+    const sut = new FoundFileRepository(db);
+    const stems = ['IMG_0001', 'IMG_0002', 'IMG_0003', 'IMG_0004', 'IMG_0005', 'IMG_0006'].map(
+      (name) => `${folder}/${name}`,
+    );
+    const found = await sut.assetsNamed(stems, ['.jpg', '.JPG', '.heic', '.HEIC', '.mov', '.MOV']);
+    expect(found.toSorted((a, b) => a.originalPath.localeCompare(b.originalPath))).toEqual([
+      { id: one.id, originalPath: `${folder}/IMG_0001.jpg`, stem: `${folder}/IMG_0001`, hasSidecar: false },
+      { id: upper.id, originalPath: `${folder}/IMG_0002.HEIC`, stem: `${folder}/IMG_0002`, hasSidecar: false },
+      { id: live.id, originalPath: `${folder}/IMG_0003.heic`, stem: `${folder}/IMG_0003`, hasSidecar: false },
+      { id: motion.id, originalPath: `${folder}/IMG_0003.mov`, stem: `${folder}/IMG_0003`, hasSidecar: false },
+      { id: own.id, originalPath: `${folder}/IMG_0004.jpg`, stem: `${folder}/IMG_0004`, hasSidecar: true },
+    ]);
+    await expect(sut.assetsNamed([], ['.jpg'])).resolves.toEqual([]);
+    await expect(sut.assetsNamed(stems, [])).resolves.toEqual([]);
   } finally {
     await db.destroy();
   }

@@ -6706,6 +6706,64 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/found-files/files/{id}/sort-again": {
+      "post": {
+        "description": "A file that was left alone after an undo is placed as a file found for the first time would be: back under a photo that is missing, added as a new photo, a spare copy, or waiting for a person. Refused when the file changed since it was read.",
+        "operationId": "sortFoundFileAgain",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoundFileDetailResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Sort a found file that was left alone again",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/found-files/files/{id}/undo": {
       "post": {
         "description": "A file that was put back under a missing photo: the photo points where it did before. A file that was added: the photo leaves the library. The file stays on the drive and is not sorted again.",
@@ -6860,6 +6918,82 @@
           }
         ],
         "summary": "Delete spare copies",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/found-files/wont-open/archive": {
+      "get": {
+        "description": "The files that are named like photos but do not open, as they are, in one archive: those of one account, of one folder no account uses, or all of them. Files that belong to another account than the person asking are left out.",
+        "operationId": "downloadFoundFilesThatWontOpen",
+        "parameters": [
+          {
+            "name": "folder",
+            "required": false,
+            "in": "query",
+            "description": "Only the files in this folder no account uses",
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": false,
+            "in": "query",
+            "description": "Only the files in this account’s folders",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download the found files that won’t open",
         "tags": [
           "Maintenance (admin)"
         ],
@@ -105407,7 +105541,7 @@
             "type": "string"
           },
           "step": {
-            "description": "What was done: found, read, back, added, spare, undone, …",
+            "description": "What was done: found, read, back, added, spare, undone, again, …",
             "type": "string"
           }
         },
@@ -105415,6 +105549,22 @@
           "at",
           "step"
         ],
+        "type": "object"
+      },
+      "FoundFilesArchiveDto": {
+        "properties": {
+          "folder": {
+            "description": "Only the files in this folder no account uses",
+            "minLength": 1,
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Only the files in this account’s folders",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "FoundFilesDeleteSpareDto": {

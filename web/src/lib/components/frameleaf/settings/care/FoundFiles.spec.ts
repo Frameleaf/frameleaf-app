@@ -18,9 +18,11 @@ const state = vi.hoisted(() => ({
   page: { url: new URL('http://localhost/user-settings?area=care&section=found-files') },
 }));
 const navigation = vi.hoisted(() => ({ goto: vi.fn() }));
+const utils = vi.hoisted(() => ({ downloadUrl: vi.fn() }));
 
 vi.mock('$app/state', () => state);
 vi.mock('$app/navigation', () => navigation);
+vi.mock('$lib/utils', async (original) => ({ ...(await original<object>()), downloadUrl: utils.downloadUrl }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { value: { configFile: false } },
 }));
@@ -219,6 +221,117 @@ describe('FoundFiles (FL-1533)', () => {
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Undo' }));
     await waitFor(() => expect(sdkMock.undoFoundFile).toHaveBeenCalledExactlyOnceWith({ id: 'img-3310' }));
     expect(await screen.findByText(/listed as missing again/)).toBeInTheDocument();
+  });
+
+  it('FL-1579: offers to sort a file again in the line that says it was undone', async () => {
+    const detail: FoundFileDetailResponseDto = {
+      ...backFile,
+      previousPath: '/data/library/taylor/IMG_3310.jpg',
+      steps: [],
+    };
+    sdkMock.getFoundFile.mockResolvedValue(detail);
+    // the file that is left on the drive can be another row than the one that was undone
+    sdkMock.undoFoundFile.mockResolvedValue({ ...detail, id: 'left-1', outcome: FoundFileOutcome.Left });
+    sdkMock.sortFoundFileAgain.mockResolvedValue({ ...detail, id: 'left-1' });
+    await show();
+    expect(screen.queryByRole('button', { name: 'Sort it again' })).toBeNull();
+    await tab(/Put back · 1/);
+    await fireEvent.click(screen.getByRole('button', { name: 'What happened to img-3310.jpg' }));
+    const dialog = await screen.findByRole('dialog', { name: 'img-3310.jpg' });
+    await fireEvent.click(await within(dialog).findByRole('button', { name: 'Undo' }));
+
+    expect(await screen.findByText(/listed as missing again/)).toBeInTheDocument();
+    await fireEvent.click(await screen.findByRole('button', { name: 'Sort it again' }));
+    await waitFor(() => expect(sdkMock.sortFoundFileAgain).toHaveBeenCalledExactlyOnceWith({ id: 'left-1' }));
+    expect(await screen.findByText('img-3310.jpg is back under the photo that was missing.')).toBeInTheDocument();
+    // the offer was for that one line: it is gone with it
+    expect(screen.queryByRole('button', { name: 'Sort it again' })).toBeNull();
+  });
+
+  it('FL-1579: sorts a left file again from its story, and says what became of it', async () => {
+    const left: FoundFileDetailResponseDto = {
+      ...addedFile,
+      outcome: FoundFileOutcome.Left,
+      previousPath: null,
+      steps: [
+        { step: 'added', at: '2026-11-12T08:40:02.000Z' },
+        { step: 'undone', at: '2026-11-12T09:00:00.000Z' },
+      ],
+    };
+    sdkMock.getFoundFile.mockResolvedValue(left);
+    sdkMock.sortFoundFileAgain.mockResolvedValue({
+      ...left,
+      outcome: FoundFileOutcome.Needs,
+      reason: FoundFileReason.OverLimit,
+    });
+    at('&file=img-7731');
+    await show();
+
+    const dialog = await screen.findByRole('dialog', { name: 'img-7731.jpg' });
+    expect(await within(dialog).findByText(/It won’t be sorted again unless you ask\./)).toBeInTheDocument();
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Sort it again' }));
+    await waitFor(() => expect(sdkMock.sortFoundFileAgain).toHaveBeenCalledExactlyOnceWith({ id: 'img-7731' }));
+    expect(await screen.findByText(/img-7731\.jpg needs a decision from you/)).toBeInTheDocument();
+  });
+
+  it('FL-1579: says so when sorting again did not work', async () => {
+    const left: FoundFileDetailResponseDto = {
+      ...addedFile,
+      outcome: FoundFileOutcome.Left,
+      previousPath: null,
+      steps: [],
+    };
+    sdkMock.getFoundFile.mockResolvedValue(left);
+    sdkMock.sortFoundFileAgain.mockRejectedValue(new Error('still leaving'));
+    at('&file=img-7731');
+    await show();
+
+    const dialog = await screen.findByRole('dialog', { name: 'img-7731.jpg' });
+    await fireEvent.click(await within(dialog).findByRole('button', { name: 'Sort it again' }));
+    expect(await within(dialog).findByText(/That didn’t work just now/)).toBeInTheDocument();
+  });
+
+  it('FL-1579: downloads the files that won’t open in one archive, but never another account’s', async () => {
+    const wontOpen = (ownerId: string | null, folder: string | null) => ({
+      reason: FoundFileReason.WontOpen,
+      ownerId,
+      folder,
+      count: 12,
+      sizeInBytes: 38_000_000,
+    });
+    const groups = [wontOpen(ME, null), wontOpen(EMMA, null), wontOpen(null, '/data/upload/5b2e')];
+    serve(summary({ needs: 36, groups }));
+    sdkMock.getFoundFiles.mockImplementation(({ ownerId }) =>
+      Promise.resolve({
+        items: [
+          file({
+            id: `broken-${ownerId ?? 'none'}`,
+            outcome: FoundFileOutcome.Needs,
+            reason: FoundFileReason.WontOpen,
+            ownerId: ownerId ?? null,
+            assetId: null,
+            viewable: ownerId !== EMMA,
+          }),
+        ],
+        nextCursor: null,
+      }),
+    );
+    await show();
+
+    const buttons = await screen.findAllByRole('button', { name: 'Download them' });
+    expect(buttons).toHaveLength(2);
+    await fireEvent.click(buttons[0]);
+    await fireEvent.click(buttons[1]);
+    expect(utils.downloadUrl.mock.calls).toEqual([
+      [
+        expect.stringMatching(new RegExp(String.raw`/admin/found-files/wont-open/archive\?ownerId=${ME}$`)),
+        'frameleaf-files-that-wont-open.zip',
+      ],
+      [
+        expect.stringMatching(/\/admin\/found-files\/wont-open\/archive\?folder=%2Fdata%2Fupload%2F5b2e$/),
+        'frameleaf-files-that-wont-open.zip',
+      ],
+    ]);
   });
 
   it('offers nothing but Done for another account’s photo', async () => {

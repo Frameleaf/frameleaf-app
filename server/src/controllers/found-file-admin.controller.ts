@@ -1,4 +1,17 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Next, Param, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Next,
+  Param,
+  Post,
+  Query,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -7,6 +20,7 @@ import {
   FoundFileDetailResponseDto,
   FoundFileListDto,
   FoundFileListResponseDto,
+  FoundFilesArchiveDto,
   FoundFilesDeleteSpareDto,
   FoundFilesDeleteSpareResponseDto,
   FoundFilesResolveDto,
@@ -94,6 +108,40 @@ export class FoundFileAdminController {
   @Authenticated({ permission: Permission.Maintenance, admin: true })
   undoFoundFile(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<FoundFileDetailResponseDto> {
     return this.service.undo(auth, id);
+  }
+
+  @Post('files/:id/sort-again')
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Sort a found file that was left alone again',
+    description:
+      'A file that was left alone after an undo is placed as a file found for the first time would be: back under a photo that is missing, added as a new photo, a spare copy, or waiting for a person. Refused when the file changed since it was read.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  sortFoundFileAgain(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<FoundFileDetailResponseDto> {
+    return this.service.sortAgain(auth, id);
+  }
+
+  @Get('wont-open/archive')
+  @Header('Cache-Control', 'no-store')
+  @Endpoint({
+    summary: 'Download the found files that won’t open',
+    description:
+      'The files that are named like photos but do not open, as they are, in one archive: those of one account, of one folder no account uses, or all of them. Files that belong to another account than the person asking are left out.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  @FileResponse('application/zip')
+  @Authenticated({ permission: Permission.Maintenance, admin: true })
+  @OriginalTransfer()
+  async downloadFoundFilesThatWontOpen(
+    @Auth() auth: AuthDto,
+    @Query() dto: FoundFilesArchiveDto,
+  ): Promise<StreamableFile> {
+    return new StreamableFile(await this.service.downloadWontOpen(auth, dto), {
+      type: 'application/zip',
+      disposition: 'attachment; filename="frameleaf-files-that-wont-open.zip"',
+    });
   }
 
   @Post('resolve')

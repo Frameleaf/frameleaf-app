@@ -4,7 +4,9 @@
    * that were on the drive but in nobody's library, what each turned out to be and what Frameleaf did with
    * it, as pictures. Four tabs: Needs you (whole groups with one decision each), Put back, Added and Spare
    * copies. A tile opens the file's story (`FoundFileStory`), where what was done can be undone;
-   * `?file=<id>` opens one from a link and `?tab=` chooses the tab.
+   * `?file=<id>` opens one from a link and `?tab=` chooses the tab. After an Undo the line that says so
+   * offers to sort the file again (FL-1579): a file left alone is in no tab, so that line and its story
+   * are where it can be asked for. The files that won't open can be downloaded in one archive.
    *
    * An administrator's page (the server sorts every account's folders), opened from File checks and kept
    * out of the navigation. Another account's picture is never shown, and never asked for: a lock stands
@@ -17,7 +19,12 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import FoundFileStory from '$lib/components/frameleaf/settings/care/FoundFileStory.svelte';
-  import { foundPicture } from '$lib/components/frameleaf/settings/care/found-files';
+  import {
+    foundArchiveUrl,
+    foundPicture,
+    sortedAgainWords,
+    WONT_OPEN_ARCHIVE,
+  } from '$lib/components/frameleaf/settings/care/found-files';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
   import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
@@ -33,6 +40,7 @@
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
+  import { downloadUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import {
     deleteSpareFoundFiles,
@@ -45,6 +53,7 @@
     IntegrityReport,
     resolveFoundFiles,
     searchUsersAdmin,
+    sortFoundFileAgain,
     type FoundFileGroupDto,
     type FoundFileResponseDto,
     type FoundFilesSummaryResponseDto,
@@ -104,6 +113,8 @@
   let said = $state('');
   let openId = $state<string | null>(null);
   let asking = $state(false);
+  /** FL-1579: the file an Undo left alone, offered again by the line that says it was undone. */
+  let offer = $state<{ id: string; name: string; message: string } | null>(null);
 
   const groupKey = (group: FoundFileGroupDto) => [group.reason, group.ownerId ?? '', group.folder ?? ''].join('|');
   const filesOf = (group: FoundFileGroupDto, size: number, cursor?: string) =>
@@ -167,9 +178,29 @@
       void goto(commandCenterUrl('care', 'found-files'), { replaceState: true, reset: false });
     }
   };
-  const storyDone = (message: string) => {
+  const storyDone = (message: string, left?: { id: string; name: string }) => {
     said = message;
+    offer = left ? { ...left, message } : null;
     void load();
+  };
+  /** Only the line that says a file was undone offers it; any later line does not. */
+  const offered = $derived(offer && offer.message === said ? offer : null);
+  const sortAgain = async () => {
+    if (!offered) {
+      return;
+    }
+    const { id, name } = offered;
+    working = true;
+    try {
+      const sorted = await sortFoundFileAgain({ id });
+      said = $t(sortedAgainWords(sorted.outcome), { values: { name } });
+    } catch {
+      said = $t('frameleaf_found_failed');
+    } finally {
+      offer = null;
+      working = false;
+      await load();
+    }
   };
 
   const back = $derived(summary?.back ?? 0);
@@ -429,7 +460,13 @@
 {/snippet}
 
 <KitPage>
-  <Said message={said} onDismiss={() => (said = '')} />
+  <Said
+    message={said}
+    onDismiss={() => (said = '')}
+    actionLabel={offered ? $t('frameleaf_found_again') : undefined}
+    onAction={() => void sortAgain()}
+    actionDisabled={working}
+  />
 
   <Hero
     tone={loaded && !failed ? hero.tone : 'quiet'}
@@ -507,6 +544,11 @@
                     {:else if group.reason === FoundFileReason.Asked}
                       <Button variant="primary" disabled={working} onclick={() => void decide(group)}>
                         {$t('frameleaf_found_put_back_now', { values: { count: group.count } })}
+                      </Button>
+                    {:else if group.reason === FoundFileReason.WontOpen && files.items.some((file) => file.viewable)}
+                      <!-- Another account's files are never sent, so they are not offered either. -->
+                      <Button onclick={() => downloadUrl(foundArchiveUrl(group), WONT_OPEN_ARCHIVE)}>
+                        {$t('frameleaf_found_download_them')}
                       </Button>
                     {/if}
                     {#if !expanded[key] || files.nextCursor}

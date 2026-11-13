@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import request from 'supertest';
 import { FoundFileAdminController } from 'src/controllers/found-file-admin.controller.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -29,6 +30,8 @@ describe(FoundFileAdminController.name, () => {
     ['get', `/admin/found-files/files/${id}`],
     ['get', `/admin/found-files/files/${id}/file`],
     ['post', `/admin/found-files/files/${id}/undo`],
+    ['post', `/admin/found-files/files/${id}/sort-again`],
+    ['get', '/admin/found-files/wont-open/archive'],
     ['post', '/admin/found-files/resolve'],
     ['post', '/admin/found-files/spare/delete'],
   ] as const)('%s %s requires authentication', async (method, url) => {
@@ -58,6 +61,41 @@ describe(FoundFileAdminController.name, () => {
       const { status } = await request(ctx.getHttpServer()).post('/admin/found-files/files/nope/undo');
       expect(status).toBe(400);
       expect(service.undo).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /admin/found-files/files/:id/sort-again', () => {
+    it('needs a found file id', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/admin/found-files/files/nope/sort-again');
+      expect(status).toBe(400);
+      expect(service.sortAgain).not.toHaveBeenCalled();
+    });
+
+    it('sorts the file again', async () => {
+      service.sortAgain.mockResolvedValue({ id, outcome: 'added' } as never);
+      const { status, body } = await request(ctx.getHttpServer()).post(`/admin/found-files/files/${id}/sort-again`);
+      expect(status).toBe(200);
+      expect(service.sortAgain).toHaveBeenCalledWith(undefined, id);
+      expect(body).toEqual({ id, outcome: 'added' });
+    });
+  });
+
+  describe('GET /admin/found-files/wont-open/archive', () => {
+    it('needs an account id it can read', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/admin/found-files/wont-open/archive?ownerId=nope');
+      expect(status).toBe(400);
+      expect(service.downloadWontOpen).not.toHaveBeenCalled();
+    });
+
+    it('sends the archive of one group', async () => {
+      service.downloadWontOpen.mockResolvedValue(Readable.from([Buffer.from('zip')]));
+      const { status, headers } = await request(ctx.getHttpServer()).get(
+        `/admin/found-files/wont-open/archive?ownerId=${owner}`,
+      );
+      expect(status).toBe(200);
+      expect(headers['content-type']).toBe('application/zip');
+      expect(headers['content-disposition']).toContain('frameleaf-files-that-wont-open.zip');
+      expect(service.downloadWontOpen).toHaveBeenCalledWith(undefined, { ownerId: owner });
     });
   });
 

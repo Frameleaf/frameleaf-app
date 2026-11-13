@@ -2661,7 +2661,7 @@ export type FoundFileStepDto = {
         [key: string]: any;
     };
     outcome?: string;
-    /** What was done: found, read, back, added, spare, undone, … */
+    /** What was done: found, read, back, added, spare, undone, again, … */
     step: string;
 };
 export type FoundFileDetailResponseDto = {
@@ -21796,6 +21796,12 @@ export type FoundFileListDto = {
     /** Files per page */
     size?: number;
 };
+export type FoundFilesArchiveDto = {
+    /** Only the files in this folder no account uses */
+    folder?: string;
+    /** Only the files in this account’s folders */
+    ownerId?: string;
+};
 export type GetAlbumInfoDto = {
     /** Return album metadata for suppressed content only */
     suppressedOnly?: boolean;
@@ -25432,6 +25438,20 @@ export function downloadFoundFile({ id }: {
     }));
 }
 /**
+ * Sort a found file that was left alone again
+ */
+export function sortFoundFileAgain({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFileDetailResponseDto;
+    }>(`/admin/found-files/files/${encodeURIComponent(id)}/sort-again`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Undo what was done with a found file
  */
 export function undoFoundFile({ id }: {
@@ -25474,6 +25494,23 @@ export function deleteSpareFoundFiles({ foundFilesDeleteSpareDto }: {
         method: "POST",
         body: foundFilesDeleteSpareDto
     })));
+}
+/**
+ * Download the found files that won’t open
+ */
+export function downloadFoundFilesThatWontOpen({ folder, ownerId }: {
+    folder?: string;
+    ownerId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/admin/found-files/wont-open/archive${QS.query(QS.explode({
+        folder,
+        ownerId
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Get the Hardware & GPU check
