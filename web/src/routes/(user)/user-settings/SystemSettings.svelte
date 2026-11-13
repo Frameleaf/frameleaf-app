@@ -27,6 +27,7 @@
   import ThemeSettings from '../../admin/system-settings/ThemeSettings.svelte';
   import Duplicates from '$lib/components/frameleaf/settings/care/Duplicates.svelte';
   import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
+  import FoundFiles from '$lib/components/frameleaf/settings/care/FoundFiles.svelte';
   import UnusedFiles from '$lib/components/frameleaf/settings/care/UnusedFiles.svelte';
   import DeletedItems from '$lib/components/frameleaf/settings/storage/DeletedItems.svelte';
   import FolderLayout from '$lib/components/frameleaf/settings/storage/FolderLayout.svelte';
@@ -248,6 +249,15 @@
       subtitle: $t('frameleaf_cc_section_health_description'),
       key: 'integrity-checks',
       icon: mdiFileCheckOutline,
+    },
+    {
+      // FL-1533: Library care → Photos found on the drive, opened from File checks.
+      admin: true,
+      component: FoundFiles,
+      title: $t('frameleaf_cc_section_found_files'),
+      subtitle: $t('frameleaf_cc_section_found_files_description'),
+      key: 'found-files',
+      icon: mdiImageSearchOutline,
     },
     {
       admin: true,

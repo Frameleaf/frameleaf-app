@@ -309,6 +309,7 @@ describe('Frameleaf settings areas', () => {
       ]);
       expect(areaSectionKeys('care')).toEqual([
         'integrity-checks',
+        'found-files',
         'repair',
         // FL-1338: Damaged and missing files, an account page every account has
         'files',

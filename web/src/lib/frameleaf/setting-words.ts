@@ -150,6 +150,9 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'libraryCare.autoRepair': { label: 'frameleaf_care_fc_when_problem_repair_name' },
   // Library care › Damaged and missing files › What Frameleaf does by itself
   'libraryCare.askPhones': { label: 'frameleaf_files_auto_phones_name' },
+  // Library care › Photos found on the drive › What Frameleaf does by itself (FL-1533)
+  'libraryCare.putBackFoundFiles': { label: 'frameleaf_found_auto_put_back_name' },
+  'libraryCare.clearGonePreviews': { label: 'frameleaf_found_auto_previews_name' },
   // Access & security › Sign in with Frameleaf
   'frameleafCloud.signIn.showOnLocalLogin': { label: 'frameleaf_signin_offer_home' },
   'frameleafCloud.signIn.buttonText': { label: 'frameleaf_signin_words' },

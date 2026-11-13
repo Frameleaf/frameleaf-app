@@ -115,7 +115,8 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     id: 'care',
     group: 'library',
     // FL-413: identical files merge automatically; the per-account Merge older copies is retired
-    sections: ['integrity-checks', 'duplicates', 'enrichment-care', 'unused-files'],
+    // FL-1533: Photos found on the drive, opened from File checks and kept out of the navigation
+    sections: ['integrity-checks', 'found-files', 'duplicates', 'enrichment-care', 'unused-files'],
     // Identify photo locations (prototype `care/location-scan.jsx`): its own page, opened from the landing's
     // Place names row and kept out of the navigation, as the prototype does. FL-1338: Damaged and missing
     // files (prototype `care/files.jsx`) is every account's own list, opened from Things to fix and File checks.
@@ -125,6 +126,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     personal: ['repair', 'files', 'couldnt-process', 'dates', 'tidy-up', 'tidy-up-review', 'location-scan'],
     order: [
       'integrity-checks',
+      'found-files',
       'repair',
       'files',
       'couldnt-process',
@@ -280,7 +282,7 @@ export const isScreenArea = (area: SettingsAreaId) => SCREEN_AREAS.includes(area
  */
 export const NAV_HIDDEN_SECTIONS: Partial<Record<SettingsAreaId, readonly string[]>> = Object.freeze({
   processing: ['hardware'],
-  care: ['location-scan', 'couldnt-process', 'dates', 'tidy-up-review'],
+  care: ['location-scan', 'couldnt-process', 'dates', 'tidy-up-review', 'found-files'],
 });
 
 /**
@@ -334,6 +336,7 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   integrity: 'frameleaf_page_file_checks_description',
   repair: 'frameleaf_page_repair_description',
   files: 'frameleaf_page_files_description',
+  'found-files': 'frameleaf_page_found_files_description',
   'couldnt-process': 'frameleaf_page_couldnt_process_description',
   dates: 'frameleaf_page_date_doctor_description',
   'tidy-up': 'frameleaf_page_tidy_up_description',
@@ -756,6 +759,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   sharing: { sharing: 'sharing' },
   care: {
     'integrity-checks': 'health',
+    'found-files': 'health',
     repair: 'repairs',
     files: 'repairs',
     'couldnt-process': 'repairs',

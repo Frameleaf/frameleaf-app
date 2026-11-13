@@ -38,13 +38,13 @@ test.describe('Integrity', () => {
     await utils.mkFolder(folder);
   });
 
-  test('"Check now" on Stray files counts the new untracked file', async ({ context, page }) => {
+  test('"Check now" on Files not in a library counts the new untracked file', async ({ context, page }) => {
     await runUntrackedCheck();
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto(fileChecks);
 
     // Each check is a row of "What is checked": its switch, "<n> found" or "None found", and "Check now".
-    const checkNow = page.getByRole('button', { name: 'Check for Stray files now' });
+    const checkNow = page.getByRole('button', { name: 'Check for Files not in a library now' });
     const check = page.getByRole('listitem').filter({ has: checkNow });
     // The row's status pill: "<n> found", or "None found" / "Not checked yet" when nothing is listed.
     const status = check.locator('.kit-pill');
@@ -61,6 +61,20 @@ test.describe('Integrity', () => {
     await expect(checkNow).toBeEnabled();
   });
 
+  test('Photos found on the drive opens from its address with its four lists (FL-1533)', async ({ context, page }) => {
+    await utils.setAuthCookies(context, admin.accessToken);
+    await page.goto('/user-settings?area=care&section=found-files');
+
+    await expect(page.getByRole('region', { name: 'Photos found on the drive' })).toBeVisible();
+    const lists = page.getByRole('group', { name: 'Show' });
+    for (const name of [/^Needs you · /, /^Put back · /, /^Added · /, /^Spare copies · /]) {
+      await expect(lists.getByRole('button', { name })).toBeVisible();
+    }
+    // the two switches are settings an administrator can change here
+    await expect(page.getByRole('switch', { name: 'Put found photos back by themselves' })).toBeChecked();
+    await expect(page.getByRole('switch', { name: 'Clear previews for photos that are gone' })).toBeChecked();
+  });
+
   test('deleting one finding removes that file and only that finding', async ({ context, page }) => {
     await utils.putTextFile('untracked', `${folder}/untracked2.png`);
     await runUntrackedCheck();
@@ -68,7 +82,7 @@ test.describe('Integrity', () => {
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto(untrackedReport);
-    await expect(page.getByRole('heading', { level: 1, name: 'Stray files report' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Files not in a library report' })).toBeVisible();
     await page.getByLabel('Filter findings by path').fill(`${folder}/untracked`);
     await expect(row(page, `${folder}/untracked1.png`)).toBeVisible();
 
