@@ -1,0 +1,1 @@
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:darktable="http://darktable.sf.net/"><rdf:Description><darktable:history><rdf:Seq><rdf:li darktable:operation="temperature" darktable:modversion="4" darktable:enabled="1" darktable:params="000000400000803f0000c03f0000000000000000"/></rdf:Seq></darktable:history></rdf:Description></rdf:RDF>

@@ -4352,6 +4352,9 @@ export type UserPreferencesResponseDto = {
     cast: CastResponse;
     clients?: ClientsResponse;
     cloudProcessing?: CloudProcessingResponse;
+    develop?: {
+        importXmpEdits: boolean;
+    };
     display?: DisplayPreferencesResponse;
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
@@ -4558,6 +4561,9 @@ export type UserPreferencesUpdateDto = {
     cast?: CastUpdate;
     clients?: ClientsUpdate;
     cloudProcessing?: CloudProcessingUpdate;
+    develop?: {
+        importXmpEdits?: boolean;
+    };
     display?: DisplayPreferencesUpdate;
     download?: DownloadUpdate;
     emailNotifications?: EmailNotificationsUpdate;
@@ -6685,6 +6691,30 @@ export type AssetDevelopKeyFrame = {
     timeMs: number;
 };
 export type AssetDevelopRecipeDto = {
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        lightroom?: {
+            [key: string]: any;
+        };
+        darktable?: {
+            [key: string]: any;
+        };
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+        }[];
+    };
     version: Version;
     exposure?: number;
     contrast?: number;
@@ -21628,6 +21658,30 @@ export type HdrAssetDevelopRecipe = {
     };
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        darktable?: {
+            [key: string]: any;
+        };
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+        }[];
+        lightroom?: {
+            [key: string]: any;
+        };
+    };
     /** Selective adjustments, applied in order after the global develop */
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
@@ -21690,6 +21744,30 @@ export type HdrAssetDevelopRecipeV4 = {
     };
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        darktable?: {
+            [key: string]: any;
+        };
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+        }[];
+        lightroom?: {
+            [key: string]: any;
+        };
+    };
     /** Selective adjustments, applied in order after the global develop */
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
@@ -21752,6 +21830,30 @@ export type HdrAssetDevelopRecipeV5 = {
     };
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        darktable?: {
+            [key: string]: any;
+        };
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+        }[];
+        lightroom?: {
+            [key: string]: any;
+        };
+    };
     /** Selective adjustments, applied in order after the global develop */
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
@@ -21814,6 +21916,30 @@ export type HdrAssetDevelopRecipeV6 = {
     };
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        darktable?: {
+            [key: string]: any;
+        };
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+        }[];
+        lightroom?: {
+            [key: string]: any;
+        };
+    };
     /** Selective adjustments, applied in order after the global develop */
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
@@ -21904,6 +22030,30 @@ export type KnownAssetDevelopRecipe = {
     grain?: number;
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        darktable?: {
+            [key: string]: any;
+        };
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+        }[];
+        lightroom?: {
+            [key: string]: any;
+        };
+    };
     /** Live and Motion Photos: the frame of the motion clip the still is rendered from */
     keyFrame?: AssetDevelopKeyFrame;
     /** Selective adjustments, applied in order after the global develop */

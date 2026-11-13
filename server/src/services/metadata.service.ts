@@ -830,12 +830,14 @@ export class MetadataService extends BaseService {
     }
 
     if (!isChanged) {
+      if (sidecarFile?.path) await this.jobRepository.queue({ name: JobName.DevelopImport, data: { id: asset.id } });
       return JobStatus.Skipped;
     }
 
     await (sidecarPath === null
       ? this.assetRepository.deleteFile({ assetId: asset.id, type: AssetFileType.Sidecar })
       : this.assetRepository.upsertFile({ assetId: asset.id, type: AssetFileType.Sidecar, path: sidecarPath }));
+    if (sidecarPath) await this.jobRepository.queue({ name: JobName.DevelopImport, data: { id: asset.id } });
 
     return JobStatus.Success;
   }

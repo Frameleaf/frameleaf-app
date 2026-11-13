@@ -1187,6 +1187,9 @@
   "preferences.cloudProcessing.enabled": {
     "type": "boolean"
   },
+  "preferences.develop.importXmpEdits": {
+    "type": "boolean"
+  },
   "preferences.display.dateFormat": {
     "type": "string",
     "enum": [

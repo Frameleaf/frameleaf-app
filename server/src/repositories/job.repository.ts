@@ -103,6 +103,7 @@ const COMMITTED_EFFECT_JOBS = new Set<JobName>([
 const REPEATABLE_JOBS = new Set<JobName>([
   JobName.MediaImport,
   JobName.PhotographyBulkGallery,
+  JobName.DevelopImport,
   // FL-1300: a scan rewrites its whole snapshot, and an apply resumes from the last change it committed.
   JobName.AlbumCleanupScan,
   JobName.AlbumCleanupApply,
@@ -1585,6 +1586,7 @@ export class JobRepository {
       case JobName.WorkflowEventDispatch: {
         return { deduplication: { id: `${JobName.WorkflowEventDispatch}:${item.data.event.deliveryId}` } };
       }
+      case JobName.DevelopImport:
       case JobName.PhotographyBulkGallery:
       case JobName.PhotographyWorkflowRender: {
         return {
