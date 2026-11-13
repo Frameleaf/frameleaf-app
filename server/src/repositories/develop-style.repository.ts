@@ -16,16 +16,17 @@ export class DevelopStyleRepository {
   }
 
   async saveProfile(profile: Selectable<DevelopStyleProfileTable>, expectedTrainedAt: Date | null) {
-    const row = await this.db
-      .insertInto('develop_style_profile')
-      .values(profile)
-      .onConflict((oc) =>
-        expectedTrainedAt
-          ? oc.column('userId').doUpdateSet(profile).where('develop_style_profile.trainedAt', '=', expectedTrainedAt)
-          : oc.column('userId').doNothing(),
-      )
-      .returning('userId')
-      .executeTakeFirst();
+    const query = expectedTrainedAt
+      ? this.db
+          .updateTable('develop_style_profile')
+          .set(profile)
+          .where('userId', '=', profile.userId)
+          .where('trainedAt', '=', expectedTrainedAt)
+      : this.db
+          .insertInto('develop_style_profile')
+          .values(profile)
+          .onConflict((oc) => oc.column('userId').doNothing());
+    const row = await query.returning('userId').executeTakeFirst();
     return !!row;
   }
 
