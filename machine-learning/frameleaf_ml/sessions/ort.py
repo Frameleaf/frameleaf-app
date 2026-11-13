@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import platform
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
+import onnx
 import onnxruntime as ort
 from numpy.typing import NDArray
 from onnxruntime.capi.onnxruntime_pybind11_state import Fail
@@ -39,6 +41,40 @@ else:
 # TensorRT-RTX records CUDA graphs in global capture mode, which fails any other thread's synchronizing call, and as its
 # context memory can move between runs, any run may record: so its sessions open and run one at a time
 _trt_rtx_lock = Lock()
+
+# A protobuf model is at most this large; a larger one keeps its weights in other files.
+_VERIFIED_MODEL_LIMIT = 2**31 - 1
+_EXTERNAL_WEIGHTS_FOLDER = "session.model_external_initializers_file_folder_path"
+
+
+def _read_model(path: Path) -> tuple[bytes, str] | None:
+    """The model's bytes and their SHA-256, read once; None when it cannot be held in memory."""
+    try:
+        with path.open("rb") as stream:
+            data = stream.read(_VERIFIED_MODEL_LIMIT + 1)
+    except (OSError, MemoryError):
+        return None
+    if not 0 < len(data) <= _VERIFIED_MODEL_LIMIT:
+        return None
+    return data, hashlib.sha256(data).hexdigest()
+
+
+def _same_model_but_for_declared_shapes(derived: bytes, source: bytes) -> bool:
+    """Whether two models have the same nodes and weights, differing at most in the shapes they
+    declare for their inputs and outputs (a batch axis made symbolic)."""
+    try:
+        left, right = onnx.load_model_from_string(derived), onnx.load_model_from_string(source)
+        for mine, theirs in ((left.graph.input, right.graph.input), (left.graph.output, right.graph.output)):
+            if [item.name for item in mine] != [item.name for item in theirs]:
+                return False
+            for item, original in zip(mine, theirs, strict=True):
+                if item.type.tensor_type.elem_type != original.type.tensor_type.elem_type:
+                    return False
+                item.type.CopyFrom(original.type)
+        return bool(left == right)
+    except Exception:
+        return False
+
 
 MigraphxInputSignature = tuple[tuple[str, str, tuple[int, ...]], ...]
 
@@ -121,7 +157,10 @@ class OrtSession:
         threads: int = 2,
     ):
         self.model_path = Path(model_path)
-        self.source_model_path = self.model_path
+        # The SHA-256 of the approved model this session provably runs: of the bytes it was created
+        # from in memory, or of the model those bytes were derived from (see `source_model_path`).
+        self.model_sha256: str | None = None
+        self._source_model_path = self.model_path
         self.threads = threads
         native = current_policy()
         self._coreml_lock = (
@@ -148,17 +187,19 @@ class OrtSession:
         self.disabled_optimizers = _disabled_optimizers_default(self.providers)
         log.debug(f"Setting disabled_optimizers to {self.disabled_optimizers}")
         self.provider_options = provider_options if provider_options is not None else self._provider_options_default
-        self.sess_options = sess_options if sess_options is not None else self._sess_options_default
-        if native is not None and native.profile_dir is not None:
-            self.sess_options.enable_profiling = True
-            self.sess_options.profile_file_prefix = str(native.profile_dir / f"native-{uuid4().hex}")
+
+        def profiled(options: ort.SessionOptions) -> ort.SessionOptions:
+            if native is not None and native.profile_dir is not None:
+                options.enable_profiling = True
+                options.profile_file_prefix = str(native.profile_dir / f"native-{uuid4().hex}")
+            return options
+
+        self.sess_options = profiled(sess_options if sess_options is not None else self._sess_options_default)
         with self._run_lock:
-            self.session = ort.InferenceSession(
-                self.model_path.as_posix(),
-                providers=self.providers,
-                provider_options=self.provider_options,
-                sess_options=self.sess_options,
-                disabled_optimizers=self.disabled_optimizers,
+            self.session = self._open(
+                self.sess_options,
+                self.provider_options,
+                None if sess_options is not None else lambda: profiled(self._sess_options_default),
             )
         if native is not None:
             self.session.disable_fallback()
@@ -168,6 +209,86 @@ class OrtSession:
                 if len(native.sessions) >= 64:
                     raise RuntimeError("native_session_limit")
                 native.sessions.append(self)
+
+    def _open(
+        self,
+        options: ort.SessionOptions,
+        provider_options: list[dict[str, Any]],
+        fresh: Callable[[], ort.SessionOptions] | None,
+    ) -> ort.InferenceSession:
+        """Create the session, from memory where a device observer must know what ran.
+
+        A session created from a path runs whatever the file held when ONNX Runtime read it, which
+        no hash taken before or after can prove. Under a device observer the model is therefore
+        read once, hashed, and the session is created from those same bytes: `model_sha256` is
+        then the digest of what runs, and the observer needs no file hashing around a run. A model
+        that cannot be loaded that way (weights in other files, too large, or custom options) is
+        loaded from its path with `model_sha256` unset, and the observer hashes the file around
+        every run as before.
+        """
+        native = current_policy()
+        self.model_sha256 = None
+        loaded = _read_model(self.model_path) if native is not None and native.observer is not None and fresh else None
+        if loaded is not None and fresh is not None:
+            data, digest = loaded
+            # ONNX Runtime resolves the external weights of an in-memory model against the working
+            # directory, which nothing has verified. An empty folder makes such a model fail here.
+            with TemporaryDirectory(prefix="frameleaf-no-external-weights-") as empty:
+                guarded = fresh()
+                guarded.add_session_config_entry(_EXTERNAL_WEIGHTS_FOLDER, empty)
+                try:
+                    session = ort.InferenceSession(
+                        data,
+                        providers=self.providers,
+                        provider_options=provider_options,
+                        sess_options=guarded,
+                        disabled_optimizers=self.disabled_optimizers,
+                    )
+                except Exception:
+                    log.info("Model is not loadable from memory; loading its file, to be hashed around every run")
+                else:
+                    # onnxruntime keeps the serialized model only to rebuild a session whose provider failed,
+                    # which a native session never does (fallback is disabled).
+                    session._model_bytes = None
+                    self.model_sha256, self.sess_options = digest, guarded
+                    return session
+                finally:
+                    del data
+        return ort.InferenceSession(
+            self.model_path.as_posix(),
+            providers=self.providers,
+            provider_options=provider_options,
+            sess_options=options,
+            disabled_optimizers=self.disabled_optimizers,
+        )
+
+    @property
+    def source_model_path(self) -> Path:
+        return self._source_model_path
+
+    @source_model_path.setter
+    def source_model_path(self, path: Path) -> None:
+        """Name the approved model this session's model was derived from.
+
+        A model with a batch axis added is written to the runtime cache and loaded from there, so
+        the bytes in memory are not the approved file's. They stand for it only when they are that
+        file's model with nothing but declared input and output shapes changed, which is checked
+        here on the bytes themselves: those the session loaded and those of the approved file,
+        each read and hashed once. `model_sha256` then names the approved bytes. If it cannot be
+        shown, it is unset and the observer hashes the approved file around every run, as before.
+        """
+        self._source_model_path = Path(path)
+        if self.model_sha256 is None or self._source_model_path == self.model_path:
+            return
+        loaded, self.model_sha256 = self.model_sha256, None
+        derived, source = _read_model(self.model_path), _read_model(self._source_model_path)
+        if (
+            derived is not None
+            and source is not None
+            and derived[1] == loaded
+            and _same_model_but_for_declared_shapes(derived[0], source[0])
+        ):
+            self.model_sha256 = source[1]
 
     def get_inputs(self) -> Sequence[SessionNode]:
         inputs: Sequence[SessionNode] = self.session.get_inputs()
@@ -192,10 +313,14 @@ class OrtSession:
         if self._coreml_lock is not None:
             with self._coreml_lock:
                 self._specialize_coreml(input_feed)
-                with observer.observe(self.source_model_path) if observer is not None else nullcontext():
+                with (
+                    observer.observe(self.source_model_path, self.model_sha256)
+                    if observer is not None
+                    else nullcontext()
+                ):
                     coreml_outputs: list[NDArray[np.float32]] = self.session.run(output_names, input_feed, run_options)
                     return coreml_outputs
-        with observer.observe(self.source_model_path) if observer is not None else nullcontext():
+        with observer.observe(self.source_model_path, self.model_sha256) if observer is not None else nullcontext():
             if "MIGraphXExecutionProvider" in self.providers:
                 model_key = self.model_path.resolve().as_posix()
                 input_key = (model_key, _migraphx_input_signature(input_feed))
@@ -239,12 +364,16 @@ class OrtSession:
         if not dimensions:
             self._coreml_shape = signature
             return
-        options = self._sess_options_default
-        for dimension, size in dimensions.items():
-            options.add_free_dimension_override_by_name(dimension, size)
-        if native.profile_dir is not None:
-            options.enable_profiling = True
-            options.profile_file_prefix = str(native.profile_dir / f"native-{uuid4().hex}")
+
+        def specialized() -> ort.SessionOptions:
+            options = self._sess_options_default
+            for dimension, size in dimensions.items():
+                options.add_free_dimension_override_by_name(dimension, size)
+            if native.profile_dir is not None:
+                options.enable_profiling = True
+                options.profile_file_prefix = str(native.profile_dir / f"native-{uuid4().hex}")
+            return options
+
         cache_root = runtime_cache_dir(self.model_path) / "coreml"
         cache_root.mkdir(parents=True, exist_ok=True)
         cache = TemporaryDirectory(prefix="shape-", dir=cache_root)
@@ -252,24 +381,22 @@ class OrtSession:
         for provider, value in zip(self.providers, providers, strict=True):
             if provider == "CoreMLExecutionProvider":
                 value["ModelCacheDirectory"] = cache.name
+        previous = self.session, self.sess_options, self.model_sha256
         try:
-            session = ort.InferenceSession(
-                self.model_path.as_posix(),
-                providers=self.providers,
-                provider_options=providers,
-                sess_options=options,
-                disabled_optimizers=self.disabled_optimizers,
-            )
+            options = specialized()
+            self.sess_options = options
+            session = self._open(options, providers, specialized)
             session.disable_fallback()
             if "CoreMLExecutionProvider" not in session.get_providers():
                 raise RuntimeError("native_provider_not_loaded")
             if native.profile_dir is not None:
                 self.session.end_profiling()
         except BaseException:
+            self.session, self.sess_options, self.model_sha256 = previous
             cache.cleanup()
             raise
         previous_cache = self._coreml_cache
-        self.session, self.sess_options = session, options
+        self.session = session
         self._coreml_cache, self._coreml_shape = cache, signature
         if previous_cache is not None:
             previous_cache.cleanup()
