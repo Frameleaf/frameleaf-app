@@ -28,6 +28,7 @@ import {
   mdiFileAlertOutline,
   mdiFileClockOutline,
   mdiFileCheckOutline,
+  mdiImageSearchOutline,
   mdiFileDocumentOutline,
   mdiFolderOutline,
   mdiFingerprint,
@@ -467,6 +468,13 @@ export const ADMIN_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_cc_section_health',
     descriptionKey: 'frameleaf_cc_section_health_description',
     icon: mdiFileCheckOutline,
+  },
+  // FL-1533: Library care → Photos found on the drive.
+  {
+    key: 'found-files',
+    titleKey: 'frameleaf_cc_section_found_files',
+    descriptionKey: 'frameleaf_cc_section_found_files_description',
+    icon: mdiImageSearchOutline,
   },
   // FL-366: Library care → Duplicates (look-alike matching and exact copies).
   {

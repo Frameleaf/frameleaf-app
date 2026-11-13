@@ -258,7 +258,7 @@ test.describe('Library Care', () => {
     await utils.setAuthCookies(context, admin.accessToken);
     // FL-366: File checks has one switch per check, named for what it finds.
     await page.goto('/user-settings?area=care&section=integrity-checks');
-    for (const name of ['Missing files', 'Damaged files', 'Stray files']) {
+    for (const name of ['Missing files', 'Damaged files', 'Files not in a library']) {
       await expect(page.getByRole('switch', { name: `Look for ${name}`, exact: true })).toBeVisible();
     }
     // FL-1338: When there's a problem shows that missing files are always looked for, with a switch that stays on.

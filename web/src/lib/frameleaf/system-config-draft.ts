@@ -81,6 +81,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   // FL-160: what a backup includes; the bucket, key and target change only through setup
   'cloud-backup': ['frameleafCloud'],
   'integrity-checks': ['integrityChecks', 'libraryCare'],
+  // FL-1533: the two switches on Photos found on the drive
+  'found-files': ['libraryCare'],
   'external-library': ['library'],
   // FL-71: "Logs & diagnostics" also holds the local analytics settings; the search models page
   // holds Ask Search, which is its own top-level group.
@@ -117,6 +119,9 @@ const SECTION_CONFIG_PATHS: Readonly<Record<string, string>> = Object.freeze({
   'libraryCare.rawRecovery': 'repair',
   // FL-1338: asking phones for lost photos is switched on Damaged and missing files
   'libraryCare.askPhones': 'files',
+  // FL-1533: what is done with photos found on the drive is switched on that page
+  'libraryCare.putBackFoundFiles': 'found-files',
+  'libraryCare.clearGonePreviews': 'found-files',
   // FL-366: one look-alike switch on Duplicates drives both settings.
   'libraryCare.duplicateReview': 'duplicates',
   'machineLearning.duplicateDetection': 'duplicates',
