@@ -101,6 +101,8 @@ const COMMITTED_EFFECT_JOBS = new Set<JobName>([
 ]);
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
+  // Campaign retries claim only untouched recipients from the durable delivery ledger.
+  JobName.PhotographyCampaignSend,
   JobName.MediaImport,
   JobName.PhotographyBulkGallery,
   // FL-1300: a scan rewrites its whole snapshot, and an apply resumes from the last change it committed.

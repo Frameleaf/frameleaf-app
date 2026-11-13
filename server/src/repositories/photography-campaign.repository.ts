@@ -164,7 +164,7 @@ export class PhotographyCampaignRepository {
       return true;
     });
   }
-  async finish(id: string, contactId: string, status: 'sent' | 'failed' | 'unsubscribed') {
+  async finish(id: string, contactId: string, status: 'sent' | 'failed' | 'unsubscribed' | 'pending') {
     await sql`UPDATE photography_campaign_delivery SET status=${status} WHERE "campaignId"=${id}::uuid AND "contactId"=${contactId}::uuid AND status='uncertain'`.execute(
       this.db,
     );

@@ -454,6 +454,13 @@ describe(JobRepository.name, () => {
     });
   });
 
+  it('resumes campaign batches through their durable recipient ledger', async () => {
+    await sut.queue({ name: JobName.PhotographyCampaignSend });
+    expect(enqueue.mock.calls[0][0][0]).toMatchObject({
+      safeToRetry: true,
+      options: { deduplication: { id: JobName.PhotographyCampaignSend, keepLastIfActive: true } },
+    });
+  });
   it('never automatically replays notification side effects and redacts sensitive history', async () => {
     await sut.queue({ name: JobName.SendMail, data: {} } as never);
     expect(enqueue.mock.calls[0][0][0]).toMatchObject({ safeToRetry: false, sensitive: true });

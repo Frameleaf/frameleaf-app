@@ -81,21 +81,24 @@ describe(PhotographyCampaignService.name, () => {
     expect(campaigns.pause).toHaveBeenCalledWith('campaign', 60);
     expect(campaigns.complete).not.toHaveBeenCalled();
   });
-  it('honors provider backoff and leaves all later recipients pending', async () => {
-    campaigns.due.mockResolvedValue([{ id: 'campaign', ownerId: auth.user.id }]);
-    campaigns.claim.mockResolvedValueOnce({ id: 'client', email: 'client@example.test' });
-    campaigns.sendIfEligible.mockImplementationOnce(
-      async (_id: string, _contact: string, sendMail: () => Promise<unknown>) => {
-        await sendMail();
-        return true;
-      },
-    );
-    send.mockRejectedValue(new MailApiError(MailSignInProvider.Gmail, 429, 'Slow down', 600));
-    await sut.dispatch();
-    expect(campaigns.pause).toHaveBeenCalledWith('campaign', 600);
-    expect(campaigns.finish).toHaveBeenCalledWith('campaign', 'client', 'failed');
-    expect(campaigns.claim).toHaveBeenCalledTimes(1);
-  });
+  it.each([600, 172_800])(
+    'honors provider backoff of %i seconds and leaves later recipients pending',
+    async (delay) => {
+      campaigns.due.mockResolvedValue([{ id: 'campaign', ownerId: auth.user.id }]);
+      campaigns.claim.mockResolvedValueOnce({ id: 'client', email: 'client@example.test' });
+      campaigns.sendIfEligible.mockImplementationOnce(
+        async (_id: string, _contact: string, sendMail: () => Promise<unknown>) => {
+          await sendMail();
+          return true;
+        },
+      );
+      send.mockRejectedValue(new MailApiError(MailSignInProvider.Gmail, 429, 'Slow down', delay));
+      await sut.dispatch();
+      expect(campaigns.pause).toHaveBeenCalledWith('campaign', delay);
+      expect(campaigns.finish).toHaveBeenCalledWith('campaign', 'client', 'pending');
+      expect(campaigns.claim).toHaveBeenCalledTimes(1);
+    },
+  );
   it('rejects header injection and oversized custom messages', () => {
     const row = {
       name: 'Photos',

@@ -53423,6 +53423,413 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "photography_contact",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "photography_contact",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "photography_contact",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "email",
+          "tableName": "photography_contact",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "name",
+          "tableName": "photography_contact",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "source",
+          "tableName": "photography_contact",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "unsubscribeToken",
+          "tableName": "photography_contact",
+          "nullable": false,
+          "isArray": false,
+          "default": "replace(((gen_random_uuid())::text || (gen_random_uuid())::text), '-'::text, ''::text)",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "unsubscribedAt",
+          "tableName": "photography_contact",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "photography_contact_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "photography_contact",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "photography_contact_unsubscribeToken_key",
+          "definition": "UNIQUE (\"unsubscribeToken\")",
+          "tableName": "photography_contact",
+          "columnNames": [
+            "unsubscribeToken"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "photography_contact_ownerId_email_key",
+          "definition": "UNIQUE (\"ownerId\", email)",
+          "tableName": "photography_contact",
+          "columnNames": [
+            "ownerId",
+            "email"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_contact_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "photography_contact",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "photography_campaign",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "photography_campaign",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "photography_campaign",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "name",
+          "tableName": "photography_campaign",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "templateKey",
+          "tableName": "photography_campaign",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "subject",
+          "tableName": "photography_campaign",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "body",
+          "tableName": "photography_campaign",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "audience",
+          "tableName": "photography_campaign",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "revision",
+          "tableName": "photography_campaign",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "photography_campaign",
+          "nullable": false,
+          "isArray": false,
+          "default": "'draft'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "scheduledFor",
+          "tableName": "photography_campaign",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "photography_campaign",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastTestAt",
+          "tableName": "photography_campaign",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "pausedUntil",
+          "tableName": "photography_campaign",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "photography_campaign_owner_idx",
+          "definition": "CREATE INDEX photography_campaign_owner_idx ON public.photography_campaign USING btree (\"ownerId\", \"createdAt\" DESC)",
+          "tableName": "photography_campaign",
+          "columnNames": [
+            "ownerId",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "photography_campaign_due_idx",
+          "definition": "CREATE INDEX photography_campaign_due_idx ON public.photography_campaign USING btree (\"scheduledFor\") WHERE (status = 'scheduled'::text)",
+          "tableName": "photography_campaign",
+          "columnNames": [
+            "scheduledFor"
+          ],
+          "using": "btree",
+          "where": "(status = 'scheduled'::text)",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "photography_campaign_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "photography_campaign",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_campaign_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "photography_campaign",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "photography_campaign_delivery",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "campaignId",
+          "tableName": "photography_campaign_delivery",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "contactId",
+          "tableName": "photography_campaign_delivery",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "photography_campaign_delivery",
+          "nullable": false,
+          "isArray": false,
+          "default": "'pending'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "attemptedAt",
+          "tableName": "photography_campaign_delivery",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "photography_campaign_attempt_idx",
+          "definition": "CREATE INDEX photography_campaign_attempt_idx ON public.photography_campaign_delivery USING btree (\"attemptedAt\" DESC) WHERE (\"attemptedAt\" IS NOT NULL)",
+          "tableName": "photography_campaign_delivery",
+          "columnNames": [
+            "attemptedAt"
+          ],
+          "using": "btree",
+          "where": "(\"attemptedAt\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "photography_campaign_delivery_pkey",
+          "definition": "PRIMARY KEY (\"campaignId\", \"contactId\")",
+          "tableName": "photography_campaign_delivery",
+          "columnNames": [
+            "campaignId",
+            "contactId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_campaign_delivery_campaignId_fkey",
+          "definition": "FOREIGN KEY (\"campaignId\") REFERENCES photography_campaign(id) ON DELETE CASCADE",
+          "tableName": "photography_campaign_delivery",
+          "columnNames": [
+            "campaignId"
+          ],
+          "referenceTableName": "photography_campaign",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_campaign_delivery_contactId_fkey",
+          "definition": "FOREIGN KEY (\"contactId\") REFERENCES photography_contact(id) ON DELETE CASCADE",
+          "tableName": "photography_campaign_delivery",
+          "columnNames": [
+            "contactId"
+          ],
+          "referenceTableName": "photography_contact",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [

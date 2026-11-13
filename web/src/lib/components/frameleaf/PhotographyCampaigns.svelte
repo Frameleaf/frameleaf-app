@@ -1,8 +1,11 @@
 <script lang="ts">
+  import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import {
+    PhotographyCampaignAudienceSource,
+    PhotographyCampaignTemplate,
     photographyCampaigns,
     photographyCampaignDeliveries,
     type PhotographyCampaignDeliveriesDto,
@@ -22,6 +25,8 @@
   let data = $state<PhotographyCampaignListDto>();
   let draft = $state<PhotographyCampaignSaveDto>();
   let id = $state('');
+  let editorOpen = $state(false);
+  let resultsOpen = $state(false);
   let revision = $state('');
   let preview = $state<PhotographyCampaignPreviewDto>();
   let when = $state('');
@@ -70,6 +75,7 @@
     });
   });
   function edit(row?: PhotographyCampaignDto) {
+    editorOpen = true;
     id = row?.id ?? crypto.randomUUID();
     draft = row
       ? {
@@ -79,7 +85,13 @@
           body: row.body,
           audience: { ...row.audience },
         }
-      : { name: '', templateKey: 'print-sale', subject: '', body: '', audience: { source: 'clients' } };
+      : {
+          name: '',
+          templateKey: PhotographyCampaignTemplate.PrintSale,
+          subject: '',
+          body: '',
+          audience: { source: PhotographyCampaignAudienceSource.Clients },
+        };
     preview = undefined;
     confirm = false;
     tested = false;
@@ -102,20 +114,27 @@
     }
     const current = generation;
     const saved = await photographySaveCampaign({ id, photographyCampaignSaveDto: draft });
-    if (disposed || current !== generation) { return; }
+    if (disposed || current !== generation) {
+      return;
+    }
     revision = saved.revision;
     await reload();
     if (showPreview) {
       const rendered = await photographyPreviewCampaign({ id });
-      if (!disposed && current === generation) { preview = rendered; }
+      if (!disposed && current === generation) {
+        preview = rendered;
+      }
     } else {
-      draft = undefined;
+      editorOpen = false;
     }
   }
   async function loadResults(campaignId: string) {
     const current = generation;
     const result = await photographyCampaignDeliveries({ id: campaignId });
-    if (!disposed && current === generation) { results = result; }
+    if (!disposed && current === generation) {
+      results = result;
+      resultsOpen = true;
+    }
   }
   async function send() {
     const current = generation;
@@ -126,9 +145,10 @@
         ...(when ? { scheduledFor: new Date(when).toISOString() } : {}),
       },
     });
-    if (disposed || current !== generation) { return; }
-    draft = undefined;
-    preview = undefined;
+    if (disposed || current !== generation) {
+      return;
+    }
+    editorOpen = false;
     confirm = false;
     await reload();
   }
@@ -142,93 +162,111 @@
       onclick={() => run(reload)}>{$t('refresh')}</Button
     >
   </div>
-  {#if error}<p role="alert">{$t('campaign_error')}</p>{/if}
+  {#if error && !draft}<p role="alert">{$t('campaign_error')}</p>{/if}
   {#if data && !data.mailReady}<p role="status">{$t('campaign_configure')}</p>{/if}
   {#if draft}
-    <form
-      onsubmit={(event) => {
-        event.preventDefault();
-        void run(() => save(true));
+    <Dialog
+      bind:open={editorOpen}
+      title={preview ? $t('preview') : $t('campaign_title')}
+      closeLabel={$t('close')}
+      wide
+      onRequestClose={() => {
+        if (!busy) {
+          editorOpen = false;
+        }
+      }}
+      onClosed={() => {
+        draft = undefined;
+        preview = undefined;
       }}
     >
-      {#if preview}
-        <h3>{$t('preview')}</h3>
-        <p>{preview.sender} · {$t('campaign_recipients', { values: { count: preview.recipients } })}</p>
-        <iframe title={$t('preview')} srcdoc={preview.html} sandbox="" referrerpolicy="no-referrer"></iframe>
-        {#if tested}<p role="status">{$t('campaign_tested')}</p>{/if}
-        <div class="actions">
-          <Button
-            disabled={busy}
-            onclick={() => {
-              preview = undefined;
-              confirm = false;
-            }}>{$t('edit')}</Button
+      {#if error}<p role="alert">{$t('campaign_error')}</p>{/if}
+      {#if data && !data.mailReady}<p role="status">{$t('campaign_configure')}</p>{/if}
+      <form
+        onsubmit={(event) => {
+          event.preventDefault();
+          void run(() => save(true));
+        }}
+      >
+        {#if preview}
+          <h3>{$t('preview')}</h3>
+          <p>{preview.sender} · {$t('campaign_recipients', { values: { count: preview.recipients } })}</p>
+          <iframe title={$t('preview')} srcdoc={preview.html} sandbox="" referrerpolicy="no-referrer"></iframe>
+          {#if tested}<p role="status">{$t('campaign_tested')}</p>{/if}
+          <div class="actions">
+            <Button
+              disabled={busy}
+              onclick={() => {
+                preview = undefined;
+                confirm = false;
+              }}>{$t('edit')}</Button
+            >
+            <Button
+              disabled={busy || !data?.mailReady}
+              onclick={() =>
+                run(async () => {
+                  await photographyTestCampaign({ id });
+                  tested = true;
+                })}>{$t('campaign_test')}</Button
+            >
+            <Button
+              disabled={busy || !data?.mailReady || preview.recipients === 0}
+              onclick={() => {
+                confirm = true;
+              }}>{$t('campaign_send')}</Button
+            >
+          </div>
+          {#if confirm}
+            <label>{$t('campaign_date')}<input type="datetime-local" bind:value={when} /></label>
+            <p>{$t('campaign_confirm')}</p>
+            <Button variant="primary" disabled={busy} onclick={() => run(send)}
+              >{when ? $t('campaign_schedule') : $t('campaign_send_now')}</Button
+            >
+          {/if}
+        {:else}
+          <label>{$t('name')}<input required maxlength="120" bind:value={draft.name} /></label>
+          <div class="fields">
+            <label
+              >{$t('campaign_audience')}<select bind:value={draft.audience.source}
+                ><option value="clients">{$t('campaign_clients')}</option><option value="leads"
+                  >{$t('campaign_leads')}</option
+                ><option value="all">{$t('all')}</option><option value="shoot">{$t('campaign_shoot')}</option></select
+              ></label
+            >
+            <label
+              >{$t('template')}<select bind:value={draft.templateKey} onchange={chooseTemplate}
+                ><option value="print-sale">{$t('campaign_print_sale')}</option><option value="review-request"
+                  >{$t('campaign_review_request')}</option
+                ><option value="mini-session">{$t('campaign_mini_session')}</option></select
+              ></label
+            >
+          </div>
+          {#if draft.audience.source === 'shoot'}<label
+              >{$t('campaign_shoot')}<select required bind:value={draft.audience.workflowId}
+                ><option value="" disabled>{$t('frameleaf_photography_choose_shoot')}</option
+                >{#each shoots as shoot (shoot.id)}<option value={shoot.id}>{shoot.name}</option>{/each}</select
+              ></label
+            >{/if}
+          <label>{$t('campaign_subject')}<input required maxlength="200" bind:value={draft.subject} /></label>
+          <label
+            >{$t('campaign_message')}<textarea required maxlength="10000" rows="7" bind:value={draft.body}
+            ></textarea></label
           >
-          <Button
-            disabled={busy || !data?.mailReady}
-            onclick={() =>
-              run(async () => {
-                await photographyTestCampaign({ id });
-                tested = true;
-              })}>{$t('campaign_test')}</Button
-          >
-          <Button
-            disabled={busy || !data?.mailReady || preview.recipients === 0}
-            onclick={() => {
-              confirm = true;
-            }}>{$t('campaign_send')}</Button
-          >
-        </div>
-        {#if confirm}
-          <label>{$t('campaign_date')}<input type="datetime-local" bind:value={when} /></label>
-          <p>{$t('campaign_confirm')}</p>
-          <Button variant="primary" disabled={busy} onclick={() => run(send)}
-            >{when ? $t('campaign_schedule') : $t('campaign_send_now')}</Button
-          >
+          <div class="actions">
+            <Button
+              disabled={busy}
+              onclick={() => {
+                editorOpen = false;
+              }}>{$t('cancel')}</Button
+            ><Button disabled={busy} onclick={() => run(() => save(false))}>{$t('save')}</Button><Button
+              type="submit"
+              disabled={busy}
+              variant="primary">{$t('preview')}</Button
+            >
+          </div>
         {/if}
-      {:else}
-        <label>{$t('name')}<input required maxlength="120" bind:value={draft.name} /></label>
-        <div class="fields">
-          <label
-            >{$t('campaign_audience')}<select bind:value={draft.audience.source}
-              ><option value="clients">{$t('campaign_clients')}</option><option value="leads"
-                >{$t('campaign_leads')}</option
-              ><option value="all">{$t('all')}</option><option value="shoot">{$t('campaign_shoot')}</option></select
-            ></label
-          >
-          <label
-            >{$t('template')}<select bind:value={draft.templateKey} onchange={chooseTemplate}
-              ><option value="print-sale">{$t('campaign_print_sale')}</option><option value="review-request"
-                >{$t('campaign_review_request')}</option
-              ><option value="mini-session">{$t('campaign_mini_session')}</option></select
-            ></label
-          >
-        </div>
-        {#if draft.audience.source === 'shoot'}<label
-            >{$t('campaign_shoot')}<select required bind:value={draft.audience.workflowId}
-              ><option value="" disabled>{$t('frameleaf_photography_choose_shoot')}</option
-              >{#each shoots as shoot (shoot.id)}<option value={shoot.id}>{shoot.name}</option>{/each}</select
-            ></label
-          >{/if}
-        <label>{$t('campaign_subject')}<input required maxlength="200" bind:value={draft.subject} /></label>
-        <label
-          >{$t('campaign_message')}<textarea required maxlength="10000" rows="7" bind:value={draft.body}
-          ></textarea></label
-        >
-        <div class="actions">
-          <Button
-            disabled={busy}
-            onclick={() => {
-              draft = undefined;
-            }}>{$t('cancel')}</Button
-          ><Button disabled={busy} onclick={() => run(() => save(false))}>{$t('save')}</Button><Button
-            type="submit"
-            disabled={busy}
-            variant="primary">{$t('preview')}</Button
-          >
-        </div>
-      {/if}
-    </form>
+      </form>
+    </Dialog>
   {:else if data}
     {#if data.items.length === 0}<p>{$t('campaign_empty')}</p>{/if}
     <ul>
@@ -273,21 +311,23 @@
         </li>{/each}
     </ul>
   {/if}
-  {#if results}<div class="mail">
-      <div class="actions">
-        <h3>{$t('campaign_view_results')}</h3>
-        <Button
-          onclick={() => {
-            results = undefined;
-          }}>{$t('close')}</Button
-        >
-      </div>
+  {#if results}
+    <Dialog
+      bind:open={resultsOpen}
+      title={$t('campaign_view_results')}
+      closeLabel={$t('close')}
+      wide
+      onClosed={() => {
+        results = undefined;
+      }}
+    >
       <ul>
         {#each results.items as item (item.email)}<li>
             {item.name} · {item.email} · {$t(`campaign_delivery_${item.status}`)}
           </li>{/each}
       </ul>
-    </div>{/if}
+    </Dialog>
+  {/if}
 </section>
 
 <style>
@@ -326,12 +366,13 @@
     background: var(--fl-surface);
     color: inherit;
   }
-  .mail {
-    padding: 2rem;
+  iframe {
+    width: 100%;
+    min-height: 32rem;
     border: 1px solid var(--fl-border);
     border-radius: 0.75rem;
+    background: white;
   }
-  iframe { width: 100%; min-height: 32rem; border: 1px solid var(--fl-border); border-radius: 0.75rem; background: white; }
   ul {
     display: grid;
     gap: 1rem;

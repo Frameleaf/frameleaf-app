@@ -11,6 +11,7 @@ import MiniSessionEmail from 'src/emails/photography-mini-session.email.js';
 import PrintSaleEmail from 'src/emails/photography-print-sale.email.js';
 import ReviewRequestEmail from 'src/emails/photography-review-request.email.js';
 import { FrameleafWorker, JobName, JobStatus, MailConnectionStatus, QueueName } from 'src/enum.js';
+import { jobSignal } from 'src/queue/context.js';
 import { MailApiError } from 'src/repositories/email.repository.js';
 import { PhotographyCampaignRepository } from 'src/repositories/photography-campaign.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
@@ -183,28 +184,39 @@ export class PhotographyCampaignService extends BaseService {
       for (const due of await this.campaigns.due()) {
         const row = await this.campaigns.get(due.ownerId, due.id);
         while (attempted < 50) {
+          jobSignal()?.throwIfAborted();
           const contact = await this.campaigns.claim(row.id);
           if (!contact) break;
           const message = await this.message(row, contact.unsubscribeToken);
           // The durable claim precedes transport. An interrupted or ambiguous attempt stays visible for review.
           if (!message.delivery.ready) return;
           try {
-            const sent = await this.campaigns.sendIfEligible(row.id, contact.id, () =>
-              this.send(message, contact.email, row.subject),
-            );
+            const sent = await this.campaigns.sendIfEligible(row.id, contact.id, () => {
+              jobSignal()?.throwIfAborted();
+              return this.send(message, contact.email, row.subject);
+            });
             await this.campaigns.finish(row.id, contact.id, sent ? 'sent' : 'unsubscribed');
           } catch (error) {
+            if (jobSignal()?.aborted) throw error;
             const retryAfter = error instanceof MailApiError ? error.retryAfterSeconds : undefined;
             const delay = Number.isFinite(retryAfter) ? Math.ceil(retryAfter!) : 60;
-            await this.campaigns.pause(row.id, Math.max(60, Math.min(86_400, delay)));
-            if (error instanceof MailApiError && error.status && error.status >= 400 && error.status !== 408) {
+            await this.campaigns.pause(row.id, Math.max(60, Math.min(2_147_483_647, delay)));
+            if (error instanceof MailApiError && error.status === 429) {
+              await this.campaigns.finish(row.id, contact.id, 'pending');
+            } else if (
+              error instanceof MailApiError &&
+              error.status &&
+              error.status >= 400 &&
+              error.status < 500 &&
+              error.status !== 408
+            ) {
               await this.campaigns.finish(row.id, contact.id, 'failed');
             }
             this.logger.warn('A campaign delivery needs review');
             return;
           }
           attempted++;
-          await setTimeout(2100);
+          await setTimeout(2100, undefined, { signal: jobSignal() });
         }
         await this.campaigns.complete(row.id);
         if (attempted >= 50) break;
