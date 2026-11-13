@@ -1287,27 +1287,19 @@
                       ? $t('frameleaf_photography_open_raw_editor_count', { values: { count: chosenRaw.length } })
                       : $t('frameleaf_photography_open_raw_editor')}</a
                   >{:else if photos.length > 0}<p class="phw-small">{$t('frameleaf_photography_no_raw_photos')}</p>{/if}
-                <button
-                  type="button"
-                  class="phw-button"
-                  disabled={styleBusy || !photos.length}
-                  onclick={() => applyStyle(active.id)}
-                >
+                <Button disabled={styleBusy || !photos.length} onclick={() => applyStyle(active.id)}>
                   <Icon icon={mdiPaletteOutline} size="1rem" aria-hidden={true} />{$t(
                     'frameleaf_photography_style_apply',
                   )}
-                </button>
+                </Button>
                 {#if styleBatch?.shootId === active.id}
                   <p role="status">
                     {$t('frameleaf_photography_style_queued', { values: { count: styleBatch.result.versions.length } })}
                   </p>
                   {#if styleBatch.result.failed}<p role="alert">{$t('frameleaf_photography_style_failed')}</p>{/if}
                   {#if styleBatch.result.versions.length}
-                    <button
-                      type="button"
-                      class="phw-button"
-                      disabled={styleBusy}
-                      onclick={() => undoStyle(styleBatch!.result.batchId)}>{$t('undo')}</button
+                    <Button disabled={styleBusy} onclick={() => undoStyle(styleBatch!.result.batchId)}
+                      >{$t('undo')}</Button
                     >
                   {/if}
                 {/if}

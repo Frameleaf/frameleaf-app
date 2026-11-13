@@ -62,7 +62,7 @@ export class DevelopStyleRepository {
     const recipe = sql<AssetDevelopRecipe>`(
       SELECT recipe FROM asset_develop_revision
       WHERE "assetId" = ${sql.ref('a.id')} AND "ownerId" = ${ownerId}::uuid
-        AND kind = 'recipe' AND status = 'rendered' AND "styleBatchId" IS NULL
+        AND kind = 'recipe' AND status = 'rendered' AND "styleBatchId" IS NULL AND "recipeVersion" = 1
         AND NOT jsonb_path_exists(recipe, '$.cleanup[*] ? (@.enabled == true)')
         ${since ? sql`AND "createdAt" > ${since}` : sql``}
       ORDER BY revision DESC LIMIT 1

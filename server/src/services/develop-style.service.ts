@@ -11,6 +11,7 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
+import { renderDevelopProjection } from 'src/utils/develop-envelope.js';
 import { defaultDevelopRecipe, normalizeDevelopRecipe } from 'src/utils/develop-recipe.js';
 import {
   extractStyleFeatures,
@@ -99,7 +100,7 @@ export class DevelopStyleService {
     for (const photo of photos) {
       try {
         const features = await this.features(photo, producerModelKey);
-        samples.push({ ...features, sliders: normalizeDevelopRecipe(photo.recipe) });
+        samples.push({ ...features, sliders: renderDevelopProjection(photo.recipe) });
       } catch {
         // A preview may disappear or become Locked between listing and decoding.
       }

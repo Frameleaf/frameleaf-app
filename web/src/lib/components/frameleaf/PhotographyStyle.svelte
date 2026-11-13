@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { forgetDevelopStyle, getDevelopStyle, learnDevelopStyle, type DevelopStyleDto } from '@frameleaf/sdk';
@@ -28,28 +29,21 @@
   <p>{$t('frameleaf_photography_style_lead')}</p>
   {#if style?.learnedEdits != null}
     <p>{$t('frameleaf_photography_style_learned', { values: { count: style.learnedEdits } })}</p>
-    <button
-      type="button"
-      class="phw-button"
+    <Button
       disabled={working}
       onclick={() =>
         run(async () => {
           await forgetDevelopStyle();
           return getDevelopStyle();
-        })}>{$t('frameleaf_photography_style_forget')}</button
+        })}>{$t('frameleaf_photography_style_forget')}</Button
     >
   {:else if style}
     {#if style.availableEdits < 50}
       <p>{$t('frameleaf_photography_style_needed', { values: { count: 50 - style.availableEdits } })}</p>
     {/if}
-    <button
-      type="button"
-      class="phw-primary"
-      disabled={working || style.availableEdits < 50}
-      onclick={() => run(learnDevelopStyle)}
-    >
+    <Button variant="primary" disabled={working || style.availableEdits < 50} onclick={() => run(learnDevelopStyle)}>
       {$t('frameleaf_photography_style_learn')}
-    </button>
+    </Button>
   {/if}
   {#if failed}<p role="alert">{$t('frameleaf_photography_style_failed')}</p>{/if}
 </section>
