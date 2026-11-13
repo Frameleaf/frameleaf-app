@@ -4,14 +4,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
+import type { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import type { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { MlProcessingSource, MlWorkload } from 'src/enum.js';
 import { rateLimitedException } from 'src/middleware/rate-limit.guard.js';
-import type { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { BaseService } from 'src/services/base.service.js';
-import type { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { FaceEmbeddingSchema } from 'src/utils/face-result.js';
-import { firstCandidate } from 'src/utils/ml-processing-order.js';
 import { isFacialRecognitionEnabled } from 'src/utils/misc.js';
+import { firstCandidate } from 'src/utils/ml-processing-order.js';
 
 export const GALLERY_SELFIE_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -96,8 +96,8 @@ export class PhotographySelfieService extends BaseService {
       }
       if (faces.length !== 1) {
         throw new BadRequestException({
-          message: faces.length ? 'Use a selfie with one face' : 'No face was found in the selfie',
-          code: faces.length ? 'selfie_multiple_faces' : 'selfie_no_face',
+          message: faces.length > 0 ? 'Use a selfie with one face' : 'No face was found in the selfie',
+          code: faces.length > 0 ? 'selfie_multiple_faces' : 'selfie_no_face',
         });
       }
       const parsed = FaceEmbeddingSchema.safeParse(faces[0].embedding);

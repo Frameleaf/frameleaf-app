@@ -34,7 +34,6 @@ import {
   PhotographyGalleryPasswordRequiredDto,
   PhotographyGallerySessionDto,
   PhotographyGallerySessionResponseDto,
-  PhotographySelfieSearchDto,
   PhotographyGuestApprovalDto,
   PhotographyInquiryCreateDto,
   PhotographyIntakeDto,
@@ -49,6 +48,7 @@ import {
   PhotographyPublicationDto,
   PhotographyRecipientCreateDto,
   PhotographyRecipientUpdateDto,
+  PhotographySelfieSearchDto,
   PhotographySiteDto,
   PhotographySiteSaveDto,
   PhotographyStudioPresetApplyDto,
@@ -63,8 +63,8 @@ import {
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited, RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
-import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { accessCloses } from 'src/services/photography-reminder.service.js';
 import { GALLERY_SELFIE_MAX_BYTES, PhotographySelfieService } from 'src/services/photography-selfie.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';

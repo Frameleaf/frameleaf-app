@@ -29,15 +29,17 @@ async function setup() {
   const image = await sharp({ create: { width: 8, height: 8, channels: 3, background: 'red' } })
     .png()
     .toBuffer();
-  const workflow = { selfieSource: vi.fn(async () => ({ ownerId, captures: [first, second] })) };
-  const findGalleryFaces = vi.fn(async () => [second.assetId, first.assetId]);
-  const rate = { hit: vi.fn(async (_key: string, _seconds: number) => ({ count: 1, resetSeconds: 3600 })) };
-  const detectFaces = vi.fn(async (_selection, _path: string) => ({ faces: [{ embedding }] }));
-  const resolveRoute = vi.fn(async () => [{ source: 'local', destinationId: 'local', available: true }]);
+  const workflow = { selfieSource: vi.fn().mockResolvedValue({ ownerId, captures: [first, second] }) };
+  const findGalleryFaces = vi.fn().mockResolvedValue([second.assetId, first.assetId]);
+  const rate = { hit: vi.fn().mockResolvedValue({ count: 1, resetSeconds: 3600 }) };
+  const detectFaces = vi
+    .fn<(_selection: unknown, path: string) => Promise<{ faces: { embedding: string }[] }>>()
+    .mockResolvedValue({ faces: [{ embedding }] });
+  const resolveRoute = vi.fn().mockResolvedValue([{ source: 'local', destinationId: 'local', available: true }]);
   const service = Object.assign(Object.create(PhotographySelfieService.prototype) as PhotographySelfieService, {
-    keepsPhotosHome: vi.fn(async () => false),
+    keepsPhotosHome: vi.fn().mockResolvedValue(false),
     mlDestinationRepository: { resolveRoute },
-    selectMlDestination: vi.fn(async () => ({ endpoint: {} })),
+    selectMlDestination: vi.fn().mockResolvedValue({ endpoint: {} }),
     searchRepository: { findGalleryFaces },
     machineLearningRepository: { detectFaces },
   });
