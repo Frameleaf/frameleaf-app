@@ -35,17 +35,12 @@ describe('XMP develop imports', () => {
     expect(recipe).toMatchObject(expected);
     expect(() => renderDevelopProjection(developEnvelope(recipe))).not.toThrow();
   });
-  it.each([
-    ['darktable-exposure', { exposure: 1.5 }],
-    ['darktable-temperature', { temperature: 16.6015, tint: 32.2942 }],
-    ['darktable-crop', { crop: { x: 0.1, y: 0.2, w: 0.8, h: 0.6 } }],
-    [
-      'darktable-colorbalancergb',
-      { shadows: 20, highlights: -10, saturation: 10, brilliance: 15, vibrance: 20, contrast: 30 },
-    ],
-  ])('maps pinned %s binary fields', (name, expected) => {
-    expect(importDarktable(fixture(name as string))).toMatchObject(expected);
-  });
+  it.each(['darktable-exposure', 'darktable-temperature', 'darktable-crop', 'darktable-colorbalancergb'])(
+    'refuses incomplete %s histories instead of approximating their pixels',
+    (name) => {
+      expect(() => importDarktable(fixture(name))).toThrow();
+    },
+  );
   it('preserves unsupported settings through a later edit', () => {
     const recipe = developEnvelope(importLightroom(fixture('lightroom-opaque')));
     const edited = preserveDevelopEnvelope(recipe, { version: 1, exposure: 0.5 });

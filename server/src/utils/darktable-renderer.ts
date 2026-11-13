@@ -1,7 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { execFile as execFileCallback } from 'node:child_process';
 import { constants } from 'node:fs';
-import { chmod, copyFile, mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { endianness } from 'node:os';
 import { basename, dirname, extname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -17,6 +17,11 @@ import {
 import { trackQueueChild } from 'src/queue/child-process.js';
 import { NATIVE_RAW_ORDER, nativeBlendParams, nativeModuleParams } from 'src/utils/darktable-controls.js';
 import { type DevelopBitmap } from 'src/utils/develop-cleanup.js';
+import {
+  type NativeHistory,
+  nativeHistoryXmp,
+  validateNativeHistory,
+} from 'src/utils/develop-import/native-history.js';
 import { maskWeight, originalMaskWeight } from 'src/utils/develop-recipe.js';
 import { makeWorkDirFor } from 'src/utils/locked-read.js';
 
@@ -31,6 +36,11 @@ export const DARKTABLE_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 1024 ** 3;
 // ponytail: one native render per worker process; use shared admission if the deployment needs a global ceiling.
 let nativeRenderActive = false;
+export class NativeDevelopBusy extends ServiceUnavailableException {
+  constructor() {
+    super('Native development is busy; try again shortly');
+  }
+}
 
 // Darktable disk exports interpret filenames as patterns, including backslash escapes and $(variables).
 const literalExportPath = (path: string) => path.replaceAll(/[\\$]/g, String.raw`\$&`);
@@ -354,10 +364,22 @@ export async function renderDarktable(
   signal?: AbortSignal,
   bitmaps: ReadonlyMap<string, DevelopBitmap> = new Map(),
 ): Promise<Buffer> {
-  const recipe = DarktableDevelopRecipeSchema.parse(value); // Reject unknown controls before touching a file/process.
+  return renderNative(input, { recipe: DarktableDevelopRecipeSchema.parse(value) }, signal, bitmaps);
+}
+
+export async function renderDarktableHistory(input: string, history: unknown, signal?: AbortSignal): Promise<Buffer> {
+  return renderNative(input, { history: validateNativeHistory(history) }, signal);
+}
+
+async function renderNative(
+  input: string,
+  value: { recipe: DarktableDevelopRecipe } | { history: NativeHistory },
+  signal?: AbortSignal,
+  bitmaps: ReadonlyMap<string, DevelopBitmap> = new Map(),
+): Promise<Buffer> {
   signal?.throwIfAborted();
   if (nativeRenderActive) {
-    throw new ServiceUnavailableException('Native development is busy; try again shortly');
+    throw new NativeDevelopBusy();
   }
   nativeRenderActive = true;
   let directory: string | undefined;
@@ -406,30 +428,40 @@ export async function renderDarktable(
       '--conf',
       'plugins/imageio/format/png/bpp=16',
     ];
-    // Native-size initialization avoids a tiny bounding box truncating the shorter image edge to zero.
-    const bootstrap = join(directory, 'bootstrap.png');
-    await runDarktable([source, literalExportPath(bootstrap), ...common], abort);
-    abort.throwIfAborted();
-    if ((await stat(bootstrap)).size > MAX_OUTPUT_BYTES) {
-      throw new Error('Invalid native bootstrap output size');
-    }
-    await rm(bootstrap); // Only the native history is needed; do not retain two full-resolution PNGs.
-    const masks = await writeNativeMasks(library, directory, recipe, bitmaps, abort);
-    const { rotatedMasks } = prepareNativeHistory(library, recipe, masks);
-    const rendered = await runDarktable([source, literalExportPath(output), ...common], abort);
-    if (
-      recipe.lensCorrection &&
-      !recipe.sensorCanvas &&
-      !/^[1-7]$/.test(
-        (rendered.stdout + rendered.stderr)
-          .matchAll(/frameleaf-lens-calibration:(\d+)\b/g)
-          .toArray()
-          .at(-1)?.[1] ?? '',
+    if ('history' in value) {
+      const sidecar = join(directory, 'history.xmp');
+      await writeFile(sidecar, nativeHistoryXmp(value.history), { mode: 0o600, flag: 'wx' });
+      await runDarktable([source, sidecar, literalExportPath(output), ...common], abort);
+    } else {
+      const recipe = value.recipe;
+      // Native-size initialization avoids a tiny bounding box truncating the shorter image edge to zero.
+      const bootstrap = join(directory, 'bootstrap.png');
+      await runDarktable([source, literalExportPath(bootstrap), ...common], abort);
+      abort.throwIfAborted();
+      if ((await stat(bootstrap)).size > MAX_OUTPUT_BYTES) {
+        throw new Error('Invalid native bootstrap output size');
+      }
+      await rm(bootstrap); // Only the native history is needed; do not retain two full-resolution PNGs.
+      const masks = await writeNativeMasks(library, directory, recipe, bitmaps, abort);
+      const { rotatedMasks } = prepareNativeHistory(library, recipe, masks);
+      const rendered = await runDarktable([source, literalExportPath(output), ...common], abort);
+      if (
+        recipe.lensCorrection &&
+        !recipe.sensorCanvas &&
+        !/^[1-7]$/.test(
+          (rendered.stdout + rendered.stderr)
+            .matchAll(/frameleaf-lens-calibration:(\d+)\b/g)
+            .toArray()
+            .at(-1)?.[1] ?? '',
+        )
       )
-    )
-      throw new Error('Native lens calibration unavailable; install the qualified engine or disable lens correction');
-    if (rotatedMasks && !(rendered.stdout + rendered.stderr).includes('frameleaf-native-mask-geometry:rotatepixels:1'))
-      throw new Error('Native tilted-sensor mask support unavailable; install the qualified engine');
+        throw new Error('Native lens calibration unavailable; install the qualified engine or disable lens correction');
+      if (
+        rotatedMasks &&
+        !(rendered.stdout + rendered.stderr).includes('frameleaf-native-mask-geometry:rotatepixels:1')
+      )
+        throw new Error('Native tilted-sensor mask support unavailable; install the qualified engine');
+    }
     abort.throwIfAborted();
     const file = await stat(output);
     if (!file.isFile() || file.size === 0 || file.size > MAX_OUTPUT_BYTES) {

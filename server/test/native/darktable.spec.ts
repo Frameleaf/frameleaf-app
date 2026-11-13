@@ -2,7 +2,36 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import sharp from 'sharp';
-import { encodeNativeDevelopOutput, renderDarktable } from 'src/utils/darktable-renderer.js';
+import { encodeNativeDevelopOutput, renderDarktable, renderDarktableHistory } from 'src/utils/darktable-renderer.js';
+import { readNativeHistory } from 'src/utils/develop-import/native-history.js';
+import { readDevelopXmp } from 'src/utils/develop-import/xmp.js';
+import { nativeMeanDeltaE76 } from 'test/native/deltae.js';
+
+it.each([
+  ['canon', 'Canon/EOS_70D.CR2', '2928f74fac36110319d2fc4f6849ff6181f6c401ff162dc8a8dea782d4cc3fcf'],
+  ['nikon', 'Nikon/D80/glarus.nef', 'fe9f0880136d438b881ee5f44b88d84402091c24b12431160298c0353c311f4b'],
+])(
+  'replays genuine %s XMP within mean CIE76 DeltaE <6 of its independent native reference',
+  async (camera, file, referenceHash) => {
+    const original = resolve(`../e2e/test-assets/formats/raw/${file}`);
+    const before = createHash('sha256')
+      .update(await readFile(original))
+      .digest('hex');
+    const fixture = resolve(`test/fixtures/develop-import/darktable-native-${camera}.xmp`);
+    const reference = await readFile(resolve(`test/fixtures/develop-import/${camera}-native-reference.jpg`));
+    expect(createHash('sha256').update(reference).digest('hex')).toBe(referenceHash);
+    const output = await renderDarktableHistory(original, readNativeHistory(readDevelopXmp(await readFile(fixture))));
+    expect((await sharp(output).metadata()).bitsPerSample).toBe(16);
+    const rendered = await encodeNativeDevelopOutput(output, { format: 'jpeg', quality: 100, size: 1536 });
+    const { mean } = await nativeMeanDeltaE76(reference, rendered!);
+    expect(mean).toBeLessThan(6);
+    expect(
+      createHash('sha256')
+        .update(await readFile(original))
+        .digest('hex'),
+    ).toBe(before);
+  },
+);
 
 it('develops an actual RAW through pinned darktable, changes EV, and preserves the original', async () => {
   const original = resolve('../e2e/test-assets/formats/raw/Canon/EOS_70D.CR2');

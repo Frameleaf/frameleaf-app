@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
 import { stat, writeFile } from 'node:fs/promises';
 import type { Mock } from 'vitest';
 import {
@@ -21,9 +22,13 @@ import {
 } from 'src/services/asset-develop.service.js';
 import {
   DARKTABLE_RENDERER_VERSION,
+  NativeDevelopBusy,
   encodeNativeDevelopOutput,
   renderDarktable,
+  renderDarktableHistory,
 } from 'src/utils/darktable-renderer.js';
+import { importDarktable } from 'src/utils/develop-import/darktable.js';
+import { readDevelopXmp } from 'src/utils/develop-import/xmp.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -34,6 +39,7 @@ import { ServiceMocks, getMocks } from 'test/utils.js';
 vi.mock('src/utils/darktable-renderer.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/darktable-renderer.js')>()),
   renderDarktable: vi.fn(),
+  renderDarktableHistory: vi.fn(),
   encodeNativeDevelopOutput: vi.fn().mockResolvedValue(Buffer.from('jpeg')),
 }));
 
@@ -50,6 +56,8 @@ const noAdjustments = {
   saturation: 0,
   dehaze: 0,
 };
+const nativeImport = () =>
+  importDarktable(readDevelopXmp(readFileSync('test/fixtures/develop-import/darktable-native-canon.xmp')))!;
 
 const revisionStub = (overrides: Partial<AssetDevelopRevision> = {}): AssetDevelopRevision => ({
   id: 'a7c3d0aa-8a9f-4a3a-9a80-1f1a2b3c4d5e',
@@ -140,6 +148,7 @@ describe(AssetDevelopService.name, () => {
           attempts: (row?.attempts ?? 0) + 1,
         })),
       ),
+      deferAttempt: vi.fn().mockResolvedValue(true),
     };
     photoTools = {
       listPresets: vi.fn(),
@@ -1168,6 +1177,100 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('handleRender', () => {
+    it.each([true, false])(
+      'requeues untracked native contention only if this attempt was returned (%s)',
+      async (returned) => {
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalFileName: 'image.CR2',
+        });
+        const revision = revisionStub({
+          assetId: asset.id,
+          recipe: nativeImport(),
+          status: AssetDevelopRevisionStatus.Queued,
+        });
+        developRepository.get.mockResolvedValue(revision);
+        developRepository.deferAttempt.mockResolvedValue(returned);
+        vi.mocked(renderDarktableHistory).mockRejectedValue(new NativeDevelopBusy());
+        await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Skipped);
+        if (returned)
+          expect(mocks.job.queue).toHaveBeenCalledWith({
+            name: JobName.AssetDevelopRender,
+            data: { id: revision.id, delay: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS },
+          });
+        else expect(mocks.job.queue).not.toHaveBeenCalled();
+        expect(developRepository.update).not.toHaveBeenCalled();
+      },
+    );
+    it('uses native 16-bit pixels for a neutral imported job and preview, keeping the original current', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        originalFileName: 'image.CR2',
+      });
+      const revision = revisionStub({
+        assetId: asset.id,
+        recipe: nativeImport(),
+        software: 'darktable',
+        status: AssetDevelopRevisionStatus.Queued,
+      });
+      developRepository.get.mockResolvedValue(revision);
+      vi.mocked(renderDarktableHistory).mockResolvedValue(Buffer.from('native-imported-png'));
+      await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Success);
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: revision.recipe, size: 256 }),
+      ).resolves.toMatchObject({ buffer: Buffer.from('jpeg') });
+      expect(encodeNativeDevelopOutput).toHaveBeenCalledTimes(3);
+      expect(
+        vi.mocked(encodeNativeDevelopOutput).mock.calls.every((call) => call[0].toString() === 'native-imported-png'),
+      ).toBe(true);
+      expect(developRepository.beginAttempt).toHaveBeenCalledWith(
+        revision.id,
+        expect.stringContaining('native-history/1'),
+        DEVELOP_RENDER_LEASE_MS / 1000,
+      );
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    });
+    it('applies a later quick exposure to decoded native pixels in both preview and a saved job', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        originalFileName: 'image.CR2',
+      });
+      const recipe = { ...nativeImport(), exposure: 1 };
+      const revision = revisionStub({
+        assetId: asset.id,
+        recipe,
+        software: 'darktable',
+        status: AssetDevelopRevisionStatus.Queued,
+      });
+      developRepository.get.mockResolvedValue(revision);
+      vi.mocked(renderDarktableHistory).mockResolvedValue(Buffer.from('native-baseline'));
+      await sut.preview(authStub.user1, asset.id, { recipe, size: 256 });
+      await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.media.decodeImage).toHaveBeenCalledTimes(2);
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(
+        Buffer.from('native-baseline'),
+        expect.objectContaining({ colorspace: 'srgb', ladder: 'pixels' }),
+      );
+      expect(encodeNativeDevelopOutput).not.toHaveBeenCalled();
+      const pixels = mocks.media.encodeDevelopOutput.mock.calls[0][0];
+      expect(pixels[0]).toBeGreaterThan(128);
+    });
+    it.each([
+      { keyFrame: { timeMs: 1 } },
+      {
+        cleanup: [
+          { id: 'clean', method: 'remove', enabled: true, region: { x: 0, y: 0, w: 1, h: 1 }, fill: 'a'.repeat(64) },
+        ],
+      },
+      { masks: [{ id: 'subject', kind: 'subject', enabled: true, artifact: 'a'.repeat(64), adjustments: {} }] },
+    ])('refuses incompatible source-bound native overlays before processing: %j', async (change) => {
+      await expect(
+        sut.preview(authStub.user1, asset.id, { recipe: { ...nativeImport(), ...change }, size: 256 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(renderDarktableHistory).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    });
     it.each(['Lightroom', 'darktable', null])(
       'preserves the current version only for automatic %s imports',
       async (software) => {
@@ -1707,6 +1810,53 @@ describe(AssetDevelopService.name, () => {
       mocks.mediaOperation.complete.mockResolvedValue(true);
       mocks.mediaOperation.heartbeat.mockResolvedValue(true);
       mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: 'token-1' } as never);
+    });
+    it('returns native v2 admission contention after progress without using its failure retry', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        originalFileName: 'image.CR2',
+      });
+      const revision = revisionStub({
+        assetId: asset.id,
+        recipe: { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 },
+        status: AssetDevelopRevisionStatus.Queued,
+      });
+      developRepository.get.mockResolvedValue(revision);
+      vi.mocked(renderDarktable).mockRejectedValue(new NativeDevelopBusy());
+      mocks.mediaOperation.requeue.mockResolvedValue(true);
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+      expect(developRepository.update).toHaveBeenCalledWith(revision.id, { progress: 10 });
+      expect(developRepository.deferAttempt).toHaveBeenCalledWith(expect.objectContaining({ attempts: 1 }));
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+    });
+
+    it('defers a native import contending with another render without consuming its retry or publishing', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        originalFileName: 'image.CR2',
+      });
+      const revision = revisionStub({
+        assetId: asset.id,
+        recipe: nativeImport(),
+        software: 'darktable',
+        status: AssetDevelopRevisionStatus.Queued,
+        attempts: 1,
+      });
+      developRepository.get.mockResolvedValue(revision);
+      vi.mocked(renderDarktableHistory).mockRejectedValue(new NativeDevelopBusy());
+      mocks.mediaOperation.requeue.mockResolvedValue(true);
+      await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.mediaOperation.requeue).toHaveBeenCalledWith(
+        'op-1',
+        'token-1',
+        expect.objectContaining({ returnAttempt: true }),
+      );
+      expect(mocks.mediaOperation.fail).not.toHaveBeenCalled();
+      expect(developRepository.deferAttempt).toHaveBeenCalledWith(
+        expect.objectContaining({ id: revision.id, attempts: 2 }),
+      );
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
     });
 
     it('records a queued render as a photo version job for the photo, and queues it with the job', async () => {
