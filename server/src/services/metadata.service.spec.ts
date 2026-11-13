@@ -6,7 +6,6 @@ import { copyFile, mkdir, mkdtemp, open as fsOpen, readFile, rm, stat as fsStat,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LockableProperty } from 'src/database.js';
-import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import type { QueueExecution } from 'src/queue/types.js';
 import { LANDMARK_ICON_PACK } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -29,6 +28,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ImmichTags, MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { MetadataService, firstDateTime } from 'src/services/metadata.service.js';
+import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonGroupFactory } from 'test/factories/person-group.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';

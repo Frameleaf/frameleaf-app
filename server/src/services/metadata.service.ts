@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ContainerDirectoryItem, ExifDateTime, Tags } from 'exiftool-vendored';
+import { ContainerDirectoryItem, ExifDateTime } from 'exiftool-vendored';
 import { Insertable, Kysely } from 'kysely';
 import { isUndefined, omitBy, pick } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
@@ -44,7 +44,7 @@ import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
-import { captureDetails, PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
+import { PHOTOGRAPHY_INTAKE_CREDITS_KEY, captureDetails } from 'src/utils/capture-details.js';
 import { dateFromFileName, namedDate } from 'src/utils/date-doctor.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { isFireworksPng } from 'src/utils/design-preview.js';
@@ -575,8 +575,8 @@ export class MetadataService extends BaseService {
       ...captureDetails(exifTags as Record<string, unknown>),
     };
     const { artist: defaultArtist, copyright: defaultCopyright } = creditDefaults?.value ?? {};
-    if (exifData.artist == null && typeof defaultArtist === 'string') exifData.artist = defaultArtist;
-    if (exifData.copyright == null && typeof defaultCopyright === 'string') exifData.copyright = defaultCopyright;
+    if (exifData.artist === null && typeof defaultArtist === 'string') exifData.artist = defaultArtist;
+    if (exifData.copyright === null && typeof defaultCopyright === 'string') exifData.copyright = defaultCopyright;
     // FL-1284: slow motion, panorama, burst, portrait … as the file's own metadata records them
     exifData.mediaKinds = detectMediaKinds(exifTags as Record<string, unknown>, {
       type: asset.type,

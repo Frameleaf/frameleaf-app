@@ -2,7 +2,6 @@ import { DateTime } from 'luxon';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
-import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { BulkIdsSchema } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
 import {
@@ -13,6 +12,7 @@ import {
   LibraryViewScopeSchema,
 } from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
+import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
 const UpdateAssetBaseSchema = z
