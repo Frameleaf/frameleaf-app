@@ -585,6 +585,8 @@ describe(IntegrityService.name, () => {
   describe('handleUntrackedFiles', () => {
     it('should detect untracked asset files', async () => {
       const { sut, ctx } = setup();
+      // FL-1532: nothing sorts the files here; every untracked path stays a finding
+      ctx.getMock(EventRepository).emit.mockResolvedValue(void 0);
 
       const {
         result: { id: ownerId },
@@ -617,6 +619,8 @@ describe(IntegrityService.name, () => {
 
     it('should not report sidecar asset_file paths from the asset-folder walk as untracked', async () => {
       const { sut, ctx } = setup();
+      // FL-1532: nothing sorts the files here; every untracked path stays a finding
+      ctx.getMock(EventRepository).emit.mockResolvedValue(void 0);
 
       const {
         result: { id: ownerId },
@@ -649,6 +653,8 @@ describe(IntegrityService.name, () => {
 
     it('should not report video moment frames as untracked', async () => {
       const { sut, ctx } = setup();
+      // FL-1532: nothing sorts the files here; every untracked path stays a finding
+      ctx.getMock(EventRepository).emit.mockResolvedValue(void 0);
 
       const {
         result: { id: ownerId },
@@ -679,6 +685,8 @@ describe(IntegrityService.name, () => {
 
     it('should not report a file only the shared reference count knows about', async () => {
       const { sut, ctx } = setup();
+      // FL-1532: nothing sorts the files here; every untracked path stays a finding
+      ctx.getMock(EventRepository).emit.mockResolvedValue(void 0);
 
       const {
         result: { id: ownerId },
@@ -698,6 +706,8 @@ describe(IntegrityService.name, () => {
 
     it('should not report either end or the staged copy of an interrupted move', async () => {
       const { sut, ctx } = setup();
+      // FL-1532: nothing sorts the files here; every untracked path stays a finding
+      ctx.getMock(EventRepository).emit.mockResolvedValue(void 0);
 
       const [{ id }] = await ctx.database
         .insertInto('move_history')
@@ -735,6 +745,8 @@ describe(IntegrityService.name, () => {
 
     it('should detect untracked asset_file files', async () => {
       const { sut, ctx } = setup();
+      // FL-1532: nothing sorts the files here; every untracked path stays a finding
+      ctx.getMock(EventRepository).emit.mockResolvedValue(void 0);
 
       const {
         result: { id: ownerId },
