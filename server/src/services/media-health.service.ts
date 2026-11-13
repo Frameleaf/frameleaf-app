@@ -183,6 +183,14 @@ const MANAGED_LOOKUP_MAX_BYTES = 10 * 1024 ** 3;
 const RECOVERY_FOLDER = LIBRARY_CARE_FOLDER;
 /** A repair as the reviewer sees it: whether every detail the original carried is in the result. */
 type RepairOutcome = Omit<JpegRepairResult, 'metadataLost'> & { metadataKept: boolean };
+/** What became of an untracked media file once its contents were read (FL-1532). */
+export type UntrackedPlacement =
+  | { outcome: 'back'; assetId: string; previousPath: string }
+  | { outcome: 'spare'; assetId?: string }
+  | { outcome: 'added'; assetId: string }
+  | { outcome: 'no-owner' }
+  | { outcome: 'over-limit' };
+
 /** The cron that starts every account's scheduled incremental health scan (Library care settings). */
 export const LIBRARY_CARE_HEALTH_SCAN_CRON = 'libraryCareHealthScan';
 
@@ -4899,85 +4907,114 @@ export class MediaHealthService {
           this.logger.debug(`Skipping recovered file ${candidatePath}: it changed while it was read`);
           continue;
         }
-        const checksumAssets = await this.assetRepository.getByChecksums(userId, [digests.sha1, digests.sha256]);
-        // The owner's own photo whose original went missing (an interrupted storage move, typically):
-        // this file is that original, so it goes back under the photo instead of being skipped.
-        if (await this.restoreLostOriginalFrom(candidatePath, checksumAssets, digests)) {
-          continue;
-        }
-        const duplicate =
-          checksumAssets.length > 0 ||
-          (await this.forkSchemaRepository.hasAssetChecksum(userId, digests.sha1, digests.sha256));
-        if (duplicate) {
-          continue;
-        }
-        if (
-          user.quotaSizeInBytes !== null &&
-          user.quotaUsageInBytes + importedBytes + digests.sizeInBytes > user.quotaSizeInBytes
-        ) {
-          this.logger.warn(`Skipping recovered file because user ${userId} has exceeded their quota`);
-          continue;
-        }
-
-        let asset: Awaited<ReturnType<AssetRepository['create']>> | undefined;
-        try {
-          asset = await this.assetRepository.create(
-            {
-              ownerId: userId,
-              libraryId: null,
-              checksum: digests.sha256,
-              checksumAlgorithm: ChecksumAlgorithm.sha256File,
-              originalPath: path.normalize(candidatePath),
-              fileCreatedAt: settled.mtime,
-              fileModifiedAt: settled.mtime,
-              localDateTime: settled.mtime,
-              type: mimeTypes.assetType(candidatePath),
-              isFavorite: false,
-              duration: null,
-              visibility: AssetVisibility.Timeline,
-              livePhotoVideoId: null,
-              originalFileName: path.basename(candidatePath),
-            },
-            undefined,
-            undefined,
-            'recovered',
-          );
-          await this.assetRepository.upsertExif({
-            exif: { assetId: asset.id, fileSizeInByte: digests.sizeInBytes },
-            lockedPropertiesBehavior: 'override',
-          });
-          await this.physicalFileRepository.ensureOriginalPhysicalFile(asset.id);
-          await this.forkSchemaRepository.recordAssetChecksums({
-            assetId: asset.id,
-            ...digests,
-            path: candidatePath,
-            source: 'recovery',
-          });
-          await this.jobRepository.queue({
-            name: JobName.AssetExtractMetadata,
-            data: { id: asset.id, source: 'upload' },
-          });
-          await this.eventRepository.emit('AssetCreate', {
-            asset,
-            file: {
-              uuid: asset.id,
-              checksum: digests.sha256,
-              legacyChecksum: digests.sha1,
-              originalPath: candidatePath,
-              originalName: path.basename(candidatePath),
-              size: digests.sizeInBytes,
-            },
-          });
+        const placed = await this.placeUntrackedFile(user, candidatePath, settled.mtime, digests, importedBytes);
+        if (placed.outcome === 'added') {
           importedBytes += digests.sizeInBytes;
-        } catch (error) {
-          if (asset) {
-            await this.assetRepository.remove({ id: asset.id });
-          }
-          if (!isAssetChecksumConstraint(error)) {
-            throw error;
-          }
+        } else if (placed.outcome === 'over-limit') {
+          this.logger.warn(`Skipping recovered file because user ${userId} has exceeded their quota`);
         }
       }
+    }
+  }
+
+  /**
+   * What an untracked media file is, once its contents have been read (FL-1532): the original of a photo
+   * that went missing (it goes back under that photo), a copy of a photo the library already has (left where
+   * it is), or a photo no library has (added to `owner`'s). A file in a folder no account owns is never
+   * added: without a match it is `no-owner`. `importedBytes` is what this pass already added for `owner`.
+   */
+  async placeUntrackedFile(
+    owner: { id: string; quotaSizeInBytes: number | null; quotaUsageInBytes: number } | null,
+    candidatePath: string,
+    mtime: Date,
+    digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>,
+    importedBytes = 0,
+  ): Promise<UntrackedPlacement> {
+    const checksums = [digests.sha1, digests.sha256];
+    const matches = owner
+      ? await this.assetRepository.getByChecksums(owner.id, checksums)
+      : await this.assetRepository.getByChecksumsForAnyOwner(checksums);
+    // The photo whose original went missing (an interrupted storage move, typically): this file is that
+    // original, so it goes back under the photo instead of being skipped.
+    const back = await this.restoreLostOriginalFrom(candidatePath, matches, digests);
+    if (back) {
+      return { outcome: 'back', assetId: back.id, previousPath: back.originalPath };
+    }
+    if (matches.length > 0) {
+      return { outcome: 'spare', assetId: matches[0].id };
+    }
+    if (!owner) {
+      return { outcome: 'no-owner' };
+    }
+    if (await this.forkSchemaRepository.hasAssetChecksum(owner.id, digests.sha1, digests.sha256)) {
+      return { outcome: 'spare' };
+    }
+    if (
+      owner.quotaSizeInBytes !== null &&
+      owner.quotaUsageInBytes + importedBytes + digests.sizeInBytes > owner.quotaSizeInBytes
+    ) {
+      return { outcome: 'over-limit' };
+    }
+
+    let asset: Awaited<ReturnType<AssetRepository['create']>> | undefined;
+    try {
+      asset = await this.assetRepository.create(
+        {
+          ownerId: owner.id,
+          libraryId: null,
+          checksum: digests.sha256,
+          checksumAlgorithm: ChecksumAlgorithm.sha256File,
+          originalPath: path.normalize(candidatePath),
+          fileCreatedAt: mtime,
+          fileModifiedAt: mtime,
+          localDateTime: mtime,
+          type: mimeTypes.assetType(candidatePath),
+          isFavorite: false,
+          duration: null,
+          visibility: AssetVisibility.Timeline,
+          livePhotoVideoId: null,
+          originalFileName: path.basename(candidatePath),
+        },
+        undefined,
+        undefined,
+        'recovered',
+      );
+      await this.assetRepository.upsertExif({
+        exif: { assetId: asset.id, fileSizeInByte: digests.sizeInBytes },
+        lockedPropertiesBehavior: 'override',
+      });
+      await this.physicalFileRepository.ensureOriginalPhysicalFile(asset.id);
+      await this.forkSchemaRepository.recordAssetChecksums({
+        assetId: asset.id,
+        ...digests,
+        path: candidatePath,
+        source: 'recovery',
+      });
+      await this.jobRepository.queue({
+        name: JobName.AssetExtractMetadata,
+        data: { id: asset.id, source: 'upload' },
+      });
+      await this.eventRepository.emit('AssetCreate', {
+        asset,
+        file: {
+          uuid: asset.id,
+          checksum: digests.sha256,
+          legacyChecksum: digests.sha1,
+          originalPath: candidatePath,
+          originalName: path.basename(candidatePath),
+          size: digests.sizeInBytes,
+        },
+      });
+      return { outcome: 'added', assetId: asset.id };
+    } catch (error) {
+      if (asset) {
+        await this.assetRepository.remove({ id: asset.id });
+      }
+      if (!isAssetChecksumConstraint(error)) {
+        throw error;
+      }
+      // another upload of the same photo won the race: the library has it now
+      return { outcome: 'spare' };
     }
   }
 
@@ -4987,9 +5024,7 @@ export class MediaHealthService {
    * modification time. Null for anything else: a file still being written, a non-file, or one that is
    * gone already.
    */
-  private async settledUntrackedFile(
-    candidatePath: string,
-  ): Promise<{ key: string; size: number; mtime: Date } | null> {
+  async settledUntrackedFile(candidatePath: string): Promise<{ key: string; size: number; mtime: Date } | null> {
     let stat: Awaited<ReturnType<StorageRepository['stat']>>;
     try {
       stat = await this.storageRepository.stat(candidatePath);
@@ -5012,12 +5047,12 @@ export class MediaHealthService {
     candidatePath: string,
     matches: Awaited<ReturnType<AssetRepository['getByChecksums']>>,
     digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>,
-  ): Promise<boolean> {
+  ): Promise<{ id: string; originalPath: string } | undefined> {
     const present = await Promise.all(
       matches.map(({ originalPath }) => this.storageRepository.checkFileExists(originalPath)),
     );
     if (matches.length === 0 || present.some(Boolean)) {
-      return false;
+      return;
     }
     for (const asset of matches) {
       if (asset.deletedAt || asset.libraryId || asset.isExternal) {
@@ -5032,10 +5067,9 @@ export class MediaHealthService {
       });
       if (restored) {
         await this.queueRelinkJobs(asset.id);
-        return true;
+        return { id: asset.id, originalPath: asset.originalPath };
       }
     }
-    return false;
   }
 
   private async validateReadableAssetIntegrity(

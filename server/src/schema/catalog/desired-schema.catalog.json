@@ -929,489 +929,6 @@
       "synchronize": true
     },
     {
-      "name": "asset_develop_revision",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "attempts",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "cancelRequested",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "error",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "exportId",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "fileName",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "height",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "gen_random_uuid()",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isCurrent",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "kind",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "'recipe'::text",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "label",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "masterPath",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "previewPath",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "progress",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "recipe",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "recipeVersion",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "1",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "renderedAt",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "rendererVersion",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "renditionChecksum",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "revision",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "software",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "sourceChecksum",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "status",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "'saved'::text",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "styleBatchId",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "width",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "hdrMasterPath",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "hdrPreviewPath",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "hdrRenditionChecksum",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "sourceAssetId",
-          "tableName": "asset_develop_revision",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "batchChargedBytes",
-          "tableName": "asset_develop_revision",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_develop_revision_asset_idx",
-          "definition": "CREATE INDEX asset_develop_revision_asset_idx ON public.asset_develop_revision USING btree (\"assetId\", revision DESC)",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "assetId",
-            "revision"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_develop_revision_owner_idx",
-          "definition": "CREATE INDEX asset_develop_revision_owner_idx ON public.asset_develop_revision USING btree (\"ownerId\")",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_develop_revision_style_batch_idx",
-          "definition": "CREATE UNIQUE INDEX asset_develop_revision_style_batch_idx ON public.asset_develop_revision USING btree (\"ownerId\", \"styleBatchId\", \"assetId\") WHERE (\"styleBatchId\" IS NOT NULL)",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "ownerId",
-            "styleBatchId",
-            "assetId"
-          ],
-          "using": "btree",
-          "where": "(\"styleBatchId\" IS NOT NULL)",
-          "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "asset_develop_revision_current_idx",
-          "definition": "CREATE UNIQUE INDEX asset_develop_revision_current_idx ON public.asset_develop_revision USING btree (\"assetId\") WHERE \"isCurrent\"",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "where": "\"isCurrent\"",
-          "unique": true,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "asset_develop_revision_attempts_check",
-          "definition": "CHECK ((attempts >= 0))",
-          "tableName": "asset_develop_revision",
-          "expression": "((attempts >= 0))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_fileName_check",
-          "definition": "CHECK (((\"fileName\" IS NULL) OR ((length(\"fileName\") >= 1) AND (length(\"fileName\") <= 255))))",
-          "tableName": "asset_develop_revision",
-          "expression": "(((\"fileName\" IS NULL) OR ((length(\"fileName\") >= 1) AND (length(\"fileName\") <= 255))))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_hdr_set_check",
-          "definition": "CHECK ((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
-          "tableName": "asset_develop_revision",
-          "expression": "((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_kind_check",
-          "definition": "CHECK ((kind = ANY (ARRAY['recipe'::text, 'external'::text])))",
-          "tableName": "asset_develop_revision",
-          "expression": "((kind = ANY (ARRAY['recipe'::text, 'external'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_label_check",
-          "definition": "CHECK (((label IS NULL) OR ((length(label) >= 1) AND (length(label) <= 120))))",
-          "tableName": "asset_develop_revision",
-          "expression": "(((label IS NULL) OR ((length(label) >= 1) AND (length(label) <= 120))))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_progress_check",
-          "definition": "CHECK (((progress >= 0) AND (progress <= 100)))",
-          "tableName": "asset_develop_revision",
-          "expression": "(((progress >= 0) AND (progress <= 100)))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_recipe_check",
-          "definition": "CHECK ((jsonb_typeof(recipe) = 'object'::text))",
-          "tableName": "asset_develop_revision",
-          "expression": "((jsonb_typeof(recipe) = 'object'::text))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_revision_check",
-          "definition": "CHECK ((revision >= 1))",
-          "tableName": "asset_develop_revision",
-          "expression": "((revision >= 1))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_software_check",
-          "definition": "CHECK (((software IS NULL) OR ((length(software) >= 1) AND (length(software) <= 120))))",
-          "tableName": "asset_develop_revision",
-          "expression": "(((software IS NULL) OR ((length(software) >= 1) AND (length(software) <= 120))))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_develop_revision_status_check",
-          "definition": "CHECK ((status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text])))",
-          "tableName": "asset_develop_revision",
-          "expression": "((status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "asset_develop_revision_assetId_revision_key",
-          "definition": "UNIQUE (\"assetId\", revision)",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "assetId",
-            "revision"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "asset_develop_revision_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "asset_develop_revision",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "asset_edit_audit",
       "columns": [
         {
@@ -29127,91 +28644,6 @@
       "synchronize": true
     },
     {
-      "name": "develop_style_profile",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "userId",
-          "tableName": "develop_style_profile",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "version",
-          "tableName": "develop_style_profile",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "sampleCount",
-          "tableName": "develop_style_profile",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "modelJson",
-          "tableName": "develop_style_profile",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "trainedAt",
-          "tableName": "develop_style_profile",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "develop_style_profile_pkey",
-          "definition": "PRIMARY KEY (\"userId\")",
-          "tableName": "develop_style_profile",
-          "columnNames": [
-            "userId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "develop_style_profile_userId_fkey",
-          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "develop_style_profile",
-          "columnNames": [
-            "userId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "duplicate_decision",
       "columns": [
         {
@@ -33457,6 +32889,223 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "job_attempt",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "jobId",
+          "tableName": "job_attempt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "attempt",
+          "tableName": "job_attempt",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "token",
+          "tableName": "job_attempt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "workerId",
+          "tableName": "job_attempt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "startedAt",
+          "tableName": "job_attempt",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "finishedAt",
+          "tableName": "job_attempt",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "outcome",
+          "tableName": "job_attempt",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "error",
+          "tableName": "job_attempt",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "job_attempt_worker_reference",
+          "definition": "CREATE INDEX job_attempt_worker_reference ON public.job_attempt USING btree (\"workerId\")",
+          "tableName": "job_attempt",
+          "columnNames": [
+            "workerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "job_attempt_pkey",
+          "definition": "PRIMARY KEY (\"jobId\", attempt)",
+          "tableName": "job_attempt",
+          "columnNames": [
+            "jobId",
+            "attempt"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "job_attempt_token_key",
+          "definition": "UNIQUE (token)",
+          "tableName": "job_attempt",
+          "columnNames": [
+            "token"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_attempt_jobId_fkey",
+          "definition": "FOREIGN KEY (\"jobId\") REFERENCES job(id) ON DELETE CASCADE",
+          "tableName": "job_attempt",
+          "columnNames": [
+            "jobId"
+          ],
+          "referenceTableName": "job",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "job_attempt_workerId_fkey",
+          "definition": "FOREIGN KEY (\"workerId\") REFERENCES job_worker(id)",
+          "tableName": "job_attempt",
+          "columnNames": [
+            "workerId"
+          ],
+          "referenceTableName": "job_worker",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "NO ACTION",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "job_worker",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "job_worker",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "startedAt",
+          "tableName": "job_worker",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "heartbeatAt",
+          "tableName": "job_worker",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "state",
+          "tableName": "job_worker",
+          "nullable": false,
+          "isArray": false,
+          "default": "'running'::text",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "job_worker_state_check",
+          "definition": "CHECK ((state = ANY (ARRAY['running'::text, 'stopping'::text, 'lost'::text])))",
+          "tableName": "job_worker",
+          "expression": "((state = ANY (ARRAY['running'::text, 'stopping'::text, 'lost'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "job_worker_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "job_worker",
+          "columnNames": [
+            "id"
+          ],
           "synchronize": true
         }
       ],
@@ -44098,223 +43747,6 @@
       "synchronize": true
     },
     {
-      "name": "job_attempt",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "jobId",
-          "tableName": "job_attempt",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "attempt",
-          "tableName": "job_attempt",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "token",
-          "tableName": "job_attempt",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "workerId",
-          "tableName": "job_attempt",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "startedAt",
-          "tableName": "job_attempt",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "finishedAt",
-          "tableName": "job_attempt",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "outcome",
-          "tableName": "job_attempt",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "error",
-          "tableName": "job_attempt",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "job_attempt_worker_reference",
-          "definition": "CREATE INDEX job_attempt_worker_reference ON public.job_attempt USING btree (\"workerId\")",
-          "tableName": "job_attempt",
-          "columnNames": [
-            "workerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "job_attempt_pkey",
-          "definition": "PRIMARY KEY (\"jobId\", attempt)",
-          "tableName": "job_attempt",
-          "columnNames": [
-            "jobId",
-            "attempt"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "job_attempt_token_key",
-          "definition": "UNIQUE (token)",
-          "tableName": "job_attempt",
-          "columnNames": [
-            "token"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_attempt_jobId_fkey",
-          "definition": "FOREIGN KEY (\"jobId\") REFERENCES job(id) ON DELETE CASCADE",
-          "tableName": "job_attempt",
-          "columnNames": [
-            "jobId"
-          ],
-          "referenceTableName": "job",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "job_attempt_workerId_fkey",
-          "definition": "FOREIGN KEY (\"workerId\") REFERENCES job_worker(id)",
-          "tableName": "job_attempt",
-          "columnNames": [
-            "workerId"
-          ],
-          "referenceTableName": "job_worker",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "NO ACTION",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "job_worker",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "job_worker",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "startedAt",
-          "tableName": "job_worker",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "heartbeatAt",
-          "tableName": "job_worker",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "state",
-          "tableName": "job_worker",
-          "nullable": false,
-          "isArray": false,
-          "default": "'running'::text",
-          "synchronize": true
-        }
-      ],
-      "indexes": [],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "job_worker_state_check",
-          "definition": "CHECK ((state = ANY (ARRAY['running'::text, 'stopping'::text, 'lost'::text])))",
-          "tableName": "job_worker",
-          "expression": "((state = ANY (ARRAY['running'::text, 'stopping'::text, 'lost'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "job_worker_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "job_worker",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "album",
       "columns": [
         {
@@ -46594,6 +46026,17 @@
       ],
       "indexes": [
         {
+          "name": "asset_health_step_assetId_idx",
+          "definition": "CREATE INDEX \"asset_health_step_assetId_idx\" ON public.asset_health_step USING btree (\"assetId\")",
+          "tableName": "asset_health_step",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_health_step_healthId_at_id_idx",
           "definition": "CREATE INDEX \"asset_health_step_healthId_at_id_idx\" ON public.asset_health_step USING btree (\"healthId\", at, id)",
           "tableName": "asset_health_step",
@@ -46601,17 +46044,6 @@
             "healthId",
             "at",
             "id"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_health_step_assetId_idx",
-          "definition": "CREATE INDEX \"asset_health_step_assetId_idx\" ON public.asset_health_step USING btree (\"assetId\")",
-          "tableName": "asset_health_step",
-          "columnNames": [
-            "assetId"
           ],
           "using": "btree",
           "unique": false,
@@ -46774,442 +46206,6 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "SET NULL",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "oauth_grant",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "userId",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "clientId",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "scopes",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "resource",
-          "tableName": "oauth_grant",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "refreshTokenHash",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "accessTokenHash",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "accessExpiresAt",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "lastUsedAt",
-          "tableName": "oauth_grant",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "lastUsedVia",
-          "tableName": "oauth_grant",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "revokedAt",
-          "tableName": "oauth_grant",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "frameleafAccountId",
-          "tableName": "oauth_grant",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "oauth_grant_clientId_idx",
-          "definition": "CREATE INDEX \"oauth_grant_clientId_idx\" ON public.oauth_grant USING btree (\"clientId\")",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "clientId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "oauth_grant_userId_revokedAt_idx",
-          "definition": "CREATE INDEX \"oauth_grant_userId_revokedAt_idx\" ON public.oauth_grant USING btree (\"userId\", \"revokedAt\")",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "userId",
-            "revokedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "oauth_grant_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "oauth_grant_refreshTokenHash_uq",
-          "definition": "UNIQUE (\"refreshTokenHash\")",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "refreshTokenHash"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "oauth_grant_accessTokenHash_uq",
-          "definition": "UNIQUE (\"accessTokenHash\")",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "accessTokenHash"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "oauth_grant_userId_fkey",
-          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "userId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "oauth_grant_clientId_fkey",
-          "definition": "FOREIGN KEY (\"clientId\") REFERENCES oauth_client(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "clientId"
-          ],
-          "referenceTableName": "oauth_client",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "oauth_authorization_code",
-      "columns": [
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "codeHash",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "clientId",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "userId",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "sessionId",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "redirectUri",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "codeChallenge",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "scopes",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "resource",
-          "tableName": "oauth_authorization_code",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "expiresAt",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "frameleafAccountId",
-          "tableName": "oauth_authorization_code",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "oauth_authorization_code_userId_idx",
-          "definition": "CREATE INDEX \"oauth_authorization_code_userId_idx\" ON public.oauth_authorization_code USING btree (\"userId\")",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "userId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "oauth_authorization_code_expiresAt_idx",
-          "definition": "CREATE INDEX \"oauth_authorization_code_expiresAt_idx\" ON public.oauth_authorization_code USING btree (\"expiresAt\")",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "expiresAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "oauth_authorization_code_sessionId_idx",
-          "definition": "CREATE INDEX \"oauth_authorization_code_sessionId_idx\" ON public.oauth_authorization_code USING btree (\"sessionId\")",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "sessionId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "oauth_authorization_code_clientId_idx",
-          "definition": "CREATE INDEX \"oauth_authorization_code_clientId_idx\" ON public.oauth_authorization_code USING btree (\"clientId\")",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "clientId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "oauth_authorization_code_hash_check",
-          "definition": "CHECK ((octet_length(\"codeHash\") = 32))",
-          "tableName": "oauth_authorization_code",
-          "expression": "((octet_length(\"codeHash\") = 32))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "oauth_authorization_code_pkey",
-          "definition": "PRIMARY KEY (\"codeHash\")",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "codeHash"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "oauth_authorization_code_clientId_fkey",
-          "definition": "FOREIGN KEY (\"clientId\") REFERENCES oauth_client(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "clientId"
-          ],
-          "referenceTableName": "oauth_client",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "oauth_authorization_code_userId_fkey",
-          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "userId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "oauth_authorization_code_sessionId_fkey",
-          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "sessionId"
-          ],
-          "referenceTableName": "session",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
           "synchronize": true
         }
       ],
@@ -48978,6 +47974,17 @@
           "synchronize": true
         },
         {
+          "name": "media_import_item_importId_idx",
+          "definition": "CREATE INDEX \"media_import_item_importId_idx\" ON public.media_import_item USING btree (\"importId\")",
+          "tableName": "media_import_item",
+          "columnNames": [
+            "importId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "media_import_item_ownerId_sourceKey_idx",
           "definition": "CREATE INDEX \"media_import_item_ownerId_sourceKey_idx\" ON public.media_import_item USING btree (\"ownerId\", \"sourceKey\")",
           "tableName": "media_import_item",
@@ -48995,17 +48002,6 @@
           "tableName": "media_import_item",
           "columnNames": [
             "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "media_import_item_importId_idx",
-          "definition": "CREATE INDEX \"media_import_item_importId_idx\" ON public.media_import_item USING btree (\"importId\")",
-          "tableName": "media_import_item",
-          "columnNames": [
-            "importId"
           ],
           "using": "btree",
           "unique": false,
@@ -49891,11 +48887,11 @@
       ],
       "indexes": [
         {
-          "name": "media_subscription_albumId_idx",
-          "definition": "CREATE INDEX \"media_subscription_albumId_idx\" ON public.media_subscription USING btree (\"albumId\")",
+          "name": "media_subscription_mediaCreatorId_idx",
+          "definition": "CREATE INDEX \"media_subscription_mediaCreatorId_idx\" ON public.media_subscription USING btree (\"mediaCreatorId\")",
           "tableName": "media_subscription",
           "columnNames": [
-            "albumId"
+            "mediaCreatorId"
           ],
           "using": "btree",
           "unique": false,
@@ -49913,11 +48909,22 @@
           "synchronize": true
         },
         {
-          "name": "media_subscription_mediaCreatorId_idx",
-          "definition": "CREATE INDEX \"media_subscription_mediaCreatorId_idx\" ON public.media_subscription USING btree (\"mediaCreatorId\")",
+          "name": "media_subscription_connectionId_idx",
+          "definition": "CREATE INDEX \"media_subscription_connectionId_idx\" ON public.media_subscription USING btree (\"connectionId\")",
           "tableName": "media_subscription",
           "columnNames": [
-            "mediaCreatorId"
+            "connectionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "media_subscription_albumId_idx",
+          "definition": "CREATE INDEX \"media_subscription_albumId_idx\" ON public.media_subscription USING btree (\"albumId\")",
+          "tableName": "media_subscription",
+          "columnNames": [
+            "albumId"
           ],
           "using": "btree",
           "unique": false,
@@ -49930,17 +48937,6 @@
           "columnNames": [
             "status",
             "nextCheckAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "media_subscription_connectionId_idx",
-          "definition": "CREATE INDEX \"media_subscription_connectionId_idx\" ON public.media_subscription USING btree (\"connectionId\")",
-          "tableName": "media_subscription",
-          "columnNames": [
-            "connectionId"
           ],
           "using": "btree",
           "unique": false,
@@ -50307,11 +49303,12 @@
       ],
       "indexes": [
         {
-          "name": "media_import_connectionId_idx",
-          "definition": "CREATE INDEX \"media_import_connectionId_idx\" ON public.media_import USING btree (\"connectionId\")",
+          "name": "media_import_ownerId_createdAt_idx",
+          "definition": "CREATE INDEX \"media_import_ownerId_createdAt_idx\" ON public.media_import USING btree (\"ownerId\", \"createdAt\")",
           "tableName": "media_import",
           "columnNames": [
-            "connectionId"
+            "ownerId",
+            "createdAt"
           ],
           "using": "btree",
           "unique": false,
@@ -50329,22 +49326,33 @@
           "synchronize": true
         },
         {
-          "name": "media_import_albumId_idx",
-          "definition": "CREATE INDEX \"media_import_albumId_idx\" ON public.media_import USING btree (\"albumId\")",
+          "name": "media_import_subscriptionId_idx",
+          "definition": "CREATE INDEX \"media_import_subscriptionId_idx\" ON public.media_import USING btree (\"subscriptionId\")",
           "tableName": "media_import",
           "columnNames": [
-            "albumId"
+            "subscriptionId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "media_import_subscriptionId_idx",
-          "definition": "CREATE INDEX \"media_import_subscriptionId_idx\" ON public.media_import USING btree (\"subscriptionId\")",
+          "name": "media_import_ownerId_idx",
+          "definition": "CREATE INDEX \"media_import_ownerId_idx\" ON public.media_import USING btree (\"ownerId\")",
           "tableName": "media_import",
           "columnNames": [
-            "subscriptionId"
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "media_import_albumId_idx",
+          "definition": "CREATE INDEX \"media_import_albumId_idx\" ON public.media_import USING btree (\"albumId\")",
+          "tableName": "media_import",
+          "columnNames": [
+            "albumId"
           ],
           "using": "btree",
           "unique": false,
@@ -50362,23 +49370,11 @@
           "synchronize": true
         },
         {
-          "name": "media_import_ownerId_createdAt_idx",
-          "definition": "CREATE INDEX \"media_import_ownerId_createdAt_idx\" ON public.media_import USING btree (\"ownerId\", \"createdAt\")",
+          "name": "media_import_connectionId_idx",
+          "definition": "CREATE INDEX \"media_import_connectionId_idx\" ON public.media_import USING btree (\"connectionId\")",
           "tableName": "media_import",
           "columnNames": [
-            "ownerId",
-            "createdAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "media_import_ownerId_idx",
-          "definition": "CREATE INDEX \"media_import_ownerId_idx\" ON public.media_import USING btree (\"ownerId\")",
-          "tableName": "media_import",
-          "columnNames": [
-            "ownerId"
+            "connectionId"
           ],
           "using": "btree",
           "unique": false,
@@ -50808,732 +49804,6 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "SET NULL",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "asset_exif",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_exif",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "make",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "model",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "exifImageWidth",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "exifImageHeight",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "bigint",
-          "primary": false,
-          "name": "fileSizeInByte",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 64,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "orientation",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "dateTimeOriginal",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "modifyDate",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "lensModel",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "fNumber",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "focalLength",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "iso",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "latitude",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "longitude",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "city",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "state",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "country",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "description",
-          "tableName": "asset_exif",
-          "nullable": false,
-          "isArray": false,
-          "default": "''::text",
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "fps",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "exposureTime",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "livePhotoCID",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "timeZone",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "projectionType",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "profileDescription",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "colorspace",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "bitsPerSample",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "autoStackId",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "rating",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "tags",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "asset_exif",
-          "nullable": false,
-          "isArray": false,
-          "default": "clock_timestamp()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "asset_exif",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "lockedProperties",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "jsonb",
-          "primary": false,
-          "name": "imageEncoding",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "gpsAccuracyM",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "altitude",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "shutterCount",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "focalLengthIn35mm",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "exposureCompensation",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "exposureProgram",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "meteringMode",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "flash",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "whiteBalance",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "sceneCaptureType",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "focusDistance",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "lensMake",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "lensSerialNumber",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "serialNumber",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "software",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "artist",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "copyright",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "imageDirection",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "gpsSpeed",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "mediaKinds",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "estimatedDateTimeOriginal",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "offsetTimeOriginal",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "offsetTime",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "title",
-          "tableName": "asset_exif",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_exif_updateId_idx",
-          "definition": "CREATE INDEX \"asset_exif_updateId_idx\" ON public.asset_exif USING btree (\"updateId\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_city_idx",
-          "definition": "CREATE INDEX asset_exif_city_idx ON public.asset_exif USING btree (city)",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "city"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "idx_asset_exif_description_trigram",
-          "definition": "CREATE INDEX idx_asset_exif_description_trigram ON public.asset_exif USING gin (f_unaccent(description) gin_trgm_ops)",
-          "tableName": "asset_exif",
-          "expression": "f_unaccent(description)",
-          "using": "gin",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "IDX_asset_exif_gist_earthcoord",
-          "definition": "CREATE INDEX \"IDX_asset_exif_gist_earthcoord\" ON public.asset_exif USING gist (ll_to_earth_public(latitude, longitude))",
-          "tableName": "asset_exif",
-          "expression": "ll_to_earth_public(latitude, longitude)",
-          "using": "gist",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_rating_order_idx",
-          "definition": "CREATE INDEX asset_exif_rating_order_idx ON public.asset_exif USING btree (COALESCE(rating, 0) DESC, \"assetId\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "assetId"
-          ],
-          "expression": "COALESCE(rating, 0)",
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_mediaKinds_idx",
-          "definition": "CREATE INDEX \"asset_exif_mediaKinds_idx\" ON public.asset_exif USING gin (\"mediaKinds\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "mediaKinds"
-          ],
-          "using": "gin",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_livePhotoCID_idx",
-          "definition": "CREATE INDEX \"asset_exif_livePhotoCID_idx\" ON public.asset_exif USING btree (\"livePhotoCID\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "livePhotoCID"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_exif_autoStackId_idx",
-          "definition": "CREATE INDEX \"asset_exif_autoStackId_idx\" ON public.asset_exif USING btree (\"autoStackId\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "autoStackId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "asset_exif_landmark_match_insert",
-          "definition": "CREATE TRIGGER asset_exif_landmark_match_insert AFTER INSERT ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION asset_exif_landmark_match()",
-          "tableName": "asset_exif",
-          "functionName": "asset_exif_landmark_match",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "insert"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "asset_exif_landmark_match_update",
-          "definition": "CREATE TRIGGER asset_exif_landmark_match_update AFTER UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION asset_exif_landmark_match()",
-          "tableName": "asset_exif",
-          "functionName": "asset_exif_landmark_match",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "asset_exif_photo_location_invalidate",
-          "definition": "CREATE TRIGGER asset_exif_photo_location_invalidate AFTER UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION photo_location_invalidate()",
-          "tableName": "asset_exif",
-          "functionName": "photo_location_invalidate",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "asset_exif_updatedAt",
-          "definition": "CREATE TRIGGER \"asset_exif_updatedAt\" BEFORE UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "asset_exif",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_exif_pkey",
-          "definition": "PRIMARY KEY (\"assetId\")",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "assetId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_exif_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
-          "tableName": "asset_exif",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
           "synchronize": true
         }
       ],
@@ -52736,6 +51006,33 @@
           "synchronize": true
         },
         {
+          "name": "job_resume",
+          "definition": "CREATE INDEX job_resume ON public.job USING btree (queue, \"availableAt\") WHERE ((\"resumeAt\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "availableAt"
+          ],
+          "using": "btree",
+          "where": "((\"resumeAt\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_live_asset_step",
+          "definition": "CREATE INDEX job_live_asset_step ON public.job USING btree (queue, name, lower((data ->> 'id'::text)) COLLATE \"C\") WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "name"
+          ],
+          "expression": "lower((data ->> 'id'::text))",
+          "using": "btree",
+          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "job_run_live",
           "definition": "CREATE INDEX job_run_live ON public.job USING btree (\"runId\") WHERE ((\"runId\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
           "tableName": "job",
@@ -52772,20 +51069,6 @@
           ],
           "using": "btree",
           "where": "((state = ANY (ARRAY['completed'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) AND (\"latestPending\" IS NULL))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_live_asset_step",
-          "definition": "CREATE INDEX job_live_asset_step ON public.job USING btree (queue, name, lower((data ->> 'id'::text)) COLLATE \"C\") WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
-          "tableName": "job",
-          "columnNames": [
-            "queue",
-            "name"
-          ],
-          "expression": "lower((data ->> 'id'::text))",
-          "using": "btree",
-          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
           "unique": false,
           "synchronize": true
         },
@@ -52866,19 +51149,6 @@
           ],
           "using": "btree",
           "where": "(\"parentId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "job_resume",
-          "definition": "CREATE INDEX job_resume ON public.job USING btree (queue, \"availableAt\") WHERE ((\"resumeAt\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])))",
-          "tableName": "job",
-          "columnNames": [
-            "queue",
-            "availableAt"
-          ],
-          "using": "btree",
-          "where": "((\"resumeAt\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])))",
           "unique": false,
           "synchronize": true
         },
@@ -53215,23 +51485,23 @@
       ],
       "indexes": [
         {
-          "name": "assistant_action_userId_createdAt_idx",
-          "definition": "CREATE INDEX \"assistant_action_userId_createdAt_idx\" ON public.assistant_action USING btree (\"userId\", \"createdAt\")",
+          "name": "assistant_action_mediaOperationId_idx",
+          "definition": "CREATE INDEX \"assistant_action_mediaOperationId_idx\" ON public.assistant_action USING btree (\"mediaOperationId\")",
           "tableName": "assistant_action",
           "columnNames": [
-            "userId",
-            "createdAt"
+            "mediaOperationId"
           ],
           "using": "btree",
           "unique": false,
           "synchronize": true
         },
         {
-          "name": "assistant_action_mediaOperationId_idx",
-          "definition": "CREATE INDEX \"assistant_action_mediaOperationId_idx\" ON public.assistant_action USING btree (\"mediaOperationId\")",
+          "name": "assistant_action_userId_createdAt_idx",
+          "definition": "CREATE INDEX \"assistant_action_userId_createdAt_idx\" ON public.assistant_action USING btree (\"userId\", \"createdAt\")",
           "tableName": "assistant_action",
           "columnNames": [
-            "mediaOperationId"
+            "userId",
+            "createdAt"
           ],
           "using": "btree",
           "unique": false,
@@ -53383,6 +51653,18 @@
       ],
       "indexes": [
         {
+          "name": "asset_ledger_missing_idx",
+          "definition": "CREATE INDEX asset_ledger_missing_idx ON public.asset_ledger USING btree (\"ownerId\") WHERE (state = 'missing'::text)",
+          "tableName": "asset_ledger",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "where": "(state = 'missing'::text)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "asset_ledger_owner_state_idx",
           "definition": "CREATE INDEX asset_ledger_owner_state_idx ON public.asset_ledger USING btree (\"ownerId\", state, \"stateAt\", \"assetId\")",
           "tableName": "asset_ledger",
@@ -53393,18 +51675,6 @@
             "assetId"
           ],
           "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_ledger_missing_idx",
-          "definition": "CREATE INDEX asset_ledger_missing_idx ON public.asset_ledger USING btree (\"ownerId\") WHERE (state = 'missing'::text)",
-          "tableName": "asset_ledger",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "where": "(state = 'missing'::text)",
           "unique": false,
           "synchronize": true
         }
@@ -53418,6 +51688,1914 @@
           "tableName": "asset_ledger",
           "columnNames": [
             "assetId"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "oauth_authorization_code",
+      "columns": [
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "codeHash",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "clientId",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sessionId",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "redirectUri",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "codeChallenge",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "scopes",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "resource",
+          "tableName": "oauth_authorization_code",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "frameleafAccountId",
+          "tableName": "oauth_authorization_code",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "oauth_authorization_code_clientId_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_clientId_idx\" ON public.oauth_authorization_code USING btree (\"clientId\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "clientId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_authorization_code_sessionId_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_sessionId_idx\" ON public.oauth_authorization_code USING btree (\"sessionId\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "sessionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_authorization_code_userId_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_userId_idx\" ON public.oauth_authorization_code USING btree (\"userId\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "userId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_authorization_code_expiresAt_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_expiresAt_idx\" ON public.oauth_authorization_code USING btree (\"expiresAt\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "oauth_authorization_code_hash_check",
+          "definition": "CHECK ((octet_length(\"codeHash\") = 32))",
+          "tableName": "oauth_authorization_code",
+          "expression": "((octet_length(\"codeHash\") = 32))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "oauth_authorization_code_pkey",
+          "definition": "PRIMARY KEY (\"codeHash\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "codeHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_authorization_code_clientId_fkey",
+          "definition": "FOREIGN KEY (\"clientId\") REFERENCES oauth_client(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "clientId"
+          ],
+          "referenceTableName": "oauth_client",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_authorization_code_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_authorization_code_sessionId_fkey",
+          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "sessionId"
+          ],
+          "referenceTableName": "session",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "oauth_grant",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "clientId",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "scopes",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "resource",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "refreshTokenHash",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "accessTokenHash",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "accessExpiresAt",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastUsedAt",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lastUsedVia",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "revokedAt",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "frameleafAccountId",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "oauth_grant_userId_revokedAt_idx",
+          "definition": "CREATE INDEX \"oauth_grant_userId_revokedAt_idx\" ON public.oauth_grant USING btree (\"userId\", \"revokedAt\")",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "userId",
+            "revokedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_grant_clientId_idx",
+          "definition": "CREATE INDEX \"oauth_grant_clientId_idx\" ON public.oauth_grant USING btree (\"clientId\")",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "clientId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "oauth_grant_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "oauth_grant_refreshTokenHash_uq",
+          "definition": "UNIQUE (\"refreshTokenHash\")",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "refreshTokenHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "oauth_grant_accessTokenHash_uq",
+          "definition": "UNIQUE (\"accessTokenHash\")",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "accessTokenHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_grant_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_grant_clientId_fkey",
+          "definition": "FOREIGN KEY (\"clientId\") REFERENCES oauth_client(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "clientId"
+          ],
+          "referenceTableName": "oauth_client",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_exif",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_exif",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "make",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "model",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "exifImageWidth",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "exifImageHeight",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "fileSizeInByte",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "orientation",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "dateTimeOriginal",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "modifyDate",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lensModel",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "fNumber",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "focalLength",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "iso",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "latitude",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "longitude",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "city",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "state",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "country",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "description",
+          "tableName": "asset_exif",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::text",
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "fps",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "exposureTime",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "livePhotoCID",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "timeZone",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "projectionType",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "profileDescription",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "colorspace",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "bitsPerSample",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "autoStackId",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "rating",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "tags",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "asset_exif",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "asset_exif",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lockedProperties",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "imageEncoding",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "gpsAccuracyM",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "altitude",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "shutterCount",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "focalLengthIn35mm",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "exposureCompensation",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "exposureProgram",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "meteringMode",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "flash",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "whiteBalance",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "sceneCaptureType",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "focusDistance",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lensMake",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lensSerialNumber",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "serialNumber",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "software",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "artist",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "copyright",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "imageDirection",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "gpsSpeed",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "mediaKinds",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "estimatedDateTimeOriginal",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "offsetTimeOriginal",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "offsetTime",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "title",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_exif_updateId_idx",
+          "definition": "CREATE INDEX \"asset_exif_updateId_idx\" ON public.asset_exif USING btree (\"updateId\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_city_idx",
+          "definition": "CREATE INDEX asset_exif_city_idx ON public.asset_exif USING btree (city)",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "city"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "idx_asset_exif_description_trigram",
+          "definition": "CREATE INDEX idx_asset_exif_description_trigram ON public.asset_exif USING gin (f_unaccent(description) gin_trgm_ops)",
+          "tableName": "asset_exif",
+          "expression": "f_unaccent(description)",
+          "using": "gin",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "IDX_asset_exif_gist_earthcoord",
+          "definition": "CREATE INDEX \"IDX_asset_exif_gist_earthcoord\" ON public.asset_exif USING gist (ll_to_earth_public(latitude, longitude))",
+          "tableName": "asset_exif",
+          "expression": "ll_to_earth_public(latitude, longitude)",
+          "using": "gist",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_rating_order_idx",
+          "definition": "CREATE INDEX asset_exif_rating_order_idx ON public.asset_exif USING btree (COALESCE(rating, 0) DESC, \"assetId\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "assetId"
+          ],
+          "expression": "COALESCE(rating, 0)",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_mediaKinds_idx",
+          "definition": "CREATE INDEX \"asset_exif_mediaKinds_idx\" ON public.asset_exif USING gin (\"mediaKinds\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "mediaKinds"
+          ],
+          "using": "gin",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_livePhotoCID_idx",
+          "definition": "CREATE INDEX \"asset_exif_livePhotoCID_idx\" ON public.asset_exif USING btree (\"livePhotoCID\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "livePhotoCID"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_exif_autoStackId_idx",
+          "definition": "CREATE INDEX \"asset_exif_autoStackId_idx\" ON public.asset_exif USING btree (\"autoStackId\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "autoStackId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "asset_exif_landmark_match_insert",
+          "definition": "CREATE TRIGGER asset_exif_landmark_match_insert AFTER INSERT ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION asset_exif_landmark_match()",
+          "tableName": "asset_exif",
+          "functionName": "asset_exif_landmark_match",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "asset_exif_landmark_match_update",
+          "definition": "CREATE TRIGGER asset_exif_landmark_match_update AFTER UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION asset_exif_landmark_match()",
+          "tableName": "asset_exif",
+          "functionName": "asset_exif_landmark_match",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "asset_exif_photo_location_invalidate",
+          "definition": "CREATE TRIGGER asset_exif_photo_location_invalidate AFTER UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION photo_location_invalidate()",
+          "tableName": "asset_exif",
+          "functionName": "photo_location_invalidate",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "asset_exif_updatedAt",
+          "definition": "CREATE TRIGGER \"asset_exif_updatedAt\" BEFORE UPDATE ON public.asset_exif FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "asset_exif",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_exif_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_exif_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON DELETE CASCADE",
+          "tableName": "asset_exif",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "develop_style_profile",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "develop_style_profile",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "version",
+          "tableName": "develop_style_profile",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "sampleCount",
+          "tableName": "develop_style_profile",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "modelJson",
+          "tableName": "develop_style_profile",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "trainedAt",
+          "tableName": "develop_style_profile",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "develop_style_profile_pkey",
+          "definition": "PRIMARY KEY (\"userId\")",
+          "tableName": "develop_style_profile",
+          "columnNames": [
+            "userId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "develop_style_profile_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "develop_style_profile",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_develop_revision",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "attempts",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "cancelRequested",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "error",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "exportId",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "fileName",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "height",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isCurrent",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "kind",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "'recipe'::text",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "label",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "masterPath",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "previewPath",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "progress",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "recipe",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "recipeVersion",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "1",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "renderedAt",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "rendererVersion",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "renditionChecksum",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "revision",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "software",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "sourceChecksum",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "'saved'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "width",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "hdrMasterPath",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "hdrPreviewPath",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "hdrRenditionChecksum",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sourceAssetId",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "batchChargedBytes",
+          "tableName": "asset_develop_revision",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "styleBatchId",
+          "tableName": "asset_develop_revision",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_develop_revision_asset_idx",
+          "definition": "CREATE INDEX asset_develop_revision_asset_idx ON public.asset_develop_revision USING btree (\"assetId\", revision DESC)",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "assetId",
+            "revision"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_develop_revision_owner_idx",
+          "definition": "CREATE INDEX asset_develop_revision_owner_idx ON public.asset_develop_revision USING btree (\"ownerId\")",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_develop_revision_style_batch_idx",
+          "definition": "CREATE UNIQUE INDEX asset_develop_revision_style_batch_idx ON public.asset_develop_revision USING btree (\"ownerId\", \"styleBatchId\", \"assetId\") WHERE (\"styleBatchId\" IS NOT NULL)",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "ownerId",
+            "styleBatchId",
+            "assetId"
+          ],
+          "using": "btree",
+          "where": "(\"styleBatchId\" IS NOT NULL)",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "asset_develop_revision_current_idx",
+          "definition": "CREATE UNIQUE INDEX asset_develop_revision_current_idx ON public.asset_develop_revision USING btree (\"assetId\") WHERE \"isCurrent\"",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "where": "\"isCurrent\"",
+          "unique": true,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "asset_develop_revision_attempts_check",
+          "definition": "CHECK ((attempts >= 0))",
+          "tableName": "asset_develop_revision",
+          "expression": "((attempts >= 0))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_fileName_check",
+          "definition": "CHECK (((\"fileName\" IS NULL) OR ((length(\"fileName\") >= 1) AND (length(\"fileName\") <= 255))))",
+          "tableName": "asset_develop_revision",
+          "expression": "(((\"fileName\" IS NULL) OR ((length(\"fileName\") >= 1) AND (length(\"fileName\") <= 255))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_hdr_set_check",
+          "definition": "CHECK ((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
+          "tableName": "asset_develop_revision",
+          "expression": "((((\"hdrMasterPath\" IS NULL) AND (\"hdrPreviewPath\" IS NULL) AND (\"hdrRenditionChecksum\" IS NULL)) OR ((\"hdrMasterPath\" IS NOT NULL) AND (\"hdrPreviewPath\" IS NOT NULL) AND (\"hdrRenditionChecksum\" IS NOT NULL) AND (octet_length(\"hdrRenditionChecksum\") = 32))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_kind_check",
+          "definition": "CHECK ((kind = ANY (ARRAY['recipe'::text, 'external'::text])))",
+          "tableName": "asset_develop_revision",
+          "expression": "((kind = ANY (ARRAY['recipe'::text, 'external'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_label_check",
+          "definition": "CHECK (((label IS NULL) OR ((length(label) >= 1) AND (length(label) <= 120))))",
+          "tableName": "asset_develop_revision",
+          "expression": "(((label IS NULL) OR ((length(label) >= 1) AND (length(label) <= 120))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_progress_check",
+          "definition": "CHECK (((progress >= 0) AND (progress <= 100)))",
+          "tableName": "asset_develop_revision",
+          "expression": "(((progress >= 0) AND (progress <= 100)))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_recipe_check",
+          "definition": "CHECK ((jsonb_typeof(recipe) = 'object'::text))",
+          "tableName": "asset_develop_revision",
+          "expression": "((jsonb_typeof(recipe) = 'object'::text))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_revision_check",
+          "definition": "CHECK ((revision >= 1))",
+          "tableName": "asset_develop_revision",
+          "expression": "((revision >= 1))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_software_check",
+          "definition": "CHECK (((software IS NULL) OR ((length(software) >= 1) AND (length(software) <= 120))))",
+          "tableName": "asset_develop_revision",
+          "expression": "(((software IS NULL) OR ((length(software) >= 1) AND (length(software) <= 120))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_develop_revision_status_check",
+          "definition": "CHECK ((status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text])))",
+          "tableName": "asset_develop_revision",
+          "expression": "((status = ANY (ARRAY['saved'::text, 'queued'::text, 'rendering'::text, 'rendered'::text, 'failed'::text, 'cancelled'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "asset_develop_revision_assetId_revision_key",
+          "definition": "UNIQUE (\"assetId\", revision)",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "assetId",
+            "revision"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "asset_develop_revision_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "asset_develop_revision",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "found_file",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "found_file",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "path",
+          "tableName": "found_file",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "sizeInBytes",
+          "tableName": "found_file",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "modifiedAt",
+          "tableName": "found_file",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "sha1",
+          "tableName": "found_file",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "sha256",
+          "tableName": "found_file",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "outcome",
+          "tableName": "found_file",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "reason",
+          "tableName": "found_file",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "found_file",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "found_file",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "previousPath",
+          "tableName": "found_file",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "steps",
+          "tableName": "found_file",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "sortedAt",
+          "tableName": "found_file",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "found_file_outcome_idx",
+          "definition": "CREATE INDEX found_file_outcome_idx ON public.found_file USING btree (outcome, \"sortedAt\", id)",
+          "tableName": "found_file",
+          "columnNames": [
+            "outcome",
+            "sortedAt",
+            "id"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "found_file_owner_idx",
+          "definition": "CREATE INDEX found_file_owner_idx ON public.found_file USING btree (\"ownerId\", outcome)",
+          "tableName": "found_file",
+          "columnNames": [
+            "ownerId",
+            "outcome"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "found_file_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "found_file",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "found_file_path_uq",
+          "definition": "UNIQUE (path)",
+          "tableName": "found_file",
+          "columnNames": [
+            "path"
           ],
           "synchronize": true
         }
@@ -53904,11 +54082,6 @@
       "synchronize": true
     },
     {
-      "name": "media_import_collection_removed",
-      "expression": "CREATE OR REPLACE FUNCTION public.media_import_collection_removed()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      UPDATE media_import_item item SET suppression = 'subscription', \"updatedAt\" = clock_timestamp()\n        FROM media_import operation WHERE item.\"importId\" = operation.id\n        AND operation.\"subscriptionId\" IS NOT NULL AND operation.\"albumId\" = OLD.\"albumId\"\n        AND item.\"assetId\" = OLD.\"assetId\" AND item.suppression IS DISTINCT FROM 'owner';\n      RETURN NULL;\n    END;\n    $function$\n",
-      "synchronize": true
-    },
-    {
       "name": "album_parent_cycle_check",
       "expression": "CREATE OR REPLACE FUNCTION public.album_parent_cycle_check()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      -- Setting parent to self is always a cycle.\n      IF NEW.\"parentId\" IS NOT NULL AND NEW.\"parentId\" = NEW.id THEN\n        RAISE EXCEPTION 'Album % cannot be its own parent', NEW.id;\n      END IF;\n      -- New parent must not already be a descendant of this album (excluding the\n      -- self-row, which is always present per closure semantics).\n      IF NEW.\"parentId\" IS NOT NULL AND EXISTS (\n        SELECT 1\n        FROM album_closure\n        WHERE id_ancestor = NEW.id\n          AND id_descendant = NEW.\"parentId\"\n          AND id_ancestor <> id_descendant\n      ) THEN\n        RAISE EXCEPTION 'Album % cannot have % as parent (would create a cycle)', NEW.id, NEW.\"parentId\";\n      END IF;\n      RETURN NEW;\n    END\n  $function$\n",
       "synchronize": true
@@ -53916,6 +54089,11 @@
     {
       "name": "asset_exif_landmark_match",
       "expression": "CREATE OR REPLACE FUNCTION public.asset_exif_landmark_match()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF TG_OP = 'UPDATE' AND OLD.latitude IS NOT DISTINCT FROM NEW.latitude\n        AND OLD.longitude IS NOT DISTINCT FROM NEW.longitude THEN\n        RETURN NULL;\n      END IF;\n      DELETE FROM public.asset_landmark WHERE \"assetId\" = NEW.\"assetId\";\n      IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN\n        INSERT INTO public.asset_landmark (\"assetId\", \"landmarkId\")\n        SELECT NEW.\"assetId\", l.id\n        FROM public.landmark l\n        WHERE public.earth_box(public.ll_to_earth_public(NEW.latitude, NEW.longitude), 200000)\n            OPERATOR(public.@>) public.ll_to_earth_public(l.latitude, l.longitude)\n          AND public.earth_distance(\n            public.ll_to_earth_public(NEW.latitude, NEW.longitude),\n            public.ll_to_earth_public(l.latitude, l.longitude)) <= l.\"radiusM\"\n          AND (NOT EXISTS (SELECT FROM public.landmark_area a WHERE a.\"landmarkId\" = l.id)\n            OR EXISTS (SELECT FROM public.landmark_area a\n              WHERE a.\"landmarkId\" = l.id AND a.area @> point(NEW.longitude, NEW.latitude)))\n        ON CONFLICT DO NOTHING;\n      END IF;\n      RETURN NULL;\n    EXCEPTION WHEN OTHERS THEN\n      RAISE WARNING 'asset_exif_landmark_match: %', SQLERRM;\n      RETURN NULL;\n    END\n  $function$\n",
+      "synchronize": true
+    },
+    {
+      "name": "media_import_asset_removed",
+      "expression": "CREATE OR REPLACE FUNCTION public.media_import_asset_removed()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF TG_OP = 'DELETE' OR (NEW.\"deletedAt\" IS NOT NULL AND OLD.\"deletedAt\" IS NULL) THEN\n        UPDATE media_import_item SET suppression = 'owner', \"updatedAt\" = clock_timestamp()\n          WHERE \"assetId\" = OLD.id;\n      END IF;\n      RETURN NULL;\n    END;\n    $function$\n",
       "synchronize": true
     },
     {
@@ -53984,13 +54162,13 @@
       "synchronize": true
     },
     {
-      "name": "person_delete_audit",
-      "expression": "CREATE OR REPLACE FUNCTION public.person_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      INSERT INTO person_audit (\"personGroupId\", \"ownerId\")\n      SELECT \"personGroupId\", \"ownerId\"\n      FROM OLD;\n      RETURN NULL;\n    END\n  $function$\n",
+      "name": "media_import_collection_removed",
+      "expression": "CREATE OR REPLACE FUNCTION public.media_import_collection_removed()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      UPDATE media_import_item item SET suppression = 'subscription', \"updatedAt\" = clock_timestamp()\n        FROM media_import operation WHERE item.\"importId\" = operation.id\n        AND operation.\"subscriptionId\" IS NOT NULL AND operation.\"albumId\" = OLD.\"albumId\"\n        AND item.\"assetId\" = OLD.\"assetId\" AND item.suppression IS DISTINCT FROM 'owner';\n      RETURN NULL;\n    END;\n    $function$\n",
       "synchronize": true
     },
     {
-      "name": "media_import_asset_removed",
-      "expression": "CREATE OR REPLACE FUNCTION public.media_import_asset_removed()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF TG_OP = 'DELETE' OR (NEW.\"deletedAt\" IS NOT NULL AND OLD.\"deletedAt\" IS NULL) THEN\n        UPDATE media_import_item SET suppression = 'owner', \"updatedAt\" = clock_timestamp()\n          WHERE \"assetId\" = OLD.id;\n      END IF;\n      RETURN NULL;\n    END;\n    $function$\n",
+      "name": "person_delete_audit",
+      "expression": "CREATE OR REPLACE FUNCTION public.person_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      INSERT INTO person_audit (\"personGroupId\", \"ownerId\")\n      SELECT \"personGroupId\", \"ownerId\"\n      FROM OLD;\n      RETURN NULL;\n    END\n  $function$\n",
       "synchronize": true
     },
     {

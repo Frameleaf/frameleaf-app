@@ -31,6 +31,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     upsertFont: vitest.fn(),
     getByChecksum: vitest.fn(),
     getByChecksums: vitest.fn(),
+    getByChecksumsForAnyOwner: vitest.fn(),
     getUploadAssetIdByChecksum: vitest.fn(),
     getUploadSkipped: vitest.fn().mockResolvedValue([]),
     getUploadSkipList: vitest.fn().mockResolvedValue({ items: [], total: 0 }),

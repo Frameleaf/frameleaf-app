@@ -93,6 +93,12 @@ type EventMap = {
   AssetDevelopCurrentChanged: [{ assetId: string }];
   AssetMetadataExtracted: [{ assetId: string; userId: string; source?: JobSource }];
 
+  /**
+   * FL-1532: the stray-file check found these files on the drive that nothing in the database lists.
+   * A handler that puts one in a library adds its path to `placed`, so it is not reported as a finding.
+   */
+  IntegrityUntrackedFound: [{ paths: string[]; placed: string[] }];
+
   // asset bulk events
   AssetTrashAll: [{ assetIds: string[]; userId: string }];
   AssetDeleteAll: [{ assetIds: string[]; userId: string }];
