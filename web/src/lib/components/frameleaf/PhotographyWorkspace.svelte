@@ -16,11 +16,17 @@
    * Clients is opt-in (owner, October 28): while it is in the top bar the rail's foot offers
    * "Remove from the top bar", which puts it back under Tools; the page owns that action.
    */
+  import { developFileUrl } from '$lib/frameleaf/develop-api';
   import { newRequestKey } from '$lib/frameleaf/request-key';
   import { onDestroy, onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
   import { Icon } from '@frameleaf/ui';
   import {
+    applyDevelopStyle,
+    getDevelopStyle,
+    undoDevelopStyle,
+    type DevelopStyleBatchDto,
+    AssetDevelopRevisionStatus,
     AssetMediaSize,
     getAllAlbums,
     getAssetDevelop,
@@ -58,6 +64,7 @@
     mdiWeb,
   } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
+  import PhotographyStyle from '$lib/components/frameleaf/PhotographyStyle.svelte';
   import PhotographyBranding from '$lib/components/frameleaf/PhotographyBranding.svelte';
   import PhotographyPublishing from '$lib/components/frameleaf/PhotographyPublishing.svelte';
   import PhotographyWorkflow from '$lib/components/frameleaf/PhotographyWorkflow.svelte';
@@ -73,6 +80,7 @@
     shootTypeKeys,
   } from '$lib/components/frameleaf/PhotographyStatus.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import PhotographyBulkGalleries from '$lib/components/frameleaf/PhotographyBulkGalleries.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
@@ -103,7 +111,7 @@
 
   /** A shoot's tabs after Photographs; Photographs itself is the open shoot under `shoots`. */
   type ShootSection = Exclude<ShootTab, 'photos'>;
-  type Section = 'shoots' | 'branding' | 'watermarks' | 'website' | 'publishing' | ShootSection;
+  type Section = 'shoots' | 'branding' | 'watermarks' | 'website' | 'publishing' | 'settings' | ShootSection;
   type PhotoFilter = 'all' | 'selected' | 'edited';
   type ShootFilter = 'all' | 'active' | 'Proofing' | 'Delivered';
   type NextAction = { label: string; icon: string; section: Section; rank: number };
@@ -182,12 +190,69 @@
   let compareOpen = $state(false);
   let batchOpen = $state(false);
   let newOpen = $state(false);
+  let bulkOpen = $state(false);
   let draft = $state(emptyDraft());
   let details = $state({ name: '', client: '', stage: shootStages[0] as Shoot['stage'] });
   let inspecting = $state<Photo | null>(null);
   let versions = $state<AssetDevelopResponseDto | null>(null);
   let versionError = $state('');
   let versionsLoading = $state(false);
+  let styleBatch = $state<{ shootId: string; result: DevelopStyleBatchDto }>();
+  let styleBusy = $state(false);
+  let styleAvailable = $state(false);
+  let styleRequest = $state<{ shootId: string; batchId: string; assetIds?: string[] }>();
+
+  async function applyStyle(shootId: string) {
+    if (!styleAvailable) {
+      section = 'settings';
+      return;
+    }
+    const request =
+      styleRequest?.shootId === shootId
+        ? styleRequest
+        : {
+            shootId,
+            batchId: newRequestKey(),
+            assetIds: selected.length > 0 ? [...selected] : undefined,
+          };
+    styleRequest = request;
+    styleBusy = true;
+    try {
+      const result = await applyDevelopStyle({
+        id: shootId,
+        developStyleApplyDto: { batchId: request.batchId, assetIds: request.assetIds },
+      });
+      styleBatch = { shootId, result };
+      styleRequest = undefined;
+      if (inspecting) {
+        void inspect(inspecting);
+      }
+    } catch {
+      error = $t('frameleaf_photography_style_failed');
+    } finally {
+      styleBusy = false;
+    }
+  }
+
+  async function undoStyle(batchId: string) {
+    styleBusy = true;
+    try {
+      const result = await undoDevelopStyle({ id: batchId });
+      if (result.remaining === 0) {
+        styleBatch = undefined;
+      } else {
+        message = $t('frameleaf_photography_style_remaining', { values: { count: result.remaining } });
+      }
+      if (inspecting) {
+        void inspect(inspecting);
+      }
+    } catch {
+      error = $t('frameleaf_photography_style_failed');
+    } finally {
+      styleBusy = false;
+    }
+  }
+
   let grid = $state<HTMLElement>();
   let scroller = $state<HTMLElement>();
   let railNav = $state<HTMLElement>();
@@ -267,32 +332,36 @@
         ? $t('frameleaf_photography_shoots_active')
         : $t(shootStageKeys[filter]);
   const title = $derived(
-    section === 'branding'
-      ? $t('frameleaf_photography_branding')
-      : section === 'watermarks'
-        ? $t('frameleaf_photography_watermarks')
-        : section === 'website'
-          ? $t('frameleaf_photography_website')
-          : section === 'publishing'
-            ? $t('frameleaf_photography_publishing')
-            : isShootSection(section)
-              ? $t(shootSectionKeys[section])
-              : (active?.name ?? $t('frameleaf_photography_shoots')),
+    section === 'settings'
+      ? $t('settings')
+      : section === 'branding'
+        ? $t('frameleaf_photography_branding')
+        : section === 'watermarks'
+          ? $t('frameleaf_photography_watermarks')
+          : section === 'website'
+            ? $t('frameleaf_photography_website')
+            : section === 'publishing'
+              ? $t('frameleaf_photography_publishing')
+              : isShootSection(section)
+                ? $t(shootSectionKeys[section])
+                : (active?.name ?? $t('frameleaf_photography_shoots')),
   );
   const subtitle = $derived(
-    section === 'branding'
-      ? $t('frameleaf_photography_branding_lead')
-      : section === 'watermarks'
-        ? $t('frameleaf_photography_watermarks_lead')
-        : section === 'website'
-          ? $t('frameleaf_photography_website_lead')
-          : section === 'publishing'
-            ? $t('frameleaf_photography_publishing_lead')
-            : isShootSection(section)
-              ? $t(sectionLeads[section])
-              : active
-                ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
-                : $t('frameleaf_photography_shoots_lead'),
+    section === 'settings'
+      ? ''
+      : section === 'branding'
+        ? $t('frameleaf_photography_branding_lead')
+        : section === 'watermarks'
+          ? $t('frameleaf_photography_watermarks_lead')
+          : section === 'website'
+            ? $t('frameleaf_photography_website_lead')
+            : section === 'publishing'
+              ? $t('frameleaf_photography_publishing_lead')
+              : isShootSection(section)
+                ? $t(sectionLeads[section])
+                : active
+                  ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
+                  : $t('frameleaf_photography_shoots_lead'),
   );
   const summaryFor = (id: string) => workflowSummaries.find((row) => row.shootId === id);
   /** The shoot whose pages the rail lists: the open one, else the one opened last, else the newest. */
@@ -758,8 +827,23 @@
     lastSection = section;
   });
 
+  async function loadStyle() {
+    const userId = authManager.user.id;
+    try {
+      const profile = await getDevelopStyle();
+      if (!disposed && authManager.user.id === userId) {
+        styleAvailable = profile.learnedEdits !== null;
+      }
+    } catch {
+      if (!disposed && authManager.user.id === userId) {
+        styleAvailable = false;
+      }
+    }
+  }
+
   onMount(() => {
     void reload();
+    void loadStyle();
     void loadStudio();
     return onLibraryAccessChange(() => {
       generation++;
@@ -775,6 +859,12 @@
       photos = [];
       inspecting = null;
       versions = null;
+      styleBatch = undefined;
+      styleRequest = undefined;
+      styleAvailable = false;
+      if (authManager.authenticated) {
+        void loadStyle();
+      }
       selected = [];
       compareOpen = false;
       batchOpen = false;
@@ -849,7 +939,7 @@
         {/each}
       {/if}
       <p class="phw-rail-heading">{$t('frameleaf_photography_studio_heading')}</p>
-      {#each [['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline]] as const as [id, label, icon] (id)}
+      {#each [['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
         <button
           type="button"
           aria-current={section === id ? 'page' : undefined}
@@ -891,10 +981,14 @@
           />
         </span>
         <!-- A shoot's own page has no New shoot (approved design, 2026-11-04). -->
-        {#if section === 'shoots' && !active}<Button
-            variant="primary"
-            disabled={loading || busy || !!error}
-            onclick={startShoot}
+        {#if section === 'shoots' && !active}
+          <Button
+            disabled={loading || busy || !!error || workspace.shoots.every((shoot) => shoot.unavailable)}
+            onclick={() => (bulkOpen = true)}
+          >
+            {$t('frameleaf_photography_bulk_title')}
+          </Button>
+          <Button variant="primary" disabled={loading || busy || !!error} onclick={startShoot}
             ><Icon icon={mdiPlus} size="1rem" aria-hidden={true} />{$t('frameleaf_photography_new_shoot')}</Button
           >{:else if isShootSection(section) && workspace.shoots.length > 0}<select
             class="phw-shoot-picker"
@@ -916,7 +1010,8 @@
         retryLabel={$t('frameleaf_photography_reload_shoots')}
       />{/if}
     <main class="phw-scroll" aria-busy={loading} bind:this={scroller}>
-      {#if section === 'branding'}<PhotographyBranding
+      {#if section === 'settings'}<PhotographyStyle onChanged={(learned) => (styleAvailable = learned)} />
+      {:else if section === 'branding'}<PhotographyBranding
           photoId={samplePhotoId}
           onSaved={() => {
             void reload();
@@ -1210,6 +1305,22 @@
                       ? $t('frameleaf_photography_open_raw_editor_count', { values: { count: chosenRaw.length } })
                       : $t('frameleaf_photography_open_raw_editor')}</a
                   >{:else if photos.length > 0}<p class="phw-small">{$t('frameleaf_photography_no_raw_photos')}</p>{/if}
+                <Button disabled={styleBusy || photos.length === 0} onclick={() => applyStyle(active.id)}>
+                  <Icon icon={mdiPaletteOutline} size="1rem" aria-hidden={true} />{$t(
+                    'frameleaf_photography_style_apply',
+                  )}
+                </Button>
+                {#if styleBatch?.shootId === active.id}
+                  <p role="status">
+                    {$t('frameleaf_photography_style_queued', { values: { count: styleBatch.result.versions.length } })}
+                  </p>
+                  {#if styleBatch.result.failed}<p role="alert">{$t('frameleaf_photography_style_failed')}</p>{/if}
+                  {#if styleBatch.result.versions.length}
+                    <Button disabled={styleBusy} onclick={() => undoStyle(styleBatch!.result.batchId)}
+                      >{$t('undo')}</Button
+                    >
+                  {/if}
+                {/if}
                 {#if inspecting}<h3>{inspecting.fileName}</h3>
                   {#if active.albumId}<a
                       href={Route.viewAlbumAsset({ albumId: active.albumId, assetId: inspecting.id })}
@@ -1223,11 +1334,18 @@
                     {#if versions.revisions.length === 0}<p>
                         {$t('frameleaf_photography_no_versions')}
                       </p>{/if}{#each versions.revisions as version (version.revision)}<p>
-                        {version.label ??
-                          $t('frameleaf_photography_version_number', {
-                            values: { number: version.revision },
-                          })}{version.isCurrent ? ` · ${$t('frameleaf_photography_version_current')}` : ''}
-                      </p>{/each}{/if}{/if}
+                        {version.label === 'My style'
+                          ? $t('frameleaf_photography_style_label')
+                          : (version.label ??
+                            $t('frameleaf_photography_version_number', {
+                              values: { number: version.revision },
+                            }))}{version.isCurrent ? ` · ${$t('frameleaf_photography_version_current')}` : ''}
+                      </p>
+                      {#if version.label === 'My style' && version.status === AssetDevelopRevisionStatus.Rendered}<img
+                          class="max-w-full rounded-lg"
+                          src={developFileUrl(inspecting.id, version.id)}
+                          alt={$t('frameleaf_photography_style_label')}
+                        />{/if}{/each}{/if}{/if}
                 <p class="phw-small">
                   {$t('frameleaf_photography_inspector_hint')}
                 </p>
@@ -1378,6 +1496,11 @@
     </div>
   </Dialog>
 
+  <PhotographyBulkGalleries
+    bind:open={bulkOpen}
+    shoots={workspace.shoots.filter((shoot) => !shoot.unavailable)}
+    onCreated={() => void reload()}
+  />
   <Dialog
     title={$t('frameleaf_photography_new_shoot')}
     closeLabel={$t('close')}

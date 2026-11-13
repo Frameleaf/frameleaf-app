@@ -384,6 +384,10 @@ export class PhotographyWorkspaceService {
     return shoot;
   }
 
+  async styleAlbumId(auth: AuthDto, shootId: string) {
+    return (await this.shoot(this.session(auth), shootId)).albumId;
+  }
+
   async photos(auth: AuthDto, id: string, query: PhotographyPhotoQueryDto): Promise<PhotographyPhotosDto> {
     const safeAuth = this.session(auth);
     const shoot = await this.shoot(safeAuth, id);

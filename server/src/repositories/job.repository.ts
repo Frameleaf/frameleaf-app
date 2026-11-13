@@ -94,6 +94,7 @@ const PUBLICATION_FAILURE_REASONS = new Map([
  * decision, and FL-1300's date healing from the cleanup apply job (the sidecar and partner copies of a healed photo).
  */
 const COMMITTED_EFFECT_JOBS = new Set<JobName>([
+  JobName.SendMail,
   JobName.DuplicateResolutionLifecycle,
   JobName.SidecarWrite,
   JobName.PartnerPropagate,
@@ -101,6 +102,7 @@ const COMMITTED_EFFECT_JOBS = new Set<JobName>([
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
   JobName.MediaImport,
+  JobName.PhotographyBulkGallery,
   // FL-1300: a scan rewrites its whole snapshot, and an apply resumes from the last change it committed.
   JobName.AlbumCleanupScan,
   JobName.AlbumCleanupApply,
@@ -1583,10 +1585,11 @@ export class JobRepository {
       case JobName.WorkflowEventDispatch: {
         return { deduplication: { id: `${JobName.WorkflowEventDispatch}:${item.data.event.deliveryId}` } };
       }
+      case JobName.PhotographyBulkGallery:
       case JobName.PhotographyWorkflowRender: {
         return {
           delay: item.data.delay ?? 0,
-          deduplication: { id: `${JobName.PhotographyWorkflowRender}:${item.data.id}`, keepLastIfActive: true },
+          deduplication: { id: `${item.name}:${item.data.id}`, keepLastIfActive: true },
         };
       }
       case JobName.AssetPaletteExtract: {

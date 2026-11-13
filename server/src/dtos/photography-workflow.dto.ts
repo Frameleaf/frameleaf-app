@@ -139,6 +139,7 @@ export class PhotographyAssemblyDto extends createZodDto(
       .max(10_000),
   }),
 ) {}
+const RecipientEmail = z.email().max(254).optional();
 const RecipientRights = {
   expiresAt: Instant,
   canProof: z.boolean(),
@@ -150,12 +151,12 @@ export class PhotographyRecipientCreateDto extends createZodDto(
     expectedRevision: Revision,
     name: z.string().trim().min(1).max(200),
     password: z.string().min(8).max(72).nullable(),
-    email: z.email().max(254).optional().describe('When given, the invitation is also emailed there'),
+    email: RecipientEmail.describe('When given, the invitation is also emailed there'),
     ...RecipientRights,
   }),
 ) {}
 export class PhotographyRecipientUpdateDto extends createZodDto(
-  z.strictObject({ expectedRevision: Revision, revoked: z.boolean(), ...RecipientRights }),
+  z.strictObject({ expectedRevision: Revision, revoked: z.boolean(), email: RecipientEmail, ...RecipientRights }),
 ) {}
 export const PhotographyOutputDefinitionSchema = PhotographyDownloadOutputSchema.safeExtend({
   revisions: z

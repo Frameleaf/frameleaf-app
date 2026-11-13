@@ -1,4 +1,4 @@
-import { defaults, getBaseUrl } from '@frameleaf/sdk';
+import { defaults, getBaseUrl, type PhotographyBulkDto } from '@frameleaf/sdk';
 import { codeForStatus, PhotographyError } from './errors';
 
 export type Watermark = {
@@ -368,6 +368,8 @@ export async function siteRequest(method = 'GET', body?: unknown): Promise<Studi
 export const studioPresetsRequest = (method = 'GET', body?: unknown) =>
   ownerRequest<StudioPresets>('/presets', method, body);
 export const loadWorkflowSummaries = () => ownerRequest<{ galleries: WorkflowSummary[] }>('/workflows', 'GET');
+export const photographyBulkRequest = (path = '', method = 'GET', body?: unknown) =>
+  ownerRequest<PhotographyBulkDto>(`/shoots/bulk${path}`, method, body);
 async function ownerRequest<T>(path: string, method: string, body?: unknown): Promise<T> {
   const headers = new Headers(defaults.headers as HeadersInit);
   headers.set('Accept', 'application/json');

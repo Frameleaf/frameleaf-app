@@ -126,6 +126,9 @@ describe(AssetDevelopService.name, () => {
       isCancelRequested: vi.fn().mockResolvedValue(false),
       releaseRemovedAssetRevisions: vi.fn().mockResolvedValue([]),
       listUnfinished: vi.fn().mockResolvedValue([]),
+      getStyleBatch: vi.fn(),
+      discardStyleRevision: vi.fn(),
+
       getArtifacts: vi.fn().mockResolvedValue([]),
       addArtifact: vi.fn().mockResolvedValue(true),
       releaseArtifacts: vi.fn().mockResolvedValue([]),
@@ -1165,6 +1168,21 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('handleRender', () => {
+    it('renders a style version while keeping the existing current version', async () => {
+      const revision = revisionStub({
+        assetId: asset.id,
+        status: AssetDevelopRevisionStatus.Queued,
+        styleBatchId: 'style-batch',
+      });
+      developRepository.get.mockResolvedValue(revision);
+      await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Success);
+      expect(developRepository.update).toHaveBeenCalledWith(
+        revision.id,
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Rendered }),
+      );
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+    });
+
     it('records native provenance and derives master and preview from the same native pixels', async () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),

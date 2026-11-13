@@ -160,6 +160,7 @@ export interface GalleryInviteEmailProps extends BaseEmailProps {
   recipientName: string;
   galleryTitle: string;
   welcomeMessage?: string;
+  password?: string;
   link: string;
   /** Already formatted for reading, or absent when the link does not expire. */
   expiresAt?: string;

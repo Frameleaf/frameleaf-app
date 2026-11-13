@@ -927,6 +927,10 @@ export type JobItem =
   | { name: JobName.IntegrityDeleteReportType; data: IIntegrityDeleteReportTypeJob }
   | { name: JobName.IntegrityDeleteReports; data: IIntegrityDeleteReportsJob }
   | { name: JobName.PhotographyWorkflowRender; data: IEntityJob & IDelayedJob }
+  | {
+      name: JobName.PhotographyBulkGallery;
+      data: IEntityJob & IDelayedJob & { ownerId: string; batchId: string; retryPublication?: boolean };
+    }
 
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }

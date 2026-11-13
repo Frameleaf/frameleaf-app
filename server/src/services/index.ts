@@ -65,6 +65,7 @@ import { DesktopQualificationService } from 'src/services/desktop-qualification.
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { DevelopBatchService } from 'src/services/develop-batch.service.js';
+import { DevelopStyleService } from 'src/services/develop-style.service.js';
 import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
@@ -142,6 +143,7 @@ import { PetService } from 'src/services/pet.service.js';
 import { PhotoLocationsService } from 'src/services/photo-locations.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
+import { PhotographyBulkService } from 'src/services/photography-bulk.service.js';
 import { PhotographyReminderService } from 'src/services/photography-reminder.service.js';
 import { PhotographySelfieService } from 'src/services/photography-selfie.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
@@ -237,6 +239,7 @@ export const services = [
   AssetSourceService,
   BookmarkService,
   DevelopBatchService,
+  DevelopStyleService,
   DesktopAssistanceActivationService,
   DesktopAssistancePolicyService,
   DesktopDeviceService,
@@ -256,6 +259,7 @@ export const services = [
   ICloudIdentityAdoptionService,
   PhotographyWorkspaceService,
   PhotographySelfieService,
+  PhotographyBulkService,
   PhotographyWorkflowService,
   PhotographySiteService,
   PhotographyReminderService,
