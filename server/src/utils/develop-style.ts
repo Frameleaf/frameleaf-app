@@ -30,7 +30,7 @@ export type StyleSample = { image: number[]; embedding?: Float32Array; sliders: 
 export type StyleModel = { imageSize: number; embeddingMean: number[]; axes: number[][]; coefficients: number[][] };
 
 export function extractStyleFeatures(pixels: Uint8Array, channels: number): number[] {
-  if (!Number.isInteger(channels) || channels < 3 || !pixels.length || pixels.length % channels) {
+  if (!Number.isSafeInteger(channels) || channels < 3 || pixels.length === 0 || pixels.length % channels) {
     throw new Error('Style features require interleaved RGB pixels');
   }
   const histogram = new Uint32Array(256);
@@ -48,7 +48,11 @@ export function extractStyleFeatures(pixels: Uint8Array, channels: number): numb
     let seen = 0;
     return histogram.findIndex((bin) => (seen += bin) >= count * fraction) / 255;
   };
-  return [0.05, 0.25, 0.5, 0.75, 0.95].map(quantile).concat(chroma / count / 255, warmth / count / 255);
+  return [
+    ...[0.05, 0.25, 0.5, 0.75, 0.95].map((fraction) => quantile(fraction)),
+    chroma / count / 255,
+    warmth / count / 255,
+  ];
 }
 
 const dot = (a: ArrayLike<number>, b: ArrayLike<number>) => {
@@ -87,7 +91,7 @@ function embeddingAxes(embeddings: Float32Array[]) {
       if (length < 1e-12) break;
       direction = next.map((value) => value / length);
     }
-    axes.push(Array.from(direction));
+    axes.push([...direction]);
     for (const row of rows) {
       const projection = dot(row, direction);
       for (let i = 0; i < dimensions; i++) row[i] -= projection * direction[i];
@@ -105,7 +109,7 @@ function styleInputs(model: Pick<StyleModel, 'axes' | 'embeddingMean'>, image: n
 }
 
 export function fitDevelopStyle(samples: StyleSample[], requireMinimum = true): StyleModel {
-  if (!samples.length || (requireMinimum && samples.length < MIN_STYLE_EDITS))
+  if (samples.length === 0 || (requireMinimum && samples.length < MIN_STYLE_EDITS))
     throw new Error('More edited photos are needed');
   const dimensions = samples.find((sample) => sample.embedding)?.embedding?.length;
   const embeddings = samples.flatMap(({ embedding }) =>

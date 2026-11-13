@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, type Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { AssetDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
+import type { DevelopStyleProfileTable } from 'src/schema/tables/develop-style-profile.table.js';
 import { AssetFileType, AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import type { DevelopStyleProfileTable } from 'src/schema/tables/develop-style-profile.table.js';
 import { hiddenByOwnerRules } from 'src/utils/database.js';
 
 @Injectable()

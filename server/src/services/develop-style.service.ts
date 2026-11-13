@@ -1,8 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { OnEvent } from 'src/decorators.js';
 import type { DevelopStyleApplyDto, DevelopStyleBatchDto } from 'src/dtos/develop-style.dto.js';
+import { OnEvent } from 'src/decorators.js';
 import { FrameleafWorker } from 'src/enum.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DevelopStyleRepository } from 'src/repositories/develop-style.repository.js';
@@ -14,12 +14,12 @@ import { PhotographyWorkspaceService } from 'src/services/photography-workspace.
 import { renderDevelopProjection } from 'src/utils/develop-envelope.js';
 import { defaultDevelopRecipe, normalizeDevelopRecipe } from 'src/utils/develop-recipe.js';
 import {
+  MIN_STYLE_EDITS,
+  type StyleSample,
   extractStyleFeatures,
   fitDevelopStyle,
-  MIN_STYLE_EDITS,
   predictDevelopStyle,
   validateDevelopStyle,
-  type StyleSample,
 } from 'src/utils/develop-style.js';
 import { parseEmbedding } from 'src/utils/embedding.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
@@ -129,7 +129,7 @@ export class DevelopStyleService {
     if (!profile) throw new BadRequestException('Learn My style before applying it');
     const requested = dto.assetIds ? [...new Set(dto.assetIds)] : undefined;
     const photos = await this.styles.shootPhotos(userId, albumId, requested);
-    if (!photos.length || photos.length > 500 || (requested && requested.length !== photos.length)) {
+    if (photos.length === 0 || photos.length > 500 || (requested && requested.length !== photos.length)) {
       throw new BadRequestException('Choose up to 500 available photos from this shoot');
     }
     const versions: DevelopStyleBatchDto['versions'] = [];

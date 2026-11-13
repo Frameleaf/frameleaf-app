@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  STYLE_SLIDERS,
+  type StyleSample,
   extractStyleFeatures,
   fitDevelopStyle,
   predictDevelopStyle,
-  STYLE_SLIDERS,
   validateDevelopStyle,
-  type StyleSample,
 } from 'src/utils/develop-style.js';
 
 const recipe = (exposure: number): StyleSample['sliders'] =>
