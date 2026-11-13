@@ -11,6 +11,8 @@ import {
   connectAssetPredicate,
   connectOwnedAlbumPredicate,
   isPolicyNarrowing,
+  lockConnectAssets,
+  lockConnectPolicyAlbums,
   refreshConnectAuth,
   requireConnectPolicy,
 } from 'src/utils/connect-policy.js';
@@ -81,7 +83,7 @@ export class ConnectRepository {
 
   async search(auth: AuthDto, dto: ConnectSearchDto) {
     let query = this.assets(auth).where('asset.type', 'in', [AssetType.Image, AssetType.Video]);
-    const search = dto.q && `%${dto.q.replaceAll(/[\\%_]/g, '\\$&')}%`;
+    const search = dto.q && `%${dto.q.replaceAll(/[\\%_]/g, String.raw`\$&`)}%`;
     if (search)
       query = query.where((eb) =>
         eb.or([eb('asset.originalFileName', 'ilike', search), eb('asset_exif.description', 'ilike', search)]),
@@ -158,16 +160,7 @@ export class ConnectRepository {
   async requireReadableAssets(auth: AuthDto, ids: string[], writable = false) {
     const unique = [...new Set(ids)];
     if (unique.length === 0) return;
-    if (publicationTransaction.getStore()) {
-      await this.db
-        .selectFrom('asset')
-        .select('id')
-        .where('id', 'in', unique)
-        .where('ownerId', '=', auth.user.id)
-        .orderBy('id')
-        .forUpdate()
-        .execute();
-    }
+    if (publicationTransaction.getStore()) await lockConnectAssets(this.db, auth, unique);
     const rows = await this.db
       .selectFrom('asset')
       .select('id')
@@ -179,15 +172,6 @@ export class ConnectRepository {
   }
 
   async requireWritableAlbum(auth: AuthDto, id: string) {
-    if (publicationTransaction.getStore()) {
-      await this.db
-        .selectFrom('album')
-        .select('id')
-        .where('id', '=', id)
-        .where(connectOwnedAlbumPredicate(auth.user.id))
-        .forUpdate()
-        .execute();
-    }
     const current = await refreshConnectAuth(this.db, auth);
     if (!requireConnectPolicy(current).writableAlbumIds.includes(id))
       throw new ForbiddenException('Album is not a writable destination');
@@ -225,7 +209,17 @@ export class ConnectRepository {
   /** Grant lock serializes additive publication with narrowing and revocation. */
   async withGrantWrite<T>(auth: AuthDto, work: (current: AuthDto) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (tx) => {
+      // Match upload publication's owner → grant → album → asset order, including tag owner FKs.
+      const owner = await tx
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', auth.user.id)
+        .where('deletedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!owner) throw new NotFoundException('Connect operation unavailable');
       const current = await refreshConnectAuth(tx, auth, true);
+      await lockConnectPolicyAlbums(tx, current);
       return publicationTransaction.run(tx, () => work(current));
     });
   }

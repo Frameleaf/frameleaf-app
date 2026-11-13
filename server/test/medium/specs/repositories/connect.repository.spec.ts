@@ -1,21 +1,26 @@
 import { Kysely, sql } from 'kysely';
 import { randomBytes } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { AlbumKind, AssetVisibility, LibraryScope } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetVisibility, LibraryScope } from 'src/enum.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
+import { AlbumRepository, lockAlbumHierarchy } from 'src/repositories/album.repository.js';
 import { ConnectRepository } from 'src/repositories/connect.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { OAuthAppRepository } from 'src/repositories/oauth-app.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
-import { getKyselyConfig } from 'src/utils/database.js';
 import { refreshConnectAuth } from 'src/utils/connect-policy.js';
 import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { connectCompetitor, publicationBarrier } from 'test/fixtures/connect-concurrency.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let database: Kysely<DB>;
 beforeAll(async () => {
   database = await getKyselyDB();
+});
+afterAll(async () => {
+  await database?.destroy();
 });
 
 const setup = async () => {
@@ -48,7 +53,7 @@ const setup = async () => {
     policyRevision: 1,
     refreshTokenHash: randomBytes(32),
     accessTokenHash: randomBytes(32),
-    accessExpiresAt: new Date(Date.now() + 3600000),
+    accessExpiresAt: new Date(Date.now() + 3_600_000),
   });
   const auth: AuthDto = {
     user: { ...user, quotaUsageInBytes: 0 },
@@ -134,24 +139,11 @@ describe('Connect query privacy', () => {
   it('holds source privacy rows through an additive write transaction', async () => {
     const { sut, auth, album, add } = await setup();
     const asset = await add(album.id);
-    const {
-      rows: [{ name }],
-    } = await sql<{ name: string }>`select current_database() name`.execute(database);
-    const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
-    url.pathname = `/${name}`;
-    const competing = new Kysely<DB>(getKyselyConfig({ connectionType: 'url', url: url.href }));
-    let release!: () => void;
-    let checked!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const ready = new Promise<void>((resolve) => {
-      checked = resolve;
-    });
+    const competing = await connectCompetitor(database);
+    const { ready, release, hold } = publicationBarrier();
     const write = sut.withGrantWrite(auth, async (current) => {
       await sut.requireReadableAssets(current, [asset.id]);
-      checked();
-      await held;
+      await hold();
     });
     await ready;
     try {
@@ -170,6 +162,180 @@ describe('Connect query privacy', () => {
       await write;
       await competing.destroy();
     }
+  });
+
+  it.each([
+    'membership',
+    'direct membership',
+    'source owner',
+    'target owner',
+    'ancestor privacy',
+    'hierarchy',
+  ] as const)('holds %s authority through additive publication', async (change) => {
+    const { sut, auth, album, outside, add, policy, grant } = await setup();
+    const asset = await add(album.id);
+    await new AlbumRepository(database).reparent(outside.id, album.id);
+    await database
+      .updateTable('oauth_grant')
+      .set({ accessPolicy: { ...policy, writableAlbumIds: [outside.id] } })
+      .where('id', '=', grant.id)
+      .execute();
+    const competing = await connectCompetitor(database);
+    const barrier = publicationBarrier();
+    const write = sut.withGrantWrite(auth, async (current) => {
+      await sut.requireWritableAlbum(current, outside.id);
+      await sut.requireReadableAssets(current, [asset.id]);
+      await barrier.hold();
+      await new AlbumRepository(database).addAssetIds(outside.id, [asset.id]);
+    });
+    await Promise.race([barrier.ready, write]);
+    try {
+      await expect(
+        competing.transaction().execute(async (tx) => {
+          await sql`set local lock_timeout = '300ms'`.execute(tx);
+          if (change === 'membership') await new AlbumRepository(tx).removeAssetIds(album.id, [asset.id]);
+          else if (change === 'direct membership')
+            await tx
+              .deleteFrom('album_asset')
+              .where('albumId', '=', album.id)
+              .where('assetId', '=', asset.id)
+              .execute();
+          else if (change === 'source owner' || change === 'target owner')
+            await tx
+              .updateTable('album_user')
+              .set({ role: AlbumUserRole.Editor })
+              .where('albumId', '=', change === 'source owner' ? album.id : outside.id)
+              .where('userId', '=', auth.user.id)
+              .execute();
+          else if (change === 'ancestor privacy')
+            await tx.updateTable('album').set({ isLocked: true }).where('id', '=', album.id).execute();
+          else if (change === 'hierarchy') await new AlbumRepository(tx).reparentIn(tx, album.id, null);
+        }),
+      ).rejects.toThrow(/lock timeout/);
+    } finally {
+      barrier.release();
+      await write;
+      await competing.destroy();
+    }
+    expect(
+      await database
+        .selectFrom('album_asset')
+        .select('assetId')
+        .where('albumId', '=', outside.id)
+        .where('assetId', '=', asset.id)
+        .execute(),
+    ).toHaveLength(1);
+  });
+
+  it.each(['album', 'owner', 'asset', 'membership'] as const)(
+    'refuses a busy %s row without waiting behind a writer that may need hierarchy',
+    async (kind) => {
+      const { sut, auth, album, add } = await setup();
+      const asset = await add(album.id);
+      const competing = await connectCompetitor(database);
+      const barrier = publicationBarrier();
+      const writer = competing.transaction().execute(async (tx) => {
+        if (kind === 'album') await tx.selectFrom('album').select('id').where('id', '=', album.id).forShare().execute();
+        else if (kind === 'owner')
+          await tx
+            .selectFrom('album_user')
+            .select('albumId')
+            .where('albumId', '=', album.id)
+            .where('userId', '=', auth.user.id)
+            .forUpdate()
+            .execute();
+        else if (kind === 'asset')
+          await tx.selectFrom('asset').select('id').where('id', '=', asset.id).forUpdate().execute();
+        else if (kind === 'membership')
+          await tx
+            .selectFrom('album_asset')
+            .select('assetId')
+            .where('albumId', '=', album.id)
+            .where('assetId', '=', asset.id)
+            .forUpdate()
+            .execute();
+        await barrier.hold();
+        await lockAlbumHierarchy(tx);
+      });
+      await Promise.race([barrier.ready, writer]);
+      try {
+        await expect(
+          database.transaction().execute(async (tx) => {
+            await sql`set local lock_timeout = '0'`.execute(tx);
+            await sql`set local statement_timeout = '5s'`.execute(tx);
+            await publicationTransaction.run(tx, () =>
+              sut.withGrantWrite(auth, (current) => sut.requireReadableAssets(current, [asset.id])),
+            );
+          }),
+        ).rejects.toThrow('Connect access is changing');
+      } finally {
+        barrier.release();
+        await writer;
+        await competing.destroy();
+      }
+    },
+  );
+
+  it('refuses a hierarchy lock inversion while a writer waits for the publication owner', async () => {
+    const { sut, auth } = await setup();
+    const competing = await connectCompetitor(database);
+    const barrier = publicationBarrier();
+    let writer!: Promise<void>;
+    try {
+      await database.transaction().execute(async (tx) => {
+        await tx.selectFrom('user').select('id').where('id', '=', auth.user.id).forUpdate().execute();
+        writer = competing.transaction().execute(async (other) => {
+          await lockAlbumHierarchy(other);
+          await barrier.hold();
+          await other.selectFrom('user').select('id').where('id', '=', auth.user.id).forUpdate().execute();
+        });
+        await Promise.race([barrier.ready, writer]);
+        barrier.release();
+        await sql`set local lock_timeout = '1s'`.execute(tx);
+        await expect(
+          publicationTransaction.run(tx, () => sut.withGrantWrite(auth, () => Promise.resolve())),
+        ).rejects.toThrow('Album hierarchy is changing');
+      });
+    } finally {
+      barrier.release();
+      await writer;
+      await competing.destroy();
+    }
+  });
+
+  it('denies publication when a hierarchy writer makes the destination private', async () => {
+    const { sut, auth, album, outside, add, policy, grant } = await setup();
+    const asset = await add(album.id);
+    await database
+      .updateTable('oauth_grant')
+      .set({ accessPolicy: { ...policy, writableAlbumIds: [outside.id] } })
+      .where('id', '=', grant.id)
+      .execute();
+    const competing = await connectCompetitor(database);
+    const barrier = publicationBarrier();
+    const mutation = competing.transaction().execute(async (tx) => {
+      await lockAlbumHierarchy(tx);
+      await new AlbumRepository(tx).reparentIn(tx, outside.id, album.id);
+      await tx.updateTable('album').set({ isLocked: true }).where('id', '=', album.id).execute();
+      await barrier.hold();
+    });
+    await Promise.race([barrier.ready, mutation]);
+    const write = sut.withGrantWrite(auth, async (current) => {
+      await sut.requireWritableAlbum(current, outside.id);
+      await sut.requireReadableAssets(current, [asset.id]);
+      await new AlbumRepository(database).addAssetIds(outside.id, [asset.id]);
+    });
+    const denied = expect(write).rejects.toThrow();
+    barrier.release();
+    await mutation;
+    await denied;
+    await expect(
+      sut.withGrantWrite(auth, (current) => sut.requireWritableAlbum(current, outside.id)),
+    ).rejects.toThrow();
+    await competing.destroy();
+    expect(
+      await database.selectFrom('album_asset').select('assetId').where('albumId', '=', outside.id).execute(),
+    ).toHaveLength(0);
   });
 
   it('rejects shared, locked and trashed target albums at consent and write time', async () => {

@@ -1,8 +1,9 @@
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { DB } from 'src/schema/index.js';
+import { lockAlbumHierarchy } from 'src/repositories/album.repository.js';
 import { hiddenContentOrOthersRules } from 'src/utils/database.js';
 import { isDefaultVisible } from 'src/utils/locked.js';
 
@@ -130,4 +131,81 @@ export const connectAssetPredicate = (auth: AuthDto, assetAlias = 'asset', writa
         and connect_grant."accessPolicy"->${writable ? 'writableAlbumIds' : 'readAlbumIds'} ? connect_album.id::text
         and ${connectOwnedAlbumPredicate(auth.user.id, 'connect_album')}
       )))`;
+};
+
+/** Existing writers can acquire rows before hierarchy; publication must not wait behind them. */
+const connectAccessLocks = async <T>(work: () => Promise<T>): Promise<T> => {
+  try {
+    return await work();
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === '55P03') {
+      throw new ConflictException('Connect access is changing; retry the operation');
+    }
+    throw error;
+  }
+};
+
+/** Lock every selected album and ancestor before any asset locks, retaining the writer's album order.
+ * The hierarchy fence stabilizes closure discovery. Row locks then protect privacy and ownership;
+ * authorization must be evaluated again after these locks, never from the discovery read.
+ */
+export const lockConnectPolicyAlbums = async (db: Kysely<DB>, auth: AuthDto, creatingAlbum = false) => {
+  await lockAlbumHierarchy(db, { shared: !creatingAlbum, failIfBusy: true });
+  const policy = requireConnectPolicy(auth);
+  const ids = [...new Set([...policy.readAlbumIds, ...policy.writableAlbumIds])].sort();
+  if (ids.length === 0) return;
+  const ancestors = await db
+    .selectFrom('album_closure')
+    .select('id_ancestor')
+    .where('id_descendant', 'in', ids)
+    .execute();
+  const allIds = [...new Set([...ids, ...ancestors.map(({ id_ancestor }) => id_ancestor)])].sort();
+  await connectAccessLocks(async () => {
+    await db
+      .selectFrom('album')
+      .select('id')
+      .where('id', 'in', allIds)
+      .orderBy('id')
+      .forNoKeyUpdate()
+      .noWait()
+      .execute();
+    await db
+      .selectFrom('album_user')
+      .select('albumId')
+      .where('albumId', 'in', ids)
+      .where('userId', '=', auth.user.id)
+      .orderBy('albumId')
+      .forShare()
+      .noWait()
+      .execute();
+  });
+};
+
+/** Retain source privacy and exact selected memberships, including writable tag sources. */
+export const lockConnectAssets = async (db: Kysely<DB>, auth: AuthDto, assetIds: string[]) => {
+  if (assetIds.length === 0) return;
+  const policy = requireConnectPolicy(auth);
+  const ids = [...new Set([...policy.readAlbumIds, ...policy.writableAlbumIds])];
+  await connectAccessLocks(async () => {
+    await db
+      .selectFrom('asset')
+      .select('id')
+      .where('id', 'in', assetIds)
+      .where('ownerId', '=', auth.user.id)
+      .orderBy('id')
+      .forUpdate()
+      .noWait()
+      .execute();
+    if (ids.length === 0) return;
+    await db
+      .selectFrom('album_asset')
+      .select('assetId')
+      .where('albumId', 'in', ids)
+      .where('assetId', 'in', assetIds)
+      .orderBy('albumId')
+      .orderBy('assetId')
+      .forShare()
+      .noWait()
+      .execute();
+  });
 };

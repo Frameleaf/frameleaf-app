@@ -1,12 +1,14 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DB } from 'src/schema/index.js';
 import { ConnectUploadStartDto } from 'src/dtos/connect-media.dto.js';
-import { AssetStatus, AssetType, ChecksumAlgorithm, LibraryScope, Permission } from 'src/enum.js';
+import { AlbumUserRole, AssetStatus, AssetType, ChecksumAlgorithm, LibraryScope, Permission } from 'src/enum.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { ConnectMediaRepository } from 'src/repositories/connect-media.repository.js';
-import type { DB } from 'src/schema/index.js';
 import { canonicalTestContext, expectCanonicalTables } from 'test/fixtures/canonical-database.js';
+import { connectCompetitor, publicationBarrier } from 'test/fixtures/connect-concurrency.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
@@ -42,7 +44,7 @@ const fixture = async () => {
       resource: 'https://library.example/api/connect',
       accessTokenHash: randomBytes(32),
       refreshTokenHash: randomBytes(32),
-      accessExpiresAt: new Date(Date.now() + 3600_000),
+      accessExpiresAt: new Date(Date.now() + 3_600_000),
       accessPolicy: policy,
     })
     .returningAll()
@@ -187,7 +189,7 @@ describe('Connect media real transactions on the canonical migration chain', () 
       .where('grantId', '=', f.grant.id)
       .where('operation', '=', 'upload-commit')
       .executeTakeFirstOrThrow();
-    expect(receipt.expiresAt.getTime() - receipt.createdAt.getTime()).toBeGreaterThanOrEqual(30 * 86400_000 - 1000);
+    expect(receipt.expiresAt.getTime() - receipt.createdAt.getTime()).toBeGreaterThanOrEqual(30 * 86_400_000 - 1000);
   });
 
   it.each(['revoke', 'narrow', 'quota'] as const)('rechecks live %s after bytes are staged', async (change) => {
@@ -195,13 +197,13 @@ describe('Connect media real transactions on the canonical migration chain', () 
     const id = await stage(f);
     if (change === 'revoke')
       await db.updateTable('oauth_grant').set({ revokedAt: new Date() }).where('id', '=', f.grant.id).execute();
-    if (change === 'narrow')
+    else if (change === 'narrow')
       await db
         .updateTable('oauth_grant')
         .set({ accessPolicy: { ...f.grant.accessPolicy!, writableAlbumIds: [] } })
         .where('id', '=', f.grant.id)
         .execute();
-    if (change === 'quota')
+    else if (change === 'quota')
       await db.updateTable('user').set({ quotaSizeInBytes: 5 }).where('id', '=', f.user.id).execute();
     await expect(commit(f, id)).rejects.toThrow();
     expect(await db.selectFrom('asset').select('id').where('ownerId', '=', f.user.id).execute()).toHaveLength(0);
@@ -237,6 +239,179 @@ describe('Connect media real transactions on the canonical migration chain', () 
       expect(await db.selectFrom('asset').select('id').where('ownerId', '=', f.user.id).execute()).toHaveLength(1);
     },
   );
+
+  it('rechecks destination ancestor privacy after staging and leaves no publication on denial', async () => {
+    const f = await fixture();
+    const { album: parent } = await f.ctx.newAlbum({ ownerId: f.user.id });
+    await new AlbumRepository(db).reparent(f.album.id, parent.id);
+    const id = await stage(f);
+    await db.updateTable('album').set({ isLocked: true }).where('id', '=', parent.id).execute();
+    await expect(commit(f, id)).rejects.toThrow('Connect operation unavailable');
+    expect(await db.selectFrom('asset').select('id').where('ownerId', '=', f.user.id).execute()).toHaveLength(0);
+    expect(
+      await db
+        .selectFrom('connect_receipt')
+        .select('id')
+        .where('grantId', '=', f.grant.id)
+        .where('operation', '=', 'upload-commit')
+        .execute(),
+    ).toHaveLength(0);
+  });
+
+  it.each(['ancestor privacy', 'hierarchy'] as const)(
+    'holds destination %s until the upload receipt commits',
+    async (change) => {
+      const f = await fixture();
+      const { album: parent } = await f.ctx.newAlbum({ ownerId: f.user.id });
+      await new AlbumRepository(db).reparent(f.album.id, parent.id);
+      const id = await stage(f);
+      const competing = await connectCompetitor(db);
+      const barrier = publicationBarrier();
+      const requireResult = f.repo.requireResult.bind(f.repo);
+      vi.spyOn(f.repo, 'requireResult').mockImplementation(async (...args) => {
+        const result = await requireResult(...args);
+        await barrier.hold();
+        return result;
+      });
+      const write = commit(f, id);
+      await Promise.race([barrier.ready, write]);
+      try {
+        await expect(
+          competing.transaction().execute(async (tx) => {
+            await sql`set local lock_timeout = '300ms'`.execute(tx);
+            if (change === 'ancestor privacy')
+              await tx.updateTable('album').set({ isLocked: true }).where('id', '=', parent.id).execute();
+            else await new AlbumRepository(tx).reparentIn(tx, parent.id, null);
+          }),
+        ).rejects.toThrow(/lock timeout/);
+      } finally {
+        barrier.release();
+        await write;
+        await competing.destroy();
+      }
+      expect(
+        await db
+          .selectFrom('connect_receipt')
+          .select('requestId')
+          .where('grantId', '=', f.grant.id)
+          .where('operation', '=', 'upload-commit')
+          .execute(),
+      ).toHaveLength(1);
+    },
+  );
+
+  it.each(['membership', 'owner', 'ancestor'] as const)(
+    'retains duplicate source %s authority through the receipt',
+    async (change) => {
+      const f = await fixture();
+      const { album: parent } = await f.ctx.newAlbum({ ownerId: f.user.id });
+      const { album: source } = await f.ctx.newAlbum({ ownerId: f.user.id, parentId: parent.id });
+      const policy = { ...f.grant.accessPolicy!, readAlbumIds: [source.id] };
+      await db.updateTable('oauth_grant').set({ accessPolicy: policy }).where('id', '=', f.grant.id).execute();
+      const { asset } = await f.ctx.newAsset({
+        ownerId: f.user.id,
+        checksum: Buffer.from(f.dto.sha256, 'hex'),
+        libraryScope: LibraryScope.Design,
+      });
+      await db.insertInto('album_asset').values({ albumId: source.id, assetId: asset.id }).execute();
+      const id = await stage(f);
+      const competing = await connectCompetitor(db);
+      const barrier = publicationBarrier();
+      const requireResult = f.repo.requireResult.bind(f.repo);
+      vi.spyOn(f.repo, 'requireResult').mockImplementation(async (...args) => {
+        const result = await requireResult(...args);
+        await barrier.hold();
+        return result;
+      });
+      const write = commit(f, id);
+      await Promise.race([barrier.ready, write]);
+      try {
+        await expect(
+          competing.transaction().execute(async (tx) => {
+            await sql`set local lock_timeout = '300ms'`.execute(tx);
+            if (change === 'membership') await new AlbumRepository(tx).removeAssetIds(source.id, [asset.id]);
+            else if (change === 'owner')
+              await tx
+                .updateTable('album_user')
+                .set({ role: AlbumUserRole.Editor })
+                .where('albumId', '=', source.id)
+                .where('userId', '=', f.user.id)
+                .execute();
+            else if (change === 'ancestor')
+              await tx.updateTable('album').set({ isLocked: true }).where('id', '=', parent.id).execute();
+          }),
+        ).rejects.toThrow(/lock timeout/);
+      } finally {
+        barrier.release();
+        expect(await write).toMatchObject({ assetId: asset.id, status: 'duplicate' });
+        await competing.destroy();
+      }
+    },
+  );
+
+  it('cleans expired tickets in bounded batches without deleting live tickets or receipt tombstones', async () => {
+    const f = await fixture();
+    const id = await stage(f);
+    const receipt = await commit(f, id);
+    const now = new Date();
+    const expired = [randomBytes(32), randomBytes(32), randomBytes(32)];
+    const live = randomBytes(32);
+    await db
+      .insertInto('connect_rendition_ticket')
+      .values([
+        ...expired.map((tokenHash) => ({
+          tokenHash,
+          assetId: receipt.assetId,
+          grantId: f.grant.id,
+          variant: 'preview' as const,
+          expiresAt: new Date(now.getTime() - 1000),
+        })),
+        {
+          tokenHash: live,
+          assetId: receipt.assetId,
+          grantId: f.grant.id,
+          variant: 'preview',
+          expiresAt: new Date(now.getTime() + 60_000),
+        },
+      ])
+      .execute();
+    await db
+      .updateTable('connect_receipt')
+      .set({ expiresAt: new Date(now.getTime() - 1000) })
+      .where('grantId', '=', f.grant.id)
+      .execute();
+    const competing = await connectCompetitor(db);
+    const barrier = publicationBarrier();
+    const locked = competing.transaction().execute(async (tx) => {
+      await tx
+        .selectFrom('connect_rendition_ticket')
+        .select('tokenHash')
+        .where('tokenHash', '=', expired[0])
+        .forUpdate()
+        .execute();
+      await barrier.hold();
+    });
+    await Promise.race([barrier.ready, locked]);
+    try {
+      expect(await f.repo.deleteExpiredTickets(now, 1)).toBe(1);
+      expect(await f.repo.deleteExpiredTickets(now, 10)).toBe(1);
+      expect(await f.repo.deleteExpiredTickets(now, 10)).toBe(0);
+    } finally {
+      barrier.release();
+      await locked;
+      await competing.destroy();
+    }
+    expect(await f.repo.deleteExpiredTickets(now, 10)).toBe(1);
+    expect(
+      (
+        await db.selectFrom('connect_rendition_ticket').select('tokenHash').where('grantId', '=', f.grant.id).execute()
+      ).map(({ tokenHash }) => tokenHash),
+    ).toEqual([live]);
+    expect(
+      await db.selectFrom('connect_receipt').select('id').where('grantId', '=', f.grant.id).execute(),
+    ).toHaveLength(2);
+    expect(await commit(f, id)).toMatchObject({ assetId: receipt.assetId });
+  });
 
   it('accepts an already authorized duplicate without changing its original or charging quota', async () => {
     const f = await fixture();

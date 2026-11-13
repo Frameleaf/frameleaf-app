@@ -43,8 +43,16 @@ import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 // shortcut: hierarchy edits serialize across users; shard this lock if measured contention warrants it.
-export const lockAlbumHierarchy = async (db: Kysely<DB>) => {
-  await sql`SELECT pg_advisory_xact_lock(hashtextextended('frameleaf:album-hierarchy', 0))`.execute(db);
+export const lockAlbumHierarchy = async (
+  db: Kysely<DB>,
+  { shared = false, failIfBusy = false }: { shared?: boolean; failIfBusy?: boolean } = {},
+) => {
+  const fn = `pg_${failIfBusy ? 'try_' : ''}advisory_xact_lock${shared ? '_shared' : ''}`;
+  const { rows } = await sql<{
+    acquired: boolean;
+  }>`SELECT ${sql.raw(fn)}(hashtextextended('frameleaf:album-hierarchy', 0)) AS acquired`.execute(db);
+  // Publication already owns user/resource locks. Never wait behind a hierarchy writer that may need them.
+  if (failIfBusy && !rows[0]?.acquired) throw new ConflictException('Album hierarchy is changing; retry the operation');
 };
 
 const assertAlbumDepth = async (db: Kysely<DB>, parentId: string | null | undefined, height: number) => {

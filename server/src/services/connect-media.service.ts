@@ -3,6 +3,7 @@ import { rm, stat } from 'node:fs/promises';
 import { IncomingHttpHeaders } from 'node:http';
 import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
+import { OnEvent } from 'src/decorators.js';
 import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
@@ -39,6 +40,14 @@ export class ConnectMediaService {
     private authService: AuthService,
     private images: MediaRepository,
   ) {}
+
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  async onNightlyDatabaseCleanup() {
+    const before = new Date();
+    while ((await this.repository.deleteExpiredTickets(before)) === 1000) {
+      // Each statement releases its batch locks; newly minted tickets are newer than this fixed cutoff.
+    }
+  }
 
   async capabilities(auth: AuthDto, via: FrameleafVia | null) {
     const limits = await this.uploads.limits();

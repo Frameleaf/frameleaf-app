@@ -29,6 +29,8 @@ import { ConnectReceiptTable } from 'src/schema/tables/connect-media.table.js';
 import {
   connectAssetPredicate,
   connectOwnedAlbumPredicate,
+  lockConnectAssets,
+  lockConnectPolicyAlbums,
   refreshConnectAuth,
   requireConnectPolicy,
   requireConnectScope,
@@ -103,6 +105,7 @@ export class ConnectMediaRepository {
     )
       throw new NotFoundException('Upload unavailable');
     const current = await this.current(tx ?? this.db, auth, !!tx, true);
+    if (tx) await lockConnectPolicyAlbums(tx, current);
     await this.destination(tx ?? this.db, current, binding.albumId, binding.workspace, !!tx);
     return current;
   }
@@ -154,6 +157,7 @@ export class ConnectMediaRepository {
   async createAlbum(auth: AuthDto, dto: ConnectAlbumCreateDto) {
     return this.db.transaction().execute(async (tx) => {
       const current = await this.current(tx, auth, true);
+      await lockConnectPolicyAlbums(tx, current, true);
       requireConnectScope(current, 'albums:write');
       const policy = requireConnectPolicy(current);
       if (!policy.writeWorkspaces.includes(dto.workspace)) throw unavailable();
@@ -208,6 +212,7 @@ export class ConnectMediaRepository {
   async start(auth: AuthDto, dto: ConnectUploadStartDto, maxSize: number) {
     return this.db.transaction().execute(async (tx) => {
       const current = await this.current(tx, auth, true, true);
+      await lockConnectPolicyAlbums(tx, current);
       await this.destination(tx, current, dto.albumId, dto.workspace, true);
       const existing = await this.findReceipt(tx, current, 'upload-start', dto.requestId, dto);
       if (existing) {
@@ -261,6 +266,7 @@ export class ConnectMediaRepository {
 
   async requireResult(tx: Kysely<DB>, auth: AuthDto, row: AssetUploadResource) {
     if (!row.resultAssetId || !row.metadata.connect) throw unavailable();
+    await lockConnectAssets(tx, auth, [row.resultAssetId]);
     const asset = await tx
       .selectFrom('asset')
       .select('id')
@@ -323,9 +329,9 @@ export class ConnectMediaRepository {
       .where('ownerId', '=', current.user.id)
       .where('checksum', '=', row.expectedChecksum)
       .where('libraryId', 'is', null)
-      .forUpdate()
       .executeTakeFirst();
     if (duplicate) {
+      await lockConnectAssets(tx, current, [duplicate.id]);
       const visible = await tx
         .selectFrom('asset')
         .select('id')
@@ -334,19 +340,6 @@ export class ConnectMediaRepository {
         .where('libraryScope', 'in', [scope(binding.workspace), LibraryScope.Both])
         .executeTakeFirst();
       if (!visible || !current.oauthApp!.scopes.includes('library:read')) throw unavailable();
-      const policy = requireConnectPolicy(current);
-      if (!policy.allLibraryRead) {
-        const membership = await tx
-          .selectFrom('album_asset')
-          .innerJoin('album', 'album.id', 'album_asset.albumId')
-          .select('album_asset.assetId')
-          .where('album_asset.assetId', '=', duplicate.id)
-          .where('album.id', 'in', policy.readAlbumIds)
-          .where(connectOwnedAlbumPredicate(current.user.id))
-          .forShare()
-          .executeTakeFirst();
-        if (!membership) throw unavailable();
-      }
     }
     const published = await publish();
     if (!published.resultAssetId || !published.resultStatus) throw unavailable();
@@ -376,6 +369,26 @@ export class ConnectMediaRepository {
       .where('requestId', '=', dto.requestId)
       .execute();
     return result;
+  }
+
+  /** Receipt tombstones are intentionally retained: expiry must never recreate a previous request. */
+  async deleteExpiredTickets(before: Date, limit = 1000): Promise<number> {
+    const result = await this.db
+      .with('expired', (db) =>
+        db
+          .selectFrom('connect_rendition_ticket')
+          .select('tokenHash')
+          .where('expiresAt', '<=', before)
+          .orderBy('expiresAt')
+          .orderBy('tokenHash')
+          .limit(Math.max(1, Math.min(limit, 1000)))
+          .forUpdate()
+          .skipLocked(),
+      )
+      .deleteFrom('connect_rendition_ticket')
+      .where('tokenHash', 'in', (db) => db.selectFrom('expired').select('tokenHash'))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 
   async createTicket(auth: AuthDto, assetId: string, variant: ConnectRenditionDto['variant']) {

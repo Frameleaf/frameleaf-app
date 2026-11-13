@@ -37,10 +37,11 @@ const fixture = () => {
     expectedSize: 10,
     expectedChecksum: Buffer.alloc(32),
     state: 'verified',
-    expiresAt: new Date(Date.now() + 3600_000),
+    expiresAt: new Date(Date.now() + 3_600_000),
     metadata: { connect: { requestId: 'save-1' } },
   };
   const repository = {
+    deleteExpiredTickets: vi.fn().mockResolvedValue(0),
     state: vi.fn().mockResolvedValue({ resource }),
     ticket: vi.fn().mockResolvedValue({ grantId, assetId, variant: 'preview' }),
     createTicket: vi
@@ -50,7 +51,7 @@ const fixture = () => {
   const uploads = {
     cancel: vi.fn(),
     commitConnect: vi.fn(),
-    limits: vi.fn().mockResolvedValue({ maxSize: 1000, maxAppendSize: 100, maxAge: 86400 }),
+    limits: vi.fn().mockResolvedValue({ maxSize: 1000, maxAppendSize: 100, maxAge: 86_400 }),
   };
   const media = {
     viewThumbnail: vi.fn().mockResolvedValue(file),
@@ -76,6 +77,15 @@ const fixture = () => {
 };
 
 describe('Connect media delivery and terminal state', () => {
+  it('drains expired ticket batches at one fixed nightly cutoff', async () => {
+    const f = fixture();
+    f.repository.deleteExpiredTickets.mockResolvedValueOnce(1000).mockResolvedValueOnce(2);
+    await f.service.onNightlyDatabaseCleanup();
+    expect(f.repository.deleteExpiredTickets).toHaveBeenCalledTimes(2);
+    expect(f.repository.deleteExpiredTickets.mock.calls[0][0]).toBeInstanceOf(Date);
+    expect(f.repository.deleteExpiredTickets.mock.calls[1][0]).toBe(f.repository.deleteExpiredTickets.mock.calls[0][0]);
+  });
+
   it('advertises upload types for selected destinations without album-creation permission', async () => {
     const f = fixture();
     const result = await f.service.capabilities(
@@ -137,8 +147,8 @@ describe('Connect media delivery and terminal state', () => {
     async (condition) => {
       const f = fixture();
       if (condition === 'expired') f.repository.ticket.mockRejectedValue(new Error('ticket expired'));
-      if (condition === 'revoked') f.oauth.validatePreviewGrant.mockRejectedValue(new Error('grant revoked'));
-      if (condition === 'private') f.connect.requireReadableAssets.mockRejectedValue(new Error('asset private'));
+      else if (condition === 'revoked') f.oauth.validatePreviewGrant.mockRejectedValue(new Error('grant revoked'));
+      else if (condition === 'private') f.connect.requireReadableAssets.mockRejectedValue(new Error('asset private'));
       await expect(f.service.ticket('opaque', 'relay')).rejects.toThrow();
       expect(f.media.viewThumbnail).not.toHaveBeenCalled();
       expect(f.media.downloadOriginal).not.toHaveBeenCalled();
@@ -265,15 +275,14 @@ describe('Connect media delivery and terminal state', () => {
         getOrientedSize: vi
           .fn()
           .mockResolvedValue(
-            condition === 'pixel-count' ? { width: 40001, height: 1000 } : { width: 100, height: 100 },
+            condition === 'pixel-count' ? { width: 40_001, height: 1000 } : { width: 100, height: 100 },
           ),
         generateThumbnail: vi.fn(async (_input: string, _options: unknown, target: string) => {
           output = target;
           await writeFile(target, 'sanitized-output');
           if (condition === 'output-size') {
             await truncate(target, 5 * 1024 * 1024 + 1);
-          }
-          if (condition === 'encode-failure') {
+          } else if (condition === 'encode-failure') {
             throw new Error('encode failed');
           }
         }),
@@ -310,7 +319,7 @@ describe('Connect media delivery and terminal state', () => {
       'relay',
     );
     expect(result.maxUploadBytes).toBe(300);
-    expect(result.receiptWindowSeconds).toBe(30 * 86400);
+    expect(result.receiptWindowSeconds).toBe(30 * 86_400);
     expect(result.renditionTicketSeconds).toBe(900);
     expect(result.originalsAllowed).toBe(false);
   });
