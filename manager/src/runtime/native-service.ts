@@ -36,6 +36,12 @@ import {
 } from './native.js';
 
 import { approveNativeUpdate } from './native-update-approval.js';
+import {
+  admitNativeInstallation,
+  NATIVE_CAPABILITIES,
+  NativeTlsRotation,
+  NativeTransition,
+} from './native-installation.js';
 const path = z
   .string()
   .min(1)
@@ -80,12 +86,6 @@ const Configuration = z
     release: releaseTag,
   })
   .strict();
-const Transition = z
-  .object({
-    operationId: SecureInstallationIdSchema,
-    fromFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
-  })
-  .strict();
 const Descriptor = Configuration.extend({
   tlsCertificatePemSha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
@@ -108,7 +108,9 @@ const Bootstrap = Configuration.extend({
     .min(24)
     .max(256)
     .regex(/^[^\r\n\0]+$/),
-  installationTransition: Transition.optional(),
+  installationTransition: NativeTransition.optional(),
+  // A new TLS certificate, handed over by the key of the one this store last accepted.
+  tlsRotation: NativeTlsRotation.optional(),
   // Only the installed qualification supervisor may opt in through bootstrap.
   mediaMoveQualification: z.strictObject({
     manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -278,6 +280,7 @@ export async function createNativeService(
   await protect(bootstrap.installation.controller);
   await verifyNativeBackupEngine(bootstrap.backupEngine, protect);
   validateNativeTls(bootstrap.tls, origin);
+  validateNativePorts(bootstrap.installation, origin);
   if (!path.safeParse(backupRepository).success)
     throw new Refusal('native_backup_destination_invalid');
   const backups = new Backups(
@@ -286,6 +289,18 @@ export async function createNativeService(
     nativeBackupCommand(bootstrap.backupEngine, command, protect),
   );
   return new NativeService(store, bootstrap, undefined, backups);
+}
+/**
+ * The database and photo ports are the supervisor's configuration. The schema already requires
+ * two different ports; neither may be the one Manager itself serves on.
+ */
+export function validateNativePorts(
+  installation: Pick<NativeBootstrap['installation'], 'databasePort' | 'apiPort'>,
+  origin: string,
+): void {
+  const manager = nativeListener(origin).port;
+  if ([installation.databasePort, installation.apiPort].includes(manager))
+    throw new Refusal('native_ports_invalid');
 }
 export function validateNativeTls(
   tls: NativeBootstrap['tls'],
@@ -413,63 +428,6 @@ export function nativeBackupCommand(
   };
 }
 
-/** Only the inherited supervisor bootstrap can request this; it must hold source process exclusion. */
-function transitionInstallation(
-  store: Store,
-  descriptor: z.infer<typeof Descriptor>,
-  transition: z.infer<typeof Transition>,
-): void {
-  const fingerprint = digest(descriptor);
-  const receipt = { ...transition, toFingerprint: fingerprint };
-  const receiptKey = `native-transition:${transition.operationId}`;
-  store.db.exec('BEGIN IMMEDIATE');
-  try {
-    const parsed = Binding.safeParse(store.get('native-installation'));
-    if (
-      !parsed.success ||
-      digest(parsed.data.descriptor) !== parsed.data.fingerprint ||
-      store.get('installation') ||
-      store.get('native-library-id') !== descriptor.installation.id
-    )
-      throw new Refusal('native_installation_changed');
-    if (
-      store.db.prepare('SELECT 1 FROM operations WHERE active=1 LIMIT 1').get()
-    )
-      throw new Refusal('operation_in_progress');
-    const prior = store.get(receiptKey);
-    if (prior !== null) {
-      if (
-        digest(prior) !== digest(receipt) ||
-        parsed.data.fingerprint !== fingerprint
-      )
-        throw new Refusal('native_installation_changed');
-    } else {
-      const source = parsed.data.descriptor;
-      if (
-        transition.fromFingerprint === fingerprint ||
-        parsed.data.fingerprint !== transition.fromFingerprint ||
-        source.protocolVersion !== descriptor.protocolVersion ||
-        source.name !== descriptor.name ||
-        source.tlsCertificatePemSha256 !== descriptor.tlsCertificatePemSha256 ||
-        ['id', 'secureInstallationId', 'state', 'databasePort', 'apiPort'].some(
-          (key) =>
-            source.installation[key as keyof typeof source.installation] !==
-            descriptor.installation[
-              key as keyof typeof descriptor.installation
-            ],
-        )
-      )
-        throw new Refusal('native_installation_changed');
-      store.set('native-installation', { fingerprint, descriptor });
-      store.set(receiptKey, receipt);
-    }
-    store.db.exec('COMMIT');
-  } catch (error) {
-    store.db.exec('ROLLBACK');
-    throw error;
-  }
-}
-
 /** The installed supervisor owns bootstrap authority; Manager owns the existing operation journal. */
 export class NativeService {
   private readonly lifecycle: NativeOperations;
@@ -509,6 +467,7 @@ export class NativeService {
       backupKey,
       tls,
       installationTransition,
+      tlsRotation,
       mediaMoveQualification,
       ...configuration
     } = bootstrap;
@@ -532,9 +491,16 @@ export class NativeService {
       );
     if (supplied.identity.installationId !== bootstrap.installation.id)
       throw new Refusal('native_installation_changed');
-    if (installationTransition)
-      transitionInstallation(store, descriptor, installationTransition);
-    else store.createOnce('native-installation', { fingerprint, descriptor });
+    // Only the inherited supervisor bootstrap reaches this; it holds source process exclusion.
+    admitNativeInstallation(
+      store,
+      descriptor,
+      (value) => {
+        const parsed = Binding.safeParse(value);
+        return parsed.success ? parsed.data : null;
+      },
+      { transition: installationTransition, rotation: tlsRotation },
+    );
     if (
       store.get<{ fingerprint: string }>('native-installation')?.fingerprint !==
       fingerprint
@@ -612,6 +578,31 @@ export class NativeService {
       port: bootstrap.installation.apiPort,
       runtime: 'native',
     });
+    this.databasePort = bootstrap.installation.databasePort;
+  }
+  private readonly databasePort: number;
+  /**
+   * What the controller this Manager owns is doing now, for a paired Desktop. `running` is
+   * reported only while that controller is in photo-serving mode and has reported ready on
+   * `ports.api`; maintenance (backup, restore, cleanup), a fault and an unread state are
+   * `unknown` with the code, never `running`. The caller's nonce binds the reply to its request.
+   */
+  runtimeStatus(nonce: string, installationId: string, managerPort: number) {
+    if (installationId !== this.publicInstallation.id)
+      throw new Refusal('installation_changed');
+    const { state, code } = this.runtime.status();
+    return {
+      protocolVersion: 1,
+      nonce,
+      installationId,
+      capabilities: [...NATIVE_CAPABILITIES],
+      ports: {
+        manager: managerPort,
+        api: this.publicInstallation.port,
+        database: this.databasePort,
+      },
+      photoServer: { state, ...(code ? { code } : {}) },
+    };
   }
   private readonly manifestSha256: string;
   ready(origin: string) {

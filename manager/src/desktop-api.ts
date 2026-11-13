@@ -26,6 +26,7 @@ const nativePaths = new Set(
     'restore-operation',
     'resume-restore',
     'approve-update',
+    'runtime',
   ].map((name) => NATIVE + name),
 );
 const browserPaths = new Set([
@@ -53,6 +54,7 @@ export function desktopApi(
     | 'restore'
     | 'approveUpdate'
     | 'mediaMove'
+    | 'runtimeStatus'
   >,
 ) {
   const router = express.Router({ caseSensitive: true, strict: true });
@@ -244,6 +246,23 @@ export function desktopApi(
         )
         .map(publicOperation),
     });
+  });
+  // A separate route: released Desktops refuse a `status` reply that carries fields they do not know.
+  router.post(NATIVE + 'runtime', (request, response) => {
+    const { nonce } = z
+      .object({ nonce: z.string().uuid() })
+      .strict()
+      .parse(request.body);
+    const current = authorize(request, 'status');
+    if (!recovery || !security.origin)
+      throw new Refusal('native_runtime_status_unavailable');
+    response.json(
+      recovery.runtimeStatus(
+        nonce,
+        current.id,
+        Number(new URL(security.origin).port),
+      ),
+    );
   });
   router.post(NATIVE + 'control', (request, response) => {
     const value = z

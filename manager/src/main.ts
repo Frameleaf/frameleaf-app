@@ -755,7 +755,7 @@ async function main() {
     httpsOptions,
   });
   app.use(requestLog());
-  app.use(desktopApi(store, security, new DesktopGrants(store, security), lifecycle, native ?? undefined));
+  app.use(desktopApi(store, security, new DesktopGrants(store, security, !!native), lifecycle, native ?? undefined));
   app.use(security.guard);
   if (native) {
     // Native management uses the desktop UI; Docker recovery/import routes cannot operate on native state.
