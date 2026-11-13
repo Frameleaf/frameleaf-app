@@ -34759,6 +34759,15 @@ export function photographySiteInquiry({ site, photographyInquiryCreateDto }: {
     })));
 }
 /**
+ * Forget your photography style
+ */
+export function forgetDevelopStyle(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/photography/style", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Read your photography style status
  */
 export function getDevelopStyle(opts?: Oazapfts.RequestOpts) {
@@ -34779,15 +34788,6 @@ export function learnDevelopStyle(opts?: Oazapfts.RequestOpts) {
     }>("/photography/style", {
         ...opts,
         method: "POST"
-    }));
-}
-/**
- * Forget your photography style
- */
-export function forgetDevelopStyle(opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText("/photography/style", {
-        ...opts,
-        method: "DELETE"
     }));
 }
 /**
