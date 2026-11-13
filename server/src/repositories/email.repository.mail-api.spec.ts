@@ -149,10 +149,13 @@ describe(`${EmailRepository.name} (Gmail and Microsoft)`, () => {
   });
   it('retains the provider Retry-After response for campaign pacing', async () => {
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { message: 'Slow down' } }), {
-        status: 429,
-        headers: { 'Retry-After': '600' },
-      }),
+      Response.json(
+        { error: { message: 'Slow down' } },
+        {
+          status: 429,
+          headers: { 'Retry-After': '600' },
+        },
+      ),
     );
     await expect(
       sut.sendEmailWithAccount({ ...message, account: { provider: MailSignInProvider.Gmail, accessToken: ACCESS } }),

@@ -1,8 +1,8 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PhotographyCampaignSaveDto } from 'src/dtos/photography-campaign.dto.js';
-import { MailApiError } from 'src/repositories/email.repository.js';
 import { MailSignInProvider } from 'src/enum.js';
+import { MailApiError } from 'src/repositories/email.repository.js';
 import { PhotographyCampaignService } from 'src/services/photography-campaign.service.js';
 import { factory } from 'test/small.factory.js';
 import { newTestService } from 'test/utils.js';

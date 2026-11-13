@@ -2,13 +2,13 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 
 export const campaignAudience = z.object({
-  source: z.enum(['all', 'clients', 'leads', 'shoot']),
+  source: z.enum(['all', 'clients', 'leads', 'shoot']).meta({ id: 'PhotographyCampaignAudienceSource' }),
   workflowId: z.uuidv4().optional(),
 });
 export class PhotographyCampaignSaveDto extends createZodDto(
   z.object({
     name: z.string().trim().min(1).max(120),
-    templateKey: z.enum(['print-sale', 'review-request', 'mini-session']),
+    templateKey: z.enum(['print-sale', 'review-request', 'mini-session']).meta({ id: 'PhotographyCampaignTemplate' }),
     subject: z
       .string()
       .trim()
@@ -29,7 +29,7 @@ export class PhotographyCampaignDto extends createZodDto(
   PhotographyCampaignSaveDto.schema.extend({
     id: z.uuidv4(),
     revision: z.uuidv4(),
-    status: z.enum(['draft', 'scheduled', 'completed', 'cancelled']),
+    status: z.enum(['draft', 'scheduled', 'completed', 'cancelled']).meta({ id: 'PhotographyCampaignStatus' }),
     scheduledFor: z.iso.datetime().nullable(),
     sentCount: z.int().nonnegative(),
     failedCount: z.int().nonnegative(),
@@ -62,7 +62,9 @@ export class PhotographyCampaignDeliveriesDto extends createZodDto(
       z.object({
         email: z.string(),
         name: z.string(),
-        status: z.enum(['pending', 'sent', 'failed', 'uncertain', 'unsubscribed']),
+        status: z
+          .enum(['pending', 'sent', 'failed', 'uncertain', 'unsubscribed'])
+          .meta({ id: 'PhotographyCampaignDeliveryStatus' }),
       }),
     ),
   }),

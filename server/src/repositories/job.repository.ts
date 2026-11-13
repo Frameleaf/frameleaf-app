@@ -1585,6 +1585,9 @@ export class JobRepository {
       case JobName.WorkflowEventDispatch: {
         return { deduplication: { id: `${JobName.WorkflowEventDispatch}:${item.data.event.deliveryId}` } };
       }
+      case JobName.PhotographyCampaignSend: {
+        return { deduplication: { id: item.name, keepLastIfActive: true } };
+      }
       case JobName.PhotographyBulkGallery:
       case JobName.PhotographyWorkflowRender: {
         return {

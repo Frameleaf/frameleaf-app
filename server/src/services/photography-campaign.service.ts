@@ -4,13 +4,13 @@ import { setTimeout } from 'node:timers/promises';
 import { createElement } from 'react';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { CampaignRow } from 'src/repositories/photography-campaign.repository.js';
-import { OnEvent } from 'src/decorators.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import { PhotographyCampaignSaveDto, PhotographyCampaignScheduleDto } from 'src/dtos/photography-campaign.dto.js';
 import { EmailLocaleContext, emailText } from 'src/emails/components/email-locale.js';
 import MiniSessionEmail from 'src/emails/photography-mini-session.email.js';
 import PrintSaleEmail from 'src/emails/photography-print-sale.email.js';
 import ReviewRequestEmail from 'src/emails/photography-review-request.email.js';
-import { FrameleafWorker, MailConnectionStatus } from 'src/enum.js';
+import { FrameleafWorker, JobName, JobStatus, MailConnectionStatus, QueueName } from 'src/enum.js';
 import { MailApiError } from 'src/repositories/email.repository.js';
 import { PhotographyCampaignRepository } from 'src/repositories/photography-campaign.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
@@ -162,10 +162,17 @@ export class PhotographyCampaignService extends BaseService {
       name: 'PhotographyCampaigns',
       expression: '* * * * *',
       onTick: () => {
-        void this.dispatch().catch(() => this.logger.warn('Campaign delivery paused'));
+        void this.jobRepository
+          .queue({ name: JobName.PhotographyCampaignSend })
+          .catch(() => this.logger.warn('Campaign delivery paused'));
       },
     });
+    await this.jobRepository.queue({ name: JobName.PhotographyCampaignSend });
+  }
+  @OnJob({ name: JobName.PhotographyCampaignSend, queue: QueueName.Notification })
+  async handleCampaigns() {
     await this.dispatch();
+    return JobStatus.Success;
   }
   async dispatch() {
     if (this.sending) return;
