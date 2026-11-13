@@ -1125,6 +1125,10 @@ export class MediaRepository {
     return sharpProcessPool.run('getOrientedSize', [input]);
   }
 
+  measureImageQuality(input: string): Promise<SharpResult<'measureImageQuality'>> {
+    return sharpProcessPool.run('measureImageQuality', [input]);
+  }
+
   async scoreThumbnailCandidate(input: string): Promise<number> {
     return sharpProcessPool.run('scoreThumbnailCandidate', [input]);
   }

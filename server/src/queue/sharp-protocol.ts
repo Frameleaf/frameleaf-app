@@ -26,6 +26,7 @@ export const SHARP_OPERATIONS = [
   'decodeDevelopArtifact',
   'getImageMetadata',
   'getOrientedSize',
+  'measureImageQuality',
   'scoreThumbnailCandidate',
 ] as const;
 export type SharpOperation = (typeof SHARP_OPERATIONS)[number];
