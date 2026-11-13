@@ -20,6 +20,7 @@
     type PhotographyCampaignListDto,
   } from '@frameleaf/sdk';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { locale } from '$lib/stores/preferences.store';
 
   let { shoots }: { shoots: { id: string; name: string }[] } = $props();
   let data = $state<PhotographyCampaignListDto>();
@@ -280,7 +281,7 @@
             <h3>{campaign.name}</h3>
             <p>{$t(`campaign_status_${campaign.status}`)}</p>
             {#if campaign.scheduledFor}<time datetime={campaign.scheduledFor}
-                >{new Date(campaign.scheduledFor).toLocaleString()}</time
+                >{new Date(campaign.scheduledFor).toLocaleString($locale)}</time
               >{/if}
             {#if campaign.status !== 'draft'}<p>
                 {$t('campaign_results', {
