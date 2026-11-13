@@ -1,0 +1,101 @@
+msgid ""
+msgstr "Project-Id-Version: Frameleaf Connect 0.1.0\nLanguage: nl_NL\nMIME-Version: 1.0\nContent-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: 8bit\n"
+
+msgid "Add each Library your editors may connect to. Allow private networking only for a Library you administer."
+msgstr "Voeg elke Library toe waarmee je redacteuren verbinding mogen maken. Sta een privénetwerk alleen toe voor een Library die je beheert."
+
+msgid "All selected albums"
+msgstr "Alle geselecteerde albums"
+
+msgid "Allow this Library on a private network"
+msgstr "Deze Library op een privénetwerk toestaan"
+
+msgid "Allowed Libraries"
+msgstr "Toegestane Library-instanties"
+
+msgid "Client ID (leave empty for automatic registration)"
+msgstr "Client-ID (leeg laten voor automatische registratie)"
+
+msgid "Connect Frameleaf"
+msgstr "Frameleaf verbinden"
+
+msgid "Connect your own Frameleaf account and choose the albums WordPress may read."
+msgstr "Verbind je eigen Frameleaf-account en kies de albums die WordPress mag lezen."
+
+msgid "Connected"
+msgstr "Verbonden"
+
+msgid "Disconnect"
+msgstr "Verbinding verbreken"
+
+msgid "Disconnected"
+msgstr "Niet verbonden"
+
+msgid "Enter a valid HTTPS Library origin without a path."
+msgstr "Voer een geldige HTTPS-oorsprong van Library in zonder pad."
+
+msgid "Frameleaf"
+msgstr "Frameleaf"
+
+msgid "Frameleaf could not complete the request. Check your connection or reconnect."
+msgstr "Frameleaf kon het verzoek niet voltooien. Controleer je verbinding of maak opnieuw verbinding."
+
+msgid "Frameleaf image"
+msgstr "Frameleaf-afbeelding"
+
+msgid "I revoked WordPress access in Frameleaf."
+msgstr "Ik heb de toegang van WordPress in Frameleaf ingetrokken."
+
+msgid "I understand that imported images become WordPress attachments."
+msgstr "Ik begrijp dat geïmporteerde afbeeldingen WordPress-bijlagen worden."
+
+msgid "Import image"
+msgstr "Afbeelding importeren"
+
+msgid "Imported images are copied into WordPress. They remain here after disconnecting or revoking Frameleaf access."
+msgstr "Geïmporteerde afbeeldingen worden naar WordPress gekopieerd. Ze blijven hier nadat je de verbinding verbreekt of de toegang tot Frameleaf intrekt."
+
+msgid "Library"
+msgstr "Library"
+
+msgid "Library HTTPS origin"
+msgstr "HTTPS-oorsprong van Library"
+
+msgid "Loading…"
+msgstr "Laden…"
+
+msgid "Next"
+msgstr "Volgende"
+
+msgid "No images are available in your selected albums."
+msgstr "Er zijn geen afbeeldingen beschikbaar in je geselecteerde albums."
+
+msgid "Previous"
+msgstr "Vorige"
+
+msgid "Reconnect required. Disconnect first; if revocation fails, retry. After a WordPress key change, revoke access in Frameleaf and confirm revocation here before resetting this connection."
+msgstr "Maak opnieuw verbinding. Verbreek eerst de verbinding; probeer het opnieuw als het intrekken mislukt. Trek na een wijziging van WordPress-sleutels de toegang in Frameleaf in en bevestig dit hier voordat je deze verbinding opnieuw instelt."
+
+msgid "Register this exact callback in Frameleaf Connect when automatic registration is disabled:"
+msgstr "Registreer dit exacte retouradres in Frameleaf Connect wanneer automatische registratie is uitgeschakeld:"
+
+msgid "Remove Library"
+msgstr "Library verwijderen"
+
+msgid "Reset after a WordPress key change"
+msgstr "Opnieuw instellen na wijziging van WordPress-sleutels"
+
+msgid "Save Library"
+msgstr "Library opslaan"
+
+msgid "Search images"
+msgstr "Afbeeldingen zoeken"
+
+msgid "Frameleaf Connect"
+msgstr "Frameleaf Connect"
+
+msgid "Import authorized Frameleaf images into the WordPress Media Library."
+msgstr "Importeer toegestane Frameleaf-afbeeldingen in de WordPress-mediabibliotheek."
+
+msgid "Frameleaf requires PHP cURL with HTTPS support and a direct network route to the Library. HTTP proxies are not used for Library requests."
+msgstr "Frameleaf vereist PHP cURL met HTTPS-ondersteuning en een directe netwerkverbinding met de Library. Library-verzoeken gebruiken geen HTTP-proxy’s."
