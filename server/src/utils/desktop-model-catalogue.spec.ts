@@ -16,8 +16,8 @@ const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(13);
-  expect(catalogue.profiles).toHaveLength(102);
+  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.profiles).toHaveLength(162);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 27)))
@@ -37,7 +37,7 @@ it('preserves every prior binding and selects the qualified precision-corrected 
 });
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(102);
+  expect(catalogue.profiles).toHaveLength(162);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
     expect(profile.embeddingDimensions).toBe(CLIP_MODEL_INFO[profile.modelName].dimSize);
@@ -120,7 +120,8 @@ it('refuses changed artifact/config identity, reference shape, fixture bytes and
     change(value);
     expect(() => parseDesktopModelCatalogue(value)).toThrow();
   }
-});
+  // the whole catalogue is parsed again for every change
+}, 60_000);
 
 it('binds a fresh canonical NAS nonce with the same digest as the native contract', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
@@ -228,6 +229,14 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
     '02bc91e1c3f4081ad6d1e5e1dc992616ba1c142e5b04c1f9f3f2e78f3e352b5e',
     '2ce10598215ef4ab45f4fcc38c3ae39c7bea261e742a21d10f7c67f7579f4095',
   ];
+  // an epoch 14 twin has its original's specification, so its digest: only the runtime source differs
+  expected.push(
+    ...catalogue.profiles
+      .slice(0, 102)
+      .flatMap((profile, index) =>
+        profile.runtimeSourceRevision === 'f2c451a6bf71ca3f3aec986e07f0852937268e2f' ? [expected[index]] : [],
+      ),
+  );
   expect(catalogue.profiles).toHaveLength(expected.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
     const first = createDesktopModelChallenge(profile, 'd621bd72-ad35-4199-95ab-76300756a38e');
@@ -367,7 +376,7 @@ it('preserves all CPU profiles while admitting only the proved CoreML CLIP sourc
 it('selects current-main CoreML profiles with distinct preprocessing while preserving prior bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
   expect(catalogue.epoch).toBeGreaterThanOrEqual(9);
-  expect(catalogue.profiles).toHaveLength(102);
+  expect(catalogue.profiles).toHaveLength(162);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 24)))
@@ -398,8 +407,8 @@ it('selects current-main CoreML profiles with distinct preprocessing while prese
 
 it('selects exact current CPU and CoreML profiles while preserving all historical bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(13);
-  expect(catalogue.profiles).toHaveLength(102);
+  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.profiles).toHaveLength(162);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 32)))
@@ -435,8 +444,8 @@ it('selects exact current CPU and CoreML profiles while preserving all historica
 
 it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(13);
-  expect(catalogue.profiles).toHaveLength(102);
+  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.profiles).toHaveLength(162);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -461,8 +470,8 @@ it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps 
 
 it('epoch 13 qualifies every selectable model the desktop runtimes can run and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(13);
-  expect(catalogue.profiles).toHaveLength(102);
+  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.profiles).toHaveLength(162);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -517,4 +526,39 @@ it('epoch 13 qualifies every selectable model the desktop runtimes can run and k
     }
     expect(desktopImageModelKey(workload, 'constructor')).toBeUndefined();
   }
+});
+
+it('epoch 14 appends a twin of every f2c451a6 profile for the verified-bytes runtime and keeps every prior binding', () => {
+  const catalogue = parseDesktopModelCatalogue(raw());
+  expect(catalogue.epoch).toBe(14);
+  expect(catalogue.profiles).toHaveLength(162);
+  expect(
+    createHash('sha256')
+      .update(canonicalJson(catalogue.profiles.slice(0, 102)))
+      .digest('hex'),
+  ).toBe('3f080358db3bfd856755e7f48b43e057cea1c0ce67e6cde15c4441eac347e2f3');
+  const previous = 'f2c451a6bf71ca3f3aec986e07f0852937268e2f';
+  const source = 'c2203495fa2400e369604347557473d81f0b9b6b';
+  const originals = catalogue.profiles.slice(0, 102).filter((p) => p.runtimeSourceRevision === previous);
+  const twins = catalogue.profiles.slice(102);
+  expect(originals).toHaveLength(60);
+  for (const [index, twin] of twins.entries()) {
+    // the same model key, files, fixture, preprocessing and reference output: only the runtime source differs
+    expect(twin.runtimeSourceRevision).toBe(source);
+    expect({ ...twin, runtimeSourceRevision: previous }).toEqual(originals[index]);
+    expect(matchDesktopModelProfile(catalogue, twin.modelName, twin.spec.entries, source, twin.spec.provider)).toEqual(
+      twin,
+    );
+  }
+  for (const provider of [
+    'CPUExecutionProvider',
+    'CoreMLExecutionProvider',
+    'CUDAExecutionProvider',
+    'OpenVINOExecutionProvider',
+  ])
+    expect(twins.filter((p) => p.spec.provider === provider)).toHaveLength(15);
+  // a released default key still resolves to the same profile content, whichever source serves it
+  for (const workload of ['ocr', 'face'] as const)
+    for (const key of Object.values(desktopImageModelKeys[workload]))
+      expect(twins.some((p) => p.modelKey === key && p.spec.provider === 'CPUExecutionProvider')).toBe(true);
 });

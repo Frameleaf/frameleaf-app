@@ -113,6 +113,17 @@ export const assetDetailsXmp = (details: AssetDetails, options: AssetDetailsOpti
     );
   }
 
+  for (const [tag, value] of [
+    ['title', exif?.title],
+    ['rights', exif?.copyright],
+  ] as const) {
+    if (value?.trim())
+      fields.push(
+        `<dc:${tag}><rdf:Alt><rdf:li xml:lang="x-default">${text(value.trim())}</rdf:li></rdf:Alt></dc:${tag}>`,
+      );
+  }
+  if (exif?.artist?.trim()) fields.push(`<dc:creator>${bag('Seq', [exif.artist.trim()])}</dc:creator>`);
+
   const tags = [...new Set((details.tags ?? []).map((tag) => tag.value).filter(Boolean))];
   if (tags.length > 0) {
     const leaves = [...new Set(tags.map((value) => value.split('/').at(-1)!).filter(Boolean))];

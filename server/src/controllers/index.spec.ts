@@ -147,6 +147,7 @@ const SHARED_LINK_ROUTES = new Set([
   'GET assets/:id/annotations',
   // A font's facts follow the item's access; the font file itself still needs the link's download permission (FL-1359)
   'GET assets/:id/font',
+  'GET assets/:id/metadata/all',
   'GET assets/:id/palette',
   'GET assets/:id/thumbnail',
   'GET assets/:id/video/playback',
@@ -267,7 +268,9 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST oauth/apps/revoke': RATE_LIMITS.oauthAppToken,
   'POST oauth/apps/register': RATE_LIMITS.oauthAppRegister,
   'GET mcp': RATE_LIMITS.mcp,
+  'GET mcp/assistant': RATE_LIMITS.mcp,
   'POST mcp': RATE_LIMITS.mcp,
+  'POST mcp/assistant': RATE_LIMITS.mcp,
   'GET mcp/preview': RATE_LIMITS.mcp,
   'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
   // FL-283: invitations and gallery passwords are bounded per address, without credential-derived buckets.
@@ -312,19 +315,22 @@ const getRoutes = () => {
       }
 
       const method = RequestMethod[requestMethod];
-      const path = [prefix, reflector.get<string>(PATH_METADATA, handler)].filter((part) => part !== '/').join('/');
-
-      return {
-        id: `${method} ${path}`,
-        label: `${Controller.name}.${name} (${method} /${path})`,
-        path,
-        auth: getAuthenticatedOptions(reflector, handler),
-        originalTransfer: reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, handler) === true,
-        remoteSignInExempt: reflector.get<boolean | undefined>(MetadataKey.RemoteSignInExempt, handler) === true,
-        homeNetworkOnly:
-          reflector.getAllAndOverride<boolean | undefined>(MetadataKey.HomeNetworkOnly, [handler, Controller]) === true,
-        rateLimit: reflector.get<RateLimitRule | undefined>(MetadataKey.RateLimit, handler),
-      };
+      const paths = reflector.get<string | string[]>(PATH_METADATA, handler);
+      return [paths].flat().map((route) => {
+        const path = [prefix, route].filter((part) => part !== '/').join('/');
+        return {
+          id: `${method} ${path}`,
+          label: `${Controller.name}.${name} (${method} /${path})`,
+          path,
+          auth: getAuthenticatedOptions(reflector, handler),
+          originalTransfer: reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, handler) === true,
+          remoteSignInExempt: reflector.get<boolean | undefined>(MetadataKey.RemoteSignInExempt, handler) === true,
+          homeNetworkOnly:
+            reflector.getAllAndOverride<boolean | undefined>(MetadataKey.HomeNetworkOnly, [handler, Controller]) ===
+            true,
+          rateLimit: reflector.get<RateLimitRule | undefined>(MetadataKey.RateLimit, handler),
+        };
+      });
     });
   });
 };

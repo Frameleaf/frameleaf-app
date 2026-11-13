@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ContainerDirectoryItem, ExifDateTime, Tags } from 'exiftool-vendored';
+import { ContainerDirectoryItem, ExifDateTime } from 'exiftool-vendored';
 import { Insertable, Kysely } from 'kysely';
 import { isUndefined, omitBy, pick } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
@@ -44,7 +44,7 @@ import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles } from 'src/utils/asset.util.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
-import { captureDetails } from 'src/utils/capture-details.js';
+import { PHOTOGRAPHY_INTAKE_CREDITS_KEY, captureDetails } from 'src/utils/capture-details.js';
 import { dateFromFileName, namedDate } from 'src/utils/date-doctor.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { isFireworksPng } from 'src/utils/design-preview.js';
@@ -388,11 +388,12 @@ export class MetadataService extends BaseService {
     previous: Awaited<ReturnType<AssetRepository['getForMetadataExtractionTags']>>,
   ) {
     const source = plainOriginal === asset.originalPath ? asset : { ...asset, originalPath: plainOriginal };
-    const [exifResult, stats] = await Promise.all([
+    const [exifResult, stats, creditDefaults] = await Promise.all([
       this.getExifTags(source),
       // FL-721: the plain copy's size is the file's real size (a sealed file is larger), and it
       // carries the stored file's mtime; motion-photo offsets and fileSizeInByte depend on it
       this.storageRepository.stat(plainOriginal),
+      this.assetRepository.getMetadataByKey(asset.id, PHOTOGRAPHY_INTAKE_CREDITS_KEY),
     ]);
     const {
       tags: exifTags,
@@ -576,6 +577,9 @@ export class MetadataService extends BaseService {
       // FL-1196: altitude, shutter count and the other details cameras record
       ...captureDetails(exifTags as Record<string, unknown>),
     };
+    const { artist: defaultArtist, copyright: defaultCopyright } = creditDefaults?.value ?? {};
+    if (exifData.artist === null && typeof defaultArtist === 'string') exifData.artist = defaultArtist;
+    if (exifData.copyright === null && typeof defaultCopyright === 'string') exifData.copyright = defaultCopyright;
     // FL-1284: slow motion, panorama, burst, portrait … as the file's own metadata records them
     exifData.mediaKinds = detectMediaKinds(exifTags as Record<string, unknown>, {
       type: asset.type,
@@ -894,6 +898,9 @@ export class MetadataService extends BaseService {
       !(await this.physicalFileRepository.isOriginalCanonical(asset.id, asset.physicalOriginalFileId, kysely));
     const values = {
       description: asset.exifInfo.description,
+      title: asset.exifInfo.title,
+      artist: asset.exifInfo.artist,
+      copyright: asset.exifInfo.copyright,
       dateTimeOriginal: asset.exifInfo.dateTimeOriginal,
       latitude: asset.exifInfo.latitude,
       longitude: asset.exifInfo.longitude,
@@ -901,15 +908,19 @@ export class MetadataService extends BaseService {
       tags: asset.exifInfo.tags,
       timeZone: asset.exifInfo.timeZone,
     };
-    const { description, dateTimeOriginal, latitude, longitude, rating, tags, timeZone } = sharesOriginal
-      ? values
-      : pick(values, lockedProperties);
+    const { description, title, artist, copyright, dateTimeOriginal, latitude, longitude, rating, tags, timeZone } =
+      sharesOriginal ? values : pick(values, lockedProperties);
 
     const sidecarTimeZone = timeZone ?? asset.exifInfo.timeZone;
     const exif = omitBy(
-      <Tags>{
+      <SidecarTags>{
         Description: description,
         ImageDescription: description,
+        'XMP-dc:Title': title ?? (lockedProperties.includes('title') ? null : undefined),
+        'XMP-dc:Creator': artist ?? (lockedProperties.includes('artist') ? null : undefined),
+        'XMP-dc:Rights': copyright ?? (lockedProperties.includes('copyright') ? null : undefined),
+        'XMP-tiff:Artist': artist ?? (lockedProperties.includes('artist') ? null : undefined),
+        'XMP-tiff:Copyright': copyright ?? (lockedProperties.includes('copyright') ? null : undefined),
         DateTimeOriginal: dateTimeOriginal
           ? sidecarTimeZone
             ? mergeTimeZone(dateTimeOriginal, sidecarTimeZone)?.toISO()
@@ -969,6 +980,9 @@ export class MetadataService extends BaseService {
     const released = job.releaseDateLock === true ? ['timeZone', 'dateTimeOriginal'] : job.releaseDateLock || [];
     const keptLocked = new Set<string>([
       ...placeProperties,
+      'title',
+      'artist',
+      'copyright',
       'tags',
       ...['timeZone', 'dateTimeOriginal'].filter((property) => !released.includes(property)),
       ...(locationRemoved ? ['latitude', 'longitude'] : []),

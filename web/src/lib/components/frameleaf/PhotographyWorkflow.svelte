@@ -69,12 +69,22 @@
     /** Studio › Watermarks, where the marks are designed. */
     onWatermarks?: () => void;
     /** Saves the shoot brief with the shoot (it lives in the workspace, not the gallery). */
-    onSaveBrief?: (brief: { notes: string; deliveryTarget: string | null }) => Promise<boolean>;
+    onSaveBrief?: (brief: {
+      notes: string;
+      deliveryTarget: string | null;
+      defaultArtist?: string;
+      defaultCopyright?: string;
+    }) => Promise<boolean>;
   } = $props();
   let briefNotes = $state(shoot.notes ?? '');
   let briefTarget = $state(shoot.deliveryTarget ?? '');
+  let defaultArtist = $state(shoot.defaultArtist ?? '');
+  let defaultCopyright = $state(shoot.defaultCopyright ?? '');
   const briefChanged = $derived(
-    briefNotes !== (shoot.notes ?? '') || (briefTarget || null) !== (shoot.deliveryTarget ?? null),
+    briefNotes !== (shoot.notes ?? '') ||
+      (briefTarget || null) !== (shoot.deliveryTarget ?? null) ||
+      defaultArtist.trim() !== (shoot.defaultArtist ?? '') ||
+      defaultCopyright.trim() !== (shoot.defaultCopyright ?? ''),
   );
   /** The three ways of working a client gallery, as cards (PhotographyWorkflow.jsx WORKFLOW_MODES). */
   const journeys = [
@@ -804,10 +814,21 @@
                 )}</span
               >
             </div>
+            <h3>{$t('frameleaf_metadata_default_credits')}</h3>
+            <p>{$t('frameleaf_metadata_default_credits_help')}</p>
+            <label>{$t('frameleaf_metadata_artist')}<input bind:value={defaultArtist} maxlength="500" /></label>
+            <label>{$t('frameleaf_metadata_copyright')}<input bind:value={defaultCopyright} maxlength="500" /></label>
             <Button
               disabled={busy || !briefChanged}
-              onclick={() => onSaveBrief({ notes: briefNotes, deliveryTarget: briefTarget || null })}
-              >{$t('frameleaf_photography_save_brief')}</Button
+              onclick={() =>
+                onSaveBrief({
+                  notes: briefNotes,
+                  deliveryTarget: briefTarget || null,
+                  ...(defaultArtist.trim() !== (shoot.defaultArtist ?? '') && { defaultArtist: defaultArtist.trim() }),
+                  ...(defaultCopyright.trim() !== (shoot.defaultCopyright ?? '') && {
+                    defaultCopyright: defaultCopyright.trim(),
+                  }),
+                })}>{$t('frameleaf_photography_save_brief')}</Button
             >
           </section>{/if}
       </div>
@@ -959,7 +980,9 @@
                   : $t('frameleaf_photography_image')}{capture.assetIds.length > 1
                   ? ` · ${$t('frameleaf_photography_stacked_files', { values: { count: capture.assetIds.length } })}`
                   : ''}</small
-              ><small
+              >{#if capture.artist || capture.copyright}<small
+                  >{[capture.artist, capture.copyright].filter(Boolean).join(' · ')}</small
+                >{/if}<small
                 >{named('processing', capture.processing)}{capture.exclusion
                   ? ` · ${named('exclusion', capture.exclusion)}`
                   : ''}</small

@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "fcdc6df30c102e91636086d916773c35c8adaede",
+  "sourceCommit": "e21e6d515a9cd719059e952a1a8fbdb01fd1c1d8",
   "sourceHashes": {
     "src/enum.ts": "723f65d7f5a48e61a82d9f6c3915699344683de71d72ba2c515acb117a972684",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -37,7 +37,7 @@
     "src/schema/tables/asset-document-edit.table.ts": "e20786febdd8281b20ae86e9f27540db3c01c7df80610e25822a1f1cec2d4360",
     "src/schema/tables/asset-edit-audit.table.ts": "31ec7ccf506f1d905bab785218246acad68f402e67d98711d89e52500a2dcc2b",
     "src/schema/tables/asset-edit.table.ts": "c59e9f658a075d8945723dbf0401ddecbf5b64dc328e35239386efb768ec8a7a",
-    "src/schema/tables/asset-exif.table.ts": "7001a66c9ed10dbefbae46726e51e744ee9632a5f9136c38e9da22cbfa3ce92f",
+    "src/schema/tables/asset-exif.table.ts": "83f019f93fecd264b9ad8c2b9dd8bdd0bcc4fce5f481f7e14f8c6c713f6b95c7",
     "src/schema/tables/asset-face-audit.table.ts": "b24df9a765cce0fd089496042f7c702c8c8b37b1eea134e4800abe03c46d3a1e",
     "src/schema/tables/asset-face.table.ts": "69c216f6f94873a74f53bd1ca80ec584188532d9c08af2306a70210a3e482c43",
     "src/schema/tables/asset-file.table.ts": "67d155381476c79d6d6a1b6f458baeea1216cbb891c73ec95bc9ac5ee7662cfe",
@@ -105,7 +105,7 @@
     "src/schema/tables/move.table.ts": "85b22f54d11e38e513e1ef55f179497a3130de07be3dd844bbd7b13274c26360",
     "src/schema/tables/natural-earth-countries.table.ts": "acc461f0604797521c9e84a6c39ec3b469a47e91a0e6b1a155610c531264046b",
     "src/schema/tables/notification.table.ts": "a7b350c012ee14e039fda9be648f4e5fdf8333ab3e99e810efc0c0961050de61",
-    "src/schema/tables/oauth-app.table.ts": "7b5a70a3279f8a1cf71a49973c2079143e01419bf7883dc110e251c3f34f49f7",
+    "src/schema/tables/oauth-app.table.ts": "d96bc86a4088e220b3e50039d553f2a191ed8a856a47d536c57437b4e09e1110",
     "src/schema/tables/ocr-search.table.ts": "53bbb08a80b9491428dddaf62b65cc70d6a0b0554f2c61bcb22ca5b0ea05ca21",
     "src/schema/tables/operational-metric-sample.table.ts": "ad06896293efb98b58d7b01ac8affc9c24aca6e3f1912b192939db626c9c04ed",
     "src/schema/tables/partner-audit.table.ts": "0ca4f0fffe6b22c417a698e6f369bf79844a7754f42a48cdddbb39bb0ceda00c",
@@ -182,6 +182,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "ad8e33cb2a5e0058b42715b83c63062aec3c41c6da93e68267aff8d838b5bc5c",
+  "dumpSha256": "a3617406a82166c935e17123fcb8ebecd1839bed731eabcc4f12626f8bef55c8",
   "rawMetadataSha256": "63dbfa931511ffcf8a3cec3d1ae620b30608bad2f20e7ad8820afd450fb9b81b"
 }

@@ -450,6 +450,7 @@ export class AlbumRepository {
       take?: number;
       /** albums to leave out before `take` applies (smart albums the person hid) */
       excludeIds?: string[];
+      excludeLocked?: boolean;
       libraryScope?: LibraryViewScope;
     } = {},
   ): Promise<MapAlbumDto[]> {
@@ -460,6 +461,7 @@ export class AlbumRepository {
       .$if(!!options.id, (qb) => qb.where('album.id', '=', options.id!))
       .$if(!!options.name, (qb) => qb.where('album.albumName', '=', options.name!))
       .$if(!!options.excludeIds?.length, (qb) => qb.where('album.id', 'not in', options.excludeIds!))
+      .$if(options.excludeLocked === true, (qb) => qb.where('album.isLocked', '=', false))
       .$if(!!options.search, (qb) =>
         qb.where(sql<boolean>`strpos(lower("album"."albumName"), lower(${options.search})) > 0`),
       )
