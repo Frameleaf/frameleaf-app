@@ -3927,6 +3927,7 @@
   "frameleaf_apps_allow_allowed_body": "Redirection vers {back}… Si rien ne se passe, fermez cette fenêtre.",
   "frameleaf_apps_allow_allowed_note": "Révoquez son accès à tout moment dans Paramètres › Votre connexion et votre confidentialité › Applications connectées.",
   "frameleaf_apps_allow_allowed_title": "{name} peut utiliser votre bibliothèque",
+  "frameleaf_apps_allow_assistant_read": "Rechercher des photos et parcourir les albums. L’assistant reçoit les noms de fichiers, les dates de prise de vue, les noms d’albums et les liens correspondants. Vous pouvez retirer l’accès dans Applications connectées.",
   "frameleaf_apps_allow_body": "{name} souhaite se connecter à votre bibliothèque Frameleaf sur {server}. Vérifiez ce que l’application pourra faire, puis faites votre choix.",
   "frameleaf_apps_allow_can_title": "L’application pourra",
   "frameleaf_apps_allow_cant_title": "L’application ne pourra pas",

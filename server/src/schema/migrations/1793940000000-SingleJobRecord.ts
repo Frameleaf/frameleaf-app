@@ -219,18 +219,10 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`DELETE FROM job_worker w WHERE w.state = 'lost' AND w."heartbeatAt" < now() - interval '7 days'
     AND NOT EXISTS (SELECT 1 FROM job j WHERE j."workerId" = w.id)
     AND NOT EXISTS (SELECT 1 FROM job_attempt a WHERE a."workerId" = w.id)`.execute(db);
-  // Deleting rows does not give disk back. Rewrite the queue tables compactly (VACUUM FULL cannot run in a transaction;
-  // CLUSTER on a named table can). ponytail: needs free space for the rows kept, which the drops above just freed.
-  for (const [table, index] of [
-    ['job', 'job_pkey'],
-    ['job_attempt', 'job_attempt_pkey'],
-    ['job_run', 'job_run_pkey'],
-    ['job_worker', 'job_worker_pkey'],
-  ]) {
-    await sql`CLUSTER ${sql.id(table)} USING ${sql.id(index)}`.execute(db);
-    // A one-off rewrite: leave no clustering mark in the schema.
-    await sql`ALTER TABLE ${sql.id(table)} SET WITHOUT CLUSTER`.execute(db);
-  }
+  // FL-1503: no compacting rewrite here. This whole migration is one transaction, so a CLUSTER would copy the
+  // rows deleted above along with the kept ones (they are not dead until commit) while the dropped tables
+  // still hold their disk: double the space for nothing, and an upgrade that fails on every start on a
+  // nearly full drive. Autovacuum reuses the freed pages.
 
   await sql`ANALYZE job, job_attempt, job_run, job_worker`.execute(db);
 }

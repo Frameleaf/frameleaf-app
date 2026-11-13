@@ -652,6 +652,16 @@ export class SqlQueueStore {
       if (rows.length === 0) return false;
       await sql`update job_attempt set outcome = 'deferred', "finishedAt" = clock_timestamp(), error = ${reason}
         where token = ${claim.token}::uuid`.execute(tx);
+      // FL-1502: a refusal that lasts (budget, consent, a destination that stays away) defers the same job
+      // every few minutes with no cap, and each wait left an attempt row and its stop proof behind. Only
+      // the latest wait is kept: it carries the reason and the proof that the job is not running.
+      await sql`delete from system_metadata where key in (
+        select 'frameleaf-attempt-evidence:' || a.token::text from job_attempt a
+        where a."jobId" = ${claim.id}::uuid and a.outcome = 'deferred' and a.token <> ${claim.token}::uuid)`.execute(
+        tx,
+      );
+      await sql`delete from job_attempt where "jobId" = ${claim.id}::uuid and outcome = 'deferred'
+        and token <> ${claim.token}::uuid`.execute(tx);
       return true;
     });
   }

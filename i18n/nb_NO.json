@@ -3929,6 +3929,7 @@
   "frameleaf_apps_allow_allowed_body": "Sender deg tilbake til {back} … Hvis ingenting skjer, lukk dette vinduet.",
   "frameleaf_apps_allow_allowed_note": "Fjern tilgangen når som helst i Innstillinger › Din pålogging og personvern › Tilkoblede apper.",
   "frameleaf_apps_allow_allowed_title": "{name} kan bruke biblioteket ditt",
+  "frameleaf_apps_allow_assistant_read": "Søk etter bilder og bla i album. Assistenten får filnavn, opptaksdatoer, albumnavn og lenker for treffene. Du kan fjerne tilgangen under Tilkoblede apper.",
   "frameleaf_apps_allow_body": "{name} vil koble til Frameleaf-biblioteket ditt på {server}. Sjekk hva den får gjøre, og velg.",
   "frameleaf_apps_allow_can_title": "Den vil kunne",
   "frameleaf_apps_allow_cant_title": "Den vil ikke kunne",

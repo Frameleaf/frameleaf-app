@@ -3929,6 +3929,7 @@
   "frameleaf_apps_allow_allowed_body": "Du wirst zu {back} zurückgebracht … Falls nichts passiert, schließe dieses Fenster.",
   "frameleaf_apps_allow_allowed_note": "Du kannst den Zugriff jederzeit unter Einstellungen › Deine Anmeldung und Privatsphäre › Verbundene Apps entfernen.",
   "frameleaf_apps_allow_allowed_title": "{name} kann deine Bibliothek nutzen",
+  "frameleaf_apps_allow_assistant_read": "Fotos suchen und Alben durchsuchen. Der Assistent erhält die passenden Dateinamen, Aufnahmedaten, Albumnamen und Links. Du kannst den Zugriff unter Verbundene Apps entziehen.",
   "frameleaf_apps_allow_body": "{name} möchte sich mit deiner Frameleaf-Bibliothek unter {server} verbinden. Prüfe, was die App tun darf, und entscheide dann.",
   "frameleaf_apps_allow_can_title": "Sie darf",
   "frameleaf_apps_allow_cant_title": "Sie darf nicht",

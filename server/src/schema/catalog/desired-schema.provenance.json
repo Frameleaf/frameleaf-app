@@ -1,14 +1,14 @@
 {
-  "sourceCommit": "349f85e75642bb3b08a6000a9ed452174c9719e7",
+  "sourceCommit": "c2bc7f278b8ce0c3d913a898c44269424a01ee64",
   "sourceHashes": {
     "src/enum.ts": "723f65d7f5a48e61a82d9f6c3915699344683de71d72ba2c515acb117a972684",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/library-import/state-schema.ts": "b4d13d8e68b85c68a14257f56062df1f4efdd7a929918f21af225fa6b4998408",
     "src/queue/schema.ts": "a7562b1877064164778469c46c67f4f16c284d7d2e91d27df0e137ff4f587401",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
-    "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
+    "src/schema/frameleaf-feature-schema.ts": "ed828687c4ccd1aec6a8dc9b3881262f22eb0ba299475e0544f2dd07abd4974a",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "2f70fec2a1d1465d4c26e17b4b7f72de9a9072c72c80e72e24d5bb867158d986",
+    "src/schema/index.ts": "265502710e2c5d2895de52da199075ea20789324e66c2554d8184bdfce3fad2b",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -82,7 +82,6 @@
     "src/schema/tables/desktop-worker-qualification.table.ts": "3291ad28e62d41af662aa50124c30cb0a31afb471b0376f2c10c42e4c533b84d",
     "src/schema/tables/desktop-worker-session.table.ts": "b3954a978e49bcc37946cdcd0a668e06f5fae2fdb02d91645f798543081e0fcd",
     "src/schema/tables/develop-batch.table.ts": "f3b3cd6db414b659b6ee97444b34b6c347f863786f212a47dc795fb9702f5f4b",
-    "src/schema/tables/develop-style-profile.table.ts": "f50483259056d5453bcabbeb048febd62efdbfb2b70609f06f1bc6a6b8e55ba7",
     "src/schema/tables/duplicate-decision.table.ts": "40e198b76121bafe69c17f282136a480e78658c2f3efcc884987fe56c4cd4316",
     "src/schema/tables/eagle-import.table.ts": "83ff2d9755ea335e9d36caef5ffb8df9e46af9bbdbf90cdc5f18215d3c0a19a5",
     "src/schema/tables/face-search.table.ts": "dcf3d20474ef65a7fc155081d9b04a5151be688268cfd113df1cf2e040f0bde9",
@@ -106,7 +105,7 @@
     "src/schema/tables/move.table.ts": "85b22f54d11e38e513e1ef55f179497a3130de07be3dd844bbd7b13274c26360",
     "src/schema/tables/natural-earth-countries.table.ts": "acc461f0604797521c9e84a6c39ec3b469a47e91a0e6b1a155610c531264046b",
     "src/schema/tables/notification.table.ts": "a7b350c012ee14e039fda9be648f4e5fdf8333ab3e99e810efc0c0961050de61",
-    "src/schema/tables/oauth-app.table.ts": "7b5a70a3279f8a1cf71a49973c2079143e01419bf7883dc110e251c3f34f49f7",
+    "src/schema/tables/oauth-app.table.ts": "d96bc86a4088e220b3e50039d553f2a191ed8a856a47d536c57437b4e09e1110",
     "src/schema/tables/ocr-search.table.ts": "53bbb08a80b9491428dddaf62b65cc70d6a0b0554f2c61bcb22ca5b0ea05ca21",
     "src/schema/tables/operational-metric-sample.table.ts": "ad06896293efb98b58d7b01ac8affc9c24aca6e3f1912b192939db626c9c04ed",
     "src/schema/tables/partner-audit.table.ts": "0ca4f0fffe6b22c417a698e6f369bf79844a7754f42a48cdddbb39bb0ceda00c",
@@ -183,6 +182,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "90dd3ce5e64ea47af4d07c3d4f4f4209b5e9de958852aa2ca75e21d6c2433166",
-  "rawMetadataSha256": "9a0a2e796cf6cbdb961226611689c54c2338b4f4dae7dd9c075617e01fe1039a"
+  "dumpSha256": "577a279a24b06132ca3b03d9b4377db714e77d905d7b17d08dba9b6435f82bf6",
+  "rawMetadataSha256": "63dbfa931511ffcf8a3cec3d1ae620b30608bad2f20e7ad8820afd450fb9b81b"
 }

@@ -3929,6 +3929,7 @@
   "frameleaf_apps_allow_allowed_body": "Ti riportiamo su {back}… Se non succede nulla, chiudi questa finestra.",
   "frameleaf_apps_allow_allowed_note": "Puoi rimuovere il suo accesso in qualsiasi momento in Impostazioni › Il tuo accesso e la privacy › App collegate.",
   "frameleaf_apps_allow_allowed_title": "{name} può usare la tua libreria",
+  "frameleaf_apps_allow_assistant_read": "Cerca foto e sfoglia gli album. L’assistente riceve i nomi dei file, le date di acquisizione, i nomi degli album e i link dei risultati. Puoi revocare l’accesso in App collegate.",
   "frameleaf_apps_allow_body": "{name} vuole collegarsi alla tua libreria Frameleaf su {server}. Controlla cosa potrà fare, poi scegli.",
   "frameleaf_apps_allow_can_title": "Potrà",
   "frameleaf_apps_allow_cant_title": "Non potrà",

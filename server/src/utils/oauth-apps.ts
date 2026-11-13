@@ -20,6 +20,20 @@ export const OAUTH_DYNAMIC_CLIENT_LIMIT = 500;
  * `Authorization: Bearer fla_…` is always checked as an app's access token, never as a session.
  */
 export const MCP_PATH = '/api/mcp';
+export const ASSISTANT_MCP_PATH = '/api/mcp/assistant';
+export const ASSISTANT_BROKER_CALLBACKS = {
+  'https://mcp.frameleaf.cloud/oauth/library/callback/chatgpt': 'ChatGPT',
+  'https://mcp.frameleaf.cloud/oauth/library/callback/claude': 'Claude',
+} as const;
+
+export const assistantBrokerName = (redirectUri: string) =>
+  Object.hasOwn(ASSISTANT_BROKER_CALLBACKS, redirectUri)
+    ? ASSISTANT_BROKER_CALLBACKS[redirectUri as keyof typeof ASSISTANT_BROKER_CALLBACKS]
+    : undefined;
+
+export const isAssistantResource = (resource: string | null) =>
+  resource !== null && new URL(resource).pathname === ASSISTANT_MCP_PATH;
+
 export const MCP_RESOURCE_METADATA_PATH = `/.well-known/oauth-protected-resource${MCP_PATH}`;
 export const OAUTH_ACCESS_TOKEN_PREFIX = 'fla_';
 export const OAUTH_REFRESH_TOKEN_PREFIX = 'flr_';

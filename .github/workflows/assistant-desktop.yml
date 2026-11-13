@@ -1,0 +1,49 @@
+name: Frameleaf Assistant desktop bundle
+'on':
+  workflow_dispatch: null
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/assistant-desktop.yml'
+      - 'integrations/claude-desktop/**'
+      - 'web/static/manifest-icon-512.maskable.png'
+      - 'LICENSE'
+      - '.nvmrc'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/assistant-desktop.yml'
+      - 'integrations/claude-desktop/**'
+      - 'web/static/manifest-icon-512.maskable.png'
+      - 'LICENSE'
+      - '.nvmrc'
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: integrations/claude-desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: integrations/claude-desktop/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run bundle
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          archive: false
+          include-hidden-files: true
+          path: integrations/claude-desktop/.artifacts/frameleaf-assistant.mcpb
+          if-no-files-found: error

@@ -1,0 +1,53 @@
+{
+  "author": {
+    "name": "Frameleaf",
+    "url": "https://frameleaf.app"
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "node": ">=22.15.0"
+    }
+  },
+  "description": "Search photos and browse albums in your Frameleaf Library.",
+  "display_name": "Frameleaf Assistant",
+  "icon": "icon.png",
+  "license": "AGPL-3.0-only",
+  "localization": {
+    "default_locale": "en",
+    "resources": "mcpb-resources/${locale}.json"
+  },
+  "manifest_version": "0.4",
+  "name": "frameleaf-assistant",
+  "server": {
+    "entry_point": "server.mjs",
+    "mcp_config": {
+      "args": ["${__dirname}/server.mjs", "${user_config.library_url}"],
+      "command": "node"
+    },
+    "type": "node"
+  },
+  "tools": [
+    {
+      "description": "Find photos and videos by metadata. Use YYYY-MM-DD for inclusive takenFrom and exclusive takenBefore.",
+      "name": "search_library"
+    },
+    {
+      "description": "List albums you can read.",
+      "name": "list_albums"
+    },
+    {
+      "description": "Read an album and list its visible photos and videos.",
+      "name": "get_album"
+    }
+  ],
+  "user_config": {
+    "library_url": {
+      "description": "The HTTPS address you use to open Frameleaf Library.",
+      "required": true,
+      "title": "Library address",
+      "type": "string"
+    }
+  },
+  "version": "1.0.0"
+}

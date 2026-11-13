@@ -40,7 +40,7 @@ const QUERYLESS_ROUTES = /^\/(?:api\/)?(?:link|admin\/license|license|users\/me\
 
 // Secret routes can carry numeric key maps, opaque recovery packages or a credential named `value`.
 const BODYLESS_ROUTES =
-  /^\/(?:api\/)?(?:mcp|admin\/(?:cloud\/backup\/(?:check|setup|escrow|key(?:\/.*)?)|buddy-backup\/key(?:\/.*)?|config\/credentials\/[^/]+))\/?$/i;
+  /^\/(?:api\/)?(?:mcp(?:\/assistant)?|admin\/(?:cloud\/backup\/(?:check|setup|escrow|key(?:\/.*)?)|buddy-backup\/key(?:\/.*)?|config\/credentials\/[^/]+))\/?$/i;
 
 /**
  * Routes that carry a bearer secret in the path itself: a cast URL's signed token, a render worker's
