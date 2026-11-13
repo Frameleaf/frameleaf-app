@@ -122,6 +122,76 @@ def test_model_with_external_weights_is_never_loaded_from_memory(tmp_path, monke
     assert observer.loaded == [None]
 
 
+def test_a_derived_model_stands_for_its_source_only_when_the_bytes_show_it(tmp_path, monkeypatch):
+    from onnx.tools.update_model_dims import update_inputs_outputs_dims
+
+    from frameleaf_ml import native_ort
+    from frameleaf_ml.sessions.ort import OrtSession
+
+    source = tmp_path / "approved/model.onnx"
+    graph(source)
+    approved = hashlib.sha256(source.read_bytes()).hexdigest()
+    observer = Observer()
+    monkeypatch.setattr(
+        native_ort, "_policy", native_ort.NativeOrtPolicy("CPUExecutionProvider", None, observer=observer)
+    )
+
+    def derive(change=None):
+        proto = update_inputs_outputs_dims(onnx.load(source), {"input": ["batch", 2]}, {"output": ["batch", 4]})
+        if change:
+            change(proto)
+        path = tmp_path / "runtime/model.onnx"
+        path.parent.mkdir(exist_ok=True)
+        onnx.save(proto, path)
+        return path
+
+    # A batch axis is the only difference: the session names the approved bytes.
+    session = OrtSession(derive())
+    loaded = session.model_sha256
+    assert loaded == hashlib.sha256(session.model_path.read_bytes()).hexdigest() != approved
+    session.source_model_path = source
+    assert session.model_sha256 == approved and session.source_model_path == source
+    assert session.run(None, {"input": np.ones((3, 2), dtype=np.float32)})[0].shape == (3, 4)
+    assert observer.calls == [source] and observer.loaded == [approved]
+
+    def weights(proto):
+        proto.graph.initializer[0].raw_data = bytes(len(proto.graph.initializer[0].raw_data))
+
+    def node(proto):
+        proto.graph.node[0].op_type = "Identity"
+
+    def rename(proto):
+        proto.graph.output[0].name = "other"
+        proto.graph.node[-1].output[0] = "other"
+
+    def element_type(proto):
+        proto.graph.input[0].type.tensor_type.elem_type = onnx.TensorProto.DOUBLE
+
+    # Anything else changed: not proven, so the approved file is hashed around every run instead.
+    for change in (weights, node, rename, element_type):
+        try:
+            session = OrtSession(derive(change))
+        except Exception:
+            continue  # not a loadable model at all
+        assert session.model_sha256 is not None
+        session.source_model_path = source
+        assert session.model_sha256 is None, change.__name__
+
+    # The derived file replaced after the session loaded it proves nothing about the session.
+    session = OrtSession(derive())
+    derive(weights)
+    session.source_model_path = source
+    assert session.model_sha256 is None
+    # Nor does a source that cannot be read.
+    session = OrtSession(derive())
+    session.source_model_path = tmp_path / "missing.onnx"
+    assert session.model_sha256 is None
+    # Naming itself as the source changes nothing.
+    session = OrtSession(source)
+    session.source_model_path = source
+    assert session.model_sha256 == approved
+
+
 def test_custom_session_options_keep_the_file_and_its_per_run_hash(tmp_path, monkeypatch):
     import onnxruntime as ort
 
