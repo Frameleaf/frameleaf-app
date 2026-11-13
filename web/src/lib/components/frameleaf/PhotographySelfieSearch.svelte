@@ -65,7 +65,12 @@
     if (!retryAt) {
       return;
     }
-    const timer = setInterval(() => (now = Date.now()), 1000);
+    const timer = setInterval(() => {
+      now = Date.now();
+      if (now >= retryAt) {
+        retryAt = 0;
+      }
+    }, 1000);
     return () => clearInterval(timer);
   });
   onDestroy(() => {
