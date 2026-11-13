@@ -332,6 +332,9 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    PhotographyContactTable,
+    PhotographyCampaignTable,
+    PhotographyCampaignDeliveryTable,
     PhotoLocationEstimateTable,
     PhotoLocationScanTable,
     PhotoLocationScanItemTable,
