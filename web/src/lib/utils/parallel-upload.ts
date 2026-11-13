@@ -136,11 +136,13 @@ export async function uploadInParts({ file, sidecarFile, sha256, metadata, signa
       const body = new FormData();
       body.append('sidecarData', sidecarFile);
       const response = await fetch(`${url}/sidecar`, { method: 'PUT', body, signal });
-      if (response.status === 404 || response.status === 405) {
+      if ([404, 405].includes(response.status)) {
         await fetch(url, { method: 'DELETE' }).catch(() => {});
         return;
       }
-      if (!response.ok) throw new ApiError(response.statusText, response.status, await response.text());
+      if (!response.ok) {
+        throw new ApiError(response.statusText, response.status, await response.text());
+      }
     }
     return await sendParts(url, file, signal, partSize, parallel, onProgress);
   } catch (error) {

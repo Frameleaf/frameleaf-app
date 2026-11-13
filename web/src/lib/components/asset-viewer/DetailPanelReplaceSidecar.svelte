@@ -22,7 +22,9 @@
 
   const replace = async () => {
     const file = files?.[0];
-    if (!file || busy) return;
+    if (!file || busy) {
+      return;
+    }
     if (file.size === 0 || file.size > maxBytes || !/\.xmp$/i.test(file.name)) {
       status = 'invalid';
       return;
@@ -35,15 +37,19 @@
       body.set('sidecarData', file);
       body.set('useFileValues', String(useFileValues));
       const response = await fetch(`${getBaseUrl()}/assets/${asset.id}/sidecar`, { method: 'PUT', body });
-      if (!current()) return;
+      if (!current()) {
+        return;
+      }
       if (!response.ok) {
-        status = response.status === 400 || response.status === 413 ? 'invalid' : 'failed';
+        status = [400, 413].includes(response.status) ? 'invalid' : 'failed';
         return;
       }
       status = 'saved';
       open = false;
     } catch {
-      if (current()) status = 'failed';
+      if (current()) {
+        status = 'failed';
+      }
     } finally {
       busy = false;
     }

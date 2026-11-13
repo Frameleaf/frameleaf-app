@@ -417,7 +417,9 @@ async function fileUploader(
         formData.append('libraryScope', libraryScope);
       }
       formData.append('assetData', new File([assetFile], assetFile.name));
-      if (sidecarFile) formData.append('sidecarData', sidecarFile);
+      if (sidecarFile) {
+        formData.append('sidecarData', sidecarFile);
+      }
       if (isLockedAssets) {
         formData.append('visibility', AssetVisibility.Locked);
       }

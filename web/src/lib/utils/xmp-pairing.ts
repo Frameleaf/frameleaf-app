@@ -1,6 +1,8 @@
 const droppedPaths = new WeakMap<File, string>();
 export const rememberDroppedPath = (file: File, fullPath: string) => {
-  if (fullPath) droppedPaths.set(file, fullPath.replace(/^\//, ''));
+  if (fullPath) {
+    droppedPaths.set(file, fullPath.replace(/^\//, ''));
+  }
 };
 export const uploadRelativePath = (file: File) => file.webkitRelativePath || droppedPaths.get(file) || '';
 
@@ -29,7 +31,9 @@ export const pairXmpSidecars = (files: File[], accepts: (file: File) => boolean)
   for (const lookup of [indexes, stems]) {
     for (const sidecar of unmatched) {
       const matches = lookup.get(paths(sidecar).slice(0, -4));
-      if (matches?.length !== 1 || pairs.has(matches[0])) continue;
+      if (matches?.length !== 1 || pairs.has(matches[0])) {
+        continue;
+      }
       pairs.set(matches[0], sidecar);
       unmatched.delete(sidecar);
     }
