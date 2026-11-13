@@ -271,6 +271,11 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'GET mcp/preview': RATE_LIMITS.mcp,
   'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
   // FL-283: invitations and gallery passwords are bounded per address, without credential-derived buckets.
+  'POST photography/galleries/:id/selfie-search': {
+    bucket: 'photography-selfie-search',
+    limit: 100,
+    windowSeconds: 3600,
+  },
   'POST photography/galleries/:id/session': { bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 },
   'PUT admin/license/activate': RATE_LIMITS.licenseActivation,
   'PUT admin/license/certificate': RATE_LIMITS.licenseActivation,
