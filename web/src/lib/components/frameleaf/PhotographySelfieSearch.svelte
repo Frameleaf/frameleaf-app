@@ -38,7 +38,9 @@
 
   function stopCamera() {
     cameraRequest++;
-    camera?.getTracks().forEach((track) => track.stop());
+    for (const track of camera?.getTracks() ?? []) {
+      track.stop();
+    }
     camera = undefined;
     cameraReady = false;
     cameraStarting = false;
@@ -101,7 +103,9 @@
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
       if (disposed || !open || current !== cameraRequest) {
-        stream.getTracks().forEach((track) => track.stop());
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
         return;
       }
       camera = stream;
@@ -109,7 +113,9 @@
       consent = false;
       await tick();
       if (disposed || !open || current !== cameraRequest) {
-        stream.getTracks().forEach((track) => track.stop());
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
         return;
       }
       if (video) {

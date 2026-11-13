@@ -38,8 +38,11 @@ it('offers upload when camera permission is denied and requires consent', async 
     expect(screen.getByRole('button', { name: 'Find my photos' })).toBeDisabled();
     expect(camera).toHaveBeenCalledWith({ video: { facingMode: 'user' }, audio: false });
   } finally {
-    if (original) Object.defineProperty(navigator, 'mediaDevices', original);
-    else Reflect.deleteProperty(navigator, 'mediaDevices');
+    if (original) {
+      Object.defineProperty(navigator, 'mediaDevices', original);
+    } else {
+      Reflect.deleteProperty(navigator, 'mediaDevices');
+    }
   }
 });
 it.each(['selfie_no_face', 'selfie_multiple_faces', 'selfie_invalid_image', 'selfie_unavailable'] as const)(
@@ -94,8 +97,11 @@ it('stops a camera stream that arrives after the sheet is destroyed', async () =
     supply({ getTracks: () => [{ stop }] } as unknown as MediaStream);
     await waitFor(() => expect(stop).toHaveBeenCalledOnce());
   } finally {
-    if (original) Object.defineProperty(navigator, 'mediaDevices', original);
-    else Reflect.deleteProperty(navigator, 'mediaDevices');
+    if (original) {
+      Object.defineProperty(navigator, 'mediaDevices', original);
+    } else {
+      Reflect.deleteProperty(navigator, 'mediaDevices');
+    }
   }
 });
 
@@ -115,7 +121,10 @@ it('stops the live camera as soon as the sheet closes', async () => {
     await waitFor(() => expect(stop).toHaveBeenCalled());
   } finally {
     play.mockRestore();
-    if (original) Object.defineProperty(navigator, 'mediaDevices', original);
-    else Reflect.deleteProperty(navigator, 'mediaDevices');
+    if (original) {
+      Object.defineProperty(navigator, 'mediaDevices', original);
+    } else {
+      Reflect.deleteProperty(navigator, 'mediaDevices');
+    }
   }
 });
