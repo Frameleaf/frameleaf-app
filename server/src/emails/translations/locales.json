@@ -109,7 +109,9 @@
     "inquiry_date": "Date : {date}",
     "not_said": "Non précisé",
     "inquiry_reply": "Pour répondre, écrivez à {email}. Ce courriel provient de votre serveur : y répondre ne parviendra pas à {name}.",
-    "open_clients": "Ouvrir Clients"
+    "open_clients": "Ouvrir Clients",
+    "campaign_unsubscribe": "Se désabonner",
+    "campaign_unsubscribed": "Vous êtes désabonné des campagnes de ce studio."
   },
   "es": {
     "greeting": "¡Hola, {name}!",
@@ -221,7 +223,9 @@
     "inquiry_date": "Fecha: {date}",
     "not_said": "Sin indicar",
     "inquiry_reply": "Para responder, escribe a {email}. Este correo procede de tu servidor, así que si respondes a él no llegará a {name}.",
-    "open_clients": "Abrir Clientes"
+    "open_clients": "Abrir Clientes",
+    "campaign_unsubscribe": "Cancelar suscripción",
+    "campaign_unsubscribed": "Has cancelado la suscripción a las campañas de este estudio."
   },
   "de": {
     "greeting": "Hey {name}!",
@@ -333,7 +337,9 @@
     "inquiry_date": "Datum: {date}",
     "not_said": "Keine Angabe",
     "inquiry_reply": "Schreibe zur Antwort an {email}. Diese E-Mail kommt von deinem Server, eine Antwort darauf erreicht {name} daher nicht.",
-    "open_clients": "Clients öffnen"
+    "open_clients": "Clients öffnen",
+    "campaign_unsubscribe": "Abmelden",
+    "campaign_unsubscribed": "Du hast dich von den Kampagnen dieses Studios abgemeldet."
   },
   "it": {
     "greeting": "Ciao {name}!",
@@ -445,7 +451,9 @@
     "inquiry_date": "Data: {date}",
     "not_said": "Non indicato",
     "inquiry_reply": "Per rispondere, scrivi a {email}. Questa email arriva dal tuo server, quindi rispondere a questo messaggio non raggiunge {name}.",
-    "open_clients": "Apri Clients"
+    "open_clients": "Apri Clients",
+    "campaign_unsubscribe": "Annulla iscrizione",
+    "campaign_unsubscribed": "Hai annullato l’iscrizione alle campagne di questo studio."
   },
   "pt": {
     "greeting": "Olá, {name}!",
@@ -557,7 +565,9 @@
     "inquiry_date": "Data: {date}",
     "not_said": "Não indicado",
     "inquiry_reply": "Para responder, escreva para {email}. Este e-mail vem do seu servidor, pelo que responder-lhe não chega a {name}.",
-    "open_clients": "Abrir Clients"
+    "open_clients": "Abrir Clients",
+    "campaign_unsubscribe": "Cancelar inscrição",
+    "campaign_unsubscribed": "Cancelou a inscrição nas campanhas deste estúdio."
   },
   "nl": {
     "greeting": "Hoi {name}!",
@@ -669,7 +679,9 @@
     "inquiry_date": "Datum: {date}",
     "not_said": "Niet opgegeven",
     "inquiry_reply": "Schrijf om te antwoorden naar {email}. Deze e-mail komt van je server, dus een antwoord erop bereikt {name} niet.",
-    "open_clients": "Clients openen"
+    "open_clients": "Clients openen",
+    "campaign_unsubscribe": "Afmelden",
+    "campaign_unsubscribed": "Je bent afgemeld voor de campagnes van deze studio."
   },
   "pl": {
     "greeting": "Cześć, {name}!",
@@ -781,7 +793,9 @@
     "inquiry_date": "Data: {date}",
     "not_said": "Nie podano",
     "inquiry_reply": "Aby odpowiedzieć, napisz na adres {email}. Ten e-mail pochodzi z Twojego serwera, więc odpowiedź na niego nie dotrze do {name}.",
-    "open_clients": "Otwórz Klientów"
+    "open_clients": "Otwórz Klientów",
+    "campaign_unsubscribe": "Wypisz się",
+    "campaign_unsubscribed": "Wypisano Cię z kampanii tego studia."
   },
   "sv": {
     "greeting": "Hej {name}!",
@@ -893,7 +907,9 @@
     "inquiry_date": "Datum: {date}",
     "not_said": "Ej angivet",
     "inquiry_reply": "För att svara, skriv till {email}. Det här e-postmeddelandet kommer från din server, så ett svar på det når inte {name}.",
-    "open_clients": "Öppna Clients"
+    "open_clients": "Öppna Clients",
+    "campaign_unsubscribe": "Avsluta prenumeration",
+    "campaign_unsubscribed": "Du har avregistrerat dig från studions kampanjer."
   },
   "da": {
     "greeting": "Hej {name}!",
@@ -1005,7 +1021,9 @@
     "inquiry_date": "Dato: {date}",
     "not_said": "Ikke oplyst",
     "inquiry_reply": "Skriv til {email} for at svare. Denne e-mail kommer fra din server, så et svar på den når ikke {name}.",
-    "open_clients": "Åbn Klienter"
+    "open_clients": "Åbn Klienter",
+    "campaign_unsubscribe": "Afmeld",
+    "campaign_unsubscribed": "Du har afmeldt dig dette studies kampagner."
   },
   "nb-NO": {
     "greeting": "Hei {name}!",
@@ -1117,6 +1135,8 @@
     "inquiry_date": "Dato: {date}",
     "not_said": "Ikke oppgitt",
     "inquiry_reply": "For å svare, skriv til {email}. Denne e-posten kommer fra serveren din, så et svar på den når ikke {name}.",
-    "open_clients": "Åpne Clients"
+    "open_clients": "Åpne Clients",
+    "campaign_unsubscribe": "Avslutt abonnement",
+    "campaign_unsubscribed": "Du har meldt deg av kampanjene fra dette studioet."
   }
 }

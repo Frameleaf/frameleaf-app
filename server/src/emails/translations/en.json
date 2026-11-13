@@ -108,5 +108,7 @@
   "inquiry_date": "Date: {date}",
   "not_said": "Not said",
   "inquiry_reply": "To answer, write to {email}. This email comes from your server, so replying to it does not reach {name}.",
-  "open_clients": "Open Clients"
+  "open_clients": "Open Clients",
+  "campaign_unsubscribe": "Unsubscribe",
+  "campaign_unsubscribed": "You have unsubscribed from this studio’s campaigns."
 }

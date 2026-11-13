@@ -147,4 +147,15 @@ describe(`${EmailRepository.name} (Gmail and Microsoft)`, () => {
       await expect(sut.readMicrosoftAddress(ACCESS)).rejects.toThrow('did not say which address signed in');
     });
   });
+  it('retains the provider Retry-After response for campaign pacing', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: 'Slow down' } }), {
+        status: 429,
+        headers: { 'Retry-After': '600' },
+      }),
+    );
+    await expect(
+      sut.sendEmailWithAccount({ ...message, account: { provider: MailSignInProvider.Gmail, accessToken: ACCESS } }),
+    ).rejects.toMatchObject({ status: 429, retryAfterSeconds: 600 });
+  });
 });

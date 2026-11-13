@@ -1,3 +1,4 @@
+import { PhotographyCampaignController } from 'src/controllers/photography-campaign.controller.js';
 import { AccountEventAdminController, AccountEventController } from 'src/controllers/account-event.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumCleanupController } from 'src/controllers/album-cleanup.controller.js';
@@ -168,6 +169,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  PhotographyCampaignController,
   MediaSubscriptionController,
   MediaCreatorController,
   MediaWatchController,

@@ -1,3 +1,4 @@
+import { PhotographyCampaignRepository } from 'src/repositories/photography-campaign.repository.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
@@ -163,6 +164,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  PhotographyCampaignRepository,
   MediaDownloaderRepository,
   MediaSessionRepository,
   MediaImportRepository,

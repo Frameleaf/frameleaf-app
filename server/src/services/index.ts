@@ -1,3 +1,4 @@
+import { PhotographyCampaignService } from 'src/services/photography-campaign.service.js';
 import { AccountEventService } from 'src/services/account-event.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumChangeRunService } from 'src/services/album-change-run.service.js';
@@ -221,6 +222,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  PhotographyCampaignService,
   MediaImportService,
   PrivateLogsService,
   PrivateMlLogsService,

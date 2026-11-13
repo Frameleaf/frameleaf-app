@@ -50,6 +50,21 @@ describe(EmailRepository.name, () => {
     });
   });
 
+  it('preserves campaign unsubscribe headers in the provider MIME message', async () => {
+    const { mime } = await sut.buildMessage({
+      from: 'studio@example.test',
+      to: 'client@example.test',
+      subject: 'Prints',
+      html: '<p>Prints</p>',
+      text: 'Prints',
+      headers: {
+        'List-Unsubscribe': '<https://photos.example.test/api/photography/unsubscribe/token>',
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+    });
+    expect(mime.toString()).toContain('List-Unsubscribe-Post: List-Unsubscribe=One-Click');
+    expect(mime.toString()).toContain('List-Unsubscribe:');
+  });
   describe('renderEmail', () => {
     it('renders the component once and derives matching plain text from the same HTML', async () => {
       const result = await sut.renderEmail({

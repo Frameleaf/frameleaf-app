@@ -1,3 +1,8 @@
+import {
+  PhotographyCampaignTable,
+  PhotographyContactTable,
+  PhotographyCampaignDeliveryTable,
+} from 'src/schema/tables/photography-campaign.table.js';
 import { Database, Extensions, Generated, Int8 } from '@frameleaf/sql-tools';
 import type { QueueDatabase } from 'src/queue/table-types.js';
 import {
@@ -627,6 +632,9 @@ export interface Migrations {
 }
 
 export interface DB extends QueueDatabase {
+  photography_campaign: PhotographyCampaignTable;
+  photography_contact: PhotographyContactTable;
+  photography_campaign_delivery: PhotographyCampaignDeliveryTable;
   desktop_clip_index: DesktopClipIndexTable;
   desktop_clip_producer: DesktopClipProducerTable;
   desktop_device: DesktopDeviceTable;
