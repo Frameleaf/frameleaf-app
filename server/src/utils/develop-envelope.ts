@@ -9,10 +9,12 @@ import {
   type KnownAssetDevelopRecipe,
   KnownAssetDevelopRecipeSchema,
 } from 'src/dtos/asset-develop.dto.js';
+import { nativeHistoryForRecipe } from 'src/utils/develop-import/native-history.js';
 
 /** Route only explicitly supported native recipes; opaque future/imported recipes remain saveable. */
 export function assertRenderableDevelopRecipe(value: unknown) {
   const envelope = developEnvelope(value);
+  nativeHistoryForRecipe(envelope);
   if ([3, 4, 5, 6].includes(envelope.version)) return renderHdrDevelopProjection(envelope);
   if (envelope.version !== 2) {
     return renderDevelopProjection(envelope);

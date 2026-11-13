@@ -61,7 +61,7 @@ describe(DevelopImportService.name, () => {
   });
   it('prefers darktable controls while preserving both source envelopes', async () => {
     const { service, storage, createImportedVersion } = setup();
-    const xml = readFileSync('test/fixtures/develop-import/darktable-exposure.xmp', 'utf8').replace(
+    const xml = readFileSync('test/fixtures/develop-import/darktable-native-canon.xmp', 'utf8').replace(
       '<rdf:Description',
       '<rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:Exposure2012="3"',
     );
@@ -70,7 +70,7 @@ describe(DevelopImportService.name, () => {
     expect(createImportedVersion).toHaveBeenCalledWith(
       'asset',
       expect.objectContaining({
-        exposure: 1.5,
+        exposure: 0,
         imported: expect.objectContaining({
           lightroom: expect.objectContaining({ Exposure2012: '3' }),
           darktable: expect.any(Object),

@@ -392,6 +392,31 @@ export class AssetDevelopRepository {
     `.execute(this.db);
     return rows[0];
   }
+  /** Return only this attempt; cancellation and a replacement lease win. Progress may change its timestamp. */
+  async deferAttempt(revision: Pick<AssetDevelopRevision, 'id' | 'attempts'>): Promise<boolean> {
+    const { rows } = await sql`
+      UPDATE ${TABLE} SET status = ${AssetDevelopRevisionStatus.Queued}, progress = 0, error = NULL,
+        attempts = greatest(0, attempts - 1), "updatedAt" = now()
+      WHERE id = ${revision.id}::uuid AND status = ${AssetDevelopRevisionStatus.Rendering}
+        AND attempts = ${revision.attempts} AND NOT "cancelRequested"
+      RETURNING id
+    `.execute(this.db);
+    return rows.length === 1;
+  }
+  /** A busy worker can acknowledge only its own cancelled attempt, never a newer render. */
+  async cancelAttempt(
+    revision: Pick<AssetDevelopRevision, 'id' | 'attempts'>,
+    actorCancelled = false,
+  ): Promise<boolean> {
+    const { rows } = await sql`
+      UPDATE ${TABLE} SET status = ${AssetDevelopRevisionStatus.Cancelled}, progress = 0, error = NULL,
+        "cancelRequested" = true, "updatedAt" = now()
+      WHERE id = ${revision.id}::uuid AND status = ${AssetDevelopRevisionStatus.Rendering}
+        AND attempts = ${revision.attempts} AND ("cancelRequested" OR ${actorCancelled})
+      RETURNING id
+    `.execute(this.db);
+    return rows.length === 1;
+  }
   async update(id: string, patch: AssetDevelopRevisionUpdate): Promise<AssetDevelopRevision | undefined> {
     const entries = Object.entries(patch).filter(([, value]) => value !== undefined);
     if (entries.length === 0) {
