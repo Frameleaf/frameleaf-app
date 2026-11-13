@@ -608,6 +608,15 @@ export class AlbumService extends BaseService {
   }
 
   async create(auth: AuthDto, dto: CreateAlbumDto): Promise<AlbumResponseDto> {
+    // FL-1499: `albums:write` makes plain albums only. Sharing, shared spaces and nesting (into a
+    // collection that may itself be shared) stay with the person.
+    if (
+      auth.oauthApp &&
+      ((dto.albumUsers?.length ?? 0) > 0 || (dto.kind ?? AlbumKind.Album) !== AlbumKind.Album || dto.parentId)
+    ) {
+      throw new ForbiddenException('Connected apps can’t share, nest or make shared spaces');
+    }
+
     const albumUsers = (dto.albumUsers || []).filter(({ userId }) => userId !== auth.user.id);
 
     for (const { userId } of albumUsers) {

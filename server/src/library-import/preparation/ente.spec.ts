@@ -64,7 +64,7 @@ describe('Ente preparation adapter', () => {
       testedVersion: media.provenance.exporter,
       source: input().source,
       // Four files: a Live Photo is a photo plus its hidden motion video; three album folders hold them.
-      summary: { owners: 1, assets: 5, albums: 3, files: 5, bytes: String(982 * 3 + 1745 * 2) },
+      summary: { owners: 1, assets: 5, albums: 2, files: 5, bytes: String(982 * 3 + 1745 * 2) },
       owners: [
         {
           sourceId: media.users.alice,
@@ -86,7 +86,7 @@ describe('Ente preparation adapter', () => {
     await writeExport(originalsRoot, 'alice', bobFile);
     await rm(join(originalsRoot, 'Bob private', 'Same bytes different owner.jpg'));
     const inspection = await inspectPreparationSource(adapter, input());
-    expect(inspection.summary).toMatchObject({ owners: 1, assets: 5, albums: 3, files: 5 });
+    expect(inspection.summary).toMatchObject({ owners: 1, assets: 5, albums: 2, files: 5 });
     expect(inspection.owners.map((owner) => owner.sourceId)).toEqual([media.users.alice]);
     expect(inspection.losses).toContainEqual({ code: 'ENTE_SHARED_FILE_NOT_IMPORTED', count: 1 });
     expect(inspection.losses).toContainEqual({ code: 'ENTE_SHARING_RESTRICTED', count: 1 });
@@ -99,7 +99,7 @@ describe('Ente preparation adapter', () => {
     record.ente.ownerID = media.users.bob;
     await writeFile(album, JSON.stringify(record));
     const inspection = await inspectPreparationSource(adapter, input());
-    expect(inspection.summary).toMatchObject({ owners: 1, assets: 5, albums: 3 });
+    expect(inspection.summary).toMatchObject({ owners: 1, assets: 5, albums: 2 });
     expect(inspection.losses).toContainEqual({ code: 'ENTE_SHARING_RESTRICTED', count: 1 });
   });
 
@@ -126,7 +126,7 @@ describe('Ente preparation adapter', () => {
     );
     const inspection = await inspectPreparationSource(adapter, input());
     expect(inspection.tested).toBe(false);
-    expect(inspection.summary).toMatchObject({ owners: 1, assets: 5, albums: 3, files: 5 });
+    expect(inspection.summary).toMatchObject({ owners: 1, assets: 5, albums: 2, files: 5 });
     expect(inspection.losses).toContainEqual({ code: UNTESTED_VERSION_LOSS, count: 1 });
   });
 

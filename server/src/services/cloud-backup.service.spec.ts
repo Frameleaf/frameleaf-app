@@ -3242,7 +3242,7 @@ describe(CloudBackupService.name, () => {
         expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('older key(s) that no key file opens'));
       });
 
-      it('an encrypted file whose header cannot be read is never backed up as plain', async () => {
+      it('a file that starts like an encrypted one but cannot be read as one is reported, and never stops the backup (FL-1500)', async () => {
         await sealedToOwner();
         const folder = join(media, 'library', OWNER);
         const broken = join(folder, 'IMG_2.jpg');
@@ -3253,9 +3253,10 @@ describe(CloudBackupService.name, () => {
 
         await sut.run(managedOperation(), 'claim-1');
 
-        // fail safe, as Buddy does: no key file can be shown to open it
-        expect(operations.complete).not.toHaveBeenCalled();
-        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('had no key file when the run started'));
+        // no key file could open it, so failing would stop every backup for everyone over one file
+        expect(operations.complete).toHaveBeenCalled();
+        expect(mocks.logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('had no key file'));
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('cannot be read as one'));
       });
 
       /** FL-738: the manifest entry for asset-1 when its file is swapped between hashing and the manifest. */

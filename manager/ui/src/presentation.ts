@@ -215,6 +215,8 @@ const refusals: Record<string, string> = {
     'The reviewed release was withdrawn and this review has expired. Cancel this update, then review the newer release before installing it.',
   database_move_failed_rolled_back:
     'Manager could not move the database to the new release’s database engine, so it put back the previous release on its unchanged database folder. Nothing was lost. Check that the database folder’s drive has free space, then try the update again.',
+  database_checkpoint_failed_rolled_back:
+    'Manager could not make the safety backup it takes before an update, so it did not install the update and started the previous release again. Nothing was lost. Check that the backups drive has free space, then try the update again.',
   database_image_change_unsupported:
     'This release’s database engine cannot replace the one this server runs. Choose another release.',
   // Journals from Managers before FL-1265, which refused these updates.

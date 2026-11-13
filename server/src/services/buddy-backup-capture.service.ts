@@ -640,11 +640,15 @@ export class BuddyBackupCaptureService {
               // snapshots, with their key files, stay as they are. The next run captures a consistent pair.
               // A key id that matches no live key file is an item restored under an older key (spec §9):
               // reported, never a failure, since no snapshot could ever capture its key file.
-              const { keyless, older } = await lockedKeyGaps(
+              const { keyless, older, unreadable } = await lockedKeyGaps(
                 sealedKeyIds,
                 lockedKeyIds,
                 StorageCore.getMediaLocation(),
               );
+              if (unreadable.length > 0)
+                this.logger.warn(
+                  `Buddy capture ${options.runId}: ${unreadable.length} file(s) start like an encrypted Locked file but cannot be read as one; captured as they are: ${unreadable.slice(0, 5).join(', ')}`,
+                );
               if (older.length > 0)
                 this.logger.warn(
                   `Buddy capture ${options.runId}: encrypted Locked files under ${older.length} older key(s) that no key file opens; they are captured as they are`,

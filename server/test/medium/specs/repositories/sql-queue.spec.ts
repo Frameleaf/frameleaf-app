@@ -103,6 +103,9 @@ describe('PostgreSQL queue', () => {
       expect(job.wait).toBeGreaterThan(25);
       expect(job.wait).toBeLessThanOrEqual(30);
       expect(await store.defer(claim, 'destination-capacity')).toBe(false);
+      // FL-1502: eight waits leave one attempt row, not eight
+      const { rows: attempts } = await sql`select 1 from job_attempt where "jobId"=${claim.id}::uuid`.execute(db);
+      expect(attempts).toHaveLength(1);
       await sql`update job set "availableAt"=now() where id=${claim.id}::uuid`.execute(db);
     }
   });
@@ -561,8 +564,7 @@ describe('PostgreSQL queue', () => {
     expect(
       (await sql`select outcome from job_attempt where "jobId" = ${retry.id}::uuid order by attempt`.execute(db)).rows,
     ).toEqual([
-      { outcome: 'deferred' },
-      { outcome: 'deferred' },
+      // FL-1502: three waits, of which only the latest keeps its row
       { outcome: 'deferred' },
       { outcome: 'pending' },
       { outcome: 'completed' },
