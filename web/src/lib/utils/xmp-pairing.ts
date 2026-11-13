@@ -10,7 +10,7 @@ const isXmp = (file: File) => /\.xmp$/i.test(file.name);
 
 export const pairXmpSidecars = (files: File[], accepts: (file: File) => boolean) => {
   const originals = files.filter((file) => !isXmp(file) && accepts(file));
-  const sidecars = files.filter(isXmp);
+  const sidecars = files.filter((file) => isXmp(file));
   const paths = (file: File) => (uploadRelativePath(file) || file.name).toLowerCase();
   const indexes = new Map<string, File[]>();
   const stems = new Map<string, File[]>();
