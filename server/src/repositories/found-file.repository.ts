@@ -25,8 +25,9 @@ export class FoundFileRepository {
 
   /** What was learned about the file at this path replaces what was known about it. */
   async upsert(file: Insertable<FoundFileTable>): Promise<void> {
-    // a JSON array has to be sent as JSON: the driver would send a JavaScript array as a Postgres array
-    const row = { ...file, steps: sql<FoundFileStep[]>`${JSON.stringify(file.steps ?? [])}::jsonb` };
+    // A JSON array has to be sent as JSON text: the driver would send a JavaScript array as a Postgres
+    // array, and JSON cast straight to jsonb would be stored as one JSON string (see jsonb-cast.spec.ts).
+    const row = { ...file, steps: sql<FoundFileStep[]>`${JSON.stringify(file.steps ?? [])}::text::jsonb` };
     const { path: _path, ...changes } = row;
     await this.db
       .insertInto('found_file')
