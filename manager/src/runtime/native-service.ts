@@ -38,6 +38,7 @@ import {
 import { approveNativeUpdate } from './native-update-approval.js';
 import {
   admitNativeInstallation,
+  NATIVE_CAPABILITIES,
   NativeTlsRotation,
   NativeTransition,
 } from './native-installation.js';
@@ -577,6 +578,31 @@ export class NativeService {
       port: bootstrap.installation.apiPort,
       runtime: 'native',
     });
+    this.databasePort = bootstrap.installation.databasePort;
+  }
+  private readonly databasePort: number;
+  /**
+   * What the controller this Manager owns is doing now, for a paired Desktop. `running` is
+   * reported only while that controller is in photo-serving mode and has reported ready on
+   * `ports.api`; maintenance (backup, restore, cleanup), a fault and an unread state are
+   * `unknown` with the code, never `running`. The caller's nonce binds the reply to its request.
+   */
+  runtimeStatus(nonce: string, installationId: string, managerPort: number) {
+    if (installationId !== this.publicInstallation.id)
+      throw new Refusal('installation_changed');
+    const { state, code } = this.runtime.status();
+    return {
+      protocolVersion: 1,
+      nonce,
+      installationId,
+      capabilities: [...NATIVE_CAPABILITIES],
+      ports: {
+        manager: managerPort,
+        api: this.publicInstallation.port,
+        database: this.databasePort,
+      },
+      photoServer: { state, ...(code ? { code } : {}) },
+    };
   }
   private readonly manifestSha256: string;
   ready(origin: string) {

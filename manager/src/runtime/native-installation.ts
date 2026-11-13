@@ -10,6 +10,7 @@ import { SecureInstallationIdSchema } from './native.js';
  * it starts Manager; the paired `runtime` reply repeats it.
  */
 export const NATIVE_CAPABILITIES = Object.freeze([
+  'runtime-status',
   'ports',
   'tls-rotation',
 ] as const);
