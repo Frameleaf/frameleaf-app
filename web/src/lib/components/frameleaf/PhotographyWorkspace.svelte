@@ -895,7 +895,7 @@
         <!-- A shoot's own page has no New shoot (approved design, 2026-11-04). -->
         {#if section === 'shoots' && !active}
           <Button
-            disabled={loading || busy || !!error || !workspace.shoots.some((shoot) => !shoot.unavailable)}
+            disabled={loading || busy || !!error || workspace.shoots.every((shoot) => shoot.unavailable)}
             onclick={() => (bulkOpen = true)}
           >
             {$t('frameleaf_photography_bulk_title')}

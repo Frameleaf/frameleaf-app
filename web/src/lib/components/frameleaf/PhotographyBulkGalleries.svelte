@@ -51,12 +51,16 @@
   } as const;
 
   $effect(() => {
-    if (open && !loadedFolders) void loadFolders();
+    if (open && !loadedFolders) {
+      void loadFolders();
+    }
   });
 
   $effect(() => {
     const id = batch?.id;
-    if (!open || !id || complete === batch?.rows.length || error) return;
+    if (!open || !id || complete === batch?.rows.length || error) {
+      return;
+    }
     const timer = setTimeout(() => void refresh(id), 2000);
     return () => clearTimeout(timer);
   });
@@ -78,14 +82,18 @@
     try {
       batch = await photographyBulkRequest(`/${id}`);
       error = false;
-      if (batch.rows.every(({ status }) => status !== 'queued' && status !== 'publishing')) onCreated();
+      if (batch.rows.every(({ status }) => status !== 'queued' && status !== 'publishing')) {
+        onCreated();
+      }
     } catch {
       error = true;
     }
   }
 
   async function submit() {
-    if (busy) return;
+    if (busy) {
+      return;
+    }
     busy = true;
     error = false;
     try {
@@ -101,7 +109,9 @@
       };
       batch = await photographyBulkRequest('', 'POST', submitted);
       stage = 'result';
-      if (batch.rows.every(({ status }) => status !== 'queued' && status !== 'publishing')) onCreated();
+      if (batch.rows.every(({ status }) => status !== 'queued' && status !== 'publishing')) {
+        onCreated();
+      }
     } catch {
       error = true;
     } finally {
@@ -110,7 +120,9 @@
   }
 
   async function retry(id: string) {
-    if (!batch || busy) return;
+    if (!batch || busy) {
+      return;
+    }
     busy = true;
     error = false;
     try {
@@ -165,7 +177,7 @@
         <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
         <Button
           variant="primary"
-          disabled={!templateId || !rows.length || rows.length > 200 || rows.some((row) => !row.valid)}
+          disabled={!templateId || rows.length === 0 || rows.length > 200 || rows.some((row) => !row.valid)}
           onclick={() => {
             error = false;
             stage = 'review';
