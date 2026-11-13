@@ -123,6 +123,22 @@ def validate_external_weights(model_path: Path, root: Path, artifacts: dict[str,
     visit(proto)
 
 
+def accelerator_present(provider: str, facts: dict[str, Any]) -> bool:
+    """Whether the runtime facts name a device the provider's nodes can have run on.
+
+    The profile says which provider ran a node, not on what. CUDA needs a card its driver reports.
+    OpenVINO also runs on the processor, so it needs one of its graphics devices. CoreML is proven
+    separately, by its signed device collector.
+    """
+    if provider == "CPUExecutionProvider":
+        return True
+    if provider == "CUDAExecutionProvider":
+        return bool(facts["gpus"])
+    if provider == "OpenVINOExecutionProvider":
+        return any(str(device).upper().startswith("GPU") for device in facts.get("openvinoDevices", []))
+    return False
+
+
 def verify_models(
     spec: ModelBindingSpec, cache_dir: Path, *, require_staged: bool = True
 ) -> tuple[InferenceEntries, list[InferenceModel]]:
@@ -253,9 +269,7 @@ async def qualify(
             reason = None
             if any(item["state"] == "incompatible" for item in evidence):
                 state, reason = "incompatible", "native_provider_execution_unproven"
-            if spec.provider not in {"CPUExecutionProvider", "CUDAExecutionProvider"} or (
-                spec.provider == "CUDAExecutionProvider" and not before["facts"]["gpus"]
-            ):
+            if not accelerator_present(spec.provider, before["facts"]):
                 state, reason = "incompatible", "native_device_execution_evidence_required"
             if device_evidence is not None:
                 state, reason = "ready-mixed", None
