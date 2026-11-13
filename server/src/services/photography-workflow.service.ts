@@ -2087,29 +2087,30 @@ export class PhotographyWorkflowService {
       return JobStatus.Success;
     } catch {
       const current = await this.repository.get(id);
-      if (current)
-        await this.repository.mutateKeepingRevision(
-          id,
-          current.ownerId,
-          current.albumId,
-          undefined,
-          current.value,
-          (value) => {
-            if (value.publication?.claim !== claim) {
-              return;
-            }
+      if (!current) return JobStatus.Skipped;
+      const failed = await this.repository.mutateKeepingRevision(
+        id,
+        current.ownerId,
+        current.albumId,
+        undefined,
+        current.value,
+        (value) => {
+          if (value.publication?.claim !== claim) {
+            return false;
+          }
 
-            value.publication.status = 'failed';
-            value.publication.failedCaptureId = activeCaptureId;
-            const failed = value.captures.find((capture) => capture.id === activeCaptureId);
-            if (failed) failed.processing = 'failed';
-            value.publication.claim = null;
-            value.publication.error =
-              'Photograph preparation failed. Check source processing, edit revisions and watermark logo, then retry.';
-            value.publication.updatedAt = iso();
-          },
-        );
-      return JobStatus.Failed;
+          value.publication.status = 'failed';
+          value.publication.failedCaptureId = activeCaptureId;
+          const failed = value.captures.find((capture) => capture.id === activeCaptureId);
+          if (failed) failed.processing = 'failed';
+          value.publication.claim = null;
+          value.publication.error =
+            'Photograph preparation failed. Check source processing, edit revisions and watermark logo, then retry.';
+          value.publication.updatedAt = iso();
+          return true;
+        },
+      );
+      return failed.result ? JobStatus.Failed : JobStatus.Skipped;
     }
   }
   private async requireRevision(row: WorkflowRow, capture: PhotographyCapture, revisionId: string) {
