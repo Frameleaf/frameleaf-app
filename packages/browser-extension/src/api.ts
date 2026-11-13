@@ -45,6 +45,33 @@ export class CaptureFailure extends Error {
 const uuid =
   /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
 
+/**
+ * FL-1498: a host that can only be this computer or one on the home network, where plain http may be
+ * switched on: loopback, private and link-local addresses, a bare name (`tower`) and the names no
+ * public DNS serves. `URL` has already written any IPv4 form as four decimal parts.
+ */
+function homeHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  const v4 = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(host);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return (
+      a === 127 ||
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254)
+    );
+  }
+  if (host.startsWith('[')) {
+    // ::1, unique local (fc00::/7) and link-local (fe80::/10)
+    return host === '[::1]' || /^\[(f[cd]|fe[89ab])[0-9a-f]*:/.test(host);
+  }
+  return (
+    /^[a-z0-9-]+$/.test(host) ||
+    /^[a-z0-9.-]+\.(local|lan|home\.arpa|internal)$/.test(host)
+  );
+}
 export function normalizeServerAddress(
   raw: string,
   allowLocalhost = false,
@@ -55,7 +82,7 @@ export function normalizeServerAddress(
   } catch {
     throw new CaptureFailure('address');
   }
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  const local = homeHost(url.hostname);
   if (
     raw.length > 8192 ||
     raw.includes('\\') ||
@@ -66,7 +93,7 @@ export function normalizeServerAddress(
     url.hash ||
     !(
       url.protocol === 'https:' ||
-      (allowLocalhost && loopback && url.protocol === 'http:')
+      (allowLocalhost && local && url.protocol === 'http:')
     )
   )
     throw new CaptureFailure('address');

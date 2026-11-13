@@ -32,7 +32,7 @@ on:
       tag:
         description: Manager component version matching manager/package.json
         type: string
-        default: manager-v1.2.18
+        default: manager-v1.2.19
 permissions:
   contents: read
 concurrency:
