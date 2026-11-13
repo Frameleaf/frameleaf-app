@@ -104,9 +104,14 @@
     if (!draft) {
       return;
     }
-    const key = draft.templateKey.replaceAll('-', '_');
-    draft.subject = $t(`campaign_${key}`);
-    draft.body = $t(`campaign_${key}_body`);
+    const key = {
+      'print-sale': 'print_sale',
+      'review-request': 'review_request',
+      'mini-session': 'mini_session',
+    } as const;
+    const template = key[draft.templateKey];
+    draft.subject = $t(`campaign_${template}`);
+    draft.body = $t(`campaign_${template}_body`);
   }
   async function save(showPreview: boolean) {
     if (!draft) {
