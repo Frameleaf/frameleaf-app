@@ -24,6 +24,81 @@ describe('native XMP history boundary', () => {
       imported: { darktable: { replay: value } },
     });
   });
+  const withInteger = (operation: string, offset: number, number: number) => {
+    const value = history();
+    const entry = value.entries.find((entry) => entry.operation === operation)!;
+    const params = Buffer.from(entry.params, 'hex');
+    params.writeInt32LE(number, offset);
+    entry.params = params.toString('hex');
+    return value;
+  };
+  it.each([0, 1, 2, 3, 4, 5, 6, 7, 1024, 1025, 1026, 1027, 1028, 1029, 2049, 2053, 3074])(
+    'accepts pinned Bayer/X-Trans/dual demosaic method %s',
+    (method) => {
+      expect(() => validateNativeHistory(withInteger('demosaic', 12, method))).not.toThrow();
+    },
+  );
+  it.each([256, 257, 258, 259, 260, 261, 513, 517, 770, 1030, 2048, 3073])(
+    'refuses a non-enumerated demosaic method %s',
+    (method) => {
+      expect(() => validateNativeHistory(withInteger('demosaic', 12, method))).toThrow();
+    },
+  );
+  it.each([
+    [0, 5],
+    [28, 11],
+    [40, 6],
+  ])('accepts pinned highlights enum at %s = %s', (offset, value) => {
+    expect(() => validateNativeHistory(withInteger('highlights', offset, value))).not.toThrow();
+  });
+  it.each([
+    [0, 6],
+    [28, 12],
+    [40, 7],
+  ])('refuses out-of-range highlights enum at %s = %s', (offset, value) => {
+    expect(() => validateNativeHistory(withInteger('highlights', offset, value))).toThrow();
+  });
+  it.each([
+    [124, 11],
+    [128, 8],
+    [132, 4],
+    [156, 2],
+  ])('accepts pinned color calibration enum at %s = %s', (offset, value) => {
+    expect(() => validateNativeHistory(withInteger('channelmixerrgb', offset, value))).not.toThrow();
+  });
+  it.each([
+    [124, 12],
+    [128, 9],
+    [132, 5],
+    [156, 3],
+  ])('refuses non-enumerated color calibration at %s = %s', (offset, value) => {
+    const descriptor = withInteger('channelmixerrgb', offset, value);
+    if (offset === 124 || offset === 128) {
+      const entry = descriptor.entries.find((entry) => entry.operation === 'channelmixerrgb')!;
+      const params = Buffer.from(entry.params, 'hex');
+      params.writeInt32LE(offset === 124 ? 4 : 5, 120);
+      entry.params = params.toString('hex');
+    }
+    expect(() => validateNativeHistory(descriptor)).toThrow();
+  });
+  it('preserves repeated updates to the same module instance in history order', () => {
+    const value = history();
+    const exposure = structuredClone(value.entries.find((entry) => entry.operation === 'exposure')!);
+    const temperature = structuredClone(value.entries.find((entry) => entry.operation === 'temperature')!);
+    const changed = Buffer.from(exposure.params, 'hex');
+    changed.writeFloatLE(1.4, 8);
+    exposure.params = changed.toString('hex');
+    value.entries.push(exposure, temperature, structuredClone(exposure));
+    expect(validateNativeHistory(value)).toEqual(value);
+    expect(readNativeHistory(readDevelopXmp(Buffer.from(nativeHistoryXmp(value))))).toEqual(value);
+  });
+  it('reads the genuine uncompressed native exposure-temperature-exposure edit history', () => {
+    const value = readNativeHistory(readDevelopXmp(fixture('canon-repeated')));
+    expect(value.entries).toHaveLength(14);
+    expect(value.entries.slice(11).map((entry) => entry.operation)).toEqual(['exposure', 'temperature', 'exposure']);
+    expect(Buffer.from(value.entries[13].params, 'hex').readFloatLE(8)).toBeCloseTo(0.9);
+    expect(readNativeHistory(readDevelopXmp(Buffer.from(nativeHistoryXmp(value))))).toEqual(value);
+  });
   it.each([
     (v: ReturnType<typeof history>) => {
       Object.assign(v, { orderVersion: 3 });

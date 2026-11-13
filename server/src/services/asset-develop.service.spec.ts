@@ -149,6 +149,7 @@ describe(AssetDevelopService.name, () => {
         })),
       ),
       deferAttempt: vi.fn().mockResolvedValue(true),
+      cancelAttempt: vi.fn().mockResolvedValue(false),
     };
     photoTools = {
       listPresets: vi.fn(),
@@ -1177,6 +1178,42 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('handleRender', () => {
+    it('settles a legacy cancellation arriving during busy cleanup without requeueing', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        originalFileName: 'image.CR2',
+      });
+      const revision = revisionStub({
+        assetId: asset.id,
+        recipe: nativeImport(),
+        status: AssetDevelopRevisionStatus.Rendering,
+        attempts: 1,
+      });
+      developRepository.get.mockResolvedValue({ ...revision, status: AssetDevelopRevisionStatus.Queued, attempts: 0 });
+      developRepository.requestCancel.mockImplementation(() => {
+        revision.cancelRequested = true;
+        return Promise.resolve();
+      });
+      developRepository.deferAttempt.mockImplementation(() => Promise.resolve(!revision.cancelRequested));
+      developRepository.cancelAttempt.mockImplementation((attempt) => {
+        if (revision.cancelRequested && attempt.attempts === revision.attempts) {
+          revision.status = AssetDevelopRevisionStatus.Cancelled;
+          return Promise.resolve(true);
+        }
+        return Promise.resolve(false);
+      });
+      vi.mocked(renderDarktableHistory).mockRejectedValue(new NativeDevelopBusy());
+      mocks.storage.unlink.mockImplementationOnce(async () => {
+        developRepository.get.mockResolvedValue(revision);
+        await sut.cancel(authStub.user1, asset.id, revision.id);
+      });
+      await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Skipped);
+      expect(revision.status).toBe(AssetDevelopRevisionStatus.Cancelled);
+      expect(developRepository.cancelAttempt).toHaveBeenCalledWith(
+        expect.objectContaining({ id: revision.id, attempts: 1 }),
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
     it.each([true, false])(
       'requeues untracked native contention only if this attempt was returned (%s)',
       async (returned) => {
@@ -1811,6 +1848,46 @@ describe(AssetDevelopService.name, () => {
       mocks.mediaOperation.heartbeat.mockResolvedValue(true);
       mocks.mediaOperation.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: 'token-1' } as never);
     });
+    it.each([true, false])(
+      'acknowledges only its own Activity cancellation when native release is refused (%s)',
+      async (owned) => {
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+          ...getForGenerateThumbnail(asset),
+          originalFileName: 'image.CR2',
+        });
+        const revision = revisionStub({
+          assetId: asset.id,
+          recipe: nativeImport(),
+          status: AssetDevelopRevisionStatus.Queued,
+        });
+        developRepository.get.mockResolvedValue(revision);
+        vi.mocked(renderDarktableHistory).mockRejectedValue(new NativeDevelopBusy());
+        mocks.mediaOperation.requeue.mockResolvedValue(false);
+        mocks.storage.unlink.mockImplementationOnce(() => {
+          mocks.mediaOperation.getForWorker.mockResolvedValue({
+            cancelRequestedAt: new Date(),
+            claimToken: owned ? 'token-1' : 'replacement-token',
+          } as never);
+          return Promise.resolve();
+        });
+        await expect(sut.handleRender({ id: revision.id, operationId: 'op-1' })).resolves.toBe(JobStatus.Skipped);
+        expect(developRepository.cancelAttempt).toHaveBeenCalledWith(
+          expect.objectContaining({ id: revision.id, attempts: 1 }),
+        );
+        if (owned)
+          expect(developRepository.cancelAttempt).toHaveBeenCalledWith(
+            expect.objectContaining({ id: revision.id, attempts: 1 }),
+            true,
+          );
+        else expect(developRepository.cancelAttempt).toHaveBeenCalledTimes(1);
+        if (owned)
+          expect(mocks.mediaOperation.acknowledgeCancel).toHaveBeenCalledWith('op-1', 'token-1', { released: true });
+        else expect(mocks.mediaOperation.acknowledgeCancel).not.toHaveBeenCalled();
+        expect(developRepository.update).not.toHaveBeenCalled();
+        expect(developRepository.deferAttempt).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
     it('returns native v2 admission contention after progress without using its failure retry', async () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
         ...getForGenerateThumbnail(asset),

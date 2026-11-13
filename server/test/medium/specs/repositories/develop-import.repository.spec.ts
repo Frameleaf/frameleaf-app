@@ -59,6 +59,43 @@ afterAll(async () => {
   await db?.destroy();
 });
 
+it('acknowledges only the matching cancelled attempt or a verified Activity cancel', async () => {
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: user.id });
+  const repo = new AssetDevelopRepository(db);
+  for (const change of [
+    'source-cancel',
+    'actor-cancel',
+    'uncancelled',
+    'new-attempt',
+    'new-actor-attempt',
+    'finished',
+  ] as const) {
+    const revision = await repo.create({
+      assetId: asset.id,
+      ownerId: user.id,
+      recipe: defaultDevelopRecipe(),
+      recipeVersion: 1,
+      label: null,
+      status: AssetDevelopRevisionStatus.Queued,
+    });
+    const attempt = (await repo.beginAttempt(revision.id, 'native-test', 600))!;
+    const actorCancelled = change === 'actor-cancel' || change === 'new-actor-attempt';
+    if (['source-cancel', 'new-attempt', 'finished'].includes(change)) await repo.requestCancel(revision.id);
+    if (change === 'new-attempt' || change === 'new-actor-attempt')
+      await repo.update(revision.id, { attempts: attempt.attempts + 1 });
+    else if (change === 'finished') await repo.update(revision.id, { status: AssetDevelopRevisionStatus.Rendered });
+    const before = await repo.get(revision.id);
+    const expected = change === 'source-cancel' || change === 'actor-cancel';
+    expect(await repo.cancelAttempt(attempt, actorCancelled)).toBe(expected);
+    if (expected)
+      expect(await repo.get(revision.id)).toMatchObject({ status: 'cancelled', cancelRequested: true, attempts: 1 });
+    else expect(await repo.get(revision.id)).toEqual(before);
+    expect(await repo.cancelAttempt(attempt, actorCancelled)).toBe(false);
+  }
+});
+
 it('retries a sidecar import atomically and creates a separate version when its settings change', async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   const { user } = await ctx.newUser();

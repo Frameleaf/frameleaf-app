@@ -768,8 +768,19 @@ export class AssetDevelopService {
       jobSignal()?.throwIfAborted();
       if (run?.done) return JobStatus.Skipped;
       if (error instanceof NativeDevelopBusy) {
-        if (run && !(await run.release(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS))) return JobStatus.Skipped;
-        if (!(await this.assetDevelopRepository.deferAttempt(revision))) return JobStatus.Skipped;
+        if (
+          run &&
+          !(await run.release(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS, async () => {
+            await this.assetDevelopRepository.cancelAttempt(revision, true);
+          }))
+        ) {
+          await this.assetDevelopRepository.cancelAttempt(revision);
+          return JobStatus.Skipped;
+        }
+        if (!(await this.assetDevelopRepository.deferAttempt(revision))) {
+          await this.assetDevelopRepository.cancelAttempt(revision);
+          return JobStatus.Skipped;
+        }
         if (!run)
           await this.jobRepository.queue({
             name: JobName.AssetDevelopRender,

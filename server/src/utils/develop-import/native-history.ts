@@ -85,7 +85,6 @@ export function validateNativeHistory(value: unknown): NativeHistory {
   const parsed = HistorySchema.safeParse(value);
   if (!parsed.success || endianness() !== 'LE') throw unsupported();
   const history = parsed.data;
-  check(new Set(history.entries.map((entry) => entry.operation)).size === history.entries.length);
   check(required.every((operation) => history.entries.some((entry) => entry.operation === operation)));
   for (const entry of history.entries) {
     const layout = layouts[entry.operation];
@@ -133,10 +132,9 @@ export function validateNativeHistory(value: unknown): NativeHistory {
         integer(0, 0, 3);
         number(4, 0, 1);
         integer(8, 0, 5);
+        // Pinned demosaic.c flags: X-Trans = 1024, dual = 2048.
         check(
-          [0, 1, 2, 3, 4, 5, 6, 7, 0x1_00, 0x1_01, 0x1_02, 0x1_03, 0x1_04, 0x1_05, 0x2_01, 0x2_05, 0x3_02].includes(
-            integer(12, 0, 0x3_02),
-          ),
+          [0, 1, 2, 3, 4, 5, 6, 7, 1024, 1025, 1026, 1027, 1028, 1029, 2049, 2053, 3074].includes(integer(12, 0, 3074)),
         );
         integer(16, 0, 4);
         number(20, 0, 1);
@@ -169,17 +167,17 @@ export function validateNativeHistory(value: unknown): NativeHistory {
         break;
       }
       case 'highlights': {
-        integer(0, 0, 6);
+        integer(0, 0, 5);
         number(4, 0, 1);
         number(8, 0, 1);
         number(12, 0, 1);
         number(16, 0, 2);
         number(20, 0, 0.5);
         integer(24, 1, 256);
-        integer(28, 0, 12);
+        integer(28, 0, 11);
         number(32, 0, 1);
         number(36, 0, 8);
-        integer(40, 0, 3);
+        integer(40, 0, 6);
         number(44, 0, 1);
         break;
       }
@@ -187,15 +185,15 @@ export function validateNativeHistory(value: unknown): NativeHistory {
         for (let offset = 0; offset < 96; offset += 4) number(offset, -16, 16);
         for (let offset = 96; offset < 120; offset += 4) integer(offset, 0, 1);
         integer(120, 0, 10);
-        integer(124, 0, 20);
-        integer(128, 0, 20);
-        integer(132, 0, 10);
+        integer(124, 0, 11);
+        integer(128, 0, 8);
+        integer(132, 0, 4);
         number(136, -1, 2);
         number(140, -1, 2);
         number(144, 1000, 25_000);
         number(148, 0, 12);
         integer(152, 0, 1);
-        integer(156, 0, 3);
+        integer(156, 0, 2);
         break;
       }
       case 'sigmoid': {

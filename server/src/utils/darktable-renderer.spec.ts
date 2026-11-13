@@ -125,10 +125,21 @@ describe('pinned darktable adapter', () => {
     expect(readNativeHistory(readDevelopXmp(Buffer.from(sidecar)))).toEqual(history);
     expect(sidecar).not.toContain('DateTimeOriginal');
     expect(await readFile(input, 'utf8')).toBe('unit-test original');
-    await expect(readFile(nativeDirectory!)).rejects.toThrow();
+    await expect(readFile(nativeDirectory!)).rejects.toMatchObject({ code: 'ENOENT' });
   });
   it('refuses unsafe native history before touching the native binary', async () => {
     await expect(renderDarktableHistory(input, { version: 1 })).rejects.toThrow();
+    expect(mocks.exec).not.toHaveBeenCalled();
+  });
+  it('refuses an out-of-range native highlights mode before any process starts', async () => {
+    const history = readNativeHistory(
+      readDevelopXmp(readFileSync('test/fixtures/develop-import/darktable-native-canon.xmp')),
+    );
+    const entry = history.entries.find((entry) => entry.operation === 'highlights')!;
+    const params = Buffer.from(entry.params, 'hex');
+    params.writeInt32LE(6, 0);
+    entry.params = params.toString('hex');
+    await expect(renderDarktableHistory(input, history)).rejects.toThrow();
     expect(mocks.exec).not.toHaveBeenCalled();
   });
   it('preserves literal output paths containing native pattern syntax', async () => {

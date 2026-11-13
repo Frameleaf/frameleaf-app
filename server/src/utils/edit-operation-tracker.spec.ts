@@ -190,6 +190,22 @@ describe(EditOperationTracker.name, () => {
       });
       expect(operations.fail).not.toHaveBeenCalled();
     });
+    it('acknowledges its own cancellation instead of failing it when Locked deferral is refused', async () => {
+      operations.beginJobQueueRun.mockResolvedValue({
+        ...claimed,
+        operation: { ...claimed.operation, createdAt: new Date() },
+      });
+      operations.requeue.mockResolvedValue(false);
+      const error = new LockedKeyUnavailableError(['owner-1']);
+      await expect(
+        sut.execute('op-1', () => {
+          operations.getForWorker.mockResolvedValue({ cancelRequestedAt: new Date(), claimToken: 'token-1' } as never);
+          return Promise.reject(error);
+        }),
+      ).rejects.toBe(error);
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith('op-1', 'token-1', { released: true });
+      expect(operations.fail).not.toHaveBeenCalled();
+    });
 
     it('fails as usual once an edit has waited 72 hours for the Locked key (FL-721)', async () => {
       operations.beginJobQueueRun.mockResolvedValue({
@@ -397,6 +413,38 @@ describe(EditOperationTracker.name, () => {
       });
 
       expect(operations.requeue).toHaveBeenCalledWith('op-1', 'token-1', { delayMs: 60_000, returnAttempt: true });
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+    it('settles only its own cancellation through the callback before acknowledging a refused release', async () => {
+      operations.requeue.mockResolvedValue(false);
+      const onCancelled = vi.fn().mockResolvedValue(undefined);
+      await sut.execute('op-1', async (run) => {
+        operations.getForWorker.mockResolvedValue({ cancelRequestedAt: new Date(), claimToken: 'token-1' } as never);
+        expect(await run!.release(60_000, onCancelled)).toBe(false);
+        expect(run!.done).toBe(true);
+        return JobStatus.Skipped;
+      });
+      expect(onCancelled).toHaveBeenCalledOnce();
+      expect(operations.acknowledgeCancel).toHaveBeenCalledWith('op-1', 'token-1', { released: true });
+      expect(onCancelled.mock.invocationCallOrder[0]).toBeLessThan(
+        operations.acknowledgeCancel.mock.invocationCallOrder[0],
+      );
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+    it('does not run a cancellation callback or acknowledge a replacement claim after refused release', async () => {
+      operations.requeue.mockResolvedValue(false);
+      const onCancelled = vi.fn().mockResolvedValue(undefined);
+      await sut.execute('op-1', async (run) => {
+        operations.getForWorker.mockResolvedValue({
+          cancelRequestedAt: new Date(),
+          claimToken: 'replacement-token',
+        } as never);
+        expect(await run!.release(60_000, onCancelled)).toBe(false);
+        expect(run!.done).toBe(true);
+        return JobStatus.Skipped;
+      });
+      expect(onCancelled).not.toHaveBeenCalled();
+      expect(operations.acknowledgeCancel).not.toHaveBeenCalled();
       expect(operations.complete).not.toHaveBeenCalled();
     });
   });

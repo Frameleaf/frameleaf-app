@@ -10,6 +10,7 @@ import { nativeMeanDeltaE76 } from 'test/native/deltae.js';
 it.each([
   ['canon', 'Canon/EOS_70D.CR2', '2928f74fac36110319d2fc4f6849ff6181f6c401ff162dc8a8dea782d4cc3fcf'],
   ['nikon', 'Nikon/D80/glarus.nef', 'fe9f0880136d438b881ee5f44b88d84402091c24b12431160298c0353c311f4b'],
+  ['canon-repeated', 'Canon/EOS_70D.CR2', '1d0a26a042952dc67723f3eaed97f62e59aba364350cee910be5140ee3cf3bd7'],
 ])(
   'replays genuine %s XMP within mean CIE76 DeltaE <6 of its independent native reference',
   async (camera, file, referenceHash) => {
