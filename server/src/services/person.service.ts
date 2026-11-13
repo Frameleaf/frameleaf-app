@@ -1814,30 +1814,38 @@ export class PersonService extends BaseService {
       }
 
       let personGroupId = matches.find((match) => match.personGroupId)?.personGroupId;
-      if (!personGroupId) {
-        const [matchWithPerson] = await this.searchRepository.searchFaces({
-          clusterGroupId,
-          embedding: face.faceSearch.embedding,
-          maxDistance: machineLearning.facialRecognition.maxDistance,
-          numResults: 1,
-          hasPerson: true,
-          minBirthDate: new Date(face.asset.fileCreatedAt),
-        });
+      let person = personGroupId ? await this.personRepository.getByGroupId({ ownerId, personGroupId }) : undefined;
+      if (!person) {
+        // Several faces are recognised at once. Joining an existing person needs no lock; anything that might create
+        // a person or group waits its turn in this cluster group and looks again, so it finds the one a face just
+        // before it created (committed once that face's transaction ends) instead of starting a second.
+        await this.personRepository.lockPersonCreation(clusterGroupId);
+        if (!personGroupId) {
+          const [matchWithPerson] = await this.searchRepository.searchFaces({
+            clusterGroupId,
+            embedding: face.faceSearch.embedding,
+            maxDistance: machineLearning.facialRecognition.maxDistance,
+            numResults: 1,
+            hasPerson: true,
+            minBirthDate: new Date(face.asset.fileCreatedAt),
+          });
 
-        personGroupId = matchWithPerson?.personGroupId ?? undefined;
-      }
+          personGroupId = matchWithPerson?.personGroupId ?? undefined;
+        }
 
-      if (!personGroupId && isCore) {
-        const group = await this.personRepository.createGroup(ownerId);
-        personGroupId = group.id;
-        this.logger.log(`Created person group ${personGroupId} for face ${id}`);
+        if (!personGroupId && isCore) {
+          const group = await this.personRepository.createGroup(ownerId);
+          personGroupId = group.id;
+          this.logger.log(`Created person group ${personGroupId} for face ${id}`);
+        } else if (personGroupId) {
+          person = await this.personRepository.getByGroupId({ ownerId, personGroupId });
+        }
       }
 
       if (personGroupId) {
         // A face on a Locked photo is never a person's thumbnail (FL-53): such a person takes another
         // face of theirs once this one is assigned, or none.
         const isLocked = isLockedAssetRow(face.asset);
-        const person = await this.personRepository.getByGroupId({ ownerId, personGroupId });
         if (person) {
           this.logger.debug(`Face ${id} matched person ${person.personGroupId}`);
         } else {

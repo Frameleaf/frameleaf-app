@@ -72,6 +72,13 @@ import {
 import { overnightCron } from 'src/utils/overnight.js';
 import { unfinishedProcessing } from 'src/utils/unfinished-processing.js';
 
+/**
+ * Recognising people runs this many faces at once (within the server's total). Creating a person stays one at a time
+ * per cluster group (`PersonRepository.lockPersonCreation`), so parallel faces never start two people for one.
+ */
+// ponytail: fixed, no setting; add job.facialRecognition.concurrency to Settings if someone needs to tune it
+const FACIAL_RECOGNITION_CONCURRENCY = 4;
+
 /** FL-71: the machine-learning workload whose routed destination runs a queue's jobs. */
 const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
   [QueueName.FaceDetection]: MlWorkload.Face,
@@ -200,7 +207,11 @@ export class QueueService extends BaseService {
   private updateConcurrency(config: SystemConfig) {
     this.logger.debug(`Updating queue concurrency settings`);
     for (const queueName of Object.values(QueueName)) {
-      const concurrency = this.isConcurrentQueue(queueName) ? config.job[queueName].concurrency : 1;
+      const concurrency = this.isConcurrentQueue(queueName)
+        ? config.job[queueName].concurrency
+        : queueName === QueueName.FacialRecognition
+          ? FACIAL_RECOGNITION_CONCURRENCY
+          : 1;
       this.logger.debug(`Setting ${queueName} concurrency to ${concurrency}`);
       this.jobRepository.setConcurrency(queueName, concurrency);
     }
