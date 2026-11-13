@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import sharp, { kernel } from 'sharp';
+import sharp from 'sharp';
 
 // Supplementary oracle: Sharp ICC-to-sRGB/Lanczos3; Lab D65 and CIE76, never Sharp's Lab D50.
 async function labD65(input: Buffer) {
   const { data, info } = await sharp(input)
     .withIccProfile('srgb')
     .removeAlpha()
-    .resize(384, 256, { fit: 'fill', kernel: kernel.lanczos3 })
+    .resize(384, 256, { fit: 'fill', kernel: 'lanczos3' })
     .raw()
     .toBuffer({ resolveWithObject: true });
   assert.equal(info.channels, 3);
