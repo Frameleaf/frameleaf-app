@@ -1,6 +1,8 @@
+import hashlib
 from contextlib import contextmanager
 
 import numpy as np
+import onnx
 import pytest
 
 from test_native_qualification import graph
@@ -12,6 +14,7 @@ class Observer:
     def __init__(self):
         self.active = False
         self.calls = []
+        self.loaded = []
         self.version = "OS build one"
         self.bindings = {}
 
@@ -27,12 +30,13 @@ class Observer:
         }
 
     @contextmanager
-    def observe(self, path):
+    def observe(self, path, loaded_sha256=None):
         assert not self.active
         self.active = True
         try:
             yield
             self.calls.append(path)
+            self.loaded.append(loaded_sha256)
         finally:
             self.active = False
 
@@ -60,13 +64,80 @@ def test_actual_session_output_is_observed_and_observer_refusal_blocks_publicati
     assert not observer.active
 
     @contextmanager
-    def refuse(path):
+    def refuse(path, loaded_sha256=None):
         yield
         raise ValueError("device_proof_missing")
 
     monkeypatch.setattr(observer, "observe", refuse)
     with pytest.raises(ValueError, match="device_proof_missing"):
         session.run(None, {"input": np.ones((1, 2), dtype=np.float32)})
+
+
+def observed_session(tmp_path, monkeypatch, **options):
+    from frameleaf_ml import native_ort
+    from frameleaf_ml.sessions.ort import OrtSession
+
+    observer = Observer()
+    monkeypatch.setattr(
+        native_ort, "_policy", native_ort.NativeOrtPolicy("CPUExecutionProvider", None, observer=observer)
+    )
+    return observer, OrtSession(tmp_path / "model.onnx", **options)
+
+
+def test_observed_session_runs_the_bytes_it_hashed_whatever_the_file_becomes(tmp_path, monkeypatch):
+    path = tmp_path / "model.onnx"
+    graph(path)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    observer, session = observed_session(tmp_path, monkeypatch)
+    assert session.model_sha256 == digest
+    assert session.session._model_path is None and session.session._model_bytes is None
+    # The file is replaced after the session exists: the session still runs, and still names, what it loaded.
+    graph(path, batch=True)
+    assert hashlib.sha256(path.read_bytes()).hexdigest() != digest
+    assert session.run(None, {"input": np.ones((1, 2), dtype=np.float32)})[0].shape == (1, 4)
+    assert observer.calls == [path] and observer.loaded == [digest]
+
+
+def test_unobserved_native_session_still_loads_from_its_file(tmp_path, monkeypatch):
+    from frameleaf_ml import native_ort
+    from frameleaf_ml.sessions.ort import OrtSession
+
+    path = tmp_path / "model.onnx"
+    graph(path)
+    monkeypatch.setattr(native_ort, "_policy", native_ort.NativeOrtPolicy("CPUExecutionProvider", None))
+    session = OrtSession(path)
+    assert session.model_sha256 is None and session.session._model_path == path.as_posix()
+
+
+def test_model_with_external_weights_is_never_loaded_from_memory(tmp_path, monkeypatch):
+    path = tmp_path / "model.onnx"
+    graph(path)
+    onnx.save(onnx.load(path), path, save_as_external_data=True, location="weights.bin", size_threshold=0)
+    assert (tmp_path / "weights.bin").is_file()
+    # ONNX Runtime would read an in-memory model's external weights from the working directory.
+    monkeypatch.chdir(tmp_path)
+    observer, session = observed_session(tmp_path, monkeypatch)
+    assert session.model_sha256 is None and session.session._model_path == path.as_posix()
+    session.run(None, {"input": np.ones((1, 2), dtype=np.float32)})
+    assert observer.loaded == [None]
+
+
+def test_custom_session_options_keep_the_file_and_its_per_run_hash(tmp_path, monkeypatch):
+    import onnxruntime as ort
+
+    graph(tmp_path / "model.onnx")
+    _, session = observed_session(tmp_path, monkeypatch, sess_options=ort.SessionOptions())
+    assert session.model_sha256 is None
+
+
+def test_unreadable_or_empty_model_is_not_loaded_from_memory(tmp_path):
+    from frameleaf_ml.sessions.ort import _read_model
+
+    assert _read_model(tmp_path / "missing.onnx") is None
+    (tmp_path / "empty.onnx").write_bytes(b"")
+    assert _read_model(tmp_path / "empty.onnx") is None
+    (tmp_path / "model.onnx").write_bytes(b"abc")
+    assert _read_model(tmp_path / "model.onnx") == (b"abc", hashlib.sha256(b"abc").hexdigest())
 
 
 def test_observer_device_facts_participate_in_runtime_fingerprint(monkeypatch):
