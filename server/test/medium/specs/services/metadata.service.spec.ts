@@ -1,13 +1,17 @@
 import { createPostgres } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { PostgresJSDialect } from 'kysely-postgres-js';
+import { randomUUID } from 'node:crypto';
 import { Stats, mkdirSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { ExifResponseSchema, mapExif } from 'src/dtos/exif.dto.js';
-import { AssetFileType, AssetVisibility, JobStatus } from 'src/enum.js';
+import { AssetFileType, AssetVisibility, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -18,12 +22,14 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { DB } from 'src/schema/index.js';
 import { MetadataService } from 'src/services/metadata.service.js';
+import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB, newRandomImage } from 'test/utils.js';
@@ -95,6 +101,118 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    it.each([false, true])(
+      'applies intake credits when upload extraction overlaps (intake publishes first: %s)',
+      async (intakeFirst) => {
+        const { sut, ctx } = setup();
+        ctx.getMock(JobRepository).queue.mockResolvedValue();
+        const { filePath } = await createTestFile({});
+        await chmod(filePath, 0o444);
+        const original = await readFile(filePath);
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: filePath });
+        const { album } = await ctx.newAlbum({ ownerId: user.id }, [asset.id]);
+        const prepare = async () => {
+          const context: QueueExecution = {
+            claim: {
+              id: randomUUID(),
+              token: randomUUID(),
+              workerId: randomUUID(),
+              queue: QueueName.MetadataExtraction,
+              name: JobName.AssetExtractMetadata,
+              data: { id: asset.id },
+              attempt: 1,
+              runId: null,
+              itemKey: null,
+              deadlineMs: 60_000,
+              startedAt: new Date(),
+            },
+            signal: new AbortController().signal,
+            progress: vi.fn(),
+            progressUnits: 0,
+            buffering: false,
+            adoptions: [],
+            followups: [],
+          };
+          await queueExecution.run(context, () => sut.handleMetadataExtraction({ id: asset.id }));
+          expect(context.adoptions).toHaveLength(1);
+          return () =>
+            ctx.database.transaction().execute((tx) =>
+              publicationTransaction.run(tx, () =>
+                queueExecution.run(context, async () => {
+                  for (const adopt of context.adoptions) await adopt(tx);
+                }),
+              ),
+            );
+        };
+        // Both attempts take the same empty EXIF revision, either side of intake's commit.
+        const upload = await prepare();
+        const defaults = { artist: 'Synthetic Studio', copyright: 'Synthetic fixture only' };
+        const workflow = new PhotographyWorkflowRepository(ctx.database);
+        await ctx.database.transaction().execute(async (tx) => {
+          expect(await workflow.addIntakeCreditDefaults(tx, user.id, album.id, [asset.id], defaults)).toEqual([
+            { assetId: asset.id },
+          ]);
+        });
+        const intake = await prepare();
+        for (const publish of intakeFirst ? [intake, upload] : [upload, intake]) await publish();
+        await expect(
+          ctx.database
+            .selectFrom('asset_exif')
+            .select(['artist', 'copyright', 'lockedProperties'])
+            .where('assetId', '=', asset.id)
+            .executeTakeFirstOrThrow(),
+        ).resolves.toEqual({ ...defaults, lockedProperties: null });
+        expect(await readFile(filePath)).toEqual(original);
+      },
+    );
+
+    it.each(['source', 'locked', 'edit', 'clear', 'unlock'])(
+      'preserves source and owner credits with intake defaults: %s',
+      async (scenario) => {
+        const { sut, ctx } = setup();
+        const { filePath } = await createTestFile(scenario === 'source' ? { Artist: 'File photographer' } : {});
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: filePath });
+        const assets = ctx.get(AssetRepository);
+        await assets.upsertMetadata(asset.id, [
+          { key: PHOTOGRAPHY_INTAKE_CREDITS_KEY, value: { artist: 'Shoot photographer', copyright: 'Shoot rights' } },
+        ]);
+        const ownerCredits = {
+          artist: scenario === 'clear' || scenario === 'unlock' ? null : 'Owner photographer',
+          copyright: null,
+        };
+        const edit = async () => {
+          await assets.upsertExif({
+            exif: { assetId: asset.id, ...ownerCredits, lockedProperties: ['artist', 'copyright'] },
+            lockedPropertiesBehavior: 'append',
+          });
+          if (scenario === 'unlock') await assets.unlockProperties(asset.id, ['artist', 'copyright']);
+        };
+        if (scenario === 'locked') await edit();
+        if (['edit', 'clear', 'unlock'].includes(scenario)) {
+          const metadata = ctx.get(MetadataRepository);
+          const readTags = metadata.readTags.bind(metadata);
+          const read = vi.spyOn(metadata, 'readTags').mockImplementationOnce(async (path) => {
+            const tags = await readTags(path);
+            await edit();
+            return tags;
+          });
+          onTestFinished(() => read.mockRestore());
+        }
+        await sut.handleMetadataExtraction({ id: asset.id });
+        await expect(
+          ctx.database
+            .selectFrom('asset_exif')
+            .select(['artist', 'copyright'])
+            .where('assetId', '=', asset.id)
+            .executeTakeFirstOrThrow(),
+        ).resolves.toEqual(
+          scenario === 'source' ? { artist: 'File photographer', copyright: 'Shoot rights' } : ownerCredits,
+        );
+      },
+    );
+
     it('extracts a real metadata-free synthetic JPEG using local JPEGDigest', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
