@@ -46,6 +46,7 @@ export type AssetDevelopRevision = {
   software: string | null;
   attempts: number;
   batchChargedBytes?: number;
+  styleBatchId?: string | null;
   createdAt: Date;
   updatedAt: Date;
   renderedAt: Date | null;
@@ -168,6 +169,7 @@ export class AssetDevelopRepository {
     software?: string | null;
     masterPath?: string | null;
     batchReturn?: BatchReturnAdmission;
+    styleBatchId?: string;
   }): Promise<AssetDevelopRevision> {
     // Serialised per asset: two saves racing for the same next number would otherwise collide on
     // the (assetId, revision) unique key and one of them would fail.
@@ -234,6 +236,13 @@ export class AssetDevelopRepository {
           });
         }
       }
+      if (input.styleBatchId) {
+        const prior = await sql<AssetDevelopRevision>`SELECT * FROM ${TABLE}
+          WHERE "styleBatchId" = ${input.styleBatchId}::uuid AND "assetId" = ${input.assetId}::uuid AND "ownerId" = ${input.ownerId}::uuid`.execute(
+          trx,
+        );
+        if (prior.rows[0]) return prior.rows[0];
+      }
       let recipe = developEnvelope(input.recipe);
       if (input.sourceRevisionId) {
         const source =
@@ -278,7 +287,7 @@ export class AssetDevelopRepository {
       const { rows } = await sql<AssetDevelopRevision>`
         INSERT INTO ${TABLE} (
           "assetId", "ownerId", revision, "recipeVersion", recipe, label, status,
-          kind, "sourceChecksum", "renditionChecksum", "exportId", "fileName", software, "masterPath"
+          kind, "sourceChecksum", "renditionChecksum", "exportId", "fileName", software, "masterPath", "styleBatchId"
         )
         VALUES (
           ${input.assetId}::uuid,
@@ -294,7 +303,8 @@ export class AssetDevelopRepository {
           ${input.exportId ?? null}::uuid,
           ${input.fileName ?? null},
           ${input.software ?? null},
-          ${input.masterPath ?? null}
+          ${input.masterPath ?? null},
+          ${input.styleBatchId ?? null}::uuid
         )
         RETURNING *
       `.execute(trx);
@@ -316,6 +326,28 @@ export class AssetDevelopRepository {
       return rows[0];
     });
   }
+  async getStyleBatch(ownerId: string, batchId: string): Promise<AssetDevelopRevision[]> {
+    const result = await sql<AssetDevelopRevision>`SELECT * FROM ${TABLE}
+      WHERE "ownerId" = ${ownerId}::uuid AND "styleBatchId" = ${batchId}::uuid ORDER BY "assetId"`.execute(this.db);
+    return result.rows;
+  }
+
+  async discardStyleRevision(ownerId: string, revision: AssetDevelopRevision) {
+    return this.db.transaction().execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_revision:${revision.assetId}`}, 0))`.execute(
+        trx,
+      );
+      const result = await sql<AssetDevelopRevision>`DELETE FROM ${TABLE} WHERE id = ${revision.id}::uuid
+        AND "ownerId" = ${ownerId}::uuid AND "styleBatchId" IS NOT NULL AND NOT "isCurrent"
+        AND status NOT IN ('queued', 'rendering')
+        AND NOT EXISTS (
+          SELECT 1 FROM public.photography_workflow workflow WHERE workflow."ownerId" = ${ownerId}::uuid
+          AND strpos(workflow.value::text, ${revision.id}) > 0
+        ) RETURNING *`.execute(trx);
+      return result.rows[0];
+    });
+  }
+
   /** Revisions whose render the queue may have lost (a restart, a flushed queue): queued or rendering. */
   async listUnfinished(): Promise<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt' | 'recipe' | 'kind'>[]> {
     const { rows } = await sql<Pick<AssetDevelopRevision, 'id' | 'status' | 'updatedAt' | 'recipe' | 'kind'>>`

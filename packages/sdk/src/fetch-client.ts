@@ -14459,6 +14459,24 @@ export type PhotographyInquiryCreateDto = {
     "type": string;
     website?: string;
 };
+export type DevelopStyleDto = {
+    availableEdits: number;
+    learnedEdits: number | null;
+    trainedAt: string | null;
+};
+export type DevelopStyleUndoDto = {
+    remaining: number;
+    removed: number;
+};
+export type DevelopStyleApplyDto = {
+    assetIds?: string[];
+    batchId: string;
+};
+export type DevelopStyleBatchDto = {
+    batchId: string;
+    failed: number;
+    versions: AssetDevelopRevisionResponseDto[];
+};
 export type PhotographyWorkflowListDto = {
     galleries: {
         currency: string;
@@ -34738,6 +34756,68 @@ export function photographySiteInquiry({ site, photographyInquiryCreateDto }: {
         ...opts,
         method: "POST",
         body: photographyInquiryCreateDto
+    })));
+}
+/**
+ * Read your photography style status
+ */
+export function getDevelopStyle(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopStyleDto;
+    }>("/photography/style", {
+        ...opts
+    }));
+}
+/**
+ * Learn a photography style from your edits
+ */
+export function learnDevelopStyle(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopStyleDto;
+    }>("/photography/style", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Forget your photography style
+ */
+export function forgetDevelopStyle(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/photography/style", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Undo an inactive styled batch
+ */
+export function undoDevelopStyle({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DevelopStyleUndoDto;
+    }>(`/photography/style/batches/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Queue inactive styled versions of shoot photos
+ */
+export function applyDevelopStyle({ id, developStyleApplyDto }: {
+    id: string;
+    developStyleApplyDto: DevelopStyleApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: DevelopStyleBatchDto;
+    }>(`/photography/style/shoots/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: developStyleApplyDto
     })));
 }
 export function photographyList(opts?: Oazapfts.RequestOpts) {
