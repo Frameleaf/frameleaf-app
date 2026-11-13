@@ -2354,10 +2354,29 @@ export class Operations {
       ]);
       return true;
     });
-    await this.step(operation, 'database-checkpoint', async () => {
-      await this.backups.initialize();
-      return this.backups.snapshot(await this.checkpoint(operation), operation.id);
-    });
+    try {
+      await this.step(operation, 'database-checkpoint', async () => {
+        await this.backups.initialize();
+        return this.backups.snapshot(await this.checkpoint(operation), operation.id);
+      });
+    } catch (error) {
+      // FL-1501: nothing changed but the application is stopped (a full backups drive, a locked
+      // repository, a dump over its limit). Left failed, the operation would keep the server down and
+      // hold the lock every later automatic update needs, so the update is cancelled and the previous
+      // release started again, exactly as when the database move does not start (below).
+      const reason = error instanceof Refusal ? error.code : ((error as Error)?.message ?? String(error));
+      console.error(redact(`manager: the safety backup before the update failed (${reason}); starting ${review.current.release} again`));
+      operation.receipts['cancellation-intent'] = {
+        kind: 'update',
+        installation: this.installation(),
+        archive: join(this.store.directory, `cancelled-stack-${operation.id}`),
+      } satisfies Cancellation;
+      this.store.save(operation);
+      await this.cancelOperation(operation);
+      operation.receipts['cancelled'] = 'database_checkpoint_failed_rolled_back';
+      this.store.save(operation);
+      return;
+    }
     // FL-1265: a database image that cannot reuse the data directory moves first. compose.json still names the
     // installed image here: only the move itself (which journals its intent first) re-renders it.
     const installed: string | undefined = JSON.parse(await readFile(join(this.directory(), 'compose.json'), 'utf8')).services

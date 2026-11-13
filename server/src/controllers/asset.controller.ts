@@ -6,6 +6,7 @@ import { AssetFontResponseDto } from 'src/dtos/asset-font.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import {
+  AssetAllMetadataResponseDto,
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
   AssetCopyDto,
@@ -314,6 +315,13 @@ export class AssetController {
     @Body() dto: UpdateAssetDto,
   ): Promise<AssetResponseDto> {
     return this.service.update(auth, id, dto);
+  }
+
+  @Get(':id/metadata/all')
+  @Authenticated({ permission: Permission.AssetRead, sharedLink: true })
+  @Endpoint({ summary: 'Get original and sidecar metadata', history: new HistoryBuilder().added('v3') })
+  getAssetAllMetadata(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AssetAllMetadataResponseDto> {
+    return this.service.getAllMetadata(auth, id);
   }
 
   @Get(':id/metadata')

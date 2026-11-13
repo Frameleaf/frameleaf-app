@@ -23,6 +23,8 @@ const ShootSchema = z.strictObject({
   /** The shoot brief on Intake & assembly (approved design, 2026-11-04): what the client asked for, and when it is due. */
   notes: z.string().max(5000).optional(),
   deliveryTarget: z.iso.date().nullable().optional(),
+  defaultArtist: z.string().trim().max(500).optional(),
+  defaultCopyright: z.string().trim().max(500).optional(),
 });
 export type StoredShoot = Omit<z.infer<typeof ShootSchema>, 'albumId'> & { albumId: string };
 export class PhotographyWorkspaceSaveDto extends createZodDto(

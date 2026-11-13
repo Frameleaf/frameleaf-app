@@ -46783,6 +46783,15 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "frameleafAccountId",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
         }
       ],
       "indexes": [
@@ -46968,6 +46977,15 @@
           "name": "expiresAt",
           "tableName": "oauth_authorization_code",
           "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "frameleafAccountId",
+          "tableName": "oauth_authorization_code",
+          "nullable": true,
           "isArray": false,
           "synchronize": true
         }
@@ -51227,6 +51245,15 @@
           "type": "text",
           "primary": false,
           "name": "offsetTime",
+          "tableName": "asset_exif",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "title",
           "tableName": "asset_exif",
           "nullable": true,
           "isArray": false,

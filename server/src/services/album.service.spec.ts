@@ -2514,6 +2514,21 @@ describe(AlbumService.name, () => {
         },
       });
 
+      it.each([
+        ['sharing', { albumUsers: [{ userId: 'someone-else', role: AlbumUserRole.Editor }] }],
+        ['a shared space', { kind: AlbumKind.Space }],
+        ['nesting', { parentId: 'parent' }],
+      ] satisfies [string, Partial<CreateAlbumDto>][])(
+        'refuses an app creating an album with %s (FL-1499)',
+        async (_name, extra) => {
+          const owner = UserFactory.create();
+          await expect(sut.create(asApp(owner), { albumName: 'From an app', ...extra })).rejects.toBeInstanceOf(
+            ForbiddenException,
+          );
+          expect(mocks.album.create).not.toHaveBeenCalled();
+        },
+      );
+
       it.each(['add', 'bulk-add'] as const)(
         'refuses an app adding to a Locked album before anything is written or locked (%s)',
         async (action) => {

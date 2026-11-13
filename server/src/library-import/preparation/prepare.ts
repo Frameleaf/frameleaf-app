@@ -17,6 +17,8 @@ import { LibraryImportRefused } from 'src/library-import/state.js';
 
 /** Recorded on every best-effort import so the review can suggest upgrading first. */
 export const UNTESTED_VERSION_LOSS = 'SOURCE_VERSION_UNTESTED';
+/** FL-1505: recorded for each photo that was merged into an identical one. Reported, never asked about. */
+export const IDENTICAL_MERGED_LOSS = 'SOURCE_IDENTICAL_ORIGINALS_MERGED';
 /** Destination media mount inside the preparation container. */
 export const DESTINATION_ROOT = '/data';
 /** The review-only pass reads no bytes: every observed file carries this hash instead. */
@@ -88,6 +90,59 @@ async function readManifest(source: OpenedPreparationSource, input: PreparationS
   return { manifest, archive };
 }
 
+/**
+ * FL-1505 (owner 2026-11-12, "merge and report"): Frameleaf keeps one photo per owner for the same bytes, and
+ * the plan refuses two. A library that holds a photo twice (the same file in two folders) is merged here, after
+ * hashing: the copy kept is the Locked one if any, then the one with the most files, then the first; it joins
+ * every album either copy was in; each merged copy is a loss in the import's record (its own description, tags
+ * and favourite do not come across). The review pass reads no bytes, so it cannot ask first.
+ * ponytail: a copy in a stack or a Live Photo pair is left alone, and the plan still refuses that library;
+ * merging those needs the pair rules too.
+ */
+export function mergeIdenticalOriginals(manifest: ImportManifest): number {
+  type Asset = ImportManifest['assets'][number];
+  // one array type for every manifest version; edited in place
+  const assets: Asset[] = manifest.assets;
+  const files = new Map(manifest.files.map((file) => [file.id, file]));
+  const paired = new Set<string>();
+  if ('stacks' in manifest) for (const stack of manifest.stacks) for (const id of stack.assetIds) paired.add(id);
+  if ('livePhotos' in manifest)
+    for (const pair of manifest.livePhotos) paired.add(pair.photoAssetId).add(pair.videoAssetId);
+  const primarySha = (asset: Asset) =>
+    files.get(
+      'primaryFileId' in asset ? asset.primaryFileId : asset.fileIds.find((id) => files.get(id)!.role === 'original')!,
+    )!.sha256;
+  const isLocked = (asset: Asset) => asset.visibility === 'locked' || asset.locked === true;
+  const groups = Map.groupBy(
+    assets.filter((asset) => !paired.has(asset.id)),
+    (asset) => JSON.stringify([asset.ownerId, primarySha(asset)]),
+  );
+  const mergedInto = new Map<string, string>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const [kept] = group.toSorted(
+      (a, b) => Number(isLocked(b)) - Number(isLocked(a)) || b.fileIds.length - a.fileIds.length,
+    );
+    for (const asset of group) if (asset !== kept) mergedInto.set(asset.id, kept.id);
+  }
+  if (mergedInto.size === 0) return 0;
+  const dropped = new Set<string>();
+  for (let index = assets.length - 1; index >= 0; index--) {
+    if (!mergedInto.has(assets[index].id)) continue;
+    for (const id of assets[index].fileIds) dropped.add(id);
+    assets.splice(index, 1);
+  }
+  // a file the kept copies still use stays
+  for (const asset of assets) for (const id of asset.fileIds) dropped.delete(id);
+  for (let index = manifest.files.length - 1; index >= 0; index--)
+    if (dropped.has(manifest.files[index].id)) manifest.files.splice(index, 1);
+  for (const album of manifest.albums)
+    album.assetIds = [...new Set(album.assetIds.map((id) => mergedInto.get(id) ?? id))];
+  for (const id of mergedInto.keys())
+    manifest.losses.push({ code: IDENTICAL_MERGED_LOSS, entityId: id, acknowledged: false });
+  return mergedInto.size;
+}
+
 /** Review-only pass: what will come over, who owns it and what will not. Writes nothing. */
 export async function inspectPreparationSource(adapter: PreparationAdapter, input: PreparationSourceInput) {
   const source = await adapter.open(input);
@@ -145,6 +200,7 @@ export async function preparePreparationSource(
   const source = await adapter.open(input);
   try {
     const { manifest, archive } = await readManifest(source, input, true);
+    const merged = mergeIdenticalOriginals(manifest);
     const choices = new Map(input.owners.map((owner) => [owner.sourceId, owner]));
     if (choices.size !== input.owners.length || manifest.users.some((user) => !choices.has(user.id)))
       throw new LibraryImportRefused('IMPORT_OWNER_MAPPING_INCOMPLETE');
@@ -218,7 +274,9 @@ export async function preparePreparationSource(
     const bundle = await publishAdapterImportBundle({
       manifest,
       archive: archive as Parameters<typeof publishAdapterImportBundle>[0]['archive'],
-      approvedLossCodes: input.approvedLossCodes,
+      // the merge is reported, not asked about: the review could not have shown it
+      approvedLossCodes:
+        merged > 0 ? new Set([...input.approvedLossCodes, IDENTICAL_MERGED_LOSS]) : input.approvedLossCodes,
       roots,
       placements,
       ownerMappings: input.owners.map(({ sourceId, destinationId }) => ({ sourceId, destinationId })),

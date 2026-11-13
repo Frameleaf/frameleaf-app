@@ -163,7 +163,8 @@ describe('SingleJobRecord migration', () => {
     expect(kept.map(({ key }) => key)).toEqual([null, 'child', 'new-done', 'new-failed', 'old-parent', 'old-stopped']);
     const { rows: workers } = await sql<{ id: string }>`SELECT id FROM job_worker`.execute(db);
     expect(workers.map(({ id }) => id)).toEqual([worker]);
-    expect(await relfile()).not.toBe(before);
+    // FL-1503: no rewrite inside the migration's transaction; autovacuum reuses the freed pages
+    expect(await relfile()).toBe(before);
 
     const { rows: jobs } = await sql<{ runId: string; itemKey: string; held: boolean; data: unknown }>`
       SELECT "runId", "itemKey", "availableAt" = 'infinity' held, data FROM job WHERE "itemKey" IN ('a','b','c','f','g') ORDER BY "itemKey"`.execute(

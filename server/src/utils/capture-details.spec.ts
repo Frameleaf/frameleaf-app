@@ -40,11 +40,37 @@ describe(captureDetails.name, () => {
       lensSerialNumber: '0000c1234',
       serialNumber: '052021001234',
       software: 'Firmware Version 1.8.1',
+      title: null,
       artist: 'Taylor',
       copyright: '© Cedar & Light',
       imageDirection: 271.5,
       gpsSpeed: 18.52,
     });
+  });
+
+  it('uses Dublin Core values before camera and IPTC fallbacks', () => {
+    expect(
+      captureDetails({
+        Title: 'XMP title',
+        ObjectName: 'IPTC title',
+        XPTitle: 'EXIF title',
+        Creator: ['Studio A', 'Studio B'],
+        Artist: 'EXIF artist',
+        ByLine: 'IPTC artist',
+        Rights: 'XMP rights',
+        Copyright: 'EXIF rights',
+        CopyrightNotice: 'IPTC rights',
+      }),
+    ).toMatchObject({ title: 'XMP title', artist: 'Studio A, Studio B', copyright: 'XMP rights' });
+    expect(
+      captureDetails({
+        Title: '',
+        ObjectName: 'IPTC title',
+        Creator: [],
+        Artist: 'EXIF artist',
+        CopyrightNotice: 'IPTC rights',
+      }),
+    ).toMatchObject({ title: 'IPTC title', artist: 'EXIF artist', copyright: 'IPTC rights' });
   });
 
   it('puts below-sea-level altitude below zero and ignores what is not a value', () => {

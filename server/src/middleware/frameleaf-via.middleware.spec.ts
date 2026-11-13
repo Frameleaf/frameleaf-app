@@ -5,6 +5,7 @@ import {
   expressTrustProxy,
   frameleafViaMiddleware,
   readFrameleafArrival,
+  requestHasTrustedTls,
   requestSecurityAddress,
   requestVia,
   stripFrameleafHeaders,
@@ -115,6 +116,25 @@ describe('frameleafViaMiddleware (FL-161)', () => {
     it('uses the socket address when nothing forwards one', () => {
       expect(viaExpress(defaults, '192.168.1.20')).toBe('192.168.1.20');
     });
+  });
+
+  it('recognizes forwarded TLS only from an explicitly trusted proxy', () => {
+    const app = express();
+    app.set('trust proxy', expressTrustProxy(['linklocal', 'uniquelocal']));
+    const socket = { remoteAddress: '172.18.0.2' };
+    const request = Object.create(app.request) as FrameleafRequest;
+    Object.assign(request, {
+      headers: { 'x-forwarded-proto': 'https' },
+      socket,
+      connection: socket,
+    });
+    const response = {} as Response;
+    const next = vi.fn();
+    expect(request.secure).toBe(true);
+    frameleafViaMiddleware(secret)(request, response, next);
+    expect(requestHasTrustedTls(request)).toBe(false);
+    frameleafViaMiddleware(secret, ['172.18.0.2'])(request, response, next);
+    expect(requestHasTrustedTls(request)).toBe(true);
   });
 
   it('leaves a request that claims nothing unmarked', () => {

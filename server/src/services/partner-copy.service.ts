@@ -74,6 +74,9 @@ const LOCK_RELEVANT_FIELDS: string[] = [
 /** The followed fields an asset edit touches (spec §4.2). Favorites and trash are never among them. */
 export const getAssetEditFields = (dto: {
   description?: unknown;
+  title?: unknown;
+  artist?: unknown;
+  copyright?: unknown;
   latitude?: unknown;
   longitude?: unknown;
   city?: unknown;
@@ -88,6 +91,9 @@ export const getAssetEditFields = (dto: {
   const touched = (...values: unknown[]) => values.some((value) => value !== undefined);
   return [
     ...(touched(dto.description) ? [AssetOriginField.Description] : []),
+    ...(touched(dto.title) ? [AssetOriginField.Title] : []),
+    ...(touched(dto.artist) ? [AssetOriginField.Artist] : []),
+    ...(touched(dto.copyright) ? [AssetOriginField.Copyright] : []),
     ...(touched(dto.latitude, dto.longitude, dto.city, dto.state, dto.country) ? [AssetOriginField.Location] : []),
     ...(touched(dto.dateTimeOriginal, dto.dateTimeRelative, dto.timeZone) ? [AssetOriginField.DateTimeOriginal] : []),
     ...(touched(dto.rating) ? [AssetOriginField.Rating] : []),

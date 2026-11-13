@@ -2702,11 +2702,16 @@ export class CloudBackupService {
     // the file's first recipient, so a partner copy needs the owner's key file, never the partner's.
     // A key id that matches no live key file is an item restored under an older key (spec §9): reported,
     // never a failure, since no backup could ever capture its key file.
-    const { keyless, older } = await lockedKeyGaps(
+    const { keyless, older, unreadable } = await lockedKeyGaps(
       run.progress.result.sealedKeyIds,
       new Set(run.progress.result.lockedKeyIds),
       StorageCore.getMediaLocation(),
     );
+    if (unreadable.length > 0) {
+      this.logger.warn(
+        `Cloud backup run ${run.id}: ${unreadable.length} file(s) start like an encrypted Locked file but cannot be read as one; backed up as they are: ${unreadable.slice(0, 5).join(', ')}`,
+      );
+    }
     if (older.length > 0) {
       this.logger.warn(
         `Cloud backup run ${run.id}: encrypted Locked files under ${older.length} older key(s) that no key file opens; they are backed up as they are`,
@@ -2829,7 +2834,7 @@ export class CloudBackupService {
     // FL-721: an encrypted Locked file is copied as it is. Its recorded checksum is the plaintext's, so a
     // mismatch is not a change; its owner (the first recipient, whoever's asset row lists the path) must
     // have a key file in this backup (see `backUpProfiles`). Checked before the verified fast path too.
-    // A file that is encrypted but whose header cannot be read counts as keyless (fail safe), never as plain.
+    // A file that starts like an encrypted one but whose header cannot be read is reported, never plain.
     const ownerKeyId = file.role === LOCKED_KEY_BACKUP_ROLE ? null : await sealedFileOwnerKeyId(file.path);
     const sealed = ownerKeyId !== null;
     if (file.role === 'original' && file.assetId) {

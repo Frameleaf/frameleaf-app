@@ -1004,6 +1004,8 @@ type StringColumn =
   | 'asset_exif.model'
   | 'asset_exif.lensModel'
   | 'asset_exif.description'
+  | 'asset_exif.title'
+  | 'asset_exif.artist'
   | 'asset.originalFileName'
   | 'asset.originalPath';
 function stringPatternPredicates(eb: AssetExpressionBuilder, column: StringColumn, filter?: StringPatternFilter) {
@@ -1176,6 +1178,8 @@ function branchPredicates(
     ...stringPatternPredicates(eb, 'asset_exif.model', branch.model),
     ...stringPatternPredicates(eb, 'asset_exif.lensModel', branch.lensModel),
     ...stringPatternPredicates(eb, 'asset_exif.description', branch.description),
+    ...stringPatternPredicates(eb, 'asset_exif.title', branch.title),
+    ...stringPatternPredicates(eb, 'asset_exif.artist', branch.artist),
     ...stringPatternPredicates(eb, 'asset.originalFileName', branch.originalFileName),
     ...stringPatternPredicates(eb, 'asset.originalPath', branch.originalPath),
     ...(branch.ocr

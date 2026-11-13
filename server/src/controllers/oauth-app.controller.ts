@@ -28,10 +28,11 @@ import {
 } from 'src/dtos/oauth-app.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
-import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
+import { requestHasTrustedTls, requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
+import { ASSISTANT_MCP_PATH, checkResource, isAssistantResource } from 'src/utils/oauth-apps.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 const HOST =
@@ -43,14 +44,15 @@ const HOST =
  * only; it can change no one's response but the requester's own, and every token, code and return
  * address is checked on its own. Remote access (relay or direct) is always https.
  */
-export const oauthIssuer = (request: Request) => {
+export const oauthIssuer = (request: Request, trustedTransportOnly = false) => {
   const host = request.headers.host ?? '';
   const safeHost = HOST.test(host) ? host.toLowerCase() : 'localhost';
   const forwardedProto = request.headers['x-forwarded-proto'];
-  const https =
-    request.secure ||
-    isRemoteVia(requestVia(request)) ||
-    (typeof forwardedProto === 'string' && forwardedProto.split(',', 1)[0].trim() === 'https');
+  const https = trustedTransportOnly
+    ? requestHasTrustedTls(request)
+    : request.secure ||
+      isRemoteVia(requestVia(request)) ||
+      (typeof forwardedProto === 'string' && forwardedProto.split(',', 1)[0].trim() === 'https');
   return `${https ? 'https' : 'http'}://${safeHost}`;
 };
 
@@ -78,7 +80,13 @@ export class OAuthAppController {
   @RateLimited(RATE_LIMITS.oauthAppAuthorize)
   @Redirect()
   async authorizeRedirect(@Req() request: Request, @Query() query: Record<string, unknown>) {
-    return { url: await this.service.authorizeRedirect(query, oauthIssuer(request)), statusCode: HttpStatus.FOUND };
+    return {
+      url: await this.service.authorizeRedirect(
+        query,
+        oauthIssuer(request, isAssistantResource(checkResource(query.resource) || null)),
+      ),
+      statusCode: HttpStatus.FOUND,
+    };
   }
 
   @Post('authorize/start')
@@ -92,8 +100,16 @@ export class OAuthAppController {
       'For the Allow page, signed in with a session (never a key or an app). Checks the app, its exact return address, the S256 code challenge and that every scope asked for is one this server offers, and says who the app is and what it asked for.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
-  start(@Auth() auth: AuthDto, @Body() dto: OAuthAppAuthorizeStartDto): Promise<OAuthAppAuthorizeStartResponseDto> {
-    return this.service.start(auth, dto);
+  start(
+    @Auth() auth: AuthDto,
+    @Req() request: Request,
+    @Body() dto: OAuthAppAuthorizeStartDto,
+  ): Promise<OAuthAppAuthorizeStartResponseDto> {
+    return this.service.start(
+      auth,
+      dto,
+      oauthIssuer(request, isAssistantResource(checkResource(dto.resource) || null)),
+    );
   }
 
   @Post('authorize')
@@ -112,7 +128,11 @@ export class OAuthAppController {
     @Req() request: Request,
     @Body() dto: OAuthAppAuthorizeDto,
   ): Promise<OAuthAppAuthorizeResponseDto> {
-    return this.service.authorize(auth, dto, oauthIssuer(request));
+    return this.service.authorize(
+      auth,
+      dto,
+      oauthIssuer(request, isAssistantResource(checkResource(dto.resource) || null)),
+    );
   }
 
   @ApiExcludeEndpoint()
@@ -130,9 +150,9 @@ export class OAuthAppController {
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   @Header('Pragma', 'no-cache')
-  token(@Body() body: Record<string, unknown>, @Res({ passthrough: true }) res: Response) {
+  token(@Body() body: Record<string, unknown>, @Req() request: Request, @Res({ passthrough: true }) res: Response) {
     allowAnyOrigin(res);
-    return this.service.token(body ?? {});
+    return this.service.token(body ?? {}, oauthIssuer(request, true));
   }
 
   @ApiExcludeEndpoint()
@@ -241,6 +261,6 @@ export class OAuthAppWellKnownController {
     allowAnyOrigin(res);
     const suffix = request.path.replace(/^\/\.well-known\/oauth-protected-resource/, '');
     const path = /^(?:\/[\w.~-]+)*$/.test(suffix) && suffix.length <= 200 ? suffix : '';
-    return this.service.getProtectedResourceMetadata(oauthIssuer(request), path);
+    return this.service.getProtectedResourceMetadata(oauthIssuer(request, path === ASSISTANT_MCP_PATH), path);
   }
 }

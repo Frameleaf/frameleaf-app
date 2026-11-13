@@ -252,12 +252,18 @@ export class PersonRepository {
   ) {
     this.db = publicationDatabase(this.db);
   }
-  /** Copy, merge and undo serialize recipient mappings through their face writes; no I/O inside. */
+  /**
+   * Copy, merge and undo serialize recipient mappings through their face writes; no I/O inside.
+   * FL-1530: this lock is a queue (a run of merges, a partner library being copied), so a waiter takes its
+   * turn for up to a minute instead of failing at the pool's 5 s lock_timeout; the writes keep the pool limit.
+   */
   async withMergeWrite<T>(write: () => Promise<T>, ownerId: string): Promise<T> {
     return this.db.transaction().execute(async (tx) => {
+      await sql`SET LOCAL lock_timeout = '60s'`.execute(tx);
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`partner-person-owner:v1:${ownerId.toLowerCase()}`},0))`.execute(
         tx,
       );
+      await sql`SET LOCAL lock_timeout TO DEFAULT`.execute(tx);
       return publicationTransaction.run(tx, write);
     });
   }

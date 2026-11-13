@@ -213,6 +213,8 @@ describe('logging interceptor redaction (FL-81)', () => {
 
 describe('secret request body exclusion', () => {
   it.each([
+    '/api/mcp/assistant',
+    '/API/MCP/ASSISTANT/',
     '/api/admin/cloud/backup/check',
     '/api/admin/cloud/backup/setup',
     '/api/admin/cloud/backup/key/unlock',

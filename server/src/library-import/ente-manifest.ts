@@ -385,6 +385,14 @@ export function readEnteManifest(input: {
     }
     return local;
   };
+  // FL-1504 (owner 2026-11-04): Ente hides a photo by putting it in a hidden album, so the album's own
+  // visibility (2) or type decides, not only the file's. Seen through the account's own view of the album.
+  const hiddenAlbum = (account: Account, albumId: Parameters<Account['albumIndex']['get']>[0]) => {
+    const album = account.albumIndex.get(albumId)?.record.ente;
+    if (!album) return false;
+    const view = album.ownerID === account.id ? album.magicMetadata : album.sharedMagicMetadata;
+    return view?.visibility === 2 || album.type === 'defaultHidden';
+  };
   const files: ImportManifest['files'] = [],
     assets: Extract<ImportManifest, { version: 5 }>['assets'] = [],
     livePhotos: Extract<ImportManifest, { version: 5 }>['livePhotos'] = [];
@@ -426,7 +434,10 @@ export function readEnteManifest(input: {
       originalFileNames: { [primaryId]: primary.name },
       localDateTime,
       // Owner 2026-11-04: a hidden file imports Locked.
-      visibility: file.visibility === 'archived' ? 'archive' : file.visibility === 'hidden' ? 'locked' : 'timeline',
+      ...(file.visibility === 'hidden' || file.albumIds.some((id) => hiddenAlbum(account, id))
+        ? // archived as well: it returns to the Archive when unlocked
+          { visibility: 'locked' as const, ...(file.visibility === 'archived' ? { archived: true as const } : {}) }
+        : { visibility: file.visibility === 'archived' ? ('archive' as const) : ('timeline' as const) }),
       metadata,
     });
     if (file.type === 'livephoto') {
@@ -463,6 +474,8 @@ export function readEnteManifest(input: {
     for (const [albumId, album] of account.albumIndex) {
       const members = memberships.get(albumId) ?? [];
       if (members.length === 0 && album.record.ente.ownerID !== account.id) continue;
+      // Its photos are Locked; an album named after it would show the title in Albums.
+      if (hiddenAlbum(account, albumId)) continue;
       const dynamic = !['album', 'folder'].includes(album.record.ente.type);
       if (dynamic) loss('ENTE_DYNAMIC_ALBUM_SNAPSHOT', account.id + ':' + albumId);
       albums.push({
