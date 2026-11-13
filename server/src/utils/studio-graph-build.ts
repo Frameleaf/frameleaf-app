@@ -95,7 +95,7 @@ export const transitionFramesFor = (
   return 0;
 };
 
-export type StudioProjectGraphOptions = {
+export type StudioProjectGraphOptions<M, T, K, C> = {
   id: string;
   name: string;
   /** Milliseconds; the project's own timestamps. */
@@ -105,16 +105,18 @@ export type StudioProjectGraphOptions = {
   lengthFrames: number;
   tracks: ReturnType<typeof studioTrack>[];
   items: StudioGraphItem[];
-  markers?: unknown[];
-  transitions?: unknown[];
-  keyframes?: unknown[];
-  compositions?: unknown[];
+  markers?: M[];
+  transitions?: T[];
+  keyframes?: K[];
+  compositions?: C[];
 };
 
 /** The project envelope in normal form (protocol 2.6): optional lists only when not empty. */
-export const studioProjectGraph = (options: StudioProjectGraphOptions) => {
+export const studioProjectGraph = <M = unknown, T = unknown, K = unknown, C = unknown>(
+  options: StudioProjectGraphOptions<M, T, K, C>,
+) => {
   const fps = studioFps(options.rate);
-  const present = (key: string, list?: unknown[]) => (list && list.length > 0 ? { [key]: list } : {});
+  const { markers, transitions, keyframes, compositions } = options;
   return {
     id: options.id,
     name: options.name,
@@ -137,10 +139,10 @@ export const studioProjectGraph = (options: StudioProjectGraphOptions) => {
       currentFrame: 0,
       zoomLevel: 1,
       scrollPosition: 0,
-      ...present('markers', options.markers),
-      ...present('transitions', options.transitions),
-      ...present('keyframes', options.keyframes),
-      ...present('compositions', options.compositions),
+      ...(markers && markers.length > 0 && { markers }),
+      ...(transitions && transitions.length > 0 && { transitions }),
+      ...(keyframes && keyframes.length > 0 && { keyframes }),
+      ...(compositions && compositions.length > 0 && { compositions }),
     },
   };
 };
