@@ -351,6 +351,18 @@ describe(AssetMediaService.name, () => {
       });
     });
 
+    it('matches a SHA-1 header against the SHA-256 it was recorded for', async () => {
+      const sha256 = Buffer.from('b'.repeat(64), 'hex');
+      mocks.forkSchema.getChecksumTranslations.mockResolvedValue([{ sha1: file1, checksum: sha256 }]);
+      mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue('asset-id');
+      await expect(sut.getUploadAssetIdByChecksum(authStub.admin, file1.toString('hex'))).resolves.toEqual({
+        id: 'asset-id',
+        status: AssetMediaStatus.DUPLICATE,
+      });
+      expect(mocks.forkSchema.getChecksumTranslations).toHaveBeenCalledWith(authStub.admin.user.id, [file1]);
+      expect(mocks.asset.getUploadAssetIdByChecksum).toHaveBeenCalledWith(authStub.admin.user.id, sha256);
+    });
+
     it('should find an existing asset', async () => {
       mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue('asset-id');
       await expect(sut.getUploadAssetIdByChecksum(authStub.admin, file1.toString('hex'))).resolves.toEqual({

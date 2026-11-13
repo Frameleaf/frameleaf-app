@@ -111,19 +111,23 @@ export class AssetMediaService extends BaseService {
       return;
     }
 
+    // Upstream Immich clients send SHA-1: match the stored SHA-256 it was recorded for, as bulkUploadCheck does
+    const submitted = fromChecksum(checksum);
+    const [alias] = await this.forkSchemaRepository.getChecksumTranslations(auth.user.id, [submitted]);
+    const digest = alias?.checksum ?? submitted;
     const duplicateOptions = this.getDuplicateCheckOptions(auth);
     const assetId = duplicateOptions
-      ? await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, fromChecksum(checksum), duplicateOptions)
-      : await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, fromChecksum(checksum));
+      ? await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, digest, duplicateOptions)
+      : await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, digest);
     if (!assetId) {
       // A hidden match: the upload would only come back as this same hidden duplicate, so spare the bytes
-      return (await this.withheldDuplicates(auth, [fromChecksum(checksum)])).size > 0
+      return (await this.withheldDuplicates(auth, [digest])).size > 0
         ? { id: '00000000-0000-0000-0000-000000000000', status: AssetMediaStatus.DUPLICATE }
         : undefined;
     }
     // Its original is gone, or (FL-556) the account lets uploads bring photos back from the Trash:
     // let the file come, the upload restores the photo.
-    const checksums = [fromChecksum(checksum)];
+    const checksums = [digest];
     if (
       (await this.lostOriginalMatches(auth, checksums)).length > 0 ||
       (await this.trashedMatches(auth, checksums)).length > 0
