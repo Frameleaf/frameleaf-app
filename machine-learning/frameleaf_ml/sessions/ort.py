@@ -204,11 +204,23 @@ class OrtSession:
         if native is not None:
             self.session.disable_fallback()
             if native.provider not in self.session.get_providers():
+                self._release_refused()
                 raise RuntimeError("native_provider_not_loaded")
             if native.profile_dir is not None:
                 if len(native.sessions) >= 64:
+                    self._release_refused()
                     raise RuntimeError("native_session_limit")
                 native.sessions.append(self)
+
+    def _release_refused(self) -> None:
+        """Close and drop a session the native policy refuses, before the refusal is raised.
+
+        ONNX Runtime opens a session's profile when it creates the session. The error raised here
+        keeps this object alive while it propagates, and Windows cannot delete an open file, so the
+        profile folder could not be removed and that failure would replace the real reason.
+        """
+        self.session.end_profiling()
+        del self.session
 
     def _open(
         self,
