@@ -1,0 +1,90 @@
+{
+  "en": {
+    "serverLabel": "Frameleaf server URL",
+    "serverHelp": "Use the canonical HTTPS origin reachable by Make, without a trailing slash or path. Create a new connection to change servers.",
+    "clientLabel": "Frameleaf client ID",
+    "clientHelp": "Ask your Frameleaf administrator for the public client ID registered on this server with callback https://www.make.com/oauth/cb/app.",
+    "error": "Frameleaf connection failed (HTTP {{statusCode}}). Reconnect or check access in Frameleaf.",
+    "help": "This connection is awaiting platform qualification. Make must reach your Frameleaf server over HTTPS; a private LAN address alone is insufficient. Ask your administrator to register exactly https://www.make.com/oauth/cb/app and give you the instance-specific public client ID. Enter the canonical server origin and that ID. Sign in to Frameleaf and select only the albums you want to read. This connection requests library:read only. A Frameleaf Cloud plan is not required for direct customer HTTPS; existing relay eligibility still applies. To stop access, revoke the grant in Frameleaf Connected Apps. Removing a Make connection is not proof of revocation."
+  },
+  "fr": {
+    "serverLabel": "URL du serveur Frameleaf",
+    "serverHelp": "Utilisez l’origine HTTPS canonique accessible par Make, sans barre oblique finale ni chemin. Créez une nouvelle connexion pour changer de serveur.",
+    "clientLabel": "Identifiant client Frameleaf",
+    "clientHelp": "Demandez à votre administrateur Frameleaf l’identifiant client public enregistré sur ce serveur avec l’URL de rappel https://www.make.com/oauth/cb/app.",
+    "error": "Échec de la connexion Frameleaf (HTTP {{statusCode}}). Reconnectez-vous ou vérifiez les autorisations dans Frameleaf.",
+    "help": "Cette connexion attend la qualification de la plateforme. Make doit accéder à votre serveur Frameleaf en HTTPS ; une adresse de réseau local privée ne suffit pas. Demandez à votre administrateur d’enregistrer exactement https://www.make.com/oauth/cb/app et de vous fournir l’identifiant client public propre à cette instance. Saisissez l’origine canonique du serveur et cet identifiant. Connectez-vous à Frameleaf et sélectionnez uniquement les albums à lire. Cette connexion demande seulement library:read. Aucun abonnement Frameleaf Cloud n’est nécessaire pour un accès HTTPS direct ; les conditions d’accès au relais existantes restent applicables. Pour arrêter l’accès, révoquez l’autorisation dans les applications connectées de Frameleaf. Supprimer une connexion Make ne prouve pas sa révocation."
+  },
+  "es": {
+    "serverLabel": "URL del servidor Frameleaf",
+    "serverHelp": "Use el origen HTTPS canónico al que Make pueda acceder, sin barra final ni ruta. Cree una conexión nueva para cambiar de servidor.",
+    "clientLabel": "ID de cliente de Frameleaf",
+    "clientHelp": "Pida a su administrador de Frameleaf el ID de cliente público registrado en este servidor con la URL de retorno https://www.make.com/oauth/cb/app.",
+    "error": "La conexión con Frameleaf ha fallado (HTTP {{statusCode}}). Vuelva a conectarse o revise los permisos en Frameleaf.",
+    "help": "Esta conexión está pendiente de validación en la plataforma. Make debe acceder a su servidor Frameleaf mediante HTTPS; una dirección de red local privada no basta. Pida a su administrador que registre exactamente https://www.make.com/oauth/cb/app y le facilite el ID de cliente público de esa instancia. Introduzca el origen canónico del servidor y ese ID. Inicie sesión en Frameleaf y seleccione solo los álbumes que quiera leer. Esta conexión solicita únicamente library:read. No se necesita un plan de Frameleaf Cloud para el acceso HTTPS directo; siguen vigentes los requisitos del relé existente. Para detener el acceso, revoque la autorización en las aplicaciones conectadas de Frameleaf. Eliminar una conexión de Make no demuestra su revocación."
+  },
+  "de": {
+    "serverLabel": "Frameleaf-Server-URL",
+    "serverHelp": "Verwenden Sie den kanonischen HTTPS-Ursprung, den Make erreichen kann, ohne abschließenden Schrägstrich oder Pfad. Erstellen Sie zum Serverwechsel eine neue Verbindung.",
+    "clientLabel": "Frameleaf-Client-ID",
+    "clientHelp": "Fragen Sie Ihren Frameleaf-Administrator nach der öffentlichen Client-ID, die auf diesem Server mit der Rückruf-URL https://www.make.com/oauth/cb/app registriert ist.",
+    "error": "Frameleaf-Verbindung fehlgeschlagen (HTTP {{statusCode}}). Stellen Sie die Verbindung erneut her oder prüfen Sie die Berechtigungen in Frameleaf.",
+    "help": "Diese Verbindung wartet auf die Plattformprüfung. Make muss Ihren Frameleaf-Server über HTTPS erreichen können; eine private LAN-Adresse allein reicht nicht aus. Bitten Sie Ihren Administrator, genau https://www.make.com/oauth/cb/app zu registrieren und Ihnen die öffentliche Client-ID dieser Instanz zu geben. Geben Sie den kanonischen Serverursprung und diese ID ein. Melden Sie sich bei Frameleaf an und wählen Sie nur die Alben aus, die Sie lesen möchten. Diese Verbindung fordert nur library:read an. Für direkten HTTPS-Zugriff ist kein Frameleaf Cloud-Abonnement nötig; die bisherigen Relay-Voraussetzungen gelten weiterhin. Widerrufen Sie den Zugriff unter den verbundenen Apps in Frameleaf. Das Löschen einer Make-Verbindung belegt keinen Widerruf."
+  },
+  "it": {
+    "serverLabel": "URL del server Frameleaf",
+    "serverHelp": "Usa l’origine HTTPS canonica raggiungibile da Make, senza barra finale né percorso. Crea una nuova connessione per cambiare server.",
+    "clientLabel": "ID client Frameleaf",
+    "clientHelp": "Chiedi all’amministratore Frameleaf l’ID client pubblico registrato su questo server con l’URL di callback https://www.make.com/oauth/cb/app.",
+    "error": "Connessione a Frameleaf non riuscita (HTTP {{statusCode}}). Riconnettiti o verifica le autorizzazioni in Frameleaf.",
+    "help": "Questa connessione è in attesa della verifica sulla piattaforma. Make deve raggiungere il server Frameleaf tramite HTTPS; un indirizzo LAN privato da solo non basta. Chiedi all’amministratore di registrare esattamente https://www.make.com/oauth/cb/app e di fornirti l’ID client pubblico specifico dell’istanza. Inserisci l’origine canonica del server e quell’ID. Accedi a Frameleaf e seleziona solo gli album da leggere. Questa connessione richiede soltanto library:read. Non serve un piano Frameleaf Cloud per l’accesso HTTPS diretto; restano validi i requisiti del relay esistente. Per interrompere l’accesso, revoca l’autorizzazione nelle app connesse di Frameleaf. Eliminare una connessione Make non dimostra la revoca."
+  },
+  "pt": {
+    "serverLabel": "URL do servidor Frameleaf",
+    "serverHelp": "Use a origem HTTPS canónica acessível pelo Make, sem barra final nem caminho. Crie uma nova ligação para mudar de servidor.",
+    "clientLabel": "ID de cliente do Frameleaf",
+    "clientHelp": "Peça ao administrador do Frameleaf o ID de cliente público registado neste servidor com o URL de retorno https://www.make.com/oauth/cb/app.",
+    "error": "A ligação ao Frameleaf falhou (HTTP {{statusCode}}). Volte a ligar ou verifique as permissões no Frameleaf.",
+    "help": "Esta ligação aguarda a validação na plataforma. O Make tem de aceder ao servidor Frameleaf por HTTPS; um endereço de rede local privado não é suficiente. Peça ao administrador para registar exatamente https://www.make.com/oauth/cb/app e fornecer o ID de cliente público desta instância. Introduza a origem canónica do servidor e esse ID. Inicie sessão no Frameleaf e selecione apenas os álbuns que pretende ler. Esta ligação pede apenas library:read. Não é necessário um plano Frameleaf Cloud para acesso HTTPS direto; os requisitos do relay existente continuam a aplicar-se. Para terminar o acesso, revogue a autorização nas aplicações ligadas do Frameleaf. Eliminar uma ligação do Make não comprova a revogação."
+  },
+  "nl": {
+    "serverLabel": "URL van de Frameleaf-server",
+    "serverHelp": "Gebruik de canonieke HTTPS-oorsprong die Make kan bereiken, zonder afsluitende schuine streep of pad. Maak een nieuwe verbinding om van server te wisselen.",
+    "clientLabel": "Frameleaf-client-ID",
+    "clientHelp": "Vraag uw Frameleaf-beheerder om de openbare client-ID die op deze server is geregistreerd met de callback-URL https://www.make.com/oauth/cb/app.",
+    "error": "De Frameleaf-verbinding is mislukt (HTTP {{statusCode}}). Maak opnieuw verbinding of controleer de toegang in Frameleaf.",
+    "help": "Deze verbinding wacht op platformvalidatie. Make moet uw Frameleaf-server via HTTPS kunnen bereiken; alleen een privé-LAN-adres is onvoldoende. Vraag uw beheerder om precies https://www.make.com/oauth/cb/app te registreren en u de openbare client-ID van deze instantie te geven. Voer de canonieke serveroorsprong en die ID in. Meld u aan bij Frameleaf en selecteer alleen de albums die u wilt lezen. Deze verbinding vraagt alleen library:read aan. Voor directe HTTPS-toegang is geen Frameleaf Cloud-abonnement nodig; de bestaande relayvoorwaarden blijven gelden. Trek de machtiging in bij de verbonden apps in Frameleaf om de toegang te stoppen. Het verwijderen van een Make-verbinding bewijst geen intrekking."
+  },
+  "pl": {
+    "serverLabel": "Adres URL serwera Frameleaf",
+    "serverHelp": "Użyj kanonicznego adresu źródłowego HTTPS dostępnego dla Make, bez końcowego ukośnika ani ścieżki. Aby zmienić serwer, utwórz nowe połączenie.",
+    "clientLabel": "Identyfikator klienta Frameleaf",
+    "clientHelp": "Poproś administratora Frameleaf o publiczny identyfikator klienta zarejestrowany na tym serwerze z adresem zwrotnym https://www.make.com/oauth/cb/app.",
+    "error": "Połączenie z Frameleaf nie powiodło się (HTTP {{statusCode}}). Połącz ponownie lub sprawdź uprawnienia we Frameleaf.",
+    "help": "To połączenie oczekuje na weryfikację platformy. Make musi mieć dostęp do serwera Frameleaf przez HTTPS; sam prywatny adres LAN nie wystarczy. Poproś administratora o zarejestrowanie dokładnie https://www.make.com/oauth/cb/app i podanie publicznego identyfikatora klienta tej instancji. Wpisz kanoniczny adres źródłowy serwera i ten identyfikator. Zaloguj się do Frameleaf i wybierz tylko albumy, które chcesz odczytywać. To połączenie żąda jedynie library:read. Bezpośredni dostęp HTTPS nie wymaga planu Frameleaf Cloud; nadal obowiązują dotychczasowe warunki dostępu przez przekaźnik. Aby zatrzymać dostęp, cofnij zgodę w połączonych aplikacjach Frameleaf. Usunięcie połączenia Make nie jest dowodem cofnięcia zgody."
+  },
+  "sv": {
+    "serverLabel": "URL till Frameleaf-servern",
+    "serverHelp": "Använd den kanoniska HTTPS-adress som Make kan nå, utan avslutande snedstreck eller sökväg. Skapa en ny anslutning för att byta server.",
+    "clientLabel": "Klient-ID för Frameleaf",
+    "clientHelp": "Be din Frameleaf-administratör om det offentliga klient-ID som registrerats på servern med återanropsadressen https://www.make.com/oauth/cb/app.",
+    "error": "Frameleaf-anslutningen misslyckades (HTTP {{statusCode}}). Anslut igen eller kontrollera behörigheten i Frameleaf.",
+    "help": "Den här anslutningen väntar på plattformsverifiering. Make måste kunna nå din Frameleaf-server via HTTPS; en privat LAN-adress räcker inte. Be administratören registrera exakt https://www.make.com/oauth/cb/app och ge dig instansens offentliga klient-ID. Ange serverns kanoniska HTTPS-adress och detta ID. Logga in på Frameleaf och välj endast de album du vill läsa. Anslutningen begär endast library:read. Ingen Frameleaf Cloud-prenumeration krävs för direkt HTTPS-åtkomst; befintliga villkor för relät gäller fortfarande. Återkalla behörigheten bland anslutna appar i Frameleaf för att stoppa åtkomsten. Att ta bort en Make-anslutning bevisar inte att behörigheten återkallats."
+  },
+  "da": {
+    "serverLabel": "URL til Frameleaf-serveren",
+    "serverHelp": "Brug den kanoniske HTTPS-adresse, som Make kan nå, uden afsluttende skråstreg eller sti. Opret en ny forbindelse for at skifte server.",
+    "clientLabel": "Klient-ID til Frameleaf",
+    "clientHelp": "Bed din Frameleaf-administrator om det offentlige klient-ID, der er registreret på serveren med returadressen https://www.make.com/oauth/cb/app.",
+    "error": "Forbindelsen til Frameleaf mislykkedes (HTTP {{statusCode}}). Opret forbindelsen igen, eller kontrollér adgangen i Frameleaf.",
+    "help": "Denne forbindelse afventer platformskvalificering. Make skal kunne nå din Frameleaf-server via HTTPS; en privat LAN-adresse er ikke tilstrækkelig. Bed administratoren om at registrere præcis https://www.make.com/oauth/cb/app og give dig denne instans’ offentlige klient-ID. Indtast serverens kanoniske HTTPS-adresse og dette ID. Log ind på Frameleaf, og vælg kun de album, du vil læse. Forbindelsen anmoder kun om library:read. Et Frameleaf Cloud-abonnement er ikke påkrævet til direkte HTTPS-adgang; de eksisterende relæbetingelser gælder stadig. Tilbagekald tilladelsen under tilsluttede apps i Frameleaf for at stoppe adgangen. At slette en Make-forbindelse beviser ikke, at tilladelsen er tilbagekaldt."
+  },
+  "nb_NO": {
+    "serverLabel": "URL til Frameleaf-serveren",
+    "serverHelp": "Bruk den kanoniske HTTPS-adressen som Make kan nå, uten avsluttende skråstrek eller sti. Opprett en ny tilkobling for å bytte server.",
+    "clientLabel": "Klient-ID for Frameleaf",
+    "clientHelp": "Be Frameleaf-administratoren om den offentlige klient-ID-en som er registrert på serveren med returadressen https://www.make.com/oauth/cb/app.",
+    "error": "Tilkoblingen til Frameleaf mislyktes (HTTP {{statusCode}}). Koble til på nytt eller kontroller tilgangen i Frameleaf.",
+    "help": "Denne tilkoblingen venter på plattformkvalifisering. Make må kunne nå Frameleaf-serveren din via HTTPS; en privat LAN-adresse alene er ikke nok. Be administratoren registrere nøyaktig https://www.make.com/oauth/cb/app og gi deg den offentlige klient-ID-en for denne instansen. Skriv inn serverens kanoniske HTTPS-adresse og denne ID-en. Logg inn på Frameleaf og velg bare albumene du vil lese. Tilkoblingen ber bare om library:read. Et Frameleaf Cloud-abonnement er ikke nødvendig for direkte HTTPS-tilgang; eksisterende vilkår for reléet gjelder fortsatt. Tilbakekall tillatelsen under tilkoblede apper i Frameleaf for å stoppe tilgangen. Å slette en Make-tilkobling beviser ikke at tillatelsen er tilbakekalt."
+  }
+}
