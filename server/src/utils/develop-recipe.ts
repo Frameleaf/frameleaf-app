@@ -65,6 +65,9 @@ import type {
  * Renderer v4 adds the keystone correction (`perspective`, `develop-perspective.ts`) between the
  * quarter turns and flips and the straighten, and `keyFrame` (Live and Motion Photos render their
  * still from the motion clip). A recipe that uses neither renders to the same bytes as under v3.
+ *
+ * Renderer v5 imports external XMP tone curves and HSL adjustments. Recipes without imported
+ * colour controls retain the v4 pixel path.
  */
 export const DEVELOP_RENDERER_VERSION = 'frameleaf-develop/5';
 
