@@ -20,7 +20,7 @@
     onResults: (ids: string[]) => void;
     onAccessEnded: () => void;
   } = $props();
-  let state = $state<'choose' | 'searching' | 'empty' | 'error'>('choose');
+  let phase = $state<'choose' | 'searching' | 'empty' | 'error'>('choose');
   let selected = $state<File>();
   let consent = $state(false);
   let failure = $state<unknown>();
@@ -56,7 +56,7 @@
       request?.abort();
       request = undefined;
       clearInput();
-      state = 'choose';
+      phase = 'choose';
       failure = undefined;
       cameraError = false;
     }
@@ -82,11 +82,11 @@
     }
     if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024 || file.size === 0) {
       failure = new PhotographyError('selfie_invalid_image');
-      state = 'error';
+      phase = 'error';
       return;
     }
     selected = file;
-    state = 'choose';
+    phase = 'choose';
   }
   async function startCamera() {
     stopCamera();
@@ -144,7 +144,7 @@
     }
     const controller = new AbortController();
     request = controller;
-    state = 'searching';
+    phase = 'searching';
     failure = undefined;
     try {
       const pending = searchGallerySelfie(galleryId, session, selected, controller.signal);
@@ -154,7 +154,7 @@
         return;
       }
       if (result.captureIds.length === 0) {
-        state = 'empty';
+        phase = 'empty';
       } else {
         onResults(result.captureIds);
         open = false;
@@ -173,7 +173,7 @@
         now = Date.now();
         retryAt = now + error.retryAfter * 1000;
       }
-      state = 'error';
+      phase = 'error';
     } finally {
       if (request === controller) {
         request = undefined;
@@ -184,7 +184,7 @@
 
 <Dialog bind:open title={$t('frameleaf_clients_selfie_title')} closeLabel={$t('close')}>
   <div class="selfie">
-    {#if state === 'choose'}
+    {#if phase === 'choose'}
       <p>{$t('frameleaf_clients_selfie_intro')}</p>
       <div class="sources">
         <Button disabled={cameraStarting} onclick={startCamera}>{$t('frameleaf_clients_selfie_camera')}</Button>
@@ -221,12 +221,12 @@
       <label class="consent"
         ><input type="checkbox" bind:checked={consent} />{$t('frameleaf_clients_selfie_consent')}</label
       >
-    {:else if state === 'searching'}
+    {:else if phase === 'searching'}
       <div role="status" aria-live="polite">
         <h3>{$t('frameleaf_clients_selfie_searching')}</h3>
         <p>{$t('frameleaf_clients_selfie_searching_body')}</p>
       </div>
-    {:else if state === 'empty'}
+    {:else if phase === 'empty'}
       <div role="status">
         <h3>{$t('frameleaf_clients_selfie_empty')}</h3>
         <p>{$t('frameleaf_clients_selfie_empty_body')}</p>
@@ -238,22 +238,22 @@
           : $t(photographyErrorKey(failure))}
       </p>
     {/if}
-    {#if state === 'choose' && remaining > 0}<p role="status">
+    {#if phase === 'choose' && remaining > 0}<p role="status">
         {$t('frameleaf_clients_selfie_wait', { values: { seconds: remaining } })}
       </p>{/if}
   </div>
   {#snippet actions()}
     <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
-    {#if state === 'choose'}
+    {#if phase === 'choose'}
       <Button variant="primary" disabled={!selected || !consent || remaining > 0} onclick={search}
         >{$t('frameleaf_clients_selfie_title')}</Button
       >
-    {:else if state !== 'searching'}
+    {:else if phase !== 'searching'}
       <Button
         variant="primary"
         onclick={() => {
           clearInput();
-          state = 'choose';
+          phase = 'choose';
           failure = undefined;
         }}>{$t('frameleaf_clients_selfie_again')}</Button
       >
