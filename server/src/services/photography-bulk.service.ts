@@ -44,35 +44,33 @@ export class PhotographyBulkService {
   }
 
   private async view(ownerId: string, batch: BulkGalleryBatch): Promise<PhotographyBulkDto> {
-    return {
-      id: batch.id,
-      rows: await Promise.all(
-        batch.rows.map(async ({ id, title, clientName, clientEmail, status, error, albumId, recipientId }) => {
-          const row = status === 'ready' || status === 'mail-queued' ? await this.repository.get(id) : undefined;
-          const recipient = row?.value.recipients.find((item) => item.id === recipientId);
-          const expiresAt = [recipient?.expiresAt, row?.value.config.expiresAt];
-          const invitation =
-            row?.ownerId === ownerId &&
-            row.value.published &&
-            recipient &&
-            !recipient.revoked &&
-            expiresAt.every((date) => !date || Date.parse(date) > Date.now())
-              ? await this.invitation(ownerId, id)
-              : null;
-          return {
-            id,
-            title,
-            clientName,
-            clientEmail,
-            status,
-            error,
-            shootId: albumId ? id : null,
-            link: invitation ? `/photography/gallery/${id}#invitation=${invitation.token}` : null,
-            password: invitation?.password ?? null,
-          };
-        }),
-      ),
-    };
+    const rows: PhotographyBulkDto['rows'] = [];
+    // A completed batch can contain 200 galleries; keep it within database acquisition capacity.
+    for (const { id, title, clientName, clientEmail, status, error, albumId, recipientId } of batch.rows) {
+      const row = status === 'ready' || status === 'mail-queued' ? await this.repository.get(id) : undefined;
+      const recipient = row?.value.recipients.find((item) => item.id === recipientId);
+      const expiresAt = [recipient?.expiresAt, row?.value.config.expiresAt];
+      const invitation =
+        row?.ownerId === ownerId &&
+        row.value.published &&
+        recipient &&
+        !recipient.revoked &&
+        expiresAt.every((date) => !date || Date.parse(date) > Date.now())
+          ? await this.invitation(ownerId, id)
+          : null;
+      rows.push({
+        id,
+        title,
+        clientName,
+        clientEmail,
+        status,
+        error,
+        shootId: albumId ? id : null,
+        link: invitation ? `/photography/gallery/${id}#invitation=${invitation.token}` : null,
+        password: invitation?.password ?? null,
+      });
+    }
+    return { id: batch.id, rows };
   }
 
   private async batch(ownerId: string, id: string) {
