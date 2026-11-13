@@ -189,7 +189,9 @@ export type UntrackedPlacement =
   | { outcome: 'spare'; assetId?: string }
   | { outcome: 'added'; assetId: string }
   | { outcome: 'no-owner' }
-  | { outcome: 'over-limit' };
+  | { outcome: 'over-limit' }
+  /** FL-1537: named like a photo, but it does not decode. */
+  | { outcome: 'wont-open' };
 
 /** The cron that starts every account's scheduled incremental health scan (Library care settings). */
 export const LIBRARY_CARE_HEALTH_SCAN_CRON = 'libraryCareHealthScan';
@@ -4922,6 +4924,9 @@ export class MediaHealthService {
    * that went missing (it goes back under that photo), a copy of a photo the library already has (left where
    * it is), or a photo no library has (added to `owner`'s). A file in a folder no account owns is never
    * added: without a match it is `no-owner`. `importedBytes` is what this pass already added for `owner`.
+   *
+   * FL-1537: `ignoreQuota` adds over the account's storage limit (an administrator said so, once);
+   * `checkOpens` decodes a file before it becomes a new photo, and one that does not decode is `wont-open`.
    */
   async placeUntrackedFile(
     owner: { id: string; quotaSizeInBytes: number | null; quotaUsageInBytes: number } | null,
@@ -4929,6 +4934,7 @@ export class MediaHealthService {
     mtime: Date,
     digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>,
     importedBytes = 0,
+    options: { ignoreQuota?: boolean; checkOpens?: boolean } = {},
   ): Promise<UntrackedPlacement> {
     const checksums = [digests.sha1, digests.sha256];
     const matches = owner
@@ -4950,10 +4956,25 @@ export class MediaHealthService {
       return { outcome: 'spare' };
     }
     if (
+      !options.ignoreQuota &&
       owner.quotaSizeInBytes !== null &&
       owner.quotaUsageInBytes + importedBytes + digests.sizeInBytes > owner.quotaSizeInBytes
     ) {
       return { outcome: 'over-limit' };
+    }
+    if (options.checkOpens) {
+      // ponytail: this reads the file a second time (the decode check hashes too). Only a file about to
+      // become a new photo pays it; share the first read if adding many new photos gets slow.
+      const opens = await this.integrityService.validate({
+        path: candidatePath,
+        originalFileName: path.basename(candidatePath),
+        type: mimeTypes.assetType(candidatePath),
+        deep: true,
+      });
+      // only a decoder's verdict counts: a busy or timed-out check says nothing about the file
+      if (opens.status === 'corrupt') {
+        return { outcome: 'wont-open' };
+      }
     }
 
     let asset: Awaited<ReturnType<AssetRepository['create']>> | undefined;

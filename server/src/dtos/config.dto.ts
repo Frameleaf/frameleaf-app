@@ -293,6 +293,8 @@ const libraryCareDefaults = {
   manualMetadata: true,
   autoRepair: true,
   askPhones: true,
+  putBackFoundFiles: true,
+  clearGonePreviews: true,
 };
 
 /**
@@ -867,6 +869,11 @@ const AdminConfigLibraryCareSchema = z
     // keeps the shipped behaviour (both on).
     autoRepair: configBool.default(true).describe('Repair damaged photos by themselves'),
     askPhones: configBool.default(true).describe('Ask phones for missing photos'),
+    // FL-1537: defaulted for the same reason
+    putBackFoundFiles: configBool
+      .default(true)
+      .describe('Put photos found on the drive that no library lists back by themselves'),
+    clearGonePreviews: configBool.default(true).describe('Clear previews for photos that are gone'),
   })
   .meta({ id: 'AdminConfigLibraryCareDto' });
 

@@ -1900,6 +1900,8 @@ export type AdminConfigLibraryCareDto = {
     autoRepair?: boolean;
     /** Health scans verify each original against its recorded checksum */
     checksumScan: boolean;
+    /** Clear previews for photos that are gone */
+    clearGonePreviews?: boolean;
     /** Group near-duplicates for review; deletion stays explicit */
     duplicateReview: boolean;
     /** Schedule incremental health scans of every account; each resumes from its recorded checkpoints */
@@ -1914,6 +1916,8 @@ export type AdminConfigLibraryCareDto = {
     livePhotoRepair: boolean;
     /** A description rerun replaces only generated text and keeps manual text */
     manualMetadata: boolean;
+    /** Put photos found on the drive that no library lists back by themselves */
+    putBackFoundFiles?: boolean;
     /** Search for recoverable copies of RAW originals when locating originals */
     rawRecovery: boolean;
 };
@@ -2598,6 +2602,120 @@ export type FileTrashEmptyResponseDto = {
 export type FileTrashRestoreResponseDto = {
     /** The new asset the file was restored as, in its last owner’s library */
     assetId: string;
+};
+export type FoundFileGroupDto = {
+    count: number;
+    /** The folder no account uses; null when the files have an account */
+    folder: string | null;
+    /** The account the files belong to; null for a folder no account uses */
+    ownerId: string | null;
+    reason: FoundFileReason;
+    sizeInBytes: number;
+};
+export type FoundFilesTidiedDto = {
+    previewSizeInBytes: number;
+    /** Previews cleared because their photo is gone */
+    previews: number;
+    /** XMP files joined to the photo of the same name */
+    sidecars: number;
+};
+export type FoundFilesSummaryResponseDto = {
+    /** Files added to a library as new photos */
+    added: number;
+    /** Files put back under a photo that was missing */
+    back: number;
+    /** The files waiting for a person, one group per decision */
+    groups: FoundFileGroupDto[];
+    /** Files a person chose to leave alone */
+    left: number;
+    /** Files waiting for a person */
+    needs: number;
+    /** Second copies of photos that are in a library */
+    spare: number;
+    spareSizeInBytes: number;
+    tidied: FoundFilesTidiedDto;
+};
+export type FoundFileResponseDto = {
+    /** The photo it went back under, became, or copies */
+    assetId: string | null;
+    fileName: string;
+    id: string;
+    outcome: FoundFileOutcome;
+    /** The account the file belongs to: its folder’s, else its photo’s; null when neither is known */
+    ownerId: string | null;
+    path: string;
+    reason: (FoundFileReason) | null;
+    sizeInBytes: number;
+    sortedAt: string;
+    /** Whether the person asking may see the picture: it is their own, or it belongs to no account */
+    viewable: boolean;
+};
+export type FoundFileListResponseDto = {
+    items: FoundFileResponseDto[];
+    /** Pass as `cursor` for the next page; null on the last page */
+    nextCursor: string | null;
+};
+export type FoundFileStepDto = {
+    at: string;
+    facts?: {
+        [key: string]: any;
+    };
+    outcome?: string;
+    /** What was done: found, read, back, added, spare, undone, … */
+    step: string;
+};
+export type FoundFileDetailResponseDto = {
+    /** The photo it went back under, became, or copies */
+    assetId: string | null;
+    fileName: string;
+    id: string;
+    outcome: FoundFileOutcome;
+    /** The account the file belongs to: its folder’s, else its photo’s; null when neither is known */
+    ownerId: string | null;
+    path: string;
+    /** Where the photo it went back under pointed before */
+    previousPath: string | null;
+    reason: (FoundFileReason) | null;
+    sizeInBytes: number;
+    sortedAt: string;
+    /** What was done with the file, oldest first */
+    steps: FoundFileStepDto[];
+    /** Whether the person asking may see the picture: it is their own, or it belongs to no account */
+    viewable: boolean;
+};
+export type FoundFilesResolveDto = {
+    /** `nextCursor` of the call before */
+    cursor?: string;
+    /** With no-owner: the folder the files are in */
+    folder?: string;
+    /** With no-owner: the account whose library the files go to. With over-limit: the account */
+    ownerId?: string;
+    reason: FoundFileDecision;
+};
+export type FoundFilesResolveResponseDto = {
+    added: number;
+    back: number;
+    /** Call again with this as `cursor`; null when the group is done */
+    nextCursor: string | null;
+    /** Files that changed or went since they were read; the next check sorts them */
+    skipped: number;
+    spare: number;
+    /** Files that still wait for a person */
+    waiting: number;
+};
+export type FoundFilesDeleteSpareDto = {
+    /** `nextCursor` of the call before */
+    cursor?: string;
+    /** Only these spare copies; left out, all of them */
+    ids?: string[];
+};
+export type FoundFilesDeleteSpareResponseDto = {
+    deleted: number;
+    freedBytes: number;
+    /** Copies kept: the photo they copy could not be shown to be there and open */
+    kept: number;
+    /** Call again with this as `cursor`; null when all were looked at */
+    nextCursor: string | null;
 };
 export type HardwareWorkloadBenchmarkDto = {
     error: string | null;
@@ -21666,6 +21784,18 @@ export type FileTrashListQueryDto = {
     /** Entries per page */
     size?: number;
 };
+export type FoundFileListDto = {
+    /** The id of the last file of the page before */
+    cursor?: string;
+    /** Only the files in this folder no account uses */
+    folder?: string;
+    outcome: FoundFileOutcome;
+    /** Only the files in this account’s folders */
+    ownerId?: string;
+    reason?: FoundFileReason;
+    /** Files per page */
+    size?: number;
+};
 export type GetAlbumInfoDto = {
     /** Return album metadata for suppressed content only */
     suppressedOnly?: boolean;
@@ -25238,6 +25368,112 @@ export function restoreFileTrashItem({ id }: {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Get the found files summary
+ */
+export function getFoundFilesSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFilesSummaryResponseDto;
+    }>("/admin/found-files", {
+        ...opts
+    }));
+}
+/**
+ * List found files
+ */
+export function getFoundFiles({ cursor, folder, outcome, ownerId, reason, size }: {
+    cursor?: string;
+    folder?: string;
+    outcome: FoundFileOutcome;
+    ownerId?: string;
+    reason?: FoundFileReason;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFileListResponseDto;
+    }>(`/admin/found-files/files${QS.query(QS.explode({
+        cursor,
+        folder,
+        outcome,
+        ownerId,
+        reason,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get one found file
+ */
+export function getFoundFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFileDetailResponseDto;
+    }>(`/admin/found-files/files/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a found file
+ */
+export function downloadFoundFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/admin/found-files/files/${encodeURIComponent(id)}/file`, {
+        ...opts
+    }));
+}
+/**
+ * Undo what was done with a found file
+ */
+export function undoFoundFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFileDetailResponseDto;
+    }>(`/admin/found-files/files/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Decide about a group of found files
+ */
+export function resolveFoundFiles({ foundFilesResolveDto }: {
+    foundFilesResolveDto: FoundFilesResolveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFilesResolveResponseDto;
+    }>("/admin/found-files/resolve", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: foundFilesResolveDto
+    })));
+}
+/**
+ * Delete spare copies
+ */
+export function deleteSpareFoundFiles({ foundFilesDeleteSpareDto }: {
+    foundFilesDeleteSpareDto: FoundFilesDeleteSpareDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFilesDeleteSpareResponseDto;
+    }>("/admin/found-files/spare/delete", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: foundFilesDeleteSpareDto
+    })));
 }
 /**
  * Get the Hardware & GPU check
@@ -42250,6 +42486,24 @@ export enum BackupSequencePlace {
 export enum DuplicateRecompareWhen {
     Now = "now",
     Tonight = "tonight"
+}
+export enum FoundFileReason {
+    NoOwner = "no-owner",
+    WontOpen = "wont-open",
+    OverLimit = "over-limit",
+    Asked = "asked"
+}
+export enum FoundFileOutcome {
+    Back = "back",
+    Added = "added",
+    Spare = "spare",
+    Needs = "needs",
+    Left = "left"
+}
+export enum FoundFileDecision {
+    NoOwner = "no-owner",
+    OverLimit = "over-limit",
+    Asked = "asked"
 }
 export enum HardwareRunsOn {
     Gpu = "gpu",

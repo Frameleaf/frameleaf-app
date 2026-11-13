@@ -514,6 +514,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
     manualMetadata: true,
     autoRepair: true,
     askPhones: true,
+    putBackFoundFiles: true,
+    clearGonePreviews: true,
   },
   editing: {
     trimMode: VideoTrimMode.Precise,

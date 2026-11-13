@@ -2147,6 +2147,33 @@ describe(MediaHealthService.name, () => {
 
         expect(mocks.asset.create).not.toHaveBeenCalled();
       });
+
+      it('FL-1537: never adds a file that does not decode, and lists it as one that won’t open', async () => {
+        vi.mocked(mocks.asset.getByChecksums).mockResolvedValue([]);
+        vi.mocked(mocks.forkSchema.hasAssetChecksum).mockResolvedValue(false);
+        const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+        validate.mockResolvedValueOnce({ status: 'corrupt' });
+        const owner = { id: 'user-1', quotaSizeInBytes: null, quotaUsageInBytes: 0 };
+        const path = '/data/upload/user-1/a.jpg';
+
+        await expect(sut.placeUntrackedFile(owner, path, mtime, digests, 0, { checkOpens: true })).resolves.toEqual({
+          outcome: 'wont-open',
+        });
+
+        expect(validate).toHaveBeenCalledWith(expect.objectContaining({ path, deep: true }));
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+      });
+
+      it('FL-1537: goes past the storage limit only when told to', async () => {
+        vi.mocked(mocks.asset.getByChecksums).mockResolvedValue([]);
+        vi.mocked(mocks.forkSchema.hasAssetChecksum).mockResolvedValue(false);
+        vi.mocked(mocks.asset.create).mockResolvedValue({ id: 'new-asset' } as never);
+        const owner = { id: 'user-1', quotaSizeInBytes: 100, quotaUsageInBytes: 95 };
+
+        await expect(
+          sut.placeUntrackedFile(owner, '/data/upload/user-1/a.jpg', mtime, digests, 0, { ignoreQuota: true }),
+        ).resolves.toEqual({ outcome: 'added', assetId: 'new-asset' });
+      });
     });
 
     it('does not restore an untracked path when either digest already belongs to the user', async () => {
