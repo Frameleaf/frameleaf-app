@@ -4,6 +4,7 @@ import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
 import {
   galleryRequest,
+  searchGallerySelfie,
   galleryMedia,
   galleryFile,
   openGallerySession,
@@ -15,6 +16,7 @@ import PhotographyClient from './PhotographyClient.svelte';
 vi.mock('$lib/frameleaf/photography/workflow-api', async (original) => ({
   ...(await original<typeof import('$lib/frameleaf/photography/workflow-api')>()),
   galleryRequest: vi.fn(),
+  searchGallerySelfie: vi.fn(),
   galleryMedia: vi.fn(),
   galleryFile: vi.fn(),
   openGallerySession: vi.fn(),
@@ -495,4 +497,39 @@ it('shows the studio welcome and stops at the selection limit', async () => {
   await fireEvent.click(screen.getByRole('button', { name: 'Add photo 8 to favourites' }));
   expect(await screen.findByText(/You can choose up to 1 photograph/)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Add photo 8 to favourites' })).toHaveAttribute('aria-pressed', 'false');
+});
+
+it('shows selfie search only when enabled for the guest', async () => {
+  render(PhotographyClient, { galleryId: 'shoot' });
+  await screen.findByText('The wedding collection');
+  expect(screen.queryByRole('button', { name: 'Find my photos' })).toBeNull();
+});
+it('keeps the selfie filter across the viewer while preserving favourites and notes', async () => {
+  const collection = structuredClone(view);
+  collection.selfieSearch = true;
+  collection.photos.push({ ...collection.photos[0], id: 'other', number: 8 });
+  collection.notes = [{ captureId: 'capture', text: 'Keep this note' }];
+  vi.mocked(galleryRequest).mockResolvedValue(collection);
+  vi.mocked(searchGallerySelfie).mockResolvedValue({ captureIds: ['capture', 'inaccessible'] });
+  render(PhotographyClient, { galleryId: 'shoot' });
+  await fireEvent.click(await screen.findByRole('button', { name: 'Find my photos' }));
+  const sheet = screen.getByRole('dialog', { name: 'Find my photos' });
+  await fireEvent.change(within(sheet).getByLabelText('Upload a selfie'), {
+    target: { files: [new File(['selfie'], 'me.jpg', { type: 'image/jpeg' })] },
+  });
+  expect(within(sheet).getByRole('button', { name: 'Find my photos' })).toBeDisabled();
+  await fireEvent.click(within(sheet).getByRole('checkbox'));
+  await fireEvent.click(within(sheet).getByRole('button', { name: 'Find my photos' }));
+  await screen.findByText('1 photo of you');
+  expect(screen.queryByRole('button', { name: 'View photo 8' })).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'View photo 7' }));
+  const viewer = screen.getByRole('dialog', { name: 'Photo 7' });
+  expect(within(viewer).getByRole('textbox')).toHaveValue('Keep this note');
+  await fireEvent.click(within(viewer).getByRole('button', { name: 'Close' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Photo 7' })).toBeNull());
+  expect(screen.getByText('1 photo of you')).toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Add photo 7 to favourites' }));
+  expect(screen.getByRole('button', { name: 'Remove photo 7 from favourites' })).toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Show all photos' }));
+  expect(screen.getByRole('button', { name: 'View photo 8' })).toBeInTheDocument();
 });

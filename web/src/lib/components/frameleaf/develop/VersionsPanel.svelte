@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { developLabel } from '$lib/frameleaf/develop-label';
   /**
    * The Versions tab (PhotographyEditor.jsx): the untouched original and every version saved on the
    * server, with its render. Choosing a version loads its settings; a rendered one can also become the
@@ -85,7 +86,9 @@
         say(
           $t('frameleaf_develop_version_loaded', {
             values: {
-              name: version.label ?? $t('frameleaf_editor_version_number', { values: { revision: version.revision } }),
+              name:
+                developLabel(version, $t) ??
+                $t('frameleaf_editor_version_number', { values: { revision: version.revision } }),
             },
           }),
         );
@@ -98,7 +101,8 @@
       >
       <span
         ><strong
-          >{version.label ?? $t('frameleaf_editor_version_number', { values: { revision: version.revision } })}</strong
+          >{developLabel(version, $t) ??
+            $t('frameleaf_editor_version_number', { values: { revision: version.revision } })}</strong
         ><small
           >{time(version.createdAt)} · {native ? status(version) : $t('frameleaf_develop_version_other_editor')}</small
         ></span

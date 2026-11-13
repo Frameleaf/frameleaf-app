@@ -65,8 +65,11 @@ import type {
  * Renderer v4 adds the keystone correction (`perspective`, `develop-perspective.ts`) between the
  * quarter turns and flips and the straighten, and `keyFrame` (Live and Motion Photos render their
  * still from the motion clip). A recipe that uses neither renders to the same bytes as under v3.
+ *
+ * Renderer v5 imports external XMP tone curves and HSL adjustments. Recipes without imported
+ * colour controls retain the v4 pixel path.
  */
-export const DEVELOP_RENDERER_VERSION = 'frameleaf-develop/4';
+export const DEVELOP_RENDERER_VERSION = 'frameleaf-develop/5';
 
 export const FULL_CROP: AssetDevelopCrop = { x: 0, y: 0, w: 1, h: 1 };
 
@@ -118,7 +121,7 @@ const SLIDER_RANGE: Record<DevelopSliderKey, { min: number; max: number }> = {
   noiseReduction: { min: 0, max: 100 },
 };
 
-export type DevelopLook = { grayscale: number; sepia: number };
+export type DevelopLook = { grayscale: number; sepia: number; imported?: AssetDevelopRecipe['imported'] };
 
 type PresetDefinition = { params: Partial<DevelopSliders>; look?: Partial<DevelopLook> };
 
@@ -244,6 +247,7 @@ export function normalizeDevelopRecipe(candidate: Partial<AssetDevelopRecipe> | 
   };
   recipe.masks = recipe.masks.map((mask) => within(mask));
   recipe.cleanup = recipe.cleanup.map((op) => within(op)).filter((op) => !op.strokes || op.strokes.length > 0);
+  if (value.imported) recipe.imported = value.imported;
   return recipe;
 }
 
@@ -577,6 +581,7 @@ export function effectiveDevelop(recipe: AssetDevelopRecipe): { params: DevelopS
   return {
     params,
     look: {
+      imported: recipe.imported,
       grayscale: round(finite(preset.look?.grayscale) * strength, 3),
       sepia: round(finite(preset.look?.sepia) * strength, 3),
     },
@@ -589,6 +594,10 @@ export const isIdentityDevelop = (recipe: AssetDevelopRecipe) => {
     STILL_SLIDER_KEYS.every((key) => params[key] === 0) &&
     look.grayscale === 0 &&
     look.sepia === 0 &&
+    !recipe.imported?.curve &&
+    !recipe.imported?.hsl?.some(
+      (channel) => channel.hue !== 0 || channel.saturation !== 0 || channel.luminance !== 0,
+    ) &&
     isFullCrop(recipe.crop) &&
     recipe.straighten === 0 &&
     recipe.rotation === 0 &&
@@ -849,6 +858,7 @@ export function applyDevelopTone(
         luts.b[data[index + 2]] / 255,
         local,
       );
+      if (look.imported) [r, g, b] = importedColor([r, g, b], look.imported);
       const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       if (grayscale > 0) {
         const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -930,4 +940,54 @@ export function planDevelopDetail(
     plan.clarity = { sigma: round(clamp(minEdge / 160, 2, 10), 2), m1: 0, m2: round(amount * 1.4, 2) };
   }
   return plan;
+}
+
+/** Imported colour controls approximate the external edit in the existing SDR working space. */
+export function importedColor(
+  rgb: [number, number, number],
+  imported: NonNullable<AssetDevelopRecipe['imported']>,
+): [number, number, number] {
+  let [r, g, b] = rgb;
+  if (imported.curve) {
+    const curve = imported.curve;
+    const sample = (value: number) => {
+      const hi = curve.findIndex((point) => point.x >= clamp(value, 0, 1));
+      if (hi <= 0) return curve[0].y;
+      const lo = curve[hi - 1];
+      const next = curve[hi];
+      return lo.y + ((next.y - lo.y) * (value - lo.x)) / (next.x - lo.x);
+    };
+    [r, g, b] = [r, g, b].map((value) => sample(value));
+  }
+  if (!imported.hsl?.some((channel) => channel.hue !== 0 || channel.saturation !== 0 || channel.luminance !== 0))
+    return [r, g, b];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  const light = (max + min) / 2;
+  if (delta === 0) return [r, g, b];
+  let hue = (max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4) * 60;
+  hue = (hue + 360) % 360;
+  const centers = [0, 30, 60, 120, 180, 240, 270, 300];
+  const next = centers.findIndex((center) => center > hue);
+  const high = Math.max(next, 0);
+  const low = (high + 7) % 8;
+  const distance = (centers[high] - centers[low] + 360) % 360;
+  const mix = ((hue - centers[low] + 360) % 360) / distance;
+  const adjust = (key: 'hue' | 'saturation' | 'luminance') =>
+    imported.hsl![low][key] * (1 - mix) + imported.hsl![high][key] * mix;
+  hue = (hue + adjust('hue') * 0.3 + 360) % 360;
+  const saturation = clamp((delta / (1 - Math.abs(2 * light - 1))) * (1 + adjust('saturation') / 100), 0, 1);
+  const l = clamp(light + adjust('luminance') / 200, 0, 1);
+  const chroma = (1 - Math.abs(2 * l - 1)) * saturation;
+  const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const pairs = [
+    [chroma, x, 0],
+    [x, chroma, 0],
+    [0, chroma, x],
+    [0, x, chroma],
+    [x, 0, chroma],
+    [chroma, 0, x],
+  ];
+  return pairs[Math.floor(hue / 60)].map((value) => value + l - chroma / 2) as [number, number, number];
 }

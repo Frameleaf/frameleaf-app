@@ -105,6 +105,7 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.PhotographyCampaignSend,
   JobName.MediaImport,
   JobName.PhotographyBulkGallery,
+  JobName.DevelopImport,
   // FL-1300: a scan rewrites its whole snapshot, and an apply resumes from the last change it committed.
   JobName.AlbumCleanupScan,
   JobName.AlbumCleanupApply,
@@ -1590,6 +1591,7 @@ export class JobRepository {
       case JobName.PhotographyCampaignSend: {
         return { deduplication: { id: item.name, keepLastIfActive: true } };
       }
+      case JobName.DevelopImport:
       case JobName.PhotographyBulkGallery:
       case JobName.PhotographyWorkflowRender: {
         return {

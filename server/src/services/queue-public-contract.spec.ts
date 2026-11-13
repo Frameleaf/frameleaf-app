@@ -29,6 +29,7 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.PhotographyWorkflowRender,
       JobName.PhotographyBulkGallery,
       JobName.PhotographyCampaignSend,
+      JobName.DevelopImport,
       JobName.AssetWarmFilmstrip,
       JobName.AssetVideoFingerprintQueueAll,
       JobName.AssetVideoFingerprint,

@@ -936,6 +936,7 @@ export type JobItem =
 
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }
+  | { name: JobName.DevelopImport; data: IEntityJob & IDelayedJob }
   | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob & IEditOperationJob };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
@@ -1803,6 +1804,7 @@ export type IntegrityCheckHistoryEntry = {
 };
 
 export type UserPreferences = {
+  develop?: { importXmpEdits: boolean };
   /** FL-329: origin-rendered system text; device overrides are scoped to signed-in sessions. */
   notifications?: import('src/utils/notification-locale.js').NotificationLocalePreferences;
   albums: {

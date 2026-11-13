@@ -428,6 +428,12 @@
           draft['download.includeEmbeddedVideos'],
           (value) => change('download.includeEmbeddedVideos', value),
         )}
+        {@render toggle(
+          $t('frameleaf_develop_import_setting'),
+          $t('frameleaf_develop_import_description'),
+          draft['develop.importXmpEdits'],
+          (value) => change('develop.importXmpEdits', value),
+        )}
         <div class="ap-group">
           <h3>{$t('frameleaf_account_prefs_supporter_title')}</h3>
           {@render toggle(

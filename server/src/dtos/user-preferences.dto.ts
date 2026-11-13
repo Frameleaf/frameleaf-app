@@ -348,6 +348,7 @@ const SavedSearchesUpdateSchema = z
 
 const UserPreferencesUpdateSchema = z
   .object({
+    develop: z.object({ importXmpEdits: z.boolean().optional() }).optional(),
     notifications: NotificationLocalePreferencesSchema.optional().describe(
       'Origin-server system notification language: account locale and optional session-specific device overrides. Save devices as a whole list with expectedRevision.',
     ),
@@ -596,6 +597,7 @@ const LockedPinResponseSchema = z
 
 const UserPreferencesResponseSchema = z
   .object({
+    develop: z.object({ importXmpEdits: z.boolean() }).optional(),
     notifications: NotificationLocalePreferencesSchema.optional(),
     albums: AlbumsResponseSchema,
     folders: FoldersResponseSchema,

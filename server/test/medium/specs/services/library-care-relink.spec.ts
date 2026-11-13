@@ -3,6 +3,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AssetFileType,
   ChecksumAlgorithm,
+  JobName,
   MediaHealthCategory,
   MediaHealthSeverity,
   MediaHealthStatus,
@@ -136,7 +137,10 @@ describe('Library Care relink and recovery keep the asset whole', () => {
       ctx
         .getMock(StorageRepository)
         .checkFileExists.mockImplementation((path) => Promise.resolve(path === sidecarPath));
+      const jobs = ctx.getMock(JobRepository);
+      jobs.queue.mockResolvedValue();
       await metadata.handleSidecarCheck({ id: asset.id });
+      expect(jobs.queue).toHaveBeenCalledWith({ name: JobName.DevelopImport, data: { id: asset.id } });
 
       const { rows } = await sql<{
         ownerId: string;
