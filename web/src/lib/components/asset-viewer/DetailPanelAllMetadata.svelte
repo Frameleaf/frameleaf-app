@@ -103,9 +103,9 @@
         <h3>{group.name}</h3>
         <dl>
           {#each group.tags as { key, value } (key)}
+            {@const href = searchHref(key, value)}
             <dt>{key}</dt>
             <dd>
-              {@const href = searchHref(key, value)}
               {#if href}<a {href}>{value}</a>{:else}{value}{/if}
             </dd>
           {/each}
