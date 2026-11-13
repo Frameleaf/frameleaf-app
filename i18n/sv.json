@@ -3925,6 +3925,7 @@
   "frameleaf_apps_allow_allowed_body": "Tar dig tillbaka till {back}… Stäng det här fönstret om inget händer.",
   "frameleaf_apps_allow_allowed_note": "Ta bort appens åtkomst när du vill i Inställningar › Din inloggning och sekretess › Anslutna appar.",
   "frameleaf_apps_allow_allowed_title": "{name} kan använda ditt bibliotek",
+  "frameleaf_apps_allow_assistant_read": "Sök efter foton och bläddra i album. Assistenten får filnamn, fotograferingsdatum, albumnamn och länkar för matchande resultat. Du kan ta bort åtkomsten under Anslutna appar.",
   "frameleaf_apps_allow_body": "{name} vill ansluta till ditt Frameleaf-bibliotek på {server}. Kontrollera vad appen kommer att kunna göra och välj sedan.",
   "frameleaf_apps_allow_can_title": "Den kommer att kunna",
   "frameleaf_apps_allow_cant_title": "Den kommer inte att kunna",

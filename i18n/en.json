@@ -3832,6 +3832,7 @@
   "frameleaf_apps_allow_allowed_body": "Taking you back to {back}… If nothing happens, close this window.",
   "frameleaf_apps_allow_allowed_note": "Remove its access at any time in Settings › Your sign-in & privacy › Connected apps.",
   "frameleaf_apps_allow_allowed_title": "{name} can use your library",
+  "frameleaf_apps_allow_assistant_read": "Search photos and browse albums. The assistant receives matching file names, capture dates, album names and links. You can remove access in Connected apps.",
   "frameleaf_apps_allow_body": "{name} wants to connect to your Frameleaf library at {server}. Check what it will be able to do, then choose.",
   "frameleaf_apps_allow_can_title": "It will be able to",
   "frameleaf_apps_allow_cant_title": "It won’t be able to",

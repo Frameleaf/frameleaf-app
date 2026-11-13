@@ -29,7 +29,7 @@ import { McpPreviewService } from 'src/services/mcp-preview.service.js';
 import { McpService } from 'src/services/mcp.service.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { sendFile } from 'src/utils/file.js';
-import { MCP_PATH, MCP_RESOURCE_METADATA_PATH } from 'src/utils/oauth-apps.js';
+import { ASSISTANT_MCP_PATH, MCP_PATH, isAssistantResource } from 'src/utils/oauth-apps.js';
 
 @ApiExcludeController()
 @Controller('mcp')
@@ -45,7 +45,7 @@ export class McpController {
     this.logger.setContext(McpController.name);
   }
 
-  @Options()
+  @Options(['/', 'assistant'])
   @Authenticated({ public: true })
   @HttpCode(HttpStatus.NO_CONTENT)
   options(@Req() request: Request, @Res({ passthrough: true }) res: Response) {
@@ -54,7 +54,7 @@ export class McpController {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, MCP-Protocol-Version');
   }
 
-  @Get()
+  @Get(['/', 'assistant'])
   @Authenticated({ public: true })
   @RateLimited(RATE_LIMITS.mcp)
   async listen(@Req() request: Request, @Res() res: Response) {
@@ -63,7 +63,7 @@ export class McpController {
     res.status(HttpStatus.METHOD_NOT_ALLOWED).setHeader('Allow', 'POST, OPTIONS').end();
   }
 
-  @Post()
+  @Post(['/', 'assistant'])
   @Authenticated({ public: true })
   @RateLimited(RATE_LIMITS.mcp)
   async handle(@Req() request: Request, @Res() res: Response, @Body() body: unknown) {
@@ -109,12 +109,18 @@ export class McpController {
     res.setHeader('Cache-Control', 'no-store');
     await this.requireEnabled();
     const resource = this.resource(request);
+    if (isAssistantResource(resource) && !resource.startsWith('https://')) {
+      throw new ForbiddenException('Official assistant access requires HTTPS');
+    }
+    if (isAssistantResource(resource) && !(await this.apps.assistantAvailable())) {
+      throw new NotFoundException();
+    }
     try {
       const auth = await this.auth.authenticateMcp(request.headers, resource, requestVia(request));
       return { auth, resource };
     } catch (error) {
       if (error instanceof UnauthorizedException) {
-        const metadata = new URL(MCP_RESOURCE_METADATA_PATH, resource);
+        const metadata = new URL(`/.well-known/oauth-protected-resource${new URL(resource).pathname}`, resource);
         const invalid = request.headers.authorization ? ' error="invalid_token",' : '';
         res.setHeader(
           'WWW-Authenticate',
@@ -139,7 +145,8 @@ export class McpController {
   }
 
   private resource(request: Request) {
-    return new URL(MCP_PATH, oauthIssuer(request)).href;
+    const path = request.path.toLowerCase().replace(/\/$/, '').endsWith('/assistant') ? ASSISTANT_MCP_PATH : MCP_PATH;
+    return new URL(path, oauthIssuer(request, path === ASSISTANT_MCP_PATH)).href;
   }
 
   private async requireEnabled() {

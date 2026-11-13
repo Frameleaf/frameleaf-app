@@ -3929,6 +3929,7 @@
   "frameleaf_apps_allow_allowed_body": "Je wordt teruggebracht naar {back}… Als er niets gebeurt, sluit dan dit venster.",
   "frameleaf_apps_allow_allowed_note": "Je kunt de toegang op elk moment intrekken via Instellingen › Jouw inloggen en privacy › Verbonden apps.",
   "frameleaf_apps_allow_allowed_title": "{name} kan je bibliotheek gebruiken",
+  "frameleaf_apps_allow_assistant_read": "Zoek foto’s en blader door albums. De assistent ontvangt de bijbehorende bestandsnamen, opnamedatums, albumnamen en links. Je kunt de toegang intrekken bij Verbonden apps.",
   "frameleaf_apps_allow_body": "{name} wil verbinding maken met je Frameleaf-bibliotheek op {server}. Bekijk wat de app mag doen en kies dan.",
   "frameleaf_apps_allow_can_title": "Dit mag de app",
   "frameleaf_apps_allow_cant_title": "Dit mag de app niet",

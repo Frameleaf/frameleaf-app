@@ -1,5 +1,6 @@
 import { Kysely } from 'kysely';
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -64,6 +65,17 @@ const coverOf = (db: Kysely<DB>, albumId: string) =>
     .then(({ albumThumbnailAssetId }) => albumThumbnailAssetId);
 
 describe('Locked album covers (FL-53)', () => {
+  it('applies the unlocked album filter before the assistant result limit', async () => {
+    const { ctx } = setup();
+    const { user } = await ctx.newUser();
+    const { album: readable } = await ctx.newAlbum({ ownerId: user.id, sortOrder: 2 });
+    const { album: locked } = await ctx.newAlbum({ ownerId: user.id, sortOrder: 1, isLocked: true });
+    const albums = new AlbumRepository(ctx.database);
+
+    expect(await albums.getAll(user.id, { take: 1 })).toMatchObject([{ id: locked.id }]);
+    expect(await albums.getAll(user.id, { take: 1, excludeLocked: true })).toMatchObject([{ id: readable.id }]);
+  });
+
   describe(AssetRepository.prototype.update.name, () => {
     it('removes a cover that becomes Locked from every album and falls back to the automatic cover', async () => {
       const context = setup();
