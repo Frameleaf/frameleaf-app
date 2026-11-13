@@ -20043,6 +20043,73 @@
         "x-immich-state": "Stable"
       }
     },
+    "/assets/{id}/metadata/all": {
+      "get": {
+        "operationId": "getAssetAllMetadata",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetAllMetadataResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get original and sidecar metadata",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      }
+    },
     "/assets/{id}/metadata/{key}": {
       "delete": {
         "description": "Delete a specific metadata key-value pair associated with the specified asset.",
@@ -81750,6 +81817,51 @@
         ],
         "type": "object"
       },
+      "AssetAllMetadataResponseDto": {
+        "properties": {
+          "groups": {
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "tags": {
+                  "items": {
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "value"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "tags"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "groups",
+          "truncated"
+        ],
+        "type": "object"
+      },
       "AssetAnnotationGeometry": {
         "additionalProperties": false,
         "properties": {
@@ -81984,6 +82096,18 @@
       },
       "AssetBulkUpdateDto": {
         "properties": {
+          "artist": {
+            "description": "Artist credit",
+            "maxLength": 500,
+            "nullable": true,
+            "type": "string"
+          },
+          "copyright": {
+            "description": "Copyright notice",
+            "maxLength": 500,
+            "nullable": true,
+            "type": "string"
+          },
           "dateTimeOriginal": {
             "description": "Original date and time",
             "type": "string"
@@ -82060,6 +82184,12 @@
           },
           "timeZone": {
             "description": "Time zone (IANA timezone)",
+            "type": "string"
+          },
+          "title": {
+            "description": "Asset title",
+            "maxLength": 500,
+            "nullable": true,
             "type": "string"
           },
           "visibility": {
@@ -102905,6 +103035,11 @@
       "ExifResponseDto": {
         "description": "EXIF response",
         "properties": {
+          "artist": {
+            "description": "Artist credit",
+            "nullable": true,
+            "type": "string"
+          },
           "bitsPerSample": {
             "default": null,
             "description": "Bits per sample",
@@ -102922,6 +103057,11 @@
           "colorspace": {
             "default": null,
             "description": "Recorded color space",
+            "nullable": true,
+            "type": "string"
+          },
+          "copyright": {
+            "description": "Copyright notice",
             "nullable": true,
             "type": "string"
           },
@@ -103101,6 +103241,11 @@
           "timeZone": {
             "default": null,
             "description": "Time zone",
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "description": "Image title",
             "nullable": true,
             "type": "string"
           }
@@ -129885,6 +130030,10 @@
                       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                       "type": "string"
                     },
+                    "artist": {
+                      "nullable": true,
+                      "type": "string"
+                    },
                     "assetId": {
                       "format": "uuid",
                       "nullable": true,
@@ -129915,6 +130064,10 @@
                       "type": "string"
                     },
                     "checksum": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "copyright": {
                       "nullable": true,
                       "type": "string"
                     },
@@ -138063,6 +138216,10 @@
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
                   "type": "string"
                 },
+                "artist": {
+                  "nullable": true,
+                  "type": "string"
+                },
                 "assetId": {
                   "format": "uuid",
                   "nullable": true,
@@ -138093,6 +138250,10 @@
                   "type": "string"
                 },
                 "checksum": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "copyright": {
                   "nullable": true,
                   "type": "string"
                 },
@@ -141850,6 +142011,14 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
                   "type": "string"
                 },
+                "defaultArtist": {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "defaultCopyright": {
+                  "maxLength": 500,
+                  "type": "string"
+                },
                 "deliveryTarget": {
                   "format": "date",
                   "nullable": true,
@@ -141947,6 +142116,14 @@
                 "date": {
                   "format": "date",
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "type": "string"
+                },
+                "defaultArtist": {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "defaultCopyright": {
+                  "maxLength": 500,
                   "type": "string"
                 },
                 "deliveryTarget": {
@@ -152009,6 +152186,9 @@
           "albumSubtreeIds": {
             "$ref": "#/components/schemas/AlbumSubtreeFilter"
           },
+          "artist": {
+            "$ref": "#/components/schemas/StringPatternFilter"
+          },
           "aspectRatio": {
             "$ref": "#/components/schemas/NumberFilterNullable",
             "description": "Source pixel width divided by height; null when dimensions are unavailable"
@@ -152146,6 +152326,9 @@
           "text": {
             "$ref": "#/components/schemas/LibraryTextFilter"
           },
+          "title": {
+            "$ref": "#/components/schemas/StringPatternFilter"
+          },
           "trashedAt": {
             "$ref": "#/components/schemas/DateFilterNullable"
           },
@@ -152173,6 +152356,9 @@
           },
           "albumSubtreeIds": {
             "$ref": "#/components/schemas/AlbumSubtreeFilter"
+          },
+          "artist": {
+            "$ref": "#/components/schemas/StringPatternFilter"
           },
           "aspectRatio": {
             "$ref": "#/components/schemas/NumberFilterNullable",
@@ -152300,6 +152486,9 @@
           },
           "text": {
             "$ref": "#/components/schemas/LibraryTextFilter"
+          },
+          "title": {
+            "$ref": "#/components/schemas/StringPatternFilter"
           },
           "trashedAt": {
             "$ref": "#/components/schemas/DateFilterNullable"
@@ -170407,9 +170596,21 @@
       },
       "UpdateAssetDto": {
         "properties": {
+          "artist": {
+            "description": "Artist credit",
+            "maxLength": 500,
+            "nullable": true,
+            "type": "string"
+          },
           "city": {
             "description": "City name; kept over reverse geocoding until the item is moved again",
             "maxLength": 255,
+            "nullable": true,
+            "type": "string"
+          },
+          "copyright": {
+            "description": "Copyright notice",
+            "maxLength": 500,
             "nullable": true,
             "type": "string"
           },
@@ -170483,6 +170684,12 @@
           "state": {
             "description": "State or region name; kept over reverse geocoding until the item is moved again",
             "maxLength": 255,
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "description": "Asset title",
+            "maxLength": 500,
             "nullable": true,
             "type": "string"
           },

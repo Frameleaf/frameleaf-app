@@ -214,6 +214,9 @@ export class AssetExifTable {
   @Column({ type: 'character varying', nullable: true })
   software!: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  title!: string | null;
+
   @Column({ type: 'character varying', nullable: true })
   artist!: string | null;
 

@@ -27,6 +27,9 @@ export type OriginKind = 'asset' | 'album';
  */
 export enum AssetOriginField {
   Description = 'description',
+  Title = 'title',
+  Artist = 'artist',
+  Copyright = 'copyright',
   Location = 'location',
   DateTimeOriginal = 'dateTimeOriginal',
   Rating = 'rating',
@@ -342,6 +345,9 @@ export class PartnerOriginRepository {
   async applyAssetFields(sourceAssetId: string, copyAssetId: string, fields: string[]): Promise<void> {
     const exifColumns = [
       ...(fields.includes(AssetOriginField.Description) ? ['description'] : []),
+      ...(fields.includes(AssetOriginField.Title) ? ['title'] : []),
+      ...(fields.includes(AssetOriginField.Artist) ? ['artist'] : []),
+      ...(fields.includes(AssetOriginField.Copyright) ? ['copyright'] : []),
       ...(fields.includes(AssetOriginField.Location) ? ['latitude', 'longitude', 'city', 'state', 'country'] : []),
       ...(fields.includes(AssetOriginField.DateTimeOriginal) ? ['dateTimeOriginal', 'timeZone'] : []),
       ...(fields.includes(AssetOriginField.Rating) ? ['rating'] : []),

@@ -215,3 +215,26 @@ describe('PersonRepository partner people', () => {
     await expect(sut.getFaceCorrection(bob.id, correction.id)).resolves.toMatchObject({ undoneAt: expect.any(Date) });
   });
 });
+
+describe('PersonRepository.withMergeWrite', () => {
+  // FL-1530: merges and partner copies queue on one lock per account; a waiter failed after the pool's 5 s
+  it("waits its turn for an account's people lock past the pool's lock limit", async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    let holding!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => (holding = resolve));
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const holder = sut.withMergeWrite(async () => {
+      holding();
+      await held;
+    }, user.id);
+    await started;
+
+    const waiter = sut.withMergeWrite(() => Promise.resolve('merged'), user.id);
+    setTimeout(release, 5500);
+
+    await expect(waiter).resolves.toBe('merged');
+    await holder;
+  }, 20_000);
+});

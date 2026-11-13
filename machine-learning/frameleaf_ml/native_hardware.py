@@ -72,6 +72,12 @@ def snapshot(device_facts: dict[str, Any] | None = None) -> dict[str, Any]:
         "gpus": gpus,
         "totalMemoryBytes": psutil.virtual_memory().total,
     }
+    if "OpenVINOExecutionProvider" in stable["providers"]:
+        # What OpenVINO can run on here ("CPU", "GPU.0", "NPU"); only a graphics device is an accelerator.
+        devices = sorted(str(device) for device in ort.capi._pybind_state.get_available_openvino_device_ids())
+        if len(devices) > 16 or any(not 1 <= len(device) <= 64 or not device.isascii() for device in devices):
+            raise ValueError("native_openvino_device_report_invalid")
+        stable["openvinoDevices"] = devices
     if device_facts is not None:
         stable["deviceEvidence"] = device_facts
     return {

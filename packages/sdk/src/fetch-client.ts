@@ -5267,12 +5267,16 @@ export type AlbumDescendantCountResponseDto = {
     count: number;
 };
 export type ExifResponseDto = {
+    /** Artist credit */
+    artist?: string | null;
     /** Bits per sample */
     bitsPerSample?: number | null;
     /** City name */
     city?: string | null;
     /** Recorded color space */
     colorspace?: string | null;
+    /** Copyright notice */
+    copyright?: string | null;
     /** Country name */
     country?: string | null;
     /** The capture date was estimated from the photos around it. Absent when it was not */
@@ -5327,6 +5331,8 @@ export type ExifResponseDto = {
     state?: string | null;
     /** Time zone */
     timeZone?: string | null;
+    /** Image title */
+    title?: string | null;
 };
 export type AssetFileProblemDto = {
     /** The file problem to open, as the file problems list names it */
@@ -6313,6 +6319,10 @@ export type AssetMediaResponseDto = {
     status: AssetMediaStatus;
 };
 export type AssetBulkUpdateDto = {
+    /** Artist credit */
+    artist?: string | null;
+    /** Copyright notice */
+    copyright?: string | null;
     /** Original date and time */
     dateTimeOriginal?: string;
     /** Relative time offset in minutes */
@@ -6334,6 +6344,8 @@ export type AssetBulkUpdateDto = {
     rating?: number | null;
     /** Time zone (IANA timezone) */
     timeZone?: string;
+    /** Asset title */
+    title?: string | null;
     visibility?: AssetVisibility;
 };
 export type AssetBulkUploadCheckItem = {
@@ -6550,8 +6562,12 @@ export type AssetUploadPartsDto = {
     size: number | null;
 };
 export type UpdateAssetDto = {
+    /** Artist credit */
+    artist?: string | null;
     /** City name; kept over reverse geocoding until the item is moved again */
     city?: string | null;
+    /** Copyright notice */
+    copyright?: string | null;
     /** Country name; kept over reverse geocoding until the item is moved again */
     country?: string | null;
     /** Original date and time */
@@ -6571,6 +6587,8 @@ export type UpdateAssetDto = {
     rating?: number | null;
     /** State or region name; kept over reverse geocoding until the item is moved again */
     state?: string | null;
+    /** Asset title */
+    title?: string | null;
     visibility?: AssetVisibility;
 };
 export type AssetAddedDateDto = {
@@ -7194,6 +7212,16 @@ export type AssetMetadataResponseDto = {
 export type AssetMetadataUpsertDto = {
     /** Metadata items to upsert */
     items: AssetMetadataUpsertItemDto[];
+};
+export type AssetAllMetadataResponseDto = {
+    groups: {
+        name: string;
+        tags: {
+            key: string;
+            value: string;
+        }[];
+    }[];
+    truncated: boolean;
 };
 export type AssetOcrResponseDto = {
     assetId: string;
@@ -8187,6 +8215,16 @@ export type IdsFilter = {
     none?: string[];
 };
 export type AlbumSubtreeFilter = IdsFilter;
+export type StringPatternFilter = {
+    endsWith?: string;
+    eq?: string | null;
+    "in"?: string[];
+    like?: string;
+    ne?: string | null;
+    notIn?: string[];
+    notLike?: string;
+    startsWith?: string;
+};
 export type NumberFilterNullable = {
     eq?: number | null;
     gt?: number;
@@ -8221,16 +8259,6 @@ export type DateFilter = {
     lt?: string;
     lte?: string;
     ne?: string;
-};
-export type StringPatternFilter = {
-    endsWith?: string;
-    eq?: string | null;
-    "in"?: string[];
-    like?: string;
-    ne?: string | null;
-    notIn?: string[];
-    notLike?: string;
-    startsWith?: string;
 };
 export type NumberFilter = {
     eq?: number;
@@ -8294,6 +8322,7 @@ export type EnumFilterAssetVisibility = {
 export type SearchFilterBranch = {
     albumIds?: IdsFilter;
     albumSubtreeIds?: AlbumSubtreeFilter;
+    artist?: StringPatternFilter;
     /** Source pixel width divided by height; null when dimensions are unavailable */
     aspectRatio?: NumberFilterNullable;
     checksum?: StringFilter;
@@ -8339,6 +8368,7 @@ export type SearchFilterBranch = {
     /** Technical quality from the best-photo check (0 to 1); null when the photo has not been scored */
     technicalScore?: NumberFilterNullable;
     text?: LibraryTextFilter;
+    title?: StringPatternFilter;
     trashedAt?: DateFilterNullable;
     "type"?: EnumFilterAssetType;
     updatedAt?: DateFilter;
@@ -8349,6 +8379,7 @@ export type SearchFilterBranch = {
 export type SearchFilter = {
     albumIds?: IdsFilter;
     albumSubtreeIds?: AlbumSubtreeFilter;
+    artist?: StringPatternFilter;
     /** Source pixel width divided by height; null when dimensions are unavailable */
     aspectRatio?: NumberFilterNullable;
     checksum?: StringFilter;
@@ -8396,6 +8427,7 @@ export type SearchFilter = {
     /** Technical quality from the best-photo check (0 to 1); null when the photo has not been scored */
     technicalScore?: NumberFilterNullable;
     text?: LibraryTextFilter;
+    title?: StringPatternFilter;
     trashedAt?: DateFilterNullable;
     "type"?: EnumFilterAssetType;
     updatedAt?: DateFilter;
@@ -14088,6 +14120,8 @@ export type PhotographyWorkspaceDto = {
         /** The cover's thumbhash (base64) once its thumbnail exists; null while the server has none, so clients can skip requesting it */
         coverThumbhash?: string | null;
         date: string;
+        defaultArtist?: string;
+        defaultCopyright?: string;
         deliveryTarget?: string | null;
         id: string;
         name: string;
@@ -14104,6 +14138,8 @@ export type PhotographyWorkspaceSaveDto = {
         albumId: string | null;
         client: string;
         date: string;
+        defaultArtist?: string;
+        defaultCopyright?: string;
         deliveryTarget?: string | null;
         id: string;
         name: string;
@@ -14514,12 +14550,14 @@ export type PhotographyWorkflowDto = {
     captures: {
         approvalRequested: boolean;
         approvedRevisionId: string | null;
+        artist?: string | null;
         assetId: string | null;
         assetIds: string[];
         camera: string | null;
         capturedAt: string | null;
         chapterId: string | null;
         checksum: string | null;
+        copyright?: string | null;
         eligible: boolean;
         exclusion: string | null;
         fileName: string | null;
@@ -15347,12 +15385,14 @@ export type PhotographyInvitationDto = {
         captures: {
             approvalRequested: boolean;
             approvedRevisionId: string | null;
+            artist?: string | null;
             assetId: string | null;
             assetIds: string[];
             camera: string | null;
             capturedAt: string | null;
             chapterId: string | null;
             checksum: string | null;
+            copyright?: string | null;
             eligible: boolean;
             exclusion: string | null;
             fileName: string | null;
@@ -28167,6 +28207,24 @@ export function updateAssetMetadata({ id, assetMetadataUpsertDto }: {
         method: "PUT",
         body: assetMetadataUpsertDto
     })));
+}
+/**
+ * Get original and sidecar metadata
+ */
+export function getAssetAllMetadata({ id, key, slug }: {
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetAllMetadataResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/metadata/all${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Delete asset metadata by key

@@ -55,6 +55,16 @@ describe('assetDetailsXmp (FL-423)', () => {
     expect(items(xmp, 'Iptc4xmpExt:PersonInImage')).toEqual(['Ana', 'Sam']);
   });
 
+  it('writes title and credits using Dublin Core and escapes their values', () => {
+    const xmp = assetDetailsXmp(
+      details({ exifInfo: exif({ title: 'River & sky', artist: 'Alex', copyright: '© Studio' }) }),
+      { orientation: false },
+    );
+    expect(items(xmp, 'dc:title')).toEqual(['River &amp; sky']);
+    expect(items(xmp, 'dc:creator')).toEqual(['Alex']);
+    expect(items(xmp, 'dc:rights')).toEqual(['© Studio']);
+  });
+
   it('leaves out what the response does not show, and the orientation of an edit that is already upright', () => {
     const xmp = assetDetailsXmp(
       details({
