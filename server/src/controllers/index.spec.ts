@@ -147,6 +147,7 @@ const SHARED_LINK_ROUTES = new Set([
   'GET assets/:id/annotations',
   // A font's facts follow the item's access; the font file itself still needs the link's download permission (FL-1359)
   'GET assets/:id/font',
+  'GET assets/:id/metadata/all',
   'GET assets/:id/palette',
   'GET assets/:id/thumbnail',
   'GET assets/:id/video/playback',
