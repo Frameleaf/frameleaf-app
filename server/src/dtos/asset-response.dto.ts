@@ -311,6 +311,9 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     return sanitizedAssetResponse as AssetResponseDto;
   }
 
+  const exif = entity.exifInfo ? mapExif(entity.exifInfo) : undefined;
+  if (exif && options.auth?.sharedLink) delete exif.artist;
+
   return {
     id: entity.id,
     createdAt: asDateTimeString(entity.createdAt),
@@ -334,7 +337,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     visibility,
     libraryScope: entity.libraryScope,
     duration: entity.duration,
-    exifInfo: entity.exifInfo ? mapExif(entity.exifInfo) : undefined,
+    exifInfo: exif,
     locationInsight:
       entity.exifInfo?.latitude !== null &&
       entity.exifInfo?.latitude !== undefined &&

@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
-# FL-1453: GitHub runners stopped resolving *.ubuntu.com (archive, security, azure.archive) on
-# 2026-11-11. Route the runner's own apt through full Ubuntu mirrors off ubuntu.com; apt still
-# checks Ubuntu's signatures. FL-1477: mirrors.edge.kernel.org then went unreachable from runners
-# for days, so the first mirror that answers is used, and apt keeps to IPv4 (the runners' IPv6
-# route is the one reported unreachable). The chosen mirror is exported as UBUNTU_MIRROR for
-# later steps (the machine-learning image build).
+# Prefer Ubuntu's signed archive over mirrors that have timed out in CI. Probe both the runner
+# suite and the pinned CUDA image's Jammy suite before exporting the mirror for Docker builds.
 set -euo pipefail
 
 if [[ "$(dpkg --print-architecture)" == amd64 ]]; then
   mirrors=(
-    http://mirrors.edge.kernel.org/ubuntu/
+    https://archive.ubuntu.com/ubuntu/
     http://mirrors.ocf.berkeley.edu/ubuntu/
     http://mirror.math.princeton.edu/pub/ubuntu/
     http://mirrors.mit.edu/ubuntu/
+    http://mirrors.edge.kernel.org/ubuntu/
   )
   pattern='mirror\+file:/etc/apt/apt-mirrors\.txt|https?://[a-z.]*\.ubuntu\.com/ubuntu/?'
 else
@@ -27,7 +24,8 @@ fi
 codename=$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release)
 mirror=
 for candidate in "${mirrors[@]}"; do
-  if curl -4 -fsS --max-time 15 -o /dev/null "${candidate}dists/${codename}/Release"; then
+  if curl -4 -fsS --retry 1 --connect-timeout 5 --max-time 15 -o /dev/null "${candidate}dists/${codename}/InRelease" &&
+    { [[ "$(dpkg --print-architecture)" != amd64 ]] || curl -4 -fsS --retry 1 --connect-timeout 5 --max-time 15 -o /dev/null "${candidate}dists/jammy/InRelease"; }; then
     mirror=$candidate
     break
   fi
@@ -47,8 +45,8 @@ for file in "${files[@]}"; do
   [[ -f "$file" ]] && sudo sed -i -E "s#(${pattern})#${mirror}#g" "$file"
 done
 
-if grep -E -h -s "$pattern" "${files[@]}"; then
-  echo "Ubuntu apt sources still point at ubuntu.com" >&2
+if grep -E -h -s "$pattern" "${files[@]}" | grep -v -F "$mirror"; then
+  echo "Ubuntu apt sources still point at an unselected archive" >&2
   exit 1
 fi
 

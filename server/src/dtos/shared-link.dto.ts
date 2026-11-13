@@ -228,7 +228,7 @@ const albumCoverAssets = (album: SharedLink['album']): { id: string }[] => {
 
 export function mapSharedLink(
   sharedLink: SharedLink,
-  options: { stripAssetMetadata: boolean; externalDomain?: string },
+  options: { stripAssetMetadata: boolean; externalDomain?: string; visitor?: boolean },
 ): SharedLinkResponseDto {
   const assets = sharedLink.assets || [];
   const isAlbum = sharedLink.type === SharedLinkType.Album;
@@ -245,7 +245,11 @@ export function mapSharedLink(
     type: sharedLink.type,
     createdAt: sharedLink.createdAt,
     expiresAt: sharedLink.expiresAt,
-    assets: assets.map((asset) => mapAsset(asset, { stripMetadata: options.stripAssetMetadata })),
+    assets: assets.map((asset) => {
+      const response = mapAsset(asset, { stripMetadata: options.stripAssetMetadata });
+      if (options.visitor && response.exifInfo) delete response.exifInfo.artist;
+      return response;
+    }),
     assetCount,
     coverAssetIds: coverAssets.slice(0, SHARED_LINK_COVER_ASSETS).map(({ id }) => id),
     album: sharedLink.album ? mapAlbum(sharedLink.album) : undefined,

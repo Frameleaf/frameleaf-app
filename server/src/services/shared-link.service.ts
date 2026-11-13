@@ -503,6 +503,7 @@ export class SharedLinkService extends BaseService {
   ): Promise<SharedLinkResponseDto> {
     const response = mapSharedLink(await this.applyNsfwPrivacy(auth, sharedLink), {
       ...options,
+      visitor: !!auth.sharedLink,
       externalDomain: await this.externalDomain(),
     });
     return response;

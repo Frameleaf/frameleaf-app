@@ -12,6 +12,7 @@ import {
   LibraryViewScopeSchema,
 } from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
+import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
 const UpdateAssetBaseSchema = z
@@ -63,6 +64,9 @@ const UpdateAssetBaseSchema = z
           .getExtensions(),
       }),
     description: z.string().optional().describe('Asset description'),
+    title: z.string().trim().max(500).nullable().optional().describe('Asset title'),
+    artist: z.string().trim().max(500).nullable().optional().describe('Artist credit'),
+    copyright: z.string().trim().max(500).nullable().optional().describe('Copyright notice'),
   })
   .refine(
     (data) =>
@@ -241,7 +245,10 @@ const AssetMetadataRouteParamsSchema = z
 
 export const AssetMetadataUpsertItemSchema = z
   .object({
-    key: z.string().describe('Metadata key'),
+    key: z
+      .string()
+      .refine((key) => key !== PHOTOGRAPHY_INTAKE_CREDITS_KEY, 'Metadata key is reserved')
+      .describe('Metadata key'),
     value: z.record(z.string(), z.unknown()).describe('Metadata value (object)'),
   })
   .meta({ id: 'AssetMetadataUpsertItemDto' });
@@ -255,7 +262,10 @@ const AssetMetadataUpsertSchema = z
 const AssetMetadataBulkUpsertItemSchema = z
   .object({
     assetId: z.uuidv4().describe('Asset ID'),
-    key: z.string().describe('Metadata key'),
+    key: z
+      .string()
+      .refine((key) => key !== PHOTOGRAPHY_INTAKE_CREDITS_KEY, 'Metadata key is reserved')
+      .describe('Metadata key'),
     value: z.record(z.string(), z.unknown()).describe('Metadata value (object)'),
   })
   .meta({ id: 'AssetMetadataBulkUpsertItemDto' });
@@ -269,7 +279,10 @@ const AssetMetadataBulkUpsertSchema = z
 const AssetMetadataBulkDeleteItemSchema = z
   .object({
     assetId: z.uuidv4().describe('Asset ID'),
-    key: z.string().describe('Metadata key'),
+    key: z
+      .string()
+      .refine((key) => key !== PHOTOGRAPHY_INTAKE_CREDITS_KEY, 'Metadata key is reserved')
+      .describe('Metadata key'),
   })
   .meta({ id: 'AssetMetadataBulkDeleteItemDto' });
 
