@@ -3,6 +3,13 @@
   "version": "1.2.20",
   "private": true,
   "type": "module",
+  "frameleaf": {
+    "nativeCapabilities": [
+      "runtime-status",
+      "ports",
+      "tls-rotation"
+    ]
+  },
   "engines": {
     "node": ">=22.23.4"
   },

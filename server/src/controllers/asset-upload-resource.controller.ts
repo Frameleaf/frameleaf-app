@@ -8,12 +8,16 @@ import {
   HttpCode,
   Options,
   Param,
+  ParseFilePipe,
   Patch,
   Post,
   Put,
   Req,
   Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiHeader, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -32,6 +36,7 @@ import { AssetUploadDirectService } from 'src/services/asset-upload-direct.servi
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
 import { assetUploadRequestHeaders, writeAssetUploadHeaders } from 'src/utils/asset-upload-response.js';
 import { writeInformation } from 'src/utils/response.js';
+import { MAX_XMP_BYTES } from 'src/utils/xmp-sidecar.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Assets)
@@ -137,6 +142,27 @@ export class AssetUploadResourceController {
     if (!res.destroyed) {
       this.respond(res, outcome, true);
     }
+  }
+
+  @Put(':id/sidecar')
+  @Authenticated({ permission: Permission.AssetUpload })
+  @HttpCode(204)
+  @UseInterceptors(FileInterceptor('sidecarData', { limits: { files: 1, fileSize: MAX_XMP_BYTES } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['sidecarData'],
+      properties: { sidecarData: { type: 'string', format: 'binary' } },
+    },
+  })
+  @Endpoint({ summary: 'Attach XMP to a resumable photo upload', history: new HistoryBuilder().added('v3') })
+  async attachAssetUploadSidecar(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @UploadedFile(new ParseFilePipe()) file: Express.Multer.File,
+  ): Promise<void> {
+    await this.service.attachUploadSidecar(auth, id, file.buffer);
   }
 
   private respond(

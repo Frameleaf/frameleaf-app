@@ -155,6 +155,23 @@ export function requestMessage(
     proof.token,
   ]);
 }
+/** Whether two origins are the same HTTPS loopback address and differ only in their port. */
+function loopbackPortOnly(from: string, to: string): boolean {
+  try {
+    const [a, b] = [new URL(from), new URL(to)];
+    return (
+      a.origin === from &&
+      b.origin === to &&
+      a.protocol === 'https:' &&
+      b.protocol === 'https:' &&
+      ['127.0.0.1', '[::1]'].includes(a.hostname) &&
+      a.hostname === b.hostname &&
+      a.port !== b.port
+    );
+  } catch {
+    return false;
+  }
+}
 function publicGrant(grant: Granted) {
   const { tokenHash, epoch, publicKey, ...safe } = grant;
   return safe;
@@ -166,6 +183,8 @@ export class DesktopGrants {
   constructor(
     private store: Store,
     private security: Security,
+    /** Native runtime only: Manager listens on loopback and its supervisor chooses the port. */
+    private loopbackPortIsConfiguration = false,
   ) {
     store.db
       .exec(`CREATE TABLE IF NOT EXISTS desktop_pairings (id TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -176,7 +195,15 @@ export class DesktopGrants {
     store.createOnce('desktop-manager-identity', { id: randomUUID(), origin });
     const stored = Identity.safeParse(store.get('desktop-manager-identity'));
     if (!stored.success) throw new Refusal('desktop_manager_identity_invalid');
-    if (stored.data.origin !== origin) this.rotate(stored.data, origin);
+    if (stored.data.origin !== origin) {
+      if (
+        this.loopbackPortIsConfiguration &&
+        loopbackPortOnly(stored.data.origin, origin)
+      )
+        // Same loopback host, another port: the same Manager for the same devices on this computer.
+        store.set('desktop-manager-identity', { ...stored.data, origin });
+      else this.rotate(stored.data, origin);
+    }
     const parsed = Identity.safeParse(store.get('desktop-manager-identity'));
     if (!parsed.success || parsed.data.origin !== origin)
       throw new Refusal('desktop_manager_identity_changed');

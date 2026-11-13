@@ -846,22 +846,19 @@ test('binding transition refuses immutable drift and incomplete operations witho
     for (const value of [
       { ...target, name: 'different' },
       { ...target, tls: { ...target.tls, certificatePem: 'another' } },
-      ...['id', 'secureInstallationId', 'state', 'databasePort', 'apiPort'].map(
-        (key) => ({
-          ...target,
-          installation: {
-            ...target.installation,
-            [key]:
-              key === 'id'
-                ? 'c'.repeat(12)
-                : key === 'secureInstallationId'
-                  ? '22222222-2222-4222-8222-222222222222'
-                  : key === 'state'
-                    ? target.installation.state + '-other'
-                    : 60000,
-          },
-        }),
-      ),
+      // The ports are configuration (FL-1512); identity and the state directory are not.
+      ...['id', 'secureInstallationId', 'state'].map((key) => ({
+        ...target,
+        installation: {
+          ...target.installation,
+          [key]:
+            key === 'id'
+              ? 'c'.repeat(12)
+              : key === 'secureInstallationId'
+                ? '22222222-2222-4222-8222-222222222222'
+                : target.installation.state + '-other',
+        },
+      })),
       {
         ...target,
         installationTransition: {

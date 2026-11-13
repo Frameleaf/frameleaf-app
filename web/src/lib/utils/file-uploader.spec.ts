@@ -39,6 +39,16 @@ describe('unsupported files', () => {
     expect(get(uploadAssetsStore)).toHaveLength(0);
   });
 
+  it('reports an unmatched sidecar without queuing it as an original', async () => {
+    const warning = vi.spyOn(toastManager, 'warning').mockImplementation(() => undefined as never);
+    addMessages('dev', { frameleaf_xmp_unmatched: 'Unmatched {file}' });
+
+    await fileUploadHandler({ files: [new File(['xmp'], 'IMG_1.xmp')] });
+
+    expect(warning).toHaveBeenCalledWith('Unmatched IMG_1.xmp', { timeout: 10_000 });
+    expect(get(uploadAssetsStore)).toHaveLength(0);
+  });
+
   it("leaves out the operating system's files a folder brings, without a warning", async () => {
     const warning = vi.spyOn(toastManager, 'warning').mockImplementation(() => undefined as never);
     const inFolder = (name: string) => {
