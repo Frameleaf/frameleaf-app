@@ -824,12 +824,10 @@
                 onSaveBrief({
                   notes: briefNotes,
                   deliveryTarget: briefTarget || null,
-                  ...(defaultArtist.trim() === (shoot.defaultArtist ?? '')
-                    ? {}
-                    : { defaultArtist: defaultArtist.trim() }),
-                  ...(defaultCopyright.trim() === (shoot.defaultCopyright ?? '')
-                    ? {}
-                    : { defaultCopyright: defaultCopyright.trim() }),
+                  ...(defaultArtist.trim() !== (shoot.defaultArtist ?? '') && { defaultArtist: defaultArtist.trim() }),
+                  ...(defaultCopyright.trim() !== (shoot.defaultCopyright ?? '') && {
+                    defaultCopyright: defaultCopyright.trim(),
+                  }),
                 })}>{$t('frameleaf_photography_save_brief')}</Button
             >
           </section>{/if}

@@ -33,7 +33,9 @@
   };
   const save = async (event: SubmitEvent) => {
     event.preventDefault();
-    if (saving || !isOwner) return;
+    if (saving || !isOwner) {
+      return;
+    }
     const id = asset.id;
     const current = authManager.captureSession();
     saving = true;
@@ -44,7 +46,9 @@
         close();
       }
     } catch (error) {
-      if (current() && asset.id === id) handleError(error, $t('frameleaf_metadata_save_failed'));
+      if (current() && asset.id === id) {
+        handleError(error, $t('frameleaf_metadata_save_failed'));
+      }
     } finally {
       saving = false;
     }

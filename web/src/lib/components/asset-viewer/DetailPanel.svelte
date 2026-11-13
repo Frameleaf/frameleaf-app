@@ -168,7 +168,7 @@
   <!-- FL-58: the owner's pets in this photo, with add, draw and undo. -->
   <DetailPanelPets {asset} {isOwner} />
   <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
-  {#if asset.hasMetadata !== false && (isOwner || asset.exifInfo?.title)}
+  {#if asset.hasMetadata && (isOwner || asset.exifInfo?.title)}
     <section>
       <h2>{$t('frameleaf_metadata_title')}</h2>
       {#key asset.id}
@@ -199,7 +199,7 @@
       />
     {/snippet}
   </DetailPanelImageEnrichment>
-  {#if asset.hasMetadata !== false && (isOwner || asset.exifInfo?.artist || asset.exifInfo?.copyright)}
+  {#if asset.hasMetadata && (isOwner || asset.exifInfo?.artist || asset.exifInfo?.copyright)}
     <section>
       <h2>{$t('frameleaf_metadata_credits')}</h2>
       {#key asset.id}
