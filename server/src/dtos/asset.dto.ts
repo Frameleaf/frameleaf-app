@@ -236,6 +236,20 @@ const AssetStatsResponseSchema = z
   })
   .meta({ id: 'AssetStatsResponseDto' });
 
+const AssetAllMetadataResponseSchema = z
+  .object({
+    groups: z.array(
+      z.object({
+        name: z.string(),
+        tags: z.array(z.object({ key: z.string(), value: z.string() })),
+      }),
+    ),
+    truncated: z.boolean(),
+  })
+  .meta({ id: 'AssetAllMetadataResponseDto' });
+
+export class AssetAllMetadataResponseDto extends createZodDto(AssetAllMetadataResponseSchema) {}
+
 const AssetMetadataRouteParamsSchema = z
   .object({
     id: z.uuidv4().describe('Asset ID'),

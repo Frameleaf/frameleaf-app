@@ -7213,6 +7213,16 @@ export type AssetMetadataUpsertDto = {
     /** Metadata items to upsert */
     items: AssetMetadataUpsertItemDto[];
 };
+export type AssetAllMetadataResponseDto = {
+    groups: {
+        name: string;
+        tags: {
+            key: string;
+            value: string;
+        }[];
+    }[];
+    truncated: boolean;
+};
 export type AssetOcrResponseDto = {
     assetId: string;
     /** Confidence score for text detection box */
@@ -28179,6 +28189,24 @@ export function updateAssetMetadata({ id, assetMetadataUpsertDto }: {
         method: "PUT",
         body: assetMetadataUpsertDto
     })));
+}
+/**
+ * Get original and sidecar metadata
+ */
+export function getAssetAllMetadata({ id, key, slug }: {
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetAllMetadataResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/metadata/all${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Delete asset metadata by key

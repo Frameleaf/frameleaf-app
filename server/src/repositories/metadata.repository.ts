@@ -253,6 +253,10 @@ export class MetadataRepository {
     await Promise.all([this.exiftool.end(), this.locationTool.end()]);
   }
 
+  readAllTags(path: string): Promise<Record<string, unknown>> {
+    return this.exiftool.readRaw(path, { readArgs: ['-api', 'largefilesupport=1', '-G1:4', '-a', '-u'] });
+  }
+
   async readTags(path: string): Promise<ImmichTags> {
     const options: ReadTaskOptions | undefined = mimeTypes.isVideo(path) ? { readArgs: ['-ee'] } : undefined;
     try {
