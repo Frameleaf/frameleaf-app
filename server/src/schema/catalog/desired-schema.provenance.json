@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "19a1b423f45443207ec64328ebdb6a1f0f593112",
+  "sourceCommit": "91b914a86ca5c205f3527d86f7f33d8ddf7b01bf",
   "sourceHashes": {
     "src/enum.ts": "b3d1e5b735a25406e973e9d9262d0dc2558c039a4108af21175bdd5660c57c7a",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -8,7 +8,7 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "ee67cb10c6797809c7a202d994679a7961d8f9642a8eb125a5a9770d6ffd5c60",
+    "src/schema/index.ts": "30c1fb5958b8823e0ea2b335921b159e5fd76a39849bf86f30933f0faafdb375",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -184,6 +184,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "7cb14d199eb6db90f8238e8ed371fe40391d3dd29a7d1fd5532ce297554aff56",
+  "dumpSha256": "931f542e9f21beb0aa9dbd5c9ddf375658372ba4debc8c4b2b34463a7a261af2",
   "rawMetadataSha256": "712d0763caf01251520f0dbf45e36c01aea50940cb4a94ad4d02977982026a06"
 }
