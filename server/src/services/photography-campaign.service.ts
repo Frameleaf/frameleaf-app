@@ -189,7 +189,10 @@ export class PhotographyCampaignService extends BaseService {
           if (!contact) break;
           const message = await this.message(row, contact.unsubscribeToken);
           // The durable claim precedes transport. An interrupted or ambiguous attempt stays visible for review.
-          if (!message.delivery.ready) return;
+          if (!message.delivery.ready) {
+            await this.campaigns.finish(row.id, contact.id, 'pending');
+            return;
+          }
           try {
             const sent = await this.campaigns.sendIfEligible(row.id, contact.id, () => {
               jobSignal()?.throwIfAborted();

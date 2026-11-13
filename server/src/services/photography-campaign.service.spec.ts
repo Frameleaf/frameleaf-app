@@ -99,6 +99,15 @@ describe(PhotographyCampaignService.name, () => {
       expect(campaigns.claim).toHaveBeenCalledTimes(1);
     },
   );
+  it('keeps an untouched recipient pending if the mail account disconnects before transport', async () => {
+    campaigns.due.mockResolvedValue([{ id: 'campaign', ownerId: auth.user.id }]);
+    campaigns.claim.mockResolvedValueOnce({ id: 'client', email: 'client@example.test' });
+    message.mockResolvedValueOnce({ delivery: { ready: false } });
+    await sut.dispatch();
+    expect(campaigns.finish).toHaveBeenCalledWith('campaign', 'client', 'pending');
+    expect(campaigns.sendIfEligible).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
   it('rejects header injection and oversized custom messages', () => {
     const row = {
       name: 'Photos',
