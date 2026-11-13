@@ -224,6 +224,8 @@ describe('secret request body exclusion', () => {
     '/api/connect/uploads',
     '/api/connect/albums',
     '/api/connect/assets/asset/tags',
+    '/api/mcp/assistant',
+    '/API/MCP/ASSISTANT/',
     '/api/admin/cloud/backup/check',
     '/api/admin/cloud/backup/setup',
     '/api/admin/cloud/backup/key/unlock',

@@ -215,6 +215,8 @@ const refusals: Record<string, string> = {
     'The reviewed release was withdrawn and this review has expired. Cancel this update, then review the newer release before installing it.',
   database_move_failed_rolled_back:
     'Manager could not move the database to the new release’s database engine, so it put back the previous release on its unchanged database folder. Nothing was lost. Check that the database folder’s drive has free space, then try the update again.',
+  database_checkpoint_failed_rolled_back:
+    'Manager could not make the safety backup it takes before an update, so it did not install the update and started the previous release again. Nothing was lost. Check that the backups drive has free space, then try the update again.',
   database_image_change_unsupported:
     'This release’s database engine cannot replace the one this server runs. Choose another release.',
   // Journals from Managers before FL-1265, which refused these updates.
@@ -654,6 +656,8 @@ export function untestedNotice(kind: string, version: string | null | undefined,
 export const UNTESTED_VERSION_LOSS = 'SOURCE_VERSION_UNTESTED';
 // Every reader names its losses <APP>_<WHAT>; the <WHAT> part means the same thing for every app.
 const lossTexts: Record<string, (app: string) => string> = {
+  IDENTICAL_ORIGINALS_MERGED: () =>
+    'Photos that were in the library more than once came across as one photo, in every album the copies were in. A merged copy’s own description, tags and favourite did not come across.',
   SOURCE_METADATA_ARCHIVED: (app) => `Some ${app}-only details and settings won't come across.`,
   SHARING_RESTRICTED: () => 'Shared links and sharing between accounts won’t come across. You can share again in Frameleaf.',
   PEOPLE_ARCHIVED: () => 'Named people and face groups won’t come across. Frameleaf finds faces again on its own.',

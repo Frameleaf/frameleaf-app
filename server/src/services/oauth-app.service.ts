@@ -22,7 +22,7 @@ import {
   OAuthAppCreateClientDto,
   OAuthAppGrantDto,
 } from 'src/dtos/oauth-app.dto.js';
-import { AccountEventAction } from 'src/enum.js';
+import { AccountEventAction, SystemMetadataKey } from 'src/enum.js';
 import { toAccountEventVia } from 'src/repositories/account-event.repository.js';
 import { ConnectRepository } from 'src/repositories/connect.repository.js';
 import { OAuthAppRepository, OAuthClient } from 'src/repositories/oauth-app.repository.js';
@@ -34,7 +34,9 @@ import {
   ConnectAccessPolicySchema,
   isConnectResource,
 } from 'src/utils/connect-policy.js';
+import { remoteEntitlement } from 'src/utils/frameleaf-remote-access.js';
 import {
+  ASSISTANT_MCP_PATH,
   MCP_PATH,
   OAUTH_ACCESS_TOKEN_PREFIX,
   OAUTH_ACCESS_TTL_SECONDS,
@@ -43,9 +45,11 @@ import {
   OAUTH_REFRESH_TOKEN_PREFIX,
   OAUTH_SCOPES_SUPPORTED,
   OAUTH_USE_RECORD_INTERVAL_MS,
+  assistantBrokerName,
   checkRegisteredRedirectUri,
   checkResource,
   cleanClientName,
+  isAssistantResource,
   matchRedirectUri,
   oauthReturnAddress,
   parseScopes,
@@ -97,6 +101,7 @@ export type OAuthTokenResponse = {
   expires_in: number;
   refresh_token: string;
   scope: string;
+  frameleaf_account_id?: string;
 };
 
 const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
@@ -127,6 +132,16 @@ export class OAuthAppService extends BaseService {
 
   /** Use is recorded at most once an hour per grant and process. */
   private usesRecorded = new Map<string, number>();
+
+  async assistantAvailable() {
+    const { connectedApps } = await this.getConfig({ withCache: false });
+    const licence = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+    return connectedApps.allowMcp !== false && remoteEntitlement(licence).direct;
+  }
+
+  private brokerForClient(redirectUris: string[]) {
+    return redirectUris.length === 1 ? assistantBrokerName(redirectUris[0]) : undefined;
+  }
 
   /**
    * `GET oauth/apps/authorize`: where the browser goes. A request whose app or return address is
@@ -231,6 +246,7 @@ export class OAuthAppService extends BaseService {
       scopes: checked.scopes,
       resource: checked.resource,
       accessPolicy,
+      frameleafAccountId: checked.frameleafAccountId,
       expiresAt: new Date(Date.now() + OAUTH_CODE_TTL_SECONDS * 1000),
     });
     await this.recordAccountEvent({
@@ -244,13 +260,13 @@ export class OAuthAppService extends BaseService {
   }
 
   /** `POST oauth/apps/token`: the token endpoint (RFC 6749 §3.2), for public clients. */
-  async token(body: Record<string, unknown>): Promise<OAuthTokenResponse> {
+  async token(body: Record<string, unknown>, issuer?: string): Promise<OAuthTokenResponse> {
     switch (body.grant_type) {
       case 'authorization_code': {
-        return this.exchangeCode(body);
+        return this.exchangeCode(body, issuer);
       }
       case 'refresh_token': {
-        return this.refresh(body);
+        return this.refresh(body, issuer);
       }
       default: {
         throw oauthError('unsupported_grant_type', 'Only authorization_code and refresh_token are supported');
@@ -386,13 +402,15 @@ export class OAuthAppService extends BaseService {
       resource: `${issuer}${path}`,
       authorization_servers: [issuer],
       scopes_supported:
-        path === CONNECT_PATH
-          ? [...CONNECT_SCOPES]
-          : OAUTH_SCOPES_SUPPORTED.filter(
-              (scope) =>
-                !['photos:upload', 'boards:upload', 'events:read'].includes(scope) &&
-                (path !== MCP_PATH || scope !== 'library:download'),
-            ),
+        path === ASSISTANT_MCP_PATH
+          ? ['library:read']
+          : path === CONNECT_PATH
+            ? [...CONNECT_SCOPES]
+            : OAUTH_SCOPES_SUPPORTED.filter(
+                (scope) =>
+                  !['photos:upload', 'boards:upload', 'events:read'].includes(scope) &&
+                  (path !== MCP_PATH || scope !== 'library:download'),
+              ),
       bearer_methods_supported: ['header'],
       resource_name: 'Frameleaf',
     };
@@ -405,6 +423,13 @@ export class OAuthAppService extends BaseService {
   async validateAccessToken(token: string, via: FrameleafVia | null | undefined): Promise<AuthDto> {
     const grant = await this.oauthAppRepository.getByAccessToken(this.cryptoRepository.hashSha256(token));
     const active = this.requireActiveGrant(grant);
+    if (
+      isAssistantResource(active.resource) &&
+      (!(await this.assistantAvailable()) ||
+        !(await this.assistantAccountMatches(active.userId, active.frameleafAccountId)))
+    ) {
+      throw new UnauthorizedException();
+    }
     void this.recordUse(
       active.id,
       active.userId,
@@ -554,7 +579,7 @@ export class OAuthAppService extends BaseService {
     this.logger.log(`Connected app ${client.id} removed by ${auth.user.id}`);
   }
 
-  private async exchangeCode(body: Record<string, unknown>): Promise<OAuthTokenResponse> {
+  private async exchangeCode(body: Record<string, unknown>, issuer?: string): Promise<OAuthTokenResponse> {
     const code = text(body.code);
     if (!code || code.length > 200) {
       throw oauthError('invalid_request', 'The code is missing');
@@ -582,6 +607,14 @@ export class OAuthAppService extends BaseService {
     if (!client || !user || !matchRedirectUri(client.redirectUris, found.redirectUri)) {
       throw invalid;
     }
+    if (
+      isAssistantResource(found.resource) &&
+      (found.resource !== `${issuer}${ASSISTANT_MCP_PATH}` ||
+        !(await this.assistantAvailable()) ||
+        !(await this.assistantAccountMatches(found.userId, found.frameleafAccountId)))
+    ) {
+      throw invalid;
+    }
     const tokens = this.newTokens();
     await this.oauthAppRepository.createGrant({
       userId: user.id,
@@ -590,14 +623,18 @@ export class OAuthAppService extends BaseService {
       resource: found.resource,
       accessPolicy: found.accessPolicy ?? null,
       policyRevision: found.accessPolicy ? 1 : 0,
+      frameleafAccountId: found.frameleafAccountId,
       refreshTokenHash: this.cryptoRepository.hashSha256(tokens.refresh_token),
       accessTokenHash: this.cryptoRepository.hashSha256(tokens.access_token),
       accessExpiresAt: tokens.expiresAt,
     });
-    return this.tokenResponse(tokens, found.scopes);
+    return {
+      ...this.tokenResponse(tokens, found.scopes),
+      ...(found.frameleafAccountId && { frameleaf_account_id: found.frameleafAccountId }),
+    };
   }
 
-  private async refresh(body: Record<string, unknown>): Promise<OAuthTokenResponse> {
+  private async refresh(body: Record<string, unknown>, issuer?: string): Promise<OAuthTokenResponse> {
     const token = text(body.refresh_token);
     if (!token || token.length > 200) {
       throw oauthError('invalid_request', 'The refresh token is missing');
@@ -626,6 +663,16 @@ export class OAuthAppService extends BaseService {
       (body.resource !== undefined && checkResource(body.resource) !== grant.resource) ||
       body.accessPolicy !== undefined ||
       body.access_policy !== undefined
+    ) {
+      throw invalid;
+    }
+    if (
+      isAssistantResource(grant.resource) &&
+      (grant.resource !== `${issuer}${ASSISTANT_MCP_PATH}` ||
+        !(await this.assistantAvailable()) ||
+        (body.resource !== undefined && checkResource(body.resource) !== grant.resource) ||
+        !(await this.userRepository.get(grant.userId, { withDeleted: false })) ||
+        !(await this.assistantAccountMatches(grant.userId, grant.frameleafAccountId)))
     ) {
       throw invalid;
     }
@@ -706,7 +753,11 @@ export class OAuthAppService extends BaseService {
   }
 
   /** The Allow page's checks: a signed-in person and a request with nothing wrong in it. */
-  private async checkPage(auth: AuthDto, dto: OAuthAppAuthorizeStartDto, issuer?: string): Promise<CheckedRequest> {
+  private async checkPage(
+    auth: AuthDto,
+    dto: OAuthAppAuthorizeStartDto,
+    issuer?: string,
+  ): Promise<CheckedRequest & { frameleafAccountId: string | null }> {
     this.requireSession(auth);
     const checked = await this.checkRequest(dto, issuer);
     if ('fault' in checked) {
@@ -715,7 +766,19 @@ export class OAuthAppService extends BaseService {
         ? requestError(fault.error, fault.description)
         : requestError('invalid_request', 'This request didn’t come from the app the way Frameleaf expects');
     }
-    return checked;
+    let frameleafAccountId: string | null = null;
+    if (isAssistantResource(checked.resource) && this.brokerForClient(checked.client.redirectUris)) {
+      const link = await this.frameleafAccountRepository.getLinkByUser(auth.user.id);
+      if (!link) {
+        throw requestError('access_denied', 'Sign in with Frameleaf to connect a marketplace assistant');
+      }
+      frameleafAccountId = link.sub;
+    }
+    return { ...checked, frameleafAccountId };
+  }
+
+  private async assistantAccountMatches(userId: string, expected: string | null) {
+    return expected === null || (await this.frameleafAccountRepository.getLinkByUser(userId))?.sub === expected;
   }
 
   private async checkRequest(
@@ -758,6 +821,20 @@ export class OAuthAppService extends BaseService {
     } else if (scopes.some((scope) => ['photos:upload', 'boards:upload', 'events:read'].includes(scope))) {
       return fault('invalid_scope', 'This scope requires the Connect resource');
     }
+    if (isAssistantResource(resource)) {
+      if (!issuer?.startsWith('https://') || resource !== `${issuer}${ASSISTANT_MCP_PATH}`) {
+        return fault('invalid_target', 'The assistant resource must use this Library’s HTTPS address');
+      }
+      if (scopes.length !== 1 || scopes[0] !== 'library:read') {
+        return fault('invalid_scope', 'The assistant resource supports library:read');
+      }
+      if (client.redirectUris.some((uri) => assistantBrokerName(uri)) && !this.brokerForClient(client.redirectUris)) {
+        return fault('invalid_request', 'The marketplace assistant must register its own return address');
+      }
+      if (!(await this.assistantAvailable())) {
+        return fault('access_denied', 'Official assistant access requires a Server licence and enabled MCP');
+      }
+    }
     if (resource && new URL(resource).pathname === MCP_PATH && scopes.includes('library:download')) {
       return fault('invalid_scope', 'MCP apps can’t download original files');
     }
@@ -779,20 +856,21 @@ export class OAuthAppService extends BaseService {
   }
 
   private clientName(name: string, redirectUris: string[]) {
-    return verifiedApp(redirectUris)?.name ?? name;
+    return this.brokerForClient(redirectUris) ?? verifiedApp(redirectUris)?.name ?? name;
   }
 
   private mapClient(
     client: Pick<OAuthClient, 'id' | 'name' | 'redirectUris'>,
     redirectUri: string | undefined,
   ): OAuthAppClientDto {
+    const broker = this.brokerForClient(client.redirectUris);
     const known = verifiedApp(client.redirectUris);
     return {
       id: client.id,
-      name: known?.name ?? client.name,
-      verified: !!known,
-      maker: known?.maker ?? null,
-      knownApp: known?.key ?? null,
+      name: broker ?? known?.name ?? client.name,
+      verified: !!(broker || known),
+      maker: broker === 'ChatGPT' ? 'OpenAI' : broker === 'Claude' ? 'Anthropic' : (known?.maker ?? null),
+      knownApp: broker === 'ChatGPT' ? 'chatgpt' : broker === 'Claude' ? 'claude' : (known?.key ?? null),
       returnTo: redirectUri ? redirectDisplay(redirectUri) : '',
     };
   }

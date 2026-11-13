@@ -69,6 +69,7 @@ export type BulkActionId =
   /** FL-943: "Fix dates…", the Date & Time Doctor's preview for a zone or a shift the person chooses (FL-930). */
   | 'fix-dates'
   | 'change-description'
+  | 'change-credits'
   | 'change-location'
   | 'archive'
   | 'unarchive'
@@ -392,6 +393,14 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       group: 'organize',
       dialog: true,
       available: live && has,
+    },
+    {
+      id: 'change-credits',
+      labelKey: 'frameleaf_metadata_bulk',
+      icon: 'mdiTextBoxOutline',
+      group: 'organize',
+      dialog: true,
+      available: !readOnly && (live || locked) && has,
     },
     {
       id: 'change-location',

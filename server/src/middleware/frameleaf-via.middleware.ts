@@ -1,5 +1,7 @@
+import { BlockList, isIP } from 'node:net';
 import type { NextFunction, Request, Response } from 'express';
 import type { IncomingHttpHeaders } from 'node:http';
+import type { TLSSocket } from 'node:tls';
 import { RequestHeader } from 'src/enum.js';
 import { type FrameleafVia, claimsFrameleafVia, frameleafVia } from 'src/utils/frameleaf-sign-in.js';
 
@@ -64,6 +66,7 @@ export type FrameleafArrival = {
 export interface FrameleafRequest extends Request {
   frameleafVia?: FrameleafVia | null;
   frameleafForwarded?: FrameleafForwarded | null;
+  frameleafTrustedTls?: boolean;
 }
 
 const firstValue = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
@@ -110,8 +113,19 @@ export const stripFrameleafHeaders = (headers: IncomingHttpHeaders, remote: bool
 };
 
 /** Registered right after `cookieParser()`, before any route, guard or server-side render. */
-export const frameleafViaMiddleware =
-  (edgeSecret: string | null) => (request: Request, response: Response, next: NextFunction) => {
+export const frameleafViaMiddleware = (edgeSecret: string | null, explicitProxies: string[] = []) => {
+  const tlsProxies = new BlockList();
+  for (const proxy of explicitProxies) {
+    const [address, prefix] = proxy.split('/', 2);
+    const family = isIP(address) === 6 ? 'ipv6' : 'ipv4';
+    if (prefix === undefined) {
+      tlsProxies.addAddress(address, family);
+    } else {
+      tlsProxies.addSubnet(address, Number(prefix), family);
+    }
+  }
+
+  return (request: Request, response: Response, next: NextFunction) => {
     const arrival = readFrameleafArrival(request.headers, edgeSecret);
     if (!arrival.via && claimsFrameleafVia(request.headers)) {
       response.status(403).json({
@@ -125,8 +139,18 @@ export const frameleafViaMiddleware =
     const marked = request as FrameleafRequest;
     marked.frameleafVia = arrival.via;
     marked.frameleafForwarded = arrival.forwarded;
+    const peer = request.socket?.remoteAddress?.replace(/^::ffff:/, '');
+    marked.frameleafTrustedTls =
+      (request.socket as TLSSocket | undefined)?.encrypted === true ||
+      arrival.via !== null ||
+      (request.headers['x-forwarded-proto'] === 'https' &&
+        !!peer &&
+        tlsProxies.check(peer, isIP(peer) === 6 ? 'ipv6' : 'ipv4'));
     next();
   };
+};
+
+export const requestHasTrustedTls = (request: Request) => (request as FrameleafRequest).frameleafTrustedTls === true;
 
 /** How a request arrived, as the middleware recorded it (`null` when not vouched for). */
 export const requestVia = (request: Request): FrameleafVia | null => (request as FrameleafRequest).frameleafVia ?? null;

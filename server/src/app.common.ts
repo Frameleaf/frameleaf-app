@@ -65,7 +65,12 @@ export async function configureExpress(
   app.use(cookieParser());
   // FL-161: record how the request arrived (vouched for by the edge worker's per-boot secret) and
   // drop every client-supplied `X-Frameleaf-*` claim before anything else reads the request.
-  app.use(frameleafViaMiddleware(frameleafCloud.edge.secret));
+  app.use(
+    frameleafViaMiddleware(
+      frameleafCloud.edge.secret,
+      network.trustedProxies.filter((proxy) => proxy !== 'linklocal' && proxy !== 'uniquelocal'),
+    ),
+  );
   const requireMcpJson: RequestHandler = (req, res, next) => {
     if (req.method === 'POST' && !req.is('application/json')) {
       res.sendStatus(415);
@@ -73,7 +78,7 @@ export async function configureExpress(
     }
     next();
   };
-  app.use(/^\/api\/mcp\/?$/i, requireMcpJson, json({ limit: '32kb' }));
+  app.use(/^\/api\/mcp(?:\/assistant)?\/?$/i, requireMcpJson, json({ limit: '32kb' }));
   app.use(
     json({
       limit: '10mb',

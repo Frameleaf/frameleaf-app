@@ -25,6 +25,7 @@ const grantColumns = [
   'oauth_grant.resource',
   'oauth_grant.accessPolicy',
   'oauth_grant.policyRevision',
+  'oauth_grant.frameleafAccountId',
   'oauth_grant.accessExpiresAt',
   'oauth_grant.createdAt',
   'oauth_grant.lastUsedAt',

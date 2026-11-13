@@ -253,7 +253,11 @@ export class AlbumService extends BaseService {
     };
   }
 
-  async getAll(auth: AuthDto, { assetId, suppressedOnly, ...rest }: GetAlbumsDto): Promise<AlbumResponseDto[]> {
+  async getAll(
+    auth: AuthDto,
+    { assetId, suppressedOnly, ...rest }: GetAlbumsDto,
+    options?: { excludeLocked?: boolean },
+  ): Promise<AlbumResponseDto[]> {
     this.refreshCoversInBackground(auth.user.id);
 
     const ownerId = auth.user.id;
@@ -273,6 +277,7 @@ export class AlbumService extends BaseService {
       : await this.albumRepository.getAll(ownerId, {
           libraryScope: LibraryScope.Personal,
           ...rest,
+          ...options,
           ...(hidden.size > 0 ? { excludeIds: [...hidden] } : {}),
         });
     if (hidden.size > 0) {
@@ -608,6 +613,15 @@ export class AlbumService extends BaseService {
   }
 
   async create(auth: AuthDto, dto: CreateAlbumDto): Promise<AlbumResponseDto> {
+    // FL-1499: `albums:write` makes plain albums only. Sharing, shared spaces and nesting (into a
+    // collection that may itself be shared) stay with the person.
+    if (
+      auth.oauthApp &&
+      ((dto.albumUsers?.length ?? 0) > 0 || (dto.kind ?? AlbumKind.Album) !== AlbumKind.Album || dto.parentId)
+    ) {
+      throw new ForbiddenException('Connected apps can’t share, nest or make shared spaces');
+    }
+
     const albumUsers = (dto.albumUsers || []).filter(({ userId }) => userId !== auth.user.id);
 
     for (const { userId } of albumUsers) {

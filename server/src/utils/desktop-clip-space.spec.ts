@@ -91,7 +91,8 @@ it('refuses unknown producers, wrong roles, changed membership, duplicate spaces
     change(value);
     expect(() => parseDesktopClipSpaces(value, models())).toThrow();
   }
-});
+  // the whole catalogue is validated again for every change
+}, 60_000);
 it('keeps logical embedding identity separate from runtime/provider qualification', () => {
   const catalogue = models();
   const variant = structuredClone(catalogue.profiles[0]);

@@ -93,7 +93,7 @@ import {
 } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
-import { MCP_PATH, isOAuthAccessToken } from 'src/utils/oauth-apps.js';
+import { MCP_PATH, isAssistantResource, isOAuthAccessToken } from 'src/utils/oauth-apps.js';
 import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
@@ -1169,7 +1169,7 @@ export class AuthService extends BaseService {
     } else if (authDto.oauthApp?.accessPolicy || isConnectResource(audience)) {
       throw new UnauthorizedException('This connected app token is restricted to Connect');
     }
-    if (audience && new URL(audience).pathname === MCP_PATH) {
+    if (audience && (new URL(audience).pathname === MCP_PATH || isAssistantResource(audience))) {
       throw new UnauthorizedException('This connected app token is for the MCP endpoint');
     }
 

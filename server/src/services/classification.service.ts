@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
   ClassificationApplyOutcome,
@@ -111,6 +111,10 @@ export class ClassificationService extends BaseService {
   }
 
   async createRule(auth: AuthDto, dto: ClassificationRuleCreateDto): Promise<ClassificationRuleResponseDto> {
+    // FL-1499: a rule keeps tagging, filing and archiving after the app is disconnected.
+    if (auth.oauthApp) {
+      throw new ForbiddenException('Connected apps can’t make rules');
+    }
     const { smartAlbums } = await this.getConfig({ withCache: false });
     const criteria = this.criteriaOf(dto);
     await this.validateCriteria(auth, criteria);

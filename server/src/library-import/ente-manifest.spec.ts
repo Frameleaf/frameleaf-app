@@ -114,7 +114,9 @@ describe('Ente common manifest mapping', () => {
     const asset = manifest.assets.find((asset) => asset.id === media.ids.first)!;
     expect(asset).toMatchObject({
       ownerId: media.users.alice,
-      visibility: 'archive',
+      // archived, and in a hidden album (FL-1504)
+      visibility: 'locked',
+      archived: true,
       type: 'IMAGE',
       localDateTime: '2025-01-01T05:30:00.000000',
       metadata: {
@@ -138,6 +140,27 @@ describe('Ente common manifest mapping', () => {
     }
     expect(read(value).manifest.assets.find((asset) => asset.id === media.ids.first)!.visibility).toBe('locked');
   });
+  it('imports the files of a hidden album as Locked and does not recreate the album (FL-1504)', () => {
+    const value = input();
+    const hidden = value.accounts.flatMap((account) =>
+      account.albums
+        .filter(
+          (album) => album.record.ente.ownerID === account.id && album.record.ente.magicMetadata?.visibility === 2,
+        )
+        .map((album) => ({ account, album })),
+    );
+    expect(hidden).not.toHaveLength(0);
+    const { manifest } = read(value);
+    expect(manifest.albums.some((album) => album.name.startsWith('Owner hidden'))).toBe(false);
+    for (const { account, album } of hidden) {
+      const members = account.files.filter(
+        (file) => file.ownerId === account.id && file.albumIds.includes(album.record.ente.albumID),
+      );
+      expect(members).not.toHaveLength(0);
+      for (const file of members)
+        expect(manifest.assets.find((asset) => asset.id === file.id)!.visibility).toBe('locked');
+    }
+  });
   it('keeps equal bytes belonging to different source IDs and owners distinct', () => {
     const { manifest } = read();
     const first = manifest.assets.find((asset) => asset.id === media.ids.first)!;
@@ -150,7 +173,8 @@ describe('Ente common manifest mapping', () => {
   });
   it('retains every owner album membership, labels Favorites as a snapshot and keeps shares restricted', () => {
     const { manifest } = read();
-    expect(manifest.albums.filter((album) => album.assetIds.includes(media.ids.first))).toHaveLength(3);
+    // FL-1504: its third album is hidden, which makes the photo Locked instead of an album
+    expect(manifest.albums.filter((album) => album.assetIds.includes(media.ids.first))).toHaveLength(2);
     expect(manifest.albums).toContainEqual(
       expect.objectContaining({
         ownerId: media.users.alice,

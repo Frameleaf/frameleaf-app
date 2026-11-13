@@ -1489,18 +1489,30 @@ describe(AuthService.name, () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
-    it('checks the MCP resource audience and keeps the grant out of ordinary routes', async () => {
-      const resource = 'https://library.example/api/mcp';
-      const auth = appAuth([Permission.AssetRead]);
-      auth.oauthApp!.resource = resource;
-      useApp(auth);
-      const headers = { authorization: 'Bearer fla_token' };
-      await expect(sut.authenticateMcp(headers, resource, 'lan')).resolves.toMatchObject({ oauthApp: { resource } });
-      await expect(sut.authenticateMcp(headers, 'https://other.example/api/mcp', 'lan')).rejects.toThrow();
-      await expect(request({ permission: Permission.AssetRead })).rejects.toThrow(
-        'This connected app token is for the MCP endpoint',
-      );
-    });
+    it.each(['/api/mcp', '/api/mcp/assistant'])(
+      'checks the %s audience and keeps it out of ordinary routes',
+      async (path) => {
+        const resource = `https://library.example${path}`;
+        const auth = appAuth([Permission.AssetRead]);
+        auth.oauthApp!.resource = resource;
+        useApp(auth);
+        const headers = { authorization: 'Bearer fla_token' };
+        await expect(sut.authenticateMcp(headers, resource, 'lan')).resolves.toMatchObject({ oauthApp: { resource } });
+        await expect(sut.authenticateMcp(headers, `https://other.example${path}`, 'lan')).rejects.toThrow();
+        await expect(
+          request({
+            permission: Permission.AssetRead,
+            connect: true,
+            connectResource: 'https://library.example/api/connect',
+          }),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+        const other = path.endsWith('/assistant') ? '/api/mcp' : '/api/mcp/assistant';
+        await expect(sut.authenticateMcp(headers, `https://library.example${other}`, 'lan')).rejects.toThrow();
+        await expect(request({ permission: Permission.AssetRead })).rejects.toThrow(
+          'This connected app token is for the MCP endpoint',
+        );
+      },
+    );
 
     it('never reaches an admin route, even for an administrator’s app', async () => {
       useApp(appAuth([Permission.AssetRead], true));

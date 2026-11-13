@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import DetailPanelAllMetadata from '$lib/components/asset-viewer/DetailPanelAllMetadata.svelte';
   import DetailPanelCameraIdentification from '$lib/components/asset-viewer/DetailPanelCameraIdentification.svelte';
   import DetailPanelDate from '$lib/components/asset-viewer/DetailPanelDate.svelte';
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
@@ -35,6 +36,7 @@
   import { t } from 'svelte-i18n';
   import OnEvents from '../OnEvents.svelte';
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
+  import DetailPanelCreditField from './DetailPanelCreditField.svelte';
   import DetailPanelPeople from '$lib/components/asset-viewer/DetailPanelPeople.svelte';
   import DetailPanelPets from '$lib/components/asset-viewer/DetailPanelPets.svelte';
   import { faceManager } from '$lib/stores/face.svelte';
@@ -160,6 +162,9 @@
     -->
   <ViewerDetailRows {asset} {isOwner} />
   <DetailPanelCameraIdentification {asset} {isOwner} />
+  {#if !asset.isOffline && (!authManager.isSharedLink || asset.hasMetadata)}
+    {#key asset.id}<DetailPanelAllMetadata {asset} />{/key}
+  {/if}
 
   <!-- FL-707 item 13: people, rating, then the description (once, with its AI evidence) and the
        sensitive-content check, after when, where, file and camera. -->
@@ -167,6 +172,20 @@
   <!-- FL-58: the owner's pets in this photo, with add, draw and undo. -->
   <DetailPanelPets {asset} {isOwner} />
   <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+  {#if asset.hasMetadata && (isOwner || asset.exifInfo?.title)}
+    <section>
+      <h2>{$t('frameleaf_metadata_title')}</h2>
+      {#key asset.id}
+        <DetailPanelCreditField
+          {asset}
+          field="title"
+          label={$t('frameleaf_metadata_title')}
+          isOwner={isOwner && !authManager.isSharedLink}
+          onAssetRefresh={onAssetUpdate}
+        />
+      {/key}
+    </section>
+  {/if}
   <DetailPanelImageEnrichment
     {asset}
     {isOwner}
@@ -184,6 +203,33 @@
       />
     {/snippet}
   </DetailPanelImageEnrichment>
+  {#if asset.hasMetadata && (isOwner || asset.exifInfo?.artist || asset.exifInfo?.copyright)}
+    <section>
+      <h2>{$t('frameleaf_metadata_credits')}</h2>
+      {#key asset.id}
+        {#if !authManager.isSharedLink && (isOwner || asset.exifInfo?.artist)}
+          <h3>{$t('frameleaf_metadata_artist')}</h3>
+          <DetailPanelCreditField
+            {asset}
+            field="artist"
+            label={$t('frameleaf_metadata_artist')}
+            {isOwner}
+            onAssetRefresh={onAssetUpdate}
+          />
+        {/if}
+        {#if isOwner || asset.exifInfo?.copyright}
+          <h3>{$t('frameleaf_metadata_copyright')}</h3>
+          <DetailPanelCreditField
+            {asset}
+            field="copyright"
+            label={$t('frameleaf_metadata_copyright')}
+            isOwner={isOwner && !authManager.isSharedLink}
+            onAssetRefresh={onAssetUpdate}
+          />
+        {/if}
+      {/key}
+    </section>
+  {/if}
   <!-- FL-59: a video's reusable frames, cover and timestamped moments. -->
   <VideoMomentsPanel {asset} {isOwner} />
 

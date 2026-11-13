@@ -35,6 +35,7 @@ import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
+import { ASSISTANT_MCP_PATH, checkResource, isAssistantResource } from 'src/utils/oauth-apps.js';
 import { oauthIssuer } from 'src/utils/oauth-issuer.js';
 import { UUIDParamDto } from 'src/validation.js';
 
@@ -64,7 +65,13 @@ export class OAuthAppController {
   @RateLimited(RATE_LIMITS.oauthAppAuthorize)
   @Redirect()
   async authorizeRedirect(@Req() request: Request, @Query() query: Record<string, unknown>) {
-    return { url: await this.service.authorizeRedirect(query, oauthIssuer(request)), statusCode: HttpStatus.FOUND };
+    return {
+      url: await this.service.authorizeRedirect(
+        query,
+        oauthIssuer(request, isAssistantResource(checkResource(query.resource) || null)),
+      ),
+      statusCode: HttpStatus.FOUND,
+    };
   }
 
   @Post('authorize/start')
@@ -80,10 +87,14 @@ export class OAuthAppController {
   })
   start(
     @Auth() auth: AuthDto,
-    @Body() dto: OAuthAppAuthorizeStartDto,
     @Req() request: Request,
+    @Body() dto: OAuthAppAuthorizeStartDto,
   ): Promise<OAuthAppAuthorizeStartResponseDto> {
-    return this.service.start(auth, dto, oauthIssuer(request));
+    return this.service.start(
+      auth,
+      dto,
+      oauthIssuer(request, isAssistantResource(checkResource(dto.resource) || null)),
+    );
   }
 
   @Post('authorize')
@@ -102,7 +113,11 @@ export class OAuthAppController {
     @Req() request: Request,
     @Body() dto: OAuthAppAuthorizeDto,
   ): Promise<OAuthAppAuthorizeResponseDto> {
-    return this.service.authorize(auth, dto, oauthIssuer(request));
+    return this.service.authorize(
+      auth,
+      dto,
+      oauthIssuer(request, isAssistantResource(checkResource(dto.resource) || null)),
+    );
   }
 
   @ApiExcludeEndpoint()
@@ -120,9 +135,9 @@ export class OAuthAppController {
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   @Header('Pragma', 'no-cache')
-  token(@Body() body: Record<string, unknown>, @Res({ passthrough: true }) res: Response) {
+  token(@Body() body: Record<string, unknown>, @Req() request: Request, @Res({ passthrough: true }) res: Response) {
     allowAnyOrigin(res);
-    return this.service.token(body ?? {});
+    return this.service.token(body ?? {}, oauthIssuer(request, true));
   }
 
   @ApiExcludeEndpoint()
@@ -258,6 +273,6 @@ export class OAuthAppWellKnownController {
     allowAnyOrigin(res);
     const suffix = request.path.replace(/^\/\.well-known\/oauth-protected-resource/, '');
     const path = /^(?:\/[\w.~-]+)*$/.test(suffix) && suffix.length <= 200 ? suffix : '';
-    return this.service.getProtectedResourceMetadata(oauthIssuer(request), path);
+    return this.service.getProtectedResourceMetadata(oauthIssuer(request, path === ASSISTANT_MCP_PATH), path);
   }
 }

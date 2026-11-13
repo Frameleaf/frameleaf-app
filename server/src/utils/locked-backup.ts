@@ -114,13 +114,34 @@ export async function sealedFileOwnerKeyId(path: string): Promise<string | null>
   if (!(await isLockedFile(path).catch(() => false))) {
     return null;
   }
-  return (await lockedFileOwnerKeyId(path).catch(() => null)) ?? unreadableLockedKeyId(path);
+  return sealedOwnerKeyIdOrUnreadable(path);
+}
+
+/**
+ * The owner key id of a file already known to start like an encrypted one. Only a header that does not
+ * parse makes it `unreadableLockedKeyId` (reported, FL-1500). A filesystem error (the drive went away, the
+ * file was replaced mid-run) says nothing about the header, so it is thrown and the run fails safe rather
+ * than skip the missing-key check for a file that may well be sealed.
+ */
+export async function sealedOwnerKeyIdOrUnreadable(path: string): Promise<string> {
+  try {
+    const { keyIds } = await readHeader(path);
+    return keyIds[0]?.toString('hex') ?? unreadableLockedKeyId(path);
+  } catch (error) {
+    if (typeof (error as NodeJS.ErrnoException | null)?.code === 'string') {
+      throw error;
+    }
+    return unreadableLockedKeyId(path);
+  }
 }
 
 /**
  * FL-721: which of the owner key ids a backup's encrypted files need have no key file in that backup.
  * `keyless` fails the run: a key file that is live now but was not captured when the run started (the
- * encryption changed during it), or a file whose header cannot be read. `older` is only reported: a key
+ * encryption changed during it). `unreadable` (FL-1500) is only reported: the paths of files that start
+ * like an encrypted file but whose header cannot be read. No key file could open such a file, so failing
+ * the run would only stop every backup for everyone over one damaged (or oddly named plain) file; it is
+ * backed up as it is. `older` is only reported: a key
  * id that matches no live key file belongs to an item restored under an older key (spec §9), which no
  * backup could ever capture a key file for. Live key files are read only when some id is missing.
  */
@@ -128,14 +149,17 @@ export async function lockedKeyGaps(
   sealedKeyIds: Iterable<string>,
   capturedKeyIds: ReadonlySet<string>,
   mediaLocation: string,
-): Promise<{ keyless: string[]; older: string[] }> {
-  const missing = [...new Set(sealedKeyIds)].filter((id) => !capturedKeyIds.has(id));
+): Promise<{ keyless: string[]; older: string[]; unreadable: string[] }> {
+  const prefix = unreadableLockedKeyId('');
+  const ids = [...new Set(sealedKeyIds)];
+  const unreadable = ids.filter((id) => id.startsWith(prefix)).map((id) => id.slice(prefix.length));
+  const missing = ids.filter((id) => !id.startsWith(prefix) && !capturedKeyIds.has(id));
   if (missing.length === 0) {
-    return { keyless: [], older: [] };
+    return { keyless: [], older: [], unreadable };
   }
   const live = await liveLockedKeyIds(mediaLocation);
-  const keyless = missing.filter((id) => live.has(id) || id.startsWith(unreadableLockedKeyId('')));
-  return { keyless, older: missing.filter((id) => !keyless.includes(id)) };
+  const keyless = missing.filter((id) => live.has(id));
+  return { keyless, older: missing.filter((id) => !live.has(id)), unreadable };
 }
 
 /** The key id (hex) of this person's key file at `path`; null when it is missing, unreadable or someone else's. */

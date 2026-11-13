@@ -223,17 +223,19 @@ it('accepts signed-collector CoreML participation only as mixed and refuses alte
   ).toThrow();
 });
 
-it('accepts an OpenVINO accelerator report like CUDA, with no device collector and no GPU list required', () => {
+it('accepts an OpenVINO accelerator report like CUDA, with no device collector, from a computer with its graphics device', () => {
   const selected = { ...profile, spec: { ...profile.spec, provider: 'OpenVINOExecutionProvider' as const } };
   const issued = createDesktopModelChallenge(selected, id);
   const identity = { ...runtime, provider: selected.spec.provider, platform: 'linux', architecture: 'x86_64' } as const;
-  const hardware = {
+  const withoutDevices = {
     ...facts,
     system: 'Linux',
     architecture: 'x86_64',
-    packages: { 'onnxruntime-gpu': '1.30.0' },
+    // an OpenVINO runtime ships onnxruntime as the onnxruntime-openvino package
+    packages: { 'onnxruntime-openvino': '1.30.0' },
     providers: ['CPUExecutionProvider', 'OpenVINOExecutionProvider'],
   };
+  const hardware = { ...withoutDevices, openvinoDevices: ['CPU', 'GPU.0'] };
   const fingerprintOf = (value: unknown) =>
     createHash('sha256')
       .update(
@@ -292,6 +294,24 @@ it('accepts an OpenVINO accelerator report like CUDA, with no device collector a
     },
     // no approved OpenVINO runtime targets macOS
     { ...value, runtime: macos, runtimeFingerprint: fingerprintOf(macos) },
+    // OpenVINO on the processor (or an NPU, or no device list at all) is not an accelerator qualification
+    { ...value, runtime: withoutDevices, runtimeFingerprint: fingerprintOf(withoutDevices) },
+    ...[['CPU'], ['CPU', 'NPU'], []].map((openvinoDevices) => {
+      const changed = { ...withoutDevices, openvinoDevices };
+      return { ...value, runtime: changed, runtimeFingerprint: fingerprintOf(changed) };
+    }),
+    // the onnxruntime that ran must be a package the runtime names
+    {
+      ...value,
+      runtime: { ...hardware, packages: { 'onnxruntime-openvino': '1.29.0' } },
+      runtimeFingerprint: fingerprintOf({ ...hardware, packages: { 'onnxruntime-openvino': '1.29.0' } }),
+    },
+    // a malformed device list is refused, not ignored
+    {
+      ...value,
+      runtime: { ...hardware, openvinoDevices: ['GPU.0', 'x'.repeat(65)] },
+      runtimeFingerprint: fingerprintOf({ ...hardware, openvinoDevices: ['GPU.0', 'x'.repeat(65)] }),
+    },
   ])
     expect(() => DesktopQualificationReceipt.validate(changed, selected, issued, identity)).toThrow();
   // a provider outside the approved list stays refused

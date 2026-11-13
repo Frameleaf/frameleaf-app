@@ -77,6 +77,10 @@ export class OAuthGrantTable {
   @Column({ type: 'integer', default: 0 })
   policyRevision!: Generated<number>;
 
+  /** Marketplace grants stay bound to the account that approved them. */
+  @Column({ nullable: true })
+  frameleafAccountId!: string | null;
+
   @Column({ type: 'bytea', unique: true })
   refreshTokenHash!: Buffer;
 
@@ -136,6 +140,10 @@ export class OAuthAuthorizationCodeTable {
 
   @Column({ type: 'jsonb', nullable: true })
   accessPolicy!: Generated<ConnectAccessPolicy | null>;
+
+  /** Marketplace grants stay bound to the account that approved them. */
+  @Column({ nullable: true })
+  frameleafAccountId!: string | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
