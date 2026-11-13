@@ -32,6 +32,7 @@ import {
   mdiFolderOutline,
   mdiFingerprint,
   mdiFormTextboxPassword,
+  mdiHistory,
   mdiHomeOutline,
   mdiImageAlbum,
   mdiImageEditOutline,
@@ -276,6 +277,13 @@ export const USER_SETTINGS_AREAS: readonly {
     titleKey: 'frameleaf_apps_title',
     descriptionKey: 'frameleaf_apps_row_description',
     icon: mdiPuzzleOutline,
+  },
+  // FL-824: your own sign-ins and account changes (FL-808), opened from Your sign-in & privacy.
+  {
+    key: 'account-activity',
+    titleKey: 'frameleaf_account_activity_title',
+    descriptionKey: 'frameleaf_account_activity_row_description',
+    icon: mdiHistory,
   },
   {
     key: 'download-settings',

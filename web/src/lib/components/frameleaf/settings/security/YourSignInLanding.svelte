@@ -4,7 +4,7 @@
    * what belongs to the person signed in. It opens on "is my account safe" (protected, or the one
    * thing to look at: a device not used for a while, or no Locked PIN yet), then two short groups,
    * each row with its state: Signing in (how you sign in, signed-in devices, FL-860 connected apps,
-   * and API keys under Advanced) and Locked photos (Locked PIN, Always Locked, and FL-721 Locked encryption). An administrator also sees where the
+   * FL-824 account activity, and API keys under Advanced) and Locked photos (Locked PIN, Always Locked, and FL-721 Locked encryption). An administrator also sees where the
    * rules for everyone are set.
    */
   import { goto } from '$app/navigation';
@@ -18,6 +18,16 @@
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { idleDevices } from '$lib/components/frameleaf/settings/security/sign-in';
+  import {
+    ACTIVITY_PAGE_SIZE,
+    activityDay,
+    activityTime,
+    daysAgo,
+    lastSignIn,
+    recentFailures,
+    type ActivityEvent,
+  } from '$lib/frameleaf/account-activity';
+  import { locale } from '$lib/stores/preferences.store';
   import { commandCenterUrl, type SettingsHostSection } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { lockedEncryptionView } from '$lib/frameleaf/locked-encryption';
@@ -27,6 +37,7 @@
     getAuthStatus,
     getFrameleafAccountLink,
     getLockedEncryption,
+    getMyActivity,
     getOAuthAppGrants,
     getSessions,
     LockedEncryptionMode,
@@ -50,7 +61,17 @@
   let frameleaf = $state<FrameleafAccountLinkResponseDto | null>(null);
   let encryption = $state<LockedEncryptionStatusResponseDto | null>(null);
   let apps = $state<OAuthAppGrantDto[] | null>(null);
+  let activity = $state<ActivityEvent[] | null>(null);
   onMount(() => {
+    // FL-824: the account activity row says when you last signed in, or that sign-ins did not work
+    void (async () => {
+      try {
+        const page = await getMyActivity({ take: ACTIVITY_PAGE_SIZE });
+        activity = page.events;
+      } catch {
+        // the row says what the page holds instead
+      }
+    })();
     void (async () => {
       try {
         encryption = await getLockedEncryption();
@@ -150,6 +171,29 @@
       case 'connected-apps': {
         return apps ? $t('frameleaf_privacy_apps_count', { values: { count: apps.length } }) : fallback;
       }
+      case 'account-activity': {
+        if (!activity) {
+          return fallback;
+        }
+        const now = new Date();
+        const failures = recentFailures(activity, now);
+        if (failures) {
+          return $t('frameleaf_account_activity_row_failed', { values: { count: failures.events.length } });
+        }
+        const last = lastSignIn(activity);
+        if (!last) {
+          return activity.length === 0 ? $t('frameleaf_account_activity_row_none') : fallback;
+        }
+        const time = activityTime(last.createdAt, $locale);
+        const days = daysAgo(last.createdAt, now);
+        return days <= 0
+          ? $t('frameleaf_account_activity_row_last_today', { values: { time } })
+          : days === 1
+            ? $t('frameleaf_account_activity_row_last_yesterday', { values: { time } })
+            : $t('frameleaf_account_activity_row_last_on', {
+                values: { day: activityDay($t, last.createdAt, now, $locale) },
+              });
+      }
       case 'user-pin-code-settings': {
         return auth ? $t(auth.pinCode ? 'frameleaf_privacy_pin_set' : 'frameleaf_privacy_pin_none') : fallback;
       }
@@ -201,6 +245,12 @@
           return 'off';
         }
         return apps.some((app) => staleMonths(app.lastUsedAt) !== null) ? 'warn' : 'good';
+      }
+      case 'account-activity': {
+        if (!activity || activity.length === 0) {
+          return 'off';
+        }
+        return recentFailures(activity, new Date()) ? 'warn' : 'good';
       }
       case 'user-pin-code-settings': {
         return auth?.pinCode ? 'good' : 'off';
@@ -259,7 +309,12 @@
 
   <Section title={$t('frameleaf_privacy_signing_in')}>
     <!-- The sign-in provider is a row of "How you sign in" (Personal.jsx MySignIn), not a page of its own. -->
-    {@render items([...row('password'), ...row('authorized-devices'), ...row('connected-apps')])}
+    {@render items([
+      ...row('password'),
+      ...row('authorized-devices'),
+      ...row('connected-apps'),
+      ...row('account-activity'),
+    ])}
     <Advanced>
       {@render items(row('api-keys'))}
     </Advanced>

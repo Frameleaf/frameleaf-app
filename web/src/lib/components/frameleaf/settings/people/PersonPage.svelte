@@ -30,7 +30,9 @@
   import SpacePicker from '$lib/components/frameleaf/settings/people/SpacePicker.svelte';
   import { bytesOfGb, gbOfBytes, gibWords, spaceWords } from '$lib/components/frameleaf/settings/people/space';
   import { accountLifecycle, canChangeRole } from '$lib/frameleaf/accounts';
+  import { goto } from '$app/navigation';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { Route } from '$lib/route';
   import { handleUpdateUserAdmin } from '$lib/services/user-admin.service';
   import { copyToClipboard } from '$lib/utils';
   import type {
@@ -236,6 +238,12 @@
   </Section>
 
   <Section title={$t('frameleaf_userpage_security')} description={$t('frameleaf_userpage_security_description')}>
+    {#snippet action()}
+      <!-- FL-824: everything that happened on this account is in the household Activity log. -->
+      <Button onclick={() => void goto(Route.activityLog({ who: user.id }))}>
+        {$t('frameleaf_account_activity_log_all_of', { values: { name: user.name } })}
+      </Button>
+    {/snippet}
     <AccountSecurityPanel {user} {sessions}>
       {#if !user.isAdmin && !user.deletedAt}
         <DesktopMemberApproval userId={user.id} />
