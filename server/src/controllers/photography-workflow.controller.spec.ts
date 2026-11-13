@@ -17,7 +17,6 @@ import { PhotographySiteService } from 'src/services/photography-site.service.js
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 
 vi.mock('src/services/photography-workflow.service.js', () => ({ PhotographyWorkflowService: class {} }));
-vi.mock('src/services/photography-selfie.service.js', () => ({ PhotographySelfieService: class {} }));
 vi.mock('src/services/photography-site.service.js', () => ({ PhotographySiteService: class {} }));
 vi.mock('src/services/auth.service.js', () => ({ AuthService: class {} }));
 
