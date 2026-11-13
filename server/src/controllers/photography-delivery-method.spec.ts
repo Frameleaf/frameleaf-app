@@ -37,6 +37,8 @@ describe.each(['archive', 'output', 'file'] as const)('photography %s delivery r
       service,
       {} as never,
       { warn: vi.fn() } as unknown as LoggingRepository,
+      {} as never,
+      {} as never,
     );
     const response = Object.assign(new EventEmitter(), {
       statusCode,

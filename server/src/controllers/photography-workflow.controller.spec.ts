@@ -11,6 +11,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { PhotographyWorkflowController } from 'src/controllers/photography-workflow.controller.js';
 import { PhotographyGalleryDto } from 'src/dtos/photography-workflow.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
+import { PhotographySelfieService } from 'src/services/photography-selfie.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 
@@ -35,6 +37,8 @@ describe('photography OpenAPI contract', () => {
         { provide: PhotographyWorkflowService, useValue: {} },
         { provide: PhotographySiteService, useValue: {} },
         { provide: LoggingRepository, useValue: {} },
+        { provide: PhotographySelfieService, useValue: {} },
+        { provide: RateLimitRepository, useValue: {} },
       ],
     }).compile();
     const app = module.createNestApplication();

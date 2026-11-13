@@ -627,8 +627,22 @@ export class PhotographyWorkflowService {
   }
   async config(auth: AuthDto, id: string, input: PhotographyWorkflowConfigDto) {
     const dto = PhotographyWorkflowConfigDto.schema.parse(input);
-    return this.mutate(auth, id, dto.expectedRevision, async (value) => {
+    return this.mutate(auth, id, dto.expectedRevision, async (value, tx) => {
       await this.validateConfig(auth, id, value, dto.config);
+      if (dto.config.selfieSearch && !value.config.selfieSearch) {
+        const owner = await this.owner(auth, id);
+        const eligible = await this.eligible(
+          { ...owner, id, revision: '', value },
+          value.captures.map((capture) => capture.id),
+        );
+        const ids = await this.repository.missingGalleryFaceDetection(
+          value.captures.filter((capture) => eligible.has(capture.id)).map((capture) => capture.assetId),
+        );
+        await this.jobs.queueAllInTransaction(
+          tx,
+          ids.map((id) => ({ name: JobName.AssetDetectFaces, data: { id } })),
+        );
+      }
       value.config = dto.config;
     });
   }
@@ -1157,6 +1171,21 @@ export class PhotographyWorkflowService {
           !output.proofWatermark || hidden(output.proofWatermark) ? null : output.approvalPreviewPath,
       }));
   }
+  async selfieSource(id: string, token: string | undefined) {
+    const { row, recipient } = await this.guest(id, token);
+    if (!row.value.config.selfieSearch || !row.value.published) {
+      throw new NotFoundException('Selfie search unavailable');
+    }
+    const gallery = await this.guestView(row, recipient);
+    const visible = new Set(gallery.photos.map((photo) => photo.id));
+    return {
+      ownerId: row.ownerId,
+      captures: row.value.captures
+        .filter((capture) => visible.has(capture.id))
+        .map(({ id: captureId, assetId }) => ({ captureId, assetId })),
+    };
+  }
+
   private async guestView(row: WorkflowRow, recipient: Recipient, preview = false) {
     await this.hydrateOutputFiles(row.value);
     const shoot = (await this.workspace.get(row.ownerId))?.value.shoots.find((shoot) => shoot.id === row.id);
@@ -1257,6 +1286,7 @@ export class PhotographyWorkflowService {
     return {
       revision: row.revision,
       checkoutAvailable: this.checkoutAvailable(row.ownerId),
+      selfieSearch: !preview && row.value.config.selfieSearch === true,
       publishedGenerationId: published?.generationId ?? null,
       title: published?.config.title ?? row.value.config.title,
       mode: published?.config.mode ?? row.value.config.mode,

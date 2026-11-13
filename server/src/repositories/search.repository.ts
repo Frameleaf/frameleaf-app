@@ -628,6 +628,27 @@ export class SearchRepository {
     });
   }
 
+  async findGalleryFaces(ownerId: string, assetIds: string[], embedding: string, maxDistance: number) {
+    if (assetIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('asset_face')
+      .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+      .innerJoin('face_search', 'face_search.faceId', 'asset_face.id')
+      .select('asset_face.assetId')
+      .select(sql<number>`min(face_search.embedding <=> ${embedding}::vector)`.as('distance'))
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset_face.assetId', 'in', assetIds)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', 'is', true)
+      .groupBy('asset_face.assetId')
+      .having(sql<boolean>`min(face_search.embedding <=> ${embedding}::vector) <= ${maxDistance}`)
+      .orderBy('distance')
+      .orderBy('asset_face.assetId')
+      .execute();
+    return rows.map(({ assetId }) => assetId);
+  }
+
   @GenerateSql({ params: [DummyValue.STRING] })
   searchPlaces(placeName: string) {
     return this.db
