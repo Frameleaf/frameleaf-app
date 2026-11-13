@@ -132,6 +132,7 @@ export type BulkPayload = {
   timeZoneById?: Record<string, string>;
   minutes?: number;
   description?: string;
+  credits?: Partial<Record<'title' | 'artist' | 'copyright', string | null>>;
   latitude?: number;
   longitude?: number;
   /** FL-51: remove the location instead of setting one (the geolocation utility's "Remove location"). */
@@ -754,6 +755,12 @@ export const runBulkAction = async (
       const description = payload?.description ?? '';
       return finish(
         await runInChunks(runner, (batch) => gateway.updateAssets({ assetBulkUpdateDto: { ids: batch, description } })),
+      );
+    }
+    case 'change-credits': {
+      const credits = requirePayload(payload, 'credits');
+      return finish(
+        await runInChunks(runner, (batch) => gateway.updateAssets({ assetBulkUpdateDto: { ids: batch, ...credits } })),
       );
     }
     case 'change-location': {

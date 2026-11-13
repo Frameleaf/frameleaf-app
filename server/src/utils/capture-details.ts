@@ -17,6 +17,8 @@ export const CAPTURE_NUMERIC_TAGS = [
   'ImageCount',
 ] as const;
 
+export const PHOTOGRAPHY_INTAKE_CREDITS_KEY = 'photography-intake-credits';
+
 export type CaptureDetails = {
   altitude: number | null;
   shutterCount: number | null;
@@ -32,6 +34,7 @@ export type CaptureDetails = {
   lensSerialNumber: string | null;
   serialNumber: string | null;
   software: string | null;
+  title: string | null;
   artist: string | null;
   copyright: string | null;
   imageDirection: number | null;
@@ -48,7 +51,9 @@ const number = (value: unknown, min: number, max: number) => {
 };
 
 const text = (value: unknown, max = 200) => {
-  const joined = Array.isArray(value) ? value.join(', ') : value;
+  const joined = Array.isArray(value)
+    ? value.filter((item) => typeof item === 'string' && item.trim()).join(', ')
+    : value;
   if (typeof joined !== 'string' && typeof joined !== 'number') {
     return null;
   }
@@ -108,8 +113,9 @@ export function captureDetails(tags: Tags): CaptureDetails {
     lensSerialNumber: text(tags.LensSerialNumber, 100),
     serialNumber: text(tags.SerialNumber ?? tags.InternalSerialNumber ?? tags.BodySerialNumber, 100),
     software: text(tags.Software),
-    artist: text(tags.Artist ?? tags.Creator),
-    copyright: text(tags.Copyright ?? tags.Rights, 500),
+    title: text(tags.Title, 500) ?? text(tags.ObjectName, 500) ?? text(tags.XPTitle, 500),
+    artist: text(tags.Creator, 500) ?? text(tags.Artist, 500) ?? text(tags.ByLine, 500),
+    copyright: text(tags.Rights, 500) ?? text(tags.Copyright, 500) ?? text(tags.CopyrightNotice, 500),
     imageDirection: number(tags.GPSImgDirection, 0, 360),
     gpsSpeed: gpsSpeed(tags),
   };

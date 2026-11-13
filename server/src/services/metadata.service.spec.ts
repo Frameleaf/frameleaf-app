@@ -28,6 +28,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ImmichTags, MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { MetadataService, firstDateTime } from 'src/services/metadata.service.js';
+import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonGroupFactory } from 'test/factories/person-group.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
@@ -1981,6 +1982,25 @@ describe(MetadataService.name, () => {
       );
     });
 
+    it('uses shoot credits only when the file does not supply them', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.getMetadataByKey.mockResolvedValue({
+        key: PHOTOGRAPHY_INTAKE_CREDITS_KEY,
+        value: { artist: 'Shoot photographer', copyright: 'Shoot rights' },
+        updatedAt: new Date(),
+      });
+      mockReadTags({ Artist: 'File photographer' });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ artist: 'File photographer', copyright: 'Shoot rights' }),
+          lockedPropertiesBehavior: 'skip',
+        }),
+      );
+    });
+
     it('should save all metadata', async () => {
       const dateForTest = new Date('1970-01-01T00:00:00.000-11:30');
       const asset = AssetFactory.create();
@@ -2073,6 +2093,7 @@ describe(MetadataService.name, () => {
             lensSerialNumber: null,
             serialNumber: null,
             software: null,
+            title: null,
             artist: null,
             copyright: null,
             imageDirection: null,

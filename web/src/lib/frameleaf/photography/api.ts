@@ -31,6 +31,8 @@ export type Shoot = {
   /** The shoot brief (approved design, 2026-11-04: Intake › Shoot brief). */
   notes?: string;
   deliveryTarget?: string | null;
+  defaultArtist?: string;
+  defaultCopyright?: string;
 };
 export type Workspace = { revision: string | null; shoots: Shoot[] };
 /** The shoot's cover asset when it can be shown: no request is made for one the server says has no thumbnail. */
@@ -68,17 +70,21 @@ export const loadWorkspace = () => request<Workspace>('');
 export const saveWorkspace = (workspace: Workspace) =>
   request<Workspace>('', 'PUT', {
     expectedRevision: workspace.revision,
-    shoots: workspace.shoots.map(({ id, albumId, name, client, type, date, stage, notes, deliveryTarget }) => ({
-      id,
-      albumId,
-      name,
-      client,
-      type,
-      date,
-      stage,
-      ...(notes !== undefined && { notes }),
-      ...(deliveryTarget !== undefined && { deliveryTarget }),
-    })),
+    shoots: workspace.shoots.map(
+      ({ id, albumId, name, client, type, date, stage, notes, deliveryTarget, defaultArtist, defaultCopyright }) => ({
+        id,
+        albumId,
+        name,
+        client,
+        type,
+        date,
+        stage,
+        ...(notes !== undefined && { notes }),
+        ...(deliveryTarget !== undefined && { deliveryTarget }),
+        ...(defaultArtist !== undefined && { defaultArtist }),
+        ...(defaultCopyright !== undefined && { defaultCopyright }),
+      }),
+    ),
   });
 export const loadPhotos = (id: string, cursor?: string | null) =>
   request<PhotoPage>(`/${encodeURIComponent(id)}/photos${cursor ? '?cursor=' + encodeURIComponent(cursor) : ''}`);

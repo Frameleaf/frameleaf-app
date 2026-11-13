@@ -97,6 +97,11 @@ export interface ImmichTags extends Omit<Tags, TagsWithWrongTypes> {
 }
 
 export type SidecarTags = Partial<Tags> & {
+  'XMP-dc:Title'?: string | null;
+  'XMP-dc:Creator'?: string | null;
+  'XMP-dc:Rights'?: string | null;
+  'XMP-tiff:Artist'?: string | null;
+  'XMP-tiff:Copyright'?: string | null;
   'XMP-mwg-rs:RegionInfo'?: ImmichTags['RegionInfo'] | null;
   'XMP-iptcExt:PersonInImage'?: string[] | null;
 };
@@ -246,6 +251,10 @@ export class MetadataRepository {
       await this.evictLocationFree(key, entry);
     }
     await Promise.all([this.exiftool.end(), this.locationTool.end()]);
+  }
+
+  readAllTags(path: string): Promise<Record<string, unknown>> {
+    return this.exiftool.readRaw(path, { readArgs: ['-api', 'largefilesupport=1', '-G1:4', '-a', '-u'] });
   }
 
   async readTags(path: string): Promise<ImmichTags> {

@@ -1,4 +1,11 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { isNumber, isUndefined, omitBy } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -13,6 +20,7 @@ import { AssetFontResponseDto } from 'src/dtos/asset-font.dto.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AssetResponseDto, SanitizedAssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
+  AssetAllMetadataResponseDto,
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
   AssetCopyDto,
@@ -63,13 +71,16 @@ import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
+import { collectAllMetadata } from 'src/utils/all-metadata.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
+import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { updateLockedColumns } from 'src/utils/database.js';
 import { extractTimeZone, getAssetDateTimeUpdates, withDateTimeOffset } from 'src/utils/date.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { fontFactsFromName, isBrowserFont } from 'src/utils/font-file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { withPlainCopy } from 'src/utils/locked-read.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, isLockedRow } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
@@ -77,6 +88,7 @@ import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPoli
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
+import { OriginalLocationPolicy, getOriginalLocationPolicy } from 'src/utils/partner-location.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 import { TrashReviewAction } from 'src/utils/trash-review.js';
 
@@ -282,8 +294,21 @@ export class AssetService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
     const { libraryScope, ...editDto } = dto;
-    const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
-      editDto;
+    const {
+      description,
+      title,
+      artist,
+      copyright,
+      dateTimeOriginal,
+      latitude,
+      longitude,
+      rating,
+      visibility,
+      city,
+      state,
+      country,
+      ...rest
+    } = editDto;
     const locking = visibility === AssetVisibility.Locked;
     const originIds = locking
       ? await this.assetRepository.findLockGroupIds([id, ...(rest.livePhotoVideoId ? [rest.livePhotoVideoId] : [])])
@@ -297,6 +322,9 @@ export class AssetService extends BaseService {
         const sidecarIds = await this.updateExif({
           id,
           description,
+          title,
+          artist,
+          copyright,
           dateTimeOriginal,
           latitude,
           longitude,
@@ -496,8 +524,21 @@ export class AssetService extends BaseService {
   }
 
   private async updateLivePhoto(auth: AuthDto, id: string, dto: UpdateAssetDto & { livePhotoVideoId: string | null }) {
-    const { description, dateTimeOriginal, latitude, longitude, rating, visibility, city, state, country, ...rest } =
-      dto;
+    const {
+      description,
+      title,
+      artist,
+      copyright,
+      dateTimeOriginal,
+      latitude,
+      longitude,
+      rating,
+      visibility,
+      city,
+      state,
+      country,
+      ...rest
+    } = dto;
     const result = await this.assetRepository.withLivePhotoUpdate(id, dto.livePhotoVideoId, async (assets, access) => {
       await requireAccess(access, { auth, permission: Permission.AssetUpdate, ids: [id] });
       const photo = await assets.getById(id);
@@ -536,7 +577,20 @@ export class AssetService extends BaseService {
         if (group.some((asset) => asset.ownerId !== auth.user.id)) throw new BadRequestException('Asset not found');
       }
       const sidecarIds = await this.updateExif(
-        { id, description, dateTimeOriginal, latitude, longitude, rating, city, state, country },
+        {
+          id,
+          description,
+          title,
+          artist,
+          copyright,
+          dateTimeOriginal,
+          latitude,
+          longitude,
+          rating,
+          city,
+          state,
+          country,
+        },
         assets,
         motionIds,
       );
@@ -575,6 +629,9 @@ export class AssetService extends BaseService {
       longitude,
       rating,
       description,
+      title,
+      artist,
+      copyright,
       duplicateId,
       dateTimeRelative,
       timeZone,
@@ -614,6 +671,9 @@ export class AssetService extends BaseService {
             longitude: clearLocation ? undefined : (longitude ?? undefined),
             rating,
             description,
+            title,
+            artist,
+            copyright,
             dateTimeOriginal: withDateTimeOffset(dateTimeOriginal),
           },
           isUndefined,
@@ -717,9 +777,18 @@ export class AssetService extends BaseService {
     // place once unlocked. Upstream removed it from all albums when it moved into the Locked folder.
 
     await this.emitAssetsChanged(ids);
-    // A sidecar holds the description, capture date and time zone, location and rating only: a favorite,
-    // archive, lock or duplicate change leaves it as it is, so it queues no rewrite of every item's file.
-    const sidecarFields = [dateTimeOriginal, latitude, longitude, rating, description, dateTimeRelative, timeZone];
+    const sidecarFields = [
+      dateTimeOriginal,
+      latitude,
+      longitude,
+      rating,
+      description,
+      title,
+      artist,
+      copyright,
+      dateTimeRelative,
+      timeZone,
+    ];
     if (sidecarFields.some((value) => value !== undefined)) {
       await this.jobRepository.queueAll(
         [...ids, ...locationVideoIds].map((id) => ({ name: JobName.SidecarWrite, data: { id } })),
@@ -1327,9 +1396,53 @@ export class AssetService extends BaseService {
     return this.assetJobRepository.updateProcessingFailures(auth, dto);
   }
 
+  private readonly allMetadataCache = new Map<string, { expiresAt: number; data: AssetAllMetadataResponseDto }>();
+
+  async getAllMetadata(auth: AuthDto, id: string): Promise<AssetAllMetadataResponseDto> {
+    if (getOriginalLocationPolicy({ auth, purpose: 'download' }) !== OriginalLocationPolicy.Serve) {
+      throw new ForbiddenException('This shared link hides metadata');
+    }
+    await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
+
+    const asset = await this.assetRepository.getById(id, { files: true });
+    if (!asset || (isLockedRow(asset) && getLockedOwnerId(auth) !== asset.ownerId)) {
+      throw new ForbiddenException('Asset metadata is unavailable');
+    }
+
+    const { sidecarFile } = getAssetFiles(asset.files ?? []);
+    const paths = [{ name: 'Original', path: asset.originalPath }];
+    if (sidecarFile) paths.push({ name: 'Sidecar', path: sidecarFile.path });
+
+    const stamps = await Promise.all(paths.map(({ path }) => this.storageRepository.stat(path)));
+    const key = JSON.stringify([
+      asset.checksum,
+      !!auth.sharedLink,
+      paths.map(({ path }, index) => [path, stamps[index].ino, stamps[index].size, stamps[index].ctimeMs]),
+    ]);
+    const now = Date.now();
+    const cached = this.allMetadataCache.get(key);
+    if (cached && cached.expiresAt > now) return cached.data;
+
+    const sources = await Promise.all(
+      paths.map(async ({ name, path }) => ({
+        name,
+        values: await withPlainCopy(path, (plain) => this.metadataRepository.readAllTags(plain), {
+          viewerId: auth.sharedLink ? undefined : auth.user.id,
+        }),
+      })),
+    );
+    const data = collectAllMetadata(sources, !!auth.sharedLink);
+    this.allMetadataCache.delete(key);
+    this.allMetadataCache.set(key, { expiresAt: now + 60 * 60 * 1000, data });
+    if (this.allMetadataCache.size > 16) {
+      this.allMetadataCache.delete(this.allMetadataCache.keys().next().value!);
+    }
+    return data;
+  }
+
   async getMetadata(auth: AuthDto, id: string): Promise<AssetMetadataResponseDto[]> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
-    return this.assetRepository.getMetadata(id);
+    return (await this.assetRepository.getMetadata(id)).filter((item) => item.key !== PHOTOGRAPHY_INTAKE_CREDITS_KEY);
   }
 
   /** FL-1359: what a font in Boards says about itself. Until the file has been read, its name stands in. */
@@ -1425,7 +1538,8 @@ export class AssetService extends BaseService {
   async getMetadataByKey(auth: AuthDto, id: string, key: string): Promise<AssetMetadataResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
 
-    const item = await this.assetRepository.getMetadataByKey(id, key);
+    const item =
+      key === PHOTOGRAPHY_INTAKE_CREDITS_KEY ? undefined : await this.assetRepository.getMetadataByKey(id, key);
     if (!item) {
       throw new BadRequestException(`Metadata with key "${key}" not found for asset with id "${id}"`);
     }
@@ -1434,6 +1548,7 @@ export class AssetService extends BaseService {
 
   async deleteMetadataByKey(auth: AuthDto, id: string, key: string): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
+    if (key === PHOTOGRAPHY_INTAKE_CREDITS_KEY) throw new BadRequestException('Metadata key is reserved');
     await this.assetRepository.deleteMetadataByKey(id, key);
   }
 
@@ -1489,6 +1604,9 @@ export class AssetService extends BaseService {
     dto: {
       id: string;
       description?: string;
+      title?: string | null;
+      artist?: string | null;
+      copyright?: string | null;
       dateTimeOriginal?: string;
       latitude?: number | null;
       longitude?: number | null;
@@ -1521,6 +1639,9 @@ export class AssetService extends BaseService {
     const writes = omitBy(
       {
         description,
+        title: dto.title,
+        artist: dto.artist,
+        copyright: dto.copyright,
         dateTimeOriginal: withDateTimeOffset(dateTimeOriginal),
         estimatedDateTimeOriginal: dto.dateEstimated ? withDateTimeOffset(dateTimeOriginal) : undefined,
         timeZone: extractTimeZone(dateTimeOriginal)?.name,
