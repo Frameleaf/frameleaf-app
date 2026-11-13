@@ -1,3 +1,6 @@
+import { ConnectEventService } from 'src/services/connect-event.service.js';
+import { ConnectMediaService } from 'src/services/connect-media.service.js';
+import { ConnectService } from 'src/services/connect.service.js';
 import { AccountEventService } from 'src/services/account-event.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumChangeRunService } from 'src/services/album-change-run.service.js';
@@ -232,6 +235,9 @@ export const services = [
   McpService,
   McpPreviewService,
   OAuthAppService,
+  ConnectService,
+  ConnectEventService,
+  ConnectMediaService,
   AlbumItemsService,
   AssetSourceService,
   BookmarkService,

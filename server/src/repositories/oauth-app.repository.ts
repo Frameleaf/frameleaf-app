@@ -23,6 +23,8 @@ const grantColumns = [
   'oauth_grant.clientId',
   'oauth_grant.scopes',
   'oauth_grant.resource',
+  'oauth_grant.accessPolicy',
+  'oauth_grant.policyRevision',
   'oauth_grant.accessExpiresAt',
   'oauth_grant.createdAt',
   'oauth_grant.lastUsedAt',

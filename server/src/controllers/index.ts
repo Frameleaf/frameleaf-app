@@ -1,3 +1,6 @@
+import { ConnectEventController } from 'src/controllers/connect-event.controller.js';
+import { ConnectMediaController } from 'src/controllers/connect-media.controller.js';
+import { ConnectController } from 'src/controllers/connect.controller.js';
 import { AccountEventAdminController, AccountEventController } from 'src/controllers/account-event.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumCleanupController } from 'src/controllers/album-cleanup.controller.js';
@@ -184,6 +187,9 @@ export const controllers = [
   BrowserExtensionSignInController,
   McpController,
   OAuthAppController,
+  ConnectController,
+  ConnectEventController,
+  ConnectMediaController,
   OAuthAppAdminController,
   OAuthAppWellKnownController,
   AlbumItemsController,

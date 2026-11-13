@@ -13,6 +13,8 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import {
   OAuthAppAdminClientDto,
+  OAuthAppAccessPolicyDto,
+  OAuthAppCreateClientDto,
   OAuthAppAuthorizeDto,
   OAuthAppAuthorizeResponseDto,
   OAuthAppAuthorizeStartDto,
@@ -22,6 +24,13 @@ import {
 } from 'src/dtos/oauth-app.dto.js';
 import { AccountEventAction } from 'src/enum.js';
 import { toAccountEventVia } from 'src/repositories/account-event.repository.js';
+import { ConnectRepository } from 'src/repositories/connect.repository.js';
+import {
+  CONNECT_PATH,
+  CONNECT_SCOPES,
+  ConnectAccessPolicySchema,
+  isConnectResource,
+} from 'src/utils/connect-policy.js';
 import { OAuthAppRepository, OAuthClient } from 'src/repositories/oauth-app.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isCodeChallenge, verifierMatches } from 'src/utils/browser-extension-sign-in.js';
@@ -113,6 +122,9 @@ export class OAuthAppService extends BaseService {
   @Inject(OAuthAppRepository)
   private oauthAppRepository!: OAuthAppRepository;
 
+  @Inject(ConnectRepository)
+  private connectRepository!: ConnectRepository;
+
   /** Use is recorded at most once an hour per grant and process. */
   private usesRecorded = new Map<string, number>();
 
@@ -132,7 +144,7 @@ export class OAuthAppService extends BaseService {
       codeChallengeMethod: query.code_challenge_method,
       resource: query.resource,
     };
-    const checked = await this.checkRequest(params);
+    const checked = await this.checkRequest(params, issuer);
     if ('fault' in checked) {
       const fault = checked.fault;
       if (!fault.target) {
@@ -164,9 +176,20 @@ export class OAuthAppService extends BaseService {
   }
 
   /** `POST oauth/apps/authorize/start`: what the Allow page shows for a request. */
-  async start(auth: AuthDto, dto: OAuthAppAuthorizeStartDto): Promise<OAuthAppAuthorizeStartResponseDto> {
-    const checked = await this.checkPage(auth, dto);
-    return { client: this.mapClient(checked.client, checked.redirectUri), scopes: checked.scopes };
+  async start(
+    auth: AuthDto,
+    dto: OAuthAppAuthorizeStartDto,
+    issuer?: string,
+  ): Promise<OAuthAppAuthorizeStartResponseDto> {
+    const checked = await this.checkPage(auth, dto, issuer);
+    const requiresAccessPolicy = isConnectResource(checked.resource);
+    return {
+      client: this.mapClient(checked.client, checked.redirectUri),
+      scopes: checked.scopes,
+      resource: checked.resource,
+      requiresAccessPolicy,
+      availableAlbums: requiresAccessPolicy ? await this.connectRepository.availableAlbums(auth.user.id) : [],
+    };
   }
 
   /**
@@ -174,7 +197,7 @@ export class OAuthAppService extends BaseService {
    * app). Allow makes the single-use code; Deny makes nothing. Either is in the account activity.
    */
   async authorize(auth: AuthDto, dto: OAuthAppAuthorizeDto, issuer: string): Promise<OAuthAppAuthorizeResponseDto> {
-    const checked = await this.checkPage(auth, dto);
+    const checked = await this.checkPage(auth, dto, issuer);
     const name = this.mapClient(checked.client, checked.redirectUri).name;
     if (!dto.allow) {
       await this.recordAccountEvent({
@@ -191,6 +214,12 @@ export class OAuthAppService extends BaseService {
         }),
       };
     }
+    const restricted = isConnectResource(checked.resource);
+    const parsed = ConnectAccessPolicySchema.safeParse(dto.accessPolicy);
+    if ((restricted && !parsed.success) || (!restricted && dto.accessPolicy !== undefined))
+      throw requestError('invalid_access_policy', 'Connect requires an explicit access policy');
+    const accessPolicy = restricted && parsed.success ? parsed.data : null;
+    if (accessPolicy) await this.connectRepository.validateAlbums(auth.user.id, accessPolicy);
     const code = this.cryptoRepository.randomBytesAsText(32);
     await this.oauthAppRepository.createCode({
       codeHash: this.cryptoRepository.hashSha256(code),
@@ -201,6 +230,7 @@ export class OAuthAppService extends BaseService {
       codeChallenge: checked.codeChallenge,
       scopes: checked.scopes,
       resource: checked.resource,
+      accessPolicy,
       expiresAt: new Date(Date.now() + OAUTH_CODE_TTL_SECONDS * 1000),
     });
     await this.recordAccountEvent({
@@ -354,9 +384,13 @@ export class OAuthAppService extends BaseService {
       resource: `${issuer}${path}`,
       authorization_servers: [issuer],
       scopes_supported:
-        path === MCP_PATH
-          ? OAUTH_SCOPES_SUPPORTED.filter((scope) => scope !== 'library:download')
-          : OAUTH_SCOPES_SUPPORTED,
+        path === CONNECT_PATH
+          ? [...CONNECT_SCOPES]
+          : OAUTH_SCOPES_SUPPORTED.filter(
+              (scope) =>
+                !['photos:upload', 'boards:upload', 'events:read'].includes(scope) &&
+                (path !== MCP_PATH || scope !== 'library:download'),
+            ),
       bearer_methods_supported: ['header'],
       resource_name: 'Frameleaf',
     };
@@ -388,6 +422,7 @@ export class OAuthAppService extends BaseService {
   private requireActiveGrant(grant: Awaited<ReturnType<OAuthAppRepository['getByAccessToken']>>) {
     if (
       !grant?.user ||
+      (isConnectResource(grant?.resource) && !ConnectAccessPolicySchema.safeParse(grant?.accessPolicy).success) ||
       grant.revokedAt ||
       new Date(grant.accessExpiresAt).getTime() <= Date.now() ||
       OAUTH_SCOPES_SUPPORTED.every((scope) => !grant.scopes.includes(scope))
@@ -411,6 +446,8 @@ export class OAuthAppService extends BaseService {
         clientName: this.clientName(grant.clientName, grant.clientRedirectUris),
         scopes: grant.scopes,
         resource: grant.resource,
+        accessPolicy: grant.accessPolicy ?? null,
+        policyRevision: grant.policyRevision ?? 0,
       },
     };
   }
@@ -419,6 +456,10 @@ export class OAuthAppService extends BaseService {
   async getGrants(auth: AuthDto): Promise<OAuthAppGrantDto[]> {
     this.requirePerson(auth);
     const grants = await this.oauthAppRepository.getActiveGrants(auth.user.id);
+    const availableAlbums =
+      auth.session && grants.some((grant) => grant.accessPolicy)
+        ? await this.connectRepository.availableAlbums(auth.user.id)
+        : [];
     return grants.map((grant) => ({
       id: grant.id,
       client: this.mapClient(
@@ -426,6 +467,10 @@ export class OAuthAppService extends BaseService {
         grant.clientRedirectUris[0],
       ),
       scopes: grant.scopes,
+      resource: grant.resource,
+      accessPolicy: grant.accessPolicy ?? null,
+      policyRevision: grant.policyRevision ?? 0,
+      availableAlbums: grant.accessPolicy ? availableAlbums : [],
       createdAt: new Date(grant.createdAt).toISOString(),
       lastUsedAt: grant.lastUsedAt ? new Date(grant.lastUsedAt).toISOString() : null,
       lastUsedVia: grant.lastUsedVia,
@@ -459,6 +504,33 @@ export class OAuthAppService extends BaseService {
       createdAt: new Date(client.createdAt).toISOString(),
       activeUsers: Number(client.activeUsers ?? 0),
     }));
+  }
+
+  async narrowAccessPolicy(auth: AuthDto, id: string, dto: OAuthAppAccessPolicyDto) {
+    this.requireSession(auth);
+    const parsed = ConnectAccessPolicySchema.safeParse(dto);
+    if (!parsed.success) throw requestError('invalid_access_policy', 'Invalid Connect access policy');
+    return this.connectRepository.narrowPolicy(auth.user.id, id, parsed.data);
+  }
+
+  async createClient(auth: AuthDto, dto: OAuthAppCreateClientDto) {
+    this.requireSession(auth);
+    if (!auth.user.isAdmin) throw new ForbiddenException();
+    const redirectUris = dto.redirectUris.map(checkRegisteredRedirectUri);
+    const name = cleanClientName(dto.name);
+    if (!name || !redirectUris.length || redirectUris.includes(null))
+      throw requestError('invalid_redirect_uri', 'Invalid app return address');
+    const client = await this.oauthAppRepository.createClient(
+      { name, redirectUris: redirectUris as string[], logoUri: null, dynamic: false, createdById: auth.user.id },
+      OAUTH_DYNAMIC_CLIENT_LIMIT,
+    );
+    if (!client) throw new BadRequestException('Unable to register app');
+    return {
+      clientId: client.id,
+      name: client.name,
+      redirectUris: client.redirectUris,
+      tokenEndpointAuthMethod: 'none' as const,
+    };
   }
 
   /** `DELETE admin/oauth/apps/{id}`: removes an app and every grant to it; each person sees it in their activity. */
@@ -498,7 +570,8 @@ export class OAuthAppService extends BaseService {
       text(body.client_id) !== found.clientId ||
       text(body.redirect_uri) !== found.redirectUri ||
       !verifierMatches(text(body.code_verifier) ?? '', found.codeChallenge) ||
-      resource !== found.resource
+      resource !== found.resource ||
+      (isConnectResource(found.resource) && !ConnectAccessPolicySchema.safeParse(found.accessPolicy).success)
     ) {
       throw invalid;
     }
@@ -513,6 +586,8 @@ export class OAuthAppService extends BaseService {
       clientId: client.id,
       scopes: found.scopes,
       resource: found.resource,
+      accessPolicy: found.accessPolicy ?? null,
+      policyRevision: found.accessPolicy ? 1 : 0,
       refreshTokenHash: this.cryptoRepository.hashSha256(tokens.refresh_token),
       accessTokenHash: this.cryptoRepository.hashSha256(tokens.access_token),
       accessExpiresAt: tokens.expiresAt,
@@ -542,7 +617,14 @@ export class OAuthAppService extends BaseService {
       }
       throw invalid;
     }
-    if (grant.revokedAt || text(body.client_id) !== grant.clientId) {
+    if (
+      grant.revokedAt ||
+      text(body.client_id) !== grant.clientId ||
+      (isConnectResource(grant.resource) && !ConnectAccessPolicySchema.safeParse(grant.accessPolicy).success) ||
+      (body.resource !== undefined && checkResource(body.resource) !== grant.resource) ||
+      body.accessPolicy !== undefined ||
+      body.access_policy !== undefined
+    ) {
       throw invalid;
     }
     if (body.scope !== undefined) {
@@ -622,9 +704,9 @@ export class OAuthAppService extends BaseService {
   }
 
   /** The Allow page's checks: a signed-in person and a request with nothing wrong in it. */
-  private async checkPage(auth: AuthDto, dto: OAuthAppAuthorizeStartDto): Promise<CheckedRequest> {
+  private async checkPage(auth: AuthDto, dto: OAuthAppAuthorizeStartDto, issuer?: string): Promise<CheckedRequest> {
     this.requireSession(auth);
-    const checked = await this.checkRequest(dto);
+    const checked = await this.checkRequest(dto, issuer);
     if ('fault' in checked) {
       const fault = checked.fault;
       throw fault.target
@@ -634,7 +716,10 @@ export class OAuthAppService extends BaseService {
     return checked;
   }
 
-  private async checkRequest(params: AuthorizeParams): Promise<CheckedRequest | { fault: RequestFault }> {
+  private async checkRequest(
+    params: AuthorizeParams,
+    issuer?: string,
+  ): Promise<CheckedRequest | { fault: RequestFault }> {
     const clientId = text(params.clientId);
     const client = clientId && UUID.test(clientId) ? await this.oauthAppRepository.getClient(clientId) : undefined;
     const redirectUri = client ? matchRedirectUri(client.redirectUris, params.redirectUri) : null;
@@ -662,6 +747,14 @@ export class OAuthAppService extends BaseService {
     const resource = checkResource(params.resource);
     if (resource === false) {
       return fault('invalid_target', 'The resource is not a valid address');
+    }
+    if (isConnectResource(resource)) {
+      if (!issuer || resource !== `${issuer}${CONNECT_PATH}`)
+        return fault('invalid_target', 'Connect resource must match this server');
+      if (scopes.some((scope) => !(CONNECT_SCOPES as readonly string[]).includes(scope)))
+        return fault('invalid_scope', 'This scope is not available to Connect');
+    } else if (scopes.some((scope) => ['photos:upload', 'boards:upload', 'events:read'].includes(scope))) {
+      return fault('invalid_scope', 'This scope requires the Connect resource');
     }
     if (resource && new URL(resource).pathname === MCP_PATH && scopes.includes('library:download')) {
       return fault('invalid_scope', 'MCP apps can’t download original files');

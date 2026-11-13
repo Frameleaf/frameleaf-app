@@ -1,3 +1,18 @@
+import {
+  ConnectReceiptTable,
+  ConnectRenditionTicketTable,
+  ConnectProvenanceTable,
+} from 'src/schema/tables/connect-media.table.js';
+import {
+  ConnectEventStreamTable,
+  ConnectEventTable,
+  ConnectAssetReadyTable,
+  ConnectEventCursorTable,
+  connect_event_append,
+  connect_event_asset_ready,
+  connect_event_album_added,
+  connect_event_studio_published,
+} from 'src/schema/tables/connect-event.table.js';
 import { Database, Extensions, Generated, Int8 } from '@frameleaf/sql-tools';
 import type { QueueDatabase } from 'src/queue/table-types.js';
 import {
@@ -326,6 +341,13 @@ import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 @Database({ name: 'frameleaf' })
 export class ImmichDatabase {
   tables = [
+    ConnectReceiptTable,
+    ConnectRenditionTicketTable,
+    ConnectProvenanceTable,
+    ConnectEventStreamTable,
+    ConnectEventTable,
+    ConnectAssetReadyTable,
+    ConnectEventCursorTable,
     PhotoLocationEstimateTable,
     PhotoLocationScanTable,
     PhotoLocationScanItemTable,
@@ -586,6 +608,10 @@ export class ImmichDatabase {
   ];
 
   functions = [
+    connect_event_append,
+    connect_event_asset_ready,
+    connect_event_album_added,
+    connect_event_studio_published,
     photo_location_invalidate,
     desktop_clip_producer_guard,
     immich_uuid_v7,
@@ -694,6 +720,13 @@ export interface DB extends QueueDatabase {
   capture_receipt: CaptureReceiptTable;
   browser_extension_sign_in_code: BrowserExtensionSignInCodeTable;
   browser_extension_access: BrowserExtensionAccessTable;
+  connect_receipt: ConnectReceiptTable;
+  connect_rendition_ticket: ConnectRenditionTicketTable;
+  connect_provenance: ConnectProvenanceTable;
+  connect_event_stream: ConnectEventStreamTable;
+  connect_event: ConnectEventTable;
+  connect_asset_ready: ConnectAssetReadyTable;
+  connect_event_cursor: ConnectEventCursorTable;
   oauth_client: OAuthClientTable;
   oauth_grant: OAuthGrantTable;
   oauth_authorization_code: OAuthAuthorizationCodeTable;

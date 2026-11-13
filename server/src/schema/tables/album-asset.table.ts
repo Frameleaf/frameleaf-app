@@ -1,3 +1,4 @@
+import { connect_event_album_added } from 'src/schema/tables/connect-event.table.js';
 import {
   AfterDeleteTrigger,
   CreateDateColumn,
@@ -12,6 +13,13 @@ import { album_asset_delete_audit, media_import_collection_removed } from 'src/s
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
+@Trigger({
+  name: 'connect_event_album_added',
+  timing: 'after',
+  actions: ['insert'],
+  scope: 'row',
+  functionName: connect_event_album_added.name,
+})
 @Table({ name: 'album_asset' })
 @Trigger({
   name: 'media_import_collection_removed',

@@ -1,3 +1,4 @@
+import { ConnectAccessPolicySchema } from 'src/utils/connect-policy.js';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 
@@ -42,11 +43,25 @@ const OAuthAppAuthorizeStartResponseSchema = z
   .object({
     client: OAuthAppClientSchema,
     scopes: z.array(z.string()).describe('The scopes the app asked for, all of which this server offers'),
+    resource: z.string().nullable(),
+    requiresAccessPolicy: z.boolean(),
+    availableAlbums: z.array(
+      z.object({
+        id: z.uuid(),
+        name: z.string(),
+        workspace: z.enum(['photo', 'design', 'both']),
+        canWrite: z.boolean(),
+      }),
+    ),
   })
   .meta({ id: 'OAuthAppAuthorizeStartResponseDto' });
 
 const OAuthAppAuthorizeSchema = z
-  .object({ ...AuthorizeRequestShape, allow: z.boolean().describe('true for Allow, false for Deny') })
+  .object({
+    ...AuthorizeRequestShape,
+    allow: z.boolean().describe('true for Allow, false for Deny'),
+    accessPolicy: ConnectAccessPolicySchema.optional(),
+  })
   .strict()
   .meta({ id: 'OAuthAppAuthorizeDto' });
 
@@ -65,6 +80,17 @@ const OAuthAppGrantSchema = z
     id: z.string().describe('The grant id; Remove revokes it'),
     client: OAuthAppClientSchema,
     scopes: z.array(z.string()).describe('What you allowed'),
+    resource: z.string().nullable(),
+    accessPolicy: ConnectAccessPolicySchema.nullable(),
+    policyRevision: z.int(),
+    availableAlbums: z.array(
+      z.object({
+        id: z.uuid(),
+        name: z.string(),
+        workspace: z.enum(['photo', 'design', 'both']),
+        canWrite: z.boolean(),
+      }),
+    ),
     createdAt: z.string().describe('When you chose Allow'),
     lastUsedAt: z.string().nullable().describe('When the app last used its access, to the hour; null if never'),
     lastUsedVia: z
@@ -90,3 +116,31 @@ export class OAuthAppAuthorizeResponseDto extends createZodDto(OAuthAppAuthorize
 export class OAuthAppGrantDto extends createZodDto(OAuthAppGrantSchema) {}
 export class OAuthAppAdminClientDto extends createZodDto(OAuthAppAdminClientSchema) {}
 export type OAuthAppClientDto = z.infer<typeof OAuthAppClientSchema>;
+
+export class OAuthAppAccessPolicyDto extends createZodDto(ConnectAccessPolicySchema) {}
+export class OAuthAppCreateClientDto extends createZodDto(
+  z
+    .object({
+      name: z.string().min(1).max(80),
+      redirectUris: z.array(z.string().max(2048)).min(1).max(10),
+      preset: z.enum(['make', 'zapier']).optional(),
+    })
+    .strict()
+    .meta({ id: 'OAuthAppCreateClientDto' }),
+) {}
+
+export class OAuthAppCreateClientResponseDto extends createZodDto(
+  z
+    .object({
+      clientId: z.uuid(),
+      name: z.string(),
+      redirectUris: z.array(z.string()),
+      tokenEndpointAuthMethod: z.literal('none'),
+    })
+    .meta({ id: 'OAuthAppCreateClientResponseDto' }),
+) {}
+export class OAuthAppAccessPolicyResponseDto extends createZodDto(
+  z
+    .object({ accessPolicy: ConnectAccessPolicySchema, policyRevision: z.int() })
+    .meta({ id: 'OAuthAppAccessPolicyResponseDto' }),
+) {}

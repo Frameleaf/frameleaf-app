@@ -1,3 +1,6 @@
+import { ConnectEventRepository } from 'src/repositories/connect-event.repository.js';
+import { ConnectMediaRepository } from 'src/repositories/connect-media.repository.js';
+import { ConnectRepository } from 'src/repositories/connect.repository.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
@@ -172,6 +175,9 @@ export const repositories = [
   CaptureRepository,
   BrowserExtensionSignInRepository,
   OAuthAppRepository,
+  ConnectRepository,
+  ConnectEventRepository,
+  ConnectMediaRepository,
   AssetSourceRepository,
   BookmarkRepository,
   DevelopBatchRepository,

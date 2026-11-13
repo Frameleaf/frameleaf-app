@@ -92,6 +92,7 @@ import {
 } from 'src/utils/frameleaf-sign-in.js';
 import { HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { lockedKeys } from 'src/utils/locked-key-holder.js';
+import { CONNECT_PATH, isConnectResource, requireConnectPolicy } from 'src/utils/connect-policy.js';
 import { MCP_PATH, isOAuthAccessToken } from 'src/utils/oauth-apps.js';
 import { getPreferences, relockMinutesOf } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
@@ -186,6 +187,8 @@ export type ValidateRequest = {
     /** `false` explicitly means no permission is required, which otherwise defaults to `all` */
     permission?: Permission | false;
     uri: string;
+    connect?: boolean;
+    connectResource?: string;
     /** FL-34: `false` leaves an elevated session's PIN expiry as it is (a status read). */
     refreshElevation?: boolean;
     /** FL-161: how the request arrived; `relay` and `wan` require a Frameleaf sign-in. */
@@ -1159,13 +1162,20 @@ export class AuthService extends BaseService {
     const requestedPermission = metadata.permission ?? Permission.All;
 
     const audience = authDto.oauthApp?.resource;
+    if (metadata.connect) {
+      requireConnectPolicy(authDto);
+      if (!metadata.connectResource || audience !== metadata.connectResource)
+        throw new UnauthorizedException('Wrong Connect resource');
+    } else if (authDto.oauthApp?.accessPolicy || isConnectResource(audience)) {
+      throw new UnauthorizedException('This connected app token is restricted to Connect');
+    }
     if (audience && new URL(audience).pathname === MCP_PATH) {
       throw new UnauthorizedException('This connected app token is for the MCP endpoint');
     }
 
     // FL-803: a connected app reaches only routes its scopes' permissions name: never an admin
     // route, and never one that takes any signed-in caller (`permission: false`), whoever owns it.
-    if (authDto.oauthApp && (adminRoute || requestedPermission === false)) {
+    if (authDto.oauthApp && (adminRoute || (requestedPermission === false && !metadata.connect))) {
       this.logger.warn(`Denied a connected app access to ${uri}`);
       throw new ForbiddenException('Connected apps can’t use this');
     }
@@ -1253,11 +1263,25 @@ export class AuthService extends BaseService {
     via: FrameleafVia | null,
   ): Promise<AuthDto & { oauthApp: AuthOAuthApp }> {
     const oauthApp = auth.oauthApp;
-    if (oauthApp?.resource !== resource) {
+    if (oauthApp?.resource !== resource || oauthApp?.accessPolicy || isConnectResource(resource)) {
       throw new UnauthorizedException();
     }
     await this.applySessionPolicy(auth, { via, adminRoute: false, uri: MCP_PATH });
     return this.applyHiddenContent({ ...auth, oauthApp });
+  }
+
+  async authorizeConnectGrant(auth: AuthDto, resource: string, via: FrameleafVia | null): Promise<AuthDto> {
+    requireConnectPolicy(auth);
+    if (auth.oauthApp!.resource !== resource) throw new UnauthorizedException('Wrong Connect resource');
+    await this.countAppRequest(auth.oauthApp!.grantId, {
+      adminRoute: false,
+      sharedLinkRoute: false,
+      uri: CONNECT_PATH,
+      via,
+      media: true,
+    });
+    await this.applySessionPolicy(auth, { via, adminRoute: false, uri: CONNECT_PATH });
+    return this.applyHiddenContent(auth);
   }
 
   private async applyHiddenContent<T extends AuthDto>(authDto: T): Promise<T> {

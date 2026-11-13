@@ -204,7 +204,13 @@ describe(OAuthAppService.name, () => {
     clearConfigCache();
     ({ sut, mocks } = newTestService(OAuthAppService));
     repo = new FakeOAuthAppRepository();
-    Object.assign(sut, { oauthAppRepository: repo });
+    Object.assign(sut, {
+      oauthAppRepository: repo,
+      connectRepository: {
+        validateAlbums: vi.fn().mockResolvedValue(undefined),
+        availableAlbums: vi.fn().mockResolvedValue([]),
+      },
+    });
     mocks.crypto.randomBytesAsText.mockImplementation((bytes: number) =>
       randomBytes(bytes).toString('base64').replaceAll(/\W/g, ''),
     );
@@ -212,6 +218,72 @@ describe(OAuthAppService.name, () => {
     me = person('taylor');
     repo.users.set(me.user.id, me.user);
     mocks.user.get.mockImplementation((id: string) => Promise.resolve(repo.users.get(id) as never));
+  });
+
+  describe('Connect policy', () => {
+    const policy = { version: 1, readAlbumIds: [], allLibraryRead: false, writableAlbumIds: [], writeWorkspaces: [] };
+    it('requires an explicit consent policy for the Connect resource', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      await expect(connect(client, { scope: 'library:read', resource: `${ISSUER}/api/connect` })).rejects.toThrow();
+      expect(repo.grants).toHaveLength(0);
+    });
+    it('refuses policy on a legacy grant', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      await expect(connect(client, { scope: 'library:read', accessPolicy: policy })).rejects.toThrow();
+    });
+    it('refuses another origin masquerading as the Connect resource', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      await expect(
+        connect(client, { scope: 'library:read', resource: 'https://other.example/api/connect', accessPolicy: policy }),
+      ).rejects.toThrow();
+    });
+    it('never grants people access to Connect', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      await expect(connect(client, { resource: `${ISSUER}/api/connect`, accessPolicy: policy })).rejects.toThrow();
+    });
+    it('binds the consent policy through code exchange and rotating refresh', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      const { tokens } = await connect(client, {
+        scope: 'library:read photos:upload events:read',
+        resource: `${ISSUER}/api/connect`,
+        accessPolicy: policy,
+      });
+      expect((await sut.validateAccessToken(tokens.access_token, null)).oauthApp).toMatchObject({
+        accessPolicy: policy,
+      });
+      const next = await sut.token({
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refresh_token,
+        client_id: client.id,
+      });
+      expect((await sut.validateAccessToken(next.access_token, null)).oauthApp).toMatchObject({ accessPolicy: policy });
+    });
+    it('refuses policy and resource changes during refresh', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      const { tokens } = await connect(client, {
+        scope: 'library:read',
+        resource: `${ISSUER}/api/connect`,
+        accessPolicy: policy,
+      });
+      const body = { grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id };
+      await expect(sut.token({ ...body, accessPolicy: { ...policy, allLibraryRead: true } })).rejects.toThrow();
+      await expect(sut.token({ ...body, resource: `${ISSUER}/api/mcp` })).rejects.toThrow();
+      expect((await sut.validateAccessToken(tokens.access_token, null)).oauthApp!.accessPolicy).toEqual(policy);
+    });
+
+    it('refuses Connect-only scopes on legacy grants', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      for (const scope of ['photos:upload', 'boards:upload', 'events:read']) {
+        await expect(connect(client, { scope })).rejects.toThrow();
+      }
+    });
+
+    it('fails closed when a Connect grant lost its policy', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      const { tokens } = await connect(client, { scope: 'library:read' });
+      repo.grants[0].resource = `${ISSUER}/api/connect`;
+      await expect(sut.validateAccessToken(tokens.access_token, null)).rejects.toBeInstanceOf(UnauthorizedException);
+    });
   });
 
   describe('authorizeRedirect', () => {
@@ -604,6 +676,31 @@ describe(OAuthAppService.name, () => {
       clearConfigCache();
       mocks.systemMetadata.get.mockResolvedValue({ connectedApps: { allowRegistration: false } });
       expect(await sut.getAuthorizationServerMetadata(ISSUER)).not.toHaveProperty('registration_endpoint');
+    });
+  });
+
+  describe('administrator registration', () => {
+    it('allows an administrator to create an unverified public client while DCR stays disabled', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ connectedApps: { allowRegistration: false } });
+      const admin = person('admin', true);
+      const result = await sut.createClient(admin, {
+        name: 'My Zap',
+        preset: 'zapier',
+        redirectUris: ['https://zapier.com/dashboard/auth/oauth/return/App/'],
+      });
+      expect(result).toMatchObject({ name: 'My Zap', tokenEndpointAuthMethod: 'none' });
+      expect(repo.clients.get(result.clientId)).toMatchObject({ dynamic: false });
+      const display = (await sut.getClients()).find((item) => item.client.id === result.clientId);
+      expect(display?.client.verified).toBe(false);
+      await expect(sut.register({ redirect_uris: [LOCAL_REDIRECT] })).rejects.toThrow();
+    });
+    it('requires an administrator session and an exact allowed callback', async () => {
+      const dto = { name: 'App', redirectUris: [LOCAL_REDIRECT] };
+      await expect(sut.createClient(me, dto)).rejects.toThrow();
+      await expect(sut.createClient({ ...person('admin', true), session: undefined }, dto)).rejects.toThrow();
+      await expect(
+        sut.createClient(person('admin', true), { ...dto, redirectUris: ['http://evil.example/cb'] }),
+      ).rejects.toThrow();
     });
   });
 

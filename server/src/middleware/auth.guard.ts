@@ -16,11 +16,14 @@ import { type FrameleafRequest, requestSecurityAddress, requestVia } from 'src/m
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AuthService, LoginDetails } from 'src/services/auth.service.js';
 import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
+import { CONNECT_PATH } from 'src/utils/connect-policy.js';
+import { oauthIssuer } from 'src/utils/oauth-issuer.js';
 import { getUserAgentDetails } from 'src/utils/request.js';
 
 type AdminRoute = { admin?: true };
 type SharedLinkRoute = { sharedLink: true; sharedLinkPassword?: false };
 type AuthorizedRoute = {
+  connect?: true;
   permission?: Permission | false;
   public?: never;
   setup?: never;
@@ -201,6 +204,10 @@ export class AuthGuard implements CanActivate {
         sharedLinkPassword,
         permission,
         uri: request.path,
+        ...((options as { connect?: true }).connect && {
+          connect: true,
+          connectResource: `${oauthIssuer(request)}${CONNECT_PATH}`,
+        }),
         refreshElevation,
         via,
         remoteSignInExempt,

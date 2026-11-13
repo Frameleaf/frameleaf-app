@@ -41,3 +41,6 @@
 1794480000000-AssetUploadSkipException
 1794485000000-AssistantAction
 1794490000000-AssetLedger
+1794500000000-ConnectAccessPolicy
+1794510000000-ConnectMedia
+1794520000000-ConnectEvents
