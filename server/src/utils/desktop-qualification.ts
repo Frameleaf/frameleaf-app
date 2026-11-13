@@ -41,7 +41,7 @@ const factsSchema = z.strictObject({
   totalMemoryBytes: integer.positive(),
   // What OpenVINO can run on ("CPU", "GPU.0", "NPU"); a runtime states it only where it has that provider.
   openvinoDevices: z
-    .array(z.string().regex(/^[\u0020-\u007E]{1,64}$/))
+    .array(z.string().regex(/^[ -~]{1,64}$/))
     .max(16)
     .optional(),
   deviceEvidence: desktopDeviceFactsSchema.optional(),
