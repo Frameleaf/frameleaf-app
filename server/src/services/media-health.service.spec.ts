@@ -7744,6 +7744,66 @@ describe(MediaHealthService.name, () => {
       expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
     });
 
+    it('leaves out of the search a file a person took back from its photo, while it is the same file', async () => {
+      missing();
+      onDrive(found);
+      const stat = settledStat({ size: 10 });
+      vi.mocked(mocks.storage.stat).mockResolvedValue(stat as never);
+      foundFileRepository.getByPaths.mockResolvedValue([
+        { path: found, sizeInBytes: '10', modifiedAt: stat.mtime, sha1, sha256, outcome: 'left' },
+      ]);
+
+      await search();
+
+      expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+      expect(lastCandidates()).toEqual([]);
+    });
+
+    describe('the scan’s last step and Undo', () => {
+      const file = '/data/upload/user-1/ab/cd/undone.jpg';
+      const stat = settledStat({ size: 10 });
+      const stray = (left: Record<string, unknown>) => {
+        vi.mocked(mocks.user.get).mockResolvedValue({
+          id: 'user-1',
+          storageLabel: null,
+          quotaSizeInBytes: null,
+          quotaUsageInBytes: 0,
+        } as never);
+        onDrive(file);
+        vi.mocked(mediaHealthRepository.getTrackedPaths).mockResolvedValue(new Set());
+        vi.mocked(mocks.storage.stat).mockResolvedValue(stat as never);
+        vi.mocked(mocks.asset.getByChecksums).mockResolvedValue([{ id: 'asset-9', originalPath: file }] as never);
+        vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+        foundFileRepository.getByPaths.mockResolvedValue([
+          { path: file, sizeInBytes: '10', modifiedAt: stat.mtime, ...other, outcome: 'left', ...left },
+        ]);
+      };
+
+      it('neither reads nor places an unchanged file a person undid or chose to leave', async () => {
+        stray({});
+
+        await sut.restoreUntracked('user-1');
+
+        expect(mocks.crypto.hashFileDigests).not.toHaveBeenCalled();
+        expect(mocks.asset.getByChecksums).not.toHaveBeenCalled();
+        expect(mocks.asset.create).not.toHaveBeenCalled();
+        expect(foundFileRepository.remember).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['size', { sizeInBytes: '11' }],
+        ['modified time', { modifiedAt: new Date(stat.mtime.getTime() - 1000) }],
+      ])('treats a left file whose %s changed since as a new file', async (_, changed) => {
+        stray(changed);
+
+        await sut.restoreUntracked('user-1');
+
+        expect(mocks.crypto.hashFileDigests).toHaveBeenCalledWith(file);
+        expect(mocks.asset.getByChecksums).toHaveBeenCalled();
+        expect(foundFileRepository.remember).toHaveBeenCalledWith(expect.objectContaining({ path: file }));
+      });
+    });
+
     it('brings back a stray photo it read before without reading it again', async () => {
       const file = '/data/upload/user-1/ab/cd/stray.jpg';
       const stat = settledStat({ size: 10 });

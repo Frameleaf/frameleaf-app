@@ -5033,6 +5033,10 @@ export class MediaHealthService {
           !!known &&
           Number(known.sizeInBytes) === settled.size &&
           new Date(known.modifiedAt).getTime() === settled.mtime.getTime();
+        if (unchanged && known.outcome === 'left') {
+          // a person undid what was done with this file, or left it: it is not sorted again while it is the same file
+          continue;
+        }
         let digests: Awaited<ReturnType<CryptoRepository['hashFileDigests']>>;
         if (unchanged) {
           if (!known.sha1 || !known.sha256) {
@@ -5315,7 +5319,8 @@ export class MediaHealthService {
    * A file that is a photo's original is known by the digests that photo's record holds; any other file by
    * the digests remembered from the one time it was read, for as long as it keeps the size and modified
    * time it had then. A path missing from the answer has to be read; one that maps to null is left out of
-   * the search: its record is of other bytes than the file holds now, or it could not be read before.
+   * the search: its record is of other bytes than the file holds now, it could not be read before, or a
+   * person undid what was done with it or chose to leave it.
    */
   private async knownDigests(files: FileOnDisk[]): Promise<Map<string, KnownDigests | null>> {
     const known = new Map<string, KnownDigests | null>();
@@ -5361,9 +5366,13 @@ export class MediaHealthService {
       ) {
         continue;
       }
+      // A file a person took back from a photo, or chose to leave, is no candidate while it is the same file:
+      // matched here, it could go back under that photo by itself and undo the person's Undo.
       known.set(
         file.path,
-        remembered.sha1 && remembered.sha256 ? { sha1: remembered.sha1, sha256: remembered.sha256 } : null,
+        remembered.outcome !== 'left' && remembered.sha1 && remembered.sha256
+          ? { sha1: remembered.sha1, sha256: remembered.sha256 }
+          : null,
       );
     }
     return known;
