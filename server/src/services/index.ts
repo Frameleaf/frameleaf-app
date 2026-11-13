@@ -65,6 +65,7 @@ import { DesktopQualificationService } from 'src/services/desktop-qualification.
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { DevelopBatchService } from 'src/services/develop-batch.service.js';
+import { DevelopStyleService } from 'src/services/develop-style.service.js';
 import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { DuplicateDecisionService } from 'src/services/duplicate-decision.service.js';
@@ -236,6 +237,7 @@ export const services = [
   AssetSourceService,
   BookmarkService,
   DevelopBatchService,
+  DevelopStyleService,
   DesktopAssistanceActivationService,
   DesktopAssistancePolicyService,
   DesktopDeviceService,
