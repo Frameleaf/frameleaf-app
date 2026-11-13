@@ -17405,7 +17405,7 @@
       "modelKey": "clip:240f796b83fd60cf268fd02d71473be3382e42bb78dc5d7b99fc6add425adcfd",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -17467,7 +17467,7 @@
       "modelKey": "clip:b6e9c781f52d417cd84729a3efb592bca5c714da884925be40a50cc588e79423",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -17531,7 +17531,7 @@
       "modelKey": "clip:723da31128e971640a42abb5301ca19adfe7a01248d90029e12e5325f492699d",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -17586,7 +17586,7 @@
       "modelKey": "ocr:533efbe4ddb6ab944a5820269d6ab5e5bc2ba15be6a85ef4c1a9f8e21bfc2dc6",
       "modelName": "PP-OCRv5_mobile",
       "modelSnapshotRevision": "be303f8b8cfb14da088d60b5e8ba6f3eafa4a823",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -17697,7 +17697,7 @@
       "modelKey": "face:fa45e38988d792cebb928a7a6e6953cd086f5fcc8a2117b476da77f792d95c2c",
       "modelName": "buffalo_l",
       "modelSnapshotRevision": "d09715916a0778919a770c343533641e250b8699",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -17780,7 +17780,7 @@
       "modelKey": "clip:240f796b83fd60cf268fd02d71473be3382e42bb78dc5d7b99fc6add425adcfd",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -17842,7 +17842,7 @@
       "modelKey": "clip:b6e9c781f52d417cd84729a3efb592bca5c714da884925be40a50cc588e79423",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -17906,7 +17906,7 @@
       "modelKey": "clip:723da31128e971640a42abb5301ca19adfe7a01248d90029e12e5325f492699d",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -17961,7 +17961,7 @@
       "modelKey": "ocr:533efbe4ddb6ab944a5820269d6ab5e5bc2ba15be6a85ef4c1a9f8e21bfc2dc6",
       "modelName": "PP-OCRv5_mobile",
       "modelSnapshotRevision": "be303f8b8cfb14da088d60b5e8ba6f3eafa4a823",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18072,7 +18072,7 @@
       "modelKey": "face:fa45e38988d792cebb928a7a6e6953cd086f5fcc8a2117b476da77f792d95c2c",
       "modelName": "buffalo_l",
       "modelSnapshotRevision": "d09715916a0778919a770c343533641e250b8699",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18155,7 +18155,7 @@
       "modelKey": "clip:240f796b83fd60cf268fd02d71473be3382e42bb78dc5d7b99fc6add425adcfd",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18217,7 +18217,7 @@
       "modelKey": "clip:b6e9c781f52d417cd84729a3efb592bca5c714da884925be40a50cc588e79423",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18281,7 +18281,7 @@
       "modelKey": "clip:723da31128e971640a42abb5301ca19adfe7a01248d90029e12e5325f492699d",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18336,7 +18336,7 @@
       "modelKey": "ocr:533efbe4ddb6ab944a5820269d6ab5e5bc2ba15be6a85ef4c1a9f8e21bfc2dc6",
       "modelName": "PP-OCRv5_mobile",
       "modelSnapshotRevision": "be303f8b8cfb14da088d60b5e8ba6f3eafa4a823",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18447,7 +18447,7 @@
       "modelKey": "face:fa45e38988d792cebb928a7a6e6953cd086f5fcc8a2117b476da77f792d95c2c",
       "modelName": "buffalo_l",
       "modelSnapshotRevision": "d09715916a0778919a770c343533641e250b8699",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18530,7 +18530,7 @@
       "modelKey": "clip:240f796b83fd60cf268fd02d71473be3382e42bb78dc5d7b99fc6add425adcfd",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18592,7 +18592,7 @@
       "modelKey": "clip:b6e9c781f52d417cd84729a3efb592bca5c714da884925be40a50cc588e79423",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18656,7 +18656,7 @@
       "modelKey": "clip:723da31128e971640a42abb5301ca19adfe7a01248d90029e12e5325f492699d",
       "modelName": "ViT-B-16-SigLIP-384__webli",
       "modelSnapshotRevision": "77dda0dfc7afd494b918ec174cddca24854a73d1",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18711,7 +18711,7 @@
       "modelKey": "ocr:533efbe4ddb6ab944a5820269d6ab5e5bc2ba15be6a85ef4c1a9f8e21bfc2dc6",
       "modelName": "PP-OCRv5_mobile",
       "modelSnapshotRevision": "be303f8b8cfb14da088d60b5e8ba6f3eafa4a823",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18822,7 +18822,7 @@
       "modelKey": "face:fa45e38988d792cebb928a7a6e6953cd086f5fcc8a2117b476da77f792d95c2c",
       "modelName": "buffalo_l",
       "modelSnapshotRevision": "d09715916a0778919a770c343533641e250b8699",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18907,7 +18907,7 @@
       "modelKey": "clip:e716d3e94697264b4545ff9452aef9ae9f4e16d46dec10a36e27a0eb8261f71b",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -18973,7 +18973,7 @@
       "modelKey": "clip:04d85e0a6c51215ed4015f49337e92ef19abdac65c2246eb95bbf4cead5c2b7a",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -19041,7 +19041,7 @@
       "modelKey": "clip:c4410149fb53f66b0eb32c730448d479117f74227628fe1ca0b98737f21c74e7",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -19436,7 +19436,7 @@
       "modelKey": "clip:ca650e64a73746b8630f488295e7aeeb60d2eea6dcb7523b1b4bc39e1b094773",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -20158,7 +20158,7 @@
       "modelKey": "clip:2f95043bbbac03fa0c59af4eb3b0bd99357e0494550c53712267088fe3a91cd0",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -20882,7 +20882,7 @@
       "modelKey": "clip:0ab69ab842a9753e73a831be5ddb3d9d498a18ac44828db3cfba09080ff38027",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -21267,7 +21267,7 @@
       "modelKey": "ocr:6e38121026683b5b78fc07bf59cb52347b348db1f6868a050a868712d5e4fab3",
       "modelName": "PP-OCRv5_server",
       "modelSnapshotRevision": "1892860981cc723ac039bcc7a1de1fd85b86d830",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -21380,7 +21380,7 @@
       "modelKey": "face:c0d072bdd543c5576821a851143e1920fdc41a61c2ec5499aec3e2f53c5fb81a",
       "modelName": "antelopev2",
       "modelSnapshotRevision": "51ca7e153bccebdbae224779e23c9c243e2fec85",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -21462,7 +21462,7 @@
       "modelKey": "face:99e33c6c4c6d638de1d5226d2c97d10aba31253b5746dd8355548f8ca4b575c9",
       "modelName": "buffalo_s",
       "modelSnapshotRevision": "0ff1751885575e62e084dff70549ce24a11fa5dc",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -21544,7 +21544,7 @@
       "modelKey": "face:9744ca6f8fb5deea855f25b3affc9078292d1dc8a30d2461a748d449165f3aa1",
       "modelName": "buffalo_m",
       "modelSnapshotRevision": "b95a1bc582b2e58f9555673bdcfd5e14e1fbdc61",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -21633,7 +21633,7 @@
       "modelKey": "clip:e716d3e94697264b4545ff9452aef9ae9f4e16d46dec10a36e27a0eb8261f71b",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -21699,7 +21699,7 @@
       "modelKey": "clip:04d85e0a6c51215ed4015f49337e92ef19abdac65c2246eb95bbf4cead5c2b7a",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -21767,7 +21767,7 @@
       "modelKey": "clip:c4410149fb53f66b0eb32c730448d479117f74227628fe1ca0b98737f21c74e7",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -22162,7 +22162,7 @@
       "modelKey": "clip:ca650e64a73746b8630f488295e7aeeb60d2eea6dcb7523b1b4bc39e1b094773",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -22884,7 +22884,7 @@
       "modelKey": "clip:2f95043bbbac03fa0c59af4eb3b0bd99357e0494550c53712267088fe3a91cd0",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -23608,7 +23608,7 @@
       "modelKey": "clip:0ab69ab842a9753e73a831be5ddb3d9d498a18ac44828db3cfba09080ff38027",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -23993,7 +23993,7 @@
       "modelKey": "ocr:6e38121026683b5b78fc07bf59cb52347b348db1f6868a050a868712d5e4fab3",
       "modelName": "PP-OCRv5_server",
       "modelSnapshotRevision": "1892860981cc723ac039bcc7a1de1fd85b86d830",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -24106,7 +24106,7 @@
       "modelKey": "face:c0d072bdd543c5576821a851143e1920fdc41a61c2ec5499aec3e2f53c5fb81a",
       "modelName": "antelopev2",
       "modelSnapshotRevision": "51ca7e153bccebdbae224779e23c9c243e2fec85",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -24188,7 +24188,7 @@
       "modelKey": "face:99e33c6c4c6d638de1d5226d2c97d10aba31253b5746dd8355548f8ca4b575c9",
       "modelName": "buffalo_s",
       "modelSnapshotRevision": "0ff1751885575e62e084dff70549ce24a11fa5dc",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -24270,7 +24270,7 @@
       "modelKey": "face:9744ca6f8fb5deea855f25b3affc9078292d1dc8a30d2461a748d449165f3aa1",
       "modelName": "buffalo_m",
       "modelSnapshotRevision": "b95a1bc582b2e58f9555673bdcfd5e14e1fbdc61",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -24359,7 +24359,7 @@
       "modelKey": "clip:e716d3e94697264b4545ff9452aef9ae9f4e16d46dec10a36e27a0eb8261f71b",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -24425,7 +24425,7 @@
       "modelKey": "clip:04d85e0a6c51215ed4015f49337e92ef19abdac65c2246eb95bbf4cead5c2b7a",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -24493,7 +24493,7 @@
       "modelKey": "clip:c4410149fb53f66b0eb32c730448d479117f74227628fe1ca0b98737f21c74e7",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -24888,7 +24888,7 @@
       "modelKey": "clip:ca650e64a73746b8630f488295e7aeeb60d2eea6dcb7523b1b4bc39e1b094773",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -25610,7 +25610,7 @@
       "modelKey": "clip:2f95043bbbac03fa0c59af4eb3b0bd99357e0494550c53712267088fe3a91cd0",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -26334,7 +26334,7 @@
       "modelKey": "clip:0ab69ab842a9753e73a831be5ddb3d9d498a18ac44828db3cfba09080ff38027",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -26719,7 +26719,7 @@
       "modelKey": "ocr:6e38121026683b5b78fc07bf59cb52347b348db1f6868a050a868712d5e4fab3",
       "modelName": "PP-OCRv5_server",
       "modelSnapshotRevision": "1892860981cc723ac039bcc7a1de1fd85b86d830",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -26832,7 +26832,7 @@
       "modelKey": "face:c0d072bdd543c5576821a851143e1920fdc41a61c2ec5499aec3e2f53c5fb81a",
       "modelName": "antelopev2",
       "modelSnapshotRevision": "51ca7e153bccebdbae224779e23c9c243e2fec85",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -26914,7 +26914,7 @@
       "modelKey": "face:99e33c6c4c6d638de1d5226d2c97d10aba31253b5746dd8355548f8ca4b575c9",
       "modelName": "buffalo_s",
       "modelSnapshotRevision": "0ff1751885575e62e084dff70549ce24a11fa5dc",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -26996,7 +26996,7 @@
       "modelKey": "face:9744ca6f8fb5deea855f25b3affc9078292d1dc8a30d2461a748d449165f3aa1",
       "modelName": "buffalo_m",
       "modelSnapshotRevision": "b95a1bc582b2e58f9555673bdcfd5e14e1fbdc61",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -27085,7 +27085,7 @@
       "modelKey": "clip:e716d3e94697264b4545ff9452aef9ae9f4e16d46dec10a36e27a0eb8261f71b",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -27151,7 +27151,7 @@
       "modelKey": "clip:04d85e0a6c51215ed4015f49337e92ef19abdac65c2246eb95bbf4cead5c2b7a",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -27219,7 +27219,7 @@
       "modelKey": "clip:c4410149fb53f66b0eb32c730448d479117f74227628fe1ca0b98737f21c74e7",
       "modelName": "ViT-B-32__openai",
       "modelSnapshotRevision": "a857c8de2c07bbcfa6646adfcf31b798845afa1e",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -27614,7 +27614,7 @@
       "modelKey": "clip:ca650e64a73746b8630f488295e7aeeb60d2eea6dcb7523b1b4bc39e1b094773",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -28336,7 +28336,7 @@
       "modelKey": "clip:2f95043bbbac03fa0c59af4eb3b0bd99357e0494550c53712267088fe3a91cd0",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -29060,7 +29060,7 @@
       "modelKey": "clip:0ab69ab842a9753e73a831be5ddb3d9d498a18ac44828db3cfba09080ff38027",
       "modelName": "ViT-SO400M-16-SigLIP2-384__webli",
       "modelSnapshotRevision": "19baa26af70bd3639ca0ca17d1560cb8056dd983",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -29445,7 +29445,7 @@
       "modelKey": "ocr:6e38121026683b5b78fc07bf59cb52347b348db1f6868a050a868712d5e4fab3",
       "modelName": "PP-OCRv5_server",
       "modelSnapshotRevision": "1892860981cc723ac039bcc7a1de1fd85b86d830",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -29558,7 +29558,7 @@
       "modelKey": "face:c0d072bdd543c5576821a851143e1920fdc41a61c2ec5499aec3e2f53c5fb81a",
       "modelName": "antelopev2",
       "modelSnapshotRevision": "51ca7e153bccebdbae224779e23c9c243e2fec85",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -29640,7 +29640,7 @@
       "modelKey": "face:99e33c6c4c6d638de1d5226d2c97d10aba31253b5746dd8355548f8ca4b575c9",
       "modelName": "buffalo_s",
       "modelSnapshotRevision": "0ff1751885575e62e084dff70549ce24a11fa5dc",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {
@@ -29722,7 +29722,7 @@
       "modelKey": "face:9744ca6f8fb5deea855f25b3affc9078292d1dc8a30d2461a748d449165f3aa1",
       "modelName": "buffalo_m",
       "modelSnapshotRevision": "b95a1bc582b2e58f9555673bdcfd5e14e1fbdc61",
-      "runtimeSourceRevision": "4da8e50954ff08be437db51a0872ce5da0e8ba06",
+      "runtimeSourceRevision": "a70fd7dcee16526cb913308e9ea9596489b24ff6",
       "spec": {
         "deadlineSeconds": 120,
         "entries": {

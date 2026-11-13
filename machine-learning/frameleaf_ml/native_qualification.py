@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import tempfile
+import traceback
 from pathlib import Path, PurePosixPath
 from threading import Timer
 from time import perf_counter
@@ -363,18 +364,29 @@ def main(observer: DeviceObserver | None = None) -> None:
                 qualify(spec, args.cache_dir, args.spec.parent, hashlib.sha256(raw_spec).hexdigest(), observer=observer)
             )
         except Exception as error:
+            # The report carries only a code; whoever started this process reads the cause here.
+            print(f"native qualification failed: {type(error).__name__}: {str(error)[:2000]}", file=sys.stderr)
+            traceback.print_exc(limit=12, file=sys.stderr)
             reason = (
                 str(error)
                 if isinstance(error, ValueError) and re.fullmatch(r"native_[a-z_]{1,100}", str(error))
                 else "native_qualification_failed"
             )
-            report = {"protocolVersion": 1, "modelKey": spec.model_key, "state": "incompatible", "reason": reason}
+            report = {
+                "protocolVersion": 1,
+                "modelKey": spec.model_key,
+                "state": "incompatible",
+                "reason": reason,
+                # For whoever started this process; a refused report is never sent anywhere.
+                "detail": f"{type(error).__name__}: {error}"[:500],
+            }
         args.output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with tempfile.NamedTemporaryFile(dir=args.output.parent, mode="w", encoding="utf-8", delete=False) as stream:
             candidate = Path(stream.name)
             json.dump(report, stream, sort_keys=True, allow_nan=False)
         candidate.replace(args.output)
         if report["state"] == "incompatible":
+            print(f"native qualification incompatible: {report.get('reason')}", file=sys.stderr)
             raise SystemExit(1)
     finally:
         watchdog.cancel()

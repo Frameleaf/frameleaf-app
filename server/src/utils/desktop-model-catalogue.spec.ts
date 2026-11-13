@@ -538,7 +538,7 @@ it('epoch 14 appended a twin of every f2c451a6 profile; epoch 15 names the runti
       .digest('hex'),
   ).toBe('3f080358db3bfd856755e7f48b43e057cea1c0ce67e6cde15c4441eac347e2f3');
   const previous = 'f2c451a6bf71ca3f3aec986e07f0852937268e2f';
-  const source = '4da8e50954ff08be437db51a0872ce5da0e8ba06';
+  const source = 'a70fd7dcee16526cb913308e9ea9596489b24ff6';
   const originals = catalogue.profiles.slice(0, 102).filter((p) => p.runtimeSourceRevision === previous);
   const twins = catalogue.profiles.slice(102);
   expect(originals).toHaveLength(60);
