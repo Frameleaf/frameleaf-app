@@ -804,9 +804,10 @@
       onRetry={() => itemGeneration++}
     />{/if}
   {#if isCollection}
-    <!-- The gutter is named for the header, which folds its actions by its width with the gutters. -->
+    <!-- The gutter is named for the header, which folds its actions by its width with the gutters.
+         *:h-full sizes Theme's wrapper, so the scroller inside it is the page's height and scrolls. -->
     <div
-      class="relative h-full overflow-hidden md:px-4 md:[--fl-library-gutter-end:1rem] md:[--fl-library-gutter-start:1rem]"
+      class="relative h-full overflow-hidden *:h-full md:px-4 md:[--fl-library-gutter-end:1rem] md:[--fl-library-gutter-start:1rem]"
     >
       <Theme theme={appTheme}>
         <div class="h-full overflow-y-auto">
