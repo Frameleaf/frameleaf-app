@@ -192,6 +192,50 @@ describe('bounded calendar pages', () => {
     }
   });
 
+  it('re-ranks only what changed and always matches a fresh summary (FL-1592)', async () => {
+    const { ctx } = newMediumService(BaseService, {
+      database: db,
+      real: [AssetRepository],
+      mock: [LoggingRepository],
+    });
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user: { id: user.id } });
+    const ids: string[] = [];
+    for (const at of ['2024-03-02', '2024-03-01', '2024-03-01', '2024-02-10', '2024-02-09']) {
+      const date = new Date(`${at}T12:00:00Z`);
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: date,
+        localDateTime: date,
+        visibility: AssetVisibility.Timeline,
+      });
+      await ctx.newExif({ assetId: asset.id, timeZone: 'UTC' });
+      ids.push(asset.id);
+    }
+    const cached = ctx.get(AssetRepository);
+    const options = { userIds: [user.id], visibility: AssetVisibility.Timeline, order: AssetOrder.Desc };
+    const expectFresh = async () => {
+      const summary = await cached.getTimeBuckets(options, auth, { pageSize: 2 });
+      expect(summary).toEqual(await new AssetRepository(db).getTimeBuckets(options, auth, { pageSize: 2 }));
+      return summary;
+    };
+    const before = await expectFresh();
+    expect(await expectFresh()).toEqual(before);
+    // Changes that touch the photo row: a new date moves it to another month, and Trash hides it.
+    await sql`update asset set "localDateTime" = '2024-02-11T12:00:00Z' where id = ${ids[0]}::uuid`.execute(db);
+    await expectFresh();
+    await sql`update asset set "deletedAt" = now() where id = ${ids[3]}::uuid`.execute(db);
+    await expectFresh();
+    // Changes that never touch the photo row still change which photos are listed.
+    await sql`insert into asset_lock ("assetId", reason) values (${ids[1]}::uuid, 'marked')`.execute(db);
+    await expectFresh();
+    await sql`delete from asset_exif where "assetId" = ${ids[4]}::uuid`.execute(db);
+    expect((await expectFresh()).map(({ timeBucket, count }) => [timeBucket, count])).toEqual([
+      ['2024-03-01', 1],
+      ['2024-02-01', 1],
+    ]);
+  });
+
   it.each([TimeBucketDateType.Taken, TimeBucketDateType.Added])(
     'retains microsecond precision for %s date cursors',
     async (dateType) => {
