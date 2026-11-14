@@ -39,6 +39,8 @@ git clone https://github.com/libvips/libvips.git
 cd libvips
 git reset --hard "$LIBVIPS_REVISION"
 git apply ../libvips-patches/0001-put-other-loaders-ahead-of-dcrawload.patch
+# FL-1374: magickload kept only the low byte of each 16-bit sample (an RGB565 BMP opened with the wrong colours).
+git apply ../libvips-patches/0002-magick7load-scale-quantum-to-output-format.patch
 
 meson setup build --buildtype=release --libdir=lib -Dintrospection=disabled -Dtiff=disabled \
   -Dpdfium=enabled -Dpoppler=disabled
