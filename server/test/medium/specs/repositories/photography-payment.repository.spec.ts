@@ -48,6 +48,7 @@ describe(PhotographyPaymentRepository.name, () => {
     ]);
     expect(started.filter(Boolean)).toHaveLength(1);
     const first = started.find(Boolean)!;
+    expect((await sut.pendingAttempt(single.id, first.payerEmail, 30))?.id).toBe(first.id);
     expect(await sut.pendingSince(single.id, 30)).toBe(true);
     // With no hold (as after 30 minutes), a second payer can still start.
     const second = (await sut.createPayment(single, 'b@example.com', 0))!;

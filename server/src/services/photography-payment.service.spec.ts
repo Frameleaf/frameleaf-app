@@ -3,9 +3,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { PaymentLinkRow, PaymentRow } from 'src/repositories/photography-payment.repository.js';
-import { SystemMetadataKey } from 'src/enum.js';
+import { MlAdmissionRefusal, SystemMetadataKey } from 'src/enum.js';
 import { type ClientsPaymentEvent, ClientsPaymentsService } from 'src/services/clients-payments.service.js';
 import { PhotographyPaymentService } from 'src/services/photography-payment.service.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 
 // The identity key itself is not what these tests are about.
 vi.mock('src/utils/frameleaf-cloud-gateway.js', async (original) => ({
@@ -55,6 +56,11 @@ const setup = () => {
       payments.find((p) => p.id === id)!.checkoutId = checkoutId;
       return Promise.resolve();
     }),
+    pendingAttempt: vi.fn((linkId: string, email: string) =>
+      Promise.resolve(
+        payments.find((p) => p.linkId === linkId && p.payerEmail === email && p.status === 'pending' && !p.checkoutId),
+      ),
+    ),
     pendingSince: vi.fn((linkId: string) =>
       Promise.resolve(payments.some((p) => p.linkId === linkId && p.status === 'pending')),
     ),
@@ -190,19 +196,37 @@ describe(PhotographyPaymentService.name, () => {
     expect(payment.status).toBe('refunded');
   });
 
-  it('releases a single-use link when checkout creation fails, and still records that payment if it lands', async () => {
+  it('releases a single-use link when Cloud refuses the checkout', async () => {
     const s = setup();
     const link = await s.service.create(auth, { ...draft, reusable: false });
-    s.clients.checkout.mockRejectedValueOnce(new Error('Frameleaf Cloud unreachable'));
+    s.clients.checkout.mockRejectedValueOnce(
+      new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 422, 'refused'),
+    );
     await expect(s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example')).rejects.toThrow();
-    const lost = s.payments[0];
-    expect(lost).toMatchObject({ status: 'failed', checkoutId: null });
-    // The payer can try again at once.
+    expect(s.payments[0]).toMatchObject({ status: 'failed', checkoutId: null });
+    const { paymentId } = await s.service.checkout(link.slug, { email: 'b@example.com' }, 'https://photos.example');
+    expect(paymentId).not.toBe(s.payments[0].id);
+  });
+
+  it('retries an uncertain checkout with the same payment and idempotency key, so only one session can be paid', async () => {
+    const s = setup();
+    const link = await s.service.create(auth, { ...draft, reusable: false });
+    s.clients.checkout.mockRejectedValueOnce(
+      new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, 'timeout'),
+    );
+    await expect(s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example')).rejects.toThrow();
+    expect(s.payments[0]).toMatchObject({ status: 'pending', checkoutId: null });
     const { paymentId } = await s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example');
-    expect(paymentId).not.toBe(lost.id);
-    // A session Stripe made for the lost attempt after all is still recorded when it is paid.
-    await s.service.paymentEvent(s.event(lost, 'payment.succeeded', { sessionId: 'cs_made_anyway' }));
-    expect(lost.status).toBe('paid');
+    expect(paymentId).toBe(s.payments[0].id);
+    expect(s.payments).toHaveLength(1);
+    const keys = s.clients.checkout.mock.calls.map(
+      (call) => (call as unknown as [string, { idempotencyKey: string }])[1].idempotencyKey,
+    );
+    expect(new Set(keys).size).toBe(1);
+    // Someone else is still held off while that attempt is open.
+    await expect(s.service.checkout(link.slug, { email: 'b@example.com' }, 'https://x.example')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 
   it('shows a missing or turned-off link as unavailable, with nothing about the studio', async () => {

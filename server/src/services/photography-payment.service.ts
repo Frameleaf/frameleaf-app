@@ -15,6 +15,7 @@ import {
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { type ClientsPaymentEvent, ClientsPaymentsService } from 'src/services/clients-payments.service.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 
 const SLUG = /^[A-Za-z0-9_-]{16}$/;
 const unavailable = () => new NotFoundException('This payment link is unavailable');
@@ -137,16 +138,22 @@ export class PhotographyPaymentService {
     if (!(await this.payments.ready(link.ownerId))) throw unavailable();
     // ponytail: a single-use link is held for 30 minutes while someone is paying it (checked and taken in one
     // locked step); a payment that still lands after that is recorded as paid and logged for a refund in Stripe.
-    const payment = await this.repository.createPayment(link, dto.email);
+    // A retry after an uncertain checkout reuses that attempt and its idempotency key, so Stripe answers with the same
+    // session instead of a second chargeable one.
+    const payment =
+      (await this.repository.pendingAttempt(link.id, dto.email, 30)) ??
+      (await this.repository.createPayment(link, dto.email));
     if (!payment)
       throw new ConflictException({ code: 'payment-in-progress', message: 'Someone is paying this link now' });
     const back = `${origin}/photography/pay/${link.slug}`;
     try {
       return await this.startCheckout(link, payment, dto.email, back);
     } catch (error) {
-      // Stripe's page never reached the payer: release the hold so they can try again. If a session was made after all,
-      // its payment still lands (a failed payment can become paid), matched by its reference.
-      await this.repository.transition(payment.id, ['pending'], 'failed', null);
+      // Cloud refused (4xx): no session exists, so release the hold. Anything uncertain (unreachable, timeout, 5xx)
+      // keeps the attempt pending for the payer's retry above; if a session was made after all, its payment still lands.
+      if (error instanceof FrameleafCloudError && error.status !== null && error.status >= 400 && error.status < 500) {
+        await this.repository.transition(payment.id, ['pending'], 'failed', null);
+      }
       throw error;
     }
   }
