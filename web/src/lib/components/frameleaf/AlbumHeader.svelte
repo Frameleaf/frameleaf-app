@@ -284,8 +284,18 @@
         : $t('frameleaf_album_kind_album'),
   );
 
-  /** The albums a cover may be picked from: this album, or a collection's albums. */
-  const coverSourceIds = $derived(isCollection ? childAlbums.map(({ id }) => id) : [album.id]);
+  /** The albums a cover may be picked from: this album and every album nested under it (FL-1584). */
+  const coverSourceIds = $derived.by(() => {
+    const ids = [album.id, ...childAlbums.map(({ id }) => id)];
+    for (let index = 1; index < ids.length; index++) {
+      for (const each of albums) {
+        if (each.parentId === ids[index] && !ids.includes(each.id)) {
+          ids.push(each.id);
+        }
+      }
+    }
+    return ids;
+  });
 
   /** Phones (apple-style.css `max-width: 700px`): the secondary actions live in the "…" menu. */
   const phone = new MediaQuery('max-width: 700px');
