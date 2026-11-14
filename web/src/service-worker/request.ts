@@ -32,6 +32,26 @@ type PendingRequest = {
 
 const pendingRequests = new Map<string, PendingRequest>();
 
+/**
+ * FL-1595: URLs the server has answered with 200 since the page last reported an access change. The
+ * browser's HTTP cache may answer these on its own (`Cache-Control: private, max-age=86400`), so a tile
+ * seen once does not wait on a 304 again. Any access change the page sees (Lock, PIN reset, sign-out,
+ * account switch, and every page load) empties this set, so the next request is reauthorized; signing
+ * in or out also clears the HTTP cache itself (Clear-Site-Data). Shared-link requests are never added:
+ * a link can be revoked without this browser hearing of it.
+ */
+const confirmed = new Set<string>();
+const access = { generation: 0 };
+// ponytail: cleared outright when full; an LRU only if large libraries keep hitting the cap
+const MAX_CONFIRMED = 50_000;
+
+export const handleAccessChange = () => {
+  access.generation++;
+  confirmed.clear();
+};
+
+const isSharedLink = (url: URL) => url.searchParams.has('key') || url.searchParams.has('slug');
+
 const getRequestKey = (request: URL | Request): string => (request instanceof URL ? request.href : request.url);
 
 const CANCELATION_MESSAGE = 'Request canceled by application';
@@ -63,13 +83,30 @@ export const handleFetch = async (request: URL | Request): Promise<Response> => 
   }
   pendingRequests.set(requestKey, pendingRequest);
 
-  // Revalidate even fresh HTTP-cache entries so a revoked grant or actual Lock cannot reuse bytes
-  // without current authorization. Keep a caller's stricter no-store policy.
+  // Revalidate even fresh HTTP-cache entries unless this URL was authorized since the last access change
+  // (FL-1595). Keep a caller's stricter no-store policy.
   // NOTE: fetch returns after headers received, not the body
-  const promise = fetch(request, {
-    signal: pendingRequest.controller.signal,
-    cache: request instanceof Request && request.cache === 'no-store' ? 'no-store' : 'no-cache',
-  })
+  const generation = access.generation;
+  const isShared = isSharedLink(new URL(requestKey));
+  const cache: RequestCache =
+    request instanceof Request && request.cache === 'no-store'
+      ? 'no-store'
+      : !isShared && confirmed.has(requestKey)
+        ? 'default'
+        : 'no-cache';
+  const promise = fetch(request, { signal: pendingRequest.controller.signal, cache })
+    // eslint-disable-next-line unicorn/prefer-await
+    .then((response) => {
+      if (response.status !== 200) {
+        confirmed.delete(requestKey);
+      } else if (!isShared && generation === access.generation) {
+        if (confirmed.size >= MAX_CONFIRMED) {
+          confirmed.clear();
+        }
+        confirmed.add(requestKey);
+      }
+      return response;
+    })
     // eslint-disable-next-line unicorn/prefer-await
     .catch((error: unknown) => {
       const standardError = error instanceof Error ? error : new Error(String(error));
