@@ -289,8 +289,9 @@ export class LibraryRepository {
         await tx
           .updateTable('media_operation')
           .set({
-            heartbeatAt: sql<Date>`now()`,
-            claimExpiresAt: sql<Date>`greatest("claimExpiresAt", now() + ${sql.lit(claim.leaseMs)} * interval '1 millisecond')`,
+            // clock_timestamp(): now() is when this transaction began, before any wait for the lock
+            heartbeatAt: sql<Date>`clock_timestamp()`,
+            claimExpiresAt: sql<Date>`greatest("claimExpiresAt", clock_timestamp() + ${sql.lit(claim.leaseMs)} * interval '1 millisecond')`,
           })
           .where('id', '=', claim.operationId)
           .execute();

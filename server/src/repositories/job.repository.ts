@@ -806,7 +806,7 @@ export class JobRepository {
         // The worker heartbeat skips a locked claim, so back-to-back fences (a library scan's batches) would starve
         // its lease until it expired mid-scan. Holding the fence proves the executor is alive: renew the lease here,
         // for `leaseMs`: how long this one fence may take. The next heartbeat sets the usual 60 seconds again.
-        await sql`update job set "leaseExpiresAt" = greatest("leaseExpiresAt", now() + ${leaseMs} * interval '1 millisecond')
+        await sql`update job set "leaseExpiresAt" = greatest("leaseExpiresAt", clock_timestamp() + ${leaseMs} * interval '1 millisecond')
           where id = ${context.claim.id}::uuid`.execute(tx);
       }
       const value = await work(tx);
