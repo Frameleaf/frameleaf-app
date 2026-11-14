@@ -1,0 +1,8 @@
+{
+  "label": "Make a Connect API call",
+  "description": "Calls any Frameleaf Connect endpoint under /api/connect with this connection's access. It cannot reach other Library APIs.",
+  "moduleType": "universal",
+  "scope": [
+    "library:read"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "label": "Search photos and videos",
+  "description": "Finds photos and videos this connection can read, newest first.",
+  "moduleType": "search",
+  "scope": [
+    "library:read"
+  ]
+}

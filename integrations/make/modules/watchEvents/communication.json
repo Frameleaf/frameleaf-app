@@ -1,0 +1,32 @@
+{
+  "url": "/events/latest",
+  "method": "GET",
+  "qs": {
+    "type": "{{parameters.type}}",
+    "albumId": "{{parameters.albumId}}"
+  },
+  "response": {
+    "limit": "{{parameters.limit}}",
+    "iterate": "{{body.items}}",
+    "trigger": {
+      "id": "{{item.deliveryId}}",
+      "date": "{{item.occurredAt}}",
+      "type": "date",
+      "order": "desc"
+    },
+    "output": {
+      "event": "{{item.event}}",
+      "deliveryId": "{{item.deliveryId}}",
+      "occurredAt": "{{item.occurredAt}}",
+      "assetId": "{{item.subject.id}}",
+      "albumId": "{{item.detail.albumId}}",
+      "format": "{{item.detail.format}}"
+    }
+  },
+  "pagination": {
+    "qs": {
+      "cursor": "{{body.nextCursor}}"
+    },
+    "condition": "{{body.hasMore}}"
+  }
+}

@@ -1,0 +1,61 @@
+[
+  {
+    "name": "url",
+    "type": "text",
+    "label": "Path",
+    "help": "Relative to /api/connect, for example /albums. Paths with dots, encoded characters or a query string are refused; use Query string instead.",
+    "required": true,
+    "validate": {
+      "max": 200,
+      "pattern": "^(?:/[A-Za-z0-9_-]+)+$(?![\\s\\S])"
+    }
+  },
+  {
+    "name": "method",
+    "type": "select",
+    "label": "Method",
+    "required": true,
+    "default": "GET",
+    "options": [
+      {
+        "label": "GET",
+        "value": "GET"
+      },
+      {
+        "label": "POST",
+        "value": "POST"
+      },
+      {
+        "label": "DELETE",
+        "value": "DELETE"
+      }
+    ]
+  },
+  {
+    "name": "qs",
+    "type": "array",
+    "label": "Query string",
+    "spec": [
+      {
+        "name": "key",
+        "type": "text",
+        "label": "Key",
+        "required": true,
+        "validate": {
+          "pattern": "^[A-Za-z][A-Za-z0-9]*$(?![\\s\\S])"
+        }
+      },
+      {
+        "name": "value",
+        "type": "text",
+        "label": "Value"
+      }
+    ]
+  },
+  {
+    "name": "body",
+    "type": "any",
+    "label": "Body",
+    "help": "JSON body for POST requests."
+  }
+]

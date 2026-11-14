@@ -1,0 +1,9 @@
+{
+  "label": "Add tags",
+  "description": "Adds tags to a photo or video in an album this connection can add to.",
+  "moduleType": "action",
+  "actionCrud": "update",
+  "scope": [
+    "tags:write"
+  ]
+}

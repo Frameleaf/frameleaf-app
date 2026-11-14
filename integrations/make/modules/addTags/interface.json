@@ -1,0 +1,10 @@
+[
+  {
+    "name": "tagIds",
+    "type": "array",
+    "label": "Tag IDs",
+    "spec": {
+      "type": "text"
+    }
+  }
+]

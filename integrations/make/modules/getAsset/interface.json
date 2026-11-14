@@ -1,0 +1,47 @@
+[
+  {
+    "name": "id",
+    "type": "text",
+    "label": "ID"
+  },
+  {
+    "name": "type",
+    "type": "text",
+    "label": "Type"
+  },
+  {
+    "name": "title",
+    "type": "text",
+    "label": "Title"
+  },
+  {
+    "name": "description",
+    "type": "text",
+    "label": "Caption"
+  },
+  {
+    "name": "width",
+    "type": "number",
+    "label": "Width"
+  },
+  {
+    "name": "height",
+    "type": "number",
+    "label": "Height"
+  },
+  {
+    "name": "duration",
+    "type": "number",
+    "label": "Duration (ms)"
+  },
+  {
+    "name": "createdAt",
+    "type": "date",
+    "label": "Taken at"
+  },
+  {
+    "name": "updatedAt",
+    "type": "date",
+    "label": "Updated at"
+  }
+]

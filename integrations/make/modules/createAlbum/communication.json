@@ -1,0 +1,12 @@
+{
+  "url": "/albums",
+  "method": "POST",
+  "body": {
+    "requestId": "{{parameters.sourceId}}",
+    "name": "{{parameters.name}}",
+    "workspace": "photo"
+  },
+  "response": {
+    "output": "{{body}}"
+  }
+}

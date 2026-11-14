@@ -1,0 +1,4 @@
+{ "description": "Gets one readable photo.",
+  "parameters": { "assetId": "00000000-0000-4000-8000-000000000001" },
+  "requests": [["GET", "/api/connect/assets/00000000-0000-4000-8000-000000000001"]],
+  "output": { "id": "00000000-0000-4000-8000-000000000001", "type": "IMAGE" } }

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "event",
+    "type": "text",
+    "label": "Event"
+  },
+  {
+    "name": "deliveryId",
+    "type": "text",
+    "label": "Delivery ID"
+  },
+  {
+    "name": "occurredAt",
+    "type": "date",
+    "label": "Occurred at"
+  },
+  {
+    "name": "assetId",
+    "type": "text",
+    "label": "Photo or video ID"
+  },
+  {
+    "name": "albumId",
+    "type": "text",
+    "label": "Album ID"
+  },
+  {
+    "name": "format",
+    "type": "text",
+    "label": "Export format"
+  }
+]

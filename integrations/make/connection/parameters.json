@@ -1,0 +1,26 @@
+[
+  {
+    "name": "serverUrl",
+    "type": "text",
+    "label": "Frameleaf server URL",
+    "help": "Use the canonical HTTPS origin reachable by Make, without a trailing slash or path. Create a new connection to change servers.",
+    "required": true,
+    "editable": false,
+    "validate": {
+      "max": 267,
+      "pattern": "^https://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$(?![\\s\\S])"
+    }
+  },
+  {
+    "name": "frameleafClientId",
+    "type": "text",
+    "label": "Frameleaf client ID",
+    "help": "Ask your Frameleaf administrator for the public client ID registered on this server with callback https://www.make.com/oauth/cb/app.",
+    "required": true,
+    "editable": false,
+    "validate": {
+      "max": 200,
+      "pattern": "^[A-Za-z0-9_-]+$(?![\\s\\S])"
+    }
+  }
+]

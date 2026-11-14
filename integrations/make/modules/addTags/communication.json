@@ -1,0 +1,10 @@
+{
+  "url": "/assets/{{encodeURL(parameters.assetId)}}/tags",
+  "method": "POST",
+  "body": {
+    "tags": "{{parameters.tags}}"
+  },
+  "response": {
+    "output": "{{body}}"
+  }
+}

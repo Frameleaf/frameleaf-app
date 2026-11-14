@@ -1,0 +1,7 @@
+{
+  "library:read": "Read photos, videos and albums you choose",
+  "albums:write": "Create albums and add photos to albums you choose",
+  "tags:write": "Add tags to photos in albums you choose",
+  "photos:upload": "Upload photos and videos to albums you choose",
+  "events:read": "See new photos and album additions you can read"
+}

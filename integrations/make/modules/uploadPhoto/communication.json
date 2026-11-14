@@ -1,0 +1,48 @@
+[
+  {
+    "url": "/uploads",
+    "method": "POST",
+    "body": {
+      "requestId": "{{parameters.sourceId}}",
+      "albumId": "{{parameters.albumId}}",
+      "workspace": "photo",
+      "filename": "{{parameters.fileName}}",
+      "size": "{{length(parameters.data)}}",
+      "sha256": "{{sha256(parameters.data)}}",
+      "contentType": "{{switch(lower(last(split(parameters.fileName, '.'))), 'jpg', 'image/jpeg', 'jpeg', 'image/jpeg', 'png', 'image/png', 'mp4', 'video/mp4', '')}}",
+      "fileCreatedAt": "{{parameters.takenAt}}",
+      "fileModifiedAt": "{{parameters.takenAt}}"
+    },
+    "response": {
+      "temp": {
+        "id": "{{body.id}}",
+        "state": "{{body.state}}",
+        "offset": "{{body.offset}}"
+      }
+    }
+  },
+  {
+    "condition": "{{temp.state = 'receiving' && temp.offset = 0}}",
+    "url": "/uploads/{{temp.id}}",
+    "method": "PATCH",
+    "type": "binary",
+    "headers": {
+      "content-type": "application/partial-upload",
+      "upload-draft-interop-version": "9",
+      "upload-offset": "0",
+      "upload-complete": "?1"
+    },
+    "body": "{{parameters.data}}"
+  },
+  {
+    "url": "/uploads/{{temp.id}}/commit",
+    "method": "POST",
+    "body": {
+      "requestId": "{{parameters.sourceId}}",
+      "sha256": "{{sha256(parameters.data)}}"
+    },
+    "response": {
+      "output": "{{body}}"
+    }
+  }
+]

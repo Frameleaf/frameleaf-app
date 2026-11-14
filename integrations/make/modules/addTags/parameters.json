@@ -1,0 +1,29 @@
+[
+  {
+    "name": "assetId",
+    "type": "text",
+    "label": "Photo or video ID",
+    "required": true,
+    "validate": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\\s\\S])"
+    }
+  },
+  {
+    "name": "tags",
+    "type": "array",
+    "label": "Tags",
+    "required": true,
+    "spec": {
+      "type": "text",
+      "validate": {
+        "min": 1,
+        "max": 100,
+        "pattern": "^[^/]+$(?![\\s\\S])"
+      }
+    },
+    "validate": {
+      "minItems": 1,
+      "maxItems": 20
+    }
+  }
+]
