@@ -1,11 +1,18 @@
 const assert = require("node:assert/strict");
 const { createHash } = require("node:crypto");
-const { test, afterEach } = require("node:test");
+const { test, afterEach, mock } = require("node:test");
+const dns = require("node:dns/promises");
 const nock = require("nock");
 const core = require("zapier-platform-core");
 const App = require("../index");
 const run = core.createAppTester(App);
 nock.disableNetConnect();
+// Sources resolve to a public documentation address unless a test says otherwise.
+mock.method(dns, "lookup", async (host) =>
+  host === "rebind.example.net"
+    ? [{ address: "169.254.169.254", family: 4 }]
+    : [{ address: "203.0.113.10", family: 4 }],
+);
 afterEach(() => {
   assert.deepEqual(nock.pendingMocks(), []);
   nock.cleanAll();
@@ -118,9 +125,18 @@ test("expired cursor, narrowed consent, busy hierarchy and expired token stay di
   const cases = [
     [410, (e) => code(e) === "CursorExpired"],
     [403, (e) => code(e) === "Forbidden"],
-    [409, (e) => e.name === "ThrottledError"],
+    [429, (e) => e.name === "ThrottledError"],
     [401, (e) => e.name === "RefreshAuthError"],
   ];
+  const conflicts = [
+    ["Connect access is changing; retry the operation", (e) => e.name === "ThrottledError"],
+    ["Connect operation unavailable", (e) => code(e) === "Unavailable"],
+    ["Request ID payload changed", (e) => code(e) === "SourceIdReused"],
+  ];
+  for (const [message, check] of conflicts) {
+    connect().get("/api/connect/events/latest").query(true).reply(409, { message });
+    await assert.rejects(() => perform("triggers.asset_ready.operation.perform"), check);
+  }
   for (const [status, check] of cases) {
     connect().get("/api/connect/events/latest").query(true).reply(status, {});
     await assert.rejects(() => perform("triggers.asset_ready.operation.perform"), check);
@@ -281,6 +297,7 @@ test("upload refuses unsafe, oversized and mismatched sources before starting", 
   await refuse({ file: "http://files.example.net/photo.jpeg" }, null, "InvalidSource");
   await refuse({ file: "https://127.0.0.1/photo.jpeg" }, null, "InvalidSource");
   await refuse({ file: "https://nas.local/photo.jpeg" }, null, "InvalidSource");
+  await refuse({ file: "https://rebind.example.net/photo.jpeg" }, null, "InvalidSource");
   await refuse({}, () =>
     nock(source).get("/photo.jpeg").reply(302, "", { Location: "http://files.example.net/x.jpeg" }),
     "InvalidSource",

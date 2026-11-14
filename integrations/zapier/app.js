@@ -1,5 +1,6 @@
 const { createHash } = require('node:crypto');
-const { isIP } = require('node:net');
+const dns = require('node:dns/promises');
+const { BlockList, isIP } = require('node:net');
 const locales = require('./locales.json');
 const createAuthentication = require('./authentication');
 const createConnect = require('./connect');
@@ -16,7 +17,21 @@ const SIGNATURES = [
   ['application/pdf', 'pdf', (b) => b.subarray(0, 5).toString('latin1') === '%PDF-'],
   ['video/mp4', 'mp4', (b) => b.subarray(4, 8).toString('latin1') === 'ftyp'],
 ];
+// Addresses a source may never resolve to: loopback, private, link-local (cloud metadata), CGNAT,
+// unspecified, multicast and their IPv6 forms.
+const PRIVATE = new BlockList();
+for (const [net, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.168.0.0', 16], ['224.0.0.0', 3]])
+  PRIVATE.addSubnet(net, prefix, 'ipv4');
+for (const [net, prefix] of [['::', 127], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]])
+  PRIVATE.addSubnet(net, prefix, 'ipv6');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+const safeDecode = (value) => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
 const startOfUtcDay = () => new Date(new Date().toISOString().slice(0, 10)).toISOString();
 
 module.exports = function createApp(locale = 'en') {
@@ -154,12 +169,26 @@ module.exports = function createApp(locale = 'en') {
       fail(z, 'invalidSource', 'InvalidSource');
     return url;
   }
+  // ponytail: checks the resolved addresses before connecting; fetch resolves again, so a DNS
+  // rebinding race remains. Pin the checked address with a custom agent if that ever matters.
+  async function resolvable(z, url) {
+    let addresses;
+    try {
+      addresses = await dns.lookup(url.hostname, { all: true });
+    } catch {
+      fail(z, 'sourceFailed', 'SourceFailed', 502);
+    }
+    if (!addresses.length || addresses.some(({ address, family }) => PRIVATE.check(address, family === 6 ? 'ipv6' : 'ipv4')))
+      fail(z, 'invalidSource', 'InvalidSource');
+    return url;
+  }
   // Fetches the file a previous step supplied. Uses plain fetch, never z.request, so no Library
   // credential can be attached; only public HTTPS, at most three re-validated redirects, a deadline
   // and a byte ceiling enforced while streaming.
   async function fetchSource(z, value, limit) {
     let url = publicHttps(z, value);
     for (let hop = 0; hop <= 3; hop++) {
+      await resolvable(z, url);
       let response;
       try {
         response = await fetch(url, {
@@ -194,7 +223,7 @@ module.exports = function createApp(locale = 'en') {
       const modified = new Date(response.headers.get('last-modified') ?? '');
       return {
         bytes: Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))),
-        name: decodeURIComponent(url.pathname.split('/').at(-1) ?? ''),
+        name: safeDecode(url.pathname.split('/').at(-1) ?? ''),
         modifiedAt: Number.isNaN(modified.getTime()) ? null : modified.toISOString(),
       };
     }

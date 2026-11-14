@@ -86,7 +86,8 @@
     "filenameLabel": "Filnavn",
     "filenameHelp": "Valgfrit. Filtypenavnet fastsættes ud fra filens indhold.",
     "capturedAtLabel": "Optagelsesdato",
-    "capturedAtHelp": "Valgfrit. Datoen, der er gemt i filen, har forrang, når den findes."
+    "capturedAtHelp": "Valgfrit. Datoen, der er gemt i filen, har forrang, når den findes.",
+    "unavailable": "Uploaden kan ikke fortsætte: den er udløbet, annulleret eller afvist, eller albummet modtager ikke længere filer. Tjek albummet, og brug et nyt kilde-id."
   },
   "de": {
     "clientHelp": "Bitte einen Frameleaf-Administrator, die von Zapier angezeigte exakte Rückrufadresse in Connect einzutragen. Gib die öffentliche Client-ID ein, niemals ein Zugriffstoken.",
@@ -175,7 +176,8 @@
     "filenameLabel": "Dateiname",
     "filenameHelp": "Optional. Die Dateiendung wird anhand des Dateiinhalts festgelegt.",
     "capturedAtLabel": "Aufnahmedatum",
-    "capturedAtHelp": "Optional. Das in der Datei gespeicherte Datum hat Vorrang, sofern vorhanden."
+    "capturedAtHelp": "Optional. Das in der Datei gespeicherte Datum hat Vorrang, sofern vorhanden.",
+    "unavailable": "Dieser Upload kann nicht fortgesetzt werden: Er ist abgelaufen, wurde abgebrochen oder abgelehnt, oder das Album nimmt keine Dateien mehr an. Prüfen Sie das Album und verwenden Sie eine neue Quell-ID."
   },
   "en": {
     "clientHelp": "Ask a Frameleaf administrator to register the exact callback shown by Zapier in Connect setup. Enter the public client ID; never an access token.",
@@ -264,7 +266,8 @@
     "filenameLabel": "File name",
     "filenameHelp": "Optional. The extension is set from the file's contents.",
     "capturedAtLabel": "Capture date",
-    "capturedAtHelp": "Optional. The date stored in the file wins when present."
+    "capturedAtHelp": "Optional. The date stored in the file wins when present.",
+    "unavailable": "This upload can no longer continue: it expired, was cancelled or rejected, or the album stopped accepting files. Check the album, then use a new Source ID."
   },
   "es": {
     "clientHelp": "Pide a un administrador de Frameleaf que registre en Connect la URL de retorno exacta que muestra Zapier. Introduce el ID de cliente público, nunca un token de acceso.",
@@ -353,7 +356,8 @@
     "filenameLabel": "Nombre del archivo",
     "filenameHelp": "Opcional. La extensión se establece a partir del contenido del archivo.",
     "capturedAtLabel": "Fecha de captura",
-    "capturedAtHelp": "Opcional. Si existe, prevalece la fecha almacenada en el archivo."
+    "capturedAtHelp": "Opcional. Si existe, prevalece la fecha almacenada en el archivo.",
+    "unavailable": "Esta subida ya no puede continuar: caducó, se canceló o se rechazó, o el álbum dejó de aceptar archivos. Revisa el álbum y usa un ID de origen nuevo."
   },
   "fr": {
     "clientHelp": "Demandez à un administrateur Frameleaf d’enregistrer dans Connect l’adresse de retour exacte affichée par Zapier. Saisissez l’identifiant client public, jamais un jeton d’accès.",
@@ -442,7 +446,8 @@
     "filenameLabel": "Nom du fichier",
     "filenameHelp": "Facultatif. L’extension est déterminée d’après le contenu du fichier.",
     "capturedAtLabel": "Date de prise de vue",
-    "capturedAtHelp": "Facultatif. La date enregistrée dans le fichier prévaut si elle est présente."
+    "capturedAtHelp": "Facultatif. La date enregistrée dans le fichier prévaut si elle est présente.",
+    "unavailable": "Ce téléversement ne peut plus continuer : il a expiré, a été annulé ou refusé, ou l’album n’accepte plus de fichiers. Vérifiez l’album, puis utilisez un nouvel ID de source."
   },
   "it": {
     "clientHelp": "Chiedi a un amministratore Frameleaf di registrare in Connect l’indirizzo di ritorno esatto mostrato da Zapier. Inserisci l’ID client pubblico, mai un token di accesso.",
@@ -531,7 +536,8 @@
     "filenameLabel": "Nome del file",
     "filenameHelp": "Facoltativo. L’estensione viene impostata in base al contenuto del file.",
     "capturedAtLabel": "Data di acquisizione",
-    "capturedAtHelp": "Facoltativo. Se presente, prevale la data memorizzata nel file."
+    "capturedAtHelp": "Facoltativo. Se presente, prevale la data memorizzata nel file.",
+    "unavailable": "Questo caricamento non può più proseguire: è scaduto, è stato annullato o rifiutato, oppure l’album non accetta più file. Controlla l’album, poi usa un nuovo ID origine."
   },
   "nb_NO": {
     "clientHelp": "Be en Frameleaf-administrator registrere den nøyaktige returadressen fra Zapier i Connect. Skriv inn den offentlige klient-ID-en, aldri et tilgangstoken.",
@@ -620,7 +626,8 @@
     "filenameLabel": "Filnavn",
     "filenameHelp": "Valgfritt. Filtypen settes ut fra filens innhold.",
     "capturedAtLabel": "Opptaksdato",
-    "capturedAtHelp": "Valgfritt. Datoen som er lagret i filen, gjelder når den finnes."
+    "capturedAtHelp": "Valgfritt. Datoen som er lagret i filen, gjelder når den finnes.",
+    "unavailable": "Opplastingen kan ikke fortsette: den har utløpt, er avbrutt eller avvist, eller albumet tar ikke lenger imot filer. Sjekk albumet, og bruk en ny kilde-ID."
   },
   "nl": {
     "clientHelp": "Vraag een Frameleaf-beheerder om de exacte terugkeer-URL uit Zapier in Connect te registreren. Voer de openbare client-ID in, nooit een toegangstoken.",
@@ -709,7 +716,8 @@
     "filenameLabel": "Bestandsnaam",
     "filenameHelp": "Optioneel. De extensie wordt bepaald op basis van de inhoud van het bestand.",
     "capturedAtLabel": "Opnamedatum",
-    "capturedAtHelp": "Optioneel. De in het bestand opgeslagen datum heeft voorrang als die aanwezig is."
+    "capturedAtHelp": "Optioneel. De in het bestand opgeslagen datum heeft voorrang als die aanwezig is.",
+    "unavailable": "Deze upload kan niet verder: hij is verlopen, geannuleerd of geweigerd, of het album accepteert geen bestanden meer. Controleer het album en gebruik een nieuwe bron-ID."
   },
   "pl": {
     "clientHelp": "Poproś administratora Frameleaf o zarejestrowanie w Connect dokładnego adresu powrotnego z Zapier. Wpisz publiczny identyfikator klienta, nigdy token dostępu.",
@@ -798,7 +806,8 @@
     "filenameLabel": "Nazwa pliku",
     "filenameHelp": "Opcjonalne. Rozszerzenie jest ustalane na podstawie zawartości pliku.",
     "capturedAtLabel": "Data wykonania",
-    "capturedAtHelp": "Opcjonalne. Jeśli jest obecna, data zapisana w pliku ma pierwszeństwo."
+    "capturedAtHelp": "Opcjonalne. Jeśli jest obecna, data zapisana w pliku ma pierwszeństwo.",
+    "unavailable": "Tego przesyłania nie można kontynuować: wygasło, zostało anulowane lub odrzucone albo album nie przyjmuje już plików. Sprawdź album i użyj nowego identyfikatora źródła."
   },
   "pt": {
     "clientHelp": "Peça a um administrador Frameleaf que registe no Connect o endereço de retorno exato apresentado pelo Zapier. Introduza o ID de cliente público, nunca um token de acesso.",
@@ -887,7 +896,8 @@
     "filenameLabel": "Nome do ficheiro",
     "filenameHelp": "Opcional. A extensão é definida a partir do conteúdo do ficheiro.",
     "capturedAtLabel": "Data de captura",
-    "capturedAtHelp": "Opcional. A data guardada no ficheiro prevalece, quando existir."
+    "capturedAtHelp": "Opcional. A data guardada no ficheiro prevalece, quando existir.",
+    "unavailable": "Este carregamento já não pode continuar: expirou, foi cancelado ou rejeitado, ou o álbum deixou de aceitar ficheiros. Verifique o álbum e use um novo ID de origem."
   },
   "sv": {
     "clientHelp": "Be en Frameleaf-administratör registrera den exakta returadressen från Zapier i Connect. Ange det offentliga klient-ID:t, aldrig en åtkomsttoken.",
@@ -976,6 +986,7 @@
     "filenameLabel": "Filnamn",
     "filenameHelp": "Valfritt. Filändelsen anges utifrån filens innehåll.",
     "capturedAtLabel": "Tagningsdatum",
-    "capturedAtHelp": "Valfritt. Datumet som är lagrat i filen gäller om det finns."
+    "capturedAtHelp": "Valfritt. Datumet som är lagrat i filen gäller om det finns.",
+    "unavailable": "Uppladdningen kan inte fortsätta: den har gått ut, avbrutits eller avvisats, eller så tar albumet inte längre emot filer. Kontrollera albumet och använd ett nytt käll-ID."
   }
 }

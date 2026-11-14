@@ -164,9 +164,14 @@ module.exports = function createConnect(text) {
       if (options.conflict) return undefined;
       // A changed payload under a reused request ID is permanent; anything else is a short-lived
       // hierarchy/consent change that Connect asks clients to retry unchanged.
-      if (/payload changed/i.test(String(response.content ?? '')))
+      const message = String(response.content ?? '');
+      if (/payload changed/i.test(message))
         throw new z.errors.Error(text.sourceReused, 'SourceIdReused', 409);
-      throw new z.errors.ThrottledError(text.busy, 15);
+      // Only "access is changing; retry" is transient. An expired, cancelled or rejected upload,
+      // or a destination that stopped accepting writes, will not recover by replaying.
+      if (/retry/i.test(message))
+        throw new z.errors.ThrottledError(text.busy, 15);
+      throw new z.errors.Error(text.unavailable, 'Unavailable', 409);
     }
     if (status === 404 && options.missing) return undefined;
     const errors = {
