@@ -188,7 +188,8 @@ export class PhotographyBookingService {
     let checkoutUrl: string | null = null;
     const owed = booking.deposit > 0 && !['paid', 'refunded'].includes(booking.depositStatus ?? '');
     if (owed && (await this.clients.ready(ownerId))) {
-      const back = origin ?? (await this.clients.publicUrl());
+      // The server's own public address first, so a resend from another address sends Stripe the same return URLs.
+      const back = (await this.clients.publicUrl()) ?? origin;
       try {
         if (back) checkoutUrl = await this.depositCheckout(booking, `${back}/studio/${idOrSlug}`);
       } catch (error) {

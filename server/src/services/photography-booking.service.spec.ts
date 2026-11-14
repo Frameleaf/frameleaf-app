@@ -202,9 +202,10 @@ describe(PhotographyBookingService.name, () => {
       (call) => (call as unknown as [string, { idempotencyKey: string }])[1].idempotencyKey,
     );
     expect(keys).toEqual([`payment-${paymentId}`, `payment-${paymentId}`]);
-    // The studio renames the session meanwhile: the resend still sends the same checkout parameters.
+    // The studio renames the session meanwhile: the resend still sends the same checkout parameters…
     s.types[0].name = 'Mini session (spring)';
-    await s.service.request('cedar', request(type.id), 'https://photos.example');
+    // …and the client comes back through another address for the same server.
+    await s.service.request('cedar', request(type.id), 'https://192.168.1.20:2283');
     const sent = s.clients.checkout.mock.calls.map((call) => (call as unknown as [string, object])[1]);
     expect(sent.at(-1)).toEqual(sent[0]);
     // A changed request (another date) is a new booking, not a resend.
