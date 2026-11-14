@@ -37,7 +37,7 @@ describe(PhotographyBookingRepository.name, () => {
     expect((await sut.types(user.id, true)).map((t) => t.name)).toEqual(['Mini']);
     expect(await sut.types(user.id)).toHaveLength(2);
 
-    const booking = await sut.createBooking({
+    const request = {
       ownerId: user.id,
       bookingTypeId: mini.id,
       typeName: 'Mini',
@@ -49,11 +49,19 @@ describe(PhotographyBookingRepository.name, () => {
       total: 28_000,
       deposit: 5000,
       currency: 'CAD',
-    });
-    const payment = await payments.createStandalonePayment(user.id, 5000, 'CAD', 'sam@example.com');
-    await sut.setDepositPayment(booking.id, payment.id);
-    await payments.transition(payment.id, ['pending'], 'paid', 'pi_1');
-    const [listed] = await sut.bookings(user.id);
+    };
+    // Overlapping resends of one request make one booking and one deposit payment.
+    const sent = await Promise.all([sut.findOrCreateRequest(request, 30), sut.findOrCreateRequest(request, 30)]);
+    expect(new Set(sent.map((r) => r.booking.id)).size).toBe(1);
+    expect(sent.filter((r) => r.created)).toHaveLength(1);
+    const booking = sent[0].booking;
+    const claimed = await Promise.all([sut.claimDepositPayment(booking.id), sut.claimDepositPayment(booking.id)]);
+    expect(claimed[0]).toBe(claimed[1]);
+    // A changed request (another date) is a new booking.
+    const other = await sut.findOrCreateRequest({ ...request, preferredDates: ['2027-05-01'] }, 30);
+    expect(other.created).toBe(true);
+    await payments.transition(claimed[0], ['pending'], 'paid', 'pi_1');
+    const listed = (await sut.bookings(user.id)).find((b) => b.id === booking.id)!;
     expect(listed).toMatchObject({
       total: 28_000,
       depositStatus: 'paid',
@@ -64,10 +72,8 @@ describe(PhotographyBookingRepository.name, () => {
       status: 'confirmed',
       depositStatus: 'paid',
     });
-    // A resend within 30 minutes finds the same request; after it is confirmed it is no longer a resend.
-    expect(await sut.recentRequest(user.id, mini.id, 'sam@example.com', 30)).toBeUndefined();
     // Deleting a type keeps its bookings.
     expect(await sut.deleteType(mini.id, user.id)).toBe(true);
-    expect((await sut.bookings(user.id))[0]).toMatchObject({ bookingTypeId: null, typeName: 'Mini' });
+    expect((await sut.bookings(user.id)).every((b) => b.bookingTypeId === null && b.typeName === 'Mini')).toBe(true);
   });
 });

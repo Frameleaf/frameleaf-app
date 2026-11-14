@@ -21,7 +21,16 @@ const setup = (ready = true) => {
       types.push(row);
       return Promise.resolve(row);
     }),
-    createBooking: vi.fn((b: Omit<BookingRow, 'id' | 'status' | 'requestedAt' | 'depositPaymentId'>) => {
+    findOrCreateRequest: vi.fn((b: Omit<BookingRow, 'id' | 'status' | 'requestedAt' | 'depositPaymentId'>) => {
+      const same = bookings.find(
+        (o) =>
+          o.ownerId === b.ownerId &&
+          o.bookingTypeId === b.bookingTypeId &&
+          o.clientEmail === b.clientEmail &&
+          JSON.stringify([o.clientName, o.message, o.preferredDates, o.addOns]) ===
+            JSON.stringify([b.clientName, b.message, b.preferredDates, b.addOns]),
+      );
+      if (same) return Promise.resolve({ booking: same, created: false });
       const row = {
         ...b,
         id: randomUUID(),
@@ -30,20 +39,15 @@ const setup = (ready = true) => {
         depositPaymentId: null,
       };
       bookings.push(row);
-      return Promise.resolve(row);
+      return Promise.resolve({ booking: row, created: true });
     }),
-    recentRequest: vi.fn((owner: string, typeId: string, email: string) =>
-      Promise.resolve(
-        bookings.findLast((b) => b.ownerId === owner && b.bookingTypeId === typeId && b.clientEmail === email),
-      ),
-    ),
-    setDepositPayment: vi.fn((id: string, paymentId: string) => {
-      bookings.find((b) => b.id === id)!.depositPaymentId = paymentId;
-      return Promise.resolve();
+    claimDepositPayment: vi.fn((id: string) => {
+      const booking = bookings.find((b) => b.id === id)!;
+      booking.depositPaymentId ??= randomUUID();
+      return Promise.resolve(booking.depositPaymentId);
     }),
   };
   const payments = {
-    createStandalonePayment: vi.fn(() => Promise.resolve({ id: randomUUID() })),
     setCheckout: vi.fn(() => Promise.resolve()),
   };
   const site = {
@@ -194,10 +198,12 @@ describe(PhotographyBookingService.name, () => {
     expect(again.checkoutUrl).toContain('checkout.stripe.com');
     expect(s.bookings).toHaveLength(1);
     expect(s.site.addInquiry).toHaveBeenCalledTimes(1);
-    expect(s.payments.createStandalonePayment).toHaveBeenCalledTimes(1);
     const keys = s.clients.checkout.mock.calls.map(
       (call) => (call as unknown as [string, { idempotencyKey: string }])[1].idempotencyKey,
     );
     expect(keys).toEqual([`payment-${paymentId}`, `payment-${paymentId}`]);
+    // A changed request (another date) is a new booking, not a resend.
+    await s.service.request('cedar', request(type.id, { preferredDates: ['2027-05-01'] }), 'https://photos.example');
+    expect(s.bookings).toHaveLength(2);
   });
 });

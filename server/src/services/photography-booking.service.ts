@@ -143,12 +143,10 @@ export class PhotographyBookingService {
       chosen.push({ id: addOn.id, name: addOn.name, price: addOn.price, quantity: pick.quantity });
     }
     const total = type.price + chosen.reduce((sum, a) => sum + a.price * a.quantity, 0);
-    // A retry of the same request (same client and session, still waiting) resumes it: no second booking or lead, and
-    // its deposit keeps its payment and idempotency key, so an uncertain checkout can't become a second one.
-    const earlier = await this.repository.recentRequest(ownerId, type.id, dto.email, 30);
-    const booking =
-      earlier ??
-      (await this.repository.createBooking({
+    // An identical resend (same client, session, dates, add-ons and message, still waiting) resumes its booking: no second
+    // booking or lead, and its deposit keeps its payment and idempotency key. A changed request is a new booking.
+    const { booking, created } = await this.repository.findOrCreateRequest(
+      {
         ownerId,
         bookingTypeId: type.id,
         typeName: type.name,
@@ -160,9 +158,11 @@ export class PhotographyBookingService {
         total,
         deposit: type.deposit,
         currency: type.currency,
-      }));
+      },
+      30,
+    );
 
-    if (!earlier) {
+    if (created) {
       const lines = [
         `Booking request: ${type.name} (${money(total, type.currency)})`,
         ...chosen.map((a) => `+ ${a.name} × ${a.quantity}`),
@@ -201,17 +201,7 @@ export class PhotographyBookingService {
 
   /** The deposit as a payment on the studio's own account; its events reach PhotographyPaymentService (`booking:`). */
   private async depositCheckout(booking: BookingRow, type: BookingTypeRow, back: string) {
-    let paymentId = booking.depositPaymentId;
-    if (!paymentId) {
-      const payment = await this.payments.createStandalonePayment(
-        booking.ownerId,
-        booking.deposit,
-        booking.currency,
-        booking.clientEmail,
-      );
-      await this.repository.setDepositPayment(booking.id, payment.id);
-      paymentId = payment.id;
-    }
+    const paymentId = await this.repository.claimDepositPayment(booking.id);
     const session = await this.clients.checkout(booking.ownerId, {
       reference: `booking:${paymentId}`,
       idempotencyKey: `payment-${paymentId}`,

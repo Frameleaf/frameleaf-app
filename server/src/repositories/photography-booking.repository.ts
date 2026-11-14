@@ -84,30 +84,53 @@ export class PhotographyBookingRepository {
       WHERE b."ownerId"=${ownerId}::uuid ORDER BY b."requestedAt" DESC LIMIT 500`.execute(this.db);
     return rows;
   }
-  async createBooking(
+  /**
+   * The booking for this exact request: an identical one from the same client for the same session in the last
+   * `minutes`, still waiting, is a resend and is returned as it is (`created` false); anything different is a new
+   * booking. One advisory lock per studio, client and session makes overlapping resends wait for each other.
+   */
+  findOrCreateRequest(
     booking: Omit<BookingRow, 'id' | 'status' | 'requestedAt' | 'depositPaymentId' | 'depositStatus'>,
+    minutes: number,
   ) {
-    const { rows } = await sql<BookingRow>`INSERT INTO photography_booking ("ownerId", "bookingTypeId", "typeName",
-        "clientName", "clientEmail", message, "preferredDates", "addOns", total, deposit, currency)
-      VALUES (${booking.ownerId}::uuid, ${booking.bookingTypeId}::uuid, ${booking.typeName}, ${booking.clientName},
-        ${booking.clientEmail}, ${booking.message}, ${JSON.stringify(booking.preferredDates)}::text::jsonb,
-        ${JSON.stringify(booking.addOns)}::text::jsonb, ${booking.total}, ${booking.deposit}, ${booking.currency})
-      RETURNING *`.execute(this.db);
-    return rows[0];
+    return this.db.transaction().execute(async (trx) => {
+      const key = `booking:${booking.ownerId}:${booking.bookingTypeId}:${booking.clientEmail.toLowerCase()}`;
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`.execute(trx);
+      const { rows: same } = await sql<BookingRow>`SELECT b.*, p.status AS "depositStatus" FROM photography_booking b
+        LEFT JOIN photography_payment p ON p.id=b."depositPaymentId"
+        WHERE b."ownerId"=${booking.ownerId}::uuid AND b."bookingTypeId"=${booking.bookingTypeId}::uuid
+          AND lower(b."clientEmail")=lower(${booking.clientEmail}) AND b."clientName"=${booking.clientName}
+          AND b.message=${booking.message} AND b."preferredDates"=${JSON.stringify(booking.preferredDates)}::text::jsonb
+          AND b."addOns"=${JSON.stringify(booking.addOns)}::text::jsonb
+          AND b.status='requested' AND b."requestedAt" > now() - make_interval(mins => ${minutes})
+        ORDER BY b."requestedAt" DESC LIMIT 1`.execute(trx);
+      if (same[0]) return { booking: same[0], created: false };
+      const { rows } = await sql<BookingRow>`INSERT INTO photography_booking ("ownerId", "bookingTypeId", "typeName",
+          "clientName", "clientEmail", message, "preferredDates", "addOns", total, deposit, currency)
+        VALUES (${booking.ownerId}::uuid, ${booking.bookingTypeId}::uuid, ${booking.typeName}, ${booking.clientName},
+          ${booking.clientEmail}, ${booking.message}, ${JSON.stringify(booking.preferredDates)}::text::jsonb,
+          ${JSON.stringify(booking.addOns)}::text::jsonb, ${booking.total}, ${booking.deposit}, ${booking.currency})
+        RETURNING *`.execute(trx);
+      return { booking: rows[0], created: true };
+    });
   }
-  /** The same client's request for the same session in the last `minutes`, still waiting: a retry of it, not a new one. */
-  async recentRequest(ownerId: string, bookingTypeId: string, clientEmail: string, minutes: number) {
-    const { rows } = await sql<BookingRow>`SELECT b.*, p.status AS "depositStatus" FROM photography_booking b
-      LEFT JOIN photography_payment p ON p.id=b."depositPaymentId"
-      WHERE b."ownerId"=${ownerId}::uuid AND b."bookingTypeId"=${bookingTypeId}::uuid AND b."clientEmail"=${clientEmail}
-        AND b.status='requested' AND b."requestedAt" > now() - make_interval(mins => ${minutes})
-      ORDER BY b."requestedAt" DESC LIMIT 1`.execute(this.db);
-    return rows[0];
-  }
-  async setDepositPayment(id: string, paymentId: string) {
-    await sql`UPDATE photography_booking SET "depositPaymentId"=${paymentId}::uuid WHERE id=${id}::uuid`.execute(
-      this.db,
-    );
+  /** The booking's deposit payment, made once: overlapping callers get the same one (the booking row is locked). */
+  claimDepositPayment(bookingId: string) {
+    return this.db.transaction().execute(async (trx) => {
+      const { rows } =
+        await sql<BookingRow>`SELECT * FROM photography_booking WHERE id=${bookingId}::uuid FOR UPDATE`.execute(trx);
+      const booking = rows[0];
+      if (booking.depositPaymentId) return booking.depositPaymentId;
+      const { rows: payment } = await sql<{ id: string }>`INSERT INTO photography_payment
+          ("ownerId", amount, currency, "payerEmail")
+        VALUES (${booking.ownerId}::uuid, ${booking.deposit}, ${booking.currency}, ${booking.clientEmail}) RETURNING id`.execute(
+        trx,
+      );
+      await sql`UPDATE photography_booking SET "depositPaymentId"=${payment[0].id}::uuid WHERE id=${bookingId}::uuid`.execute(
+        trx,
+      );
+      return payment[0].id;
+    });
   }
   async setStatus(id: string, ownerId: string, status: BookingStatus) {
     const { rows } = await sql<BookingRow>`WITH updated AS (UPDATE photography_booking SET status=${status}
