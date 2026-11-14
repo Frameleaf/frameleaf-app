@@ -462,6 +462,20 @@ export class PhotographySiteService {
     });
   }
 
+  /** FL-1049: the live studio behind a public site address (404 when its site is off). */
+  liveStudio(idOrSlug: string) {
+    return this.resolve(idOrSlug);
+  }
+
+  /** FL-1049: saves a lead on the studio's inquiry list and tells the studio, as a website inquiry does. */
+  async addInquiry(ownerId: string, site: PhotographySite, inquiry: Omit<PhotographyInquiry, 'id' | 'createdAt'>) {
+    const saved: PhotographyInquiry = { id: randomUUID(), createdAt: new Date().toISOString(), ...inquiry };
+    await this.repository.mutateStudio(ownerId, undefined, (record) => {
+      record.inquiries = [saved, ...(record.inquiries ?? [])].slice(0, MAX_INQUIRIES);
+    });
+    await this.tell(ownerId, site, saved);
+  }
+
   async inquire(idOrSlug: string, input: PhotographyInquiryCreateDto) {
     const dto = PhotographyInquiryCreateDto.schema.parse(input);
     const { ownerId, site } = await this.resolve(idOrSlug);

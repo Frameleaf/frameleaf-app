@@ -91,6 +91,12 @@ export class PhotographyPaymentRepository {
     const { rows } = await sql<PaymentRow>`SELECT * FROM photography_payment WHERE id=${id}::uuid`.execute(this.db);
     return rows[0];
   }
+  /** FL-1049: a payment that belongs to no link (a booking deposit). */
+  async createStandalonePayment(ownerId: string, amount: number, currency: string, payerEmail: string) {
+    const { rows } = await sql<PaymentRow>`INSERT INTO photography_payment ("ownerId", amount, currency, "payerEmail")
+      VALUES (${ownerId}::uuid, ${amount}, ${currency}, ${payerEmail}) RETURNING *`.execute(this.db);
+    return rows[0];
+  }
   /** The payer's own unfinished attempt on this link; retrying it with its idempotency key returns the same session. */
   async pendingAttempt(linkId: string, payerEmail: string, minutes: number) {
     const { rows } = await sql<PaymentRow>`SELECT * FROM photography_payment WHERE "linkId"=${linkId}::uuid
