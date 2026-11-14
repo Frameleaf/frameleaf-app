@@ -9,6 +9,7 @@ const ranked = (type: AssetTypeEnum, bestFrameTimestampMs: number | null): BestP
     bestPhotoScore: {
       score: 0.95,
       aestheticScore: null,
+      aestheticScoreVersion: 1,
       technicalScore: null,
       subjectScore: null,
       diversityScore: null,

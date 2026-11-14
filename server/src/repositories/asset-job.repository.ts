@@ -759,6 +759,18 @@ export class AssetJobRepository {
             and asset_face."deletedAt" is null
             and asset_face."isVisible" is true
         )`.as('faceCount'),
+        // FL-978: the visual search embedding feeds the learned aesthetic head
+        eb
+          .selectFrom('smart_search')
+          .select('smart_search.embedding')
+          .whereRef('smart_search.assetId', '=', 'asset.id')
+          .as('embedding'),
+        // FL-978: an embedding-only re-score reuses the stored image statistics
+        eb
+          .selectFrom('asset_best_photo_score')
+          .select('asset_best_photo_score.metadata')
+          .whereRef('asset_best_photo_score.assetId', '=', 'asset.id')
+          .as('scoreMetadata'),
       ])
       .where('asset.id', '=', id)
       .executeTakeFirst();

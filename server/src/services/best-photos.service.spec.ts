@@ -2,6 +2,7 @@ import { vitest } from 'vitest';
 import { BEST_PHOTOS_MIN_SCORE, BEST_PHOTO_SCORE_VERSION } from 'src/dtos/best-photos.dto.js';
 import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
+import { getAestheticHead, scoreAesthetic } from 'src/utils/aesthetic-head.js';
 import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { lockedFixture } from 'test/fixtures/locked.stub.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
@@ -9,7 +10,13 @@ import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metada
 import { factory } from 'test/small.factory.js';
 
 describe(BestPhotosService.name, () => {
-  const logger = { setContext: vitest.fn(), warn: vitest.fn(), debug: vitest.fn(), error: vitest.fn() };
+  const logger = {
+    setContext: vitest.fn(),
+    log: vitest.fn(),
+    warn: vitest.fn(),
+    debug: vitest.fn(),
+    error: vitest.fn(),
+  };
   const assetJobRepository = {
     getForBestPhotoScoring: vitest.fn(),
     getForVideoDuplicateFrameJob: vitest.fn(),
@@ -208,6 +215,74 @@ describe(BestPhotosService.name, () => {
     it('keeps technicalScore on its version 1 scale for an ordinary photo, so Tidy up leaves it alone', async () => {
       const { technicalScore } = await scoreOf(quality({ sharpness: 1, contrast: 30 }));
       expect(technicalScore).toBeGreaterThan(0.9);
+    });
+  });
+
+  describe('learned aesthetic score (FL-978)', () => {
+    const modelName = 'ViT-B-16-SigLIP-384__webli'; // the default visual search model
+    const embedding = Array.from({ length: 768 }, (_, index) => Math.sin(index) / 20);
+    const photo = {
+      id: 'asset-1',
+      ownerId: 'user-1',
+      type: AssetType.Image,
+      status: AssetStatus.Active,
+      deletedAt: null,
+      visibility: AssetVisibility.Timeline,
+      originalFileName: 'IMG_0001.JPG',
+      width: 4032,
+      height: 3024,
+      previewFile: '/preview.jpg',
+      faceCount: 0,
+      embedding: null as string | null,
+      scoreMetadata: null as Record<string, unknown> | null,
+    };
+
+    it('uses the head for the visual search model when the photo has an embedding', async () => {
+      assetJobRepository.getForBestPhotoScoring.mockResolvedValue({ ...photo, embedding: JSON.stringify(embedding) });
+      mediaRepository.measureImageQuality.mockResolvedValue(quality());
+
+      await expect(sut.handleScore({ id: photo.id })).resolves.toBe(JobStatus.Success);
+
+      const learned = scoreAesthetic(getAestheticHead(modelName)!, embedding)!;
+      expect(bestPhotosRepository.upsertScore).toHaveBeenCalledWith(
+        expect.objectContaining({
+          aestheticScore: expect.closeTo(learned, 9),
+          metadata: expect.objectContaining({ aestheticScoreVersion: 2, aestheticModel: modelName }),
+        }),
+      );
+    });
+
+    it('keeps version 1 until the photo has an embedding', async () => {
+      assetJobRepository.getForBestPhotoScoring.mockResolvedValue(photo);
+      mediaRepository.measureImageQuality.mockResolvedValue(quality());
+
+      await sut.handleScore({ id: photo.id });
+
+      expect(bestPhotosRepository.upsertScore).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ aestheticScoreVersion: 1, aestheticModel: null }),
+        }),
+      );
+    });
+
+    it('re-scores a new embedding from the stored image statistics without reading the preview', async () => {
+      assetJobRepository.getForBestPhotoScoring.mockResolvedValue(photo);
+      mediaRepository.measureImageQuality.mockResolvedValue(quality());
+      await sut.handleScore({ id: photo.id });
+      const { metadata, technicalScore } = bestPhotosRepository.upsertScore.mock.lastCall![0];
+      mediaRepository.measureImageQuality.mockClear();
+
+      assetJobRepository.getForBestPhotoScoring.mockResolvedValue({
+        ...photo,
+        embedding: JSON.stringify(embedding),
+        scoreMetadata: metadata,
+      });
+      await expect(sut.handleScore({ id: photo.id, embeddingChanged: true })).resolves.toBe(JobStatus.Success);
+
+      expect(mediaRepository.measureImageQuality).not.toHaveBeenCalled();
+      expect(bestPhotosRepository.upsertScore).toHaveBeenLastCalledWith(
+        expect.objectContaining({ technicalScore, metadata: expect.objectContaining({ aestheticScoreVersion: 2 }) }),
+      );
     });
   });
 

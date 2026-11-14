@@ -75,6 +75,9 @@
     selectAll="loaded"
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
+    <!-- FL-978 (FL-821 mock): the ranking's aesthetic score is learned from common photographic taste -->
+    <p class="aesthetic-note">{$t('frameleaf_best_photos_aesthetic_note')}</p>
+
     {#snippet subheader()}
       <BestMoments assets={rankedItems} onPlay={playMoment} />
     {/snippet}
@@ -96,3 +99,12 @@
     {/snippet}
   </LibraryView>
 </UserPageLayout>
+
+<style>
+  .aesthetic-note {
+    max-width: 450px;
+    margin: 4px 0 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+</style>
