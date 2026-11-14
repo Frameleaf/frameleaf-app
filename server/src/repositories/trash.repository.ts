@@ -21,6 +21,7 @@ import {
   requireDuplicateUndoFamily,
   restoreDuplicateUndoMetadata,
 } from 'src/repositories/duplicate-undo-completion.js';
+import { lockDuplicateOwner } from 'src/repositories/duplicate.repository.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import {
   associatedSeeds,
@@ -393,8 +394,10 @@ export class TrashRepository {
         const locked = [
           ...new Set([...selected, ...binding.family.assetIds, ...(duplicateUndo?.memberIds ?? [])]),
         ].sort();
-        if (duplicateUndo)
+        if (duplicateUndo) {
+          await lockDuplicateOwner(tx, userId);
           for (const id of locked) await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${id})::int)`.execute(tx);
+        }
         if (locked.length > 0)
           await tx
             .selectFrom('asset')

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetStatus, AssetVisibility, MediaOperationBulkAction, MediaOperationKind } from 'src/enum.js';
+import { lockDuplicateOwner } from 'src/repositories/duplicate.repository.js';
 import { DB } from 'src/schema/index.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { anyUuid, asUuid, withDefaultVisibility } from 'src/utils/database.js';
@@ -273,13 +274,16 @@ export class DuplicateDecisionRepository {
       return;
     }
 
-    await this.db
-      .updateTable('asset')
-      .set({ duplicateId })
-      .where('asset.ownerId', '=', asUuid(ownerId))
-      .where('asset.id', '=', anyUuid(assetIds))
-      .where((eb) => eb.or([eb('asset.duplicateId', 'is', null), eb('asset.duplicateId', '=', asUuid(duplicateId))]))
-      .execute();
+    await this.db.transaction().execute(async (tx) => {
+      await lockDuplicateOwner(tx, ownerId);
+      await tx
+        .updateTable('asset')
+        .set({ duplicateId })
+        .where('asset.ownerId', '=', asUuid(ownerId))
+        .where('asset.id', '=', anyUuid(assetIds))
+        .where((eb) => eb.or([eb('asset.duplicateId', 'is', null), eb('asset.duplicateId', '=', asUuid(duplicateId))]))
+        .execute();
+    });
   }
 
   /**
@@ -291,13 +295,16 @@ export class DuplicateDecisionRepository {
       return;
     }
 
-    await this.db
-      .updateTable('asset')
-      .set({ duplicateId: null })
-      .where('asset.ownerId', '=', asUuid(ownerId))
-      .where('asset.id', '=', anyUuid(assetIds))
-      .where('asset.duplicateId', '=', asUuid(duplicateId))
-      .execute();
+    await this.db.transaction().execute(async (tx) => {
+      await lockDuplicateOwner(tx, ownerId);
+      await tx
+        .updateTable('asset')
+        .set({ duplicateId: null })
+        .where('asset.ownerId', '=', asUuid(ownerId))
+        .where('asset.id', '=', anyUuid(assetIds))
+        .where('asset.duplicateId', '=', asUuid(duplicateId))
+        .execute();
+    });
   }
 
   /** A durable job's status and lineage, for deciding who may carry on a decision it started. */
