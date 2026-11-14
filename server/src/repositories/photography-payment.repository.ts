@@ -91,10 +91,10 @@ export class PhotographyPaymentRepository {
     const { rows } = await sql<PaymentRow>`SELECT * FROM photography_payment WHERE id=${id}::uuid`.execute(this.db);
     return rows[0];
   }
-  /** The payer's own unfinished attempt on this link whose checkout outcome was never confirmed. */
+  /** The payer's own unfinished attempt on this link; retrying it with its idempotency key returns the same session. */
   async pendingAttempt(linkId: string, payerEmail: string, minutes: number) {
     const { rows } = await sql<PaymentRow>`SELECT * FROM photography_payment WHERE "linkId"=${linkId}::uuid
-      AND "payerEmail"=${payerEmail} AND status='pending' AND "checkoutId" IS NULL
+      AND "payerEmail"=${payerEmail} AND status='pending'
       AND "createdAt" > now() - make_interval(mins => ${minutes}) ORDER BY "createdAt" DESC LIMIT 1`.execute(this.db);
     return rows[0];
   }

@@ -57,9 +57,7 @@ const setup = () => {
       return Promise.resolve();
     }),
     pendingAttempt: vi.fn((linkId: string, email: string) =>
-      Promise.resolve(
-        payments.find((p) => p.linkId === linkId && p.payerEmail === email && p.status === 'pending' && !p.checkoutId),
-      ),
+      Promise.resolve(payments.find((p) => p.linkId === linkId && p.payerEmail === email && p.status === 'pending')),
     ),
     pendingSince: vi.fn((linkId: string) =>
       Promise.resolve(payments.some((p) => p.linkId === linkId && p.status === 'pending')),
@@ -209,6 +207,21 @@ describe(PhotographyPaymentService.name, () => {
     );
     const { paymentId } = await s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example');
     expect(paymentId).toBe(s.payments[0].id);
+  });
+
+  it('lets the payer get their session again when the response was lost after it was stored', async () => {
+    const s = setup();
+    const link = await s.service.create(auth, { ...draft, reusable: false });
+    const first = await s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example');
+    expect(s.payments[0].checkoutId).not.toBeNull();
+    // The browser never saw that answer and the payer presses Pay again.
+    const again = await s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example');
+    expect(again.paymentId).toBe(first.paymentId);
+    expect(s.payments).toHaveLength(1);
+    const keys = s.clients.checkout.mock.calls.map(
+      (call) => (call as unknown as [string, { idempotencyKey: string }])[1].idempotencyKey,
+    );
+    expect(new Set(keys).size).toBe(1);
   });
 
   it('two retries of one attempt at once share its payment and idempotency key', async () => {
