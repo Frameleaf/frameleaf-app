@@ -1,0 +1,18 @@
+{
+	"node": "n8n-nodes-frameleaf.frameleaf",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Productivity"],
+	"resources": {
+		"credentialDocumentation": [
+			{
+				"url": "https://github.com/Frameleaf/frameleaf-app/tree/main/integrations/n8n-nodes-frameleaf#connect"
+			}
+		],
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/Frameleaf/frameleaf-app/tree/main/integrations/n8n-nodes-frameleaf"
+			}
+		]
+	}
+}
