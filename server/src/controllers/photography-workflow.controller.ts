@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -501,9 +502,12 @@ export class PhotographyWorkflowController {
     @Param('id', uuid) id: string,
     @Param('orderId', uuid) orderId: string,
     @Headers('x-photography-session') session: string | undefined,
-    @Body() dto: PhotographyCheckoutRequestDto,
+    @Req() req: Request,
   ) {
-    return this.service.checkout(id, session, orderId, dto.returnUrl);
+    // The body is optional (FL-1037): an empty request reads as `{}`, a given one is checked strictly.
+    const parsed = PhotographyCheckoutRequestDto.schema.safeParse(req.body ?? {});
+    if (!parsed.success) throw new BadRequestException('Invalid checkout request');
+    return this.service.checkout(id, session, orderId, parsed.data.returnUrl);
   }
   @Post('galleries/:id/zip')
   @ApiOperation({ operationId: 'photographyZip' })

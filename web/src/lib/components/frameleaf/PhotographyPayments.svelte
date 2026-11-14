@@ -37,6 +37,22 @@
     }
   }
 
+  /** While Stripe finishes setting the account up, check again every 10 seconds without blanking the card. */
+  async function refresh() {
+    try {
+      account = await clientsPaymentAccount();
+    } catch {
+      // keep what is shown; the next check tries again
+    }
+  }
+  $effect(() => {
+    if (view !== 'connecting') {
+      return;
+    }
+    const timer = setInterval(() => void refresh(), 10_000);
+    return () => clearInterval(timer);
+  });
+
   onMount(load);
 
   const currency = $derived(account?.defaultCurrency?.toUpperCase() ?? '');

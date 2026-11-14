@@ -156,25 +156,20 @@ export class ClientsPaymentsService {
     return (await this.systemMetadataRepository.get(SystemMetadataKey.ClientsPayments)) ?? { accounts: {} };
   }
 
-  // ponytail: read-modify-write of one small record; account changes are rare and the last write is the newest answer.
+  /** One studio's entry, written atomically. A studio once seen keeps its entry, so its events keep routing. */
   private async remember(ownerId: string, account: CloudAccount) {
     const link = await this.link();
     if (!link) return;
-    const state = await this.state();
-    if (account.status === 'none') {
-      delete state.accounts[ownerId];
-    } else {
-      state.accounts[ownerId] = {
-        fingerprint: ClientsPaymentsService.fingerprint(link.instanceId, ownerId),
-        status: account.status,
-        chargesEnabled: account.chargesEnabled,
-        requirementsDue: account.requirementsDue,
-        country: account.country,
-        defaultCurrency: account.defaultCurrency,
-        updatedAt: new Date().toISOString(),
-      };
-    }
-    await this.systemMetadataRepository.set(SystemMetadataKey.ClientsPayments, state);
+    if (account.status === 'none' && !(await this.state()).accounts[ownerId]) return;
+    await this.systemMetadataRepository.setEntry(SystemMetadataKey.ClientsPayments, 'accounts', ownerId, {
+      fingerprint: ClientsPaymentsService.fingerprint(link.instanceId, ownerId),
+      status: account.status === 'none' ? 'disconnected' : account.status,
+      chargesEnabled: account.chargesEnabled,
+      requirementsDue: account.requirementsDue,
+      country: account.country,
+      defaultCurrency: account.defaultCurrency,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   private view(account: Omit<CloudAccount, 'payoutsEnabled'> | null, ownerId: string): ClientsPaymentAccount {
@@ -290,8 +285,8 @@ export class ClientsPaymentsService {
     for (const event of events) {
       const ownerId = owners.get(event.owner);
       try {
-        if (ownerId) await this.handle({ ...event, ownerId });
-        handled.push(event.id);
+        // Acknowledged only once something stored it; anything else comes back on the next collection.
+        if (ownerId && (await this.handle({ ...event, ownerId }))) handled.push(event.id);
       } catch (error) {
         this.logger.warn(`Payment event ${event.id} left for the next collection: ${(error as Error).message}`);
       }
@@ -300,13 +295,16 @@ export class ClientsPaymentsService {
       await this.request(z.unknown(), '/events/ack', null, { method: 'POST', body: { ids: handled } });
   }
 
+  /** True once the event was stored: an account change, or a feature's handler for its reference. */
   private async handle(event: ClientsPaymentEvent) {
     if (event.account) {
       await this.remember(event.ownerId, event.account);
-      return;
+      return true;
     }
     const kind = event.reference?.split(':', 1)[0];
     const handler = kind ? this.handlers.get(kind) : undefined;
-    if (handler) await handler(event);
+    if (!handler) return false;
+    await handler(event);
+    return true;
   }
 }
