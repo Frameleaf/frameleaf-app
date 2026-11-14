@@ -223,6 +223,21 @@ describe(PhotographyPaymentService.name, () => {
       (call) => (call as unknown as [string, { idempotencyKey: string }])[1].idempotencyKey,
     );
     expect(new Set(keys).size).toBe(1);
+    // A refusal on a later try (say the token endpoint answers 4xx) never releases an attempt that may have a session.
+    s.clients.checkout.mockRejectedValueOnce(
+      new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, 'timeout'),
+    );
+    s.clients.checkout.mockRejectedValueOnce(
+      new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 401, 'token refused'),
+    );
+    const other = await s.service.create(auth, { ...draft, reusable: false });
+    await expect(
+      s.service.checkout(other.slug, { email: 'c@example.com' }, 'https://photos.example'),
+    ).rejects.toThrow();
+    await expect(
+      s.service.checkout(other.slug, { email: 'c@example.com' }, 'https://photos.example'),
+    ).rejects.toThrow();
+    expect(s.payments.filter((p) => p.linkId === other.id)).toEqual([expect.objectContaining({ status: 'pending' })]);
     // Someone else is still held off while that attempt is open.
     await expect(s.service.checkout(link.slug, { email: 'b@example.com' }, 'https://x.example')).rejects.toBeInstanceOf(
       ConflictException,

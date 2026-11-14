@@ -140,9 +140,8 @@ export class PhotographyPaymentService {
     // locked step); a payment that still lands after that is recorded as paid and logged for a refund in Stripe.
     // A retry after an uncertain checkout reuses that attempt and its idempotency key, so Stripe answers with the same
     // session instead of a second chargeable one.
-    const payment =
-      (await this.repository.pendingAttempt(link.id, dto.email, 30)) ??
-      (await this.repository.createPayment(link, dto.email));
+    const earlier = await this.repository.pendingAttempt(link.id, dto.email, 30);
+    const payment = earlier ?? (await this.repository.createPayment(link, dto.email));
     if (!payment)
       throw new ConflictException({ code: 'payment-in-progress', message: 'Someone is paying this link now' });
     const back = `${origin}/photography/pay/${link.slug}`;
@@ -151,7 +150,14 @@ export class PhotographyPaymentService {
     } catch (error) {
       // Cloud refused (4xx): no session exists, so release the hold. Anything uncertain (unreachable, timeout, 5xx)
       // keeps the attempt pending for the payer's retry above; if a session was made after all, its payment still lands.
-      if (error instanceof FrameleafCloudError && error.status !== null && error.status >= 400 && error.status < 500) {
+      // An attempt that may already have reached Stripe stays pending whatever a later try says; only a new one is released.
+      if (
+        !earlier &&
+        error instanceof FrameleafCloudError &&
+        error.status !== null &&
+        error.status >= 400 &&
+        error.status < 500
+      ) {
         await this.repository.transition(payment.id, ['pending'], 'failed', null);
       }
       throw error;
