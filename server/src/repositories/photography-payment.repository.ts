@@ -35,10 +35,10 @@ export class PhotographyPaymentRepository {
   constructor(@InjectKysely() private readonly db: Kysely<DB>) {}
 
   async links(ownerId: string) {
-    const { rows } = await sql<PaymentLinkRow & { payments: number; collected: number }>`
+    const { rows } = await sql<PaymentLinkRow & { payments: number; collected: string }>`
       SELECT l.*,
         (SELECT count(*)::int FROM photography_payment p WHERE p."linkId"=l.id AND p.status='paid') AS payments,
-        (SELECT coalesce(sum(p.amount),0)::int FROM photography_payment p WHERE p."linkId"=l.id AND p.status='paid') AS collected
+        (SELECT coalesce(sum(p.amount),0) FROM photography_payment p WHERE p."linkId"=l.id AND p.status='paid') AS collected
       FROM photography_payment_link l WHERE l."ownerId"=${ownerId}::uuid ORDER BY l."createdAt" DESC`.execute(this.db);
     return rows;
   }
@@ -102,22 +102,38 @@ export class PhotographyPaymentRepository {
   async setCheckout(id: string, checkoutId: string) {
     await sql`UPDATE photography_payment SET "checkoutId"=${checkoutId} WHERE id=${id}::uuid`.execute(this.db);
   }
+  /** Whether someone started paying this link in the last `minutes` and hasn't finished or given up. */
+  async pendingSince(linkId: string, minutes: number) {
+    const { rows } = await sql<{ n: number }>`SELECT count(*)::int AS n FROM photography_payment
+      WHERE "linkId"=${linkId}::uuid AND status='pending' AND "createdAt" > now() - make_interval(mins => ${minutes})`.execute(
+      this.db,
+    );
+    return rows[0].n > 0;
+  }
   /**
-   * Moves a payment from one of `from` to `to`; false when it was already elsewhere, so a replayed or
-   * out-of-order event changes nothing. A single-use link closes in the same transaction as its payment.
+   * Moves a payment from one of `from` to `to`; `moved` is false when it was already elsewhere, so a replayed
+   * or out-of-order event changes nothing. The link row is locked first, so two payments on a single-use
+   * link settle one after the other: the first closes the link, and `duplicate` reports any later one.
    */
   transition(id: string, from: PaymentRow['status'][], to: PaymentRow['status'], providerRef: string | null) {
     return this.db.transaction().execute(async (trx) => {
+      const { rows: link } = await sql<{ id: string; reusable: boolean }>`SELECT l.id, l.reusable
+        FROM photography_payment_link l JOIN photography_payment p ON p."linkId"=l.id
+        WHERE p.id=${id}::uuid FOR UPDATE OF l`.execute(trx);
+      const single = link[0] && !link[0].reusable;
+      const { rows: before } = single
+        ? await sql<{ n: number }>`SELECT count(*)::int AS n FROM photography_payment
+            WHERE "linkId"=${link[0].id}::uuid AND status='paid' AND id<>${id}::uuid`.execute(trx)
+        : { rows: [{ n: 0 }] };
       const { rows } = await sql<PaymentRow>`UPDATE photography_payment SET status=${to},
         "providerRef"=coalesce(${providerRef}, "providerRef"),
         "paidAt"=CASE WHEN ${to}='paid' THEN now() ELSE "paidAt" END
         WHERE id=${id}::uuid AND status = ANY(${from}::text[]) RETURNING *`.execute(trx);
-      const payment = rows[0];
-      if (payment && to === 'paid' && payment.linkId) {
-        await sql`UPDATE photography_payment_link SET active=false
-          WHERE id=${payment.linkId}::uuid AND reusable=false`.execute(trx);
+      const moved = !!rows[0];
+      if (moved && to === 'paid' && single) {
+        await sql`UPDATE photography_payment_link SET active=false WHERE id=${link[0].id}::uuid`.execute(trx);
       }
-      return !!payment;
+      return { moved, duplicate: moved && to === 'paid' && before[0].n > 0 };
     });
   }
 }

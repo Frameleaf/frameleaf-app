@@ -6,6 +6,7 @@ import {
   PhotographyPaymentLinkCreateDto,
   PhotographyPaymentLinkUpdateDto,
 } from 'src/dtos/photography-payment.dto.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   type PaymentLinkRow,
   type PaymentRow,
@@ -18,7 +19,7 @@ import { type ClientsPaymentEvent, ClientsPaymentsService } from 'src/services/c
 const SLUG = /^[A-Za-z0-9_-]{16}$/;
 const unavailable = () => new NotFoundException('This payment link is unavailable');
 
-const linkView = (link: PaymentLinkRow & { payments?: number; collected?: number }) => ({
+const linkView = (link: PaymentLinkRow & { payments?: number; collected?: number | string }) => ({
   id: link.id,
   slug: link.slug,
   title: link.title,
@@ -28,7 +29,8 @@ const linkView = (link: PaymentLinkRow & { payments?: number; collected?: number
   reusable: link.reusable,
   active: link.active,
   payments: link.payments ?? 0,
-  collected: link.collected ?? 0,
+  // A sum is bigint in PostgreSQL; well inside a JS number for any studio's totals.
+  collected: Number(link.collected ?? 0),
   createdAt: new Date(link.createdAt).toISOString(),
 });
 
@@ -44,6 +46,7 @@ export class PhotographyPaymentService {
     private workspace: PhotographyWorkspaceRepository,
     private workflow: PhotographyWorkflowRepository,
     private payments: ClientsPaymentsService,
+    private logger?: LoggingRepository,
   ) {
     this.payments.onPayment('link', (event) => this.paymentEvent(event));
   }
@@ -132,6 +135,10 @@ export class PhotographyPaymentService {
   async checkout(slug: string, dto: PhotographyPayCheckoutDto, origin: string) {
     const link = await this.open(slug);
     if (!(await this.payments.ready(link.ownerId))) throw unavailable();
+    // ponytail: a single-use link is held for 30 minutes while someone is paying it; past that a second
+    // payment is still possible, recorded as paid and logged so the studio can refund it in Stripe.
+    if (!link.reusable && (await this.repository.pendingSince(link.id, 30)))
+      throw new ConflictException({ code: 'payment-in-progress', message: 'Someone is paying this link now' });
     const payment = await this.repository.createPayment(link, dto.email);
     const back = `${origin}/photography/pay/${link.slug}`;
     const session = await this.payments.checkout(link.ownerId, {
@@ -174,8 +181,9 @@ export class PhotographyPaymentService {
     if (!move) return;
     if (event.type === 'payment.refunded') {
       // A refund that arrives before its payment was recorded is retried (thrown, so not acknowledged).
-      if (!payment.providerRef && payment.status === 'pending')
-        throw new ConflictException('Refund arrived before its payment; retrying');
+      if (payment.status === 'refunded') return;
+      // A refund is retried (thrown, so not acknowledged) until its payment has been recorded as paid.
+      if (payment.status !== 'paid') throw new ConflictException('Refund arrived before its payment; retrying');
       if (!event.paymentIntent || payment.providerRef !== event.paymentIntent) return;
     } else if (
       event.sessionId !== payment.checkoutId ||
@@ -184,6 +192,9 @@ export class PhotographyPaymentService {
     ) {
       return;
     }
-    await this.repository.transition(payment.id, move[0], move[1], event.paymentIntent);
+    const { moved, duplicate } = await this.repository.transition(payment.id, move[0], move[1], event.paymentIntent);
+    if (!moved && event.type === 'payment.refunded') throw new ConflictException('Refund not recorded yet; retrying');
+    if (duplicate)
+      this.logger?.warn(`Payment ${payment.id} paid a single-use link that was already paid; refund it in Stripe`);
   }
 }

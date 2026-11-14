@@ -45,14 +45,19 @@ const setup = () => {
       payments.find((p) => p.id === id)!.checkoutId = checkoutId;
       return Promise.resolve();
     }),
+    pendingSince: vi.fn((linkId: string) =>
+      Promise.resolve(payments.some((p) => p.linkId === linkId && p.status === 'pending')),
+    ),
     transition: vi.fn((id: string, from: PaymentRow['status'][], to: PaymentRow['status'], ref: string | null) => {
       const p = payments.find((p) => p.id === id)!;
-      if (!from.includes(p.status)) return Promise.resolve(false);
+      if (!from.includes(p.status)) return Promise.resolve({ moved: false, duplicate: false });
+      const link = links.find((l) => l.id === p.linkId);
+      const duplicate =
+        to === 'paid' && !!link && !link.reusable && payments.some((o) => o.linkId === link.id && o.status === 'paid');
       p.status = to;
       p.providerRef = ref ?? p.providerRef;
-      const link = links.find((l) => l.id === p.linkId);
       if (to === 'paid' && link && !link.reusable) link.active = false;
-      return Promise.resolve(true);
+      return Promise.resolve({ moved: true, duplicate });
     }),
   };
   let n = 0;
@@ -128,7 +133,7 @@ describe(PhotographyPaymentService.name, () => {
       await s.service.paymentEvent(paid);
       expect(payment.status).toBe('paid');
     }
-    expect(s.repository.transition.mock.results.filter((r) => r.value)).toHaveLength(4);
+    expect(s.payments.filter((p) => p.status === 'paid')).toHaveLength(2);
     expect((await s.service.paymentStatus(link.slug, s.payments[0].id)).status).toBe('paid');
   });
 
@@ -137,6 +142,10 @@ describe(PhotographyPaymentService.name, () => {
     const link = await s.service.create(auth, { ...draft, reusable: false });
     const { paymentId } = await s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example');
     const payment = s.payments.find((p) => p.id === paymentId)!;
+    // While one payer is at checkout, a single-use link takes no second payer.
+    await expect(s.service.checkout(link.slug, { email: 'c@example.com' }, 'https://x.example')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     // A refund delivered before its payment is retried, never dropped.
     await expect(
       s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null })),
@@ -155,6 +164,21 @@ describe(PhotographyPaymentService.name, () => {
     await s.service.paymentEvent(s.event(payment, 'payment.expired'));
     await s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null, paymentIntent: 'pi_other' }));
     expect(payment.status).toBe('paid');
+    await s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null }));
+    expect(payment.status).toBe('refunded');
+  });
+
+  it('retries a refund for a payment that is failed or expired until it has been paid', async () => {
+    const s = setup();
+    const link = await s.service.create(auth, draft);
+    const { paymentId } = await s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example');
+    const payment = s.payments.find((p) => p.id === paymentId)!;
+    await s.service.paymentEvent(s.event(payment, 'payment.failed'));
+    expect(payment).toMatchObject({ status: 'failed', providerRef: 'pi_1' });
+    await expect(
+      s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null })),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await s.service.paymentEvent(s.event(payment, 'payment.succeeded'));
     await s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null }));
     expect(payment.status).toBe('refunded');
   });

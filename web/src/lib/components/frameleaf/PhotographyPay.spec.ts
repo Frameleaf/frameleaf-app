@@ -37,4 +37,12 @@ describe('PhotographyPay', () => {
     render(PhotographyPay, { slug, paymentId: '00000000-0000-4000-8000-000000000009' });
     expect(await screen.findByText('Thank you for your payment')).toBeInTheDocument();
   });
+
+  it('tells the payer a refunded payment was refunded, not that it failed', async () => {
+    sdkMock.photographyPublicPaymentLink.mockResolvedValue(link);
+    sdkMock.photographyPayStatus.mockResolvedValue({ status: 'refunded', amount: 15_000, currency: 'CAD' } as never);
+    render(PhotographyPay, { slug, paymentId: '00000000-0000-4000-8000-000000000009' });
+    expect(await screen.findByText('This payment was refunded')).toBeInTheDocument();
+    expect(screen.queryByText(/didn’t go through/)).not.toBeInTheDocument();
+  });
 });

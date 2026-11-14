@@ -16,7 +16,7 @@
   /** FL-1041: the public page a payment link opens. `paymentId` is set when Stripe sends the payer back. */
   let { slug, paymentId }: { slug: string; paymentId: string | null } = $props();
 
-  type Phase = 'loading' | 'ready' | 'paying' | 'checking' | 'thanks' | 'unavailable';
+  type Phase = 'loading' | 'ready' | 'paying' | 'checking' | 'later' | 'thanks' | 'refunded' | 'unavailable';
   let phase = $state<Phase>('loading');
   let link = $state<PhotographyPublicPaymentLinkDto>();
   let paid = $state<PhotographyPayStatusDto>();
@@ -44,6 +44,10 @@
         phase = 'thanks';
         return;
       }
+      if (status.status === 'refunded') {
+        phase = 'refunded';
+        return;
+      }
       if (status.status !== 'pending') {
         failed = true;
         phase = link ? 'ready' : 'unavailable';
@@ -52,8 +56,14 @@
     } catch {
       // keep waiting; the page stays on "Checking your payment"
     }
-    if (tries < 40 && !disposed) {
+    if (disposed) {
+      return;
+    }
+    if (tries < 40) {
       timer = setTimeout(() => void check(id, tries + 1), 3000);
+    } else {
+      // Two minutes without an answer: the page says so and lets the payer check again.
+      phase = 'later';
     }
   }
 
@@ -67,10 +77,14 @@
       if (target.protocol !== 'https:' || target.hostname !== 'checkout.stripe.com') {
         throw new Error('unexpected checkout address');
       }
-      location.assign(target.href);
+      if (!disposed) {
+        location.assign(target.href);
+      }
     } catch {
-      failed = true;
-      phase = 'ready';
+      if (!disposed) {
+        failed = true;
+        phase = 'ready';
+      }
     }
   }
 
@@ -121,6 +135,24 @@
         <Icon icon={mdiClockOutline} size="1.5rem" aria-hidden={true} />
         <h2>{$t('frameleaf_clients_pay_checking_title')}</h2>
         <p>{$t('frameleaf_clients_pay_checking_body')}</p>
+      </div>
+    {:else if phase === 'later' && paymentId}
+      <div class="status" role="status">
+        <Icon icon={mdiClockOutline} size="1.5rem" aria-hidden={true} />
+        <h2>{$t('frameleaf_clients_pay_later_title')}</h2>
+        <p>{$t('frameleaf_clients_pay_later_body')}</p>
+        <Button
+          onclick={() => {
+            phase = 'checking';
+            void check(paymentId);
+          }}>{$t('frameleaf_clients_pay_check_again')}</Button
+        >
+      </div>
+    {:else if phase === 'refunded'}
+      <div class="status" role="status">
+        <Icon icon={mdiInformationOutline} size="1.5rem" aria-hidden={true} />
+        <h2>{$t('frameleaf_clients_pay_refunded_title')}</h2>
+        <p>{$t('frameleaf_clients_pay_refunded_body')}</p>
       </div>
     {:else if phase === 'thanks' && paid}
       <div class="status" role="status">
