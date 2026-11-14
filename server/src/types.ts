@@ -1714,6 +1714,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafServerId]: { id: string; createdAt: string };
   [SystemMetadataKey.FrameleafServiceDiscovery]: FrameleafServiceDiscovery;
   [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
+  [SystemMetadataKey.ClientsPayments]: import('src/services/clients-payments.service.js').ClientsPaymentsState;
   [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
   [SystemMetadataKey.FrameleafPricing]: FrameleafPricingState;
   [SystemMetadataKey.FrameleafBoot]: FrameleafBoot;

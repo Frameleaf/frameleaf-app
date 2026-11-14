@@ -46035,6 +46035,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyCheckoutRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "content": {
@@ -46473,6 +46483,110 @@
             "description": ""
           }
         },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/payment-account": {
+      "delete": {
+        "operationId": "clientsPaymentAccountDisconnect",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientsPaymentAccountDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "get": {
+        "operationId": "clientsPaymentAccount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientsPaymentAccountDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/payment-account/connect": {
+      "post": {
+        "operationId": "clientsPaymentAccountConnect",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientsPaymentConnectDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientsPaymentConnectResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
         "tags": [
           "Studio projects"
         ]
@@ -93948,6 +94062,74 @@
         ],
         "type": "object"
       },
+      "ClientsPaymentAccountDto": {
+        "properties": {
+          "chargesEnabled": {
+            "type": "boolean"
+          },
+          "country": {
+            "nullable": true,
+            "type": "string"
+          },
+          "defaultCurrency": {
+            "nullable": true,
+            "type": "string"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "requirementsDue": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "none",
+              "pending",
+              "active",
+              "disconnected",
+              "unavailable"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "chargesEnabled",
+          "country",
+          "defaultCurrency",
+          "legacy",
+          "requirementsDue",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ClientsPaymentConnectDto": {
+        "additionalProperties": false,
+        "properties": {
+          "returnUrl": {
+            "format": "uri",
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "returnUrl"
+        ],
+        "type": "object"
+      },
+      "ClientsPaymentConnectResponseDto": {
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
       "ClientsResponse": {
         "properties": {
           "enabled": {
@@ -131301,6 +131483,17 @@
         "required": [
           "url"
         ],
+        "type": "object"
+      },
+      "PhotographyCheckoutRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "returnUrl": {
+            "format": "uri",
+            "maxLength": 2000,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "PhotographyChoicesDto": {

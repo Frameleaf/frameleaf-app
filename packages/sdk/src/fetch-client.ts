@@ -13994,6 +13994,9 @@ export type PhotographyChoicesDto = {
 export type PhotographyOrderAcceptDto = {
     expectedRevision: string | null;
 };
+export type PhotographyCheckoutRequestDto = {
+    returnUrl?: string;
+};
 export type PhotographyCheckoutDto = {
     url: string;
 };
@@ -14039,6 +14042,20 @@ export type PhotographyZipDto = {
 export type PhotographyZipResponseDto = {
     id: string;
     status: Status6;
+    url: string;
+};
+export type ClientsPaymentAccountDto = {
+    chargesEnabled: boolean;
+    country: string | null;
+    defaultCurrency: string | null;
+    legacy: boolean;
+    requirementsDue: string[];
+    status: Status7;
+};
+export type ClientsPaymentConnectDto = {
+    returnUrl: string;
+};
+export type ClientsPaymentConnectResponseDto = {
     url: string;
 };
 export type PhotographyCallbackDto = {
@@ -15026,7 +15043,7 @@ export type PhotographyWorkflowDto = {
         readyCount: number;
         recipientId: string;
         roundId: string | null;
-        status: Status7;
+        status: Status8;
         terms: string;
         total: number;
     }[];
@@ -15180,7 +15197,7 @@ export type PhotographyWorkflowDto = {
         error: string | null;
         failedCaptureId: string | null;
         id: string;
-        status: Status8;
+        status: Status9;
         total: number;
     } | null;
     receipts: {
@@ -15869,7 +15886,7 @@ export type PhotographyInvitationDto = {
             readyCount: number;
             recipientId: string;
             roundId: string | null;
-            status: Status9;
+            status: Status10;
             terms: string;
             total: number;
         }[];
@@ -16023,7 +16040,7 @@ export type PhotographyInvitationDto = {
             error: string | null;
             failedCaptureId: string | null;
             id: string;
-            status: Status10;
+            status: Status11;
             total: number;
         } | null;
         receipts: {
@@ -17000,7 +17017,7 @@ export type RenderWorkerProgressDto = {
     processedUnits: number;
     /** Actual Studio export phase; never advances the publication state */
     stage?: StudioRenderStage;
-    status: Status11;
+    status: Status12;
     totalUnits: number | null;
     /** Present only when counted units are actual rendered frames */
     unit?: Unit2;
@@ -23084,7 +23101,7 @@ export type SyncAssetTrashStateV1 = {
     assetId: string;
     deletedAt: string;
     isOffline: boolean;
-    status: Status12;
+    status: Status13;
 };
 export type SyncAssetV1 = {
     /** Checksum */
@@ -35071,21 +35088,23 @@ export function photographyAccept({ xPhotographySession, id, orderId, photograph
         })
     })));
 }
-export function photographyCheckout({ xPhotographySession, id, orderId }: {
+export function photographyCheckout({ xPhotographySession, id, orderId, photographyCheckoutRequestDto }: {
     xPhotographySession: string;
     id: string;
     orderId: string;
+    photographyCheckoutRequestDto: PhotographyCheckoutRequestDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: PhotographyCheckoutDto;
-    }>(`/photography/galleries/${encodeURIComponent(id)}/orders/${encodeURIComponent(orderId)}/checkout`, {
+    }>(`/photography/galleries/${encodeURIComponent(id)}/orders/${encodeURIComponent(orderId)}/checkout`, oazapfts.json({
         ...opts,
         method: "POST",
+        body: photographyCheckoutRequestDto,
         headers: oazapfts.mergeHeaders(opts?.headers, {
             "X-Photography-Session": xPhotographySession
         })
-    }));
+    })));
 }
 export function photographyOutput({ xPhotographySession, captureId, id, outputId }: {
     xPhotographySession: string;
@@ -35223,6 +35242,35 @@ export function photographyArchive({ xPhotographySession, id, zipId }: {
             "X-Photography-Session": xPhotographySession
         })
     }));
+}
+export function clientsPaymentAccountDisconnect(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClientsPaymentAccountDto;
+    }>("/photography/payment-account", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+export function clientsPaymentAccount(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClientsPaymentAccountDto;
+    }>("/photography/payment-account", {
+        ...opts
+    }));
+}
+export function clientsPaymentAccountConnect({ clientsPaymentConnectDto }: {
+    clientsPaymentConnectDto: ClientsPaymentConnectDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClientsPaymentConnectResponseDto;
+    }>("/photography/payment-account/connect", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: clientsPaymentConnectDto
+    })));
 }
 export function photographyCallback({ stripeSignature, body }: {
     stripeSignature: string;
@@ -45130,6 +45178,13 @@ export enum Status5 {
 export enum Status6 {
     Ready = "ready"
 }
+export enum Status7 {
+    None = "none",
+    Pending = "pending",
+    Active = "active",
+    Disconnected = "disconnected",
+    Unavailable = "unavailable"
+}
 export enum Alignment {
     Left = "left",
     Center = "center",
@@ -45375,7 +45430,7 @@ export enum Ordering {
     Manual = "manual",
     Chapters = "chapters"
 }
-export enum Status7 {
+export enum Status8 {
     Quoted = "quoted",
     Accepted = "accepted",
     Settled = "settled",
@@ -45406,7 +45461,7 @@ export enum Type12 {
     Logo = "logo",
     Both = "both"
 }
-export enum Status8 {
+export enum Status9 {
     Queued = "queued",
     Rendering = "rendering",
     Ready = "ready",
@@ -45495,7 +45550,7 @@ export enum Type18 {
     Logo = "logo",
     Both = "both"
 }
-export enum Status9 {
+export enum Status10 {
     Quoted = "quoted",
     Accepted = "accepted",
     Settled = "settled",
@@ -45526,7 +45581,7 @@ export enum Type20 {
     Logo = "logo",
     Both = "both"
 }
-export enum Status10 {
+export enum Status11 {
     Queued = "queued",
     Rendering = "rendering",
     Ready = "ready",
@@ -45866,7 +45921,7 @@ export enum QueueJobWorkerKind {
     Lan = "lan",
     FrameleafCloud = "frameleaf-cloud"
 }
-export enum Status11 {
+export enum Status12 {
     Preparing = "preparing",
     Rendering = "rendering"
 }
@@ -46894,7 +46949,7 @@ export enum StudioImportPublicationState {
     Published = "published",
     Aborted = "aborted"
 }
-export enum Status12 {
+export enum Status13 {
     Active = "active",
     Trashed = "trashed",
     Deleted = "deleted"

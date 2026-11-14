@@ -29,6 +29,7 @@ import {
   PhotographyAssemblyDto,
   PhotographyCallbackDto,
   PhotographyCheckoutDto,
+  PhotographyCheckoutRequestDto,
   PhotographyChoicesDto,
   PhotographyGalleryDto,
   PhotographyGalleryPasswordRequiredDto,
@@ -499,8 +500,9 @@ export class PhotographyWorkflowController {
     @Param('id', uuid) id: string,
     @Param('orderId', uuid) orderId: string,
     @Headers('x-photography-session') session: string | undefined,
+    @Body() dto: PhotographyCheckoutRequestDto,
   ) {
-    return this.service.checkout(id, session, orderId);
+    return this.service.checkout(id, session, orderId, dto.returnUrl);
   }
   @Post('galleries/:id/zip')
   @ApiOperation({ operationId: 'photographyZip' })

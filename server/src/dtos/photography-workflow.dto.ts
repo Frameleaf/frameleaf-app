@@ -506,6 +506,15 @@ export class PhotographyGalleryDto extends createZodDto(
 ) {}
 export class PhotographySelfieSearchDto extends createZodDto(z.object({ captureIds: Ids })) {}
 export class PhotographyCheckoutDto extends createZodDto(z.object({ url: z.string() })) {}
+/** FL-1037: where Stripe sends the client back (their gallery page); http or https only. */
+export class PhotographyCheckoutRequestDto extends createZodDto(
+  z.strictObject({
+    returnUrl: z
+      .url({ protocol: /^https?$/ })
+      .max(2000)
+      .optional(),
+  }),
+) {}
 export class PhotographyZipResponseDto extends createZodDto(
   z.object({ id: Id, status: z.literal('ready'), url: z.string() }),
 ) {}

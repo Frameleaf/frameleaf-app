@@ -33,6 +33,7 @@ import { BuddyBackupAdminController, BuddyBackupOwnerController } from 'src/cont
 import { CaptureController } from 'src/controllers/capture.controller.js';
 import { CastController } from 'src/controllers/cast.controller.js';
 import { ClassificationController } from 'src/controllers/classification.controller.js';
+import { ClientsPaymentsController } from 'src/controllers/clients-payments.controller.js';
 import { CloudAdminController } from 'src/controllers/cloud-admin.controller.js';
 import { CloudBackupAdminController } from 'src/controllers/cloud-backup-admin.controller.js';
 import { CloudBackupOwnerController } from 'src/controllers/cloud-backup-owner.controller.js';
@@ -204,6 +205,7 @@ export const controllers = [
   FrameleafLibraryMoveController,
   FrameleafLibrarySetupController,
   PhotographyWorkspaceController,
+  ClientsPaymentsController,
   PhotographyWorkflowController,
   AssetUploadResourceController,
   BackupDeviceAdminController,

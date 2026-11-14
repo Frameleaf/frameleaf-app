@@ -44,6 +44,7 @@ import { CaptureService } from 'src/services/capture.service.js';
 import { CastService } from 'src/services/cast.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
+import { ClientsPaymentsService } from 'src/services/clients-payments.service.js';
 import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.service.js';
 import { CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { CloudLibraryBatchService } from 'src/services/cloud-library-batch.service.js';
@@ -265,6 +266,7 @@ export const services = [
   PhotographyWorkspaceService,
   PhotographySelfieService,
   PhotographyBulkService,
+  ClientsPaymentsService,
   PhotographyWorkflowService,
   PhotographySiteService,
   PhotographyReminderService,

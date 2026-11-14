@@ -1,5 +1,11 @@
 import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
-import { ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -206,6 +212,18 @@ async function setup(brand?: unknown) {
   const storage = {
     createZipStream: vi.fn(() => ({ stream: { destroy: vi.fn() }, addFile: vi.fn(), finalize: async () => {} })),
   };
+  const payments = {
+    onPayment: vi.fn(),
+    ready: vi.fn(() => Promise.resolve(false)),
+    publicUrl: vi.fn(() => Promise.resolve('https://photos.example')),
+    checkout: vi.fn(() =>
+      Promise.resolve({
+        id: 'cs_test_connect',
+        url: 'https://checkout.stripe.com/c/pay/cs_test_connect',
+        expiresAt: '',
+      }),
+    ),
+  };
   const service = new PhotographyWorkflowService(
     repository as never,
     workspace as never,
@@ -214,6 +232,7 @@ async function setup(brand?: unknown) {
     crypto as never,
     jobs as never,
     storage as never,
+    payments as never,
   );
   const notifications = { create: vi.fn(() => Promise.resolve({ id: randomUUID(), createdAt: new Date() })) };
   const email = { renderEmail: vi.fn(() => Promise.resolve({ html: '<p>x</p>', text: 'x' })) };
@@ -265,6 +284,7 @@ async function setup(brand?: unknown) {
     return row!.value.rounds.at(-1)!;
   }
   return {
+    payments,
     service,
     siteService,
     notifications,
@@ -1136,6 +1156,71 @@ describe('photography workflow integration boundaries', () => {
     state.payment_intent.latest_charge.amount_refunded = 500;
     await s.service.callback(...event('evt_refunded', 'charge.refunded'));
     expect(s.row().value.orders[0]).toMatchObject({ status: 'refunded', total: 1500, captureIds: [s.captureId] });
+  });
+  it('takes an order through the studio’s connected account and applies relayed events once (FL-1037)', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.published();
+    await s.service.config(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      config: { ...s.row().value.config, additionalPrice: 1500, paymentTiming: 'before-editing' },
+    });
+    const round = await s.selected(client.session);
+    await s.service.order(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      roundId: round.id,
+      recipientId: client.recipientId,
+      pricing: 'package',
+    });
+    const order = s.row().value.orders[0];
+    await s.service.accept(s.shootId, client.session, order.id, { expectedRevision: s.row().revision });
+    expect(s.payments.onPayment).toHaveBeenCalledWith('order', expect.any(Function));
+    await expect(s.service.checkout(s.shootId, client.session, order.id)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    s.payments.ready.mockResolvedValue(true);
+    expect(await s.service.checkout(s.shootId, client.session, order.id)).toEqual({
+      url: 'https://checkout.stripe.com/c/pay/cs_test_connect',
+    });
+    expect(s.payments.checkout).toHaveBeenCalledWith(
+      s.ownerId,
+      expect.objectContaining({
+        reference: `order:${order.id}`,
+        amount: 1500,
+        currency: 'cad',
+        successUrl: `https://photos.example/photography/gallery/${s.shootId}`,
+      }),
+    );
+    expect(s.row().value.orders[0].checkoutId).toBe('cs_test_connect');
+    const event = (id: string, type: string, extra: object = {}) => ({
+      id,
+      type,
+      owner: 'f'.repeat(64),
+      ownerId: s.ownerId,
+      createdAt: new Date().toISOString(),
+      reference: `order:${order.id}`,
+      sessionId: 'cs_test_connect',
+      paymentIntent: 'pi_connect',
+      amount: 1500,
+      currency: 'cad',
+      payerEmail: null,
+      account: null,
+      ...extra,
+    });
+    // Another studio's event, a wrong amount and a different checkout change nothing.
+    await s.service.connectedPayment(event('evt_other', 'payment.succeeded', { ownerId: 'someone-else' }));
+    await s.service.connectedPayment(event('evt_short', 'payment.succeeded', { amount: 1499 }));
+    await s.service.connectedPayment(event('evt_stale', 'payment.succeeded', { sessionId: 'cs_other' }));
+    expect(s.row().value.orders[0].status).toBe('accepted');
+    await s.service.connectedPayment(event('evt_paid', 'payment.succeeded'));
+    await s.service.connectedPayment(event('evt_paid', 'payment.succeeded'));
+    expect(s.row().value.orders[0]).toMatchObject({ status: 'settled', paymentIntentId: 'pi_connect' });
+    expect(s.row().value.receipts.filter((r) => r.reference === 'evt_paid')).toHaveLength(1);
+    // An expiry after payment never cancels it; a refund of that payment does mark it.
+    await s.service.connectedPayment(event('evt_expired', 'payment.expired'));
+    expect(s.row().value.orders[0].status).toBe('settled');
+    await s.service.connectedPayment(event('evt_refund', 'payment.refunded', { sessionId: null, amount: 500 }));
+    expect(s.row().value.orders[0].status).toBe('refunded');
   });
   it('snapshots config outputs, renders distinct clean/branded sizes and historical approved versions, and scopes ZIP entries', async () => {
     const s = await setup();

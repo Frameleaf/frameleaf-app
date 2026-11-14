@@ -44,6 +44,7 @@
     mdiChevronRight,
     mdiClipboardCheckOutline,
     mdiClockOutline,
+    mdiCreditCardOutline,
     mdiClose,
     mdiImport,
     mdiEmailOutline,
@@ -66,6 +67,7 @@
   } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import PhotographyCampaigns from '$lib/components/frameleaf/PhotographyCampaigns.svelte';
+  import PhotographyPayments from '$lib/components/frameleaf/PhotographyPayments.svelte';
   import PhotographyStyle from '$lib/components/frameleaf/PhotographyStyle.svelte';
   import PhotographyBranding from '$lib/components/frameleaf/PhotographyBranding.svelte';
   import PhotographyPublishing from '$lib/components/frameleaf/PhotographyPublishing.svelte';
@@ -114,7 +116,15 @@
   /** A shoot's tabs after Photographs; Photographs itself is the open shoot under `shoots`. */
   type ShootSection = Exclude<ShootTab, 'photos'>;
   type Section =
-    'campaigns' | 'shoots' | 'branding' | 'watermarks' | 'website' | 'publishing' | 'settings' | ShootSection;
+    | 'campaigns'
+    | 'payments'
+    | 'shoots'
+    | 'branding'
+    | 'watermarks'
+    | 'website'
+    | 'publishing'
+    | 'settings'
+    | ShootSection;
   type PhotoFilter = 'all' | 'selected' | 'edited';
   type ShootFilter = 'all' | 'active' | 'Proofing' | 'Delivered';
   type NextAction = { label: string; icon: string; section: Section; rank: number };
@@ -157,7 +167,7 @@
     /** A shoot to open first: the RAW develop editor's way back (FL-420). */
     initialShoot?: string;
     /** `galleries`: the editor's Proof opens the shoot's galleries; `website`: an inquiry email's link (FL-702). */
-    initialSection?: 'galleries' | 'website';
+    initialSection?: 'galleries' | 'website' | 'payments';
     /** Take Clients out of the top bar (back under Tools); omitted, the rail offers no such action. */
     onRemoveFromTopBar?: () => void;
     /** Removing is being saved. */
@@ -166,7 +176,11 @@
 
   // svelte-ignore state_referenced_locally
   let section = $state<Section>(
-    initialSection === 'website' ? 'website' : initialShoot && initialSection === 'galleries' ? 'galleries' : 'shoots',
+    initialSection === 'website' || initialSection === 'payments'
+      ? initialSection
+      : initialShoot && initialSection === 'galleries'
+        ? 'galleries'
+        : 'shoots',
   );
   let shootFilter = $state<ShootFilter>('all');
   let workspace = $state<Workspace>({ revision: null, shoots: [] });
@@ -337,22 +351,24 @@
   const title = $derived(
     section === 'campaigns'
       ? $t('campaign_title')
-      : section === 'settings'
-        ? $t('settings')
-        : section === 'branding'
-          ? $t('frameleaf_photography_branding')
-          : section === 'watermarks'
-            ? $t('frameleaf_photography_watermarks')
-            : section === 'website'
-              ? $t('frameleaf_photography_website')
-              : section === 'publishing'
-                ? $t('frameleaf_photography_publishing')
-                : isShootSection(section)
-                  ? $t(shootSectionKeys[section])
-                  : (active?.name ?? $t('frameleaf_photography_shoots')),
+      : section === 'payments'
+        ? $t('frameleaf_clients_payments')
+        : section === 'settings'
+          ? $t('settings')
+          : section === 'branding'
+            ? $t('frameleaf_photography_branding')
+            : section === 'watermarks'
+              ? $t('frameleaf_photography_watermarks')
+              : section === 'website'
+                ? $t('frameleaf_photography_website')
+                : section === 'publishing'
+                  ? $t('frameleaf_photography_publishing')
+                  : isShootSection(section)
+                    ? $t(shootSectionKeys[section])
+                    : (active?.name ?? $t('frameleaf_photography_shoots')),
   );
   const subtitle = $derived(
-    section === 'settings' || section === 'campaigns'
+    (['settings', 'campaigns', 'payments'] as Section[]).includes(section)
       ? ''
       : section === 'branding'
         ? $t('frameleaf_photography_branding_lead')
@@ -944,7 +960,7 @@
         {/each}
       {/if}
       <p class="phw-rail-heading">{$t('frameleaf_photography_studio_heading')}</p>
-      {#each [['campaigns', $t('campaign_title'), mdiEmailOutline], ['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
+      {#each [['campaigns', $t('campaign_title'), mdiEmailOutline], ['payments', $t('frameleaf_clients_payments'), mdiCreditCardOutline], ['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
         <button
           type="button"
           aria-current={section === id ? 'page' : undefined}
@@ -1036,6 +1052,8 @@
         />
       {:else if section === 'campaigns'}
         <PhotographyCampaigns shoots={workspace.shoots} />
+      {:else if section === 'payments'}
+        <PhotographyPayments studioName={studio?.name ?? ''} />
       {:else if isShootSection(section)}
         {#if active}{#key `${active.id}:${section}`}<PhotographyWorkflow
               shoot={active}
