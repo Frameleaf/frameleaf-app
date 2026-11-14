@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { access } from 'node:fs/promises';
 import sharp from 'sharp';
 import { PhotographySelfieService } from 'src/services/photography-selfie.service.js';
+import * as cloudGateway from 'src/utils/frameleaf-cloud-gateway.js';
 
 vi.mock('src/services/base.service.js', () => ({
   BaseService: class {
@@ -42,6 +43,7 @@ async function setup() {
     selectMlDestination: vi.fn().mockResolvedValue({ endpoint: {} }),
     searchRepository: { findGalleryFaces },
     machineLearningRepository: { detectFaces },
+    configRepository: { getEnv: () => ({ frameleafCloud: { guestSelfies: false } }) },
   });
   return { image, workflow, rate, detectFaces, findGalleryFaces, service, resolveRoute };
 }
@@ -94,7 +96,7 @@ it('rejects multiple faces and removes temporary input even if inference fails',
   }
 });
 
-it('refuses an unsupported ephemeral destination without sending a selfie or falling back', async () => {
+it('keeps a selfie off Frameleaf Cloud until guest selfies are allowed there, without falling back', async () => {
   const { image, workflow, rate, detectFaces, service, resolveRoute } = await setup();
   resolveRoute.mockResolvedValueOnce([cloud, { source: 'local', destinationId: 'local', available: true }]);
   await expect(service.search(workflow as never, rate as never, id, token, image)).rejects.toMatchObject({
@@ -116,4 +118,33 @@ it('sends the selfie to the photographer desktop helpers when the Face route rea
     expect.objectContaining({ destinationId: 'nas', ownerId, desktopPool: 'only', guestFace: true }),
   );
   expect(detectFaces).toHaveBeenCalledOnce();
+});
+
+it('asks Frameleaf Cloud for the selfie faces when allowed and the Face route reaches it (FC-277)', async () => {
+  const { image, workflow, rate, detectFaces, service, resolveRoute, findGalleryFaces } = await setup();
+  resolveRoute.mockResolvedValueOnce([cloud]);
+  const values = [1, ...Array.from({ length: 511 }, () => 0)];
+  const floats = new Float32Array(values);
+  const data = Buffer.from(floats.buffer, floats.byteOffset, floats.byteLength).toString('base64');
+  const detectSelfieFaces = vi.fn().mockResolvedValue({
+    image: { width: 8, height: 8 },
+    faces: [
+      {
+        boundingBox: { x1: 1, y1: 1, x2: 7, y2: 7 },
+        score: 0.9,
+        embedding: { dim: 512, encoding: 'f32le-base64', data },
+      },
+    ],
+    warnings: [],
+  });
+  const gateway = { url: 'https://ml.na.frameleaf.cloud', token: {} };
+  vi.spyOn(cloudGateway, 'resolveCloudGateway').mockResolvedValue({ state: 'ready', gateway } as never);
+  Object.assign(service, {
+    configRepository: { getEnv: () => ({ frameleafCloud: { guestSelfies: true } }) },
+    frameleafCloudMlRepository: { detectSelfieFaces },
+  });
+  await expect(service.search(workflow as never, rate as never, id, token, image)).resolves.toBeDefined();
+  expect(detectSelfieFaces).toHaveBeenCalledWith(gateway, expect.any(Uint8Array), 0.7);
+  expect(findGalleryFaces).toHaveBeenCalledWith(ownerId, expect.any(Array), embedding, 0.5);
+  expect(detectFaces).not.toHaveBeenCalled();
 });

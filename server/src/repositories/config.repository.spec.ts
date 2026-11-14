@@ -9,6 +9,7 @@ const getEnv = () => {
 const resetEnv = () => {
   for (const env of [
     'FRAMELEAF_ALLOW_EXTERNAL_PLUGINS',
+    'FRAMELEAF_GUEST_SELFIE_CLOUD',
     'FRAMELEAF_SHUTDOWN_GRACE_SECONDS',
     'FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS',
     'FRAMELEAF_ALLOW_SETUP',
@@ -479,6 +480,7 @@ describe('getEnv', () => {
     it('points at Frameleaf Cloud by default', () => {
       expect(getEnv().frameleafCloud).toEqual({
         url: 'https://api.frameleaf.cloud',
+        guestSelfies: false,
         pushUrl: null,
         identityDir: null,
         linkToken: null,
@@ -501,8 +503,10 @@ describe('getEnv', () => {
       process.env.FRAMELEAF_LOCAL_URL = 'http://192.168.1.10:2283/photos';
       process.env.FRAMELEAF_ACME_DIRECTORY_URL = 'https://acme-staging-v02.api.letsencrypt.org/directory';
       process.env.FRAMELEAF_LICENSE_EXTRA_JWKS_FILE = ' /run/secrets/frameleaf-dev-keys.json ';
+      process.env.FRAMELEAF_GUEST_SELFIE_CLOUD = 'true';
       expect(getEnv().frameleafCloud).toEqual({
         url: 'https://frameleaf.cloud.test',
+        guestSelfies: true,
         pushUrl: 'https://push.frameleaf.cloud.test',
         identityDir: '/data/identity',
         linkToken: 'fll_abcdefgh12345678',
