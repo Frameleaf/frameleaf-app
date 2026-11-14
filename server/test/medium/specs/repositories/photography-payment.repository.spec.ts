@@ -83,15 +83,15 @@ describe(PhotographyPaymentRepository.name, () => {
       await sql`SELECT id FROM photography_payment_link WHERE id=${link.id}::uuid FOR UPDATE`.execute(trx);
       await sql`INSERT INTO photography_payment ("ownerId", "linkId", amount, currency, "payerEmail")
         VALUES (${user.id}::uuid, ${link.id}::uuid, 5000, 'CAD', 'a@example.com')`.execute(trx);
+      const { rows: me } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx);
       second = sut.createPayment(link, 'b@example.com');
-      // Commit only once PostgreSQL reports the second payer waiting on the link lock.
+      // Commit only once PostgreSQL reports a session blocked by this very transaction.
       let blocked = false;
       for (let tries = 0; tries < 100 && !blocked; tries++) {
         const { rows } = await sql<{ n: number }>`SELECT count(*)::int AS n FROM pg_stat_activity
-          WHERE wait_event_type = 'Lock' AND query LIKE '%photography_payment_link%FOR UPDATE%'`.execute(database);
+          WHERE ${me[0].pid}::int = ANY(pg_blocking_pids(pid))`.execute(database);
         blocked = rows[0].n > 0;
-        if (blocked) break;
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        if (!blocked) await new Promise((resolve) => setTimeout(resolve, 50));
       }
       expect(blocked).toBe(true);
     });
