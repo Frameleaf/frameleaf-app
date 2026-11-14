@@ -12,6 +12,7 @@ import {
   PhotographyBookingStatusDto,
   PhotographyBookingTypeSaveDto,
 } from 'src/dtos/photography-booking.dto.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   type BookingRow,
   type BookingTypeRow,
@@ -68,6 +69,7 @@ export class PhotographyBookingService {
     private payments: PhotographyPaymentRepository,
     private site: PhotographySiteService,
     private clients: ClientsPaymentsService,
+    private logger?: LoggingRepository,
   ) {}
 
   private studio(auth: AuthDto) {
@@ -141,65 +143,88 @@ export class PhotographyBookingService {
       chosen.push({ id: addOn.id, name: addOn.name, price: addOn.price, quantity: pick.quantity });
     }
     const total = type.price + chosen.reduce((sum, a) => sum + a.price * a.quantity, 0);
-    const booking = await this.repository.createBooking({
-      ownerId,
-      bookingTypeId: type.id,
-      typeName: type.name,
-      clientName: dto.name,
-      clientEmail: dto.email,
-      message: dto.message,
-      preferredDates: dto.preferredDates,
-      addOns: chosen,
-      total,
-      deposit: type.deposit,
-      currency: type.currency,
-    });
+    // A retry of the same request (same client and session, still waiting) resumes it: no second booking or lead, and
+    // its deposit keeps its payment and idempotency key, so an uncertain checkout can't become a second one.
+    const earlier = await this.repository.recentRequest(ownerId, type.id, dto.email, 30);
+    const booking =
+      earlier ??
+      (await this.repository.createBooking({
+        ownerId,
+        bookingTypeId: type.id,
+        typeName: type.name,
+        clientName: dto.name,
+        clientEmail: dto.email,
+        message: dto.message,
+        preferredDates: dto.preferredDates,
+        addOns: chosen,
+        total,
+        deposit: type.deposit,
+        currency: type.currency,
+      }));
 
-    const lines = [
-      `Booking request: ${type.name} (${money(total, type.currency)})`,
-      ...chosen.map((a) => `+ ${a.name} × ${a.quantity}`),
-      dto.preferredDates.length > 0 ? `Preferred dates: ${dto.preferredDates.join(', ')}` : '',
-      dto.message,
-    ].filter(Boolean);
-    await this.site.addInquiry(ownerId, site, {
-      kind: 'inquiry',
-      name: dto.name,
-      email: dto.email,
-      date: dto.preferredDates[0] ?? '',
-      type: type.name.slice(0, 60),
-      message: lines.join('\n').slice(0, 5000),
-    });
+    if (!earlier) {
+      const lines = [
+        `Booking request: ${type.name} (${money(total, type.currency)})`,
+        ...chosen.map((a) => `+ ${a.name} × ${a.quantity}`),
+        dto.preferredDates.length > 0 ? `Preferred dates: ${dto.preferredDates.join(', ')}` : '',
+        dto.message,
+      ].filter(Boolean);
+      // The booking is the record; the lead on the inquiry list is a convenience, so a failure there is logged and
+      // never turned into an error that would make the client send the booking again.
+      try {
+        await this.site.addInquiry(ownerId, site, {
+          kind: 'inquiry',
+          name: dto.name,
+          email: dto.email,
+          date: dto.preferredDates[0] ?? '',
+          type: type.name.slice(0, 60),
+          message: lines.join('\n').slice(0, 5000),
+        });
+      } catch (error) {
+        this.logger?.warn(`Booking ${booking.id} saved without its inquiry lead: ${(error as Error).message}`);
+      }
+    }
 
     let checkoutUrl: string | null = null;
-    if (type.deposit > 0 && (await this.clients.ready(ownerId))) {
+    const owed = booking.deposit > 0 && !['paid', 'refunded'].includes(booking.depositStatus ?? '');
+    if (owed && (await this.clients.ready(ownerId))) {
       const back = origin ?? (await this.clients.publicUrl());
-      if (back) checkoutUrl = await this.depositCheckout(booking, type, `${back}/studio/${idOrSlug}`);
+      try {
+        if (back) checkoutUrl = await this.depositCheckout(booking, type, `${back}/studio/${idOrSlug}`);
+      } catch (error) {
+        // The booking is taken either way; sending the form again resumes this same deposit.
+        this.logger?.warn(`Deposit checkout for booking ${booking.id} didn't start: ${(error as Error).message}`);
+      }
     }
-    return { total, deposit: type.deposit, currency: type.currency, checkoutUrl };
+    return { total: booking.total, deposit: booking.deposit, currency: booking.currency, checkoutUrl };
   }
 
   /** The deposit as a payment on the studio's own account; its events reach PhotographyPaymentService (`booking:`). */
   private async depositCheckout(booking: BookingRow, type: BookingTypeRow, back: string) {
-    const payment = await this.payments.createStandalonePayment(
-      booking.ownerId,
-      type.deposit,
-      type.currency,
-      booking.clientEmail,
-    );
-    await this.repository.setDepositPayment(booking.id, payment.id);
+    let paymentId = booking.depositPaymentId;
+    if (!paymentId) {
+      const payment = await this.payments.createStandalonePayment(
+        booking.ownerId,
+        booking.deposit,
+        booking.currency,
+        booking.clientEmail,
+      );
+      await this.repository.setDepositPayment(booking.id, payment.id);
+      paymentId = payment.id;
+    }
     const session = await this.clients.checkout(booking.ownerId, {
-      reference: `booking:${payment.id}`,
-      idempotencyKey: `payment-${payment.id}`,
+      reference: `booking:${paymentId}`,
+      idempotencyKey: `payment-${paymentId}`,
       name: `${type.name} deposit`,
-      amount: type.deposit,
-      currency: type.currency.toLowerCase(),
+      amount: booking.deposit,
+      currency: booking.currency.toLowerCase(),
       customerEmail: booking.clientEmail,
       successUrl: `${back}?booking=sent`,
       cancelUrl: back,
     });
     if (!session.url.startsWith('https://checkout.stripe.com/'))
       throw new ConflictException('Invalid hosted checkout response');
-    await this.payments.setCheckout(payment.id, session.id);
+    await this.payments.setCheckout(paymentId, session.id);
     return session.url;
   }
 }

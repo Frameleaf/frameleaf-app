@@ -60,7 +60,12 @@ describe(PhotographyBookingRepository.name, () => {
       status: 'requested',
       preferredDates: ['2027-04-01'],
     });
-    expect((await sut.setStatus(booking.id, user.id, 'confirmed'))!.status).toBe('confirmed');
+    expect(await sut.setStatus(booking.id, user.id, 'confirmed')).toMatchObject({
+      status: 'confirmed',
+      depositStatus: 'paid',
+    });
+    // A resend within 30 minutes finds the same request; after it is confirmed it is no longer a resend.
+    expect(await sut.recentRequest(user.id, mini.id, 'sam@example.com', 30)).toBeUndefined();
     // Deleting a type keeps its bookings.
     expect(await sut.deleteType(mini.id, user.id)).toBe(true);
     expect((await sut.bookings(user.id))[0]).toMatchObject({ bookingTypeId: null, typeName: 'Mini' });

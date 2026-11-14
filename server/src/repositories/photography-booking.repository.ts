@@ -95,14 +95,25 @@ export class PhotographyBookingRepository {
       RETURNING *`.execute(this.db);
     return rows[0];
   }
+  /** The same client's request for the same session in the last `minutes`, still waiting: a retry of it, not a new one. */
+  async recentRequest(ownerId: string, bookingTypeId: string, clientEmail: string, minutes: number) {
+    const { rows } = await sql<BookingRow>`SELECT b.*, p.status AS "depositStatus" FROM photography_booking b
+      LEFT JOIN photography_payment p ON p.id=b."depositPaymentId"
+      WHERE b."ownerId"=${ownerId}::uuid AND b."bookingTypeId"=${bookingTypeId}::uuid AND b."clientEmail"=${clientEmail}
+        AND b.status='requested' AND b."requestedAt" > now() - make_interval(mins => ${minutes})
+      ORDER BY b."requestedAt" DESC LIMIT 1`.execute(this.db);
+    return rows[0];
+  }
   async setDepositPayment(id: string, paymentId: string) {
     await sql`UPDATE photography_booking SET "depositPaymentId"=${paymentId}::uuid WHERE id=${id}::uuid`.execute(
       this.db,
     );
   }
   async setStatus(id: string, ownerId: string, status: BookingStatus) {
-    const { rows } = await sql<BookingRow>`UPDATE photography_booking SET status=${status}
-      WHERE id=${id}::uuid AND "ownerId"=${ownerId}::uuid RETURNING *`.execute(this.db);
+    const { rows } = await sql<BookingRow>`WITH updated AS (UPDATE photography_booking SET status=${status}
+        WHERE id=${id}::uuid AND "ownerId"=${ownerId}::uuid RETURNING *)
+      SELECT updated.*, p.status AS "depositStatus" FROM updated
+      LEFT JOIN photography_payment p ON p.id=updated."depositPaymentId"`.execute(this.db);
     return rows[0];
   }
 }

@@ -32,6 +32,11 @@ const setup = (ready = true) => {
       bookings.push(row);
       return Promise.resolve(row);
     }),
+    recentRequest: vi.fn((owner: string, typeId: string, email: string) =>
+      Promise.resolve(
+        bookings.findLast((b) => b.ownerId === owner && b.bookingTypeId === typeId && b.clientEmail === email),
+      ),
+    ),
     setDepositPayment: vi.fn((id: string, paymentId: string) => {
       bookings.find((b) => b.id === id)!.depositPaymentId = paymentId;
       return Promise.resolve();
@@ -170,5 +175,29 @@ describe(PhotographyBookingService.name, () => {
     expect((await s.service.publicTypes('cedar')).types.map((t) => t.name)).toEqual(['Mini session']);
     expect((await s.service.types(auth)).types).toHaveLength(2);
     await expect(s.service.types({ ...auth, sharedLink: {} } as never)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('takes the booking even when checkout or the lead fails, and a resend resumes the same booking and deposit', async () => {
+    const s = setup();
+    const type = await s.service.createType(auth, mini);
+    s.site.addInquiry.mockRejectedValueOnce(new Error('Studio settings storage limit reached'));
+    s.clients.checkout.mockRejectedValueOnce(new Error('Frameleaf Cloud unreachable'));
+    expect(await s.service.request('cedar', request(type.id), 'https://photos.example')).toMatchObject({
+      total: 28_000,
+      checkoutUrl: null,
+    });
+    expect(s.bookings).toHaveLength(1);
+    const paymentId = s.bookings[0].depositPaymentId;
+    expect(paymentId).not.toBeNull();
+    // The client sends the form again: same booking, no second lead, same deposit payment and idempotency key.
+    const again = await s.service.request('cedar', request(type.id), 'https://photos.example');
+    expect(again.checkoutUrl).toContain('checkout.stripe.com');
+    expect(s.bookings).toHaveLength(1);
+    expect(s.site.addInquiry).toHaveBeenCalledTimes(1);
+    expect(s.payments.createStandalonePayment).toHaveBeenCalledTimes(1);
+    const keys = s.clients.checkout.mock.calls.map(
+      (call) => (call as unknown as [string, { idempotencyKey: string }])[1].idempotencyKey,
+    );
+    expect(keys).toEqual([`payment-${paymentId}`, `payment-${paymentId}`]);
   });
 });
