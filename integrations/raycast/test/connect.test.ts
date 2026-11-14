@@ -75,6 +75,7 @@ test("library address must be HTTPS, or HTTP on a private network", () => {
 
 test("discovery is pinned to the configured origin", async () => {
   const endpoints = await discover(discovery().impl, ORIGIN);
+  assert.equal(endpoints.serverId, undefined);
   assert.deepEqual(endpoints, {
     resource: `${ORIGIN}/api/connect`,
     authorize: `${ORIGIN}/api/oauth/apps/authorize`,
@@ -82,6 +83,9 @@ test("discovery is pinned to the configured origin", async () => {
     revoke: `${ORIGIN}/api/oauth/apps/revoke`,
     register: `${ORIGIN}/api/oauth/apps/register`,
   });
+
+  const pinned = await discover(discovery(metadata(), resource({ frameleaf_server_id: "server-1" })).impl, ORIGIN);
+  assert.equal(pinned.serverId, "server-1");
 
   const { register: absent } = await discover(discovery(metadata({ registration_endpoint: undefined })).impl, ORIGIN);
   assert.equal(absent, undefined);

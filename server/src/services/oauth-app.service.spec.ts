@@ -388,7 +388,7 @@ describe(OAuthAppService.name, () => {
           : { connectedApps: { allowMcp: enabled, allowRegistration: true } }) as never,
       ),
     );
-    expect(sut.getProtectedResourceMetadata(ISSUER, '/api/mcp/assistant')).toMatchObject({
+    expect(await sut.getProtectedResourceMetadata(ISSUER, '/api/mcp/assistant')).toMatchObject({
       resource,
       scopes_supported: ['library:read'],
     });
@@ -416,17 +416,30 @@ describe(OAuthAppService.name, () => {
     });
   });
 
-  it('advertises Connect-only scopes exclusively on the Connect resource', () => {
-    expect(sut.getProtectedResourceMetadata(ISSUER, '/api/mcp/assistant').scopes_supported).toEqual(['library:read']);
+  it('advertises Connect-only scopes exclusively on the Connect resource', async () => {
+    mocks.systemMetadata.get.mockResolvedValue({ id: 'server-1', createdAt: '2026-11-14T00:00:00.000Z' } as never);
+    expect((await sut.getProtectedResourceMetadata(ISSUER, '/api/mcp/assistant')).scopes_supported).toEqual([
+      'library:read',
+    ]);
     for (const path of ['', '/api/mcp', '/api/mcp/assistant']) {
-      const scopes = sut.getProtectedResourceMetadata(ISSUER, path).scopes_supported;
+      const { scopes_supported: scopes } = await sut.getProtectedResourceMetadata(ISSUER, path);
       expect(scopes).not.toContain('photos:upload');
       expect(scopes).not.toContain('boards:upload');
       expect(scopes).not.toContain('events:read');
     }
-    expect(sut.getProtectedResourceMetadata(ISSUER, '/api/connect').scopes_supported).toEqual(
+    expect((await sut.getProtectedResourceMetadata(ISSUER, '/api/connect')).scopes_supported).toEqual(
       expect.arrayContaining(['photos:upload', 'boards:upload', 'events:read']),
     );
+  });
+
+  it('publishes the Connect server ID before sign-in, and only for Connect', async () => {
+    mocks.systemMetadata.get.mockResolvedValue({ id: 'server-1', createdAt: '2026-11-14T00:00:00.000Z' } as never);
+    expect(await sut.getProtectedResourceMetadata(ISSUER, '/api/connect')).toMatchObject({
+      frameleaf_server_id: 'server-1',
+    });
+    for (const path of ['', '/api/mcp', '/api/mcp/assistant']) {
+      expect(await sut.getProtectedResourceMetadata(ISSUER, path)).not.toHaveProperty('frameleaf_server_id');
+    }
   });
 
   it.each([null, 'other-account'])(
@@ -550,8 +563,10 @@ describe(OAuthAppService.name, () => {
   });
 
   it('keeps original downloads outside the MCP resource and consent', async () => {
-    expect(sut.getProtectedResourceMetadata(ISSUER, '/api/mcp').scopes_supported).not.toContain('library:download');
-    expect(sut.getProtectedResourceMetadata(ISSUER, '').scopes_supported).toContain('library:download');
+    expect((await sut.getProtectedResourceMetadata(ISSUER, '/api/mcp')).scopes_supported).not.toContain(
+      'library:download',
+    );
+    expect((await sut.getProtectedResourceMetadata(ISSUER, '')).scopes_supported).toContain('library:download');
     const client = repo.addClient([CLAUDE_REDIRECT]);
     const { dto } = request(client);
     const url = await sut.authorizeRedirect(
