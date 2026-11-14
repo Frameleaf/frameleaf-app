@@ -1,0 +1,5 @@
+{ "description": "Photos added to Trips trigger once each, newest first; a second run finds nothing new.",
+  "events": 3,
+  "parameters": { "type": "album.asset.added", "albumId": "00000000-0000-4000-8000-000000009001", "limit": 100 },
+  "requests": [["GET", "/api/connect/events/latest"]],
+  "count": 3, "output": { "event": "album.asset.added", "albumId": "00000000-0000-4000-8000-000000009001" } }

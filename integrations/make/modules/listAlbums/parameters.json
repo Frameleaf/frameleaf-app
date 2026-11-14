@@ -1,0 +1,12 @@
+[
+  {
+    "name": "limit",
+    "type": "uinteger",
+    "label": "Limit",
+    "default": 100,
+    "required": true,
+    "validate": {
+      "max": 3200
+    }
+  }
+]

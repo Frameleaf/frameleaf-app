@@ -1,0 +1,9 @@
+{
+  "url": "/albums",
+  "method": "GET",
+  "response": {
+    "limit": "{{parameters.limit}}",
+    "iterate": "{{body.items}}",
+    "output": "{{item}}"
+  }
+}

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -29,6 +30,7 @@ import {
   PhotographyAssemblyDto,
   PhotographyCallbackDto,
   PhotographyCheckoutDto,
+  PhotographyCheckoutRequestDto,
   PhotographyChoicesDto,
   PhotographyGalleryDto,
   PhotographyGalleryPasswordRequiredDto,
@@ -492,6 +494,7 @@ export class PhotographyWorkflowController {
   }
   @Post('galleries/:id/orders/:orderId/checkout')
   @ApiOperation({ operationId: 'photographyCheckout' })
+  @ApiBody({ type: PhotographyCheckoutRequestDto, required: false })
   @Authenticated({ public: true })
   @ApiResponse({ status: 201, type: PhotographyCheckoutDto })
   @ApiHeader({ name: 'X-Photography-Session', required: true, schema: { type: 'string', pattern: '^[a-f0-9]{64}$' } })
@@ -499,8 +502,12 @@ export class PhotographyWorkflowController {
     @Param('id', uuid) id: string,
     @Param('orderId', uuid) orderId: string,
     @Headers('x-photography-session') session: string | undefined,
+    @Req() req: Request,
   ) {
-    return this.service.checkout(id, session, orderId);
+    // The body is optional (FL-1037): an empty request reads as `{}`, a given one is checked strictly.
+    const parsed = PhotographyCheckoutRequestDto.schema.safeParse(req.body ?? {});
+    if (!parsed.success) throw new BadRequestException('Invalid checkout request');
+    return this.service.checkout(id, session, orderId, parsed.data.returnUrl);
   }
   @Post('galleries/:id/zip')
   @ApiOperation({ operationId: 'photographyZip' })

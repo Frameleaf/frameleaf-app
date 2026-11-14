@@ -1,0 +1,4 @@
+{ "description": "Adds two tags to a photo.",
+  "parameters": { "assetId": "00000000-0000-4000-8000-000000000001", "tags": ["beach", "2026"] },
+  "requests": [["POST", "/api/connect/assets/00000000-0000-4000-8000-000000000001/tags"]],
+  "output": { "tagIds": ["00000000-0000-4000-8000-000000080000", "00000000-0000-4000-8000-000000080001"] } }

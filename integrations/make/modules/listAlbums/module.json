@@ -1,0 +1,8 @@
+{
+  "label": "List albums",
+  "description": "Lists the albums this connection can read or add to.",
+  "moduleType": "search",
+  "scope": [
+    "library:read"
+  ]
+}

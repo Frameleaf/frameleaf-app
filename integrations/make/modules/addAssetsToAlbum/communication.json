@@ -1,0 +1,12 @@
+{
+  "url": "/albums/{{encodeURL(parameters.albumId)}}/assets",
+  "method": "POST",
+  "body": {
+    "assetIds": "{{parameters.assetIds}}"
+  },
+  "response": {
+    "output": {
+      "results": "{{body}}"
+    }
+  }
+}

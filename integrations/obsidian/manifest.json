@@ -1,0 +1,10 @@
+{
+  "author": "Frameleaf",
+  "authorUrl": "https://frameleaf.app",
+  "description": "Search your Frameleaf Library and insert photos as local image attachments.",
+  "id": "frameleaf-images",
+  "isDesktopOnly": true,
+  "minAppVersion": "1.11.4",
+  "name": "Frameleaf Images",
+  "version": "0.1.0"
+}

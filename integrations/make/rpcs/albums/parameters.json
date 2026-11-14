@@ -1,0 +1,3 @@
+[
+  { "name": "writable", "type": "boolean", "label": "Writable albums only" }
+]

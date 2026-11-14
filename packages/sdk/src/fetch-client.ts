@@ -14247,6 +14247,9 @@ export type PhotographyChoicesDto = {
 export type PhotographyOrderAcceptDto = {
     expectedRevision: string | null;
 };
+export type PhotographyCheckoutRequestDto = {
+    returnUrl?: string;
+};
 export type PhotographyCheckoutDto = {
     url: string;
 };
@@ -14292,6 +14295,20 @@ export type PhotographyZipDto = {
 export type PhotographyZipResponseDto = {
     id: string;
     status: Status6;
+    url: string;
+};
+export type ClientsPaymentAccountDto = {
+    chargesEnabled: boolean;
+    country: string | null;
+    defaultCurrency: string | null;
+    legacy: boolean;
+    requirementsDue: string[];
+    status: ClientsPaymentAccountStatus;
+};
+export type ClientsPaymentConnectDto = {
+    returnUrl: string;
+};
+export type ClientsPaymentConnectResponseDto = {
     url: string;
 };
 export type PhotographyCallbackDto = {
@@ -35820,21 +35837,23 @@ export function photographyAccept({ xPhotographySession, id, orderId, photograph
         })
     })));
 }
-export function photographyCheckout({ xPhotographySession, id, orderId }: {
+export function photographyCheckout({ xPhotographySession, id, orderId, photographyCheckoutRequestDto }: {
     xPhotographySession: string;
     id: string;
     orderId: string;
+    photographyCheckoutRequestDto?: PhotographyCheckoutRequestDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
         data: PhotographyCheckoutDto;
-    }>(`/photography/galleries/${encodeURIComponent(id)}/orders/${encodeURIComponent(orderId)}/checkout`, {
+    }>(`/photography/galleries/${encodeURIComponent(id)}/orders/${encodeURIComponent(orderId)}/checkout`, oazapfts.json({
         ...opts,
         method: "POST",
+        body: photographyCheckoutRequestDto,
         headers: oazapfts.mergeHeaders(opts?.headers, {
             "X-Photography-Session": xPhotographySession
         })
-    }));
+    })));
 }
 export function photographyOutput({ xPhotographySession, captureId, id, outputId }: {
     xPhotographySession: string;
@@ -35972,6 +35991,35 @@ export function photographyArchive({ xPhotographySession, id, zipId }: {
             "X-Photography-Session": xPhotographySession
         })
     }));
+}
+export function clientsPaymentAccountDisconnect(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClientsPaymentAccountDto;
+    }>("/photography/payment-account", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+export function clientsPaymentAccount(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClientsPaymentAccountDto;
+    }>("/photography/payment-account", {
+        ...opts
+    }));
+}
+export function clientsPaymentAccountConnect({ clientsPaymentConnectDto }: {
+    clientsPaymentConnectDto: ClientsPaymentConnectDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ClientsPaymentConnectResponseDto;
+    }>("/photography/payment-account/connect", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: clientsPaymentConnectDto
+    })));
 }
 export function photographyCallback({ stripeSignature, body }: {
     stripeSignature: string;
@@ -45988,6 +46036,13 @@ export enum Status5 {
 }
 export enum Status6 {
     Ready = "ready"
+}
+export enum ClientsPaymentAccountStatus {
+    None = "none",
+    Pending = "pending",
+    Active = "active",
+    Disconnected = "disconnected",
+    Unavailable = "unavailable"
 }
 export enum Alignment {
     Left = "left",

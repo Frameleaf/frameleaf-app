@@ -1,0 +1,23 @@
+[
+  {
+    "name": "sourceId",
+    "type": "text",
+    "label": "Source ID",
+    "help": "A stable ID from the source record, such as its ID in the previous module. The same Source ID never creates a second album.",
+    "required": true,
+    "validate": {
+      "min": 1,
+      "max": 200
+    }
+  },
+  {
+    "name": "name",
+    "type": "text",
+    "label": "Name",
+    "required": true,
+    "validate": {
+      "min": 1,
+      "max": 500
+    }
+  }
+]

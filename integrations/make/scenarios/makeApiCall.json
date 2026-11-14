@@ -1,0 +1,4 @@
+{ "description": "Calls GET /albums through the restricted universal module.",
+  "parameters": { "url": "/albums", "method": "GET", "qs": [{ "key": "unused", "value": "1" }] },
+  "requests": [["GET", "/api/connect/albums"]],
+  "output": { "statusCode": 200 } }

@@ -1,0 +1,161 @@
+{
+  "authorize": {
+    "temp": {
+      "code_verifier": "{{uuid}}{{uuid}}{{uuid}}"
+    },
+    "url": "{{parameters.serverUrl}}/api/oauth/apps/authorize",
+    "qs": {
+      "response_type": "code",
+      "client_id": "{{parameters.frameleafClientId}}",
+      "redirect_uri": "{{oauth.makeRedirectUri}}",
+      "resource": "{{parameters.serverUrl}}/api/connect",
+      "scope": "{{join(oauth.scope, ' ')}}",
+      "code_challenge": "{{base64url(sha256(temp.code_verifier, 'base64'))}}",
+      "code_challenge_method": "S256"
+    },
+    "response": {
+      "temp": {
+        "code": "{{query.code}}"
+      }
+    },
+    "log": {
+      "sanitize": [
+        "request.url",
+        "request.qs",
+        "request.headers",
+        "request.body",
+        "response.headers",
+        "response.body",
+        "response.query"
+      ]
+    }
+  },
+  "token": {
+    "url": "{{parameters.serverUrl}}/api/oauth/apps/token",
+    "method": "POST",
+    "type": "urlencoded",
+    "body": {
+      "grant_type": "authorization_code",
+      "client_id": "{{parameters.frameleafClientId}}",
+      "redirect_uri": "{{oauth.makeRedirectUri}}",
+      "resource": "{{parameters.serverUrl}}/api/connect",
+      "code": "{{temp.code}}",
+      "code_verifier": "{{temp.code_verifier}}"
+    },
+    "response": {
+      "valid": "{{statusCode = 200 && body.token_type = 'Bearer' && body.access_token && body.refresh_token && body.expires_in > 0}}",
+      "error": {
+        "type": "ConnectionError",
+        "message": "Frameleaf connection failed (HTTP {{statusCode}}). Reconnect or check access in Frameleaf."
+      },
+      "data": {
+        "expires": "{{addSeconds(now, body.expires_in)}}",
+        "accessToken": "{{body.access_token}}",
+        "refreshToken": "{{body.refresh_token}}"
+      }
+    },
+    "log": {
+      "sanitize": [
+        "request.url",
+        "request.qs",
+        "request.headers",
+        "request.body",
+        "response.headers",
+        "response.body",
+        "response.query"
+      ]
+    }
+  },
+  "refresh": {
+    "condition": "{{data.expires < addSeconds(now, 60)}}",
+    "url": "{{parameters.serverUrl}}/api/oauth/apps/token",
+    "method": "POST",
+    "type": "urlencoded",
+    "body": {
+      "grant_type": "refresh_token",
+      "client_id": "{{parameters.frameleafClientId}}",
+      "resource": "{{parameters.serverUrl}}/api/connect",
+      "refresh_token": "{{data.refreshToken}}"
+    },
+    "response": {
+      "valid": "{{statusCode = 200 && body.token_type = 'Bearer' && body.access_token && body.refresh_token && body.expires_in > 0}}",
+      "error": {
+        "type": "ConnectionError",
+        "message": "Frameleaf connection failed (HTTP {{statusCode}}). Reconnect or check access in Frameleaf."
+      },
+      "data": {
+        "expires": "{{addSeconds(now, body.expires_in)}}",
+        "accessToken": "{{body.access_token}}",
+        "refreshToken": "{{body.refresh_token}}"
+      }
+    },
+    "log": {
+      "sanitize": [
+        "request.url",
+        "request.qs",
+        "request.headers",
+        "request.body",
+        "response.headers",
+        "response.body",
+        "response.query"
+      ]
+    }
+  },
+  "info": {
+    "url": "{{parameters.serverUrl}}/api/connect/capabilities",
+    "method": "GET",
+    "headers": {
+      "authorization": "Bearer {{connection.accessToken}}"
+    },
+    "response": {
+      "valid": "{{statusCode = 200 && body.protocolVersion = 1 && body.connection.grantId && body.connection.libraryUserId}}",
+      "error": {
+        "type": "ConnectionError",
+        "message": "Frameleaf connection failed (HTTP {{statusCode}}). Reconnect or check access in Frameleaf."
+      },
+      "metadata": {
+        "type": "text",
+        "value": "Frameleaf"
+      }
+    },
+    "log": {
+      "sanitize": [
+        "request.url",
+        "request.qs",
+        "request.headers",
+        "request.body",
+        "response.headers",
+        "response.body",
+        "response.query"
+      ]
+    }
+  },
+  "invalidate": {
+    "url": "{{parameters.serverUrl}}/api/oauth/apps/revoke",
+    "method": "POST",
+    "type": "urlencoded",
+    "body": {
+      "token": "{{data.refreshToken}}",
+      "token_type_hint": "refresh_token",
+      "client_id": "{{parameters.frameleafClientId}}"
+    },
+    "response": {
+      "valid": "{{statusCode = 200 || statusCode = 204}}",
+      "error": {
+        "type": "ConnectionError",
+        "message": "Frameleaf connection failed (HTTP {{statusCode}}). Reconnect or check access in Frameleaf."
+      }
+    },
+    "log": {
+      "sanitize": [
+        "request.url",
+        "request.qs",
+        "request.headers",
+        "request.body",
+        "response.headers",
+        "response.body",
+        "response.query"
+      ]
+    }
+  }
+}

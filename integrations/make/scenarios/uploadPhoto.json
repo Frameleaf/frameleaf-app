@@ -1,0 +1,4 @@
+{ "description": "Uploads a JPEG in one append and commits it.",
+  "parameters": { "sourceId": "drive-file-7", "albumId": "00000000-0000-4000-8000-000000009001", "fileName": "beach.jpg", "data": { "$fixture": "jpeg" }, "takenAt": "2026-07-01T10:00:00.000Z" },
+  "requests": [["POST", "/api/connect/uploads"], ["PATCH", "/api/connect/uploads/00000000-0000-4000-8000-000000060000"], ["POST", "/api/connect/uploads/00000000-0000-4000-8000-000000060000/commit"]],
+  "output": { "status": "created" } }

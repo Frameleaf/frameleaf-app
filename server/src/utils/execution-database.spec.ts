@@ -3,6 +3,8 @@ import type { QueueExecution } from 'src/queue/types.js';
 import { queueExecution } from 'src/queue/context.js';
 import {
   DATABASE_ACQUIRE_TIMEOUT_MS,
+  DATABASE_MAX_WAITERS,
+  DATABASE_STALL_MS,
   boundExecutionReservations,
   withDatabaseCleanup,
 } from 'src/utils/execution-database.js';
@@ -95,6 +97,51 @@ describe('bounded execution database reservations', () => {
     expect(release).not.toHaveBeenCalled();
     expect(restart).toHaveBeenCalledOnce();
     await expect(client.reserve()).rejects.toThrow('requires worker restart');
+  });
+
+  describe('a pool that stops granting reservations (FL-1591)', () => {
+    const setup = (reserve: () => Promise<unknown>) => {
+      vi.useFakeTimers();
+      const end = vi.fn().mockResolvedValue(undefined);
+      const restart = vi.fn();
+      const client = boundExecutionReservations(
+        { reserve, end } as unknown as ReturnType<typeof createPostgres>,
+        restart,
+      );
+      return { client, end, restart };
+    };
+    const refuse = (client: ReturnType<typeof createPostgres>) => client.reserve().catch(() => {});
+
+    it('closes the pool and asks for a fresh worker once nothing is granted for a minute', async () => {
+      const { client, end, restart } = setup(() => new Promise(() => {}));
+      for (let n = 0; n < DATABASE_MAX_WAITERS; n++) void refuse(client);
+      await vi.advanceTimersByTimeAsync(DATABASE_ACQUIRE_TIMEOUT_MS);
+      await expect(client.reserve()).rejects.toThrow('capacity exhausted');
+      expect(restart).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(DATABASE_STALL_MS);
+      await expect(client.reserve()).rejects.toThrow('capacity exhausted');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(end).toHaveBeenCalledWith({ timeout: 0 });
+      expect(restart).toHaveBeenCalledOnce();
+      await expect(client.reserve()).rejects.toThrow('requires worker restart');
+    });
+
+    it('does not count idle time before the first wait, or a slow pool that still grants', async () => {
+      let grant: ((connection: unknown) => void) | undefined;
+      const { client, restart } = setup(() => new Promise((resolve) => (grant = resolve)));
+      await vi.advanceTimersByTimeAsync(10 * DATABASE_STALL_MS);
+      const first = expect(client.reserve()).rejects.toThrow('timed out');
+      await vi.advanceTimersByTimeAsync(DATABASE_ACQUIRE_TIMEOUT_MS);
+      await first;
+      grant!({ release: vi.fn(), unsafe: vi.fn() });
+      for (let n = 0; n < 20; n++) {
+        const waiting = refuse(client);
+        await vi.advanceTimersByTimeAsync(DATABASE_ACQUIRE_TIMEOUT_MS);
+        await waiting;
+        grant!({ release: vi.fn(), unsafe: vi.fn() });
+      }
+      expect(restart).not.toHaveBeenCalled();
+    });
   });
 
   describe("a rollback stopped by an earlier statement's cancel request (FL-1443)", () => {

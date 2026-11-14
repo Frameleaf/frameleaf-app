@@ -1,0 +1,15 @@
+{
+  "url": "/assets/{{encodeURL(parameters.assetId)}}/rendition",
+  "method": "GET",
+  "qs": {
+    "variant": "{{parameters.variant}}"
+  },
+  "response": {
+    "type": "binary",
+    "output": {
+      "fileName": "{{parameters.assetId}}{{switch(headers.`content-type`, 'image/jpeg', '.jpg', 'image/png', '.png', 'image/webp', '.webp', 'video/mp4', '.mp4', '')}}",
+      "data": "{{body}}",
+      "contentType": "{{headers.`content-type`}}"
+    }
+  }
+}

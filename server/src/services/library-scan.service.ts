@@ -957,7 +957,13 @@ export class LibraryScanService {
         async (tx) => {
           let sourceIds: string[] = [];
           const outcome = await this.libraryRepository.withScanClaim(
-            { operationId: operation.id, claimToken, libraryId: library.id, fingerprint: result.fingerprint! },
+            {
+              operationId: operation.id,
+              claimToken,
+              libraryId: library.id,
+              fingerprint: result.fingerprint!,
+              leaseMs: LIBRARY_SCAN_LEASE_MS,
+            },
             async (assets, repository) => {
               // Locks may have waited after the preflight check. Abort before and after mutation so
               // withScanClaim rolls back a cancelled in-flight transaction.
@@ -994,6 +1000,9 @@ export class LibraryScanService {
           return { value: outcome, assetIds: sourceIds, accepted: !!outcome && 'value' in outcome };
         },
         options.close ?? false,
+        // FL-1590: a library's first scan starts processing for everything it imports, so its batches commit while the
+        // server is at its busiest; give each one the scan's own lease instead of the queue's 60 seconds.
+        library.refreshedAt === null ? LIBRARY_SCAN_LEASE_MS : undefined,
       );
     } catch (error) {
       if (!(error instanceof LibraryBatchStopped)) throw error;

@@ -860,7 +860,8 @@
         session,
         `/orders/${encodeURIComponent(orderId)}/checkout`,
         'POST',
-        {},
+        // FL-1037: Stripe brings the client back to this gallery (never the invitation in the address).
+        { returnUrl: `${location.origin}${location.pathname}` },
       );
       const url = new URL(result.url);
       if (url.protocol !== 'https:' || url.hostname !== 'checkout.stripe.com') {

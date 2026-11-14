@@ -359,6 +359,8 @@ interface TimelineCalendarCursor {
   name: string;
   id: string;
 }
+/** FL-1592: how many whole timeline summaries (one per user and set of filters) each process keeps */
+const CALENDAR_PAGE_CACHE_SIZE = 32;
 export interface TimeBucketItem {
   timeBucket: string;
   count: number;
@@ -514,6 +516,8 @@ const isBestPhotoOf = (eb: ExpressionBuilder<DB, 'asset'>, { ownerId, minScore }
 @Injectable()
 export class AssetRepository {
   private readonly smartAlbums: SmartAlbumRepository;
+  /** FL-1592: per-month calendar page summaries by request, each kept with the fingerprint it was ranked at. */
+  private readonly calendarPageCache = new Map<string, Map<string, { fingerprint: string; pages: TimeBucketItem[] }>>();
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
@@ -3053,32 +3057,35 @@ export class AssetRepository {
       const direction = sql.raw(options.order === AssetOrder.Asc ? 'asc' : 'desc');
       const window = sql`partition by ${bucketDate} order by ${day} ${direction}, ${timestamp} ${direction},
         asset."originalFileName" ${direction}, asset.id ${direction}`;
-      const selection = this.timelineAssets(options, auth, bucketDate)
-        .where((eb) =>
-          eb.exists(
-            eb.selectFrom('asset_exif').select('asset_exif.assetId').whereRef('asset_exif.assetId', '=', 'asset.id'),
-          ),
-        )
-        // FL-820: positions restart every month, so a lookup only needs to rank the located asset's month.
-        // Inside the subquery `asset` is the inner row, so the bucket expression reads the located asset.
-        .$if(!!pages.locateAssetId, (qb) =>
-          qb.where(
-            sql<boolean>`${bucketDate} = (select ${bucketDate} from asset where asset.id = ${pages.locateAssetId}::uuid)`,
-          ),
-        )
-        .select([
-          'asset.id',
-          sql<number>`row_number() over (${window})`.as('position'),
-          sql<string | null>`lag(asset.id) over (${window})`.as('previousId'),
-          sql<string | null>`lead(asset.id) over (${window})`.as('nextId'),
-          sql<Date | null>`lag(${day}) over (${window})`.as('previousDay'),
-          sql<Date>`${day}`.as('dayDate'),
-          sql<number>`extract(day from ${day})::integer`.as('dayNumber'),
-          sql<number>`count(*) over (partition by ${bucketDate}, ${day})`.as('dayCount'),
-        ]);
-      // Rank narrow IDs once; each summary lets the client jump directly to a bounded page. FL-820: aggregate
-      // only each page's boundary rows and each day's first row, not every ranked row (a third of the time at 1M).
-      const { rows } = await sql<TimeBucketItem>`
+      const visible = this.timelineAssets(options, auth, bucketDate).where((eb) =>
+        eb.exists(
+          eb.selectFrom('asset_exif').select('asset_exif.assetId').whereRef('asset_exif.assetId', '=', 'asset.id'),
+        ),
+      );
+      const monthText = sql<string>`(${bucketDate} at time zone 'UTC')::date::text`;
+      const rank = async (months?: string[]) => {
+        const selection = visible
+          // FL-820: positions restart every month, so a lookup only needs to rank the located asset's month.
+          // Inside the subquery `asset` is the inner row, so the bucket expression reads the located asset.
+          .$if(!!pages.locateAssetId, (qb) =>
+            qb.where(
+              sql<boolean>`${bucketDate} = (select ${bucketDate} from asset where asset.id = ${pages.locateAssetId}::uuid)`,
+            ),
+          )
+          .$if(!!months, (qb) => qb.where(sql<boolean>`${monthText} = any(${months}::text[])`))
+          .select([
+            'asset.id',
+            sql<number>`row_number() over (${window})`.as('position'),
+            sql<string | null>`lag(asset.id) over (${window})`.as('previousId'),
+            sql<string | null>`lead(asset.id) over (${window})`.as('nextId'),
+            sql<Date | null>`lag(${day}) over (${window})`.as('previousDay'),
+            sql<Date>`${day}`.as('dayDate'),
+            sql<number>`extract(day from ${day})::integer`.as('dayNumber'),
+            sql<number>`count(*) over (partition by ${bucketDate}, ${day})`.as('dayCount'),
+          ]);
+        // Rank narrow IDs once; each summary lets the client jump directly to a bounded page. FL-820: aggregate
+        // only each page's boundary rows and each day's first row, not every ranked row (a third of the time at 1M).
+        const { rows } = await sql<TimeBucketItem>`
         with ranked as (${selection}),
         numbered as (
           select *, ((position - 1) / ${pages.pageSize})::integer as page,
@@ -3102,7 +3109,44 @@ export class AssetRepository {
         group by "timeBucket", page
         order by "timeBucket" ${direction}, page asc
       `.execute(this.db);
-      return rows;
+        return rows;
+      };
+      if (pages.locateAssetId) return rank();
+      // FL-1592: ranking every photo took ~5 s of database time at 2,000,000 photos. A per-month fingerprint
+      // (photo count, ID set and newest change) costs about a plain month count, so only months whose
+      // fingerprint changed are ranked again. Any change to a listed photo, or to which photos the request may
+      // see, changes its month's fingerprint: every asset update stamps a new "updateId".
+      const { rows: months } = await sql<{ timeBucket: string; fingerprint: string }>`
+        select ("timeBucket" at time zone 'UTC')::date::text as "timeBucket",
+          count(*) || ':' || sum(hashtextextended(id::text, 0)) || ':' || max("updateId"::text) as fingerprint
+        from (${visible.select(['asset.id', 'asset.updateId'])}) visible
+        group by "timeBucket"
+        order by "timeBucket" ${direction}
+      `.execute(this.db);
+      const key = JSON.stringify([auth?.user.id, auth?.sharedLink?.id, options, pages.pageSize]);
+      const cached = this.calendarPageCache.get(key);
+      const stale = months.filter(
+        ({ timeBucket, fingerprint }) => cached?.get(timeBucket)?.fingerprint !== fingerprint,
+      );
+      const ranked = stale.length > 0 ? await rank(stale.map(({ timeBucket }) => timeBucket)) : [];
+      const fresh = Map.groupBy(ranked, (page) => page.timeBucket);
+      const next = new Map(
+        months.map(({ timeBucket, fingerprint }) => [
+          timeBucket,
+          { fingerprint, pages: fresh.get(timeBucket) ?? (cached?.get(timeBucket)?.pages || []) },
+        ]),
+      );
+      // ponytail: a small per-process LRU of whole summaries; enough for each user's few open timelines.
+      this.calendarPageCache.delete(key);
+      this.calendarPageCache.set(key, next);
+      for (const old of this.calendarPageCache.keys()) {
+        if (this.calendarPageCache.size <= CALENDAR_PAGE_CACHE_SIZE) break;
+        this.calendarPageCache.delete(old);
+      }
+      return next
+        .values()
+        .flatMap(({ pages }) => pages)
+        .toArray();
     }
     return this.db
       .with('asset', () => this.timelineAssets(options, auth, this.timelineBucketDate(options)))

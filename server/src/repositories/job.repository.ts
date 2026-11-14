@@ -790,7 +790,11 @@ export class JobRepository {
    * One transaction fenced by the current claim (when inside a job): the claim is locked before `work` and still
    * held after it, or nothing commits.
    */
-  private fenced<T>(context: QueueExecution | undefined, work: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
+  private fenced<T>(
+    context: QueueExecution | undefined,
+    work: (tx: Transaction<DB>) => Promise<T>,
+    leaseMs = 60_000,
+  ): Promise<T> {
     context?.signal.throwIfAborted();
     const claimHeld = (tx: Transaction<DB>, lock: boolean) =>
       sql`select id from job where id = ${context!.claim.id}::uuid and token = ${context!.claim.token}::uuid
@@ -798,6 +802,13 @@ export class JobRepository {
         ${lock ? sql`for update` : sql``}`.execute(tx);
     return this.store.db.transaction().execute(async (tx) => {
       if (context && (await claimHeld(tx, true)).rows.length === 0) throw new Error('Producer lost its claim');
+      if (context) {
+        // The worker heartbeat skips a locked claim, so back-to-back fences (a library scan's batches) would starve
+        // its lease until it expired mid-scan. Holding the fence proves the executor is alive: renew the lease here,
+        // for `leaseMs`: how long this one fence may take. The next heartbeat sets the usual 60 seconds again.
+        await sql`update job set "leaseExpiresAt" = greatest("leaseExpiresAt", clock_timestamp() + ${leaseMs} * interval '1 millisecond')
+          where id = ${context.claim.id}::uuid`.execute(tx);
+      }
       const value = await work(tx);
       if (context) {
         context.signal.throwIfAborted();
@@ -944,7 +955,8 @@ export class JobRepository {
         !JOBS_NOT_RETRIED.has(item.name),
       sensitive: JOBS_WITH_SENSITIVE_DATA.has(item.name),
       deadlineMs:
-        item.name === JobName.MediaImport
+        // FL-1590: a scan's first saved batch can be slow on a big library under load; after it, the idle deadline applies.
+        item.name === JobName.MediaImport || item.name === JobName.LibraryScanRun
           ? 12 * 60 * 60 * 1000
           : isMl
             ? QUEUE_TIMING.mlDeadline
@@ -1085,38 +1097,43 @@ export class JobRepository {
 
   /**
    * Assets a scan batch imports and their processing jobs commit together (FL-1265: they run at once, before the scan
-   * ends). `close` marks the scan's enumeration done.
+   * ends). `close` marks the scan's enumeration done. `leaseMs` is how long the batch may take to commit.
    */
   async commitLibraryScanBatch<T>(
     identity: LibrarySourceIdentity,
     examined: number,
     work: (tx: Transaction<DB>) => Promise<{ value: T; assetIds: string[]; accepted: boolean }>,
     close = false,
+    leaseMs?: number,
   ): Promise<T> {
     if (!Number.isSafeInteger(examined) || examined < 0 || examined > QUEUE_BATCH)
       throw new Error('Library acceptance is limited to 250 examined items');
     if (runAdmission.getStore() || publicationTransaction.getStore())
       throw new Error('Library acceptance cannot nest publication transactions');
-    return this.fenced(queueExecution.getStore(), async (tx) => {
-      const { value, assetIds, accepted } = await work(tx);
-      if (!accepted) return value;
-      if (assetIds.length > QUEUE_BATCH) throw new Error('Library acceptance is limited to 250 source intents');
-      await this.openLibraryScanRun(tx, identity);
-      const intents = assetIds.map((id) => ({
-        ...this.intent({ name: JobName.SidecarCheck, data: { id, source: 'upload' } }),
-        runId: identity.operationId,
-        itemKey: id,
-        rootItemKey: id,
-        parentId: undefined,
-      }));
-      await this.store.enqueue(intents, tx, identity.operationId);
-      if (assetIds.length > 0) {
-        await sql`update job_run set "itemCount" = coalesce("itemCount", 0) + ${assetIds.length}
+    return this.fenced(
+      queueExecution.getStore(),
+      async (tx) => {
+        const { value, assetIds, accepted } = await work(tx);
+        if (!accepted) return value;
+        if (assetIds.length > QUEUE_BATCH) throw new Error('Library acceptance is limited to 250 source intents');
+        await this.openLibraryScanRun(tx, identity);
+        const intents = assetIds.map((id) => ({
+          ...this.intent({ name: JobName.SidecarCheck, data: { id, source: 'upload' } }),
+          runId: identity.operationId,
+          itemKey: id,
+          rootItemKey: id,
+          parentId: undefined,
+        }));
+        await this.store.enqueue(intents, tx, identity.operationId);
+        if (assetIds.length > 0) {
+          await sql`update job_run set "itemCount" = coalesce("itemCount", 0) + ${assetIds.length}
           where id = ${identity.operationId}::uuid`.execute(tx);
-      }
-      if (close && value) await this.store.finishEnumeration(identity.operationId, tx);
-      return value;
-    });
+        }
+        if (close && value) await this.store.finishEnumeration(identity.operationId, tx);
+        return value;
+      },
+      leaseMs,
+    );
   }
 
   /**
