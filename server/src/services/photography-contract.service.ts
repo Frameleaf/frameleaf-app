@@ -1,8 +1,9 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { render, toPlainText } from '@react-email/render';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createElement } from 'react';
+import sharp from 'sharp';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -44,7 +45,20 @@ const unknownFields = (body: string) =>
 const iso = (value: Date | string | null) => (value ? new Date(value).toISOString() : null);
 const contractsFolder = (ownerId: string) =>
   join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), 'clients-contracts');
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/** Decodes the drawn signature fully (sharp) and re-encodes it, so only a small, valid PNG reaches the PDF. */
+const signaturePng = async (dataUrl: string) => {
+  const input = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
+  try {
+    const image = sharp(input, { limitInputPixels: 2000 * 1000 });
+    const { format, width = 0, height = 0 } = await image.metadata();
+    if (input.length <= 256_000 && format === 'png' && width <= 2000 && height <= 1000) {
+      return await image.png().toBuffer();
+    }
+  } catch {
+    // An undecodable image is refused below.
+  }
+  throw new BadRequestException('Signature image is invalid');
+};
 
 export const contractView = (row: ContractRow) => ({
   id: row.id,
@@ -214,9 +228,7 @@ export class PhotographyContractService extends BaseService {
     let png: Buffer | null = null;
     if (input.signatureType === 'drawn') {
       if (!input.signaturePng) throw new BadRequestException('Draw your signature');
-      png = Buffer.from(input.signaturePng.slice(input.signaturePng.indexOf(',') + 1), 'base64');
-      if (png.length > 256_000 || !png.subarray(0, 8).equals(PNG))
-        throw new BadRequestException('Signature image is invalid');
+      png = await signaturePng(input.signaturePng);
     }
     const signed = await this.contracts.sign(
       row.id,
@@ -231,8 +243,14 @@ export class PhotographyContractService extends BaseService {
       request,
     );
     if (!signed) throw new ConflictException('The agreement changed. Ask the studio for a new link.');
-    const sealed = await this.finalize(signed);
-    await this.notifySigned(sealed).catch(() => this.logger.warn('A signed-contract email could not be sent'));
+    // The signature is recorded; a seal that fails here is completed the next time the PDF is asked for.
+    const sealed = await this.finalize(signed).catch(() => {
+      this.logger.warn('A signed contract could not be sealed yet');
+      return null;
+    });
+    if (sealed) {
+      await this.notifySigned(sealed).catch(() => this.logger.warn('A signed-contract email could not be sent'));
+    }
     return this.publicView(token, request);
   }
   async publicPdf(token: string) {
@@ -264,11 +282,15 @@ export class PhotographyContractService extends BaseService {
     });
     const folder = contractsFolder(row.ownerId);
     this.storageRepository.mkdirSync(folder);
-    const path = join(folder, `${row.id}.pdf`);
-    await this.storageRepository.createOrOverwriteFile(path, pdf);
-    return (
-      (await this.contracts.finalize(row.id, path, sha256(pdf))) ?? (await this.contracts.get(row.ownerId, row.id))
-    );
+    // A unique name per render: if two requests seal at once, the one that loses removes only its own file.
+    const path = join(folder, `${row.id}-${randomUUID()}.pdf`);
+    await this.storageRepository.createFile(path, pdf);
+    const sealed = await this.contracts.finalize(row.id, path, sha256(pdf));
+    if (sealed) {
+      return sealed;
+    }
+    await this.storageRepository.unlinkIfExists(path);
+    return this.contracts.get(row.ownerId, row.id);
   }
   private async audit(row: ContractRow, withFinal: boolean): Promise<ContractAudit & { finalPdfSha256?: string }> {
     const studio = await this.studio(row.ownerId);

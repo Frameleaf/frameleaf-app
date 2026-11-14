@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { contractEventSha256 } from 'src/repositories/photography-contract.repository.js';
 import { PhotographyContractService } from 'src/services/photography-contract.service.js';
@@ -145,7 +146,35 @@ describe(PhotographyContractService.name, () => {
       documentSha256: contract.documentSha256,
     } as const;
     await expect(sut.sign(token, dto, request)).rejects.toBeInstanceOf(BadRequestException);
+    const truncated = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    await expect(
+      sut.sign(token, { ...dto, signaturePng: `data:image/png;base64,${truncated.toString('base64')}` }, request),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(contracts.sign).not.toHaveBeenCalled();
+  });
+
+  it('keeps a drawn signature even when sealing has to wait', async () => {
+    const drawn = await sharp({ create: { width: 60, height: 20, channels: 4, background: '#000000ff' } })
+      .png()
+      .toBuffer();
+    contracts.byToken.mockResolvedValue(contract);
+    contracts.sign.mockResolvedValue({ ...contract, status: 'signed', signatureType: 'drawn', signedAt: new Date() });
+    mocks.storage.createFile.mockRejectedValue(new Error('disk full'));
+    await expect(
+      sut.sign(
+        token,
+        {
+          name: 'Morgan',
+          signatureType: 'drawn',
+          signaturePng: `data:image/png;base64,${drawn.toString('base64')}`,
+          consent: true,
+          documentSha256: contract.documentSha256,
+        },
+        request,
+      ),
+    ).resolves.toBeDefined();
+    expect(contracts.sign.mock.calls[0][2].signaturePng.subarray(1, 4).toString()).toBe('PNG');
+    expect(mocks.email.sendEmail).not.toHaveBeenCalled();
   });
 
   it('seals a signed contract as PDF/A with audit.json and records the PDF hash', async () => {
@@ -165,8 +194,8 @@ describe(PhotographyContractService.name, () => {
       request,
     );
     expect(contracts.sign).toHaveBeenCalledWith('contract', sha256(token), expect.anything(), request);
-    const [path, pdf] = mocks.storage.createOrOverwriteFile.mock.calls[0] as [string, Buffer];
-    expect(path).toMatch(/clients-contracts\/contract\.pdf$/);
+    const [path, pdf] = mocks.storage.createFile.mock.calls[0] as [string, Buffer];
+    expect(path).toMatch(/clients-contracts\/contract-[\da-f-]+\.pdf$/);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pdf.includes('pdfaid:part')).toBe(true);
     expect(pdf.includes('(audit.json)')).toBe(true);
