@@ -304,6 +304,10 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   // FL-1083: bearer-token opt-out links are public and bounded per address.
   'GET photography/unsubscribe/:token': { bucket: 'photography-unsubscribe', limit: 60, windowSeconds: 60 },
   'POST photography/unsubscribe/:token': { bucket: 'photography-unsubscribe', limit: 60, windowSeconds: 60 },
+  // FL-1076: contract signing links are public bearer tokens.
+  'GET photography/sign/:token': { bucket: 'photography-contract-sign', limit: 60, windowSeconds: 60 },
+  'POST photography/sign/:token': { bucket: 'photography-contract-sign', limit: 60, windowSeconds: 60 },
+  'GET photography/sign/:token/pdf': { bucket: 'photography-contract-sign', limit: 60, windowSeconds: 60 },
 };
 
 const isAdminPermission = (permission: AuthenticatedOptions['permission']) =>
@@ -373,6 +377,19 @@ describe('controllers', () => {
       'POST photography/unsubscribe/:token',
     ]);
     expect(optOutRoutes.every((route) => route.auth?.public)).toBe(true);
+  });
+
+  it('keeps contract management signed in and only the signing link public', () => {
+    const contractRoutes = routes.filter((route) => /^photography\/contract(s|-templates)/.test(route.path));
+    expect(contractRoutes.length).toBeGreaterThan(0);
+    expect(contractRoutes.filter((route) => route.auth?.public)).toEqual([]);
+    const signRoutes = routes.filter((route) => route.path.startsWith('photography/sign/'));
+    expect(signRoutes.map((route) => route.id).toSorted()).toEqual([
+      'GET photography/sign/:token',
+      'GET photography/sign/:token/pdf',
+      'POST photography/sign/:token',
+    ]);
+    expect(signRoutes.every((route) => route.auth?.public)).toBe(true);
   });
 
   it('should only allow shared link access to expected routes', () => {

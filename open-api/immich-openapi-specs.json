@@ -47058,6 +47058,503 @@
         ]
       }
     },
+    "/photography/contract-templates": {
+      "get": {
+        "operationId": "photographyContractTemplates",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyContractTemplateListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "post": {
+        "operationId": "photographyCreateContractTemplate",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyContractTemplateSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyContractTemplateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/contract-templates/{id}": {
+      "delete": {
+        "operationId": "photographyDeleteContractTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "put": {
+        "operationId": "photographyUpdateContractTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyContractTemplateSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyContractTemplateDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/contracts": {
+      "get": {
+        "operationId": "photographyContracts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyContractListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "post": {
+        "description": "Fills a template; the text is then frozen.",
+        "operationId": "photographyCreateContract",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyContractCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyContractDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/contracts/{id}": {
+      "delete": {
+        "operationId": "photographyDeleteContract",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "get": {
+        "operationId": "photographyContract",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyContractDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/contracts/{id}/export": {
+      "get": {
+        "description": "The signed PDF, audit.json and SHA256SUMS in one archive.",
+        "operationId": "photographyContractExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/contracts/{id}/pdf": {
+      "get": {
+        "operationId": "photographyContractPdf",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/contracts/{id}/send": {
+      "post": {
+        "description": "Emails a signing link that works for 30 days. Sending again replaces the earlier link.",
+        "operationId": "photographySendContract",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyContractDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/contracts/{id}/void": {
+      "post": {
+        "operationId": "photographyVoidContract",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyContractDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
     "/photography/galleries/{id}": {
       "get": {
         "operationId": "photographyGallery",
@@ -47775,114 +48272,6 @@
         ]
       }
     },
-    "/photography/pay/{slug}": {
-      "get": {
-        "operationId": "photographyPublicPaymentLink",
-        "parameters": [
-          {
-            "name": "slug",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotographyPublicPaymentLinkDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "tags": [
-          "Studio projects"
-        ]
-      }
-    },
-    "/photography/pay/{slug}/checkout": {
-      "post": {
-        "operationId": "photographyPayCheckout",
-        "parameters": [
-          {
-            "name": "slug",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PhotographyPayCheckoutDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotographyPayCheckoutResponseDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "tags": [
-          "Studio projects"
-        ]
-      }
-    },
-    "/photography/pay/{slug}/payments/{paymentId}": {
-      "get": {
-        "operationId": "photographyPayStatus",
-        "parameters": [
-          {
-            "name": "paymentId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "slug",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotographyPayStatusDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "tags": [
-          "Studio projects"
-        ]
-      }
-    },
     "/photography/payment-account": {
       "delete": {
         "operationId": "clientsPaymentAccountDisconnect",
@@ -47965,193 +48354,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ClientsPaymentConnectResponseDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "tags": [
-          "Studio projects"
-        ]
-      }
-    },
-    "/photography/payment-links": {
-      "get": {
-        "operationId": "photographyPaymentLinks",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotographyPaymentLinkListDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "tags": [
-          "Studio projects"
-        ]
-      },
-      "post": {
-        "operationId": "photographyCreatePaymentLink",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PhotographyPaymentLinkCreateDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotographyPaymentLinkDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "tags": [
-          "Studio projects"
-        ]
-      }
-    },
-    "/photography/payment-links/{id}": {
-      "delete": {
-        "operationId": "photographyDeletePaymentLink",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "tags": [
-          "Studio projects"
-        ]
-      },
-      "patch": {
-        "operationId": "photographyUpdatePaymentLink",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PhotographyPaymentLinkUpdateDto"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotographyPaymentLinkDto"
-                }
-              }
-            },
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ],
-        "tags": [
-          "Studio projects"
-        ]
-      }
-    },
-    "/photography/payments": {
-      "get": {
-        "operationId": "photographyPayments",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotographyPaymentListDto"
                 }
               }
             },
@@ -48911,6 +49113,111 @@
           }
         ],
         "x-immich-state": "Alpha"
+      }
+    },
+    "/photography/sign/{token}": {
+      "get": {
+        "operationId": "photographyPublicContract",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPublicContractDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "post": {
+        "operationId": "photographySignContract",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyContractSignDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPublicContractDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/sign/{token}/pdf": {
+      "get": {
+        "operationId": "photographyPublicContractPdf",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
       }
     },
     "/photography/site": {
@@ -134255,6 +134562,382 @@
         ],
         "type": "object"
       },
+      "PhotographyContractCreateDto": {
+        "properties": {
+          "clientEmail": {
+            "format": "email",
+            "maxLength": 254,
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
+          },
+          "clientName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sessionDate": {
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "total": {
+            "maxLength": 50,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "clientEmail",
+          "clientName",
+          "templateId"
+        ],
+        "type": "object"
+      },
+      "PhotographyContractDto": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "clientEmail": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "documentSha256": {
+            "pattern": "^[a-f\\d]{64}$",
+            "type": "string"
+          },
+          "finalPdfSha256": {
+            "nullable": true,
+            "pattern": "^[a-f\\d]{64}$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sentAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "signedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "signerName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PhotographyContractStatus"
+          },
+          "templateId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "clientEmail",
+          "clientName",
+          "createdAt",
+          "documentSha256",
+          "finalPdfSha256",
+          "id",
+          "name",
+          "sentAt",
+          "signedAt",
+          "signerName",
+          "status",
+          "templateId"
+        ],
+        "type": "object"
+      },
+      "PhotographyContractEventType": {
+        "enum": [
+          "created",
+          "sent",
+          "email_verified",
+          "viewed",
+          "consented",
+          "signed",
+          "finalized",
+          "voided"
+        ],
+        "type": "string"
+      },
+      "PhotographyContractListDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "body": {
+                  "type": "string"
+                },
+                "clientEmail": {
+                  "type": "string"
+                },
+                "clientName": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "documentSha256": {
+                  "pattern": "^[a-f\\d]{64}$",
+                  "type": "string"
+                },
+                "finalPdfSha256": {
+                  "nullable": true,
+                  "pattern": "^[a-f\\d]{64}$",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "sentAt": {
+                  "format": "date-time",
+                  "nullable": true,
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "signedAt": {
+                  "format": "date-time",
+                  "nullable": true,
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "signerName": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/PhotographyContractStatus"
+                },
+                "templateId": {
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "templateId",
+                "name",
+                "clientName",
+                "clientEmail",
+                "body",
+                "documentSha256",
+                "status",
+                "createdAt",
+                "sentAt",
+                "signedAt",
+                "signerName",
+                "finalPdfSha256"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "mailReady": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "mailReady"
+        ],
+        "type": "object"
+      },
+      "PhotographyContractMergeField": {
+        "enum": [
+          "client_name",
+          "session_date",
+          "total"
+        ],
+        "type": "string"
+      },
+      "PhotographyContractSignDto": {
+        "properties": {
+          "consent": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "documentSha256": {
+            "description": "The hash of the text the signer read",
+            "pattern": "^[a-f\\d]{64}$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "signaturePng": {
+            "description": "A PNG data URL; required for a drawn signature",
+            "maxLength": 400000,
+            "pattern": "^data:image\\/png;base64,[A-Za-z\\d+/]+=*$",
+            "type": "string"
+          },
+          "signatureType": {
+            "$ref": "#/components/schemas/PhotographyContractSignatureType"
+          }
+        },
+        "required": [
+          "consent",
+          "documentSha256",
+          "name",
+          "signatureType"
+        ],
+        "type": "object"
+      },
+      "PhotographyContractSignatureType": {
+        "enum": [
+          "typed",
+          "drawn"
+        ],
+        "type": "string"
+      },
+      "PhotographyContractStatus": {
+        "enum": [
+          "draft",
+          "sent",
+          "viewed",
+          "signed",
+          "void"
+        ],
+        "type": "string"
+      },
+      "PhotographyContractTemplateDto": {
+        "properties": {
+          "body": {
+            "maxLength": 50000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "name",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PhotographyContractTemplateListDto": {
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/PhotographyContractMergeField"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "body": {
+                  "maxLength": 50000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "body",
+                "id",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "fields",
+          "items"
+        ],
+        "type": "object"
+      },
+      "PhotographyContractTemplateSaveDto": {
+        "properties": {
+          "body": {
+            "maxLength": 50000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "name"
+        ],
+        "type": "object"
+      },
       "PhotographyGalleryDto": {
         "properties": {
           "brand": {
@@ -139698,59 +140381,6 @@
         ],
         "type": "object"
       },
-      "PhotographyPayCheckoutDto": {
-        "additionalProperties": false,
-        "properties": {
-          "email": {
-            "format": "email",
-            "maxLength": 254,
-            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
-            "type": "string"
-          }
-        },
-        "required": [
-          "email"
-        ],
-        "type": "object"
-      },
-      "PhotographyPayCheckoutResponseDto": {
-        "properties": {
-          "paymentId": {
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "type": "string"
-          },
-          "url": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "paymentId",
-          "url"
-        ],
-        "type": "object"
-      },
-      "PhotographyPayStatusDto": {
-        "properties": {
-          "amount": {
-            "maximum": 9007199254740991,
-            "minimum": -9007199254740991,
-            "type": "integer"
-          },
-          "currency": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/PhotographyPaymentStatus"
-          }
-        },
-        "required": [
-          "amount",
-          "currency",
-          "status"
-        ],
-        "type": "object"
-      },
       "PhotographyPaymentDto": {
         "additionalProperties": false,
         "properties": {
@@ -139780,276 +140410,6 @@
           "reference"
         ],
         "type": "object"
-      },
-      "PhotographyPaymentLinkCreateDto": {
-        "additionalProperties": false,
-        "properties": {
-          "amount": {
-            "maximum": 99999999,
-            "minimum": 50,
-            "type": "integer"
-          },
-          "currency": {
-            "$ref": "#/components/schemas/PhotographyPaymentLinkCurrency"
-          },
-          "description": {
-            "default": "",
-            "maxLength": 300,
-            "type": "string"
-          },
-          "reusable": {
-            "type": "boolean"
-          },
-          "title": {
-            "maxLength": 80,
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "amount",
-          "currency",
-          "reusable",
-          "title"
-        ],
-        "type": "object"
-      },
-      "PhotographyPaymentLinkCurrency": {
-        "enum": [
-          "CAD",
-          "USD",
-          "EUR",
-          "GBP"
-        ],
-        "type": "string"
-      },
-      "PhotographyPaymentLinkDto": {
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "amount": {
-            "maximum": 9007199254740991,
-            "minimum": -9007199254740991,
-            "type": "integer"
-          },
-          "collected": {
-            "maximum": 9007199254740991,
-            "minimum": -9007199254740991,
-            "type": "integer"
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "currency": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "type": "string"
-          },
-          "payments": {
-            "maximum": 9007199254740991,
-            "minimum": -9007199254740991,
-            "type": "integer"
-          },
-          "reusable": {
-            "type": "boolean"
-          },
-          "slug": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "active",
-          "amount",
-          "collected",
-          "createdAt",
-          "currency",
-          "description",
-          "id",
-          "payments",
-          "reusable",
-          "slug",
-          "title"
-        ],
-        "type": "object"
-      },
-      "PhotographyPaymentLinkListDto": {
-        "properties": {
-          "links": {
-            "items": {
-              "properties": {
-                "active": {
-                  "type": "boolean"
-                },
-                "amount": {
-                  "maximum": 9007199254740991,
-                  "minimum": -9007199254740991,
-                  "type": "integer"
-                },
-                "collected": {
-                  "maximum": 9007199254740991,
-                  "minimum": -9007199254740991,
-                  "type": "integer"
-                },
-                "createdAt": {
-                  "type": "string"
-                },
-                "currency": {
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                  "type": "string"
-                },
-                "payments": {
-                  "maximum": 9007199254740991,
-                  "minimum": -9007199254740991,
-                  "type": "integer"
-                },
-                "reusable": {
-                  "type": "boolean"
-                },
-                "slug": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "slug",
-                "title",
-                "description",
-                "amount",
-                "currency",
-                "reusable",
-                "active",
-                "payments",
-                "collected",
-                "createdAt"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "ready": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "links",
-          "ready"
-        ],
-        "type": "object"
-      },
-      "PhotographyPaymentLinkUpdateDto": {
-        "additionalProperties": false,
-        "properties": {
-          "active": {
-            "type": "boolean"
-          },
-          "description": {
-            "maxLength": 300,
-            "type": "string"
-          },
-          "title": {
-            "maxLength": 80,
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "PhotographyPaymentListDto": {
-        "properties": {
-          "payments": {
-            "items": {
-              "properties": {
-                "amount": {
-                  "maximum": 9007199254740991,
-                  "minimum": -9007199254740991,
-                  "type": "integer"
-                },
-                "createdAt": {
-                  "type": "string"
-                },
-                "currency": {
-                  "type": "string"
-                },
-                "id": {
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                  "type": "string"
-                },
-                "linkId": {
-                  "format": "uuid",
-                  "nullable": true,
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                  "type": "string"
-                },
-                "payerEmail": {
-                  "type": "string"
-                },
-                "status": {
-                  "$ref": "#/components/schemas/PhotographyPaymentListStatus"
-                },
-                "title": {
-                  "nullable": true,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "linkId",
-                "title",
-                "amount",
-                "currency",
-                "payerEmail",
-                "status",
-                "createdAt"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "payments"
-        ],
-        "type": "object"
-      },
-      "PhotographyPaymentListStatus": {
-        "enum": [
-          "paid",
-          "failed",
-          "expired",
-          "refunded"
-        ],
-        "type": "string"
-      },
-      "PhotographyPaymentStatus": {
-        "enum": [
-          "pending",
-          "paid",
-          "failed",
-          "expired",
-          "refunded"
-        ],
-        "type": "string"
       },
       "PhotographyPhotosDto": {
         "properties": {
@@ -141109,22 +141469,57 @@
         ],
         "type": "object"
       },
-      "PhotographyPublicPaymentLinkDto": {
+      "PhotographyPublicContractDto": {
         "properties": {
-          "amount": {
-            "maximum": 9007199254740991,
-            "minimum": -9007199254740991,
-            "type": "integer"
+          "body": {
+            "type": "string"
           },
-          "brand": {
+          "documentSha256": {
+            "pattern": "^[a-f\\d]{64}$",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "properties": {
+                "at": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "type": {
+                  "$ref": "#/components/schemas/PhotographyContractEventType"
+                }
+              },
+              "required": [
+                "type",
+                "at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "signed": {
+            "type": "boolean"
+          },
+          "signedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "signerName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "studio": {
             "properties": {
               "color": {
                 "type": "string"
               },
               "email": {
-                "type": "string"
-              },
-              "logoInitials": {
                 "type": "string"
               },
               "name": {
@@ -141134,27 +141529,20 @@
             "required": [
               "name",
               "email",
-              "color",
-              "logoInitials"
+              "color"
             ],
             "type": "object"
-          },
-          "currency": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
           }
         },
         "required": [
-          "amount",
-          "brand",
-          "currency",
-          "description",
-          "title"
+          "body",
+          "documentSha256",
+          "history",
+          "name",
+          "signed",
+          "signedAt",
+          "signerName",
+          "studio"
         ],
         "type": "object"
       },

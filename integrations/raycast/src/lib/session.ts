@@ -201,13 +201,22 @@ export async function openSession(): Promise<Session> {
   const preferences = getPreferenceValues<Preferences>();
   const origin = libraryOrigin(preferences.libraryUrl);
   const api = new ConnectApi(origin, (rejected) => token(origin, preferences, rejected));
-  // ponytail: the identity check needs an authenticated call, because the Library publishes its server
-  // ID only in capabilities. A public ID in discovery would let this run before any token is sent.
+  const { serverId } = await endpointsFor(origin);
+  const pinned = (await readConnection(origin)).serverId;
+  const mismatch = async () => {
+    await dropTokensQuietly(); // never send this server a token, not even to revoke it
+    throw fail("identity");
+  };
+  // Checked before any token is sent. Libraries older than discovery's server ID are checked below,
+  // after the first authenticated request.
+  if (pinned && serverId && serverId !== pinned) await mismatch();
   let capabilities = await api.capabilities();
   const connection = await readConnection(origin);
-  if (connection.serverId && connection.serverId !== capabilities.server.id) {
-    await dropTokensQuietly(); // don't also hand the refresh token to this server through revocation
-    throw fail("identity");
+  if (
+    (connection.serverId && connection.serverId !== capabilities.server.id) ||
+    (serverId && serverId !== capabilities.server.id)
+  ) {
+    await mismatch();
   }
   if (!connection.serverId) await writeConnection({ ...connection, serverId: capabilities.server.id });
 

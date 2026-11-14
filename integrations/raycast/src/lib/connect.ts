@@ -111,6 +111,8 @@ export type Endpoints = {
   token: string;
   revoke: string;
   register?: string;
+  /** The Library's ID, published before sign-in so a pinned identity can be checked first. */
+  serverId?: string;
 };
 
 function sameOrigin(origin: string, value: unknown): string {
@@ -150,6 +152,8 @@ export async function discover(fetchImpl: Fetch, origin: string): Promise<Endpoi
     token: sameOrigin(origin, server.token_endpoint),
     revoke: sameOrigin(origin, server.revocation_endpoint ?? `${origin}/api/oauth/apps/revoke`),
     register: server.registration_endpoint === undefined ? undefined : sameOrigin(origin, server.registration_endpoint),
+    ...(typeof protectedResource.frameleaf_server_id === "string" &&
+      protectedResource.frameleaf_server_id && { serverId: protectedResource.frameleaf_server_id }),
   };
 }
 
