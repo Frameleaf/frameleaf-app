@@ -47,6 +47,7 @@ describe(PhotographyContractService.name, () => {
     sign: vi.fn(),
     finalize: vi.fn(),
     events: vi.fn(),
+    committedPdfPath: vi.fn(),
   };
   const delivery = vi.fn();
   const auth = factory.auth({ session: {} });
@@ -207,19 +208,17 @@ describe(PhotographyContractService.name, () => {
     const signed = { ...contract, status: 'signed', signatureType: 'typed', signerName: 'M', signedAt: new Date() };
     mocks.storage.createFile.mockResolvedValue(undefined);
     contracts.finalize.mockRejectedValue(new Error('connection reset'));
-    contracts.get.mockImplementation(() =>
-      Promise.resolve({ ...signed, pdfPath: mocks.storage.createFile.mock.calls[0][0] }),
-    );
+    contracts.committedPdfPath.mockImplementation(() => Promise.resolve(mocks.storage.createFile.mock.calls[0][0]));
     contracts.byToken.mockResolvedValue(signed);
     await expect(sut.publicPdf(token)).rejects.toThrow('connection reset');
     expect(mocks.storage.unlinkIfExists).not.toHaveBeenCalled();
-    contracts.get.mockResolvedValue({ ...signed, pdfPath: null });
+    contracts.committedPdfPath.mockResolvedValue('/another-seal.pdf');
     await expect(sut.publicPdf(token)).rejects.toThrow('connection reset');
     expect(mocks.storage.unlinkIfExists).toHaveBeenCalledOnce();
-    contracts.get.mockRejectedValue(new NotFoundException());
+    contracts.committedPdfPath.mockResolvedValue(null);
     await expect(sut.publicPdf(token)).rejects.toThrow('connection reset');
     expect(mocks.storage.unlinkIfExists).toHaveBeenCalledTimes(2);
-    contracts.get.mockRejectedValue(new Error('database unavailable'));
+    contracts.committedPdfPath.mockRejectedValue(new Error('database unavailable'));
     await expect(sut.publicPdf(token)).rejects.toThrow('connection reset');
     expect(mocks.storage.unlinkIfExists).toHaveBeenCalledTimes(2);
   });

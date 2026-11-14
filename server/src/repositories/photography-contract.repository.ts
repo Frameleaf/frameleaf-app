@@ -247,6 +247,21 @@ export class PhotographyContractRepository {
       return [{ type: 'finalized', actor: 'system', data: { finalPdfSha256 } }];
     });
   }
+  /**
+   * The sealed file path as committed, read under a row lock so an in-flight finalize commits (or rolls
+   * back) first. Null when the contract no longer exists.
+   */
+  committedPdfPath(id: string) {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .selectFrom('photography_contract')
+        .select('pdfPath')
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+      return row ? row.pdfPath : null;
+    });
+  }
   /** Locks the row, lets the caller remove its sealed file first, then deletes it; a failed removal keeps the row. */
   delete(ownerId: string, id: string, removeFile: (pdfPath: string) => Promise<void>) {
     return this.db.transaction().execute(async (trx) => {
