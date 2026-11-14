@@ -149,6 +149,7 @@ import { PetService } from 'src/services/pet.service.js';
 import { PhotoLocationsService } from 'src/services/photo-locations.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
+import { PhotographyBookingService } from 'src/services/photography-booking.service.js';
 import { PhotographyBulkService } from 'src/services/photography-bulk.service.js';
 import { PhotographyCampaignService } from 'src/services/photography-campaign.service.js';
 import { PhotographyContractService } from 'src/services/photography-contract.service.js';
@@ -279,6 +280,7 @@ export const services = [
   PhotographyBulkService,
   ClientsPaymentsService,
   PhotographyPaymentService,
+  PhotographyBookingService,
   PhotographyWorkflowService,
   PhotographySiteService,
   PhotographyReminderService,

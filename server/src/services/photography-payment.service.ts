@@ -49,6 +49,8 @@ export class PhotographyPaymentService {
     private logger?: LoggingRepository,
   ) {
     this.payments.onPayment('link', (event) => this.paymentEvent(event));
+    // FL-1049: booking deposits are payments too, with no link.
+    this.payments.onPayment('booking', (event) => this.paymentEvent(event));
   }
 
   private studio(auth: AuthDto) {
@@ -177,7 +179,7 @@ export class PhotographyPaymentService {
 
   /** A relayed Stripe event for `link:<payment id>`. Replays and out-of-order events change nothing. */
   async paymentEvent(event: ClientsPaymentEvent) {
-    const id = event.reference?.slice('link:'.length) ?? '';
+    const id = event.reference?.split(':', 2)[1] ?? '';
     if (!/^[a-f0-9-]{36}$/.test(id)) return;
     const payment = await this.repository.payment(id);
     if (!payment || payment.ownerId !== event.ownerId) return;

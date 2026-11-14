@@ -46755,6 +46755,244 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/photography/booking-types": {
+      "get": {
+        "operationId": "photographyBookingTypes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyBookingTypeListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "post": {
+        "operationId": "photographyCreateBookingType",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyBookingTypeSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyBookingTypeDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/booking-types/{id}": {
+      "delete": {
+        "operationId": "photographyDeleteBookingType",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "put": {
+        "operationId": "photographyUpdateBookingType",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyBookingTypeSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyBookingTypeDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/bookings": {
+      "get": {
+        "operationId": "photographyBookings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyBookingListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/bookings/{id}": {
+      "patch": {
+        "operationId": "photographyUpdateBookingStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyBookingStatusDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyBookingDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
     "/photography/campaigns": {
       "get": {
         "operationId": "photographyCampaigns",
@@ -50303,6 +50541,76 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PhotographyPublicSiteDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/studios/{site}/booking-types": {
+      "get": {
+        "operationId": "photographyPublicBookingTypes",
+        "parameters": [
+          {
+            "name": "site",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPublicBookingTypeListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/studios/{site}/bookings": {
+      "post": {
+        "operationId": "photographyRequestBooking",
+        "parameters": [
+          {
+            "name": "site",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyBookingRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyBookingRequestResponseDto"
                 }
               }
             },
@@ -134089,6 +134397,642 @@
         ],
         "type": "object"
       },
+      "PhotographyBookingDepositStatus": {
+        "enum": [
+          "none",
+          "unpaid",
+          "pending",
+          "paid",
+          "failed",
+          "expired",
+          "refunded"
+        ],
+        "type": "string"
+      },
+      "PhotographyBookingDto": {
+        "properties": {
+          "addOns": {
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "price": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "quantity": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "price",
+                "quantity"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "bookingTypeId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "clientEmail": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "deposit": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "depositStatus": {
+            "$ref": "#/components/schemas/PhotographyBookingDepositStatus"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "preferredDates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "requestedAt": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PhotographyBookingStatus"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "typeName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "addOns",
+          "bookingTypeId",
+          "clientEmail",
+          "clientName",
+          "currency",
+          "deposit",
+          "depositStatus",
+          "id",
+          "message",
+          "preferredDates",
+          "requestedAt",
+          "status",
+          "total",
+          "typeName"
+        ],
+        "type": "object"
+      },
+      "PhotographyBookingListDto": {
+        "properties": {
+          "bookings": {
+            "items": {
+              "properties": {
+                "addOns": {
+                  "items": {
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "price": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      },
+                      "quantity": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "price",
+                      "quantity"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "bookingTypeId": {
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "clientEmail": {
+                  "type": "string"
+                },
+                "clientName": {
+                  "type": "string"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "deposit": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "depositStatus": {
+                  "$ref": "#/components/schemas/PhotographyBookingDepositStatus"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "preferredDates": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "requestedAt": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/PhotographyBookingStatus"
+                },
+                "total": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "typeName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "bookingTypeId",
+                "typeName",
+                "clientName",
+                "clientEmail",
+                "message",
+                "preferredDates",
+                "addOns",
+                "total",
+                "deposit",
+                "currency",
+                "depositStatus",
+                "status",
+                "requestedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "bookings"
+        ],
+        "type": "object"
+      },
+      "PhotographyBookingRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "addOns": {
+            "default": [],
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "maxLength": 40,
+                  "type": "string"
+                },
+                "quantity": {
+                  "maximum": 20,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "quantity"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "bookingTypeId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "maxLength": 254,
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "preferredDates": {
+            "default": [],
+            "items": {
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+              "type": "string"
+            },
+            "maxItems": 3,
+            "type": "array"
+          },
+          "website": {
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingTypeId",
+          "email",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PhotographyBookingRequestResponseDto": {
+        "properties": {
+          "checkoutUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "deposit": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checkoutUrl",
+          "currency",
+          "deposit",
+          "total"
+        ],
+        "type": "object"
+      },
+      "PhotographyBookingStatus": {
+        "enum": [
+          "requested",
+          "confirmed",
+          "declined",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "PhotographyBookingStatusDto": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/PhotographyBookingStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "PhotographyBookingTypeDto": {
+        "properties": {
+          "active": {
+            "default": true,
+            "type": "boolean"
+          },
+          "addOns": {
+            "default": [],
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "pattern": "^[A-Za-z0-9_-]{1,40}$",
+                  "type": "string"
+                },
+                "maxQuantity": {
+                  "maximum": 20,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "name": {
+                  "maxLength": 80,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "price": {
+                  "maximum": 99999999,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "price",
+                "maxQuantity"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/PhotographyPaymentLinkCurrency"
+          },
+          "deposit": {
+            "default": 0,
+            "maximum": 99999999,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "durationMinutes": {
+            "maximum": 1440,
+            "minimum": 5,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "order": {
+            "default": 0,
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "price": {
+            "maximum": 99999999,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdAt",
+          "currency",
+          "durationMinutes",
+          "id",
+          "name",
+          "price"
+        ],
+        "type": "object"
+      },
+      "PhotographyBookingTypeListDto": {
+        "properties": {
+          "types": {
+            "items": {
+              "properties": {
+                "active": {
+                  "default": true,
+                  "type": "boolean"
+                },
+                "addOns": {
+                  "default": [],
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "pattern": "^[A-Za-z0-9_-]{1,40}$",
+                        "type": "string"
+                      },
+                      "maxQuantity": {
+                        "maximum": 20,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "price": {
+                        "maximum": 99999999,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "price",
+                      "maxQuantity"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "currency": {
+                  "$ref": "#/components/schemas/PhotographyPaymentLinkCurrency"
+                },
+                "deposit": {
+                  "default": 0,
+                  "maximum": 99999999,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "description": {
+                  "default": "",
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                "durationMinutes": {
+                  "maximum": 1440,
+                  "minimum": 5,
+                  "type": "integer"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 80,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "order": {
+                  "default": 0,
+                  "maximum": 1000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "price": {
+                  "maximum": 99999999,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "durationMinutes",
+                "price",
+                "currency",
+                "id",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "types"
+        ],
+        "type": "object"
+      },
+      "PhotographyBookingTypeSaveDto": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "default": true,
+            "type": "boolean"
+          },
+          "addOns": {
+            "default": [],
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "pattern": "^[A-Za-z0-9_-]{1,40}$",
+                  "type": "string"
+                },
+                "maxQuantity": {
+                  "maximum": 20,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "name": {
+                  "maxLength": 80,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "price": {
+                  "maximum": 99999999,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "price",
+                "maxQuantity"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/PhotographyPaymentLinkCurrency"
+          },
+          "deposit": {
+            "default": 0,
+            "maximum": 99999999,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "durationMinutes": {
+            "maximum": 1440,
+            "minimum": 5,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "order": {
+            "default": 0,
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "price": {
+            "maximum": 99999999,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "durationMinutes",
+          "name",
+          "price"
+        ],
+        "type": "object"
+      },
       "PhotographyBrandDto": {
         "properties": {
           "brand": {
@@ -143078,6 +144022,95 @@
         "required": [
           "expiresAt",
           "session"
+        ],
+        "type": "object"
+      },
+      "PhotographyPublicBookingTypeListDto": {
+        "properties": {
+          "types": {
+            "items": {
+              "properties": {
+                "addOns": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "pattern": "^[A-Za-z0-9_-]{1,40}$",
+                        "type": "string"
+                      },
+                      "maxQuantity": {
+                        "maximum": 20,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "price": {
+                        "maximum": 99999999,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "price",
+                      "maxQuantity"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "deposit": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "durationMinutes": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "price": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "description",
+                "durationMinutes",
+                "price",
+                "deposit",
+                "currency",
+                "addOns"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "types"
         ],
         "type": "object"
       },

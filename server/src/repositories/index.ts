@@ -119,6 +119,7 @@ import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PhotoLocationsRepository } from 'src/repositories/photo-locations.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
+import { PhotographyBookingRepository } from 'src/repositories/photography-booking.repository.js';
 import { PhotographyCampaignRepository } from 'src/repositories/photography-campaign.repository.js';
 import { PhotographyContractRepository } from 'src/repositories/photography-contract.repository.js';
 import { PhotographyInvoiceRepository } from 'src/repositories/photography-invoice.repository.js';
@@ -173,6 +174,7 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 export const repositories = [
   PhotographyCampaignRepository,
   PhotographyPaymentRepository,
+  PhotographyBookingRepository,
   PhotographyContractRepository,
   PhotographyInvoiceRepository,
   MediaDownloaderRepository,

@@ -13888,6 +13888,107 @@ export type PhotoSourceReceiptDto = {
     uploadResourceId: string;
     verifiedAt: string;
 };
+export type PhotographyBookingTypeListDto = {
+    types: {
+        active?: boolean;
+        addOns?: {
+            id: string;
+            maxQuantity: number;
+            name: string;
+            price: number;
+        }[];
+        createdAt: string;
+        currency: PhotographyPaymentLinkCurrency;
+        deposit?: number;
+        description?: string;
+        durationMinutes: number;
+        id: string;
+        name: string;
+        order?: number;
+        price: number;
+    }[];
+};
+export type PhotographyBookingTypeSaveDto = {
+    active?: boolean;
+    addOns?: {
+        id: string;
+        maxQuantity: number;
+        name: string;
+        price: number;
+    }[];
+    currency: PhotographyPaymentLinkCurrency;
+    deposit?: number;
+    description?: string;
+    durationMinutes: number;
+    name: string;
+    order?: number;
+    price: number;
+};
+export type PhotographyBookingTypeDto = {
+    active?: boolean;
+    addOns?: {
+        id: string;
+        maxQuantity: number;
+        name: string;
+        price: number;
+    }[];
+    createdAt: string;
+    currency: PhotographyPaymentLinkCurrency;
+    deposit?: number;
+    description?: string;
+    durationMinutes: number;
+    id: string;
+    name: string;
+    order?: number;
+    price: number;
+};
+export type PhotographyBookingListDto = {
+    bookings: {
+        addOns: {
+            id: string;
+            name: string;
+            price: number;
+            quantity: number;
+        }[];
+        bookingTypeId: string | null;
+        clientEmail: string;
+        clientName: string;
+        currency: string;
+        deposit: number;
+        depositStatus: PhotographyBookingDepositStatus;
+        id: string;
+        message: string;
+        preferredDates: string[];
+        requestedAt: string;
+        status: PhotographyBookingStatus;
+        total: number;
+        typeName: string;
+    }[];
+};
+export type PhotographyBookingStatusDto = {
+    status: PhotographyBookingStatus;
+};
+export type PhotographyBookingDto = {
+    addOns: {
+        id: string;
+        name: string;
+        price: number;
+        quantity: number;
+    }[];
+    bookingTypeId: string | null;
+    clientEmail: string;
+    clientName: string;
+    currency: string;
+    deposit: number;
+    depositStatus: PhotographyBookingDepositStatus;
+    id: string;
+    message: string;
+    preferredDates: string[];
+    requestedAt: string;
+    status: PhotographyBookingStatus;
+    total: number;
+    typeName: string;
+};
 export type PhotographyCampaignListDto = {
     clients: number;
     items: {
@@ -15224,6 +15325,41 @@ export type PhotographyPublicSiteDto = {
     }[];
     title: string;
     trustedBy: string[];
+};
+export type PhotographyPublicBookingTypeListDto = {
+    types: {
+        addOns: {
+            id: string;
+            maxQuantity: number;
+            name: string;
+            price: number;
+        }[];
+        currency: string;
+        deposit: number;
+        description: string;
+        durationMinutes: number;
+        id: string;
+        name: string;
+        price: number;
+    }[];
+};
+export type PhotographyBookingRequestDto = {
+    addOns?: {
+        id: string;
+        quantity: number;
+    }[];
+    bookingTypeId: string;
+    email: string;
+    message?: string;
+    name: string;
+    preferredDates?: string[];
+    website?: string;
+};
+export type PhotographyBookingRequestResponseDto = {
+    checkoutUrl: string | null;
+    currency: string;
+    deposit: number;
+    total: number;
 };
 export type PhotographyInquiryCreateDto = {
     date: "" | string;
@@ -35745,6 +35881,68 @@ export function verifyPhotoSourceCopy({ id, itemId, runId, photoSourceVerifyDto 
         body: photoSourceVerifyDto
     })));
 }
+export function photographyBookingTypes(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyBookingTypeListDto;
+    }>("/photography/booking-types", {
+        ...opts
+    }));
+}
+export function photographyCreateBookingType({ photographyBookingTypeSaveDto }: {
+    photographyBookingTypeSaveDto: PhotographyBookingTypeSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyBookingTypeDto;
+    }>("/photography/booking-types", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyBookingTypeSaveDto
+    })));
+}
+export function photographyDeleteBookingType({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/booking-types/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+export function photographyUpdateBookingType({ id, photographyBookingTypeSaveDto }: {
+    id: string;
+    photographyBookingTypeSaveDto: PhotographyBookingTypeSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyBookingTypeDto;
+    }>(`/photography/booking-types/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographyBookingTypeSaveDto
+    })));
+}
+export function photographyBookings(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyBookingListDto;
+    }>("/photography/bookings", {
+        ...opts
+    }));
+}
+export function photographyUpdateBookingStatus({ id, photographyBookingStatusDto }: {
+    id: string;
+    photographyBookingStatusDto: PhotographyBookingStatusDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyBookingDto;
+    }>(`/photography/bookings/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: photographyBookingStatusDto
+    })));
+}
 export function photographyCampaigns(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
@@ -36758,6 +36956,29 @@ export function photographyPublicSite({ site }: {
     }>(`/photography/studios/${encodeURIComponent(site)}`, {
         ...opts
     }));
+}
+export function photographyPublicBookingTypes({ site }: {
+    site: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPublicBookingTypeListDto;
+    }>(`/photography/studios/${encodeURIComponent(site)}/booking-types`, {
+        ...opts
+    }));
+}
+export function photographyRequestBooking({ site, photographyBookingRequestDto }: {
+    site: string;
+    photographyBookingRequestDto: PhotographyBookingRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyBookingRequestResponseDto;
+    }>(`/photography/studios/${encodeURIComponent(site)}/bookings`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyBookingRequestDto
+    })));
 }
 /**
  * Sends the studio an inquiry from its website, or asks for a gallery link. Always answers 204 for a working site, whatever the email address.
@@ -46334,6 +46555,27 @@ export enum PhotoSourceItemState {
 export enum PhotoSourceStorage {
     Managed = "managed"
 }
+export enum PhotographyPaymentLinkCurrency {
+    Cad = "CAD",
+    Usd = "USD",
+    Eur = "EUR",
+    Gbp = "GBP"
+}
+export enum PhotographyBookingDepositStatus {
+    None = "none",
+    Unpaid = "unpaid",
+    Pending = "pending",
+    Paid = "paid",
+    Failed = "failed",
+    Expired = "expired",
+    Refunded = "refunded"
+}
+export enum PhotographyBookingStatus {
+    Requested = "requested",
+    Confirmed = "confirmed",
+    Declined = "declined",
+    Cancelled = "cancelled"
+}
 export enum PhotographyCampaignAudienceSource {
     All = "all",
     Clients = "clients",
@@ -46497,12 +46739,6 @@ export enum ClientsPaymentAccountStatus {
     Active = "active",
     Disconnected = "disconnected",
     Unavailable = "unavailable"
-}
-export enum PhotographyPaymentLinkCurrency {
-    Cad = "CAD",
-    Usd = "USD",
-    Eur = "EUR",
-    Gbp = "GBP"
 }
 export enum PhotographyPaymentListStatus {
     Paid = "paid",

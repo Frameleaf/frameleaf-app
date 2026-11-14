@@ -117,6 +117,7 @@ import {
 } from 'src/controllers/photo-locations.controller.js';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
+import { PhotographyBookingController } from 'src/controllers/photography-booking.controller.js';
 import { PhotographyCampaignController } from 'src/controllers/photography-campaign.controller.js';
 import { PhotographyContractController } from 'src/controllers/photography-contract.controller.js';
 import { PhotographyInvoiceController } from 'src/controllers/photography-invoice.controller.js';
@@ -218,6 +219,7 @@ export const controllers = [
   PhotographyWorkspaceController,
   ClientsPaymentsController,
   PhotographyPaymentController,
+  PhotographyBookingController,
   PhotographyWorkflowController,
   AssetUploadResourceController,
   BackupDeviceAdminController,

@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "767169d950405a2ff112387dfdee435583f04d4e",
+  "sourceCommit": "784f841541dd8bfa65f8c4406d7e9819003371ba",
   "sourceHashes": {
     "src/enum.ts": "58e5f863916ec4a404c61f3d383c86ed25699762627828ad48bc873fc1aae39d",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -8,7 +8,7 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "79d019d5eb6d946d8c3aac4254a552dce5acbbb48357374772adb02afab07a05",
+    "src/schema/index.ts": "34441ba9e9d117148a433ab8f9811fcbbac4285a014ce844e04ce08347d1ccfb",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -126,6 +126,7 @@
     "src/schema/tables/photo-locations.table.ts": "658855e6235ac4b2a382143e6a991aedd26d6ac03bb87e3ecd216c77d36965ad",
     "src/schema/tables/photo-source.table.ts": "e74d09e60453adacad59b8d90866e3d581e407003dda817fe196633f5088061f",
     "src/schema/tables/photo-tools.table.ts": "cb52713d8c29c44e520a43d2c2bdc6b465dbbd7fa19b8c2a6e7a7c2e59aaeb5e",
+    "src/schema/tables/photography-booking.table.ts": "69e3421befe654618da9c050c90bb5b471cb27f0bc53f2c7d8f95b6fd29f8574",
     "src/schema/tables/photography-campaign.table.ts": "0e9c2856a6bb6c0bbb7db491b53efe8f25602ddc15aedb841eb77833058db8d4",
     "src/schema/tables/photography-contract.table.ts": "2d90cdb08821dbb2a3a3ec4655ead43fe04159019291486de2fdfa29b7b55689",
     "src/schema/tables/photography-invoice.table.ts": "1da2cc057c2a60cd8881606e08db6b1a8aef5f759133a62a219621c2a78bafc3",
@@ -190,6 +191,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "5f1ea350ddc5ca020f6a23ce8725727e096c1b988281cf48f7300ef43232240f",
-  "rawMetadataSha256": "0f13d4cfae881523fa10dadb0f45e4294ec725c75a3f16f038184ff6ee6df6bd"
+  "dumpSha256": "26b9f2beb0ab91fe9a8c8d2e6b39d9aef0b15e45284ffd8b4a2c47fce2a65451",
+  "rawMetadataSha256": "bec80a0b315dbf0c779336eb05d30da038777761416dcf5791e4edc82d53a2fe"
 }

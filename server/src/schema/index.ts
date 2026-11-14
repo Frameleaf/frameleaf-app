@@ -227,6 +227,7 @@ import {
   PhotoSourceTable,
 } from 'src/schema/tables/photo-source.table.js';
 import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
+import { PhotographyBookingTable, PhotographyBookingTypeTable } from 'src/schema/tables/photography-booking.table.js';
 import {
   PhotographyCampaignDeliveryTable,
   PhotographyCampaignTable,
@@ -368,6 +369,8 @@ export class ImmichDatabase {
     PhotographyPaymentLinkTable,
     PhotographyInvoiceTable,
     PhotographyPaymentTable,
+    PhotographyBookingTypeTable,
+    PhotographyBookingTable,
     PhotographyContractTemplateTable,
     PhotographyContractTable,
     PhotographyContractEventTable,
@@ -681,6 +684,8 @@ export interface DB extends QueueDatabase {
   photography_campaign_delivery: PhotographyCampaignDeliveryTable;
   photography_payment_link: PhotographyPaymentLinkTable;
   photography_payment: PhotographyPaymentTable;
+  photography_booking_type: PhotographyBookingTypeTable;
+  photography_booking: PhotographyBookingTable;
   photography_invoice: PhotographyInvoiceTable;
   photography_contract_template: PhotographyContractTemplateTable;
   photography_contract: PhotographyContractTable;

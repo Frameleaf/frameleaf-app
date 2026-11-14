@@ -2,6 +2,8 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 
 export const PAYMENT_LINK_CURRENCIES = ['CAD', 'USD', 'EUR', 'GBP'] as const;
+/** The currencies studios price links and bookings in. */
+export const PaymentCurrencySchema = z.enum(PAYMENT_LINK_CURRENCIES).meta({ id: 'PhotographyPaymentLinkCurrency' });
 
 const PaymentLinkSchema = z.object({
   id: z.uuid(),
@@ -31,7 +33,7 @@ export class PhotographyPaymentLinkCreateDto extends createZodDto(
     description: z.string().trim().max(300).default(''),
     /** Smallest currency unit (cents). */
     amount: z.int().min(50).max(99_999_999),
-    currency: z.enum(PAYMENT_LINK_CURRENCIES).meta({ id: 'PhotographyPaymentLinkCurrency' }),
+    currency: PaymentCurrencySchema,
     reusable: z.boolean(),
   }),
 ) {}
