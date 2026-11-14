@@ -9210,7 +9210,8 @@ export type ConnectEventPageDto = {
         subject: {
             id: string;
             kind: ConnectEventSubjectKind;
-            name: null;
+            /** Reserved; always null in Connect protocol 1 */
+            name: string | null;
         };
     }[];
     nextCursor: string | null;
@@ -9226,7 +9227,8 @@ export type ConnectEventSampleDto = {
         subject: {
             id: string;
             kind: ConnectEventSubjectKind;
-            name: null;
+            /** Reserved; always null in Connect protocol 1 */
+            name: string | null;
         };
     }[];
 };

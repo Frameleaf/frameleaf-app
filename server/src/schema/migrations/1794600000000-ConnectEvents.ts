@@ -40,6 +40,12 @@ export async function up(db: Kysely<any>): Promise<void> {
     BEGIN
       IF TG_TABLE_NAME='asset_file' THEN
         IF NEW.type NOT IN ('preview','thumbnail') OR NEW."isEdited" THEN RETURN NEW; END IF;
+      ELSIF TG_TABLE_NAME='asset_job_status' THEN
+        -- Only a newly set metadataExtractedAt can make an asset ready; other status writes skip the asset lock.
+        IF NEW."metadataExtractedAt" IS NULL THEN RETURN NEW; END IF;
+        IF TG_OP='UPDATE' THEN
+          IF OLD."metadataExtractedAt" IS NOT NULL THEN RETURN NEW; END IF;
+        END IF;
       END IF;
       SELECT "ownerId" INTO asset_owner FROM asset WHERE id=NEW."assetId" AND type IN ('IMAGE','VIDEO') FOR NO KEY UPDATE;
       IF asset_owner IS NULL THEN RETURN NEW; END IF;
@@ -65,7 +71,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     DECLARE export_format text;
     BEGIN
       IF NEW.state<>'published' OR NEW.scope IS DISTINCT FROM 'library' OR NEW."resultAssetId" IS NULL THEN RETURN NEW; END IF;
-      IF TG_OP='UPDATE' AND OLD.state='published' THEN RETURN NEW; END IF;
+      IF TG_OP='UPDATE' AND OLD.state='published' AND OLD.scope='library' AND OLD."resultAssetId" IS NOT NULL THEN RETURN NEW; END IF;
       export_format := CASE WHEN NEW."outputContentType" IN ('image/jpeg','image/heic','video/mp4','video/webm','video/quicktime','video/x-matroska') THEN NEW."outputContentType" ELSE NULL END;
       PERFORM connect_event_append(NEW."ownerId",'studio.export.completed:'||NEW.id,'studio.export.completed',NEW."resultAssetId",NULL,NEW.id,export_format);
       RETURN NEW;

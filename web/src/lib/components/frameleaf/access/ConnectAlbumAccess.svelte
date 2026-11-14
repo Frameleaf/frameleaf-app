@@ -38,6 +38,9 @@
     ),
   );
   const destinations = $derived([...albums, ...created]);
+  // A destination the grant cannot upload into stays off, unless it is already chosen (so it can be cleared).
+  const writable = (album: (typeof albums)[number]) =>
+    album.canWrite !== false && (album.workspace === 'both' ? choices.length > 0 : choices.includes(album.workspace));
   const createDestination = async () => {
     const target = workspace || choices[0];
     if (!albumName.trim() || !choices.includes(target)) {
@@ -106,7 +109,7 @@
         <label
           ><input
             type="checkbox"
-            disabled={album.canWrite === false}
+            disabled={!writable(album) && !policy.writableAlbumIds.includes(album.id)}
             checked={policy.writableAlbumIds.includes(album.id)}
             onchange={(event) => toggle('writableAlbumIds', album.id, event.currentTarget.checked)}
           />{$t('frameleaf_connect_write_album', { values: { name: album.name } })}</label

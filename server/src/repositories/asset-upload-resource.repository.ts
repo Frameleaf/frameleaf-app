@@ -695,7 +695,14 @@ export class AssetUploadResourceRepository {
       .where('ownerId', 'is not', null)
       .where((eb) =>
         eb.or([
-          eb.and([eb('state', 'in', ['finalizing', 'pair-finalizing', 'verified']), eb('expiresAt', '>', new Date())]),
+          // Capture, media import, Connect and folder uploads publish through their own callers, never this
+          // recovery pass; they are left out here so they cannot fill the batch.
+          eb.and([
+            eb('state', 'in', ['finalizing', 'pair-finalizing', 'verified']),
+            eb('expiresAt', '>', new Date()),
+            sql<boolean>`coalesce(metadata->>'publication', '') NOT IN ('capture', 'media-import', 'connect')`,
+            sql<boolean>`coalesce(metadata#>>'{sourceIdentity,kind}', '') <> 'folder'`,
+          ]),
           eb.and([eb('state', '=', 'published'), eb('ingested', '=', false)]),
         ]),
       )

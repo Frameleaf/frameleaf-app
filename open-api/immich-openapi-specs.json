@@ -100614,7 +100614,9 @@
                       "$ref": "#/components/schemas/ConnectEventSubjectKind"
                     },
                     "name": {
-                      "type": "null"
+                      "description": "Reserved; always null in Connect protocol 1",
+                      "nullable": true,
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -100699,7 +100701,9 @@
                       "$ref": "#/components/schemas/ConnectEventSubjectKind"
                     },
                     "name": {
-                      "type": "null"
+                      "description": "Reserved; always null in Connect protocol 1",
+                      "nullable": true,
+                      "type": "string"
                     }
                   },
                   "required": [

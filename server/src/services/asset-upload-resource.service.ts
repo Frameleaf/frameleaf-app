@@ -316,6 +316,8 @@ export class AssetUploadResourceService {
                 ? head.subarray(0, 5).toString() === '%PDF-'
                 : row.contentType === 'video/mp4' && head.subarray(4, 8).toString() === 'ftyp';
         if (!valid) throw new BadRequestException('Upload content does not match its media type');
+        // FL-813: the owner may have deleted this item, and asked not to get it back, while its bytes arrived.
+        await this.refuseDeleted(currentAuth, [row]);
         prepared = await this.media.prepareUploadAsset(currentAuth, this.metadata(row), this.file(row));
       }
       const result = await this.uploads.locked(id, auth.user.id, async (tx, resource) => {

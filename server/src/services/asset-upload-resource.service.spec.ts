@@ -244,6 +244,31 @@ describe('resumable asset byte commit boundaries', () => {
     expect(h.uploads.publish).toHaveBeenCalledOnce();
   });
 
+  it('refuses a Connect commit of an item its owner deleted while the bytes arrived', async () => {
+    const h = setup();
+    h.mutate({
+      state: 'verified',
+      contentType: 'image/jpeg',
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: h.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+      metadata: {
+        ...h.row().metadata,
+        publication: 'connect',
+        connect: { grantId: 'grant', actor: 'oauth:grant', requestId: 'save-1', albumId: 'album', workspace: 'design' },
+      },
+    });
+    h.media.refuseDeletedByOwner.mockRejectedValue(new ConflictException('deleted by its owner'));
+    await expect(
+      h.service.commitConnect(auth, h.row().id, {
+        requestId: 'save-1',
+        sha256: h.row().expectedChecksum.toString('hex'),
+      }),
+    ).rejects.toThrow('deleted by its owner');
+    expect(h.media.prepareUploadAsset).not.toHaveBeenCalled();
+    expect(h.uploads.publish).not.toHaveBeenCalled();
+  });
+
   it('refuses content that does not match its declared media type before publication', async () => {
     const h = setup();
     h.storage.readFile.mockResolvedValue(Buffer.from('<html>not a photo</html>'));
