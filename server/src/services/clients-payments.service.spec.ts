@@ -26,8 +26,8 @@ const setup = (answers: Record<string, unknown>) => {
       if (key === SystemMetadataKey.ClientsPayments) return Promise.resolve(state);
       return Promise.resolve(null);
     }),
-    set: vi.fn((_key: SystemMetadataKey, value: ClientsPaymentsState) => {
-      state = structuredClone(value);
+    setEntry: vi.fn((_key: SystemMetadataKey, _field: string, entry: string, value: unknown) => {
+      state = { accounts: { ...state?.accounts, [entry]: value as ClientsPaymentsState['accounts'][string] } };
       return Promise.resolve();
     }),
   };
@@ -106,7 +106,8 @@ describe(ClientsPaymentsService.name, () => {
     expect(handler).toHaveBeenCalledTimes(2);
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({ id: 'evt_ok', ownerId }));
     const ack = s.requests.find((r) => r.url.endsWith('/events/ack'))!;
-    expect(ack.body).toEqual({ ids: ['evt_ok', 'evt_unknown_kind', 'evt_stranger', 'evt_account'] });
+    // A failed handler, a kind nobody handles and an unknown studio stay for the next collection.
+    expect(ack.body).toEqual({ ids: ['evt_ok', 'evt_account'] });
     expect(s.state()!.accounts[ownerId]).toMatchObject({ status: 'pending', chargesEnabled: false });
     expect(await s.service.ready(ownerId)).toBe(false);
   });

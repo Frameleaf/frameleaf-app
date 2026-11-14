@@ -1212,6 +1212,10 @@ describe('photography workflow integration boundaries', () => {
     await s.service.connectedPayment(event('evt_short', 'payment.succeeded', { amount: 1499 }));
     await s.service.connectedPayment(event('evt_stale', 'payment.succeeded', { sessionId: 'cs_other' }));
     expect(s.row().value.orders[0].status).toBe('accepted');
+    // A refund delivered before its payment is retried, never dropped.
+    await expect(
+      s.service.connectedPayment(event('evt_early_refund', 'payment.refunded', { sessionId: null })),
+    ).rejects.toBeInstanceOf(ConflictException);
     await s.service.connectedPayment(event('evt_paid', 'payment.succeeded'));
     await s.service.connectedPayment(event('evt_paid', 'payment.succeeded'));
     expect(s.row().value.orders[0]).toMatchObject({ status: 'settled', paymentIntentId: 'pi_connect' });

@@ -50,6 +50,20 @@ export class SystemMetadataRepository {
     return metadata.value as SystemMetadata[T];
   }
 
+  /**
+   * FL-1037: sets one entry of a record-of-records value (`{ [field]: { [entry]: value } }`) in a single
+   * statement, so writers changing different entries never overwrite each other's.
+   */
+  async setEntry(key: SystemMetadataKey, field: string, entry: string, value: unknown): Promise<void> {
+    const json = JSON.stringify(value);
+    await sql`INSERT INTO system_metadata (key, value)
+      VALUES (${key}, jsonb_build_object(${field}::text, jsonb_build_object(${entry}::text, ${json}::jsonb)))
+      ON CONFLICT (key) DO UPDATE SET value = jsonb_set(
+        CASE WHEN jsonb_typeof(system_metadata.value -> ${field}::text) = 'object' THEN system_metadata.value
+          ELSE coalesce(system_metadata.value, '{}'::jsonb) || jsonb_build_object(${field}::text, '{}'::jsonb) END,
+        ARRAY[${field}::text, ${entry}::text], ${json}::jsonb)`.execute(this.db);
+  }
+
   async set<T extends keyof SystemMetadata>(key: T, value: SystemMetadata[T], overwrite = true): Promise<void> {
     if (
       (

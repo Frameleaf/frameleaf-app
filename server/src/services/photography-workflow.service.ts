@@ -2589,6 +2589,9 @@ export class PhotographyWorkflowService {
           : event.type === 'payment.expired'
             ? 'cancelled'
             : null;
+    // A refund that arrives before its payment was recorded is retried (thrown, so not acknowledged).
+    if (event.type === 'payment.refunded' && !order.paymentIntentId && order.status === 'accepted')
+      throw new ConflictException('Refund arrived before its payment; retrying');
     const matches =
       event.type === 'payment.refunded'
         ? !!event.paymentIntent && order.paymentIntentId === event.paymentIntent
