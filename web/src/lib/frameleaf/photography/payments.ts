@@ -4,7 +4,8 @@ export type PaymentsView = 'loading' | 'error' | 'unavailable' | 'empty' | 'conn
 
 /** FL-1037, FL-1000 mock states: connected once Stripe enables charges; attention while Stripe still needs details. */
 export const paymentsView = (
-  account: Pick<ClientsPaymentAccountDto, 'status' | 'chargesEnabled' | 'requirementsDue'>,
+  // The SDK's status is a generated enum; its values are plain strings.
+  account: Pick<ClientsPaymentAccountDto, 'chargesEnabled' | 'requirementsDue'> & { status: string },
 ): PaymentsView => {
   if (account.status === 'unavailable') {
     return 'unavailable';

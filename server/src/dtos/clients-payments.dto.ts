@@ -9,7 +9,9 @@ const HttpUrl = z.url({ protocol: /^https?$/ }).max(2000);
  * this studio's payments with the old server-wide Stripe keys.
  */
 export const ClientsPaymentAccountSchema = z.object({
-  status: z.enum(['none', 'pending', 'active', 'disconnected', 'unavailable']),
+  status: z
+    .enum(['none', 'pending', 'active', 'disconnected', 'unavailable'])
+    .meta({ id: 'ClientsPaymentAccountStatus' }),
   chargesEnabled: z.boolean(),
   requirementsDue: z.array(z.string()),
   country: z.string().nullable(),
