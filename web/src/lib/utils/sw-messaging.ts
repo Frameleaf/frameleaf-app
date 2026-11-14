@@ -7,3 +7,11 @@ export function cancelImageUrl(url: string | undefined | null) {
   }
   serviceWorker!.controller?.postMessage({ type: 'cancel', url });
 }
+
+/** FL-1595: library access changed; the service worker reauthorizes every image URL again. */
+export function reportAccessChange() {
+  if (!hasServiceWorker) {
+    return;
+  }
+  serviceWorker!.controller?.postMessage({ type: 'access' });
+}

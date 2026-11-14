@@ -87,8 +87,9 @@ test('shares one item with a person and removes it when the owner revokes access
     await sheet.getByRole('button', { name: 'Stop sharing with Jamie Recipient' }).click();
     await expect(sheet).toHaveCount(0);
     await expect(viewer).toHaveCount(0);
-    expect(await mediaStatus(recipientPage, shared.id, 'thumbnail')).toBe(400);
-    expect(await mediaStatus(recipientPage, shared.id, 'original')).toBe(404);
+    // FL-1595: the recipient's page hears of the revocation live and stops reusing cached media
+    await expect.poll(() => mediaStatus(recipientPage, shared.id, 'thumbnail'), { timeout: 10_000 }).toBe(400);
+    await expect.poll(() => mediaStatus(recipientPage, shared.id, 'original'), { timeout: 10_000 }).toBe(404);
     await expect(tile).toHaveCount(0);
     await expect(received.getByRole('status')).toHaveText('Nothing has been shared with you yet.');
     await recipientPage.reload();
@@ -118,8 +119,9 @@ test('shares one item with a person and removes it when the owner revokes access
     await expect(viewer).toHaveCount(0);
     await expect(tile).toHaveCount(0);
     await expect(received.getByRole('status')).toHaveText('Nothing has been shared with you yet.');
-    expect(await mediaStatus(recipientPage, shared.id, 'thumbnail')).toBe(400);
-    expect(await mediaStatus(recipientPage, shared.id, 'original')).toBe(404);
+    // FL-1595: the recipient's page hears of the revocation live and stops reusing cached media
+    await expect.poll(() => mediaStatus(recipientPage, shared.id, 'thumbnail'), { timeout: 10_000 }).toBe(400);
+    await expect.poll(() => mediaStatus(recipientPage, shared.id, 'original'), { timeout: 10_000 }).toBe(404);
     await expect(
       getAssetInfo({ id: shared.id }, { headers: asBearerAuth(recipient.accessToken) }),
     ).rejects.toMatchObject({ status: 400 });

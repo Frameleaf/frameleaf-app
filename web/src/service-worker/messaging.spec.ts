@@ -1,7 +1,7 @@
 import { installMessageListener } from './messaging';
-import { handleCancel } from './request';
+import { handleAccessChange, handleCancel } from './request';
 
-vi.mock('./request', () => ({ handleCancel: vi.fn() }));
+vi.mock('./request', () => ({ handleAccessChange: vi.fn(), handleCancel: vi.fn() }));
 
 describe('worker cancellation messages', () => {
   let target: EventTarget;
@@ -34,6 +34,12 @@ describe('worker cancellation messages', () => {
       expect(handleCancel).toHaveBeenCalledExactlyOnceWith(new URL(url, 'https://frameleaf.test'));
     },
   );
+
+  it('forwards an access change from a page', () => {
+    listener(message({ type: 'access' }));
+    expect(handleAccessChange).toHaveBeenCalledOnce();
+    expect(handleCancel).not.toHaveBeenCalled();
+  });
 
   it('installs one effective listener when installation is repeated', () => {
     installMessageListener();

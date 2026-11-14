@@ -1,9 +1,9 @@
-import { handleCancel, handleFetch } from './request';
+import { handleAccessChange, handleCancel, handleFetch } from './request';
 
 /**
- * FL-137: the service worker only shares a thumbnail or original between requests that are in flight
- * together. Once a response has arrived, a new request goes to the server again, so a revoked share,
- * a newly Locked item or another person signed in on this browser never gets the earlier response.
+ * FL-137: the service worker shares a thumbnail or original only between requests in flight together.
+ * FL-1595: once the server has authorized a URL, the browser's HTTP cache may answer it until the page
+ * reports an access change (Lock, sign-out, account switch, page load); shared links always go back.
  */
 const url = (id: string) => new URL(`https://frameleaf.test/api/assets/${id}/thumbnail?size=preview`);
 
@@ -11,6 +11,8 @@ const text = async (response: Promise<Response>) => {
   const settled = await response;
   return settled.text();
 };
+
+const cacheModes = () => vi.mocked(fetch).mock.calls.map(([, init]) => init?.cache);
 
 describe('service worker asset requests', () => {
   let resolvers: Array<(response: Response) => void>;
@@ -34,6 +36,50 @@ describe('service worker asset requests', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    handleAccessChange();
+  });
+
+  it('lets the HTTP cache answer a URL the server authorized since the last access change', async () => {
+    const first = handleFetch(url('seen'));
+    resolvers[0](new Response('image'));
+    await text(first);
+    const second = handleFetch(url('seen'));
+    resolvers[1](new Response('image'));
+    await text(second);
+    expect(cacheModes()).toEqual(['no-cache', 'default']);
+
+    handleAccessChange();
+    const third = handleFetch(url('seen'));
+    resolvers[2](new Response('image'));
+    await text(third);
+    expect(cacheModes()).toEqual(['no-cache', 'default', 'no-cache']);
+  });
+
+  it('forgets an authorization granted before an access change that landed mid-request', async () => {
+    const first = handleFetch(url('racing'));
+    handleAccessChange();
+    resolvers[0](new Response('image'));
+    await text(first);
+    const second = handleFetch(url('racing'));
+    expect(cacheModes()).toEqual(['no-cache', 'no-cache']);
+    resolvers[1](new Response('image'));
+    await text(second);
+  });
+
+  it('always reauthorizes a shared link and a refused URL', async () => {
+    const shared = new URL('https://frameleaf.test/api/assets/s/thumbnail?key=abc');
+    for (let index = 0; index < 2; index++) {
+      const response = handleFetch(shared);
+      resolvers[index](new Response('image'));
+      await text(response);
+    }
+    const refused = handleFetch(url('refused'));
+    resolvers[2](new Response('denied', { status: 403 }));
+    await text(refused);
+    const again = handleFetch(url('refused'));
+    resolvers[3](new Response('image'));
+    await text(again);
+    expect(cacheModes()).toEqual(['no-cache', 'no-cache', 'no-cache', 'no-cache']);
   });
 
   it('shares one server request between requests in flight together', async () => {
@@ -72,7 +118,7 @@ describe('service worker asset requests', () => {
     await expect(response.text()).resolves.toBe('denied');
   });
 
-  it.each(['thumbnail', 'original'])('reauthorizes a cached %s after revocation or Lock', async (media) => {
+  it.each(['thumbnail', 'original'])('reauthorizes a cached %s after an access change', async (media) => {
     for (const change of ['revoked', 'Locked']) {
       const request = new Request(`https://frameleaf.test/api/assets/${change}/${media}`);
       // happy-dom omits Request.cache; supply the browser property in this HTTP-cache model.
@@ -101,6 +147,8 @@ describe('service worker asset requests', () => {
       expect(request.cache).toBe('default');
       await expect(text(handleFetch(request))).resolves.toBe('private media');
       isAllowed = false;
+      // the page reports the Lock or the revocation as an access change
+      handleAccessChange();
       const denied = await handleFetch(request);
       expect(denied.status).toBe(403);
       expect(authorizations).toBe(2);

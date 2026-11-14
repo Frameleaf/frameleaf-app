@@ -3,9 +3,11 @@ import { expect, test, type Page } from '@playwright/test';
 import { asBearerAuth, baseUrl, utils } from 'src/utils.js';
 
 /**
- * FL-137 (QA-101): what a browser already loaded never outlives access. The web client's service worker
- * handles every thumbnail and original request; after a share is revoked, the item is Locked, or
- * another person signs in on the same browser, the same URL must go back to the server and be refused.
+ * FL-137 (QA-101), as amended by FL-1595: what a browser already loaded does not outlive access. The web
+ * client's service worker handles every thumbnail and original request. Once the server has authorized a
+ * URL, the browser's HTTP cache may answer it until the page hears of an access change: the owner
+ * un-sharing or Locking a shared item (live `on_asset_hidden`), this session's own Lock, a page load, or
+ * another person signing in. After any of these the same URL goes back to the server and is refused.
  */
 /** Fetches from inside the page, so the service worker and the browser's HTTP cache both apply. */
 const fetchStatus = (page: Page, url: string) =>
@@ -34,7 +36,9 @@ const controlled = async (page: Page) => {
   await page.waitForFunction(() => !!navigator.serviceWorker?.controller, undefined, { timeout: 30_000 });
 };
 
-test('revocation, Locking and a new sign-in are never answered from the browser (FL-137)', async ({ browser }) => {
+test('revocation, Locking and a new sign-in are not answered from the browser once the page hears of them (FL-137, FL-1595)', async ({
+  browser,
+}) => {
   test.setTimeout(120_000);
   utils.initSdk();
   await utils.resetDatabase();
@@ -74,16 +78,16 @@ test('revocation, Locking and a new sign-in are never answered from the browser 
       expect(await fetchStatus(page, original(id))).toBe(200);
     }
 
-    // The owner stops sharing one item and Locks the other. The server now refuses both, and the
-    // service worker must revalidate normal requests, including fresh browser HTTP-cache entries.
+    // The owner stops sharing one item and Locks the other. The server now refuses both and tells the
+    // recipient's page live; from then on the service worker revalidates even fresh HTTP-cache entries.
     await unshareItems(
       { itemShareChangeDto: { assetIds: [revoked.id], userIds: [recipient.userId] } },
       { headers: asBearerAuth(owner.accessToken) },
     );
     await lockAssets({ bulkIdsDto: { ids: [locked.id] } }, { headers: asBearerAuth(owner.accessToken) });
     for (const id of [revoked.id, locked.id]) {
-      expect(await fetchStatus(page, thumbnail(id))).not.toBe(200);
-      expect(await fetchStatus(page, original(id))).not.toBe(200);
+      await expect.poll(() => fetchStatus(page, thumbnail(id)), { timeout: 10_000 }).not.toBe(200);
+      await expect.poll(() => fetchStatus(page, original(id)), { timeout: 10_000 }).not.toBe(200);
     }
 
     // The recipient gets the first item back and loads it into the browser cache; then someone else
