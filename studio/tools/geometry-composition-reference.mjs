@@ -138,7 +138,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FD-27 reviews captions and persists transcript drafts; composition and raster producers are unchanged.
     sourceSha256 === '0aa58e0ee46dd0d1e058f530ce747707db4f97d037afdf60e4352b8ab3d2c0c3' ||
     // FD-27 retains the Apply error when storage refuses rollback; producer bytes are unchanged.
-    sourceSha256 === 'e6bb2e8e859dfb80309ae119edd40662bd09ffb13fdb473fe52062153f46cc6c'
+    sourceSha256 === 'e6bb2e8e859dfb80309ae119edd40662bd09ffb13fdb473fe52062153f46cc6c' ||
+    // FL-1429 adds Cloud caption batches to the clip menu; composition and raster producers are unchanged.
+    sourceSha256 === 'f76d7aef72b9d3dc7489f990afead2e4901fbb67b19f036f03fcb7abbeaeb122'
   )
     return {
       ...COMPOSITION_SOURCES,

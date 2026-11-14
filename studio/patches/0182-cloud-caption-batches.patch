@@ -1,0 +1,102 @@
+diff --git a/src/features/timeline/components/timeline-item/item-context-menu.test.tsx b/src/features/timeline/components/timeline-item/item-context-menu.test.tsx
+--- a/src/features/timeline/components/timeline-item/item-context-menu.test.tsx
++++ b/src/features/timeline/components/timeline-item/item-context-menu.test.tsx
+@@ -1,7 +1,8 @@
+ import type { ComponentProps, ReactNode } from 'react'
+-import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { fireEvent, render, screen } from '@testing-library/react'
+ import { useSelectionStore } from '@/shared/state/selection'
++import { registerCloudCaptionHost } from '@/shared/state/cloud-caption-host'
+ import { ItemContextMenu } from './item-context-menu'
+ 
+ const { mockGetSceneVerificationModelOptions } = vi.hoisted(() => ({
+@@ -131,6 +132,29 @@ describe('ItemContextMenu scene detection', () => {
+ })
+ 
+ describe('ItemContextMenu captions', () => {
++  afterEach(() => registerCloudCaptionHost(null))
++
++  it('offers Frameleaf Cloud captions for every selected clip when several are selected', () => {
++    const openBatch = vi.fn()
++    registerCloudCaptionHost({ start: vi.fn(), openBatch })
++    useSelectionStore.setState({ selectedItemIds: ['a', 'b', 'c'] })
++
++    renderContextMenu({
++      captionActions: { canManageCaptions: true, hasCaptions: false, onOpenCaptionDialog: vi.fn() },
++    })
++
++    fireEvent.click(screen.getByRole('button', { name: 'Captions for 3 clips on Frameleaf Cloud…' }))
++    expect(openBatch).toHaveBeenCalledWith(['a', 'b', 'c'])
++  })
++
++  it('offers no batch with one clip selected or without Frameleaf Cloud', () => {
++    useSelectionStore.setState({ selectedItemIds: ['a', 'b'] })
++    renderContextMenu({
++      captionActions: { canManageCaptions: true, hasCaptions: false, onOpenCaptionDialog: vi.fn() },
++    })
++    expect(screen.queryByRole('button', { name: /on Frameleaf Cloud/ })).not.toBeInTheDocument()
++  })
++
+   it('shows a single "Generate Captions" item when no transcript exists', () => {
+     const onOpenCaptionDialog = vi.fn()
+ 
+diff --git a/src/features/timeline/components/timeline-item/item-context-menu.tsx b/src/features/timeline/components/timeline-item/item-context-menu.tsx
+--- a/src/features/timeline/components/timeline-item/item-context-menu.tsx
++++ b/src/features/timeline/components/timeline-item/item-context-menu.tsx
+@@ -16,6 +16,7 @@ import { captureContextMenuEventInit, replayContextMenuEvent } from '../../utils
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { trimSelectedToPlayhead } from '../../stores/actions/edit/trim-actions'
+ import { useSelectionStore } from '@/shared/state/selection'
++import { getCloudCaptionHost } from '@/shared/state/cloud-caption-host'
+ import { useGradeClipboardStore } from '@/shared/state/grade-clipboard'
+ import { useItemsStore } from '../../stores/items-store'
+ import {
+@@ -619,9 +620,17 @@ function CaptionActions({
+   const captionActionLabel = hasCaptions
+     ? t('timeline.contextMenu.regenerateCaptions')
+     : t('timeline.contextMenu.generateCaptions')
++  // Frameleaf FL-1429: with several clips selected, caption them on Frameleaf Cloud in one go.
++  const selectedItemIds = useSelectionStore((s) => s.selectedItemIds)
++  const openBatch = getCloudCaptionHost()?.openBatch
+ 
+   return (
+     <>
++      {canManageCaptions && openBatch && selectedItemIds.length > 1 && (
++        <ContextMenuItem onClick={() => openBatch([...selectedItemIds])}>
++          {t('transcript.cloud.batchMenu', { count: selectedItemIds.length })}
++        </ContextMenuItem>
++      )}
+       {canManageCaptions && onOpenCaptionDialog && (
+         <>
+           {isGeneratingCaptions ? (
+diff --git a/src/i18n/locales/partials/en/transcript.json b/src/i18n/locales/partials/en/transcript.json
+--- a/src/i18n/locales/partials/en/transcript.json
++++ b/src/i18n/locales/partials/en/transcript.json
+@@ -12,7 +12,13 @@
+       "replace": "Replace those lines",
+       "keep": "Keep mine",
+       "failed": "Frameleaf Cloud couldn't caption {{name}}.",
+-      "gone": "Captions for {{name}} are ready, but that clip is no longer on the timeline."
++      "gone": "Captions for {{name}} are ready, but that clip is no longer on the timeline.",
++      "batchMenu": "Captions for {{count}} clips on Frameleaf Cloud…",
++      "batchTitle": "Captions for {{count}} clips on Frameleaf Cloud",
++      "batchNote": "Each clip gets its own price and its own confirmation. Nothing is sent or charged for a clip until you confirm it, and you can skip any clip.",
++      "batchReview": "Review the prices",
++      "batchNoSound": "No sound",
++      "batchRunning": "Already being captioned"
+     },
+     "sourceAnalyzed": "Full source analyzed",
+     "detectedRange": "Voice detected from {{start}} to {{end}}. Silent and music-only sections are omitted.",
+diff --git a/src/shared/state/cloud-caption-host.ts b/src/shared/state/cloud-caption-host.ts
+--- a/src/shared/state/cloud-caption-host.ts
++++ b/src/shared/state/cloud-caption-host.ts
+@@ -8,6 +8,8 @@
+ export interface CloudCaptionHost {
+   /** Ask the host to price captions for one timeline clip. `language` is empty for auto-detect. */
+   start(request: { clipId: string; language: string }): void
++  /** FL-1429: list several selected clips; each is then priced and confirmed on its own. */
++  openBatch?(clipIds: string[]): void
+ }
+ 
+ let host: CloudCaptionHost | null = null
