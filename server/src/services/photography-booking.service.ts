@@ -190,7 +190,7 @@ export class PhotographyBookingService {
     if (owed && (await this.clients.ready(ownerId))) {
       const back = origin ?? (await this.clients.publicUrl());
       try {
-        if (back) checkoutUrl = await this.depositCheckout(booking, type, `${back}/studio/${idOrSlug}`);
+        if (back) checkoutUrl = await this.depositCheckout(booking, `${back}/studio/${idOrSlug}`);
       } catch (error) {
         // The booking is taken either way; sending the form again resumes this same deposit.
         this.logger?.warn(`Deposit checkout for booking ${booking.id} didn't start: ${(error as Error).message}`);
@@ -200,12 +200,13 @@ export class PhotographyBookingService {
   }
 
   /** The deposit as a payment on the studio's own account; its events reach PhotographyPaymentService (`booking:`). */
-  private async depositCheckout(booking: BookingRow, type: BookingTypeRow, back: string) {
+  private async depositCheckout(booking: BookingRow, back: string) {
+    // Every value comes from the booking as saved, so a resend sends Stripe the same parameters with the same key.
     const paymentId = await this.repository.claimDepositPayment(booking.id);
     const session = await this.clients.checkout(booking.ownerId, {
       reference: `booking:${paymentId}`,
       idempotencyKey: `payment-${paymentId}`,
-      name: `${type.name} deposit`,
+      name: `${booking.typeName} deposit`,
       amount: booking.deposit,
       currency: booking.currency.toLowerCase(),
       customerEmail: booking.clientEmail,
