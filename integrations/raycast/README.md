@@ -19,7 +19,7 @@ Select a photo to see a preview. Previews are fetched only for the selected phot
 | Download original | ⌘ ⇧ D  | Ctrl Shift D |
 | Reload            | ⌘ R    | Ctrl R       |
 
-Downloads go to your Downloads folder and never replace an existing file. A normal download is a large JPEG without location or camera details. **Download Original** appears only after you turn on **Original downloads** in the extension preferences and allow it when you connect; it saves the file exactly as stored, including its location and camera details. If you turn it on after connecting, choose **Allow Original Downloads** on any photo to ask again. Videos download as a still image; open them in Frameleaf to play or save the video.
+Downloads go to your Downloads folder and never replace an existing file. A normal download is a large JPEG without location or camera details. **Download Original** appears only after you turn on **Original downloads** in the extension preferences and allow it when you connect; it saves the file exactly as stored, including its location and camera details. If you turn it on after connecting, choose **Allow Original Downloads** on any photo to ask again. Turning it off revokes that permission: Raycast replaces its connection with a read-only one, so you sign in once more. Videos download as a still image; open them in Frameleaf to play or save the video.
 
 ## Connect
 

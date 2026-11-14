@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -135,7 +135,7 @@ test("token responses are validated and carry the resource", async () => {
     { ...good, scope: "library:download" },
     { ...good, scope: "library:read albums:write" },
   ]) {
-    await assert.rejects(exchange(fakeFetch(() => json(bad)).impl, endpoints, {}), kind("server"));
+    await assert.rejects(exchange(fakeFetch(() => json(bad)).impl, endpoints, {}), kind("protocol"));
   }
   await assert.rejects(exchange(fakeFetch(() => json({}, 503)).impl, endpoints, {}), kind("busy"));
 });
@@ -200,15 +200,36 @@ test("API maps statuses to distinguishable errors and hides unreadable albums", 
   );
 });
 
-test("renditions return bytes with their media type", async () => {
+const stream = (...chunks: number[][]) =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(new Uint8Array(chunk));
+      controller.close();
+    },
+  });
+const rendition = (type: string, ...chunks: number[][]) => ({ body: stream(...chunks), type });
+
+test("renditions stream with their media type", async () => {
   const { impl, calls } = fakeFetch(
-    () => new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "image/jpeg; charset=binary" } }),
+    () => new Response(stream([1, 2], [3]), { headers: { "Content-Type": "image/jpeg; charset=binary" } }),
   );
   const api = new ConnectApi(ORIGIN, async () => "t", impl);
   const result = await api.rendition("abc", "display");
-  assert.deepEqual([...result.bytes], [1, 2, 3]);
   assert.equal(result.type, "image/jpeg");
+  assert.deepEqual([...new Uint8Array(await new Response(result.body).arrayBuffer())], [1, 2, 3]);
   assert.equal(calls[0].url, `${ORIGIN}/api/connect/assets/abc/rendition?variant=display`);
+});
+
+test("the request timeout stops at response headers, not the body", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let signal: AbortSignal | undefined;
+  const { impl } = fakeFetch((_url, init) => {
+    signal = init.signal ?? undefined;
+    return new Response(stream([1]));
+  });
+  await new ConnectApi(ORIGIN, async () => "t", impl).rendition("abc", "original");
+  t.mock.timers.tick(60_000);
+  assert.equal(signal?.aborted, false);
 });
 
 test("only one refresh runs at a time across callers", async () => {
@@ -231,18 +252,39 @@ test("only one refresh runs at a time across callers", async () => {
   }
 });
 
-test("downloads never overwrite and never use original filenames", async () => {
+test("a stale lock is taken over once and released", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "frameleaf-raycast-"));
+  try {
+    await mkdir(join(dir, "refresh.lock"));
+    const old = new Date(Date.now() - 120_000);
+    await utimes(join(dir, "refresh.lock"), old, old);
+    let runs = 0;
+    await Promise.all([1, 2].map(() => withLock(dir, async () => void runs++)));
+    assert.equal(runs, 2);
+    assert.deepEqual(await readdir(dir), []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("downloads stream to a new file, never overwrite and never use original filenames", async () => {
   const dir = await mkdtemp(join(tmpdir(), "frameleaf-raycast-"));
   try {
     const asset = { id: "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", createdAt: "2026-07-04T12:00:00.000Z" };
-    const first = await saveNew(dir, asset, "image/jpeg", new Uint8Array([1]));
-    const second = await saveNew(dir, asset, "image/jpeg", new Uint8Array([2]));
-    const original = await saveNew(dir, asset, "image/heic", new Uint8Array([3]), " original");
+    const first = await saveNew(dir, asset, rendition("image/jpeg", [1], [2]));
+    const second = await saveNew(dir, asset, rendition("image/jpeg", [3]));
+    const original = await saveNew(dir, asset, rendition("image/heic", [4]), " original");
     assert.equal(first, join(dir, "Frameleaf 2026-07-04 0f1e2d3c.jpg"));
     assert.equal(second, join(dir, "Frameleaf 2026-07-04 0f1e2d3c (2).jpg"));
     assert.equal(original, join(dir, "Frameleaf 2026-07-04 0f1e2d3c original.heic"));
-    assert.deepEqual([...(await readFile(first))], [1]);
+    assert.deepEqual([...(await readFile(first))], [1, 2]);
     assert.equal((await readdir(dir)).length, 3);
+
+    const broken = new ReadableStream<Uint8Array>({
+      pull: (controller) => controller.error(new Error("connection reset")),
+    });
+    await assert.rejects(saveNew(dir, asset, { body: broken, type: "image/png" }), kind("offline"));
+    assert.equal((await readdir(dir)).length, 3, "partial file removed");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -1,12 +1,14 @@
-import { Action, ActionPanel, Icon, List, showToast, Toast } from "@raycast/api";
+import { Action, ActionPanel, Icon, List } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
-import { AssetList, ErrorView, errorText, getSession } from "./components.tsx";
+import { AssetList, ErrorView, getSession, libraryKey, showFailure } from "./components.tsx";
 
 export default function Command() {
-  const { data, isLoading, error, revalidate } = useCachedPromise(async () => (await getSession()).api.albums(), [], {
-    keepPreviousData: true,
-    onError: (failure) => void showToast({ style: Toast.Style.Failure, title: errorText(failure) }),
-  });
+  const { data, isLoading, error, revalidate } = useCachedPromise(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the address is only part of the cache key
+    async (library: string) => (await getSession()).api.albums(),
+    [libraryKey()],
+    { keepPreviousData: true, onError: (failure) => showFailure(failure, () => revalidate()) },
+  );
   return (
     <List isLoading={isLoading} searchBarPlaceholder="Filter albums">
       {error && !data?.length ? (
