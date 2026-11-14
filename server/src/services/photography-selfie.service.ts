@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -10,6 +10,8 @@ import { MlProcessingSource, MlWorkload } from 'src/enum.js';
 import { rateLimitedException } from 'src/middleware/rate-limit.guard.js';
 import { BaseService } from 'src/services/base.service.js';
 import { FaceEmbeddingSchema } from 'src/utils/face-result.js';
+import { CloudConnectionState, resolveCloudGateway } from 'src/utils/frameleaf-cloud-gateway.js';
+import { decodeCloudEmbedding } from 'src/utils/frameleaf-cloud.js';
 import { isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { firstCandidate } from 'src/utils/ml-processing-order.js';
 
@@ -74,24 +76,25 @@ export class PhotographySelfieService extends BaseService {
         const candidate = firstCandidate(
           route.filter(({ source }) => !homeOnly || source !== MlProcessingSource.Cloud),
         );
-        // Frameleaf Cloud runs library batches only; it has no request-scoped inference for a guest's selfie.
-        if (!candidate || candidate.source === MlProcessingSource.Cloud)
-          throw new Error('Ephemeral face inference is unavailable for this destination');
-        const selection = await this.selectMlDestination({
-          workload: MlWorkload.Face,
-          destinationId: candidate.destinationId,
-          ownerId,
-          homeOnly,
-          desktopPool: candidate.desktopPool ? 'only' : 'skip',
-          guestFace: true,
-        });
-        const result = await this.machineLearningRepository.detectFaces(
-          selection,
-          path,
-          options,
-          AbortSignal.timeout(30_000),
-        );
-        faces = result.faces;
+        if (!candidate) throw new Error('No place processes faces');
+        if (candidate.source === MlProcessingSource.Cloud) faces = await this.cloudSelfie(path, options);
+        else {
+          const selection = await this.selectMlDestination({
+            workload: MlWorkload.Face,
+            destinationId: candidate.destinationId,
+            ownerId,
+            homeOnly,
+            desktopPool: candidate.desktopPool ? 'only' : 'skip',
+            guestFace: true,
+          });
+          const result = await this.machineLearningRepository.detectFaces(
+            selection,
+            path,
+            options,
+            AbortSignal.timeout(30_000),
+          );
+          faces = result.faces;
+        }
       } catch {
         throw new ServiceUnavailableException({ message: 'Selfie search is unavailable', code: 'selfie_unavailable' });
       }
@@ -108,5 +111,31 @@ export class PhotographySelfieService extends BaseService {
     } finally {
       await rm(folder, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * FL-1058, FC-277: the Face route reaches Frameleaf Cloud, which answers one selfie on CPU in the owner's region
+   * while the guest waits (owner decision 2026-11-13). Off until the owner allows Cloud for guest selfies
+   * (`FRAMELEAF_GUEST_SELFIE_CLOUD`); the Cloud service runs buffalo_l only, so another face model stays unavailable.
+   */
+  private async cloudSelfie(path: string, options: { modelName: string; minScore: number }) {
+    if (!this.configRepository.getEnv().frameleafCloud.guestSelfies || options.modelName !== 'buffalo_l')
+      throw new Error('Frameleaf Cloud does not take guest selfies');
+    const resolution = await resolveCloudGateway({
+      configRepository: this.configRepository,
+      databaseRepository: this.databaseRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+      instanceIdentityRepository: this.instanceIdentityRepository,
+      frameleafCloudRepository: this.frameleafCloudRepository,
+      eventRepository: this.eventRepository,
+      logger: this.logger,
+    });
+    if (resolution.state !== CloudConnectionState.Ready) throw new Error(resolution.detail);
+    const answer = await this.frameleafCloudMlRepository.detectSelfieFaces(
+      resolution.gateway,
+      new Uint8Array(await readFile(path)),
+      options.minScore,
+    );
+    return answer.faces.map(({ embedding }) => ({ embedding: JSON.stringify(decodeCloudEmbedding(embedding)) }));
   }
 }
