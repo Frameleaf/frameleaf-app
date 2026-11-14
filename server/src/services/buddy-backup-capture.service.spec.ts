@@ -169,7 +169,13 @@ describe('Buddy effective configuration file capture', () => {
     };
     const captured = await capture(randomUUID());
     expect(captured.manifest.studio?.projects[KEY.projectId].imports).toEqual([studioImport]);
-    expect(referencePaths).toContainEqual([path]);
+    // FL-1602: pinned by the one statement that reads the snapshot's paths, under the barrier
+    expect(
+      queries.some(
+        (query) =>
+          query.startsWith('INSERT INTO public.buddy_backup_reference') && query.includes('studio_project_import'),
+      ),
+    ).toBe(true);
     expect(captured.manifest.studio?.projects[KEY.projectId].files).toEqual([
       expect.objectContaining({ path, sha256: checksum, size: bytes.length }),
     ]);
@@ -222,6 +228,39 @@ describe('Buddy effective configuration file capture', () => {
     const runId = randomUUID();
     await expect(capture(runId)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await service.readCapture(runId)).toBeNull();
+  });
+
+  it('a run that stops part way reuses the files it already staged instead of reading them again (FL-1602)', async () => {
+    const read = (block: { mock: { calls: unknown[][] } }) =>
+      block.mock.calls.map(([, bytes]) => Buffer.from(bytes as Buffer).toString());
+    const block = vi.spyOn(service as unknown as { block: (...args: unknown[]) => unknown }, 'block');
+    // The dump is read last: without it the run stops after the configuration file is staged.
+    await rm(dumpPath, { force: true });
+    const runId = randomUUID();
+    await expect(capture(runId, [configPath])).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(read(block)).toContain(plaintext.toString());
+    await writeFile(dumpPath, 'synthetic database dump');
+    block.mockClear();
+
+    const captured = await capture(runId, [configPath]);
+
+    expect(read(block)).toContain('synthetic database dump');
+    expect(read(block)).not.toContain(plaintext.toString());
+    const sha256 = createHash('sha256').update(plaintext).digest('hex');
+    expect(captured.manifest.configurationFiles).toEqual([expect.objectContaining({ path: configPath, sha256 })]);
+    expect(captured.objects.map(({ id }) => id)).toEqual(
+      expect.arrayContaining(captured.manifest.contents[sha256].blocks),
+    );
+
+    // A file that changed since it was staged is read again.
+    await rm(dumpPath, { force: true });
+    const next = randomUUID();
+    await expect(capture(next, [configPath])).rejects.toMatchObject({ code: 'ENOENT' });
+    await writeFile(configPath, 'changed settings');
+    await writeFile(dumpPath, 'synthetic database dump');
+    block.mockClear();
+    await capture(next, [configPath]);
+    expect(read(block)).toContain('changed settings');
   });
 
   describe('Locked key files (FL-721)', () => {
@@ -436,6 +475,11 @@ describe('Buddy effective configuration file capture', () => {
               libraryId: null,
               isExternal: false,
             },
+          ];
+        // its records are read from the snapshot before the copy finds the file busy
+        if (text.includes('"checksumAlgorithm", "type"'))
+          return [
+            { id: assetId, ownerId: OWNER, checksum: Buffer.alloc(20), checksumAlgorithm: 'sha1-path', type: 'IMAGE' },
           ];
       };
       vi.spyOn(CloudBackupIndexRepository.prototype, 'listAssets')
