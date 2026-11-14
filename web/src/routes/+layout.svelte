@@ -22,7 +22,12 @@
   import { Route } from '$lib/route';
   import { lang, locale } from '$lib/stores/preferences.store';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
-  import { closeWebsocketConnection, openWebsocketConnection, websocketStore } from '$lib/stores/websocket';
+  import {
+    closeWebsocketConnection,
+    openWebsocketConnection,
+    websocketEvents,
+    websocketStore,
+  } from '$lib/stores/websocket';
   import { maintenanceShouldRedirect } from '$lib/utils/maintenance';
   import { reportAccessChange } from '$lib/utils/sw-messaging';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
@@ -55,6 +60,8 @@
   // land before this listener exists, so a page load reports a change of its own.
   reportAccessChange();
   onLibraryAccessChange(reportAccessChange);
+  // An item shared with this person was un-shared or Locked by its owner, live (item-share service).
+  websocketEvents.on('on_asset_hidden', reportAccessChange);
   // The legacy kit takes the brand: Frameleaf toasts and the one confirmation dialog.
   installFrameleafKit();
 
