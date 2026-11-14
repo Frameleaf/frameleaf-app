@@ -27,6 +27,7 @@ import {
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
+import { lockDuplicateOwner } from 'src/repositories/duplicate.repository.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { duplicateDisposalReasons, reviewKindOf } from 'src/utils/duplicate-review.js';
@@ -576,17 +577,11 @@ export class DuplicateService extends BaseService {
       read.publish(async () => {
         const tx = publicationTransaction.getStore();
         if (tx) {
-          // Group merges can touch siblings not returned by the nearest-neighbour query.
-          // Lock this owner's rows in stable order before reading matching/manual resolution state.
+          // Group merges can touch siblings not returned by the nearest-neighbour query, so serialize
+          // with every other rewrite of this owner's groups before reading them (FL-1601: one lock,
+          // not a row lock on each of the owner's photos).
           const owner = await tx.selectFrom('asset').select('ownerId').where('id', '=', id).executeTakeFirst();
-          if (owner)
-            await tx
-              .selectFrom('asset')
-              .select('id')
-              .where('ownerId', '=', owner.ownerId)
-              .orderBy('id')
-              .forUpdate()
-              .execute();
+          if (owner) await lockDuplicateOwner(tx, owner.ownerId);
         }
         const asset = await this.assetJobRepository.getForSearchDuplicatesJob(id);
         if (!asset) {

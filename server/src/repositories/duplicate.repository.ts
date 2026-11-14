@@ -32,6 +32,13 @@ interface DuplicateMergeOptions {
   sourceIds: string[];
 }
 type DuplicatePrivacyOptions = HiddenContentQueryOptions;
+
+/**
+ * FL-1601: serializes every read-then-rewrite of one owner's look-alike groups (detection, resolution,
+ * decisions and their undo). Order: queue fences → job row → this lock → per-asset locks → rows.
+ */
+export const lockDuplicateOwner = (tx: Transaction<DB>, ownerId: string) =>
+  sql`select pg_advisory_xact_lock(-1601, hashtext(${ownerId})::int)`.execute(tx);
 @Injectable()
 export class DuplicateRepository {
   constructor(
@@ -61,6 +68,14 @@ export class DuplicateRepository {
             );
           if (rows.length === 0) throw new Error('Duplicate decision lost its claim');
         }
+        // a group never spans owners: detection, identical files and decisions all stay within one
+        const owner = await tx
+          .selectFrom('asset')
+          .select('ownerId')
+          .where('duplicateId', '=', asUuid(duplicateId))
+          .limit(1)
+          .executeTakeFirst();
+        if (owner) await lockDuplicateOwner(tx, owner.ownerId);
         const members = await tx
           .selectFrom('asset')
           .select(['id', 'livePhotoVideoId'])
