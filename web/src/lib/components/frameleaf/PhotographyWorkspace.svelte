@@ -44,6 +44,7 @@
     mdiChevronRight,
     mdiClipboardCheckOutline,
     mdiClockOutline,
+    mdiCalendarOutline,
     mdiCreditCardOutline,
     mdiLinkVariant,
     mdiClose,
@@ -70,6 +71,7 @@
   } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import PhotographyCampaigns from '$lib/components/frameleaf/PhotographyCampaigns.svelte';
+  import PhotographyBookingTypes from '$lib/components/frameleaf/PhotographyBookingTypes.svelte';
   import PhotographyPaymentLinks from '$lib/components/frameleaf/PhotographyPaymentLinks.svelte';
   import PhotographyContracts from '$lib/components/frameleaf/PhotographyContracts.svelte';
   import PhotographyInvoices from '$lib/components/frameleaf/PhotographyInvoices.svelte';
@@ -126,6 +128,7 @@
     | 'invoices'
     | 'campaigns'
     | 'payment-links'
+    | 'booking-types'
     | 'payments'
     | 'shoots'
     | 'branding'
@@ -368,22 +371,26 @@
             ? $t('frameleaf_clients_payments')
             : section === 'payment-links'
               ? $t('frameleaf_clients_payment_links')
-              : section === 'settings'
-                ? $t('settings')
-                : section === 'branding'
-                  ? $t('frameleaf_photography_branding')
-                  : section === 'watermarks'
-                    ? $t('frameleaf_photography_watermarks')
-                    : section === 'website'
-                      ? $t('frameleaf_photography_website')
-                      : section === 'publishing'
-                        ? $t('frameleaf_photography_publishing')
-                        : isShootSection(section)
-                          ? $t(shootSectionKeys[section])
-                          : (active?.name ?? $t('frameleaf_photography_shoots')),
+              : section === 'booking-types'
+                ? $t('frameleaf_clients_booking_types')
+                : section === 'settings'
+                  ? $t('settings')
+                  : section === 'branding'
+                    ? $t('frameleaf_photography_branding')
+                    : section === 'watermarks'
+                      ? $t('frameleaf_photography_watermarks')
+                      : section === 'website'
+                        ? $t('frameleaf_photography_website')
+                        : section === 'publishing'
+                          ? $t('frameleaf_photography_publishing')
+                          : isShootSection(section)
+                            ? $t(shootSectionKeys[section])
+                            : (active?.name ?? $t('frameleaf_photography_shoots')),
   );
   const subtitle = $derived(
-    (['settings', 'campaigns', 'payments', 'contracts', 'invoices', 'payment-links'] as Section[]).includes(section)
+    (
+      ['settings', 'campaigns', 'payments', 'contracts', 'invoices', 'payment-links', 'booking-types'] as Section[]
+    ).includes(section)
       ? ''
       : section === 'branding'
         ? $t('frameleaf_photography_branding_lead')
@@ -975,7 +982,7 @@
         {/each}
       {/if}
       <p class="phw-rail-heading">{$t('frameleaf_photography_studio_heading')}</p>
-      {#each [['contracts', $t('frameleaf_clients_contract_title'), mdiFileDocumentOutline], ['invoices', $t('frameleaf_clients_invoice_title'), mdiReceiptTextOutline], ['campaigns', $t('campaign_title'), mdiEmailOutline], ['payment-links', $t('frameleaf_clients_payment_links'), mdiLinkVariant], ['payments', $t('frameleaf_clients_payments'), mdiCreditCardOutline], ['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
+      {#each [['contracts', $t('frameleaf_clients_contract_title'), mdiFileDocumentOutline], ['invoices', $t('frameleaf_clients_invoice_title'), mdiReceiptTextOutline], ['campaigns', $t('campaign_title'), mdiEmailOutline], ['booking-types', $t('frameleaf_clients_booking_types'), mdiCalendarOutline], ['payment-links', $t('frameleaf_clients_payment_links'), mdiLinkVariant], ['payments', $t('frameleaf_clients_payments'), mdiCreditCardOutline], ['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
         <button
           type="button"
           aria-current={section === id ? 'page' : undefined}
@@ -1073,6 +1080,8 @@
         <PhotographyCampaigns shoots={workspace.shoots} />
       {:else if section === 'payments'}
         <PhotographyPayments studioName={studio?.name ?? ''} />
+      {:else if section === 'booking-types'}
+        <PhotographyBookingTypes />
       {:else if section === 'payment-links'}
         <PhotographyPaymentLinks onSetUpPayments={() => (section = 'payments')} />
       {:else if isShootSection(section)}

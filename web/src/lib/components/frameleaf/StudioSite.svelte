@@ -14,6 +14,7 @@
     thumbnail = false,
     emptyWork,
     onInquiry,
+    onBook,
   }: {
     site: PublicSite;
     /** A small, inert render for the template picker. */
@@ -22,6 +23,8 @@
     emptyWork?: string;
     /** Sends an inquiry; absent in the editor's preview, where nothing is sent. */
     onInquiry?: (inquiry: InquiryInput) => Promise<void>;
+    /** FL-1053: opens the booking form; set only when the studio has sessions to book. */
+    onBook?: () => void;
   } = $props();
 
   const template = $derived(siteTemplate(site.template));
@@ -408,6 +411,9 @@
             >{$t('frameleaf_studio_site_services')}</a
           >{/if}
         {#if has('inquiry')}<a href="#ss-inquiry" tabindex={tabIndex}>{$t('frameleaf_studio_site_contact')}</a>{/if}
+        {#if onBook}<button type="button" class="ss-login" onclick={onBook} tabindex={tabIndex}
+            >{$t('frameleaf_clients_booking_book')}</button
+          >{/if}
         {#if has('clients')}<a class="ss-login" href="#ss-clients" tabindex={tabIndex}
             >{$t('frameleaf_studio_site_client_login')}</a
           >{/if}
