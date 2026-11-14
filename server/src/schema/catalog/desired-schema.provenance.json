@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "5433e634dabbe11365b1b254f8561ef9794b85f4",
+  "sourceCommit": "68745897650d81643a8b83738c3af9c5ff2bdd03",
   "sourceHashes": {
     "src/enum.ts": "58e5f863916ec4a404c61f3d383c86ed25699762627828ad48bc873fc1aae39d",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -8,7 +8,7 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "6fc4f8259edf56e9dbb85eb8ef6cc94721ba22df829e2a28580ac0060373c685",
+    "src/schema/index.ts": "c347e322f0d0d2da6e3db9be90dc4c45e7a37bc3c00000214776c02bff49864c",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -128,6 +128,7 @@
     "src/schema/tables/photo-tools.table.ts": "cb52713d8c29c44e520a43d2c2bdc6b465dbbd7fa19b8c2a6e7a7c2e59aaeb5e",
     "src/schema/tables/photography-campaign.table.ts": "0e9c2856a6bb6c0bbb7db491b53efe8f25602ddc15aedb841eb77833058db8d4",
     "src/schema/tables/photography-contract.table.ts": "2d90cdb08821dbb2a3a3ec4655ead43fe04159019291486de2fdfa29b7b55689",
+    "src/schema/tables/photography-payment.table.ts": "6eca6a0332a1e044352b8cf0a70f1a9d0edd0ae8db84bb0a654562f45c41dfce",
     "src/schema/tables/physical-file.table.ts": "983ee1341d4843fcf720286de94e9e64410dd16705cde8f83301962d640d8865",
     "src/schema/tables/plugin-method.table.ts": "d1a6c8b56050fc06afcfdee7deca452e27fcfe54bc6f5ea6fdb85ca297543c18",
     "src/schema/tables/plugin.table.ts": "e29234679dd17e282b10a3e32672f5b4d0a9a2eb0b8560436d0a91f1f2b2df12",
@@ -188,6 +189,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "0aa8398f2f7faa01d801efffe0ce154be3f791c7b98457685bb445294bb3aa44",
-  "rawMetadataSha256": "000a3df11b826a4bf1371c9665258388b47a70f9cf8799254b900e4ce14192dd"
+  "dumpSha256": "02fc73fc40deebb9f49b1b0bb000cf6d7e260c42d7a47a3faca17fd654be2e83",
+  "rawMetadataSha256": "6e5d6f11227c306c26d2e4e95576fc0de5e142a618af9bd70316f8444c953be3"
 }
