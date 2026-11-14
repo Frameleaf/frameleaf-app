@@ -416,6 +416,11 @@ class Connection {
       await this.forget();
       throw fail('reconnect');
     }
+    if (!this.settings.serverId || this.key() !== key) {
+      // Disconnected while refreshing: the new token must not outlive the disconnect.
+      await this.revoke(origin, clientId, tokens.refresh).catch(() => {});
+      throw fail('reconnect');
+    }
     this.secrets.setSecret(key, tokens.refresh); // Rotation is persisted before the new access token is used.
     this.access = { token: tokens.access, expires: tokens.expires };
     return tokens.access;
@@ -454,6 +459,7 @@ class Connection {
   /** Returns false when the Library could not be told; the local credentials are removed either way. */
   async disconnect() {
     this.pending?.cancel();
+    await this.refreshing?.catch(() => {});
     const refresh =
       this.settings.serverId && this.secrets.getSecret(this.key());
     let revoked = true;
@@ -506,8 +512,38 @@ class Connection {
  * Saves the asset next to the note as a local attachment (reusing an earlier copy of the same
  * revision) and returns the text to insert. Nothing is written until the whole image has arrived.
  */
-async function saveAttachment(app, connection, asset, sourcePath, sourceLink) {
+async function saveAttachment(
+  app,
+  connection,
+  asset,
+  sourcePath,
+  sourceLink,
+  inFlight = new Map(),
+) {
   const prefix = attachmentPrefix(asset);
+  // Concurrent inserts of one image share the download; each builds its own link for its own note.
+  if (!inFlight.has(prefix))
+    inFlight.set(
+      prefix,
+      saveFile(app, connection, asset, prefix, sourcePath).finally(() =>
+        inFlight.delete(prefix),
+      ),
+    );
+  const file = await inFlight.get(prefix);
+  let text =
+    '!' +
+    app.fileManager.generateMarkdownLink(
+      file,
+      sourcePath,
+      undefined,
+      altText(asset.title || asset.description),
+    );
+  if (sourceLink)
+    text += `\n[${altText(t('source_label'))}](<${connection.settings.origin}/photos/${asset.id}>)`;
+  return { file, text };
+}
+
+async function saveFile(app, connection, asset, prefix, sourcePath) {
   const existing = () =>
     app.vault.getFiles().find((file) => file.name.startsWith(prefix));
   let file = existing();
@@ -528,17 +564,7 @@ async function saveAttachment(app, connection, asset, sourcePath, sourceLink) {
       if (!file) throw fail('save_failed');
     }
   }
-  let text =
-    '!' +
-    app.fileManager.generateMarkdownLink(
-      file,
-      sourcePath,
-      undefined,
-      altText(asset.title || asset.description),
-    );
-  if (sourceLink)
-    text += `\n[${altText(t('source_label'))}](<${connection.settings.origin}/photos/${asset.id}>)`;
-  return { file, text };
+  return file;
 }
 
 class InsertModal extends obsidian.Modal {
@@ -700,7 +726,8 @@ class SettingsTab extends obsidian.PluginSettingTab {
                 new obsidian.Notice(t('waiting'), 10_000);
                 await connection.connect(
                   this.origin ?? settings.origin,
-                  this.clientId ?? settings.clientId,
+                  // Only an edited App ID is explicit; otherwise connect() reuses the stored one for the same Library.
+                  this.clientId,
                 );
               }
             } catch (error) {
@@ -769,20 +796,14 @@ class FrameleafImages extends obsidian.Plugin {
   }
   async insert(editor, file, asset) {
     try {
-      const key = attachmentPrefix(asset);
-      if (!this.inFlight.has(key)) {
-        this.inFlight.set(
-          key,
-          saveAttachment(
-            this.app,
-            this.connection,
-            asset,
-            file.path,
-            this.settings.sourceLink,
-          ).finally(() => this.inFlight.delete(key)),
-        );
-      }
-      const saved = await this.inFlight.get(key);
+      const saved = await saveAttachment(
+        this.app,
+        this.connection,
+        asset,
+        file.path,
+        this.settings.sourceLink,
+        this.inFlight,
+      );
       // The download may outlast the note; only insert into the editor that asked, while it still shows that note.
       const view = this.app.workspace.getActiveViewOfType(
         obsidian.MarkdownView,

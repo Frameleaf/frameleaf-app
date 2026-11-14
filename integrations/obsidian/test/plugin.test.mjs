@@ -511,3 +511,51 @@ test("disconnecting revokes the grant and clears the secret", async (t) => {
   assert.equal([...secrets.values()].join(""), "");
   assert.equal(connection.connected, false);
 });
+
+test("a stored App ID from another Library is not reused", async (t) => {
+  const { origin, connection, settings, seen } = await library(t);
+  Object.assign(settings, {
+    origin: "https://old.example.com",
+    clientId: "old-client",
+  });
+  await connection.connect(origin, undefined);
+  assert.equal(seen.registered.length, 1);
+  assert.equal(settings.clientId, "client-1");
+});
+
+test("disconnecting during a refresh leaves no live token behind", async (t) => {
+  const { origin, connection, secrets, seen } = await library(t, {
+    expiresIn: 10,
+  });
+  await connection.connect(origin);
+  const browsing = connection.albums().catch(() => {});
+  assert.equal(await connection.disconnect(), true);
+  await browsing;
+  assert.equal([...secrets.values()].join(""), "");
+  assert.deepEqual(seen.revoked, ["refresh-2"]);
+  assert.equal(connection.connected, false);
+});
+
+test("concurrent inserts share one download but each note gets its own link", async (t) => {
+  const { origin, connection, seen } = await library(t);
+  await connection.connect(origin);
+  const app = vault();
+  const sources = [];
+  const link = app.fileManager.generateMarkdownLink;
+  app.fileManager.generateMarkdownLink = (file, source, ...rest) => (
+    sources.push(source),
+    link(file, source, ...rest)
+  );
+  const shared = new Map();
+  const [a, b] = await Promise.all([
+    saveAttachment(app, connection, ASSET, "A/x.md", true, shared),
+    saveAttachment(app, connection, ASSET, "B/y.md", false, shared),
+  ]);
+  assert.equal(seen.renditions, 1);
+  assert.equal(app.files.length, 1);
+  assert.equal(a.file, b.file);
+  assert.deepEqual(sources, ["A/x.md", "B/y.md"]);
+  assert.match(a.text, /View in Frameleaf/);
+  assert.doesNotMatch(b.text, /View in Frameleaf/);
+  assert.equal(shared.size, 0);
+});
