@@ -1,4 +1,5 @@
-import { getAlbumTree, getSharedSpaceInvitations } from '@frameleaf/sdk';
+import { getSharedSpaceInvitations } from '@frameleaf/sdk';
+import { loadAlbumTree } from '$lib/frameleaf/album-tree-cache';
 import { searchContextFor } from '$lib/frameleaf/search-context';
 import { pendingInvitations } from '$lib/frameleaf/shared-space';
 import { authenticate } from '$lib/utils/auth';
@@ -11,7 +12,7 @@ export const load = (async ({ url, depends }) => {
   // Invitations are not memberships, so they are not in the tree; the spaces shelf only says how
   // many are waiting. The shelf is still worth showing without that count, so its failure is quiet.
   const [tree, invitations] = await Promise.all([
-    getAlbumTree({ libraryScope: searchContextFor(new URL(url.href)).query.filter.libraryScope }),
+    loadAlbumTree(searchContextFor(new URL(url.href)).query.filter.libraryScope),
     getSharedSpaceInvitations().catch(() => []),
   ]);
   const $t = await getFormatter();

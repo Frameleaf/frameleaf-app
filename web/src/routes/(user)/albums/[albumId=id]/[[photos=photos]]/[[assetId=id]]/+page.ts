@@ -1,4 +1,5 @@
-import { AlbumKind, getAlbumInfo, getAlbumTree, getSharedSpaceMembers, LibraryViewScope } from '@frameleaf/sdk';
+import { AlbumKind, getAlbumInfo, getSharedSpaceMembers, LibraryViewScope } from '@frameleaf/sdk';
+import { loadAlbumTree } from '$lib/frameleaf/album-tree-cache';
 import { authenticate } from '$lib/utils/auth';
 import type { PageLoad } from './$types';
 
@@ -14,8 +15,8 @@ export const load = (async ({ params, url, depends }) => {
   // collection shows the Boards tree (FL-670), and an album holding albums of either is never "empty".
   const [album, personalTree, designTree] = await Promise.all([
     getAlbumInfo({ id: params.albumId }),
-    getAlbumTree({}),
-    getAlbumTree({ libraryScope: LibraryViewScope.Design }),
+    loadAlbumTree(),
+    loadAlbumTree(LibraryViewScope.Design),
   ]);
   // A shared space's unanswered invitations are not album users, so the header asks for them to say
   // "1 invited" instead of "Private · share it". Not being able to read them only loses that line.

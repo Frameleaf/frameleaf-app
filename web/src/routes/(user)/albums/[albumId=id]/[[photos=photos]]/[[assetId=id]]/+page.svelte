@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { refreshAlbumTrees } from '$lib/frameleaf/album-tree-cache';
   import { browser } from '$app/env';
-  import { afterNavigate, beforeNavigate, goto, invalidate, onNavigate } from '$app/navigation';
+  import { afterNavigate, beforeNavigate, goto, onNavigate } from '$app/navigation';
   import { navigating, page } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
@@ -261,7 +262,7 @@
   const handleMutated = (removedIds: string[]) => {
     const removed = new Set(removedIds);
     collectionAssets = collectionAssets.filter(({ id }) => !removed.has(id));
-    handlePromiseError(refreshAlbum().then(() => invalidate('album:data')));
+    handlePromiseError(refreshAlbum().then(() => refreshAlbumTrees()));
   };
 
   const updateCollectionAsset = (updated: AssetResponseDto) => {
@@ -373,7 +374,7 @@
     if (!isCurrentView(view) || manager !== timelineManager) {
       return;
     }
-    await invalidate('album:data');
+    await refreshAlbumTrees();
     if (isCurrentView(view) && manager === timelineManager) {
       await manager?.refresh();
     }
@@ -691,7 +692,7 @@
 
     // invalidating during navigation causes an infinite page load
     await navigating.complete;
-    await invalidate('album:data');
+    await refreshAlbumTrees();
   };
 
   // Another member or device changed this album (its shared order, name, cover): show the server's copy.
