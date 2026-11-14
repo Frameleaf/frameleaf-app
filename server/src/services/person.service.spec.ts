@@ -2898,18 +2898,18 @@ describe(PersonService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
-    it('should fail if face does not exist', async () => {
-      expect(await sut.handleRecognizeFaces({ id: 'unknown-face' })).toBe(JobStatus.Failed);
+    it('should skip if face does not exist', async () => {
+      expect(await sut.handleRecognizeFaces({ id: 'unknown-face' })).toBe(JobStatus.Skipped);
 
       expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
       expect(mocks.person.create).not.toHaveBeenCalled();
     });
 
-    it('should fail if face does not have asset', async () => {
+    it('should skip if face does not have asset', async () => {
       const face = AssetFaceFactory.create();
       mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(face, null));
 
-      expect(await sut.handleRecognizeFaces({ id: face.id })).toBe(JobStatus.Failed);
+      expect(await sut.handleRecognizeFaces({ id: face.id })).toBe(JobStatus.Skipped);
 
       expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
       expect(mocks.person.create).not.toHaveBeenCalled();

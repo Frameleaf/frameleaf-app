@@ -1738,8 +1738,9 @@ export class PersonService extends BaseService {
     const recognize = async (): Promise<JobStatus> => {
       let face = await this.personRepository.getFaceForFacialRecognitionJob(id);
       if (!face || !face.asset) {
-        this.logger.warn(`Face ${id} not found`);
-        return JobStatus.Failed;
+        // The face was removed after this job was queued (re-detection, deleted photo): nothing to recognise.
+        this.logger.debug(`Face ${id} no longer exists, skipping`);
+        return JobStatus.Skipped;
       }
 
       const tx = publicationTransaction.getStore();
@@ -1886,9 +1887,7 @@ export class PersonService extends BaseService {
     };
     if (
       deferJobAdoption(async () => {
-        if ((await recognize()) === JobStatus.Failed) {
-          throw new Error('Face recognition could not publish');
-        }
+        await recognize();
       })
     ) {
       return JobStatus.Success;
