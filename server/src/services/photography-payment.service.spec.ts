@@ -190,6 +190,21 @@ describe(PhotographyPaymentService.name, () => {
     expect(payment.status).toBe('refunded');
   });
 
+  it('releases a single-use link when checkout creation fails, and still records that payment if it lands', async () => {
+    const s = setup();
+    const link = await s.service.create(auth, { ...draft, reusable: false });
+    s.clients.checkout.mockRejectedValueOnce(new Error('Frameleaf Cloud unreachable'));
+    await expect(s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example')).rejects.toThrow();
+    const lost = s.payments[0];
+    expect(lost).toMatchObject({ status: 'failed', checkoutId: null });
+    // The payer can try again at once.
+    const { paymentId } = await s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example');
+    expect(paymentId).not.toBe(lost.id);
+    // A session Stripe made for the lost attempt after all is still recorded when it is paid.
+    await s.service.paymentEvent(s.event(lost, 'payment.succeeded', { sessionId: 'cs_made_anyway' }));
+    expect(lost.status).toBe('paid');
+  });
+
   it('shows a missing or turned-off link as unavailable, with nothing about the studio', async () => {
     const s = setup();
     await expect(s.service.publicLink('not-a-real-slug!')).rejects.toBeInstanceOf(NotFoundException);

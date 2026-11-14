@@ -141,13 +141,24 @@ export class PhotographyPaymentService {
     if (!payment)
       throw new ConflictException({ code: 'payment-in-progress', message: 'Someone is paying this link now' });
     const back = `${origin}/photography/pay/${link.slug}`;
+    try {
+      return await this.startCheckout(link, payment, dto.email, back);
+    } catch (error) {
+      // Stripe's page never reached the payer: release the hold so they can try again. If a session was made after all,
+      // its payment still lands (a failed payment can become paid), matched by its reference.
+      await this.repository.transition(payment.id, ['pending'], 'failed', null);
+      throw error;
+    }
+  }
+
+  private async startCheckout(link: PaymentLinkRow, payment: PaymentRow, email: string, back: string) {
     const session = await this.payments.checkout(link.ownerId, {
       reference: `link:${payment.id}`,
       idempotencyKey: `payment-${payment.id}`,
       name: link.title,
       amount: link.amount,
       currency: link.currency.toLowerCase(),
-      customerEmail: dto.email,
+      customerEmail: email,
       successUrl: `${back}?payment=${payment.id}`,
       cancelUrl: back,
     });
@@ -184,7 +195,9 @@ export class PhotographyPaymentService {
       // Cloud took the reference from this payment's own PaymentIntent; a different intent already on file is not it.
       if (!event.paymentIntent || (payment.providerRef && payment.providerRef !== event.paymentIntent)) return;
     } else if (
-      event.sessionId !== payment.checkoutId ||
+      // No session on file means checkout creation failed before its id came back; the reference, which Cloud read
+      // from that session's own metadata, still ties the event to this payment.
+      (payment.checkoutId !== null && event.sessionId !== payment.checkoutId) ||
       (event.type === 'payment.succeeded' &&
         (event.amount !== payment.amount || event.currency?.toUpperCase() !== payment.currency))
     ) {
