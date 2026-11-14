@@ -3143,7 +3143,10 @@ export class AssetRepository {
         if (this.calendarPageCache.size <= CALENDAR_PAGE_CACHE_SIZE) break;
         this.calendarPageCache.delete(old);
       }
-      return next.values().toArray().flatMap(({ pages }) => pages);
+      return next
+        .values()
+        .flatMap(({ pages }) => pages)
+        .toArray();
     }
     return this.db
       .with('asset', () => this.timelineAssets(options, auth, this.timelineBucketDate(options)))
