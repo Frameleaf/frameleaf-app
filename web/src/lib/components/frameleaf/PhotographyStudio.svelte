@@ -14,7 +14,9 @@
   /** FL-1053: the studio's bookable sessions; the header offers booking only when there are some. */
   let bookingTypes = $state<PhotographyPublicBookingTypeListDto['types']>([]);
   // Back from Stripe's deposit page (`?booking=sent`): the form opens on its confirmation.
-  const returned = new URLSearchParams(location.search).get('booking') === 'sent';
+  // The confirmation shows once; a later "Book a session" opens a fresh form.
+  let returned = $state(new URLSearchParams(location.search).get('booking') === 'sent');
+  // svelte-ignore state_referenced_locally
   let booking = $state(returned);
   let disposed = false;
 
@@ -55,7 +57,12 @@
   <StudioSite
     {site}
     onInquiry={(inquiry) => sendInquiry(address, inquiry)}
-    onBook={bookingTypes.length > 0 ? () => (booking = true) : undefined}
+    onBook={bookingTypes.length > 0
+      ? () => {
+          returned = false;
+          booking = true;
+        }
+      : undefined}
   />
   {#if booking}<PhotographyStudioBooking bind:open={booking} site={address} types={bookingTypes} sent={returned} />{/if}
 {:else}<div class="pc pc-gate">
