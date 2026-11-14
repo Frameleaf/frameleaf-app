@@ -1,0 +1,67 @@
+{
+	"name": "React to Studio exports",
+	"nodes": [
+		{
+			"id": "trigger",
+			"name": "Frameleaf Trigger",
+			"type": "n8n-nodes-frameleaf.frameleafTrigger",
+			"typeVersion": 1,
+			"position": [0, 0],
+			"parameters": {
+				"event": "studio.export.completed",
+				"albumId": "",
+				"checkpoint": "initial",
+				"pollTimes": {
+					"item": [
+						{
+							"mode": "everyMinute"
+						}
+					]
+				}
+			},
+			"credentials": {
+				"frameleafOAuth2Api": {
+					"id": "SELECT_YOUR_CREDENTIAL",
+					"name": "Select your Frameleaf credential"
+				}
+			}
+		},
+		{
+			"id": "action",
+			"name": "Frameleaf",
+			"type": "n8n-nodes-frameleaf.frameleaf",
+			"typeVersion": 1,
+			"position": [300, 0],
+			"parameters": {
+				"operation": "download",
+				"assetId": "={{$json.subject.id}}",
+				"variant": "display",
+				"binaryProperty": "data",
+				"maximumMiB": 5
+			},
+			"credentials": {
+				"frameleafOAuth2Api": {
+					"id": "SELECT_YOUR_CREDENTIAL",
+					"name": "Select your Frameleaf credential"
+				}
+			}
+		}
+	],
+	"connections": {
+		"Frameleaf Trigger": {
+			"main": [
+				[
+					{
+						"node": "Frameleaf",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		}
+	},
+	"active": false,
+	"settings": {
+		"executionOrder": "v1"
+	}
+}
