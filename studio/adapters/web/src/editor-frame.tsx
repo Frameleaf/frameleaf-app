@@ -105,6 +105,7 @@ import { registerMediaFileRelink } from '@/features/media-library/stores/media-r
 import { registerSubjectCutoutHost } from '@/shared/state/subject-cutout-host'
 import { registerCloudCaptionHost } from '@/shared/state/cloud-caption-host'
 import { createCloudCaptions } from './cloud-captions'
+import { CloudCaptionBatchDialog, openCloudCaptionBatch } from './cloud-caption-batch'
 import { captureSnapshot, restoreSnapshot } from '@/features/timeline/stores/commands/snapshot'
 import { useCompositionNavigationStore } from '@/features/timeline/stores/composition-navigation-store'
 import { useTimelineCommandStore } from '@/features/timeline/stores/timeline-command-store'
@@ -389,6 +390,7 @@ function EditorApp({ state, projectId }: { state: Session; projectId: string }) 
         </div>
         <GlobalTooltip />
         <RemotePreview context={state.context} call={call} />
+        <CloudCaptionBatchDialog />
         {showToaster && (
           <Suspense fallback={null}>
             <LazyToaster />
@@ -725,10 +727,20 @@ function installMediaRelink(state: Session) {
       return !state.disposed
     },
   })
-  registerCloudCaptionHost({ start: (request) => void cloudCaptions.start(request) })
+  registerCloudCaptionHost({
+    start: (request) => void cloudCaptions.start(request),
+    // FL-1429: several selected clips, each priced and confirmed on its own by the host.
+    openBatch: (clipIds) =>
+      openCloudCaptionBatch({
+        clipIds,
+        rows: cloudCaptions.batchRows,
+        start: (ids, language) => void cloudCaptions.startBatch(ids, language),
+      }),
+  })
   void cloudCaptions.resume()
   state.unsubscribe.push(() => {
     registerCloudCaptionHost(null)
+    openCloudCaptionBatch(null)
     cloudCaptions.stop()
   })
   state.unsubscribe.push(

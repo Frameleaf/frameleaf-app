@@ -8,7 +8,22 @@
  */
 export type StudioCloudCaptionAnchor = { fromSeconds: number; sourceStartSeconds: number; speed: number };
 
-export type StudioCloudCaptionRequest = { clipId: string; language: string; name: string };
+/**
+ * FL-1429: one clip of several selected together. Each is still priced and confirmed on its own; the
+ * batch only lets the host list the others, and answer the rest with nothing once the person stops.
+ */
+export type StudioCloudCaptionBatch = {
+  id: string;
+  index: number;
+  clips: Array<{ clipId: string; name: string }>;
+};
+
+export type StudioCloudCaptionRequest = {
+  clipId: string;
+  language: string;
+  name: string;
+  batch?: StudioCloudCaptionBatch;
+};
 
 export type StudioCloudCaptionJob = StudioCloudCaptionRequest & { id: string };
 
@@ -26,6 +41,8 @@ const CLIP_ID = /^[\w-]{1,128}$/;
 const JOB_ID = /^[\da-f]{8}-[\da-f]{4}-7[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i;
 const LANGUAGE = /^[A-Za-z0-9-]{2,35}$/;
 const MAX_NAME = 512;
+const BATCH_ID = /^[\w-]{1,64}$/;
+const MAX_BATCH = 100;
 const SETTLED = ['completed', 'failed', 'cancelled'] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -34,14 +51,33 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export const isStudioCloudCaptionId = (value: unknown): value is string =>
   typeof value === 'string' && JOB_ID.test(value);
 
-export const isStudioCloudCaptionRequest = (value: unknown): value is StudioCloudCaptionRequest =>
+const isClipName = (value: unknown): value is { clipId: string; name: string } =>
   isRecord(value) &&
   typeof value.clipId === 'string' &&
   CLIP_ID.test(value.clipId) &&
-  typeof value.language === 'string' &&
-  LANGUAGE.test(value.language) &&
   typeof value.name === 'string' &&
   value.name.length <= MAX_NAME;
+
+const isBatch = (value: unknown, clipId: string): value is StudioCloudCaptionBatch =>
+  isRecord(value) &&
+  typeof value.id === 'string' &&
+  BATCH_ID.test(value.id) &&
+  Array.isArray(value.clips) &&
+  value.clips.length >= 2 &&
+  value.clips.length <= MAX_BATCH &&
+  value.clips.every((clip) => isClipName(clip)) &&
+  new Set(value.clips.map((clip: { clipId: string }) => clip.clipId)).size === value.clips.length &&
+  Number.isSafeInteger(value.index) &&
+  (value.index as number) >= 0 &&
+  (value.index as number) < value.clips.length &&
+  (value.clips[value.index as number] as { clipId: string }).clipId === clipId;
+
+export const isStudioCloudCaptionRequest = (value: unknown): value is StudioCloudCaptionRequest =>
+  isClipName(value) &&
+  typeof (value as Record<string, unknown>).language === 'string' &&
+  LANGUAGE.test((value as Record<string, unknown>).language as string) &&
+  ((value as Record<string, unknown>).batch === undefined ||
+    isBatch((value as Record<string, unknown>).batch, value.clipId));
 
 const isJob = (value: unknown): value is StudioCloudCaptionJob =>
   isStudioCloudCaptionRequest(value) && isStudioCloudCaptionId((value as StudioCloudCaptionJob).id);
@@ -117,7 +153,8 @@ export const createCloudCaptionServices = ({
       if (!id) {
         return null;
       }
-      const job = { ...request, id };
+      // The batch only matters while it is being confirmed; a remembered job is one clip.
+      const job = { clipId: request.clipId, language: request.language, name: request.name, id };
       owners.set(id, project);
       remember(project, [...pending(project).filter((existing) => existing.id !== id), job]);
       // Confirmation may settle after Save as copy. The original can resume it when reopened.
@@ -202,6 +239,29 @@ export const CLOUD_CAPTION_ENGINE_STRINGS = {
     host: 'frameleaf_studio_cloud_captions_failed',
     engine: 'transcript.cloud.failed',
     values: ['name'],
+  },
+  cloudCaptionsBatchMenu: {
+    host: 'frameleaf_studio_cloud_captions_batch_menu',
+    engine: 'transcript.cloud.batchMenu',
+    values: ['count'],
+  },
+  cloudCaptionsBatchTitle: {
+    host: 'frameleaf_studio_cloud_captions_batch_list_title',
+    engine: 'transcript.cloud.batchTitle',
+    values: ['count'],
+  },
+  cloudCaptionsBatchNote: { host: 'frameleaf_studio_cloud_captions_batch_note', engine: 'transcript.cloud.batchNote' },
+  cloudCaptionsBatchReview: {
+    host: 'frameleaf_studio_cloud_captions_batch_review',
+    engine: 'transcript.cloud.batchReview',
+  },
+  cloudCaptionsBatchNoSound: {
+    host: 'frameleaf_studio_cloud_captions_batch_no_sound',
+    engine: 'transcript.cloud.batchNoSound',
+  },
+  cloudCaptionsBatchRunning: {
+    host: 'frameleaf_studio_cloud_captions_batch_running',
+    engine: 'transcript.cloud.batchRunning',
   },
   cloudCaptionsGone: {
     host: 'frameleaf_studio_cloud_captions_gone',

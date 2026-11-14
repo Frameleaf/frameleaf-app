@@ -105,6 +105,7 @@
   } from '$lib/frameleaf/studio/caption-languages';
   import { createCloudCaptionServices, type StudioCloudCaptionRequest } from '$lib/frameleaf/studio/cloud-captions';
   import CloudJobDialog from '$lib/components/frameleaf/cloud/CloudJobDialog.svelte';
+  import { estimateRange } from '$lib/frameleaf/cloud-jobs';
   import StudioCloudReceipts from '$lib/components/frameleaf/StudioCloudReceipts.svelte';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
@@ -937,7 +938,19 @@
     current: () => boolean;
     estimate: (modelSku: string | null) => ReturnType<typeof estimateStudioTranscription>;
     resolve: (id: string | null) => void;
+    /** FL-1429: set when the person moves on to the next clip of a batch, so closing isn't stopping. */
+    skipped?: boolean;
   } | null>(null);
+  /**
+   * FL-1429: the batch being confirmed. Each clip's estimate fills in as it arrives; once the person
+   * stops, the rest are answered with nothing and never shown.
+   */
+  let captionBatch = $state<{
+    id: string;
+    estimates: Record<string, string>;
+    outcomes: Record<string, 'sent' | 'skipped'>;
+  } | null>(null);
+  const stoppedCaptionBatches = new Set<string>();
   let cloudCaptionsOpen = $state(false);
   let cloudCaptionActive = false;
   let cloudCaptionAlive = true;
@@ -945,6 +958,9 @@
   let cloudReceiptOrigin = $state<string | null>(null);
 
   const confirmCloudCaptions = async (request: StudioCloudCaptionRequest, projectId: string) => {
+    if (request.batch && stoppedCaptionBatches.has(request.batch.id)) {
+      return null;
+    }
     if (cloudCaptionActive || cloudCaptionsOpen || !authManager.authenticated || storedRevision === null) {
       return null;
     }
@@ -969,8 +985,18 @@
         return null;
       }
       if (!destination) {
+        // Set-up opens once; the rest of a batch waits for the person to start again.
+        if (request.batch) {
+          stoppedCaptionBatches.add(request.batch.id);
+        }
         getCloudManager.open('processing');
         return null;
+      }
+      const { batch } = request;
+      if (batch && captionBatch?.id !== batch.id) {
+        const listed = { id: batch.id, estimates: {}, outcomes: {} };
+        captionBatch = listed;
+        void estimateCaptionBatch(batch, projectId, destination.id, request.language, current);
       }
       return await new Promise<string | null>((resolve) => {
         cloudCaptions = {
@@ -996,6 +1022,48 @@
       cloudCaptionActive = false;
     }
   };
+
+  /** Prices every clip of a batch for its list, one after another; the clip on show is priced by its dialog. */
+  const estimateCaptionBatch = async (
+    batch: NonNullable<StudioCloudCaptionRequest['batch']>,
+    projectId: string,
+    destinationId: string,
+    language: string,
+    current: () => boolean,
+  ) => {
+    for (const clip of batch.clips) {
+      if (captionBatch?.id !== batch.id || stoppedCaptionBatches.has(batch.id) || !current()) {
+        return;
+      }
+      try {
+        const estimate = await estimateStudioTranscription({
+          id: projectId,
+          studioTranscriptionEstimateDto: { clipId: clip.clipId, language, destinationId },
+        });
+        if (captionBatch?.id === batch.id) {
+          captionBatch.estimates[clip.clipId] = estimateRange(estimate.p50Usd, estimate.p90Usd);
+        }
+      } catch {
+        // The clip's own dialog prices it again and says what went wrong.
+      }
+    }
+  };
+
+  const captionBatchSteps = (request: StudioCloudCaptionRequest) =>
+    request.batch?.clips.map((clip, index) => {
+      const outcome = captionBatch?.outcomes[clip.clipId];
+      return {
+        label: `${index + 1}. ${clip.name}`,
+        value: outcome
+          ? $t(
+              outcome === 'sent'
+                ? 'frameleaf_studio_cloud_captions_batch_sent'
+                : 'frameleaf_studio_cloud_captions_batch_skipped',
+            )
+          : (captionBatch?.estimates[clip.clipId] ?? ''),
+        current: index === request.batch?.index,
+      };
+    });
 
   $effect(() => {
     if (cloudCaptionsOpen && cloudCaptions && !cloudCaptions.current()) {
@@ -1798,15 +1866,45 @@
 {#if cloudCaptions}
   {@const quote = cloudCaptions}
   {#key quote}
+    {@const batch = quote.request.batch}
     <CloudJobDialog
       bind:open={cloudCaptionsOpen}
-      title={$t('frameleaf_studio_cloud_captions_title')}
+      title={batch
+        ? $t('frameleaf_studio_cloud_captions_batch_title', {
+            values: { index: batch.index + 1, total: batch.clips.length },
+          })
+        : $t('frameleaf_studio_cloud_captions_title')}
       workName={$t('frameleaf_cloud_job_work_captions')}
       summary={quote.request.name}
       estimateWith={quote.estimate}
       canSubmit={quote.current}
-      onSubmitted={(job) => quote.resolve(job.operationId)}
-      onDismissed={() => quote.resolve(null)}
+      steps={captionBatchSteps(quote.request)}
+      cancelLabel={batch ? $t('frameleaf_studio_cloud_captions_batch_stop') : undefined}
+      onSkip={batch
+        ? () => {
+            quote.skipped = true;
+            if (captionBatch?.id === batch.id) {
+              captionBatch.outcomes[quote.request.clipId] = 'skipped';
+            }
+            cloudCaptionsOpen = false;
+          }
+        : undefined}
+      onSubmitted={(job) => {
+        quote.resolve(job.operationId);
+        if (batch) {
+          // The next clip's price follows; this job carries on in Activity.
+          if (captionBatch?.id === batch.id) {
+            captionBatch.outcomes[quote.request.clipId] = 'sent';
+          }
+          cloudCaptionsOpen = false;
+        }
+      }}
+      onDismissed={() => {
+        if (batch && !quote.skipped) {
+          stoppedCaptionBatches.add(batch.id);
+        }
+        quote.resolve(null);
+      }}
     />
   {/key}
 {/if}

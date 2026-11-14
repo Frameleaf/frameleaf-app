@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import type { StudioCloudCaptionJob, StudioCloudCaptionState } from '@frameleaf/host/cloud-captions'
 import type { SubtitleSegmentItem, TimelineItem, TimelineTrack, VideoItem } from '@/types/timeline'
 import { useItemsStore } from '@/features/timeline/stores/items-store'
-import { createCloudCaptions, cuesToSegments, existingLineCount } from '../src/cloud-captions'
+import {
+  cloudCaptionBatchRows,
+  createCloudCaptions,
+  cuesToSegments,
+  existingLineCount,
+} from '../src/cloud-captions'
 
 const toasts = vi.hoisted(() => {
   const toast = Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() })
@@ -241,5 +246,51 @@ describe('FL-1304 captions on Frameleaf Cloud', () => {
     ).start({ clipId: 'a', language: '' })
     expect(start).toHaveBeenCalledWith(expect.objectContaining({ clipId: 'a', language: 'auto' }))
     expect(read).not.toHaveBeenCalled()
+  })
+})
+
+describe('FL-1429 Cloud captions for several selected clips', () => {
+  it('lists selected clips in timeline order, captions a linked video once, and says why others are left out', () => {
+    const video = { ...clip('v', 300), linkedGroupId: 'g' }
+    const sound = { ...clip('s', 300), type: 'audio', linkedGroupId: 'g' } as unknown as TimelineItem
+    const title = { id: 't', type: 'text', trackId: 'v1', from: 0, durationInFrames: 60, label: 'Title' } as unknown as TimelineItem
+    const rows = cloudCaptionBatchRows([video, sound, title, clip('a', 0), clip('busy', 600)], ['v', 's', 't', 'a', 'busy'], fps, new Set(['busy']))
+    expect(rows.map((row) => [row.clipId, row.reason])).toEqual([
+      ['t', 'no-sound'],
+      ['a', null],
+      ['v', null],
+      ['busy', 'running'],
+    ])
+    expect(rows[1].seconds).toBe(10)
+  })
+
+  it('asks for each clip in turn with the batch, and follows every one that was confirmed', async () => {
+    seed([clip('a', 0), clip('b', 300), clip('c', 600)])
+    const asked: string[] = []
+    const start = vi.fn((request: { clipId: string }) => {
+      asked.push(request.clipId)
+      return Promise.resolve(request.clipId === 'b' ? null : { ...job(request.clipId), id: `job-${request.clipId}` })
+    })
+    const read = vi.fn((_id: string) => Promise.resolve({ status: 'cancelled', error: null, cues: [], anchor: null } as StudioCloudCaptionState))
+    await createCloudCaptions(
+      { start, read, pending: () => Promise.resolve([]), forget, ready: () => Promise.resolve(true) },
+      1,
+    ).startBatch(['c', 'a', 'b'], '')
+    expect(asked).toEqual(['a', 'b', 'c'])
+    const batch = (start.mock.calls[1][0] as { batch: { index: number; clips: unknown[] } }).batch
+    expect(batch.index).toBe(1)
+    expect(batch.clips).toHaveLength(3)
+    expect(start.mock.calls[0][0]).toEqual(expect.objectContaining({ language: 'auto' }))
+    expect(read.mock.calls.map(([id]) => id).sort()).toEqual(['job-a', 'job-c'])
+  })
+
+  it('sends a single clip without a batch', async () => {
+    seed([clip('a', 0)])
+    const start = vi.fn(() => Promise.resolve(null))
+    await createCloudCaptions(
+      { start, read: vi.fn(), pending: () => Promise.resolve([]), forget, ready: () => Promise.resolve(true) },
+      1,
+    ).startBatch(['a'], 'en')
+    expect(start).toHaveBeenCalledWith({ clipId: 'a', name: 'a', language: 'en' })
   })
 })
