@@ -3,6 +3,7 @@ package.path = 'frameleaf.lrplugin/?.lua;' .. package.path
 local Util = require('Util')
 
 local logged, passwords, prefs, opened, server
+local uuids = 0
 
 _G.LOC = function(s, ...)
   local args = { ... }
@@ -31,7 +32,7 @@ local sdk = {
     pcall = pcall,
     execute = function(cmd) return os.execute(cmd) == true and 0 or 0 end,
   },
-  LrUUID = { generateUUID = function() return string.format('%08x-aaaa-4bbb-8ccc-%012x', math.random(0, 2 ^ 31), math.random(0, 2 ^ 40)) end },
+  LrUUID = { generateUUID = function() uuids = uuids + 1; return string.format('%08x-aaaa-4bbb-8ccc-%012d', uuids, uuids) end },
   LrLogger = function()
     return { enable = function() end, warn = function(_, m) logged[#logged + 1] = m end }
   end,

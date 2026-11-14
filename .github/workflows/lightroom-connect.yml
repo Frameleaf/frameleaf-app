@@ -6,15 +6,13 @@ on:
       - integrations/lightroom/**
       - package.json
       - .github/workflows/lightroom-connect.yml
+  # Publishes the ZIP to the fixed `lightroom-plugin` prerelease when the plugin (or the Connect API it needs) changes on main.
+  push:
+    branches: [main]
+    paths:
+      - integrations/lightroom/**
+      - server/src/controllers/connect.controller.ts
   workflow_dispatch:
-    inputs:
-      release-tag:
-        description: 'Attach the plugin to this frameleaf-v<version> release (empty: test only)'
-        required: false
-  # Production publishes the release with GITHUB_TOKEN, which starts no `release` event; follow the run instead.
-  workflow_run:
-    workflows: [Deploy production]
-    types: [completed]
 permissions:
   contents: read
 concurrency:
@@ -22,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   plugin:
-    if: github.event_name != 'workflow_run'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -43,42 +41,38 @@ jobs:
         run: |
           integrations/lightroom/scripts/package.sh "$RUNNER_TEMP/lightroom"
           (cd "$RUNNER_TEMP/lightroom" && shasum -a 256 -c ./*.sha256 && unzip -l ./*.zip)
-  attach:
-    # Gives the docs a stable link: releases/latest/download/frameleaf-lightroom.zip
-    if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-      (github.event_name == 'workflow_dispatch' && inputs['release-tag'] != '')
+  publish:
+    # Stable download link for the docs: releases/download/lightroom-plugin/frameleaf-lightroom.zip
+    # A prerelease that is never "Latest"; Manager only offers frameleaf-v<version> releases.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
+    concurrency:
+      group: lightroom-plugin-publish
+      cancel-in-progress: false
     steps:
-      - name: Find the release
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REQUESTED: ${{ inputs['release-tag'] }}
-        run: |
-          tag="${REQUESTED:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)}"
-          [[ "$tag" =~ ^frameleaf-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Not a Frameleaf release: $tag"; exit 1; }
-          echo "tag=$tag" >>"$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ steps.release.outputs.tag }}
           persist-credentials: false
-      - name: Build and attach
+      - name: Build and publish
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
         run: |
-          # The plugin needs the Library's Connect API; releases without it get no plugin.
-          if [[ ! -f server/src/controllers/connect.controller.ts || ! -f integrations/lightroom/scripts/package.sh ]]; then
-            echo "$TAG has no Connect API or plugin; nothing to attach."
+          # The plugin needs the Library's Connect API; publish nothing until main has it.
+          if [[ ! -f server/src/controllers/connect.controller.ts ]]; then
+            echo "main has no Connect API yet; nothing to publish."
             exit 0
           fi
           out="$RUNNER_TEMP/lightroom"
           zip="$(integrations/lightroom/scripts/package.sh "$out")"
           cp "$zip" "$out/frameleaf-lightroom.zip"
           (cd "$out" && shasum -a 256 frameleaf-lightroom.zip >frameleaf-lightroom.zip.sha256)
-          gh release upload "$TAG" "$zip" "$zip.sha256" "$out/frameleaf-lightroom.zip" "$out/frameleaf-lightroom.zip.sha256" \
+          if ! gh release view lightroom-plugin --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create lightroom-plugin --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --prerelease --latest=false --title "Frameleaf for Lightroom Classic" \
+              --notes "Install guide: https://frameleaf.app/docs/using/lightroom/"
+          fi
+          gh release upload lightroom-plugin "$zip" "$zip.sha256" "$out/frameleaf-lightroom.zip" "$out/frameleaf-lightroom.zip.sha256" \
             --repo "$GITHUB_REPOSITORY" --clobber

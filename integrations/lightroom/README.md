@@ -2,7 +2,7 @@
 
 A publish service that sends Lightroom Classic collections to Frameleaf albums through Frameleaf Connect (`/api/connect`, OAuth with PKCE). Install the packaged ZIP and follow the [English guide](help/en.md) or the matching guide in `help/`. The plugin UI ships in English and the ten Frameleaf languages (`TranslatedStrings_*.txt`).
 
-Each Frameleaf release that includes the Connect API carries `frameleaf-lightroom.zip` (and a versioned copy with `.sha256`), attached after Deploy production by `.github/workflows/lightroom-connect.yml`; the website links `https://github.com/Frameleaf/frameleaf-app/releases/latest/download/frameleaf-lightroom.zip`.
+When the plugin (or the Connect API it needs) changes on main, `.github/workflows/lightroom-connect.yml` publishes `frameleaf-lightroom.zip`, a versioned copy and `.sha256` checksums to the fixed `lightroom-plugin` prerelease. It does nothing until main has the Connect API. The prerelease is never marked Latest, and Manager only offers `frameleaf-v<version>` releases. The website links `https://github.com/Frameleaf/frameleaf-app/releases/download/lightroom-plugin/frameleaf-lightroom.zip`.
 
 What it does:
 
