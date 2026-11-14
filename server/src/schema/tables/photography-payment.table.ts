@@ -1,5 +1,6 @@
 import { Column, ForeignKeyColumn, PrimaryGeneratedColumn, Table } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { PhotographyInvoiceTable } from 'src/schema/tables/photography-invoice.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /** FL-1041: a studio's payment link; the payer can't change its amount. */
@@ -23,6 +24,8 @@ export class PhotographyPaymentTable {
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', index: false }) ownerId!: string;
   @ForeignKeyColumn(() => PhotographyPaymentLinkTable, { onDelete: 'SET NULL', nullable: true, index: false })
   linkId!: string | null;
+  @ForeignKeyColumn(() => PhotographyInvoiceTable, { onDelete: 'SET NULL', nullable: true, index: false })
+  invoiceId!: string | null;
   @Column({ type: 'integer' }) amount!: number;
   @Column() currency!: string;
   @Column() payerEmail!: string;
