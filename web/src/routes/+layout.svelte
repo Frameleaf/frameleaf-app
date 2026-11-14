@@ -51,7 +51,9 @@
   import '$lib/frameleaf/tokens.css';
 
   trackSessionModals(modalManager);
-  // FL-1595: images authorized under the old access are asked for again (also on every page load).
+  // FL-1595: images authorized under the old access are asked for again. The first user load can
+  // land before this listener exists, so a page load reports a change of its own.
+  reportAccessChange();
   onLibraryAccessChange(reportAccessChange);
   // The legacy kit takes the brand: Frameleaf toasts and the one confirmation dialog.
   installFrameleafKit();
