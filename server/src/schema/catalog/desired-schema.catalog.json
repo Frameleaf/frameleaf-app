@@ -53851,18 +53851,6 @@
       ],
       "indexes": [
         {
-          "name": "photography_campaign_owner_idx",
-          "definition": "CREATE INDEX photography_campaign_owner_idx ON public.photography_campaign USING btree (\"ownerId\", \"createdAt\" DESC)",
-          "tableName": "photography_campaign",
-          "columnNames": [
-            "ownerId",
-            "createdAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "photography_campaign_due_idx",
           "definition": "CREATE INDEX photography_campaign_due_idx ON public.photography_campaign USING btree (\"scheduledFor\") WHERE (status = 'scheduled'::text)",
           "tableName": "photography_campaign",
@@ -53871,6 +53859,18 @@
           ],
           "using": "btree",
           "where": "(status = 'scheduled'::text)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "photography_campaign_owner_idx",
+          "definition": "CREATE INDEX photography_campaign_owner_idx ON public.photography_campaign USING btree (\"ownerId\", \"createdAt\" DESC)",
+          "tableName": "photography_campaign",
+          "columnNames": [
+            "ownerId",
+            "createdAt"
+          ],
+          "using": "btree",
           "unique": false,
           "synchronize": true
         }
@@ -53999,6 +53999,489 @@
             "contactId"
           ],
           "referenceTableName": "photography_contact",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "photography_contract_template",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "photography_contract_template",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "photography_contract_template",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "name",
+          "tableName": "photography_contract_template",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "body",
+          "tableName": "photography_contract_template",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "photography_contract_template",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "photography_contract_template",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "photography_contract_template_owner_idx",
+          "definition": "CREATE INDEX photography_contract_template_owner_idx ON public.photography_contract_template USING btree (\"ownerId\")",
+          "tableName": "photography_contract_template",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "photography_contract_template_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "photography_contract_template",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_contract_template_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "photography_contract_template",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "photography_contract",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "photography_contract",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "photography_contract",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "templateId",
+          "tableName": "photography_contract",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "name",
+          "tableName": "photography_contract",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "clientName",
+          "tableName": "photography_contract",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "clientEmail",
+          "tableName": "photography_contract",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "body",
+          "tableName": "photography_contract",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "documentSha256",
+          "tableName": "photography_contract",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "photography_contract",
+          "nullable": false,
+          "isArray": false,
+          "default": "'draft'::text",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "tokenHash",
+          "tableName": "photography_contract",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "tokenExpiresAt",
+          "tableName": "photography_contract",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "photography_contract",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "sentAt",
+          "tableName": "photography_contract",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "signedAt",
+          "tableName": "photography_contract",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "signerName",
+          "tableName": "photography_contract",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "signatureType",
+          "tableName": "photography_contract",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "signaturePng",
+          "tableName": "photography_contract",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "pdfPath",
+          "tableName": "photography_contract",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "finalPdfSha256",
+          "tableName": "photography_contract",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "photography_contract_owner_idx",
+          "definition": "CREATE INDEX photography_contract_owner_idx ON public.photography_contract USING btree (\"ownerId\", \"createdAt\" DESC)",
+          "tableName": "photography_contract",
+          "columnNames": [
+            "ownerId",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "photography_contract_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "photography_contract",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "photography_contract_tokenHash_key",
+          "definition": "UNIQUE (\"tokenHash\")",
+          "tableName": "photography_contract",
+          "columnNames": [
+            "tokenHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_contract_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "photography_contract",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_contract_templateId_fkey",
+          "definition": "FOREIGN KEY (\"templateId\") REFERENCES photography_contract_template(id) ON DELETE SET NULL",
+          "tableName": "photography_contract",
+          "columnNames": [
+            "templateId"
+          ],
+          "referenceTableName": "photography_contract_template",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "photography_contract_event",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "contractId",
+          "tableName": "photography_contract_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "seq",
+          "tableName": "photography_contract_event",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "type",
+          "tableName": "photography_contract_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "actor",
+          "tableName": "photography_contract_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "at",
+          "tableName": "photography_contract_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "ip",
+          "tableName": "photography_contract_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "userAgent",
+          "tableName": "photography_contract_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "data",
+          "tableName": "photography_contract_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "prevEventSha256",
+          "tableName": "photography_contract_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "sha256",
+          "tableName": "photography_contract_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "photography_contract_event_pkey",
+          "definition": "PRIMARY KEY (\"contractId\", seq)",
+          "tableName": "photography_contract_event",
+          "columnNames": [
+            "contractId",
+            "seq"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_contract_event_contractId_fkey",
+          "definition": "FOREIGN KEY (\"contractId\") REFERENCES photography_contract(id) ON DELETE CASCADE",
+          "tableName": "photography_contract_event",
+          "columnNames": [
+            "contractId"
+          ],
+          "referenceTableName": "photography_contract",
           "referenceColumnNames": [
             "id"
           ],
