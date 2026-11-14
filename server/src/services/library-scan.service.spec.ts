@@ -579,6 +579,7 @@ describe(LibraryScanService.name, () => {
         2,
         expect.any(Function),
         false,
+        LIBRARY_SCAN_LEASE_MS, // a first scan's batches get the scan's lease (FL-1590)
       );
       const accepted = await mocks.job.commitLibraryScanBatch.mock.results[0].value;
       expect(accepted.value).toHaveLength(1);
@@ -616,6 +617,14 @@ describe(LibraryScanService.name, () => {
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
       expect(mocks.asset.getExcludedExternalAssetIds).not.toHaveBeenCalled();
       expect(operations.complete).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives batches the queue lease once the library has been scanned before (FL-1590)', async () => {
+      mocks.library.get.mockResolvedValue({ ...library, refreshedAt: new Date() });
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/new.jpg']));
+      await sut.run(operationOf(), 'token');
+      expect(mocks.job.commitLibraryScanBatch).toHaveBeenCalled();
+      for (const call of mocks.job.commitLibraryScanBatch.mock.calls) expect(call[4]).toBeUndefined();
     });
 
     it('keeps a committed source when an asset notification fails, without replaying creation', async () => {

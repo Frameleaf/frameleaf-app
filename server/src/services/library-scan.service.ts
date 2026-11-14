@@ -994,6 +994,9 @@ export class LibraryScanService {
           return { value: outcome, assetIds: sourceIds, accepted: !!outcome && 'value' in outcome };
         },
         options.close ?? false,
+        // FL-1590: a library's first scan starts processing for everything it imports, so its batches commit while the
+        // server is at its busiest; give each one the scan's own lease instead of the queue's 60 seconds.
+        library.refreshedAt === null ? LIBRARY_SCAN_LEASE_MS : undefined,
       );
     } catch (error) {
       if (!(error instanceof LibraryBatchStopped)) throw error;

@@ -207,19 +207,34 @@ describe('library scan jobs', () => {
       buffering: false,
     };
 
-    const imported = await queueExecution.run(context, () =>
-      jobs.commitLibraryScanBatch(scan.identity, 1, async (tx) => {
-        await new Promise((resolve) => setTimeout(resolve, 1500)); // a batch outliving the lease it started with
-        const asset = mediumFactory.assetInsert({
-          ownerId: scan.ownerId,
-          libraryId: scan.identity.libraryId,
-          isExternal: true,
-        });
-        await tx.insertInto('asset').values(asset).execute();
-        return { value: [asset.id!], assetIds: [asset.id!], accepted: true };
-      }),
-    );
-    expect(imported).toHaveLength(1);
+    const batch = (leaseMs?: number) =>
+      queueExecution.run(context, () =>
+        jobs.commitLibraryScanBatch(
+          scan.identity,
+          1,
+          async (tx) => {
+            await new Promise((resolve) => setTimeout(resolve, 1500)); // a batch outliving the lease it started with
+            const asset = mediumFactory.assetInsert({
+              ownerId: scan.ownerId,
+              libraryId: scan.identity.libraryId,
+              isExternal: true,
+            });
+            await tx.insertInto('asset').values(asset).execute();
+            return { value: [asset.id!], assetIds: [asset.id!], accepted: true };
+          },
+          false,
+          leaseMs,
+        ),
+      );
+    expect(await batch()).toHaveLength(1);
+
+    // FL-1590: a first scan's batch may take as long as the lease it asks for, not just the queue's 60 seconds.
+    const expireSoon = () =>
+      sql`update job set "leaseExpiresAt" = now() + interval '1 second' where id = ${claim.id}::uuid`.execute(db);
+    await expireSoon();
+    await expect(batch(1000)).rejects.toThrow('Producer lost its claim');
+    await expireSoon();
+    expect(await batch(5000)).toHaveLength(1);
     expect(await store.complete(claim, [])).toBe(true);
   });
 });
