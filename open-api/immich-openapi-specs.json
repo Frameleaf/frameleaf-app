@@ -139741,14 +139741,7 @@
             "type": "string"
           },
           "status": {
-            "enum": [
-              "pending",
-              "paid",
-              "failed",
-              "expired",
-              "refunded"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/PhotographyPaymentStatus"
           }
         },
         "required": [
@@ -139797,13 +139790,7 @@
             "type": "integer"
           },
           "currency": {
-            "enum": [
-              "CAD",
-              "USD",
-              "EUR",
-              "GBP"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/PhotographyPaymentLinkCurrency"
           },
           "description": {
             "default": "",
@@ -139826,6 +139813,15 @@
           "title"
         ],
         "type": "object"
+      },
+      "PhotographyPaymentLinkCurrency": {
+        "enum": [
+          "CAD",
+          "USD",
+          "EUR",
+          "GBP"
+        ],
+        "type": "string"
       },
       "PhotographyPaymentLinkDto": {
         "properties": {
@@ -140009,13 +140005,7 @@
                   "type": "string"
                 },
                 "status": {
-                  "enum": [
-                    "paid",
-                    "failed",
-                    "expired",
-                    "refunded"
-                  ],
-                  "type": "string"
+                  "$ref": "#/components/schemas/PhotographyPaymentListStatus"
                 },
                 "title": {
                   "nullable": true,
@@ -140041,6 +140031,25 @@
           "payments"
         ],
         "type": "object"
+      },
+      "PhotographyPaymentListStatus": {
+        "enum": [
+          "paid",
+          "failed",
+          "expired",
+          "refunded"
+        ],
+        "type": "string"
+      },
+      "PhotographyPaymentStatus": {
+        "enum": [
+          "pending",
+          "paid",
+          "failed",
+          "expired",
+          "refunded"
+        ],
+        "type": "string"
       },
       "PhotographyPhotosDto": {
         "properties": {
