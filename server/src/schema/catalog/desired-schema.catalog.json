@@ -53851,18 +53851,6 @@
       ],
       "indexes": [
         {
-          "name": "photography_campaign_owner_idx",
-          "definition": "CREATE INDEX photography_campaign_owner_idx ON public.photography_campaign USING btree (\"ownerId\", \"createdAt\" DESC)",
-          "tableName": "photography_campaign",
-          "columnNames": [
-            "ownerId",
-            "createdAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "photography_campaign_due_idx",
           "definition": "CREATE INDEX photography_campaign_due_idx ON public.photography_campaign USING btree (\"scheduledFor\") WHERE (status = 'scheduled'::text)",
           "tableName": "photography_campaign",
@@ -53871,6 +53859,18 @@
           ],
           "using": "btree",
           "where": "(status = 'scheduled'::text)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "photography_campaign_owner_idx",
+          "definition": "CREATE INDEX photography_campaign_owner_idx ON public.photography_campaign USING btree (\"ownerId\", \"createdAt\" DESC)",
+          "tableName": "photography_campaign",
+          "columnNames": [
+            "ownerId",
+            "createdAt"
+          ],
+          "using": "btree",
           "unique": false,
           "synchronize": true
         }
@@ -54004,6 +54004,350 @@
           ],
           "onUpdate": "NO ACTION",
           "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "photography_payment_link",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "photography_payment_link",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "photography_payment_link",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "slug",
+          "tableName": "photography_payment_link",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "title",
+          "tableName": "photography_payment_link",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "description",
+          "tableName": "photography_payment_link",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::text",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "amount",
+          "tableName": "photography_payment_link",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "currency",
+          "tableName": "photography_payment_link",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "reusable",
+          "tableName": "photography_payment_link",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "active",
+          "tableName": "photography_payment_link",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "photography_payment_link",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "photography_payment_link_owner_idx",
+          "definition": "CREATE INDEX photography_payment_link_owner_idx ON public.photography_payment_link USING btree (\"ownerId\", \"createdAt\" DESC)",
+          "tableName": "photography_payment_link",
+          "columnNames": [
+            "ownerId",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "photography_payment_link_amount_check",
+          "definition": "CHECK ((amount > 0))",
+          "tableName": "photography_payment_link",
+          "expression": "((amount > 0))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "photography_payment_link_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "photography_payment_link",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "photography_payment_link_slug_key",
+          "definition": "UNIQUE (slug)",
+          "tableName": "photography_payment_link",
+          "columnNames": [
+            "slug"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_payment_link_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "photography_payment_link",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "photography_payment",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "photography_payment",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "photography_payment",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "linkId",
+          "tableName": "photography_payment",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "amount",
+          "tableName": "photography_payment",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "currency",
+          "tableName": "photography_payment",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "payerEmail",
+          "tableName": "photography_payment",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "checkoutId",
+          "tableName": "photography_payment",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "providerRef",
+          "tableName": "photography_payment",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "photography_payment",
+          "nullable": false,
+          "isArray": false,
+          "default": "'pending'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "photography_payment",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "paidAt",
+          "tableName": "photography_payment",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "photography_payment_owner_idx",
+          "definition": "CREATE INDEX photography_payment_owner_idx ON public.photography_payment USING btree (\"ownerId\", \"createdAt\" DESC)",
+          "tableName": "photography_payment",
+          "columnNames": [
+            "ownerId",
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "photography_payment_link_id_idx",
+          "definition": "CREATE INDEX photography_payment_link_id_idx ON public.photography_payment USING btree (\"linkId\")",
+          "tableName": "photography_payment",
+          "columnNames": [
+            "linkId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "photography_payment_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "photography_payment",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_payment_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "photography_payment",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_payment_linkId_fkey",
+          "definition": "FOREIGN KEY (\"linkId\") REFERENCES photography_payment_link(id) ON DELETE SET NULL",
+          "tableName": "photography_payment",
+          "columnNames": [
+            "linkId"
+          ],
+          "referenceTableName": "photography_payment_link",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "SET NULL",
           "synchronize": true
         }
       ],
