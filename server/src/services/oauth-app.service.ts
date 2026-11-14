@@ -35,6 +35,7 @@ import {
   isConnectResource,
 } from 'src/utils/connect-policy.js';
 import { remoteEntitlement } from 'src/utils/frameleaf-remote-access.js';
+import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
 import {
   ASSISTANT_MCP_PATH,
   MCP_PATH,
@@ -396,8 +397,12 @@ export class OAuthAppService extends BaseService {
     };
   }
 
-  /** RFC 9728 protected resource metadata for this server's API (or a path under it, such as /api/mcp). */
-  getProtectedResourceMetadata(issuer: string, path: string) {
+  /**
+   * RFC 9728 protected resource metadata for this server's API (or a path under it, such as /api/mcp).
+   * Connect also publishes `frameleaf_server_id`, the same ID as its capabilities' `server.id`, so a
+   * client can confirm the Library it pinned before it sends any token (FL-1521).
+   */
+  async getProtectedResourceMetadata(issuer: string, path: string) {
     return {
       resource: `${issuer}${path}`,
       authorization_servers: [issuer],
@@ -413,6 +418,9 @@ export class OAuthAppService extends BaseService {
               ),
       bearer_methods_supported: ['header'],
       resource_name: 'Frameleaf',
+      ...(path === CONNECT_PATH && {
+        frameleaf_server_id: await stableServerId({ systemMetadataRepository: this.systemMetadataRepository }),
+      }),
     };
   }
 
