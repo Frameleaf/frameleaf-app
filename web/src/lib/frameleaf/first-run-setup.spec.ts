@@ -209,6 +209,19 @@ describe('first-run setup state (FL-176)', () => {
       const old = parseSetup({ version: 1, flow: 'new', step: 'sign-in-choice', reached: 1, choices: {} }, 'new');
       expect(old?.step).toBe(0);
     });
+
+    it('never resumes a signed-out browser past the administrator form from a saved copy', () => {
+      // a copy left by an earlier install at the same address, where the admin was created
+      const stale = { ...createSetup('new'), step: 4, reached: 4 };
+      stale.choices = { ...stale.choices, accountCreated: true, adminName: 'Old', adminEmail: 'old@example.test' };
+      const resumed = resumeSetup('new', { local: stale }, false);
+      expect(resumed.choices.accountCreated).toBe(false);
+      expect(resumed.step).toBe(indexOf('new', 'account'));
+      // the same for the existing-library sign-in gate
+      const gate = { ...createSetup('existing'), step: 3, reached: 3 };
+      gate.choices = { ...gate.choices, signedIn: true };
+      expect(resumeSetup('existing', { local: gate }, false)).toMatchObject({ step: 0, choices: { signedIn: false } });
+    });
   });
 
   describe('applying choices', () => {
