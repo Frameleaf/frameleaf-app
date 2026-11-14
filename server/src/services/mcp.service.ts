@@ -80,9 +80,11 @@ function tool<T extends z.ZodObject>(
   schema: T,
   execute: (args: z.output<T>) => Promise<object>,
   annotations?: ToolAnnotations,
+  title?: string,
 ) {
   return {
     description,
+    title,
     scope,
     annotations,
     inputSchema: { ...z.toJSONSchema(schema), type: 'object' as const },
@@ -124,8 +126,9 @@ export class McpService extends BaseService {
         ? this.getAssistantTools(auth, new URL(app.resource).origin)
         : this.getTools(auth, previewUrl);
     server.setRequestHandler(ListToolsRequestSchema, () => ({
-      tools: Object.entries(tools).map(([name, { description, inputSchema, annotations }]) => ({
+      tools: Object.entries(tools).map(([name, { description, inputSchema, annotations, title }]) => ({
         name,
+        ...(title && { title }),
         description,
         inputSchema,
         annotations,
@@ -235,6 +238,7 @@ export class McpService extends BaseService {
             .map((asset) => assetResult(asset));
         },
         assistantAnnotations,
+        'Search Library',
       ),
       list_albums: tool(
         'List albums you can read.',
@@ -246,6 +250,7 @@ export class McpService extends BaseService {
             .slice(0, limit)
             .map((album) => albumResult(album)),
         assistantAnnotations,
+        'List Albums',
       ),
       get_album: tool(
         'Read an album and list its visible photos and videos.',
@@ -270,6 +275,7 @@ export class McpService extends BaseService {
           };
         },
         assistantAnnotations,
+        'Get Album',
       ),
     };
   }

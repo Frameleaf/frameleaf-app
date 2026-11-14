@@ -165,7 +165,12 @@ test('the stdio connector advertises only read-only tools before sign-in', async
       tools.map(({ name }) => name),
       ['search_library', 'list_albums', 'get_album'],
     );
+    assert.deepEqual(
+      tools.map(({ title }) => title),
+      [message('searchTitle'), message('listTitle'), message('albumTitle')],
+    );
     assert.ok(tools.every(({ annotations }) => annotations.readOnlyHint));
+    assert.ok(tools.every(({ annotations }) => annotations.destructiveHint === false));
     assert.equal((await client.callTool({ name: 'create_album' })).isError, true);
   } finally {
     await client.close();
@@ -269,6 +274,8 @@ test('all Library languages have the same messages and the English manifest matc
   assert.equal(manifest.description, messages.en.extensionDescription);
   assert.equal(manifest.user_config.library_url.title, messages.en.libraryAddress);
   assert.equal(manifest.user_config.library_url.description, messages.en.libraryAddressHelp);
+  // MCPB 0.4 allows only name and description here; MCP tools/list carries titles.
+  assert.ok(manifest.tools.every((tool) => Object.keys(tool).sort().join(',') === 'description,name'));
   assert.deepEqual(
     manifest.tools.map(({ description }) => description),
     [messages.en.searchDescription, messages.en.listDescription, messages.en.albumDescription],
