@@ -120,7 +120,7 @@ for template in templates:
     assert.equal(hexos.app_values.privileged, undefined);
     assert.deepEqual(hexos.app_values.capabilities.add, ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']);
     assert.deepEqual(hexos.app_values.labels, [{ key: 'app.frameleaf.manager.role', value: 'controller' }]);
-    assert.deepEqual(hexos.app_values.ports.map(port => [port.port_number, port.container_port]), [[2282, 9443]]);
+    assert.deepEqual(hexos.app_values.ports.map(port => [port.port_number, port.container_port]), [['$PORT(2282)', 9443]]);
     assert.equal(hexos.requirements.ports[0], 2282);
     const env = Object.fromEntries(hexos.app_values.envs.map(({ name, value }) => [name, value]));
     assert.equal(env.MANAGER_BIND_ADDRESS, '0.0.0.0');

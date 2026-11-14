@@ -1,0 +1,50 @@
+{
+	"name": "n8n-nodes-frameleaf",
+	"version": "0.1.0",
+	"description": "Connect selected Frameleaf albums to self-hosted n8n workflows",
+	"license": "MIT",
+	"keywords": [
+		"n8n-community-node-package",
+		"frameleaf"
+	],
+	"author": {
+		"name": "Frameleaf",
+		"email": "support@frameleaf.app"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Frameleaf/frameleaf-app.git",
+		"directory": "integrations/n8n-nodes-frameleaf"
+	},
+	"files": [
+		"dist",
+		"examples"
+	],
+	"scripts": {
+		"build": "n8n-node build",
+		"lint": "n8n-node lint",
+		"test": "node --test test/*.test.cjs",
+		"prepublishOnly": "npm run build && npm test && npm run lint",
+		"test:platform": "sh test/platform/run.sh"
+	},
+	"n8n": {
+		"n8nNodesApiVersion": 1,
+		"credentials": [
+			"dist/credentials/FrameleafOAuth2Api.credentials.js"
+		],
+		"nodes": [
+			"dist/nodes/Frameleaf/Frameleaf.node.js"
+		],
+		"strict": true
+	},
+	"devDependencies": {
+		"@n8n/node-cli": "0.56.3",
+		"@types/node": "22.19.15",
+		"n8n-workflow": "2.47.1",
+		"typescript": "5.9.3"
+	},
+	"peerDependencies": {
+		"n8n-workflow": "*"
+	},
+	"homepage": "https://frameleaf.app"
+}

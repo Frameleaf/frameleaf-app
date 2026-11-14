@@ -1,0 +1,41 @@
+name: n8n Connect
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - integrations/n8n-nodes-frameleaf/**
+      - integrations/help/n8n/**
+      - .github/workflows/n8n-connect.yml
+      - .github/workflows/n8n-connect-publish.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    if: github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: integrations/n8n-nodes-frameleaf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: integrations/n8n-nodes-frameleaf/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run lint
+      - run: npm run test:platform
+      - run: npm pack --dry-run
+      - name: Check repository hygiene
+        working-directory: .
+        run: bash .github/check-repository-hygiene.sh

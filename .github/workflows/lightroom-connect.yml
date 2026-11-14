@@ -1,0 +1,78 @@
+name: Lightroom Connect
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - integrations/lightroom/**
+      - package.json
+      - .github/workflows/lightroom-connect.yml
+  # Publishes the ZIP to the fixed `lightroom-plugin` prerelease when the plugin (or the Connect API it needs) changes on main.
+  push:
+    branches: [main]
+    paths:
+      - integrations/lightroom/**
+      - server/src/controllers/connect.controller.ts
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lightroom-connect-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  plugin:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install Lua 5.1 (Lightroom's runtime) and busted
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.1 liblua5.1-0-dev luarocks zip
+          sudo luarocks --lua-version=5.1 install busted
+      - name: Syntax
+        run: for f in integrations/lightroom/frameleaf.lrplugin/*.lua integrations/lightroom/spec/*.lua; do luac5.1 -p "$f"; done
+      - name: Unit and catalogue tests
+        working-directory: integrations/lightroom
+        run: busted --lua=lua5.1 spec
+      - name: Package
+        run: |
+          integrations/lightroom/scripts/package.sh "$RUNNER_TEMP/lightroom"
+          (cd "$RUNNER_TEMP/lightroom" && shasum -a 256 -c ./*.sha256 && unzip -l ./*.zip)
+  publish:
+    # Stable download link for the docs: releases/download/lightroom-plugin/frameleaf-lightroom.zip
+    # A prerelease that is never "Latest"; Manager only offers frameleaf-v<version> releases.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: lightroom-plugin-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The plugin needs the Library's Connect API; publish nothing until main has it.
+          if [[ ! -f server/src/controllers/connect.controller.ts ]]; then
+            echo "main has no Connect API yet; nothing to publish."
+            exit 0
+          fi
+          out="$RUNNER_TEMP/lightroom"
+          zip="$(integrations/lightroom/scripts/package.sh "$out")"
+          cp "$zip" "$out/frameleaf-lightroom.zip"
+          (cd "$out" && shasum -a 256 frameleaf-lightroom.zip >frameleaf-lightroom.zip.sha256)
+          if ! gh release view lightroom-plugin --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create lightroom-plugin --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --prerelease --latest=false --title "Frameleaf for Lightroom Classic" \
+              --notes "Install guide: https://frameleaf.app/docs/using/lightroom/"
+          fi
+          gh release upload lightroom-plugin "$zip" "$zip.sha256" "$out/frameleaf-lightroom.zip" "$out/frameleaf-lightroom.zip.sha256" \
+            --repo "$GITHUB_REPOSITORY" --clobber

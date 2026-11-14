@@ -74,15 +74,16 @@ export class PhotographySelfieService extends BaseService {
         const candidate = firstCandidate(
           route.filter(({ source }) => !homeOnly || source !== MlProcessingSource.Cloud),
         );
-        // The queued Desktop pool and Cloud library batch protocols cannot carry ephemeral guest data.
-        if (!candidate || candidate.desktopPool || candidate.source === MlProcessingSource.Cloud)
+        // Frameleaf Cloud runs library batches only; it has no request-scoped inference for a guest's selfie.
+        if (!candidate || candidate.source === MlProcessingSource.Cloud)
           throw new Error('Ephemeral face inference is unavailable for this destination');
         const selection = await this.selectMlDestination({
           workload: MlWorkload.Face,
           destinationId: candidate.destinationId,
           ownerId,
           homeOnly,
-          desktopPool: 'skip',
+          desktopPool: candidate.desktopPool ? 'only' : 'skip',
+          guestFace: true,
         });
         const result = await this.machineLearningRepository.detectFaces(
           selection,

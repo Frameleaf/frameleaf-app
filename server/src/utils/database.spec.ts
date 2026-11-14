@@ -67,6 +67,22 @@ describe(boundPoolClose.name, () => {
 describe('desktop inference database diagnostics', () => {
   afterEach(() => vi.restoreAllMocks());
   it.each([
+    ...[
+      'connect_receipt',
+      'connect_provenance',
+      'connect_rendition_ticket',
+      'connect_event',
+      'connect_event_stream',
+      'connect_event_cursor',
+      'oauth_grant',
+      'oauth_client',
+      'oauth_authorization_code',
+      'oauth_spent_refresh_token',
+      'asset_upload_resource',
+      'asset_upload_part',
+    ].map((table) => `insert into "${table}" values ($1)`),
+    'SELECT tokenHash FROM public.connect_rendition_ticket WHERE tokenHash=$1',
+    'SELECT cursorHash FROM public.connect_event_cursor WHERE cursorHash=$1',
     ...['desktop_ml_task', 'desktop_ml_attempt', 'desktop_worker_session', 'desktop_worker_challenge'].map(
       (table) => `insert into "${table}" values ($1)`,
     ),

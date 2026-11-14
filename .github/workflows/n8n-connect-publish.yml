@@ -1,0 +1,58 @@
+name: Publish n8n Connect
+
+# Run only after separate release authorization and npm trusted-publisher setup.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Authorized n8n-nodes-frameleaf-vX.Y.Z tag on the exact current main
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: integrations/n8n-nodes-frameleaf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify authorized release tag
+        working-directory: .
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^n8n-nodes-frameleaf-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          candidate=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
+          test "$candidate" = "$GITHUB_SHA"
+          test "$candidate" = "$(git rev-parse origin/main)"
+          version=$(node -p "require('./integrations/n8n-nodes-frameleaf/package.json').version")
+          test "$RELEASE_TAG" = "n8n-nodes-frameleaf-v$version"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: integrations/n8n-nodes-frameleaf/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run lint
+      - run: npm run test:platform
+      - name: Check repository hygiene
+        working-directory: .
+        run: bash .github/check-repository-hygiene.sh
+      - name: Publish with provenance through npm trusted publishing
+        run: npm publish --provenance --access public

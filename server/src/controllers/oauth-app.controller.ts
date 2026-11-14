@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Options,
   Param,
+  Patch,
   Post,
   Query,
   Redirect,
@@ -19,42 +20,26 @@ import type { Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  OAuthAppAccessPolicyDto,
+  OAuthAppAccessPolicyResponseDto,
   OAuthAppAdminClientDto,
   OAuthAppAuthorizeDto,
   OAuthAppAuthorizeResponseDto,
   OAuthAppAuthorizeStartDto,
   OAuthAppAuthorizeStartResponseDto,
+  OAuthAppCreateClientDto,
+  OAuthAppCreateClientResponseDto,
   OAuthAppGrantDto,
 } from 'src/dtos/oauth-app.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
-import { requestHasTrustedTls, requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
-import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
 import { ASSISTANT_MCP_PATH, checkResource, isAssistantResource } from 'src/utils/oauth-apps.js';
+import { oauthIssuer } from 'src/utils/oauth-issuer.js';
 import { UUIDParamDto } from 'src/validation.js';
 
-const HOST =
-  /^(?:[a-z\d](?:[a-z\d-]{0,62}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,62}[a-z\d])?)*|\[[\da-f:.]+\])(?::\d{1,5})?$/i;
-
-/**
- * FL-803: the issuer, built from the address the request used, because an app checks that the
- * metadata it found names the server it asked (RFC 8414 §3.3). The Host header is checked for shape
- * only; it can change no one's response but the requester's own, and every token, code and return
- * address is checked on its own. Remote access (relay or direct) is always https.
- */
-export const oauthIssuer = (request: Request, trustedTransportOnly = false) => {
-  const host = request.headers.host ?? '';
-  const safeHost = HOST.test(host) ? host.toLowerCase() : 'localhost';
-  const forwardedProto = request.headers['x-forwarded-proto'];
-  const https = trustedTransportOnly
-    ? requestHasTrustedTls(request)
-    : request.secure ||
-      isRemoteVia(requestVia(request)) ||
-      (typeof forwardedProto === 'string' && forwardedProto.split(',', 1)[0].trim() === 'https');
-  return `${https ? 'https' : 'http'}://${safeHost}`;
-};
+export { oauthIssuer } from 'src/utils/oauth-issuer.js';
 
 /** The protocol endpoints are called by apps from anywhere; they never read cookies, so any origin may. */
 const allowAnyOrigin = (res: Response) => {
@@ -177,6 +162,22 @@ export class OAuthAppController {
     return this.service.register(body ?? {});
   }
 
+  @Patch('grants/:id/access-policy')
+  @Header('Cache-Control', 'no-store')
+  @Authenticated({ permission: false })
+  @Endpoint({
+    history: new HistoryBuilder().added('v1.2.21'),
+    operationId: 'narrowOAuthAppAccessPolicy',
+    summary: 'Reduce a connected app’s access',
+  })
+  narrowAccessPolicy(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: OAuthAppAccessPolicyDto,
+  ): Promise<OAuthAppAccessPolicyResponseDto> {
+    return this.service.narrowAccessPolicy(auth, id, dto);
+  }
+
   @Get('grants')
   @Authenticated({ permission: Permission.SessionRead })
   @Endpoint({
@@ -221,6 +222,17 @@ export class OAuthAppAdminController {
   })
   getClients(): Promise<OAuthAppAdminClientDto[]> {
     return this.service.getClients();
+  }
+
+  @Post()
+  @Authenticated({ admin: true, permission: false })
+  @Endpoint({
+    history: new HistoryBuilder().added('v1.2.21'),
+    operationId: 'createOAuthAppClient',
+    summary: 'Register a public app client',
+  })
+  createClient(@Auth() auth: AuthDto, @Body() dto: OAuthAppCreateClientDto): Promise<OAuthAppCreateClientResponseDto> {
+    return this.service.createClient(auth, dto);
   }
 
   @Delete(':id')
