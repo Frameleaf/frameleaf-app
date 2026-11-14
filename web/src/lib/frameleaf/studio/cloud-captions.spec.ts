@@ -41,6 +41,37 @@ describe('Studio captions on Frameleaf Cloud', () => {
     expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.readCloudCaptions([ID])).toBe(true);
   });
 
+  it('accepts a clip of a batch only where the batch names it (FL-1429)', () => {
+    const clips = [
+      { clipId: 'clip-1', name: 'Lake morning.mov' },
+      { clipId: 'clip-2', name: 'Forest trail.mov' },
+    ];
+    const batched = { ...request, batch: { id: 'batch-1', index: 0, clips } };
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.startCloudCaptions([batched])).toBe(true);
+    expect(isStudioCloudCaptionRequest({ ...batched, batch: { ...batched.batch, index: 1 } })).toBe(false);
+    expect(isStudioCloudCaptionRequest({ ...batched, batch: { ...batched.batch, index: 2 } })).toBe(false);
+    expect(isStudioCloudCaptionRequest({ ...batched, batch: { ...batched.batch, clips: [clips[0]] } })).toBe(false);
+    expect(isStudioCloudCaptionRequest({ ...batched, batch: { ...batched.batch, clips: [clips[0], clips[0]] } })).toBe(
+      false,
+    );
+    expect(isStudioCloudCaptionRequest({ ...batched, batch: { ...batched.batch, id: '../x' } })).toBe(false);
+  });
+
+  it('remembers a batched job as its one clip', async () => {
+    const storage = memory();
+    const services = make({ storage });
+    const batch = {
+      id: 'batch-1',
+      index: 0,
+      clips: [
+        { clipId: 'clip-1', name: 'Lake morning.mov' },
+        { clipId: 'clip-2', name: 'Forest trail.mov' },
+      ],
+    };
+    await expect(services.startCloudCaptions({ ...request, batch })).resolves.toEqual({ ...request, id: ID });
+    await expect(make({ storage }).pendingCloudCaptions()).resolves.toEqual([{ ...request, id: ID }]);
+  });
+
   it('saves before it prices, because the server prices the head revision', async () => {
     const order: string[] = [];
     const services = make({

@@ -122,6 +122,7 @@ import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js
 import { PhotographyBookingRepository } from 'src/repositories/photography-booking.repository.js';
 import { PhotographyCampaignRepository } from 'src/repositories/photography-campaign.repository.js';
 import { PhotographyContractRepository } from 'src/repositories/photography-contract.repository.js';
+import { PhotographyInvoiceRepository } from 'src/repositories/photography-invoice.repository.js';
 import { PhotographyPaymentRepository } from 'src/repositories/photography-payment.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
@@ -175,6 +176,7 @@ export const repositories = [
   PhotographyPaymentRepository,
   PhotographyBookingRepository,
   PhotographyContractRepository,
+  PhotographyInvoiceRepository,
   MediaDownloaderRepository,
   MediaSessionRepository,
   MediaImportRepository,

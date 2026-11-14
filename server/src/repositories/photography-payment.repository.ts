@@ -80,8 +80,10 @@ export class PhotographyPaymentRepository {
     return rows[0].n;
   }
   async payments(ownerId: string) {
-    const { rows } = await sql<PaymentRow & { title: string | null }>`SELECT p.*, l.title FROM photography_payment p
+    const { rows } = await sql<PaymentRow & { title: string | null }>`SELECT p.*,
+        coalesce(l.title, 'CL-' || lpad(i.number::text, 4, '0')) AS title FROM photography_payment p
       LEFT JOIN photography_payment_link l ON l.id=p."linkId"
+      LEFT JOIN photography_invoice i ON i.id=p."invoiceId"
       WHERE p."ownerId"=${ownerId}::uuid AND p.status<>'pending' ORDER BY p."createdAt" DESC LIMIT 500`.execute(
       this.db,
     );

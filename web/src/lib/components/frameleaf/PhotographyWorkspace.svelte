@@ -50,6 +50,7 @@
     mdiImport,
     mdiEmailOutline,
     mdiFileDocumentOutline,
+    mdiReceiptTextOutline,
     mdiFolderDownloadOutline,
     mdiHeartOutline,
     mdiImageEditOutline,
@@ -71,6 +72,7 @@
   import PhotographyCampaigns from '$lib/components/frameleaf/PhotographyCampaigns.svelte';
   import PhotographyPaymentLinks from '$lib/components/frameleaf/PhotographyPaymentLinks.svelte';
   import PhotographyContracts from '$lib/components/frameleaf/PhotographyContracts.svelte';
+  import PhotographyInvoices from '$lib/components/frameleaf/PhotographyInvoices.svelte';
   import PhotographyPayments from '$lib/components/frameleaf/PhotographyPayments.svelte';
   import PhotographyStyle from '$lib/components/frameleaf/PhotographyStyle.svelte';
   import PhotographyBranding from '$lib/components/frameleaf/PhotographyBranding.svelte';
@@ -121,6 +123,7 @@
   type ShootSection = Exclude<ShootTab, 'photos'>;
   type Section =
     | 'contracts'
+    | 'invoices'
     | 'campaigns'
     | 'payment-links'
     | 'payments'
@@ -357,28 +360,30 @@
   const title = $derived(
     section === 'contracts'
       ? $t('frameleaf_clients_contract_title')
-      : section === 'campaigns'
-        ? $t('campaign_title')
-        : section === 'payments'
-          ? $t('frameleaf_clients_payments')
-          : section === 'payment-links'
-            ? $t('frameleaf_clients_payment_links')
-            : section === 'settings'
-              ? $t('settings')
-              : section === 'branding'
-                ? $t('frameleaf_photography_branding')
-                : section === 'watermarks'
-                  ? $t('frameleaf_photography_watermarks')
-                  : section === 'website'
-                    ? $t('frameleaf_photography_website')
-                    : section === 'publishing'
-                      ? $t('frameleaf_photography_publishing')
-                      : isShootSection(section)
-                        ? $t(shootSectionKeys[section])
-                        : (active?.name ?? $t('frameleaf_photography_shoots')),
+      : section === 'invoices'
+        ? $t('frameleaf_clients_invoice_title')
+        : section === 'campaigns'
+          ? $t('campaign_title')
+          : section === 'payments'
+            ? $t('frameleaf_clients_payments')
+            : section === 'payment-links'
+              ? $t('frameleaf_clients_payment_links')
+              : section === 'settings'
+                ? $t('settings')
+                : section === 'branding'
+                  ? $t('frameleaf_photography_branding')
+                  : section === 'watermarks'
+                    ? $t('frameleaf_photography_watermarks')
+                    : section === 'website'
+                      ? $t('frameleaf_photography_website')
+                      : section === 'publishing'
+                        ? $t('frameleaf_photography_publishing')
+                        : isShootSection(section)
+                          ? $t(shootSectionKeys[section])
+                          : (active?.name ?? $t('frameleaf_photography_shoots')),
   );
   const subtitle = $derived(
-    (['settings', 'campaigns', 'payments', 'contracts', 'payment-links'] as Section[]).includes(section)
+    (['settings', 'campaigns', 'payments', 'contracts', 'invoices', 'payment-links'] as Section[]).includes(section)
       ? ''
       : section === 'branding'
         ? $t('frameleaf_photography_branding_lead')
@@ -970,7 +975,7 @@
         {/each}
       {/if}
       <p class="phw-rail-heading">{$t('frameleaf_photography_studio_heading')}</p>
-      {#each [['contracts', $t('frameleaf_clients_contract_title'), mdiFileDocumentOutline], ['campaigns', $t('campaign_title'), mdiEmailOutline], ['payment-links', $t('frameleaf_clients_payment_links'), mdiLinkVariant], ['payments', $t('frameleaf_clients_payments'), mdiCreditCardOutline], ['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
+      {#each [['contracts', $t('frameleaf_clients_contract_title'), mdiFileDocumentOutline], ['invoices', $t('frameleaf_clients_invoice_title'), mdiReceiptTextOutline], ['campaigns', $t('campaign_title'), mdiEmailOutline], ['payment-links', $t('frameleaf_clients_payment_links'), mdiLinkVariant], ['payments', $t('frameleaf_clients_payments'), mdiCreditCardOutline], ['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
         <button
           type="button"
           aria-current={section === id ? 'page' : undefined}
@@ -1062,6 +1067,8 @@
         />
       {:else if section === 'contracts'}
         <PhotographyContracts />
+      {:else if section === 'invoices'}
+        <PhotographyInvoices />
       {:else if section === 'campaigns'}
         <PhotographyCampaigns shoots={workspace.shoots} />
       {:else if section === 'payments'}

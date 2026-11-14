@@ -132,5 +132,20 @@
   "contract_pdf_event_consented": "Agreed to sign electronically",
   "contract_pdf_event_signed": "Signed",
   "contract_pdf_event_finalized": "Signed copy sealed",
-  "contract_pdf_event_voided": "Voided"
+  "contract_pdf_event_voided": "Voided",
+  "invoice_email_subject": "{studio} sent you invoice {number}",
+  "invoice_email_body": "{amount} is due by {date}.",
+  "invoice_email_button": "View invoice",
+  "invoice_reminder_subject": "Reminder: invoice {number} from {studio}",
+  "invoice_reminder_body": "{amount} is due by {date}.",
+  "invoice_reminder_overdue": "{amount} was due on {date}.",
+  "invoice_pdf_title": "Invoice {number}",
+  "invoice_pdf_prepared_for": "Prepared for {name}",
+  "invoice_pdf_subtotal": "Subtotal",
+  "invoice_pdf_tax": "Tax ({rate}%)",
+  "invoice_pdf_total": "Total",
+  "invoice_pdf_paid": "Paid",
+  "invoice_pdf_balance": "Balance due",
+  "invoice_pdf_schedule": "Payment schedule",
+  "invoice_pdf_due": "Due {date}"
 }

@@ -8074,6 +8074,7 @@ export type ValidateAccessTokenResponseDto = {
 };
 export type BestPhotoScoreDto = {
     aestheticScore: number | null;
+    aestheticScoreVersion: number;
     bestFrameTimestampMs: number | null;
     computedAt: string;
     diversityScore: number | null;
@@ -14397,6 +14398,119 @@ export type PhotographyZipResponseDto = {
     id: string;
     status: Status6;
     url: string;
+};
+export type PhotographyInvoiceListDto = {
+    items: {
+        clientEmail: string;
+        clientName: string;
+        createdAt: string;
+        currency: string;
+        id: string;
+        label: string;
+        lines: {
+            description: string;
+            quantity: number;
+            unitPrice: number;
+        }[];
+        "number": number;
+        overdue: boolean;
+        paid: number;
+        reminders: boolean;
+        schedule: {
+            amount: number;
+            dueOn: string;
+        }[];
+        sentAt: string | null;
+        status: PhotographyInvoiceStatus;
+        subtotal: number;
+        tax: number;
+        taxBasisPoints: number;
+        total: number;
+    }[];
+    mailReady: boolean;
+    paymentsReady: boolean;
+};
+export type PhotographyInvoiceSaveDto = {
+    balanceDue: string;
+    clientEmail: string;
+    clientName: string;
+    currency: PhotographyInvoiceCurrency;
+    deposit: number;
+    depositDue: string | null;
+    lines: {
+        description: string;
+        quantity: number;
+        unitPrice: number;
+    }[];
+    reminders: boolean;
+    taxBasisPoints: number;
+};
+export type PhotographyInvoiceDto = {
+    clientEmail: string;
+    clientName: string;
+    createdAt: string;
+    currency: string;
+    id: string;
+    label: string;
+    lines: {
+        description: string;
+        quantity: number;
+        unitPrice: number;
+    }[];
+    "number": number;
+    overdue: boolean;
+    paid: number;
+    reminders: boolean;
+    schedule: {
+        amount: number;
+        dueOn: string;
+    }[];
+    sentAt: string | null;
+    status: PhotographyInvoiceStatus;
+    subtotal: number;
+    tax: number;
+    taxBasisPoints: number;
+    total: number;
+};
+export type PhotographyPublicInvoiceDto = {
+    clientName: string;
+    currency: string;
+    label: string;
+    lines: {
+        description: string;
+        quantity: number;
+        unitPrice: number;
+    }[];
+    next: {
+        amount: number;
+        dueOn: string;
+    } | null;
+    paid: number;
+    payOnline: boolean;
+    schedule: {
+        amount: number;
+        dueOn: string;
+    }[];
+    status: PhotographyInvoiceStatus;
+    studio: {
+        color: string;
+        email: string;
+        name: string;
+    };
+    subtotal: number;
+    tax: number;
+    taxBasisPoints: number;
+    total: number;
+};
+export type PhotographyInvoiceCheckoutDto = {
+    paymentId: string;
+    url: string;
+};
+export type PhotographyInvoicePaymentStatusDto = {
+    status: PhotographyInvoicePaymentStatus;
+};
+export type PhotographyInvoicePaidDto = {
+    amount: number;
 };
 export type PhotographyPublicPaymentLinkDto = {
     amount: number;
@@ -36267,6 +36381,159 @@ export function photographyArchive({ xPhotographySession, id, zipId }: {
         })
     }));
 }
+export function photographyInvoices(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyInvoiceListDto;
+    }>("/photography/invoices", {
+        ...opts
+    }));
+}
+/**
+ * Totals and tax are computed on the server.
+ */
+export function photographyCreateInvoice({ photographyInvoiceSaveDto }: {
+    photographyInvoiceSaveDto: PhotographyInvoiceSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyInvoiceDto;
+    }>("/photography/invoices", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyInvoiceSaveDto
+    })));
+}
+export function photographyPublicInvoice({ token }: {
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPublicInvoiceDto;
+    }>(`/photography/invoices/view/${encodeURIComponent(token)}`, {
+        ...opts
+    }));
+}
+/**
+ * Checkout for the amount due now.
+ */
+export function photographyInvoiceCheckout({ token }: {
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyInvoiceCheckoutDto;
+    }>(`/photography/invoices/view/${encodeURIComponent(token)}/checkout`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+export function photographyInvoicePaymentStatus({ paymentId, token }: {
+    paymentId: string;
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyInvoicePaymentStatusDto;
+    }>(`/photography/invoices/view/${encodeURIComponent(token)}/payments/${encodeURIComponent(paymentId)}`, {
+        ...opts
+    }));
+}
+export function photographyPublicInvoicePdf({ token }: {
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/invoices/view/${encodeURIComponent(token)}/pdf`, {
+        ...opts
+    }));
+}
+/**
+ * Drafts only; void a sent invoice.
+ */
+export function photographyDeleteInvoice({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/invoices/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+export function photographyInvoice({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyInvoiceDto;
+    }>(`/photography/invoices/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Allowed until a payment is recorded.
+ */
+export function photographyUpdateInvoice({ id, photographyInvoiceSaveDto }: {
+    id: string;
+    photographyInvoiceSaveDto: PhotographyInvoiceSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyInvoiceDto;
+    }>(`/photography/invoices/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographyInvoiceSaveDto
+    })));
+}
+/**
+ * Records a payment received outside Frameleaf.
+ */
+export function photographyMarkInvoicePaid({ id, photographyInvoicePaidDto }: {
+    id: string;
+    photographyInvoicePaidDto: PhotographyInvoicePaidDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyInvoiceDto;
+    }>(`/photography/invoices/${encodeURIComponent(id)}/paid`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyInvoicePaidDto
+    })));
+}
+export function photographyInvoicePdf({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/invoices/${encodeURIComponent(id)}/pdf`, {
+        ...opts
+    }));
+}
+export function photographySendInvoice({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyInvoiceDto;
+    }>(`/photography/invoices/${encodeURIComponent(id)}/send`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+export function photographyVoidInvoice({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyInvoiceDto;
+    }>(`/photography/invoices/${encodeURIComponent(id)}/void`, {
+        ...opts,
+        method: "POST"
+    }));
+}
 export function photographyPublicPaymentLink({ slug }: {
     slug: string;
 }, opts?: Oazapfts.RequestOpts) {
@@ -46438,6 +46705,26 @@ export enum Status5 {
 }
 export enum Status6 {
     Ready = "ready"
+}
+export enum PhotographyInvoiceStatus {
+    Draft = "draft",
+    Sent = "sent",
+    Part = "part",
+    Paid = "paid",
+    Void = "void"
+}
+export enum PhotographyInvoiceCurrency {
+    Cad = "CAD",
+    Usd = "USD",
+    Eur = "EUR",
+    Gbp = "GBP"
+}
+export enum PhotographyInvoicePaymentStatus {
+    Pending = "pending",
+    Paid = "paid",
+    Failed = "failed",
+    Expired = "expired",
+    Refunded = "refunded"
 }
 export enum PhotographyPaymentStatus {
     Pending = "pending",

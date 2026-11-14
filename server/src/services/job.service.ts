@@ -585,8 +585,16 @@ export class JobService extends BaseService {
         // FL-58: a fresh CLIP embedding is what pet recognition reads. The handler returns at once
         // for an owner who has not confirmed a pet yet, before any destination is contacted.
         const asset = await this.assetRepository.getById(item.data.id);
-        if (asset && asset.libraryScope !== LibraryScope.Design)
+        if (asset && asset.libraryScope !== LibraryScope.Design) {
           await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: item.data.id } });
+          // FL-978: a new embedding (a new upload or a visual search model change) re-scores its aesthetics
+          if (asset.type === AssetType.Image && response === JobStatus.Success) {
+            await this.jobRepository.queue({
+              name: JobName.BestPhotosScore,
+              data: { id: item.data.id, embeddingChanged: true },
+            });
+          }
+        }
         if (item.data.source === 'upload') {
           // FL-651: a video is fingerprinted first, unless video comparison is off
           const fingerprint =

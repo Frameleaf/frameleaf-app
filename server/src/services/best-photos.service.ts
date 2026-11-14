@@ -20,6 +20,7 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { AESTHETIC_HEAD_SCORE_VERSION, getAestheticHead, scoreAesthetic } from 'src/utils/aesthetic-head.js';
 import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -49,8 +50,7 @@ const PER_FACE_WEIGHT = 0.2;
  * photos and 29 full-size camera files at preview size: sharpness 1 is the 10th percentile and 6 the 99th,
  * contrast 20–65 and entropy 5–7.5 span ordinary photos, and brightness is fine within 45 of mid-grey.
  * With 12 MP originals about 1–3% of photos clear BEST_PHOTOS_MIN_SCORE, the rest spread below it.
- * ponytail: a hand-tuned technical heuristic, not an aesthetic model; replace with a learned aesthetic
- * score over the visual search embedding when one ships. */
+ * FL-978: this is aesthetic score version 1, kept for models without a learned head (`aesthetic-head.ts`). */
 const imageQualityOf = ({ mean, contrast, entropy, sharpness }: ImageQuality) =>
   0.5 * clamp((sharpness - 1) / 5) +
   0.2 * clamp(1 - Math.max(0, Math.abs(mean - 120) - 45) / 60) +
@@ -70,8 +70,22 @@ const VIDEO_FRAME_SAMPLE_COUNT = 5;
 // than monopolizing the background queue.
 const VIDEO_SCORE_MAX_DURATION_SECONDS = 15 * 60;
 
+/** FL-978: the image statistics a score stored, so an embedding-only re-score does not read the preview again. */
+const storedQuality = (metadata: Record<string, unknown> | null): ImageQuality | null => {
+  const { brightness: mean, contrast, entropy, sharpness, thumbnailScore } = metadata ?? {};
+  const values = [mean, contrast, entropy, sharpness, thumbnailScore];
+  return values.every((value) => typeof value === 'number' && Number.isFinite(value))
+    ? ({ mean, contrast, entropy, sharpness, thumbnailScore } as ImageQuality)
+    : null;
+};
+
+/** FL-978: sigmoid(head(embedding)) for the visual search model that made the embedding, or null. */
+type LearnedAesthetic = { score: number; modelName: string };
+
 @Injectable()
 export class BestPhotosService {
+  private readonly modelsWithoutHead = new Set<string>();
+
   constructor(
     private logger: LoggingRepository,
     private assetJobRepository: AssetJobRepository,
@@ -115,7 +129,7 @@ export class BestPhotosService {
   }
 
   @OnJob({ name: JobName.BestPhotosScore, queue: QueueName.BackgroundTask })
-  async handleScore({ id }: JobOf<JobName.BestPhotosScore>): Promise<JobStatus> {
+  async handleScore({ id, embeddingChanged }: JobOf<JobName.BestPhotosScore>): Promise<JobStatus> {
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForBestPhotoScoring(id);
     if (!asset || !this.isEligible(asset)) {
@@ -130,7 +144,9 @@ export class BestPhotosService {
 
     try {
       const upsert =
-        asset.type === AssetType.Video ? await this.scoreVideoAsset(asset) : await this.scoreImageAsset(asset);
+        asset.type === AssetType.Video
+          ? await this.scoreVideoAsset(asset)
+          : await this.scoreImageAsset(asset, embeddingChanged);
       if (!upsert) {
         return JobStatus.Skipped;
       }
@@ -156,10 +172,31 @@ export class BestPhotosService {
     );
   }
 
-  private async scoreImageAsset(asset: BestPhotoScoringAsset): Promise<BestPhotoScoreUpsert> {
+  private async scoreImageAsset(asset: BestPhotoScoringAsset, embeddingChanged = false): Promise<BestPhotoScoreUpsert> {
+    const stored = embeddingChanged ? storedQuality(asset.scoreMetadata) : null;
     // FL-721: an encrypted Locked preview is read through a plain copy
-    const quality = await withPlainCopy(asset.previewFile!, (path) => this.mediaRepository.measureImageQuality(path));
-    return this.buildScoreUpsert(asset, quality, asset.width, asset.height);
+    const quality =
+      stored ?? (await withPlainCopy(asset.previewFile!, (path) => this.mediaRepository.measureImageQuality(path)));
+    return this.buildScoreUpsert(asset, quality, asset.width, asset.height, await this.learnedAesthetic(asset));
+  }
+
+  /** FL-978: the learned aesthetic score; null keeps version 1 (no embedding yet, or no head for the model). */
+  private async learnedAesthetic(asset: BestPhotoScoringAsset): Promise<LearnedAesthetic | null> {
+    if (!asset.embedding) {
+      return null;
+    }
+    const { machineLearning } = await getConfig(
+      { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
+      { withCache: true },
+    );
+    const modelName = machineLearning.clip.modelName;
+    const head = getAestheticHead(modelName);
+    if (!head && !this.modelsWithoutHead.has(modelName)) {
+      this.modelsWithoutHead.add(modelName);
+      this.logger.log(`Visual search model ${modelName} has no learned aesthetic head; Best Photos keeps version 1`);
+    }
+    const score = head && scoreAesthetic(head, JSON.parse(asset.embedding) as number[]);
+    return score === null ? null : { score, modelName };
   }
 
   /** Samples frames across the video, scores each with the image scorer, and
@@ -289,6 +326,7 @@ export class BestPhotosService {
     quality: ImageQuality,
     width: number | null,
     height: number | null,
+    learned: LearnedAesthetic | null = null,
   ): BestPhotoScoreUpsert {
     const { thumbnailScore } = quality;
     const imageQuality = imageQualityOf(quality);
@@ -306,7 +344,7 @@ export class BestPhotosService {
     // 8 MP and up counts as full resolution: a 12 MP phone photo is not a lesser photo than a 24 MP one.
     const resolutionScore = clamp((Math.sqrt(pixels) - 700) / 2100);
     const subjectScore = clamp(0.6 + Math.min(asset.faceCount, FACE_COUNT_CAP) * PER_FACE_WEIGHT - screenshotPenalty);
-    const aestheticScore = clamp(imageQuality - screenshotPenalty);
+    const aestheticScore = clamp((learned?.score ?? imageQuality) - screenshotPenalty);
     const diversityScore = 0.5;
 
     const score = clamp(0.75 * aestheticScore + 0.1 * resolutionScore + 0.15 * subjectScore - tinyPenalty);
@@ -334,6 +372,9 @@ export class BestPhotosService {
         faceCount: asset.faceCount,
         screenshotPenalty,
         tinyPenalty,
+        aestheticScoreVersion: learned ? AESTHETIC_HEAD_SCORE_VERSION : 1,
+        aestheticModel: learned?.modelName ?? null,
+        learnedAestheticScore: learned?.score ?? null,
       },
       // Video scoring fills these in (see scoreVideoAsset); images have no frames.
       bestFrameTimestampMs: null,
@@ -348,6 +389,7 @@ export class BestPhotosService {
       bestPhotoScore: {
         score: asset.bestPhotoScore,
         aestheticScore: asset.bestPhotoAestheticScore,
+        aestheticScoreVersion: asset.bestPhotoMetadata?.aestheticScoreVersion === AESTHETIC_HEAD_SCORE_VERSION ? 2 : 1,
         technicalScore: asset.bestPhotoTechnicalScore,
         subjectScore: asset.bestPhotoSubjectScore,
         diversityScore: asset.bestPhotoDiversityScore,

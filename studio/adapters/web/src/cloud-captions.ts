@@ -75,11 +75,53 @@ export function existingLineCount(
   return placed + shown.length
 }
 
+/** FL-1429: one selected clip in a batch, and whether it can be sent. */
+export interface CloudCaptionBatchRow {
+  clipId: string
+  name: string
+  seconds: number
+  /** Why it is left out: no sound to caption, or a Cloud job already running for it. */
+  reason: 'no-sound' | 'running' | null
+}
+
+const clipName = (item: TimelineItem) => {
+  const media = item.mediaId ? useMediaLibraryStore.getState().mediaById[item.mediaId] : undefined
+  return media?.fileName ?? item.label
+}
+
+/**
+ * The selected clips in timeline order. A sound clip linked to a selected video is its sound, so it is
+ * captioned once, with the video.
+ */
+export function cloudCaptionBatchRows(
+  items: readonly TimelineItem[],
+  clipIds: readonly string[],
+  fps: number,
+  running: ReadonlySet<string> = new Set(),
+): CloudCaptionBatchRow[] {
+  const wanted = new Set(clipIds)
+  const selected = items.filter((item) => wanted.has(item.id))
+  const videoGroups = new Set(
+    selected.filter((item) => item.type === 'video' && item.linkedGroupId).map((item) => item.linkedGroupId),
+  )
+  return selected
+    .filter((item) => !(item.type === 'audio' && item.linkedGroupId && videoGroups.has(item.linkedGroupId)))
+    .sort((a, b) => a.from - b.from)
+    .map((item) => ({
+      clipId: item.id,
+      name: clipName(item),
+      seconds: item.durationInFrames / fps,
+      reason: !isClip(item) || !item.mediaId ? 'no-sound' : running.has(item.id) ? 'running' : null,
+    }))
+}
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) {
   let stopped = false
   const following = new Set<string>()
+  /** Clips with a Cloud job being followed, so a batch doesn't send them twice. */
+  const runningClips = new Set<string>()
 
   const forget = (job: StudioCloudCaptionJob) => calls.forget(job.id).catch(() => {})
 
@@ -131,6 +173,15 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
   const follow = async (job: StudioCloudCaptionJob) => {
     if (following.has(job.id)) return
     following.add(job.id)
+    runningClips.add(job.clipId)
+    try {
+      await followUntilSettled(job)
+    } finally {
+      runningClips.delete(job.clipId)
+    }
+  }
+
+  const followUntilSettled = async (job: StudioCloudCaptionJob) => {
     let failures = 0
     while (!stopped) {
       let state: StudioCloudCaptionState
@@ -173,6 +224,39 @@ export function createCloudCaptions(calls: CloudCaptionCalls, pollMs = POLL_MS) 
       } catch {
         toast.error(i18n.t('transcript.cloud.failed', { name }))
       }
+    },
+    /** FL-1429: the selected clips as the batch dialog lists them. */
+    batchRows: (clipIds: readonly string[]) => {
+      const { items, fps } = useTimelineStore.getState()
+      return cloudCaptionBatchRows(items, clipIds, fps, runningClips)
+    },
+    /**
+     * FL-1429: price and confirm each clip on its own, one after another. The host shows each price;
+     * a skipped clip sends nothing, and once the person stops, the host answers the rest with nothing.
+     */
+    startBatch: async (clipIds: readonly string[], language: string) => {
+      const { items, fps } = useTimelineStore.getState()
+      const clips = cloudCaptionBatchRows(items, clipIds, fps, runningClips)
+        .filter((row) => !row.reason)
+        .map(({ clipId, name }) => ({ clipId, name }))
+      if (clips.length === 0) return
+      const id = `batch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      const sent: Promise<void>[] = []
+      for (const [index, clip] of clips.entries()) {
+        if (stopped) break
+        try {
+          const job = await calls.start({
+            ...clip,
+            language: language || 'auto',
+            ...(clips.length > 1 && { batch: { id, index, clips } }),
+          })
+          // Followed alongside the next clip's price, not before it.
+          if (job) sent.push(follow(job))
+        } catch {
+          toast.error(i18n.t('transcript.cloud.failed', { name: clip.name }))
+        }
+      }
+      await Promise.all(sent)
     },
     /** Jobs confirmed before a reload still bring their captions back. */
     resume: async () => {

@@ -319,6 +319,19 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
     windowSeconds: 600,
   },
   'POST photography/studios/:site/bookings': RATE_LIMITS.studioInquiry,
+  // FL-1081: invoice links are public bearer tokens.
+  'GET photography/invoices/view/:token': { bucket: 'photography-invoice-page', limit: 120, windowSeconds: 600 },
+  'GET photography/invoices/view/:token/pdf': { bucket: 'photography-invoice-page', limit: 120, windowSeconds: 600 },
+  'GET photography/invoices/view/:token/payments/:paymentId': {
+    bucket: 'photography-invoice-page',
+    limit: 120,
+    windowSeconds: 600,
+  },
+  'POST photography/invoices/view/:token/checkout': {
+    bucket: 'photography-invoice-checkout',
+    limit: 20,
+    windowSeconds: 600,
+  },
 };
 
 const isAdminPermission = (permission: AuthenticatedOptions['permission']) =>

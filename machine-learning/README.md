@@ -161,6 +161,23 @@ Run `python scripts/qualify-aesthetic-head.py HEAD.json FIXTURE.json` in the ML 
 
 The head and fixture both name the admitted `producerModelKey`. The head's `layers` list contains dense `weights` in input-by-output order and a `bias` array per layer, with ReLU between layers and one final logit. The fixture's `samples` list contains each photo's unique `id`, numeric `embedding`, `v1` score, and human `rating`. Keep training and evaluation photos separate. The script reports the Spearman improvement and content hashes and exits unsuccessfully below an improvement of 0.15.
 
+## Shipped aesthetic heads (FL-978)
+
+The server reads one head per visual search model from `server/resources/aesthetic-heads/<model>.json` and scores Library aesthetic version 2 as `sigmoid(head(embedding))` in Node. A model with no head keeps version 1 and the server logs that once. `scripts/build-aesthetic-head.py` built both heads on 2026-11-14:
+
+1. `embed` ran the shipped `OpenClipVisualEncoder` on the CPU provider over files from the Frameleaf model mirror. The script resolves the producer key from the release catalogue by the visual ONNX SHA-256.
+2. `train` fitted ridge regression (alpha from 5-fold cross-validation) to the mean human rating. It then calibrated the logit so the median training photo scores 0.5 and the top 2% score 0.96. About 2% of photos then clear the Best Photos threshold, as with version 1.
+3. `fixture` joined the held-out embeddings and ratings with Library v1 aesthetic scores. The v1 scores came from the server's own `SharpOperations.measureImageQuality` and image-quality formula.
+
+Ratings come from AVA (Murray et al., CVPR 2012): photography-challenge photos with at least 50 human votes each, from the stratified 10% subset `trojblue/AVA-aesthetics-10pct-min50-10bins`. Training used 10,219 photos from its train split. Evaluation used 1,500 photos from its separate test split, with no shared image IDs. AVA reflects the taste of one online photography community, so the score can undervalue some styles and cultures. Best Photos says so under its heading.
+
+| Model | Producer key | Head SHA-256 | Spearman v1 → v2 (1,500 held out) |
+| --- | --- | --- | --- |
+| `ViT-B-16-SigLIP-384__webli` | `clip:723da31128e971640a42abb5301ca19adfe7a01248d90029e12e5325f492699d` | `34b3d58bd766eec3359a088e07d1fca85e2a4838575bb8d3589b7b5b8afed495` | 0.159 → 0.700 (+0.541) |
+| `ViT-B-32__openai` | `clip:c4410149fb53f66b0eb32c730448d479117f74227628fe1ca0b98737f21c74e7` | `1d00114c25e6c8146eeb2352ab84091ec66ebb374a671ce1994ff63f29847d24` | 0.159 → 0.665 (+0.506) |
+
+The SigLIP-384 fixture SHA-256 is `2cf4f62c92875d72fe663db8d9744a7005f50b15a98fdcb8b28a9029206bbec8`. The ViT-B-32 fixture SHA-256 is `ddc911d3e2c342715b300945344aee64ab82b6d8d43c247553aa1a65c56280f1`. Rerun the steps above to regenerate the fixtures; they are too large for the repository.
+
 # Facial Recognition
 
 ## Acknowledgements

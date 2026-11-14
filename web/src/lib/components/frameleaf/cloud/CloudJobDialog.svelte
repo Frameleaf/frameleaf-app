@@ -66,6 +66,15 @@
     onSubmitted?: (job: CloudMlJobResponseDto) => void;
     /** The dialog closed with nothing sent. */
     onDismissed?: () => void;
+    /**
+     * FL-1429: this job is one of several (Studio captions for selected clips). The list shows each
+     * one's estimate or what became of it; this job is still confirmed on its own.
+     */
+    steps?: Array<{ label: string; value: string; current: boolean }>;
+    /** Moves on to the next job of the batch, sending nothing for this one. */
+    onSkip?: () => void;
+    /** What Cancel says when it ends a batch ("Stop here"). */
+    cancelLabel?: string;
   };
 
   let {
@@ -79,6 +88,9 @@
     canSubmit,
     onSubmitted,
     onDismissed,
+    steps,
+    onSkip,
+    cancelLabel,
   }: Props = $props();
 
   let estimate = $state<CloudMlJobEstimateResponseDto | null>(null);
@@ -281,6 +293,16 @@
 
 <Dialog {title} closeLabel={$t('close')} bind:open>
   <div class="fcj">
+    {#if steps && !job}
+      <ol class="fcj-batch">
+        {#each steps as step, index (index)}
+          <li class:is-current={step.current} aria-current={step.current ? 'step' : undefined}>
+            <span>{step.label}</span>
+            <span>{step.value}</span>
+          </li>
+        {/each}
+      </ol>
+    {/if}
     <p class="fcj-summary">
       <Icon icon={mdiCloudOutline} size="16" aria-hidden={true} />
       <span>{[workLabel, summary].filter(Boolean).join(' · ')}</span>
@@ -463,7 +485,10 @@
 
   {#snippet actions()}
     {#if !job}
-      <Button onclick={close}>{$t('cancel')}</Button>
+      <Button onclick={close}>{cancelLabel ?? $t('cancel')}</Button>
+      {#if onSkip}
+        <Button disabled={submitting} onclick={onSkip}>{$t('frameleaf_studio_cloud_captions_batch_skip')}</Button>
+      {/if}
       {#if estimate?.refusal?.code === 'insufficient-credits'}
         <!-- FL-544: one button that fixes it, instead of a sentence; the job is estimated again after -->
         <Button

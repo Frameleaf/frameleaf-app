@@ -854,7 +854,23 @@ select
       asset_face."assetId" = asset.id
       and asset_face."deletedAt" is null
       and asset_face."isVisible" is true
-  ) as "faceCount"
+  ) as "faceCount",
+  (
+    select
+      "smart_search"."embedding"
+    from
+      "smart_search"
+    where
+      "smart_search"."assetId" = "asset"."id"
+  ) as "embedding",
+  (
+    select
+      "asset_best_photo_score"."metadata"
+    from
+      "asset_best_photo_score"
+    where
+      "asset_best_photo_score"."assetId" = "asset"."id"
+  ) as "scoreMetadata"
 from
   "asset"
 where

@@ -85,6 +85,18 @@ describe(JobService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.PetRecognition }));
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.BestPhotosScore }));
     });
+    it('re-scores a photo for Best Photos once its new embedding is stored (FL-978)', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Image });
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.job.run.mockResolvedValue(JobStatus.Success);
+
+      await sut.onJobRun(QueueName.SmartSearch, { name: JobName.SmartSearch, data: { id: asset.id } });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.BestPhotosScore,
+        data: { id: asset.id, embeddingChanged: true },
+      });
+    });
     it.each([
       [true, JobName.AssetVideoFingerprint],
       [false, JobName.AssetDetectDuplicates],
@@ -296,10 +308,10 @@ describe(JobService.name, () => {
         ],
       },
       {
-        // FL-58: a fresh CLIP embedding is read by pet recognition
+        // FL-58: a fresh CLIP embedding is read by pet recognition (a photo's is also scored, below)
         item: { name: JobName.SmartSearch, data: { id: 'asset-1' } },
         jobs: [JobName.PetRecognition],
-        stub: [AssetFactory.create({ id: 'asset-1' })],
+        stub: [AssetFactory.create({ id: 'asset-1', type: AssetType.Video })],
       },
       {
         item: { name: JobName.AssetDetectFaces, data: { id: 'asset-1' } },
