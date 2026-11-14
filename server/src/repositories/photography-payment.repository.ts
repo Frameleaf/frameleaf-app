@@ -99,10 +99,12 @@ export class PhotographyPaymentRepository {
   createPayment(link: PaymentLinkRow, payerEmail: string, holdMinutes = 30) {
     return this.db.transaction().execute(async (trx) => {
       if (!link.reusable) {
+        // Lock first, then look: under READ COMMITTED the second statement sees whatever the lock holder committed.
+        await sql`SELECT id FROM photography_payment_link WHERE id=${link.id}::uuid FOR UPDATE`.execute(trx);
         const { rows } = await sql<{ busy: boolean }>`SELECT EXISTS (
-            SELECT 1 FROM photography_payment WHERE "linkId"=l.id AND (status IN ('paid','refunded')
+            SELECT 1 FROM photography_payment WHERE "linkId"=${link.id}::uuid AND (status IN ('paid','refunded')
               OR (status='pending' AND "createdAt" > now() - make_interval(mins => ${holdMinutes})))
-          ) AS busy FROM photography_payment_link l WHERE l.id=${link.id}::uuid FOR UPDATE`.execute(trx);
+          ) AS busy`.execute(trx);
         if (rows[0]?.busy) return;
       }
       const { rows } =

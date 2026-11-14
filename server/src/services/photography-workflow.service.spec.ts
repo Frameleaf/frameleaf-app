@@ -1212,10 +1212,6 @@ describe('photography workflow integration boundaries', () => {
     await s.service.connectedPayment(event('evt_short', 'payment.succeeded', { amount: 1499 }));
     await s.service.connectedPayment(event('evt_stale', 'payment.succeeded', { sessionId: 'cs_other' }));
     expect(s.row().value.orders[0].status).toBe('accepted');
-    // A refund delivered before its payment is retried, never dropped.
-    await expect(
-      s.service.connectedPayment(event('evt_early_refund', 'payment.refunded', { sessionId: null })),
-    ).rejects.toBeInstanceOf(ConflictException);
     await s.service.connectedPayment(event('evt_paid', 'payment.succeeded'));
     await s.service.connectedPayment(event('evt_paid', 'payment.succeeded'));
     expect(s.row().value.orders[0]).toMatchObject({ status: 'settled', paymentIntentId: 'pi_connect' });
@@ -1224,6 +1220,61 @@ describe('photography workflow integration boundaries', () => {
     await s.service.connectedPayment(event('evt_expired', 'payment.expired'));
     expect(s.row().value.orders[0].status).toBe('settled');
     await s.service.connectedPayment(event('evt_refund', 'payment.refunded', { sessionId: null, amount: 500 }));
+    expect(s.row().value.orders[0].status).toBe('refunded');
+  });
+  it('records a refund that arrives before its payment, and the late success changes nothing (FL-1037)', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.published();
+    await s.service.config(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      config: { ...s.row().value.config, additionalPrice: 1500, paymentTiming: 'before-editing' },
+    });
+    const round = await s.selected(client.session);
+    await s.service.order(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      roundId: round.id,
+      recipientId: client.recipientId,
+      pricing: 'package',
+    });
+    const order = s.row().value.orders[0];
+    await s.service.accept(s.shootId, client.session, order.id, { expectedRevision: s.row().revision });
+    expect(s.payments.onPayment).toHaveBeenCalledWith('order', expect.any(Function));
+    await expect(s.service.checkout(s.shootId, client.session, order.id)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    s.payments.ready.mockResolvedValue(true);
+    expect(await s.service.checkout(s.shootId, client.session, order.id)).toEqual({
+      url: 'https://checkout.stripe.com/c/pay/cs_test_connect',
+    });
+    expect(s.payments.checkout).toHaveBeenCalledWith(
+      s.ownerId,
+      expect.objectContaining({
+        reference: `order:${order.id}`,
+        amount: 1500,
+        currency: 'cad',
+        successUrl: `https://photos.example/photography/gallery/${s.shootId}`,
+      }),
+    );
+    expect(s.row().value.orders[0].checkoutId).toBe('cs_test_connect');
+    const event = (id: string, type: string, extra: object = {}) => ({
+      id,
+      type,
+      owner: 'f'.repeat(64),
+      ownerId: s.ownerId,
+      createdAt: new Date().toISOString(),
+      reference: `order:${order.id}`,
+      sessionId: 'cs_test_connect',
+      paymentIntent: 'pi_connect',
+      amount: 1500,
+      currency: 'cad',
+      payerEmail: null,
+      account: null,
+      ...extra,
+    });
+    await s.service.connectedPayment(event('evt_early_refund', 'payment.refunded', { sessionId: null }));
+    expect(s.row().value.orders[0]).toMatchObject({ status: 'refunded', paymentIntentId: 'pi_connect' });
+    await s.service.connectedPayment(event('evt_late_paid', 'payment.succeeded'));
     expect(s.row().value.orders[0].status).toBe('refunded');
   });
   it('snapshots config outputs, renders distinct clean/branded sizes and historical approved versions, and scopes ZIP entries', async () => {

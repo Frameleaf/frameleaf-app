@@ -175,16 +175,14 @@ export class PhotographyPaymentService {
       'payment.succeeded': [['pending', 'failed', 'expired'], 'paid'],
       'payment.failed': [['pending'], 'failed'],
       'payment.expired': [['pending'], 'expired'],
-      'payment.refunded': [['paid'], 'refunded'],
+      // Stripe refunds only money it took, so a refund settles the payment even when its success comes later.
+      'payment.refunded': [['pending', 'failed', 'expired', 'paid'], 'refunded'],
     };
     const move = transitions[event.type];
     if (!move) return;
     if (event.type === 'payment.refunded') {
-      // A refund that arrives before its payment was recorded is retried (thrown, so not acknowledged).
-      if (payment.status === 'refunded') return;
-      // A refund is retried (thrown, so not acknowledged) until its payment has been recorded as paid.
-      if (payment.status !== 'paid') throw new ConflictException('Refund arrived before its payment; retrying');
-      if (!event.paymentIntent || payment.providerRef !== event.paymentIntent) return;
+      // Cloud took the reference from this payment's own PaymentIntent; a different intent already on file is not it.
+      if (!event.paymentIntent || (payment.providerRef && payment.providerRef !== event.paymentIntent)) return;
     } else if (
       event.sessionId !== payment.checkoutId ||
       (event.type === 'payment.succeeded' &&
@@ -192,8 +190,7 @@ export class PhotographyPaymentService {
     ) {
       return;
     }
-    const { moved, duplicate } = await this.repository.transition(payment.id, move[0], move[1], event.paymentIntent);
-    if (!moved && event.type === 'payment.refunded') throw new ConflictException('Refund not recorded yet; retrying');
+    const { duplicate } = await this.repository.transition(payment.id, move[0], move[1], event.paymentIntent);
     if (duplicate)
       this.logger?.warn(`Payment ${payment.id} paid a single-use link that was already paid; refund it in Stripe`);
   }

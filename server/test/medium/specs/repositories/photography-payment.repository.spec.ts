@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotographyPaymentRepository } from 'src/repositories/photography-payment.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -62,5 +62,30 @@ describe(PhotographyPaymentRepository.name, () => {
     expect(await sut.pendingSince(single.id, 30)).toBe(false);
     // A replay changes nothing.
     expect(await sut.transition(first.id, ['pending'], 'paid', 'pi_a')).toEqual({ moved: false, duplicate: false });
+  });
+
+  it('a payer who waits on the lock sees the payment the lock holder committed (FL-1041)', async () => {
+    const { ctx } = newMediumService(BaseService, { database, real: [], mock: [LoggingRepository] });
+    const { user } = await ctx.newUser();
+    const sut = new PhotographyPaymentRepository(database);
+    const link = await sut.createLink({
+      ownerId: user.id,
+      slug: `w${Date.now()}`.padEnd(16, 'x'),
+      title: 'Deposit',
+      description: '',
+      amount: 5000,
+      currency: 'CAD',
+      reusable: false,
+    });
+    let second: Promise<unknown> | undefined;
+    await database.transaction().execute(async (trx) => {
+      // The first payer holds the lock and has inserted, but not committed, when the second one starts.
+      await sql`SELECT id FROM photography_payment_link WHERE id=${link.id}::uuid FOR UPDATE`.execute(trx);
+      await sql`INSERT INTO photography_payment ("ownerId", "linkId", amount, currency, "payerEmail")
+        VALUES (${user.id}::uuid, ${link.id}::uuid, 5000, 'CAD', 'a@example.com')`.execute(trx);
+      second = sut.createPayment(link, 'b@example.com');
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(await second).toBeUndefined();
   });
 });

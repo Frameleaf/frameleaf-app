@@ -149,10 +149,6 @@ describe(PhotographyPaymentService.name, () => {
     await expect(s.service.checkout(link.slug, { email: 'c@example.com' }, 'https://x.example')).rejects.toBeInstanceOf(
       ConflictException,
     );
-    // A refund delivered before its payment is retried, never dropped.
-    await expect(
-      s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null })),
-    ).rejects.toBeInstanceOf(ConflictException);
     await s.service.paymentEvent(s.event(payment, 'payment.succeeded', { amount: 1 }));
     await s.service.paymentEvent(s.event(payment, 'payment.succeeded', { ownerId: randomUUID() }));
     await s.service.paymentEvent(s.event(payment, 'payment.succeeded', { sessionId: 'cs_other' }));
@@ -171,18 +167,19 @@ describe(PhotographyPaymentService.name, () => {
     expect(payment.status).toBe('refunded');
   });
 
-  it('retries a refund for a payment that is failed or expired until it has been paid', async () => {
+  it('records a refund that arrives before its payment; the late success changes nothing', async () => {
     const s = setup();
     const link = await s.service.create(auth, draft);
     const { paymentId } = await s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example');
     const payment = s.payments.find((p) => p.id === paymentId)!;
     await s.service.paymentEvent(s.event(payment, 'payment.failed'));
     expect(payment).toMatchObject({ status: 'failed', providerRef: 'pi_1' });
-    await expect(
-      s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null })),
-    ).rejects.toBeInstanceOf(ConflictException);
-    await s.service.paymentEvent(s.event(payment, 'payment.succeeded'));
+    // A refund for a different payment intent is not this payment's.
+    await s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null, paymentIntent: 'pi_other' }));
+    expect(payment.status).toBe('failed');
     await s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null }));
+    expect(payment.status).toBe('refunded');
+    await s.service.paymentEvent(s.event(payment, 'payment.succeeded'));
     expect(payment.status).toBe('refunded');
   });
 
