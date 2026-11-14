@@ -137,6 +137,10 @@ describe(PhotographyPaymentService.name, () => {
     const link = await s.service.create(auth, { ...draft, reusable: false });
     const { paymentId } = await s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example');
     const payment = s.payments.find((p) => p.id === paymentId)!;
+    // A refund delivered before its payment is retried, never dropped.
+    await expect(
+      s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null })),
+    ).rejects.toBeInstanceOf(ConflictException);
     await s.service.paymentEvent(s.event(payment, 'payment.succeeded', { amount: 1 }));
     await s.service.paymentEvent(s.event(payment, 'payment.succeeded', { ownerId: randomUUID() }));
     await s.service.paymentEvent(s.event(payment, 'payment.succeeded', { sessionId: 'cs_other' }));

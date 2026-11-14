@@ -173,6 +173,9 @@ export class PhotographyPaymentService {
     const move = transitions[event.type];
     if (!move) return;
     if (event.type === 'payment.refunded') {
+      // A refund that arrives before its payment was recorded is retried (thrown, so not acknowledged).
+      if (!payment.providerRef && payment.status === 'pending')
+        throw new ConflictException('Refund arrived before its payment; retrying');
       if (!event.paymentIntent || payment.providerRef !== event.paymentIntent) return;
     } else if (
       event.sessionId !== payment.checkoutId ||
