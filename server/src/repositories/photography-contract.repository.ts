@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import type { DB } from 'src/schema/index.js';
 import type { PhotographyContractTable } from 'src/schema/tables/photography-contract.table.js';
+import { UserStatus } from 'src/enum.js';
 
 export type ContractRow = Selectable<PhotographyContractTable>;
 export type ContractStatus = 'draft' | 'sent' | 'viewed' | 'signed' | 'void';
@@ -129,6 +130,16 @@ export class PhotographyContractRepository {
       .where('tokenHash', '=', tokenHash)
       .where('tokenExpiresAt', '>', new Date())
       .where('status', '!=', 'void')
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('user')
+            .select('user.id')
+            .whereRef('user.id', '=', 'photography_contract.ownerId')
+            .where('user.deletedAt', 'is', null)
+            .where('user.status', '=', UserStatus.Active),
+        ),
+      )
       .executeTakeFirst();
   }
   events(contractId: string): Promise<ContractEvent[]> {
@@ -141,11 +152,12 @@ export class PhotographyContractRepository {
       .then((rows) => rows.map((row) => ({ ...row, at: new Date(row.at).toISOString() }) as ContractEvent));
   }
 
-  create(value: Insertable<PhotographyContractTable>) {
+  /** The studio's name and email at creation go into the hash-chained `created` event and stay frozen there. */
+  create(value: Insertable<PhotographyContractTable>, studio: { name: string; email: string }) {
     return this.db.transaction().execute(async (trx) => {
       const row = await trx.insertInto('photography_contract').values(value).returningAll().executeTakeFirstOrThrow();
       await this.append(trx, row.id, [
-        { type: 'created', actor: 'studio', data: { documentSha256: row.documentSha256 } },
+        { type: 'created', actor: 'studio', data: { documentSha256: row.documentSha256, studio } },
       ]);
       return row;
     });
@@ -235,13 +247,20 @@ export class PhotographyContractRepository {
       return [{ type: 'finalized', actor: 'system', data: { finalPdfSha256 } }];
     });
   }
-  async delete(ownerId: string, id: string) {
-    const { numDeletedRows } = await this.db
-      .deleteFrom('photography_contract')
-      .where('ownerId', '=', ownerId)
-      .where('id', '=', id)
-      .executeTakeFirst();
-    if (!numDeletedRows) throw new NotFoundException('Contract is unavailable');
+  /** Locks the row, lets the caller remove its sealed file first, then deletes it; a failed removal keeps the row. */
+  delete(ownerId: string, id: string, removeFile: (pdfPath: string) => Promise<void>) {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .selectFrom('photography_contract')
+        .select('pdfPath')
+        .where('ownerId', '=', ownerId)
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!row) throw new NotFoundException('Contract is unavailable');
+      if (row.pdfPath) await removeFile(row.pdfPath);
+      await trx.deleteFrom('photography_contract').where('id', '=', id).execute();
+    });
   }
 
   /**

@@ -141,15 +141,19 @@ export class PhotographyContractService extends BaseService {
       }),
     );
     if (missing.size > 0) throw new BadRequestException(`Fill in ${[...missing].join(', ')}`);
-    const row = await this.contracts.create({
-      ownerId,
-      templateId: template.id,
-      name: template.name,
-      clientName: input.clientName,
-      clientEmail: input.clientEmail.toLowerCase(),
-      body,
-      documentSha256: sha256(Buffer.from(body, 'utf8')),
-    });
+    const studio = await this.studio(ownerId);
+    const row = await this.contracts.create(
+      {
+        ownerId,
+        templateId: template.id,
+        name: template.name,
+        clientName: input.clientName,
+        clientEmail: input.clientEmail.toLowerCase(),
+        body,
+        documentSha256: sha256(Buffer.from(body, 'utf8')),
+      },
+      { name: studio.name, email: studio.email },
+    );
     return contractView(row);
   }
   /** Sends (or re-sends) the signing link. A new link replaces the old one. */
@@ -181,9 +185,7 @@ export class PhotographyContractService extends BaseService {
   }
   async delete(auth: AuthDto, id: string) {
     const ownerId = this.workflow.studioOwner(auth);
-    const row = await this.contracts.get(ownerId, id);
-    await this.contracts.delete(ownerId, id);
-    if (row.pdfPath) await this.storageRepository.unlinkIfExists(row.pdfPath);
+    await this.contracts.delete(ownerId, id, (path) => this.storageRepository.unlinkIfExists(path));
   }
   async pdf(auth: AuthDto, id: string) {
     const row = await this.signed(await this.contracts.get(this.workflow.studioOwner(auth), id));
@@ -244,13 +246,7 @@ export class PhotographyContractService extends BaseService {
     );
     if (!signed) throw new ConflictException('The agreement changed. Ask the studio for a new link.');
     // The signature is recorded; a seal that fails here is completed the next time the PDF is asked for.
-    const sealed = await this.finalize(signed).catch(() => {
-      this.logger.warn('A signed contract could not be sealed yet');
-      return null;
-    });
-    if (sealed) {
-      await this.notifySigned(sealed).catch(() => this.logger.warn('A signed-contract email could not be sent'));
-    }
+    await this.finalize(signed).catch(() => this.logger.warn('A signed contract could not be sealed yet'));
     return this.publicView(token, request);
   }
   async publicPdf(token: string) {
@@ -268,7 +264,10 @@ export class PhotographyContractService extends BaseService {
     if (row.status !== 'signed') throw new NotFoundException('The contract isn’t signed yet');
     return this.finalize(row);
   }
-  /** Renders and stores the sealed PDF once; safe to call again if a previous attempt stopped half way. */
+  /**
+   * Renders and stores the sealed PDF once; safe to call again if a previous attempt stopped half way.
+   * The request that seals it also emails the signed copy, so a seal finished later still notifies.
+   */
   private async finalize(row: ContractRow): Promise<ContractRow> {
     if (row.pdfPath) return row;
     const studio = await this.studio(row.ownerId);
@@ -285,15 +284,24 @@ export class PhotographyContractService extends BaseService {
     // A unique name per render: if two requests seal at once, the one that loses removes only its own file.
     const path = join(folder, `${row.id}-${randomUUID()}.pdf`);
     await this.storageRepository.createFile(path, pdf);
-    const sealed = await this.contracts.finalize(row.id, path, sha256(pdf));
-    if (sealed) {
-      return sealed;
+    let sealed: ContractRow | null;
+    try {
+      sealed = await this.contracts.finalize(row.id, path, sha256(pdf));
+    } catch (error) {
+      await this.storageRepository.unlinkIfExists(path);
+      throw error;
     }
-    await this.storageRepository.unlinkIfExists(path);
-    return this.contracts.get(row.ownerId, row.id);
+    if (!sealed) {
+      await this.storageRepository.unlinkIfExists(path);
+      return this.contracts.get(row.ownerId, row.id);
+    }
+    await this.notifySigned(sealed).catch(() => this.logger.warn('A signed-contract email could not be sent'));
+    return sealed;
   }
   private async audit(row: ContractRow, withFinal: boolean): Promise<ContractAudit & { finalPdfSha256?: string }> {
-    const studio = await this.studio(row.ownerId);
+    const events = await this.contracts.events(row.id);
+    const frozen = events[0]?.data.studio as { name: string; email: string } | undefined;
+    const studio = frozen ?? (await this.studio(row.ownerId));
     return {
       format: CONTRACT_RECORD_FORMAT,
       contractId: row.id,
@@ -303,7 +311,7 @@ export class PhotographyContractService extends BaseService {
       documentSha256: row.documentSha256,
       consentText: CONTRACT_CONSENT_TEXT,
       consentSha256: sha256(CONTRACT_CONSENT_TEXT),
-      events: await this.contracts.events(row.id),
+      events,
       ...(withFinal && row.finalPdfSha256 ? { finalPdfSha256: row.finalPdfSha256 } : {}),
     };
   }
