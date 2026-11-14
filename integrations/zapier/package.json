@@ -1,0 +1,23 @@
+{
+  "name": "frameleaf-zapier-connect",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Frameleaf Connect for Zapier: triggers, searches, actions and files",
+  "main": "index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "check": "node --check app.js && node --check authentication.js && node --check connect.js && node --check index.js",
+    "validate": "zapier-platform validate"
+  },
+  "dependencies": {
+    "zapier-platform-core": "19.3.0"
+  },
+  "devDependencies": {
+    "nock": "14.0.16",
+    "zapier-platform-cli": "19.3.0"
+  }
+}
