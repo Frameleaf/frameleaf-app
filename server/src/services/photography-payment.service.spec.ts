@@ -1,10 +1,17 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { PaymentLinkRow, PaymentRow } from 'src/repositories/photography-payment.repository.js';
-import type { ClientsPaymentEvent } from 'src/services/clients-payments.service.js';
+import { SystemMetadataKey } from 'src/enum.js';
+import { type ClientsPaymentEvent, ClientsPaymentsService } from 'src/services/clients-payments.service.js';
 import { PhotographyPaymentService } from 'src/services/photography-payment.service.js';
+
+// The identity key itself is not what these tests are about.
+vi.mock('src/utils/frameleaf-cloud-gateway.js', async (original) => ({
+  ...(await original<typeof import('src/utils/frameleaf-cloud-gateway.js')>()),
+  loadInstanceIdentity: vi.fn(() => Promise.resolve({})),
+}));
 
 const ownerId = randomUUID();
 const auth = { user: { id: ownerId }, session: { id: 's' } } as unknown as AuthDto;
@@ -191,5 +198,91 @@ describe(PhotographyPaymentService.name, () => {
     s.links[0].active = false;
     await expect(s.service.publicLink(link.slug)).rejects.toThrow('This payment link is unavailable');
     expect(s.repository.paidCount).not.toHaveBeenCalled();
+  });
+
+  it('stores a full batch of early refunds through the real handler before acknowledging, then takes the late success', async () => {
+    const s = setup();
+    const instanceId = randomUUID();
+    const fingerprint = createHash('sha256').update(`${instanceId}${ownerId}`).digest('hex');
+    const account = {
+      fingerprint,
+      status: 'active',
+      chargesEnabled: true,
+      requirementsDue: [],
+      country: 'CA',
+      defaultCurrency: 'cad',
+      updatedAt: '',
+    };
+    let events: unknown[] = [];
+    const acked: string[][] = [];
+    let session = 0;
+    const metadata = {
+      get: vi.fn((key: SystemMetadataKey) =>
+        Promise.resolve(
+          key === SystemMetadataKey.FrameleafCloudLink
+            ? { status: 'linked', instanceId, cloudUrl: 'https://cloud.example' }
+            : key === SystemMetadataKey.ClientsPayments
+              ? { accounts: { [ownerId]: account } }
+              : null,
+        ),
+      ),
+      setEntry: vi.fn(),
+    };
+    const cloud = {
+      discovery: vi.fn(() => Promise.resolve({ api: 'https://api.cloud.example' })),
+      accessToken: vi.fn(() => Promise.resolve({ accessToken: 't' })),
+      requestJson: vi.fn(
+        (schema: { parse: (v: unknown) => unknown }, request: { url: string; body?: { ids: string[] } }) => {
+          const path = new URL(request.url).pathname;
+          if (path.endsWith('/checkout')) {
+            session++;
+            return Promise.resolve(
+              schema.parse({
+                id: `cs_${session}`,
+                url: `https://checkout.stripe.com/c/pay/cs_${session}`,
+                expiresAt: '',
+              }),
+            );
+          }
+          if (path.endsWith('/events')) {
+            // Cloud's contract: unacknowledged events come back, oldest first.
+            const waiting = events.filter((e) => !acked.flat().includes((e as { id: string }).id));
+            return Promise.resolve(schema.parse({ events: waiting.slice(0, 50) }));
+          }
+          acked.push(request.body!.ids);
+          return Promise.resolve({});
+        },
+      ),
+    };
+    const clients = new ClientsPaymentsService(
+      cloud as never,
+      { getEnv: () => ({ frameleafCloud: { url: 'https://cloud.example' } }) } as never,
+      { withLock: (_lock: unknown, fn: () => unknown) => fn() } as never,
+      metadata as never,
+      { loadOrCreate: vi.fn(), currentSigner: vi.fn() } as never,
+      { setContext: vi.fn(), warn: vi.fn() } as never,
+    );
+    const service = new PhotographyPaymentService(
+      s.repository as never,
+      { get: vi.fn() } as never,
+      { ownerName: vi.fn() } as never,
+      clients,
+    );
+    const link = await service.create(auth, draft);
+    for (let n = 0; n < 50; n++)
+      await service.checkout(link.slug, { email: `p${n}@example.com` }, 'https://photos.example');
+    const refund = (p: PaymentRow, n: number) => ({
+      ...s.event(p, 'payment.refunded', { sessionId: null, paymentIntent: `pi_${n}` }),
+      owner: fingerprint,
+    });
+    events = s.payments.map((p, n) => refund(p, n));
+    events.push({ ...s.event(s.payments[7], 'payment.succeeded', { paymentIntent: 'pi_7' }), owner: fingerprint });
+
+    await clients.collect();
+    expect(acked[0]).toHaveLength(50);
+    expect(s.payments.every((p) => p.status === 'refunded')).toBe(true);
+    await clients.collect();
+    expect(acked[1]).toEqual([(events[50] as { id: string }).id]);
+    expect(s.payments[7].status).toBe('refunded');
   });
 });

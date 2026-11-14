@@ -84,7 +84,16 @@ describe(PhotographyPaymentRepository.name, () => {
       await sql`INSERT INTO photography_payment ("ownerId", "linkId", amount, currency, "payerEmail")
         VALUES (${user.id}::uuid, ${link.id}::uuid, 5000, 'CAD', 'a@example.com')`.execute(trx);
       second = sut.createPayment(link, 'b@example.com');
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Commit only once PostgreSQL reports the second payer waiting on the link lock.
+      let blocked = false;
+      for (let tries = 0; tries < 100 && !blocked; tries++) {
+        const { rows } = await sql<{ n: number }>`SELECT count(*)::int AS n FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock' AND query LIKE '%photography_payment_link%FOR UPDATE%'`.execute(database);
+        blocked = rows[0].n > 0;
+        if (blocked) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(blocked).toBe(true);
     });
     expect(await second).toBeUndefined();
   });
