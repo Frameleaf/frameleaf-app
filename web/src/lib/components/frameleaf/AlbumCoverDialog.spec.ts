@@ -49,6 +49,27 @@ describe('AlbumCoverDialog', () => {
     sdkMock.searchAssets.mockResolvedValue(searchResult());
   });
 
+  it('offers the photos of every nested album, searching each album on its own (FL-1584)', async () => {
+    sdkMock.searchAssets
+      .mockResolvedValueOnce(searchResult([]))
+      .mockResolvedValueOnce(searchResult([assets[0]]))
+      .mockResolvedValueOnce(searchResult([assets[1]]));
+    const album = albumFactory.build({ id: 'collection-1' });
+    render(AlbumCoverDialog, {
+      album,
+      albumIds: ['collection-1', 'child-1', 'child-2'],
+      open: true,
+      onUpdated: vi.fn(),
+    });
+
+    expect(await screen.findByRole('radio', { name: 'beach.jpg' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'sunset.jpg' })).toBeInTheDocument();
+    expect(sdkMock.searchAssets).toHaveBeenCalledTimes(3);
+    for (const id of ['collection-1', 'child-1', 'child-2']) {
+      expect(sdkMock.searchAssets).toHaveBeenCalledWith({ metadataSearchDto: { albumIds: [id], size: 120 } });
+    }
+  });
+
   it('starts from the picked cover with "Always use the newest item" off', async () => {
     renderDialog();
 

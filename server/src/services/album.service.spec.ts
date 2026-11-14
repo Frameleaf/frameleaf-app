@@ -745,6 +745,7 @@ describe(AlbumService.name, () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(album));
       mocks.album.getAssetIds.mockResolvedValue(new Set());
+      mocks.album.getDescendantIds.mockResolvedValue(new Set());
 
       await expect(
         sut.update(AuthFactory.create(owner), album.id, { albumThumbnailAssetId: 'not-in-album' }),
@@ -777,11 +778,49 @@ describe(AlbumService.name, () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(album));
       mocks.asset.getById.mockResolvedValue(othersLocked as never);
+      mocks.album.getDescendantIds.mockResolvedValue(new Set());
 
       await expect(
         sut.update(AuthFactory.create(owner), album.id, { albumThumbnailAssetId: othersLocked.id }),
       ).rejects.toThrow('Invalid album thumbnail');
 
+      expect(mocks.album.update).not.toHaveBeenCalled();
+    });
+
+    it('should take a collection cover from an album nested inside it (FL-1584)', async () => {
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const photo = AssetFactory.create({ ownerId: owner.id });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getDescendantIds.mockResolvedValue(new Set(['child-album']));
+      mocks.album.getAssetIds.mockResolvedValue(new Set([photo.id]));
+      mocks.asset.getById.mockResolvedValue(photo as never);
+      mocks.album.update.mockResolvedValue(getForAlbum(album));
+
+      await sut.update(AuthFactory.create(owner), album.id, { albumThumbnailAssetId: photo.id });
+
+      expect(mocks.album.getAssetIds).toHaveBeenCalledWith('child-album', [photo.id]);
+      expect(mocks.album.update).toHaveBeenCalledWith(
+        album.id,
+        expect.objectContaining({ albumThumbnailAssetId: photo.id }),
+        expect.anything(),
+      );
+    });
+
+    it('should refuse a Locked photo from a nested album as the cover (FL-1584)', async () => {
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const locked = AssetFactory.create({ visibility: AssetVisibility.Locked });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getDescendantIds.mockResolvedValue(new Set(['child-album']));
+      mocks.album.getAssetIds.mockResolvedValue(new Set([locked.id]));
+      mocks.asset.getById.mockResolvedValue(locked as never);
+
+      await expect(
+        sut.update(AuthFactory.create(owner), album.id, { albumThumbnailAssetId: locked.id }),
+      ).rejects.toThrow('Invalid album thumbnail');
       expect(mocks.album.update).not.toHaveBeenCalled();
     });
 

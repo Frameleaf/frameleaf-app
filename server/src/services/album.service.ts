@@ -724,7 +724,10 @@ export class AlbumService extends BaseService {
       const visibleAssetIds = new Set(album.assets?.map((asset) => asset.id));
       if (!visibleAssetIds.has(dto.albumThumbnailAssetId)) {
         await this.requireNotOwnLockedCover(auth, dto.albumThumbnailAssetId);
-        throw new BadRequestException('Invalid album thumbnail');
+        // FL-1584: a collection (or an album holding albums) may take its cover from any album inside it.
+        if (!(await this.isNestedCover(album.id, dto.albumThumbnailAssetId))) {
+          throw new BadRequestException('Invalid album thumbnail');
+        }
       }
     }
 
@@ -1533,6 +1536,18 @@ export class AlbumService extends BaseService {
    * that is the caller's own Locked photo with an error that says so. Anyone else's asset gets only the
    * generic error, so the answer never reveals whether another person's photo is Locked.
    */
+  /** True when `assetId` is in an album nested anywhere under `albumId` and is not Locked (a cover is seen by every member). */
+  private async isNestedCover(albumId: string, assetId: string): Promise<boolean> {
+    // ponytail: one query per nested album; batch it if collections grow to hundreds of albums.
+    for (const descendantId of await this.albumRepository.getDescendantIds(albumId)) {
+      if ((await this.albumRepository.getAssetIds(descendantId, [assetId])).has(assetId)) {
+        const asset = await this.assetRepository.getById(assetId);
+        return !!asset && !asset.deletedAt && !isLockedRow(asset);
+      }
+    }
+    return false;
+  }
+
   private async requireNotOwnLockedCover(auth: AuthDto, assetId: string): Promise<void> {
     const asset = await this.assetRepository.getById(assetId);
     if (asset && asset.ownerId === auth.user.id && isLockedRow(asset)) {
