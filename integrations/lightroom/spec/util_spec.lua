@@ -1,0 +1,93 @@
+package.path = 'frameleaf.lrplugin/?.lua;' .. package.path
+local Util = require('Util')
+
+describe('JSON', function()
+  it('round-trips objects, arrays and escapes', function()
+    local text = Util.encodeJson({ b = { 1, 2, 3 }, a = 'quote " and \\ and \n', c = true, d = Util.emptyArray })
+    assert.are.equal('{"a":"quote \\" and \\\\ and \\n","b":[1,2,3],"c":true,"d":[]}', text)
+    local back = Util.decodeJson(text)
+    assert.are.same({ 1, 2, 3 }, back.b)
+    assert.are.equal('quote " and \\ and \n', back.a)
+  end)
+
+  it('decodes server responses with nulls, unicode and numbers', function()
+    local v = Util.decodeJson('{"id":"x","title":null,"n":-1.5e2,"s":"caf\\u00e9 \\ud83d\\ude00","l":[{"k":false}]}')
+    assert.are.equal('x', v.id)
+    assert.is_nil(v.title)
+    assert.are.equal(-150, v.n)
+    assert.are.equal('café 😀', v.s)
+    assert.is_false(v.l[1].k)
+  end)
+
+  it('rejects malformed text', function()
+    assert.has_error(function() Util.decodeJson('{"a":1,}') end)
+    assert.has_error(function() Util.decodeJson('{"a":1} x') end)
+  end)
+end)
+
+describe('PKCE', function()
+  it('hashes known vectors', function()
+    assert.are.equal('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', Util.sha256Hex(''))
+    assert.are.equal('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', Util.sha256Hex('abc'))
+    assert.are.equal('248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1',
+      Util.sha256Hex('abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'))
+  end)
+
+  it('matches the RFC 7636 S256 example', function()
+    assert.are.equal('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+      Util.pkceChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'))
+  end)
+end)
+
+describe('URLs', function()
+  it('normalizes Library addresses', function()
+    assert.are.equal('https://photos.example.com', Util.normalizeLibraryUrl(' Photos.Example.com/ '))
+    assert.are.equal('http://192.168.1.20:2283', Util.normalizeLibraryUrl('http://192.168.1.20:2283/'))
+    assert.are.equal('https://x.test/frameleaf', Util.normalizeLibraryUrl('https://x.test/frameleaf//?a=1'))
+    assert.is_nil(Util.normalizeLibraryUrl('ftp://x.test'))
+    assert.is_nil(Util.normalizeLibraryUrl('https://user:pw@x.test'))
+    assert.is_nil(Util.normalizeLibraryUrl(''))
+  end)
+
+  it('encodes forms and parses callbacks', function()
+    assert.are.equal('a=1%202&b=%2F%3F', Util.formEncode({ b = '/?', a = '1 2' }))
+    local q = Util.parseQuery('lightroom://net.frameleaf.connect/oauth/callback?code=ab%2Bc&state=s1&error_description=No+thanks')
+    assert.are.equal('ab+c', q.code)
+    assert.are.equal('s1', q.state)
+    assert.are.equal('No thanks', q.error_description)
+  end)
+end)
+
+describe('publish mapping', function()
+  it('builds stable request IDs within the server limit', function()
+    local sha = string.rep('a', 64)
+    local id = Util.requestId('123456', sha)
+    assert.are.equal('lr-123456-' .. sha, id)
+    assert.is_true(#id <= 200)
+    assert.are.equal('lr-collection-42', Util.albumRequestId(42))
+  end)
+
+  it('reads digests from shasum and certutil', function()
+    local hex = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    assert.are.equal(hex, Util.parseDigest(hex .. '  /tmp/a.jpg\n'))
+    assert.are.equal(hex, Util.parseDigest('SHA256 hash of C:\\a.jpg:\r\n' .. hex:upper() .. '\r\nCertUtil: -hashfile command completed successfully.\r\n'))
+    assert.are.equal(hex, Util.parseDigest('SHA256 hash of a.jpg:\nba 78 16 bf 8f 01 cf ea 41 41 40 de 5d ae 22 23 b0 03 61 a3 96 17 7a 9c b4 10 ff 61 f2 00 15 ad\n'))
+    assert.is_nil(Util.parseDigest('not found'))
+  end)
+
+  it('turns keywords into at most 20 unique tags', function()
+    assert.are.same({ 'Beach', 'Sunset' }, Util.keywordTags(' Beach, Sunset,beach, '))
+    local many = {}
+    for i = 1, 30 do many[i] = 'k' .. i end
+    assert.are.equal(20, #Util.keywordTags(table.concat(many, ',')))
+    assert.are.same({}, Util.keywordTags(nil))
+  end)
+
+  it('formats dates and filenames for upload', function()
+    assert.are.equal('2001-01-01T00:00:00Z', Util.isoFromCocoa(0))
+    assert.are.equal('1970-01-01T00:00:10Z', Util.isoUtc(10))
+    assert.are.equal('IMG_0001.jpg', Util.uploadFilename('/tmp/render/IMG_0001.JPG'))
+    assert.are.equal('My photo.jpg', Util.uploadFilename('C:\\Temp\\My photo.jpeg'))
+    assert.are.equal('photo.jpg', Util.uploadFilename('/tmp/.jpg'))
+  end)
+end)
