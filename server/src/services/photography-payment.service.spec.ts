@@ -196,16 +196,41 @@ describe(PhotographyPaymentService.name, () => {
     expect(payment.status).toBe('refunded');
   });
 
-  it('releases a single-use link when Cloud refuses the checkout', async () => {
+  it('keeps a refused attempt for its payer to retry, and holds the single-use link from others meanwhile', async () => {
     const s = setup();
     const link = await s.service.create(auth, { ...draft, reusable: false });
     s.clients.checkout.mockRejectedValueOnce(
-      new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 422, 'refused'),
+      new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 401, 'token refused'),
     );
     await expect(s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example')).rejects.toThrow();
-    expect(s.payments[0]).toMatchObject({ status: 'failed', checkoutId: null });
-    const { paymentId } = await s.service.checkout(link.slug, { email: 'b@example.com' }, 'https://photos.example');
-    expect(paymentId).not.toBe(s.payments[0].id);
+    expect(s.payments[0]).toMatchObject({ status: 'pending', checkoutId: null });
+    await expect(s.service.checkout(link.slug, { email: 'b@example.com' }, 'https://x.example')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    const { paymentId } = await s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example');
+    expect(paymentId).toBe(s.payments[0].id);
+  });
+
+  it('two retries of one attempt at once share its payment and idempotency key', async () => {
+    const s = setup();
+    const link = await s.service.create(auth, { ...draft, reusable: false });
+    s.clients.checkout.mockRejectedValueOnce(
+      new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, null, 'timeout'),
+    );
+    await expect(s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example')).rejects.toThrow();
+    s.clients.checkout.mockRejectedValueOnce(
+      new FrameleafCloudError(MlAdmissionRefusal.RequestInvalid, 422, 'refused'),
+    );
+    const results = await Promise.allSettled([
+      s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example'),
+      s.service.checkout(link.slug, { email: 'a@example.com' }, 'https://photos.example'),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(s.payments).toEqual([expect.objectContaining({ status: 'pending' })]);
+    const keys = s.clients.checkout.mock.calls.map(
+      (call) => (call as unknown as [string, { idempotencyKey: string }])[1].idempotencyKey,
+    );
+    expect(new Set(keys).size).toBe(1);
   });
 
   it('retries an uncertain checkout with the same payment and idempotency key, so only one session can be paid', async () => {
