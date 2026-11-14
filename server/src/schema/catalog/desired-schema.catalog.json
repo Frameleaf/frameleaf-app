@@ -55767,6 +55767,429 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "photography_booking_type",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "name",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "description",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::text",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "durationMinutes",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "price",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "deposit",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "currency",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "active",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "addOns",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "order",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "photography_booking_type",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "photography_booking_type_owner_idx",
+          "definition": "CREATE INDEX photography_booking_type_owner_idx ON public.photography_booking_type USING btree (\"ownerId\", \"order\")",
+          "tableName": "photography_booking_type",
+          "columnNames": [
+            "ownerId",
+            "order"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "photography_booking_type_durationMinutes_check",
+          "definition": "CHECK ((\"durationMinutes\" > 0))",
+          "tableName": "photography_booking_type",
+          "expression": "((\"durationMinutes\" > 0))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "photography_booking_type_price_check",
+          "definition": "CHECK ((price >= 0))",
+          "tableName": "photography_booking_type",
+          "expression": "((price >= 0))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "photography_booking_type_check",
+          "definition": "CHECK (((deposit >= 0) AND (deposit <= price)))",
+          "tableName": "photography_booking_type",
+          "expression": "(((deposit >= 0) AND (deposit <= price)))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "photography_booking_type_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "photography_booking_type",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_booking_type_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "photography_booking_type",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "photography_booking",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "bookingTypeId",
+          "tableName": "photography_booking",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "typeName",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "clientName",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "clientEmail",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "message",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::text",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "preferredDates",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "addOns",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "default": "'[]'::jsonb",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "total",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "deposit",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "currency",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "depositPaymentId",
+          "tableName": "photography_booking",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "default": "'requested'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "requestedAt",
+          "tableName": "photography_booking",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "photography_booking_owner_idx",
+          "definition": "CREATE INDEX photography_booking_owner_idx ON public.photography_booking USING btree (\"ownerId\", \"requestedAt\" DESC)",
+          "tableName": "photography_booking",
+          "columnNames": [
+            "ownerId",
+            "requestedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "photography_booking_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "photography_booking",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_booking_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON DELETE CASCADE",
+          "tableName": "photography_booking",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_booking_bookingTypeId_fkey",
+          "definition": "FOREIGN KEY (\"bookingTypeId\") REFERENCES photography_booking_type(id) ON DELETE SET NULL",
+          "tableName": "photography_booking",
+          "columnNames": [
+            "bookingTypeId"
+          ],
+          "referenceTableName": "photography_booking_type",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photography_booking_depositPaymentId_fkey",
+          "definition": "FOREIGN KEY (\"depositPaymentId\") REFERENCES photography_payment(id) ON DELETE SET NULL",
+          "tableName": "photography_booking",
+          "columnNames": [
+            "depositPaymentId"
+          ],
+          "referenceTableName": "photography_payment",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
