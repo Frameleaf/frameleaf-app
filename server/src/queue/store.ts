@@ -93,7 +93,7 @@ const stageHeld = (runId: RawBuilder<unknown>, name: RawBuilder<unknown>) =>
  * FL-1478: the `availableAt` of work for photos that just came in (an upload from a phone, a computer, an app or a
  * shared link). It sorts after work started by hand and before every backlog job, so a new upload's thumbnails do not
  * wait behind a library-wide queue. Arrivals stay in order among themselves by `createdAt`; the claim index is
- * unchanged. FL-1601: folder scans (`library`) and imports (`import`: Google Photos, Eagle) keep their origin for
+ * unchanged. FL-1603: folder scans (`library`) and imports (`import`: Google Photos, Eagle) keep their origin for
  * Activity but queue as backlog, so a phone upload made during a two-million-photo import is not stuck behind it.
  */
 const ARRIVAL = sql`'epoch'::timestamptz + interval '1 day'`;
