@@ -11,6 +11,12 @@ export const DATABASE_ACQUIRE_TIMEOUT_MS = 5000;
 export const DATABASE_MAX_WAITERS = 64;
 export const DATABASE_CLEANUP_TIMEOUT_MS = 2000;
 /**
+ * FL-1591: after the database restarts, a worker's reservations can stay held by work that never resumes, so every
+ * later acquisition fails and no job runs until the server restarts. Waiters with no reservation granted or released
+ * for this long mean the pool will not recover: close it and let the supervisor start a fresh worker.
+ */
+export const DATABASE_STALL_MS = 60_000;
+/**
  * A full pool is a passing overload, not a server fault: answer 503 so clients and proxies retry,
  * instead of a 500 that reads as a bug. Outside a request (jobs) it is still an ordinary Error.
  */
@@ -55,6 +61,11 @@ export const boundExecutionReservations = (
   let reserved = 0;
   if (monitorPool) readPoolUsage = () => ({ reserved, waiting: pending, capacity: DATABASE_POOL_SIZE });
   let unusable: Promise<void> | undefined;
+  // ponytail: one pool-wide stall clock, not per-caller tracking; the leaking caller is not knowable from here.
+  let lastProgress = performance.now();
+  const progress = () => {
+    lastProgress = performance.now();
+  };
   const discardPool = () => {
     // PostgresJS cannot discard one reserved session. Close this worker's pool before any
     // poisoned reservation can be released, then let its supervisor create a fresh worker.
@@ -65,7 +76,15 @@ export const boundExecutionReservations = (
     if (unusable) throw new Error('Database pool requires worker restart');
     const signal = cleanupExecution.getStore() ?? executionSignal();
     signal?.throwIfAborted();
-    if (pending >= DATABASE_MAX_WAITERS) throw databaseBusy('Database acquisition capacity exhausted');
+    const stalled = () => {
+      if (performance.now() - lastProgress >= DATABASE_STALL_MS) void discardPool().catch(() => {});
+    };
+    if (pending >= DATABASE_MAX_WAITERS) {
+      stalled();
+      throw databaseBusy('Database acquisition capacity exhausted');
+    }
+    // Contention starts now: an idle pool has made no progress because nothing asked it to.
+    if (pending === 0) progress();
     pending++;
     return new Promise<Awaited<ReturnType<Client['reserve']>>>((resolve, reject) => {
       let settled = false;
@@ -74,6 +93,7 @@ export const boundExecutionReservations = (
         settled = true;
         clearTimeout(timer);
         signal?.removeEventListener('abort', fail);
+        if (!signal?.aborted) stalled();
         reject(signal?.reason ?? databaseBusy('Database acquisition timed out'));
       };
       const timer = setTimeout(fail, DATABASE_ACQUIRE_TIMEOUT_MS);
@@ -84,6 +104,7 @@ export const boundExecutionReservations = (
       void reserve().then(
         (connection) => {
           pending--;
+          progress();
           if (settled) {
             connection.release();
             return;
@@ -95,6 +116,7 @@ export const boundExecutionReservations = (
           let released = false;
           const release = connection.release.bind(connection);
           connection.release = () => {
+            progress();
             if (monitorPool && !released) {
               released = true;
               reserved--;
