@@ -493,6 +493,7 @@ export class PhotographyWorkflowController {
   }
   @Post('galleries/:id/orders/:orderId/checkout')
   @ApiOperation({ operationId: 'photographyCheckout' })
+  @ApiBody({ type: PhotographyCheckoutRequestDto, required: false })
   @Authenticated({ public: true })
   @ApiResponse({ status: 201, type: PhotographyCheckoutDto })
   @ApiHeader({ name: 'X-Photography-Session', required: true, schema: { type: 'string', pattern: '^[a-f0-9]{64}$' } })
