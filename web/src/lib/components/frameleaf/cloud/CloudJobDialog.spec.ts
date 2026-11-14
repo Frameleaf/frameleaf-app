@@ -222,6 +222,30 @@ describe('CloudJobDialog: photo upscale under the 64 MP output cap (FC-46)', () 
     await rerender({ open: false });
     expect(onDismissed).toHaveBeenCalledOnce();
   });
+  it('lists the rest of a batch with each estimate and lets this clip be skipped (FL-1429)', async () => {
+    const onSkip = vi.fn();
+    render(CloudJobDialog, {
+      open: true,
+      title: 'Captions on Frameleaf Cloud · clip 2 of 3',
+      workName: 'Captions',
+      summary: 'Forest trail.mov',
+      estimateWith: () => Promise.resolve(estimate(null)),
+      steps: [
+        { label: '1. Lake morning.mov', value: 'Sent', current: false },
+        { label: '2. Forest trail.mov', value: '$0.05–$0.06', current: true },
+        { label: '3. Kayaking.mov', value: '$0.04–$0.05', current: false },
+      ],
+      onSkip,
+      cancelLabel: 'Stop here',
+    });
+    expect(screen.getByText('3. Kayaking.mov')).toBeInTheDocument();
+    expect(screen.getByText('2. Forest trail.mov').closest('li')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByRole('button', { name: 'Stop here' })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_studio_cloud_captions_batch_skip' }));
+    expect(onSkip).toHaveBeenCalledOnce();
+    expect(sdkMock.createCloudMlJob).not.toHaveBeenCalled();
+  });
+
   const pressConfirm = async () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_cloud_job_submit' }));
   };

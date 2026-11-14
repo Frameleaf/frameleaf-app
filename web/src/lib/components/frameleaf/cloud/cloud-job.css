@@ -119,3 +119,29 @@
     transform: translateX(290%);
   }
 }
+
+/* FL-1429: where this job sits in a batch (prototype cloud-job.css .fcj-batch). */
+.fcj-batch {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  font-size: var(--fl-font-small);
+}
+.fcj-batch li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  color: var(--fl-muted);
+}
+.fcj-batch li + li {
+  border-top: 1px solid var(--fl-border);
+}
+.fcj-batch li.is-current {
+  color: var(--fl-text);
+  font-weight: 600;
+}
