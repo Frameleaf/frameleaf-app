@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhotographyBookingRepository } from 'src/repositories/photography-booking.repository.js';
 import { PhotographyCampaignRepository } from 'src/repositories/photography-campaign.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -55,6 +56,67 @@ it('keeps owner contacts separate and preserves opt-outs when sources are synchr
     }),
   ).toBe(false);
   expect(sent).toBe(false);
+});
+
+it('adds booking clients as leads once, per owner, without re-subscribing anyone', async () => {
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user } = await ctx.newUser();
+  const { user: other } = await ctx.newUser();
+  const repository = new PhotographyCampaignRepository(db);
+  const bookings = new PhotographyBookingRepository(db);
+  const book = async (ownerId: string, clientName: string, clientEmail: string, message = '') => {
+    const type = await bookings.createType(ownerId, {
+      name: 'Mini',
+      description: '',
+      durationMinutes: 30,
+      price: 20_000,
+      deposit: 0,
+      currency: 'CAD',
+      active: true,
+      addOns: [],
+      order: 0,
+    });
+    await bookings.findOrCreateRequest(
+      {
+        ownerId,
+        bookingTypeId: type.id,
+        typeName: 'Mini',
+        clientName,
+        clientEmail,
+        message,
+        preferredDates: [],
+        addOns: [],
+        total: 20_000,
+        deposit: 0,
+        currency: 'CAD',
+      },
+      30,
+    );
+  };
+  // The same person as an inquiry and as a booking (different case) is one contact.
+  await sql`INSERT INTO photography_studio_site ("ownerId",revision,value) VALUES (${user.id}::uuid,gen_random_uuid(),${JSON.stringify({ inquiries: [{ name: 'Sam', email: 'sam@example.test' }] })}::text::jsonb)`.execute(
+    db,
+  );
+  await book(user.id, 'Sam', ' Sam@Example.test ');
+  await book(user.id, 'Robin', 'robin@example.test');
+  await book(other.id, 'Kai', 'kai@example.test');
+  await repository.syncContacts(user.id);
+  await repository.syncContacts(user.id);
+  const leads = await repository.contacts(user.id, { source: 'leads' });
+  expect(leads.map((c) => c.email).toSorted()).toEqual(['robin@example.test', 'sam@example.test']);
+  expect(await repository.contacts(other.id, { source: 'all' })).toEqual([]);
+
+  // A later booking under a new name updates the contact; an opt-out survives every later sync.
+  const robin = leads.find((c) => c.email === 'robin@example.test')!;
+  await book(user.id, 'Robin Lee', 'robin@example.test', 'second request');
+  await repository.syncContacts(user.id);
+  expect((await repository.contacts(user.id, { source: 'all' })).find((c) => c.id === robin.id)?.name).toBe(
+    'Robin Lee',
+  );
+  expect(await repository.unsubscribe(robin.unsubscribeToken)).toBe(true);
+  await book(user.id, 'Robin', 'robin@example.test', 'third request');
+  await repository.syncContacts(user.id);
+  expect((await repository.contacts(user.id, { source: 'all' })).map((c) => c.email)).toEqual(['sam@example.test']);
 });
 
 it('claims each recipient once and resumes untouched recipients without replaying uncertain attempts', async () => {

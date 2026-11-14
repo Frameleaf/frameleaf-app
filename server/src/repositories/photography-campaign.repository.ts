@@ -31,14 +31,17 @@ export class PhotographyCampaignRepository {
   async syncContacts(ownerId: string) {
     await sql`INSERT INTO photography_contact ("ownerId", email, name, source)
       SELECT DISTINCT ON (email) ${ownerId}::uuid, email, name, source FROM (
-        SELECT lower(trim(r->>'email')) email, coalesce(r->>'name','') name, 'clients' source
+        SELECT lower(trim(r->>'email')) email, coalesce(r->>'name','') name, 'clients' source, NULL::timestamptz seen
         FROM photography_workflow w CROSS JOIN LATERAL jsonb_array_elements(coalesce(w.value->'recipients','[]')) r
         WHERE w."ownerId"=${ownerId}::uuid AND coalesce((r->>'revoked')::boolean,false)=false
-        UNION ALL SELECT lower(trim(i->>'email')), coalesce(i->>'name',''), 'leads'
+        UNION ALL SELECT lower(trim(i->>'email')), coalesce(i->>'name',''), 'leads', NULL
         FROM photography_studio_site s CROSS JOIN LATERAL jsonb_array_elements(coalesce(s.value->'inquiries','[]')) i
         WHERE s."ownerId"=${ownerId}::uuid
+        -- FL-1567: whoever asked for a booking is a lead too, even when their inquiry entry wasn't written.
+        UNION ALL SELECT lower(trim(b."clientEmail")), b."clientName", 'leads', b."requestedAt"
+        FROM photography_booking b WHERE b."ownerId"=${ownerId}::uuid
       ) sources WHERE email ~ '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$'
-      ORDER BY email, source
+      ORDER BY email, source, seen DESC NULLS LAST
       ON CONFLICT ("ownerId", email) DO UPDATE SET name=excluded.name,
         source=CASE WHEN photography_contact.source='clients' THEN 'clients' ELSE excluded.source END`.execute(this.db);
   }
