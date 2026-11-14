@@ -349,7 +349,8 @@ const getEnv = (): EnvData => {
 
     frameleafCloud: {
       url: dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, ''),
-      guestSelfies: dto.FRAMELEAF_GUEST_SELFIE_CLOUD ?? false,
+      // FL-1058: read directly, not through EnvSchema, whose keys are a published response enum.
+      guestSelfies: /^(true|1|yes|on)$/i.test(process.env.FRAMELEAF_GUEST_SELFIE_CLOUD?.trim() ?? ''),
       pushUrl: dto.FRAMELEAF_PUSH_URL ? dto.FRAMELEAF_PUSH_URL.replace(/\/+$/, '') : null,
       identityDir: dto.FRAMELEAF_IDENTITY_DIR ?? null,
       linkToken: dto.FRAMELEAF_LINK_TOKEN ?? null,

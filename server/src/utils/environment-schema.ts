@@ -135,11 +135,6 @@ export const EnvSchema = z
      */
     FRAMELEAF_CLOUD_URL: z.url({ protocol: /^https?$/ }).default('https://api.frameleaf.cloud'),
     /**
-     * FL-1058: let a gallery guest's selfie go to Frameleaf Cloud when the Face route reaches it. Off until the owner
-     * decides whether Cloud may take guest selfies (decision 3); people who keep their photos at home are never sent.
-     */
-    FRAMELEAF_GUEST_SELFIE_CLOUD: stringBool.optional(),
-    /**
      * Overrides the push gateway address Frameleaf Cloud publishes in its discovery document
      * (`endpoints.push`, `https://push.frameleaf.cloud`). Unset is the normal case; push is only off
      * when neither names an address.
