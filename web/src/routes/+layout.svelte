@@ -24,6 +24,8 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { closeWebsocketConnection, openWebsocketConnection, websocketStore } from '$lib/stores/websocket';
   import { maintenanceShouldRedirect } from '$lib/utils/maintenance';
+  import { reportAccessChange } from '$lib/utils/sw-messaging';
+  import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { installFrameleafKit } from '$lib/frameleaf/kit-bridge';
   import { heroNavigation, installHeroIntent, sectionCrossfade } from '$lib/frameleaf/motion';
   import { installSearchShortcuts } from '$lib/frameleaf/search-shortcuts';
@@ -49,6 +51,8 @@
   import '$lib/frameleaf/tokens.css';
 
   trackSessionModals(modalManager);
+  // FL-1595: images authorized under the old access are asked for again (also on every page load).
+  onLibraryAccessChange(reportAccessChange);
   // The legacy kit takes the brand: Frameleaf toasts and the one confirmation dialog.
   installFrameleafKit();
 
