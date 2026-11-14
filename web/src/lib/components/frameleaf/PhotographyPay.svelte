@@ -16,8 +16,8 @@
   /** FL-1041: the public page a payment link opens. `paymentId` is set when Stripe sends the payer back. */
   let { slug, paymentId }: { slug: string; paymentId: string | null } = $props();
 
-  type State = 'loading' | 'ready' | 'paying' | 'checking' | 'thanks' | 'unavailable';
-  let state = $state<State>('loading');
+  type Phase = 'loading' | 'ready' | 'paying' | 'checking' | 'thanks' | 'unavailable';
+  let phase = $state<Phase>('loading');
   let link = $state<PhotographyPublicPaymentLinkDto>();
   let paid = $state<PhotographyPayStatusDto>();
   let email = $state('');
@@ -41,12 +41,12 @@
       }
       if (status.status === 'paid') {
         paid = status;
-        state = 'thanks';
+        phase = 'thanks';
         return;
       }
       if (status.status !== 'pending') {
         failed = true;
-        state = link ? 'ready' : 'unavailable';
+        phase = link ? 'ready' : 'unavailable';
         return;
       }
     } catch {
@@ -59,7 +59,7 @@
 
   async function pay(event: SubmitEvent) {
     event.preventDefault();
-    state = 'paying';
+    phase = 'paying';
     failed = false;
     try {
       const { url } = await photographyPayCheckout({ slug, photographyPayCheckoutDto: { email } });
@@ -70,7 +70,7 @@
       location.assign(target.href);
     } catch {
       failed = true;
-      state = 'ready';
+      phase = 'ready';
     }
   }
 
@@ -81,10 +81,10 @@
       link = undefined;
     }
     if (paymentId) {
-      state = 'checking';
+      phase = 'checking';
       await check(paymentId);
     } else {
-      state = link ? 'ready' : 'unavailable';
+      phase = link ? 'ready' : 'unavailable';
     }
   });
 </script>
@@ -97,7 +97,7 @@
         {link.brand.name}
       </header>
     {/if}
-    {#if state === 'ready' && link}
+    {#if phase === 'ready' && link}
       <section class="card">
         <h1>{link.title}</h1>
         {#if link.description}<p>{link.description}</p>{/if}
@@ -111,18 +111,18 @@
           <Button variant="primary" type="submit">{$t('frameleaf_clients_pay_continue')}</Button>
         </form>
       </section>
-    {:else if state === 'loading' || state === 'paying'}
+    {:else if phase === 'loading' || phase === 'paying'}
       <div class="status" role="status">
         <Icon icon={mdiClockOutline} size="1.5rem" aria-hidden={true} />
         <h2>{$t('frameleaf_clients_pay_loading')}</h2>
       </div>
-    {:else if state === 'checking'}
+    {:else if phase === 'checking'}
       <div class="status" role="status">
         <Icon icon={mdiClockOutline} size="1.5rem" aria-hidden={true} />
         <h2>{$t('frameleaf_clients_pay_checking_title')}</h2>
         <p>{$t('frameleaf_clients_pay_checking_body')}</p>
       </div>
-    {:else if state === 'thanks' && paid}
+    {:else if phase === 'thanks' && paid}
       <div class="status" role="status">
         <Icon icon={mdiCheckCircleOutline} size="1.5rem" aria-hidden={true} />
         <h2>{$t('frameleaf_clients_pay_thanks_title')}</h2>

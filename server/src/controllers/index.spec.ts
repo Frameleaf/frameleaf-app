@@ -308,6 +308,10 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'GET photography/sign/:token': { bucket: 'photography-contract-sign', limit: 60, windowSeconds: 60 },
   'POST photography/sign/:token': { bucket: 'photography-contract-sign', limit: 60, windowSeconds: 60 },
   'GET photography/sign/:token/pdf': { bucket: 'photography-contract-sign', limit: 60, windowSeconds: 60 },
+  // FL-1041: the public pay page and its checkout.
+  'GET photography/pay/:slug': { bucket: 'photography-pay-page', limit: 120, windowSeconds: 600 },
+  'GET photography/pay/:slug/payments/:paymentId': { bucket: 'photography-pay-page', limit: 120, windowSeconds: 600 },
+  'POST photography/pay/:slug/checkout': { bucket: 'photography-pay-checkout', limit: 20, windowSeconds: 600 },
 };
 
 const isAdminPermission = (permission: AuthenticatedOptions['permission']) =>
