@@ -1,6 +1,6 @@
 {
   "name": "frameleaf-monorepo",
-  "version": "1.2.23",
+  "version": "1.2.24",
   "description": "Monorepo for Frameleaf",
   "type": "module",
   "private": true,
