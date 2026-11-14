@@ -86,7 +86,7 @@ export class PhotographyBookingRepository {
   }
   /**
    * The booking for this exact request: an identical one from the same client for the same session in the last
-   * `minutes`, still waiting, is a resend and is returned as it is (`created` false); anything different is a new
+   * `minutes` (add-ons compared by id and quantity, not by price, which the studio may edit), still waiting, is a resend and is returned as it is (`created` false); anything different is a new
    * booking. One advisory lock per studio, client and session makes overlapping resends wait for each other.
    */
   findOrCreateRequest(
@@ -101,7 +101,9 @@ export class PhotographyBookingRepository {
         WHERE b."ownerId"=${booking.ownerId}::uuid AND b."bookingTypeId"=${booking.bookingTypeId}::uuid
           AND lower(b."clientEmail")=lower(${booking.clientEmail}) AND b."clientName"=${booking.clientName}
           AND b.message=${booking.message} AND b."preferredDates"=${JSON.stringify(booking.preferredDates)}::text::jsonb
-          AND b."addOns"=${JSON.stringify(booking.addOns)}::text::jsonb
+          AND coalesce((SELECT jsonb_agg(jsonb_build_object('id', e->>'id', 'quantity', (e->>'quantity')::int))
+            FROM jsonb_array_elements(b."addOns") e), '[]'::jsonb)
+            = ${JSON.stringify(booking.addOns.map((a) => ({ id: a.id, quantity: a.quantity })))}::text::jsonb
           AND b.status='requested' AND b."requestedAt" > now() - make_interval(mins => ${minutes})
         ORDER BY b."requestedAt" DESC LIMIT 1`.execute(trx);
       if (same[0]) return { booking: same[0], created: false };

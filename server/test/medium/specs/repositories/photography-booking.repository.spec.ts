@@ -57,6 +57,12 @@ describe(PhotographyBookingRepository.name, () => {
     const booking = sent[0].booking;
     const claimed = await Promise.all([sut.claimDepositPayment(booking.id), sut.claimDepositPayment(booking.id)]);
     expect(claimed[0]).toBe(claimed[1]);
+    // The studio renames and reprices the add-on meanwhile: the client's resend is still the same request.
+    const resent = await sut.findOrCreateRequest(
+      { ...request, addOns: [{ id: 'prints', name: 'Prints (new)', price: 4500, quantity: 2 }], total: 29_000 },
+      30,
+    );
+    expect(resent).toMatchObject({ created: false, booking: { id: booking.id } });
     // A changed request (another date) is a new booking.
     const other = await sut.findOrCreateRequest({ ...request, preferredDates: ['2027-05-01'] }, 30);
     expect(other.created).toBe(true);
