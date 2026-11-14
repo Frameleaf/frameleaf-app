@@ -1279,6 +1279,50 @@ describe(LibraryService.name, () => {
       },
     );
 
+    it('renews the scan claim for a batch that asks for a lease (FL-1590)', async () => {
+      const { ctx, claim } = await claimedScan();
+      const expiry = () =>
+        defaultDatabase
+          .selectFrom('media_operation')
+          .select('claimExpiresAt')
+          .where('id', '=', claim.operationId)
+          .executeTakeFirstOrThrow()
+          .then(({ claimExpiresAt }) => new Date(claimExpiresAt as unknown as Date).getTime());
+      const before = await expiry();
+      await ctx.get(LibraryRepository).withScanClaim(claim, () => Promise.resolve(true));
+      expect(await expiry()).toBe(before); // no lease asked for: the claim is left as it was
+      await expect(
+        ctx.get(LibraryRepository).withScanClaim({ ...claim, leaseMs: 300_000 }, () => Promise.resolve(true)),
+      ).resolves.toEqual({ value: true });
+      expect(await expiry()).toBeGreaterThan(before + 200_000);
+    });
+
+    it('dates a renewed scan claim from when its batch got the lock, not when it began waiting (FL-1590)', async () => {
+      const { ctx, claim } = await claimedScan();
+      const locked = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const holder = defaultDatabase.transaction().execute(async (tx) => {
+        await sql`select id from media_operation where id = ${claim.operationId}::uuid for update`.execute(tx);
+        locked.resolve();
+        await release.promise;
+      });
+      await locked.promise;
+      const batch = ctx
+        .get(LibraryRepository)
+        .withScanClaim({ ...claim, leaseMs: 120_000 }, () => Promise.resolve(true));
+      await new Promise((resolve) => setTimeout(resolve, 1500)); // the batch waits for the lock
+      const releasedAt = Date.now();
+      release.resolve();
+      await holder;
+      await expect(batch).resolves.toEqual({ value: true });
+      const { claimExpiresAt } = await defaultDatabase
+        .selectFrom('media_operation')
+        .select('claimExpiresAt')
+        .where('id', '=', claim.operationId)
+        .executeTakeFirstOrThrow();
+      expect(new Date(claimExpiresAt as unknown as Date).getTime()).toBeGreaterThanOrEqual(releasedAt + 120_000 - 250);
+    });
+
     it('rolls back asset creation with its claim transaction', async () => {
       const { ctx, library, claim } = await claimedScan();
       await expect(
