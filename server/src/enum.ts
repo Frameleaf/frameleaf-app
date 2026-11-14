@@ -585,6 +585,8 @@ export enum SystemMetadataKey {
   FrameleafMailSignIn = 'frameleaf-mail-sign-in',
   /** FL-159: the last AI Wallet balance read from Frameleaf Cloud (USD display). */
   FrameleafMlWallet = 'frameleaf-ml-wallet',
+  /** FL-1037: each studio's Stripe account status as Frameleaf Cloud last reported it. */
+  ClientsPayments = 'clients-payments',
   /** FL-156: this server's Frameleaf licence certificate and its refresh state. */
   FrameleafLicense = 'frameleaf-license',
   /**
@@ -2708,6 +2710,8 @@ export enum DatabaseLock {
   UniversalStorageChecksum = 980,
   /** Approved design (2026-11-04): one server sends the day's client gallery reminders. */
   PhotographyReminders = 981,
+  /** FL-1037: one worker collects the studios' payment events from Frameleaf Cloud at a time. */
+  ClientsPaymentEvents = 982,
 }
 
 export enum MaintenanceAction {

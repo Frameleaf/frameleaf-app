@@ -55,6 +55,8 @@ import { PhotographyWorkflowRepository, type WorkflowRow } from 'src/repositorie
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
+import { type ClientsPaymentEvent, ClientsPaymentsService } from 'src/services/clients-payments.service.js';
+import { legacyStripeEnv, legacyStripeOwner } from 'src/utils/clients-payments.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
@@ -267,7 +269,11 @@ export class PhotographyWorkflowService {
     private crypto: CryptoRepository,
     private jobs: JobRepository,
     private storage: StorageRepository,
-  ) {}
+    private payments?: ClientsPaymentsService,
+  ) {
+    // FL-1037: orders paid through a studio's connected account report back here.
+    this.payments?.onPayment('order', (event) => this.connectedPayment(event));
+  }
   private initial(
     title: string,
     studio?: {
@@ -1285,7 +1291,7 @@ export class PhotographyWorkflowService {
       }));
     return {
       revision: row.revision,
-      checkoutAvailable: this.checkoutAvailable(row.ownerId),
+      checkoutAvailable: await this.checkoutAvailable(row.ownerId),
       selfieSearch: !preview && row.value.config.selfieSearch === true,
       publishedGenerationId: published?.generationId ?? null,
       title: published?.config.title ?? row.value.config.title,
@@ -2392,17 +2398,12 @@ export class PhotographyWorkflowService {
       }
     });
   }
-  private checkoutAvailable(ownerId: string) {
-    return (
-      process.env.PHOTOGRAPHY_STRIPE_STUDIO_OWNER_ID === ownerId &&
-      /^sk_(test|live)_/.test(process.env.PHOTOGRAPHY_STRIPE_SECRET_KEY ?? '') &&
-      !!process.env.PHOTOGRAPHY_STRIPE_WEBHOOK_SECRET &&
-      /^https:\/\//.test(process.env.PHOTOGRAPHY_CHECKOUT_SUCCESS_URL ?? '') &&
-      /^https:\/\//.test(process.env.PHOTOGRAPHY_CHECKOUT_CANCEL_URL ?? '')
-    );
+  /** FL-1037: the studio's connected account, or the deprecated server-wide Stripe settings for that one studio. */
+  private async checkoutAvailable(ownerId: string) {
+    return legacyStripeOwner() === ownerId || ((await this.payments?.ready(ownerId)) ?? false);
   }
   private stripeConfig() {
-    const secret = process.env.PHOTOGRAPHY_STRIPE_SECRET_KEY;
+    const secret = legacyStripeEnv('STRIPE_SECRET_KEY');
     if (!secret || !/^sk_(test|live)_/.test(secret))
       throw new ServiceUnavailableException('Studio hosted checkout is not configured');
     return secret;
@@ -2416,7 +2417,7 @@ export class PhotographyWorkflowService {
     if (!response.ok) throw new ServiceUnavailableException('Payment provider could not reconcile this order');
     return response.json() as Promise<Record<string, any>>;
   }
-  async checkout(id: string, token: string | undefined, orderId: string) {
+  async checkout(id: string, token: string | undefined, orderId: string, returnUrl?: string) {
     const { row, recipient } = await this.guest(id, token);
     const order = row.value.orders.find((o) => o.id === orderId && o.recipientId === recipient.id);
     if (!order || order.status !== 'accepted' || order.total <= 0)
@@ -2426,12 +2427,14 @@ export class PhotographyWorkflowService {
       order.items.some((item) => this.outputs(order, item).some((output) => !output.approved || !output.revisionId))
     )
       throw new ConflictException('Awaiting photographer and client approval');
-    if (!this.checkoutAvailable(row.ownerId))
+    const connected = legacyStripeOwner() !== row.ownerId && ((await this.payments?.ready(row.ownerId)) ?? false);
+    if (!connected && legacyStripeOwner() !== row.ownerId)
       throw new ServiceUnavailableException('No studio-owned checkout account is configured for this photographer');
     if (!recipient.canDownload) throw new ForbiddenException('This recipient cannot purchase downloads');
     await this.selection(row, recipient, order.captureIds, false);
-    const success = process.env.PHOTOGRAPHY_CHECKOUT_SUCCESS_URL;
-    const cancel = process.env.PHOTOGRAPHY_CHECKOUT_CANCEL_URL;
+    if (connected) return this.connectedCheckout(row, order, returnUrl);
+    const success = legacyStripeEnv('CHECKOUT_SUCCESS_URL');
+    const cancel = legacyStripeEnv('CHECKOUT_CANCEL_URL');
     if (!success || !cancel || !/^https:\/\//.test(success) || !/^https:\/\//.test(cancel))
       throw new ServiceUnavailableException('Hosted checkout return URLs are not configured');
     const form = new URLSearchParams({
@@ -2469,7 +2472,7 @@ export class PhotographyWorkflowService {
     return { url: session.url };
   }
   async callback(raw: Buffer, signature: string | undefined) {
-    const secret = process.env.PHOTOGRAPHY_STRIPE_WEBHOOK_SECRET;
+    const secret = legacyStripeEnv('STRIPE_WEBHOOK_SECRET');
     if (!secret || !signature || !verifyStripeSignature(raw, signature, secret))
       throw new ForbiddenException('Invalid payment callback');
     let event: { id: string; type: string; data: { object: Record<string, any> } };
@@ -2501,7 +2504,7 @@ export class PhotographyWorkflowService {
       throw new BadRequestException('Unbound payment event');
     const row = await this.repository.paymentOrder(orderId);
     if (!row) throw new NotFoundException('Order unavailable');
-    if (process.env.PHOTOGRAPHY_STRIPE_STUDIO_OWNER_ID !== row.ownerId)
+    if (legacyStripeEnv('STRIPE_STUDIO_OWNER_ID') !== row.ownerId)
       throw new ForbiddenException('Callback studio ownership mismatch');
     const order = row.value.orders.find((o) => o.id === orderId)!;
     if (!order.checkoutId) throw new ConflictException('Checkout has not been recorded; retry callback');
@@ -2539,6 +2542,74 @@ export class PhotographyWorkflowService {
       this.receipt(value, current, `provider:${state ?? 'pending'}`, event.id);
     });
     return { received: true };
+  }
+  /** FL-1037: checkout on the studio's own Stripe account, through Frameleaf Cloud. */
+  private async connectedCheckout(row: WorkflowRow, order: WorkflowRow['value']['orders'][number], returnUrl?: string) {
+    const base = await this.payments!.publicUrl();
+    const back = returnUrl ?? (base ? `${base}/photography/gallery/${row.id}` : null);
+    if (!back) throw new ServiceUnavailableException('Set this server’s public address to take payments');
+    const session = await this.payments!.checkout(row.ownerId, {
+      reference: `order:${order.id}`,
+      idempotencyKey: `photography-${order.id}`,
+      name: 'Digital photograph order',
+      amount: order.total,
+      currency: order.currency.toLowerCase(),
+      successUrl: back,
+      cancelUrl: back,
+    });
+    if (!session.url.startsWith('https://checkout.stripe.com/'))
+      throw new ServiceUnavailableException('Invalid hosted checkout response');
+    // FL-423: a client's checkout keeps the owner's revision
+    await this.repository.mutateKeepingRevision(row.id, row.ownerId, row.albumId, undefined, row.value, (value) => {
+      const current = value.orders.find((o) => o.id === order.id);
+      if (!current || current.status !== 'accepted') throw new ConflictException('Order changed during checkout');
+      if (current.checkoutId && current.checkoutId !== session.id)
+        throw new ConflictException('Checkout identity changed');
+      current.checkoutId = session.id;
+    });
+    return { url: session.url };
+  }
+  /**
+   * FL-1037: a payment event for an order, relayed by Frameleaf Cloud from the studio's connected
+   * account (Stripe verified there). Matched to the order's own checkout or payment; anything else is
+   * ignored. Recorded once per event id.
+   */
+  async connectedPayment(event: ClientsPaymentEvent) {
+    const orderId = event.reference?.slice('order:'.length) ?? '';
+    if (!/^[a-f0-9-]{36}$/.test(orderId)) return;
+    const row = await this.repository.paymentOrder(orderId);
+    if (!row || row.ownerId !== event.ownerId) return;
+    const order = row.value.orders.find((o) => o.id === orderId);
+    if (!order?.checkoutId) return;
+    const state =
+      event.type === 'payment.succeeded'
+        ? 'settled'
+        : event.type === 'payment.refunded'
+          ? 'refunded'
+          : event.type === 'payment.expired'
+            ? 'cancelled'
+            : null;
+    // A refund that arrives before its payment was recorded is retried (thrown, so not acknowledged).
+    if (event.type === 'payment.refunded' && !order.paymentIntentId && order.status === 'accepted')
+      throw new ConflictException('Refund arrived before its payment; retrying');
+    const matches =
+      event.type === 'payment.refunded'
+        ? !!event.paymentIntent && order.paymentIntentId === event.paymentIntent
+        : event.sessionId === order.checkoutId &&
+          (event.type !== 'payment.succeeded' ||
+            (event.amount === order.total && event.currency?.toUpperCase() === order.currency));
+    if (!matches) return;
+    // FL-423: the payment provider's confirmation of a client's payment keeps the owner's revision
+    await this.repository.mutateKeepingRevision(row.id, row.ownerId, row.albumId, undefined, row.value, (value) => {
+      if (value.receipts.some((receipt) => receipt.reference === event.id)) return;
+      const current = value.orders.find((o) => o.id === orderId)!;
+      if (state && current.status !== 'refunded' && current.status !== 'cancelled') {
+        if (state === 'cancelled' && current.status === 'settled') return;
+        current.status = state;
+        if (event.paymentIntent) current.paymentIntentId = event.paymentIntent;
+      }
+      this.receipt(value, current, `provider:${state ?? 'pending'}`, event.id);
+    });
   }
   async galleryLogo(id: string, token: string | undefined) {
     const { row } = await this.guest(id, token, true);

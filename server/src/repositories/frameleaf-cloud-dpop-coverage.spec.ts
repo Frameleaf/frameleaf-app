@@ -135,7 +135,8 @@ describe('every Frameleaf Cloud call sends a DPoP proof (FC-50, CLD-201)', () =>
       const source = readFileSync(join(SRC, 'services/photography-workflow.service.ts'), 'utf8');
       expect(source.match(/\bfetch\(/g)).toHaveLength(1);
       expect(source).toContain('fetch(`https://api.stripe.com/v1/${endpoint}`, {');
-      expect(source).toContain('const secret = process.env.PHOTOGRAPHY_STRIPE_SECRET_KEY;');
+      // FL-1037: the deprecated server-wide key (FRAMELEAF_CLIENTS_STRIPE_SECRET_KEY, formerly PHOTOGRAPHY_…).
+      expect(source).toContain("const secret = legacyStripeEnv('STRIPE_SECRET_KEY');");
       expect(source).toContain('headers: { Authorization: `Bearer ${this.stripeConfig()}`, ...options.headers },');
       expect(
         source
