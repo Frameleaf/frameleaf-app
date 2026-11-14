@@ -16,6 +16,8 @@ const BestPhotoScoreSchema = z
   .object({
     score: z.number().meta({ format: 'double' }).min(0).max(1),
     aestheticScore: z.number().meta({ format: 'double' }).min(0).max(1).nullable(),
+    /** FL-978: 1 = image-quality heuristic, 2 = learned from the visual search embedding. */
+    aestheticScoreVersion: z.int().min(1),
     technicalScore: z.number().meta({ format: 'double' }).min(0).max(1).nullable(),
     subjectScore: z.number().meta({ format: 'double' }).min(0).max(1).nullable(),
     diversityScore: z.number().meta({ format: 'double' }).min(0).max(1).nullable(),
