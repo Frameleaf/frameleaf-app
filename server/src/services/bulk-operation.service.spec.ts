@@ -1121,7 +1121,9 @@ describe(BulkOperationService.name, () => {
 
     it('gives a job that failed unexpectedly its one automatic retry (FL-1603)', async () => {
       const operation = { id: 'bulk-job' } as MediaOperation;
-      operations.claimNext.mockResolvedValueOnce({ operation, claimToken: 'claim' }).mockResolvedValue(undefined);
+      vi.mocked(operations.claimNext)
+        .mockResolvedValueOnce({ operation, claimToken: 'claim' })
+        .mockResolvedValue(undefined);
       vi.spyOn(sut, 'run').mockRejectedValueOnce(new Error('connection reset'));
 
       await sut.drain();
