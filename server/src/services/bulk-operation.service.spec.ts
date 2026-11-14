@@ -1118,6 +1118,21 @@ describe(BulkOperationService.name, () => {
       expect(operations.claimNext).toHaveBeenCalledWith(expect.objectContaining({ kinds: [MediaOperationKind.Bulk] }));
       expect(operations.recoverExpiredClaims).not.toHaveBeenCalled();
     });
+
+    it('gives a job that failed unexpectedly its one automatic retry (FL-1603)', async () => {
+      const operation = { id: 'bulk-job' } as MediaOperation;
+      operations.claimNext.mockResolvedValueOnce({ operation, claimToken: 'claim' }).mockResolvedValue(undefined);
+      vi.spyOn(sut, 'run').mockRejectedValueOnce(new Error('connection reset'));
+
+      await sut.drain();
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        'bulk-job',
+        'claim',
+        { error: 'connection reset', errorCode: 'bulk_failed' },
+        { resumable: true },
+      );
+    });
   });
   describe('duplicate decisions (FL-61)', () => {
     const operationId = '0195e2a0-0000-7000-8000-0000000000d1';

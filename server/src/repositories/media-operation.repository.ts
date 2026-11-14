@@ -110,8 +110,11 @@ const safeAutomaticReplay = () => sql<boolean>`("kind" = any(${[...SAFE_MEDIA_OP
  * FL-1459: what the lease sweep retries. A library scan carries on from its recorded phase and cursor, as it does
  * after a restart (`LibraryScanService.run`), so a crash or power cut gets the same one automatic retry; it stays out
  * of `safeAutomaticReplay`, which also decides a failure's retry, where a scan's own failure is reported.
+ * FL-1603: a bulk edit likewise applies its in-flight batch again from its cursor (every action is safe to repeat,
+ * owner decision 2026-09-22), so a worker that died mid-job gets its one retry instead of a lease-expired failure.
  */
-const sweepReplay = () => sql<boolean>`(${safeAutomaticReplay()} or "kind" = ${MediaOperationKind.LibraryScan})`;
+const sweepReplay = () =>
+  sql<boolean>`(${safeAutomaticReplay()} or "kind" = any(${[MediaOperationKind.LibraryScan, MediaOperationKind.Bulk]}::text[]))`;
 
 /** Queue-owned operations cannot recover before their execution owner has been fenced. */
 const executionOwnerSettled = () => sql<boolean>`("claimedBy" is distinct from 'job-queue' or not exists (

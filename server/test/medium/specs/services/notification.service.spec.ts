@@ -371,30 +371,36 @@ describe('notification detail and retention contracts', () => {
   });
 
   it.each([
-    { label: 'old recently read', createdDays: 20, readDays: 1, deletedDays: null, retained: false },
-    { label: 'old previously read', createdDays: 20, readDays: 3, deletedDays: null, retained: true },
-    { label: 'old unread', createdDays: 40, readDays: null, deletedDays: null, retained: true },
+    // FL-1603: read ones go two days after they were read (once 15 days old), unread ones after 30 days
+    { label: 'old recently read', createdDays: 20, readDays: 1, deletedDays: null, retained: true },
+    { label: 'old previously read', createdDays: 20, readDays: 3, deletedDays: null, retained: false },
+    { label: 'new previously read', createdDays: 10, readDays: 3, deletedDays: null, retained: true },
+    { label: 'old unread', createdDays: 40, readDays: null, deletedDays: null, retained: false },
+    { label: 'recent unread', createdDays: 20, readDays: null, deletedDays: null, retained: true },
     { label: 'old soft-deleted', createdDays: 20, readDays: null, deletedDays: 4, retained: false },
-  ])('preserves SQL cleanup behavior for $label', async ({ createdDays, readDays, deletedDays, retained }) => {
-    const { ctx } = setup();
-    const { user } = await ctx.newUser();
-    const repository = ctx.get(NotificationRepository);
-    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
-    const item = await repository.create({
-      userId: user.id,
-      title: 'Retention fixture',
-      description: null,
-      data: null,
-      createdAt: daysAgo(createdDays),
-      readAt: readDays === null ? null : daysAgo(readDays),
-      deletedAt: deletedDays === null ? null : daysAgo(deletedDays),
-    });
-    await repository.cleanup();
-    const row = await defaultDatabase
-      .selectFrom('notification')
-      .select('id')
-      .where('id', '=', item.id)
-      .executeTakeFirst();
-    expect(row !== undefined).toBe(retained);
-  });
+  ])(
+    'cleans up $label notifications by the retention rules',
+    async ({ createdDays, readDays, deletedDays, retained }) => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const repository = ctx.get(NotificationRepository);
+      const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+      const item = await repository.create({
+        userId: user.id,
+        title: 'Retention fixture',
+        description: null,
+        data: null,
+        createdAt: daysAgo(createdDays),
+        readAt: readDays === null ? null : daysAgo(readDays),
+        deletedAt: deletedDays === null ? null : daysAgo(deletedDays),
+      });
+      await repository.cleanup();
+      const row = await defaultDatabase
+        .selectFrom('notification')
+        .select('id')
+        .where('id', '=', item.id)
+        .executeTakeFirst();
+      expect(row !== undefined).toBe(retained);
+    },
+  );
 });
