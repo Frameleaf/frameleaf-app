@@ -170,7 +170,11 @@ export class DesktopMlRepository {
           query.where((eb) =>
             eb.or([
               eb('ownerId', '=', worker.ownerId),
-              eb.not(lockedAssetIdExists(sql`(desktop_ml_task.disclosure -> 'source' ->> 'assetId')::uuid`)),
+              eb.and([
+                eb.not(lockedAssetIdExists(sql`(desktop_ml_task.disclosure -> 'source' ->> 'assetId')::uuid`)),
+                // FL-1058: a gallery guest's selfie stays on the photographer's own computers
+                sql<boolean>`desktop_ml_task.disclosure ->> 'workload' IS DISTINCT FROM 'guest-face'`,
+              ]),
             ]),
           ),
         )
@@ -505,7 +509,12 @@ export class DesktopMlRepository {
     else await this.db.transaction().execute(assert);
   }
 
-  async discard(id: string): Promise<void> {
+  /** `forget`: FL-1058, a guest selfie task leaves no consumed row (nor its input hash) behind. */
+  async discard(id: string, forget = false): Promise<void> {
+    if (forget) {
+      await this.db.deleteFrom('desktop_ml_task').where('id', '=', id).execute();
+      return;
+    }
     await this.db
       .updateTable('desktop_ml_task')
       .set({

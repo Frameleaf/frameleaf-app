@@ -586,7 +586,9 @@ export class BaseService {
         mlDestinationRepository: this.mlDestinationRepository,
         machineLearningRepository: this.machineLearningRepository,
         selectBackgroundPool: (selection, options) =>
-          this.machineLearningRepository.selectBackgroundPool(selection, request.jobId, options?.requireReady),
+          request.guestFace && request.ownerId
+            ? this.machineLearningRepository.selectGuestFacePool(selection, request.ownerId, options?.requireReady)
+            : this.machineLearningRepository.selectBackgroundPool(selection, request.jobId, options?.requireReady),
       },
       request,
     );
