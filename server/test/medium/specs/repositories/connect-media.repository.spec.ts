@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
@@ -174,10 +175,19 @@ describe('Connect media real transactions on the canonical migration chain', () 
   it('publishes once under concurrent commits and keeps a 30 day receipt without overwriting the original', async () => {
     const f = await fixture();
     const id = await stage(f);
-    // Both concurrent callers succeed: the second recovers the first's recorded receipt.
-    const [first, second] = await Promise.all([commit(f, id), commit(f, id)]);
-    expect(second).toEqual(first);
+    // The upload lock is a try-lock: an overlapping caller either replays the receipt or gets a retryable 409.
+    const results = await Promise.allSettled([commit(f, id), commit(f, id)]);
+    const fulfilled = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+    expect(fulfilled.length).toBeGreaterThan(0);
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        expect(result.reason).toBeInstanceOf(ConflictException);
+      }
+    }
     const retry = await commit(f, id);
+    for (const value of fulfilled) {
+      expect(value).toEqual(retry);
+    }
     const assets = await db.selectFrom('asset').selectAll().where('ownerId', '=', f.user.id).execute();
     expect(assets).toHaveLength(1);
     expect(retry.assetId).toBe(assets[0].id);
