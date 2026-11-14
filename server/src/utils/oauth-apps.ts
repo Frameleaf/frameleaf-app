@@ -69,6 +69,9 @@ export const OAUTH_APP_SCOPES = Object.freeze({
   'tags:write': [Permission.TagCreate, Permission.TagAsset],
   /** See the names of people and pets the person named. */
   'people:read': [Permission.PersonRead],
+  'photos:upload': [Permission.AssetUpload],
+  'boards:upload': [Permission.AssetUpload],
+  'events:read': [],
 } satisfies Record<string, Permission[]>);
 
 export type OAuthAppScope = keyof typeof OAUTH_APP_SCOPES;
@@ -120,6 +123,7 @@ const parseUrl = (value: unknown): URL | null => {
  * so it can be compared exactly. Returns the address or null.
  */
 export const checkRegisteredRedirectUri = (value: unknown): string | null => {
+  if (value === 'lightroom://net.frameleaf.connect/oauth/callback') return value;
   const url = parseUrl(value);
   if (!url || typeof value !== 'string') {
     return null;

@@ -33,6 +33,9 @@ class TestController {
   @Authenticated()
   thumbnailRoute() {}
 
+  @Authenticated({ connect: true, permission: false })
+  connectRoute() {}
+
   @Authenticated()
   @RemoteMediaCeiling()
   mediaRoute() {}
@@ -61,6 +64,23 @@ describe(AuthGuard.name, () => {
   beforeEach(() => {
     ({ sut: authService, mocks } = newTestService(AuthService));
     sut = new AuthGuard(mocks.logger as unknown as LoggingRepository, new Reflector(), authService);
+  });
+
+  it('derives the exact Connect audience from the request authority', async () => {
+    const authenticate = vi.spyOn(authService, 'authenticate').mockResolvedValue({} as never);
+    await sut.canActivate(
+      contextFor(TestController.prototype.connectRoute, {
+        path: '/api/connect/assets',
+        secure: true,
+        headers: { host: 'library.example:443' },
+        query: { resource: 'https://other.example/api/connect' },
+      }),
+    );
+    expect(authenticate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ connect: true, connectResource: 'https://library.example/api/connect' }),
+      }),
+    );
   });
 
   describe('protected shared links', () => {

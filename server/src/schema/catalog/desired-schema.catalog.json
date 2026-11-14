@@ -7993,6 +7993,19 @@
           ],
           "timing": "after",
           "scope": "row"
+        },
+        {
+          "name": "connect_event_album_added",
+          "definition": "CREATE TRIGGER connect_event_album_added AFTER INSERT ON public.album_asset FOR EACH ROW EXECUTE FUNCTION connect_event_album_added()",
+          "tableName": "album_asset",
+          "functionName": "connect_event_album_added",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert"
+          ],
+          "timing": "after",
+          "scope": "row"
         }
       ],
       "constraints": [
@@ -9866,6 +9879,20 @@
             "update"
           ],
           "timing": "before",
+          "scope": "row"
+        },
+        {
+          "name": "connect_event_asset_file_ready",
+          "definition": "CREATE TRIGGER connect_event_asset_file_ready AFTER INSERT OR UPDATE ON public.asset_file FOR EACH ROW EXECUTE FUNCTION connect_event_asset_ready()",
+          "tableName": "asset_file",
+          "functionName": "connect_event_asset_ready",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert",
+            "update"
+          ],
+          "timing": "after",
           "scope": "row"
         }
       ],
@@ -34076,7 +34103,22 @@
           "synchronize": true
         }
       ],
-      "triggers": [],
+      "triggers": [
+        {
+          "name": "connect_event_studio_published",
+          "definition": "CREATE TRIGGER connect_event_studio_published AFTER INSERT OR UPDATE ON public.studio_export_version FOR EACH ROW EXECUTE FUNCTION connect_event_studio_published()",
+          "tableName": "studio_export_version",
+          "functionName": "connect_event_studio_published",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert",
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        }
+      ],
       "constraints": [
         {
           "type": "check",
@@ -45659,7 +45701,22 @@
         }
       ],
       "indexes": [],
-      "triggers": [],
+      "triggers": [
+        {
+          "name": "connect_event_metadata_ready",
+          "definition": "CREATE TRIGGER connect_event_metadata_ready AFTER INSERT OR UPDATE ON public.asset_job_status FOR EACH ROW EXECUTE FUNCTION connect_event_asset_ready()",
+          "tableName": "asset_job_status",
+          "functionName": "connect_event_asset_ready",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert",
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        }
+      ],
       "constraints": [
         {
           "type": "primary-key",
@@ -51695,442 +51752,6 @@
       "synchronize": true
     },
     {
-      "name": "oauth_authorization_code",
-      "columns": [
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "codeHash",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "clientId",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "userId",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "sessionId",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "redirectUri",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "codeChallenge",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "scopes",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "resource",
-          "tableName": "oauth_authorization_code",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "expiresAt",
-          "tableName": "oauth_authorization_code",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "frameleafAccountId",
-          "tableName": "oauth_authorization_code",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "oauth_authorization_code_clientId_idx",
-          "definition": "CREATE INDEX \"oauth_authorization_code_clientId_idx\" ON public.oauth_authorization_code USING btree (\"clientId\")",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "clientId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "oauth_authorization_code_sessionId_idx",
-          "definition": "CREATE INDEX \"oauth_authorization_code_sessionId_idx\" ON public.oauth_authorization_code USING btree (\"sessionId\")",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "sessionId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "oauth_authorization_code_userId_idx",
-          "definition": "CREATE INDEX \"oauth_authorization_code_userId_idx\" ON public.oauth_authorization_code USING btree (\"userId\")",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "userId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "oauth_authorization_code_expiresAt_idx",
-          "definition": "CREATE INDEX \"oauth_authorization_code_expiresAt_idx\" ON public.oauth_authorization_code USING btree (\"expiresAt\")",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "expiresAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "oauth_authorization_code_hash_check",
-          "definition": "CHECK ((octet_length(\"codeHash\") = 32))",
-          "tableName": "oauth_authorization_code",
-          "expression": "((octet_length(\"codeHash\") = 32))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "oauth_authorization_code_pkey",
-          "definition": "PRIMARY KEY (\"codeHash\")",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "codeHash"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "oauth_authorization_code_clientId_fkey",
-          "definition": "FOREIGN KEY (\"clientId\") REFERENCES oauth_client(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "clientId"
-          ],
-          "referenceTableName": "oauth_client",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "oauth_authorization_code_userId_fkey",
-          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "userId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "oauth_authorization_code_sessionId_fkey",
-          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "oauth_authorization_code",
-          "columnNames": [
-            "sessionId"
-          ],
-          "referenceTableName": "session",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "oauth_grant",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "userId",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "clientId",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "scopes",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "resource",
-          "tableName": "oauth_grant",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "refreshTokenHash",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "accessTokenHash",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "accessExpiresAt",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "oauth_grant",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "lastUsedAt",
-          "tableName": "oauth_grant",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "lastUsedVia",
-          "tableName": "oauth_grant",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "revokedAt",
-          "tableName": "oauth_grant",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "frameleafAccountId",
-          "tableName": "oauth_grant",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "oauth_grant_userId_revokedAt_idx",
-          "definition": "CREATE INDEX \"oauth_grant_userId_revokedAt_idx\" ON public.oauth_grant USING btree (\"userId\", \"revokedAt\")",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "userId",
-            "revokedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "oauth_grant_clientId_idx",
-          "definition": "CREATE INDEX \"oauth_grant_clientId_idx\" ON public.oauth_grant USING btree (\"clientId\")",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "clientId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "oauth_grant_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "oauth_grant_refreshTokenHash_uq",
-          "definition": "UNIQUE (\"refreshTokenHash\")",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "refreshTokenHash"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "oauth_grant_accessTokenHash_uq",
-          "definition": "UNIQUE (\"accessTokenHash\")",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "accessTokenHash"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "oauth_grant_userId_fkey",
-          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "userId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "oauth_grant_clientId_fkey",
-          "definition": "FOREIGN KEY (\"clientId\") REFERENCES oauth_client(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "oauth_grant",
-          "columnNames": [
-            "clientId"
-          ],
-          "referenceTableName": "oauth_client",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "asset_exif",
       "columns": [
         {
@@ -54010,6 +53631,1317 @@
       "synchronize": true
     },
     {
+      "name": "oauth_authorization_code",
+      "columns": [
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "codeHash",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "clientId",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sessionId",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "redirectUri",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "codeChallenge",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "scopes",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "resource",
+          "tableName": "oauth_authorization_code",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "oauth_authorization_code",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "frameleafAccountId",
+          "tableName": "oauth_authorization_code",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "accessPolicy",
+          "tableName": "oauth_authorization_code",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "oauth_authorization_code_clientId_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_clientId_idx\" ON public.oauth_authorization_code USING btree (\"clientId\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "clientId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_authorization_code_sessionId_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_sessionId_idx\" ON public.oauth_authorization_code USING btree (\"sessionId\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "sessionId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_authorization_code_userId_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_userId_idx\" ON public.oauth_authorization_code USING btree (\"userId\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "userId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_authorization_code_expiresAt_idx",
+          "definition": "CREATE INDEX \"oauth_authorization_code_expiresAt_idx\" ON public.oauth_authorization_code USING btree (\"expiresAt\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "oauth_authorization_code_hash_check",
+          "definition": "CHECK ((octet_length(\"codeHash\") = 32))",
+          "tableName": "oauth_authorization_code",
+          "expression": "((octet_length(\"codeHash\") = 32))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "oauth_authorization_code_pkey",
+          "definition": "PRIMARY KEY (\"codeHash\")",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "codeHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_authorization_code_clientId_fkey",
+          "definition": "FOREIGN KEY (\"clientId\") REFERENCES oauth_client(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "clientId"
+          ],
+          "referenceTableName": "oauth_client",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_authorization_code_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_authorization_code_sessionId_fkey",
+          "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_authorization_code",
+          "columnNames": [
+            "sessionId"
+          ],
+          "referenceTableName": "session",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "oauth_grant",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "clientId",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "scopes",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "resource",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "refreshTokenHash",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "accessTokenHash",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "accessExpiresAt",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "lastUsedAt",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "lastUsedVia",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "revokedAt",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "frameleafAccountId",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "accessPolicy",
+          "tableName": "oauth_grant",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "policyRevision",
+          "tableName": "oauth_grant",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "oauth_grant_userId_revokedAt_idx",
+          "definition": "CREATE INDEX \"oauth_grant_userId_revokedAt_idx\" ON public.oauth_grant USING btree (\"userId\", \"revokedAt\")",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "userId",
+            "revokedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "oauth_grant_clientId_idx",
+          "definition": "CREATE INDEX \"oauth_grant_clientId_idx\" ON public.oauth_grant USING btree (\"clientId\")",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "clientId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "oauth_grant_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "oauth_grant_refreshTokenHash_uq",
+          "definition": "UNIQUE (\"refreshTokenHash\")",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "refreshTokenHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "oauth_grant_accessTokenHash_uq",
+          "definition": "UNIQUE (\"accessTokenHash\")",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "accessTokenHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_grant_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "oauth_grant_clientId_fkey",
+          "definition": "FOREIGN KEY (\"clientId\") REFERENCES oauth_client(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "oauth_grant",
+          "columnNames": [
+            "clientId"
+          ],
+          "referenceTableName": "oauth_client",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "connect_receipt",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "connect_receipt",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "grantId",
+          "tableName": "connect_receipt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "operation",
+          "tableName": "connect_receipt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "requestId",
+          "tableName": "connect_receipt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "requestHash",
+          "tableName": "connect_receipt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "status",
+          "tableName": "connect_receipt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "resultId",
+          "tableName": "connect_receipt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "result",
+          "tableName": "connect_receipt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "connect_receipt",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "connect_receipt",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "connect_receipt_grantId_idx",
+          "definition": "CREATE INDEX \"connect_receipt_grantId_idx\" ON public.connect_receipt USING btree (\"grantId\")",
+          "tableName": "connect_receipt",
+          "columnNames": [
+            "grantId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "connect_receipt_expiresAt_idx",
+          "definition": "CREATE INDEX \"connect_receipt_expiresAt_idx\" ON public.connect_receipt USING btree (\"expiresAt\")",
+          "tableName": "connect_receipt",
+          "columnNames": [
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "connect_receipt_hash_check",
+          "definition": "CHECK ((octet_length(\"requestHash\") = 32))",
+          "tableName": "connect_receipt",
+          "expression": "((octet_length(\"requestHash\") = 32))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "connect_receipt_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "connect_receipt",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "connect_receipt_grantId_operation_requestId_uq",
+          "definition": "UNIQUE (\"grantId\", operation, \"requestId\")",
+          "tableName": "connect_receipt",
+          "columnNames": [
+            "grantId",
+            "operation",
+            "requestId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "connect_receipt_grantId_fkey",
+          "definition": "FOREIGN KEY (\"grantId\") REFERENCES oauth_grant(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "connect_receipt",
+          "columnNames": [
+            "grantId"
+          ],
+          "referenceTableName": "oauth_grant",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "connect_rendition_ticket",
+      "columns": [
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "tokenHash",
+          "tableName": "connect_rendition_ticket",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "grantId",
+          "tableName": "connect_rendition_ticket",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "connect_rendition_ticket",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "variant",
+          "tableName": "connect_rendition_ticket",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "connect_rendition_ticket",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "connect_rendition_ticket_assetId_idx",
+          "definition": "CREATE INDEX \"connect_rendition_ticket_assetId_idx\" ON public.connect_rendition_ticket USING btree (\"assetId\")",
+          "tableName": "connect_rendition_ticket",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "connect_rendition_ticket_expiresAt_idx",
+          "definition": "CREATE INDEX \"connect_rendition_ticket_expiresAt_idx\" ON public.connect_rendition_ticket USING btree (\"expiresAt\")",
+          "tableName": "connect_rendition_ticket",
+          "columnNames": [
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "connect_rendition_ticket_grantId_idx",
+          "definition": "CREATE INDEX \"connect_rendition_ticket_grantId_idx\" ON public.connect_rendition_ticket USING btree (\"grantId\")",
+          "tableName": "connect_rendition_ticket",
+          "columnNames": [
+            "grantId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "connect_rendition_ticket_pkey",
+          "definition": "PRIMARY KEY (\"tokenHash\")",
+          "tableName": "connect_rendition_ticket",
+          "columnNames": [
+            "tokenHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "connect_rendition_ticket_grantId_fkey",
+          "definition": "FOREIGN KEY (\"grantId\") REFERENCES oauth_grant(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "connect_rendition_ticket",
+          "columnNames": [
+            "grantId"
+          ],
+          "referenceTableName": "oauth_grant",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "connect_rendition_ticket_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "connect_rendition_ticket",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "connect_provenance",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "uploadId",
+          "tableName": "connect_provenance",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "connect_provenance",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "source",
+          "tableName": "connect_provenance",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "connect_provenance",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "connect_provenance_assetId_idx",
+          "definition": "CREATE INDEX \"connect_provenance_assetId_idx\" ON public.connect_provenance USING btree (\"assetId\")",
+          "tableName": "connect_provenance",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "connect_provenance_pkey",
+          "definition": "PRIMARY KEY (\"uploadId\")",
+          "tableName": "connect_provenance",
+          "columnNames": [
+            "uploadId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "connect_provenance_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "connect_provenance",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "connect_event_stream",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "connect_event_stream",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "position",
+          "tableName": "connect_event_stream",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "prunedThrough",
+          "tableName": "connect_event_stream",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "connect_event_stream_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\")",
+          "tableName": "connect_event_stream",
+          "columnNames": [
+            "ownerId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "connect_event_stream_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "connect_event_stream",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "connect_event",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "connect_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "position",
+          "tableName": "connect_event",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "deliveryId",
+          "tableName": "connect_event",
+          "nullable": false,
+          "isArray": false,
+          "default": "gen_random_uuid()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "sourceId",
+          "tableName": "connect_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "event",
+          "tableName": "connect_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "connect_event",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "connect_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "versionId",
+          "tableName": "connect_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "format",
+          "tableName": "connect_event",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "occurredAt",
+          "tableName": "connect_event",
+          "nullable": false,
+          "isArray": false,
+          "default": "clock_timestamp()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "connect_event_retention_idx",
+          "definition": "CREATE INDEX connect_event_retention_idx ON public.connect_event USING btree (\"occurredAt\")",
+          "tableName": "connect_event",
+          "columnNames": [
+            "occurredAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "connect_event_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", \"position\")",
+          "tableName": "connect_event",
+          "columnNames": [
+            "ownerId",
+            "position"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "connect_event_source_key",
+          "definition": "UNIQUE (\"ownerId\", \"sourceId\")",
+          "tableName": "connect_event",
+          "columnNames": [
+            "ownerId",
+            "sourceId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "connect_event_delivery_key",
+          "definition": "UNIQUE (\"deliveryId\")",
+          "tableName": "connect_event",
+          "columnNames": [
+            "deliveryId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "connect_event_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES connect_event_stream(\"ownerId\") ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "connect_event",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "connect_event_stream",
+          "referenceColumnNames": [
+            "ownerId"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "connect_asset_ready",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "connect_asset_ready",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "connect_asset_ready_pkey",
+          "definition": "PRIMARY KEY (\"assetId\")",
+          "tableName": "connect_asset_ready",
+          "columnNames": [
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "connect_asset_ready_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "connect_asset_ready",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "connect_event_cursor",
+      "columns": [
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "tokenHash",
+          "tableName": "connect_event_cursor",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "connect_event_cursor",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "grantId",
+          "tableName": "connect_event_cursor",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "binding",
+          "tableName": "connect_event_cursor",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "mode",
+          "tableName": "connect_event_cursor",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "type",
+          "tableName": "connect_event_cursor",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "connect_event_cursor",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "position",
+          "tableName": "connect_event_cursor",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "floor",
+          "tableName": "connect_event_cursor",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bigint",
+          "primary": false,
+          "name": "ceiling",
+          "tableName": "connect_event_cursor",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 64,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "remaining",
+          "tableName": "connect_event_cursor",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "expiresAt",
+          "tableName": "connect_event_cursor",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "connect_event_cursor_expiry_idx",
+          "definition": "CREATE INDEX connect_event_cursor_expiry_idx ON public.connect_event_cursor USING btree (\"expiresAt\")",
+          "tableName": "connect_event_cursor",
+          "columnNames": [
+            "expiresAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "connect_event_cursor_pkey",
+          "definition": "PRIMARY KEY (\"tokenHash\")",
+          "tableName": "connect_event_cursor",
+          "columnNames": [
+            "tokenHash"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "connect_event_cursor_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "connect_event_cursor",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "connect_event_cursor_grantId_fkey",
+          "definition": "FOREIGN KEY (\"grantId\") REFERENCES oauth_grant(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "connect_event_cursor",
+          "columnNames": [
+            "grantId"
+          ],
+          "referenceTableName": "oauth_grant",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
       "name": "photography_contract_template",
       "columns": [
         {
@@ -54700,6 +55632,16 @@
       "synchronize": true
     },
     {
+      "name": "connect_event_asset_ready",
+      "expression": "CREATE OR REPLACE FUNCTION public.connect_event_asset_ready()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE asset_owner uuid; ready_id uuid;\n    BEGIN\n      IF TG_TABLE_NAME='asset_file' THEN\n        IF NEW.type NOT IN ('preview','thumbnail') OR NEW.\"isEdited\" THEN RETURN NEW; END IF;\n      ELSIF TG_TABLE_NAME='asset_job_status' THEN\n        -- Only a newly set metadataExtractedAt can make an asset ready; other status writes skip the asset lock.\n        IF NEW.\"metadataExtractedAt\" IS NULL THEN RETURN NEW; END IF;\n        IF TG_OP='UPDATE' THEN\n          IF OLD.\"metadataExtractedAt\" IS NOT NULL THEN RETURN NEW; END IF;\n        END IF;\n      END IF;\n      SELECT \"ownerId\" INTO asset_owner FROM asset WHERE id=NEW.\"assetId\" AND type IN ('IMAGE','VIDEO') FOR NO KEY UPDATE;\n      IF asset_owner IS NULL THEN RETURN NEW; END IF;\n      IF EXISTS (SELECT 1 FROM asset_job_status WHERE \"assetId\"=NEW.\"assetId\" AND \"metadataExtractedAt\" IS NOT NULL)\n        AND EXISTS (SELECT 1 FROM asset_file WHERE \"assetId\"=NEW.\"assetId\" AND type='preview' AND NOT \"isEdited\" AND path<>'')\n        AND EXISTS (SELECT 1 FROM asset_file WHERE \"assetId\"=NEW.\"assetId\" AND type='thumbnail' AND NOT \"isEdited\" AND path<>'') THEN\n        INSERT INTO connect_asset_ready (\"assetId\") VALUES (NEW.\"assetId\") ON CONFLICT DO NOTHING RETURNING \"assetId\" INTO ready_id;\n        IF ready_id IS NOT NULL THEN\n          PERFORM connect_event_append(asset_owner,'asset.ready:'||ready_id,'asset.ready',ready_id,NULL,NULL,NULL);\n        END IF;\n      END IF;\n      RETURN NEW;\n    END$function$\n",
+      "synchronize": true
+    },
+    {
+      "name": "connect_event_studio_published",
+      "expression": "CREATE OR REPLACE FUNCTION public.connect_event_studio_published()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE export_format text;\n    BEGIN\n      IF NEW.state<>'published' OR NEW.scope IS DISTINCT FROM 'library' OR NEW.\"resultAssetId\" IS NULL THEN RETURN NEW; END IF;\n      IF TG_OP='UPDATE' AND OLD.state='published' AND OLD.scope='library' AND OLD.\"resultAssetId\" IS NOT NULL THEN RETURN NEW; END IF;\n      export_format := CASE WHEN NEW.\"outputContentType\" IN ('image/jpeg','image/heic','video/mp4','video/webm','video/quicktime','video/x-matroska') THEN NEW.\"outputContentType\" ELSE NULL END;\n      PERFORM connect_event_append(NEW.\"ownerId\",'studio.export.completed:'||NEW.id,'studio.export.completed',NEW.\"resultAssetId\",NULL,NEW.id,export_format);\n      RETURN NEW;\n    END$function$\n",
+      "synchronize": true
+    },
+    {
       "name": "person_group_delete_audit",
       "expression": "CREATE OR REPLACE FUNCTION public.person_group_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      INSERT INTO person_group_audit (\"personGroupId\", \"clusterGroupId\")\n      SELECT \"id\", \"clusterGroupId\"\n      FROM OLD;\n      RETURN NULL;\n    END\n  $function$\n",
       "synchronize": true
@@ -54740,6 +55682,11 @@
       "synchronize": true
     },
     {
+      "name": "connect_event_album_added",
+      "expression": "CREATE OR REPLACE FUNCTION public.connect_event_album_added()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE asset_owner uuid;\n    BEGIN\n      SELECT \"ownerId\" INTO asset_owner FROM asset WHERE id=NEW.\"assetId\";\n      PERFORM connect_event_append(asset_owner,'album.asset.added:'||NEW.\"albumId\"||':'||NEW.\"assetId\"||':'||NEW.\"updateId\",\n        'album.asset.added',NEW.\"assetId\",NEW.\"albumId\",NULL,NULL);\n      RETURN NEW;\n    END$function$\n",
+      "synchronize": true
+    },
+    {
       "name": "pet_observation_delete_audit",
       "expression": "CREATE OR REPLACE FUNCTION public.pet_observation_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n INSERT INTO pet_observation_audit (\"observationId\", \"petId\", \"assetId\", \"ownerId\")\n SELECT deleted.id, deleted.\"petId\", deleted.\"assetId\", coalesce(pet.\"ownerId\", asset.\"ownerId\")\n FROM OLD AS deleted LEFT JOIN pet ON pet.id = deleted.\"petId\" LEFT JOIN asset ON asset.id = deleted.\"assetId\"\n WHERE coalesce(pet.\"ownerId\", asset.\"ownerId\") IS NOT NULL\n AND (pet.\"ownerId\" IS NULL OR asset.\"ownerId\" IS NULL OR pet.\"ownerId\" = asset.\"ownerId\");\n RETURN NULL; END\n  $function$\n",
       "synchronize": true
@@ -54762,6 +55709,11 @@
     {
       "name": "partner_delete_audit",
       "expression": "CREATE OR REPLACE FUNCTION public.partner_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      INSERT INTO partner_audit (\"sharedById\", \"sharedWithId\")\n      SELECT \"sharedById\", \"sharedWithId\"\n      FROM OLD;\n      RETURN NULL;\n    END\n  $function$\n",
+      "synchronize": true
+    },
+    {
+      "name": "connect_event_append",
+      "expression": "CREATE OR REPLACE FUNCTION public.connect_event_append(p_owner uuid, p_source text, p_event text, p_asset uuid, p_album uuid, p_version uuid, p_format text)\n RETURNS void\n LANGUAGE plpgsql\nAS $function$\n    DECLARE next_position bigint;\n    BEGIN\n      INSERT INTO connect_event_stream (\"ownerId\") VALUES (p_owner) ON CONFLICT DO NOTHING;\n      PERFORM 1 FROM connect_event_stream WHERE \"ownerId\"=p_owner FOR UPDATE;\n      IF EXISTS (SELECT 1 FROM connect_event WHERE \"ownerId\"=p_owner AND \"sourceId\"=p_source) THEN RETURN; END IF;\n      UPDATE connect_event_stream SET position=position+1 WHERE \"ownerId\"=p_owner RETURNING position INTO next_position;\n      INSERT INTO connect_event (\"ownerId\",position,\"sourceId\",event,\"assetId\",\"albumId\",\"versionId\",format)\n        VALUES (p_owner,next_position,p_source,p_event,p_asset,p_album,p_version,p_format);\n    END$function$\n",
       "synchronize": true
     }
   ],

@@ -9,7 +9,16 @@ import type { MessageFormatter, Translations } from 'svelte-i18n';
  */
 
 /** The scopes this server offers, in the order the Allow page lists them. */
-export const APP_SCOPES = ['library:read', 'people:read', 'albums:write', 'tags:write', 'library:download'] as const;
+export const APP_SCOPES = [
+  'library:read',
+  'people:read',
+  'albums:write',
+  'tags:write',
+  'library:download',
+  'photos:upload',
+  'boards:upload',
+  'events:read',
+] as const;
 export type AppScope = (typeof APP_SCOPES)[number];
 
 const isScope = (scope: string): scope is AppScope => (APP_SCOPES as readonly string[]).includes(scope);
@@ -71,7 +80,18 @@ export const isReturnTo = (redirectUrl: string, redirectUri: string) => {
   try {
     const next = new URL(redirectUrl);
     const expected = new URL(redirectUri);
-    return next.origin === expected.origin && next.pathname === expected.pathname;
+    return (
+      next.protocol === expected.protocol &&
+      next.hostname === expected.hostname &&
+      next.port === expected.port &&
+      next.pathname === expected.pathname &&
+      !next.username &&
+      !next.password &&
+      !next.hash &&
+      [...new Set(expected.searchParams.keys())].every(
+        (key) => JSON.stringify(next.searchParams.getAll(key)) === JSON.stringify(expected.searchParams.getAll(key)),
+      )
+    );
   } catch {
     return false;
   }

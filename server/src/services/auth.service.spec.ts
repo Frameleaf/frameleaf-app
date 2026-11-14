@@ -1452,6 +1452,43 @@ describe(AuthService.name, () => {
       expect(mocks.session.getByToken).not.toHaveBeenCalled();
     });
 
+    it('isolates restricted Connect grants from REST and MCP', async () => {
+      const auth = appAuth([Permission.AssetRead]);
+      Object.assign(auth.oauthApp!, {
+        resource: 'https://library.example/api/connect',
+        accessPolicy: { version: 1, readAlbumIds: [], allLibraryRead: true, writableAlbumIds: [], writeWorkspaces: [] },
+      });
+      useApp(auth);
+      await expect(request({ permission: Permission.AssetRead })).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(sut.authorizeMcpGrant(auth, 'https://library.example/api/connect', 'lan')).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      await expect(
+        request({
+          permission: Permission.AssetRead,
+          connect: true,
+          connectResource: 'https://other.example/api/connect',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(
+        request({
+          permission: Permission.AssetRead,
+          connect: true,
+          connectResource: 'https://library.example/api/connect',
+        }),
+      ).resolves.toMatchObject({ oauthApp: { resource: 'https://library.example/api/connect' } });
+    });
+    it('refuses legacy app grants on Connect routes', async () => {
+      useApp(appAuth([Permission.AssetRead]));
+      await expect(
+        request({
+          permission: Permission.AssetRead,
+          connect: true,
+          connectResource: 'https://library.example/api/connect',
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
     it.each(['/api/mcp', '/api/mcp/assistant'])(
       'checks the %s audience and keeps it out of ordinary routes',
       async (path) => {
@@ -1462,6 +1499,13 @@ describe(AuthService.name, () => {
         const headers = { authorization: 'Bearer fla_token' };
         await expect(sut.authenticateMcp(headers, resource, 'lan')).resolves.toMatchObject({ oauthApp: { resource } });
         await expect(sut.authenticateMcp(headers, `https://other.example${path}`, 'lan')).rejects.toThrow();
+        await expect(
+          request({
+            permission: Permission.AssetRead,
+            connect: true,
+            connectResource: 'https://library.example/api/connect',
+          }),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
         const other = path.endsWith('/assistant') ? '/api/mcp' : '/api/mcp/assistant';
         await expect(sut.authenticateMcp(headers, `https://library.example${other}`, 'lan')).rejects.toThrow();
         await expect(request({ permission: Permission.AssetRead })).rejects.toThrow(
