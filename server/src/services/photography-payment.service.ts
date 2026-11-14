@@ -135,11 +135,11 @@ export class PhotographyPaymentService {
   async checkout(slug: string, dto: PhotographyPayCheckoutDto, origin: string) {
     const link = await this.open(slug);
     if (!(await this.payments.ready(link.ownerId))) throw unavailable();
-    // ponytail: a single-use link is held for 30 minutes while someone is paying it; past that a second
-    // payment is still possible, recorded as paid and logged so the studio can refund it in Stripe.
-    if (!link.reusable && (await this.repository.pendingSince(link.id, 30)))
-      throw new ConflictException({ code: 'payment-in-progress', message: 'Someone is paying this link now' });
+    // ponytail: a single-use link is held for 30 minutes while someone is paying it (checked and taken in one
+    // locked step); a payment that still lands after that is recorded as paid and logged for a refund in Stripe.
     const payment = await this.repository.createPayment(link, dto.email);
+    if (!payment)
+      throw new ConflictException({ code: 'payment-in-progress', message: 'Someone is paying this link now' });
     const back = `${origin}/photography/pay/${link.slug}`;
     const session = await this.payments.checkout(link.ownerId, {
       reference: `link:${payment.id}`,

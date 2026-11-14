@@ -25,6 +25,9 @@ const setup = () => {
     ),
     payment: vi.fn((id: string) => Promise.resolve(payments.find((p) => p.id === id))),
     createPayment: vi.fn((link: PaymentLinkRow, payerEmail: string) => {
+      if (!link.reusable && payments.some((p) => p.linkId === link.id && ['pending', 'paid'].includes(p.status))) {
+        return Promise.resolve(undefined);
+      }
       const row: PaymentRow = {
         id: randomUUID(),
         ownerId: link.ownerId,

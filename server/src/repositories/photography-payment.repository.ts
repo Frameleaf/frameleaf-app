@@ -91,13 +91,27 @@ export class PhotographyPaymentRepository {
     const { rows } = await sql<PaymentRow>`SELECT * FROM photography_payment WHERE id=${id}::uuid`.execute(this.db);
     return rows[0];
   }
-  async createPayment(link: PaymentLinkRow, payerEmail: string) {
-    const { rows } =
-      await sql<PaymentRow>`INSERT INTO photography_payment ("ownerId", "linkId", amount, currency, "payerEmail")
-      VALUES (${link.ownerId}::uuid, ${link.id}::uuid, ${link.amount}, ${link.currency}, ${payerEmail}) RETURNING *`.execute(
-        this.db,
-      );
-    return rows[0];
+  /**
+   * A new pending payment. For a single-use link the link row is locked and the payment is refused
+   * (undefined) while another payer started within `holdMinutes` or the link is already paid, so two
+   * checkouts can't both pass the check.
+   */
+  createPayment(link: PaymentLinkRow, payerEmail: string, holdMinutes = 30) {
+    return this.db.transaction().execute(async (trx) => {
+      if (!link.reusable) {
+        const { rows } = await sql<{ busy: boolean }>`SELECT EXISTS (
+            SELECT 1 FROM photography_payment WHERE "linkId"=l.id AND (status IN ('paid','refunded')
+              OR (status='pending' AND "createdAt" > now() - make_interval(mins => ${holdMinutes})))
+          ) AS busy FROM photography_payment_link l WHERE l.id=${link.id}::uuid FOR UPDATE`.execute(trx);
+        if (rows[0]?.busy) return;
+      }
+      const { rows } =
+        await sql<PaymentRow>`INSERT INTO photography_payment ("ownerId", "linkId", amount, currency, "payerEmail")
+        VALUES (${link.ownerId}::uuid, ${link.id}::uuid, ${link.amount}, ${link.currency}, ${payerEmail}) RETURNING *`.execute(
+          trx,
+        );
+      return rows[0];
+    });
   }
   async setCheckout(id: string, checkoutId: string) {
     await sql`UPDATE photography_payment SET "checkoutId"=${checkoutId} WHERE id=${id}::uuid`.execute(this.db);
