@@ -1,6 +1,9 @@
 // Frameleaf Connect protocol 1 client. No Raycast imports, so `node --test` can exercise it.
-import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 export const RESOURCE_PATH = "/api/connect";
 export const READ_SCOPE = "library:read";
@@ -20,7 +23,8 @@ export type ErrorKind =
   | "forbidden" // access was narrowed or that action isn't allowed
   | "missing" // the photo or rendition is unavailable
   | "busy" // the Library asked to retry shortly
-  | "server";
+  | "server" // the Library answered with an error
+  | "protocol"; // a success response we couldn't use (a token may have rotated anyway)
 
 export class ConnectError extends Error {
   kind: ErrorKind;
@@ -43,6 +47,7 @@ const MESSAGES: Record<ErrorKind, string> = {
   missing: "That photo is no longer available.",
   busy: "Your Library is busy. Try again in a moment.",
   server: "Your Library couldn’t complete the request.",
+  protocol: "Your Library sent a response Raycast couldn’t use.",
 };
 
 export const fail = (kind: ErrorKind): ConnectError => new ConnectError(kind, MESSAGES[kind]);
@@ -78,11 +83,20 @@ export function libraryOrigin(address: string | undefined): string {
 
 export type Fetch = typeof fetch;
 
+/**
+ * The timeout covers only the wait for response headers, so a large original can keep streaming.
+ * An optional caller signal still cancels the whole transfer.
+ */
 async function request(fetchImpl: Fetch, url: string | URL, init: RequestInit = {}): Promise<Response> {
+  const headers = new AbortController();
+  const timer = setTimeout(() => headers.abort(), 20_000);
+  const signal = init.signal ? AbortSignal.any([init.signal, headers.signal]) : headers.signal;
   try {
-    return await fetchImpl(url, { ...init, redirect: "error", signal: init.signal ?? AbortSignal.timeout(20_000) });
+    return await fetchImpl(url, { ...init, redirect: "error", signal });
   } catch {
     throw fail("offline");
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -199,7 +213,7 @@ export async function exchange(
     !scope.includes(READ_SCOPE) ||
     scope.some((value) => !ALLOWED_SCOPES.includes(value))
   ) {
-    throw fail("server");
+    throw fail("protocol");
   }
   return {
     accessToken: data.access_token,
@@ -240,7 +254,22 @@ export async function withLock<T>(dir: string, fn: () => Promise<T>, staleMs = 6
         () => 0,
       );
       if (age > staleMs) {
-        await rm(lock, { recursive: true, force: true });
+        // Take over atomically: only one waiter's rename can succeed. If what it moved turns out to be
+        // fresh (another waiter took over first), put it back and keep waiting.
+        const moved = `${lock}.${randomUUID()}`;
+        if (
+          await rename(lock, moved).then(
+            () => true,
+            () => false,
+          )
+        ) {
+          const movedAge = await stat(moved).then(
+            (info) => Date.now() - info.mtimeMs,
+            () => staleMs + 1,
+          );
+          if (movedAge > staleMs) await rm(moved, { recursive: true, force: true });
+          else await rename(moved, lock).catch(() => rm(moved, { recursive: true, force: true }));
+        }
       } else if (Date.now() > deadline) {
         throw fail("busy");
       } else {
@@ -339,19 +368,42 @@ export class ConnectApi {
     return this.#json<AssetPage>(`assets?${params}`);
   }
 
-  /** The rendition bytes and their type. Originals need `library:download` and the Library's permission. */
-  async rendition(id: string, variant: Variant, signal?: AbortSignal): Promise<{ bytes: Uint8Array; type: string }> {
+  /** A rendition stream and its type. Originals need `library:download` and the Library's permission. */
+  async rendition(id: string, variant: Variant, signal?: AbortSignal): Promise<Rendition> {
     const response = await this.#send(
       `assets/${encodeURIComponent(id)}/rendition?variant=${variant}`,
       signal ? { signal } : {},
     );
     const type = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-    try {
-      return { bytes: new Uint8Array(await response.arrayBuffer()), type };
-    } catch {
-      throw fail("offline");
-    }
+    if (!response.body) throw fail("protocol");
+    return { body: response.body, type };
   }
+}
+
+export type Rendition = { body: ReadableStream<Uint8Array>; type: string };
+
+/** Streams a rendition into a new file (never replacing one). Removes the partial file on failure. */
+async function streamTo(path: string, body: ReadableStream<Uint8Array>): Promise<boolean> {
+  const handle = await open(path, "wx").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "EEXIST") return undefined;
+    throw error;
+  });
+  if (!handle) return false;
+  try {
+    await pipeline(Readable.fromWeb(body as import("node:stream/web").ReadableStream), handle.createWriteStream());
+  } catch {
+    await rm(path, { force: true });
+    throw fail("offline");
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+  return true;
+}
+
+/** Writes a rendition to `path`, replacing it: for temporary previews and clipboard copies. */
+export async function writeTemp(path: string, { body }: Rendition): Promise<void> {
+  await rm(path, { force: true });
+  await streamTo(path, body);
 }
 
 const EXTENSIONS: Record<string, string> = {
@@ -376,32 +428,46 @@ export function fileName(asset: Pick<Asset, "id" | "createdAt">, type: string, s
   return `Frameleaf ${date} ${id}${suffix}.${EXTENSIONS[type] ?? "bin"}`;
 }
 
-/** Writes bytes into `dir` without overwriting: `name`, then `name (2)`, `name (3)`… Returns the path. */
+/** Streams a rendition into `dir` without overwriting: `name`, then `name (2)`, `name (3)`… Returns the path. */
 export async function saveNew(
   dir: string,
   asset: Pick<Asset, "id" | "createdAt">,
-  type: string,
-  bytes: Uint8Array,
+  { body, type }: Rendition,
   suffix = "",
 ): Promise<string> {
   await mkdir(dir, { recursive: true });
   for (let copy = 1; copy < 1000; copy++) {
     const path = join(dir, fileName(asset, type, copy === 1 ? suffix : `${suffix} (${copy})`));
+    if (
+      await stat(path).then(
+        () => true,
+        () => false,
+      )
+    )
+      continue;
     const partial = `${path}.part`;
-    try {
-      await writeFile(partial, bytes, { flag: "wx" });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
-      throw error;
-    }
+    if (!(await streamTo(partial, body))) continue;
     if (
       await stat(path).then(
         () => true,
         () => false,
       )
     ) {
+      // Another download took the name meanwhile; keep looking without re-reading the stream.
+      for (let next = copy + 1; next < 1000; next++) {
+        const other = join(dir, fileName(asset, type, `${suffix} (${next})`));
+        if (
+          !(await stat(other).then(
+            () => true,
+            () => false,
+          ))
+        ) {
+          await rename(partial, other);
+          return other;
+        }
+      }
       await rm(partial, { force: true });
-      continue;
+      throw fail("server");
     }
     await rename(partial, path);
     return path;

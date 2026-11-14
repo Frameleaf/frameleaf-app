@@ -10,14 +10,15 @@ import {
   showToast,
   Toast,
   Keyboard,
+  getPreferenceValues,
 } from "@raycast/api";
 import { useCachedPromise, usePromise } from "@raycast/utils";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { useEffect, useState } from "react";
-import { ConnectError, fileName, saveNew, type Asset, type Variant } from "./lib/connect.ts";
+import { ConnectError, fileName, saveNew, writeTemp, type Asset, type Variant } from "./lib/connect.ts";
 import { forgetSignIn, openSession, tempDir, type Session } from "./lib/session.ts";
 
 let sessionPromise: Promise<Session> | undefined;
@@ -37,25 +38,38 @@ export function getSession(): Promise<Session> {
 export const errorText = (error: unknown) =>
   error instanceof ConnectError ? error.message : "Something went wrong. Try again.";
 
+const errorKind = (error: unknown) => (error instanceof ConnectError ? error.kind : "server");
+const needsSignIn = (error: unknown) => ["revoked", "declined", "identity"].includes(errorKind(error));
+const connectAgain = async (error: unknown, retry: () => void) => {
+  await reconnect(errorKind(error) === "identity");
+  retry();
+};
+
+/** Cached results belong to one Library address, so a different address never shows them. */
+export const libraryKey = () => getPreferenceValues<{ libraryUrl?: string }>().libraryUrl?.trim() ?? "";
+
+/** A failure while results are already shown: a toast, offering Connect Again when that's the fix. */
+export const showFailure = (error: unknown, retry: () => void) =>
+  void showToast({
+    style: Toast.Style.Failure,
+    title: errorText(error),
+    primaryAction: needsSignIn(error)
+      ? { title: "Connect Again", onAction: (toast) => void toast.hide().then(() => connectAgain(error, retry)) }
+      : undefined,
+  });
+
 export function ErrorView({ error, retry }: { error: unknown; retry: () => void }) {
-  const kind = error instanceof ConnectError ? error.kind : "server";
-  const needsSignIn = kind === "revoked" || kind === "declined" || kind === "identity";
+  const kind = errorKind(error);
+  const signIn = needsSignIn(error);
   return (
     <List.EmptyView
-      icon={kind === "offline" ? Icon.WifiDisabled : needsSignIn ? Icon.Plug : Icon.Warning}
-      title={kind === "offline" ? "Library unavailable" : needsSignIn ? "Not connected" : "Couldn’t load"}
+      icon={kind === "offline" ? Icon.WifiDisabled : signIn ? Icon.Plug : Icon.Warning}
+      title={kind === "offline" ? "Library unavailable" : signIn ? "Not connected" : "Couldn’t load"}
       description={errorText(error)}
       actions={
         <ActionPanel>
-          {needsSignIn ? (
-            <Action
-              title="Connect Again"
-              icon={Icon.Plug}
-              onAction={async () => {
-                await reconnect(kind === "identity");
-                retry();
-              }}
-            />
+          {signIn ? (
+            <Action title="Connect Again" icon={Icon.Plug} onAction={() => connectAgain(error, retry)} />
           ) : (
             <Action title="Try Again" icon={Icon.ArrowClockwise} onAction={retry} />
           )}
@@ -80,26 +94,20 @@ async function withToast(title: string, task: () => Promise<string | void>) {
 
 async function download(asset: Asset, variant: Variant) {
   const { api } = await getSession();
-  const { bytes, type } = await api.rendition(asset.id, variant);
-  const path = await saveNew(
-    join(homedir(), "Downloads"),
-    asset,
-    type,
-    bytes,
-    variant === "original" ? " original" : "",
-  );
+  const rendition = await api.rendition(asset.id, variant);
+  const path = await saveNew(join(homedir(), "Downloads"), asset, rendition, variant === "original" ? " original" : "");
   await showInFinder(path);
 }
 
 async function copyImage(asset: Asset) {
   const { api } = await getSession();
-  const { bytes, type } = await api.rendition(asset.id, "display");
+  const rendition = await api.rendition(asset.id, "display");
   // The clipboard holds a file reference, so keep only the most recent copy on disk.
   const dir = tempDir("clipboard");
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
-  const path = join(dir, fileName(asset, type));
-  await writeFile(path, bytes);
+  const path = join(dir, fileName(asset, rendition.type));
+  await writeTemp(path, rendition);
   await Clipboard.copy({ file: path });
 }
 
@@ -174,11 +182,11 @@ function AssetDetail({ asset }: { asset: Asset }) {
   const { data: path, error } = usePromise(
     async (id: string) => {
       const { api } = await getSession();
-      const { bytes, type } = await api.rendition(id, "preview");
+      const rendition = await api.rendition(id, "preview");
       const dir = tempDir("previews");
       await mkdir(dir, { recursive: true });
-      const file = join(dir, fileName(asset, type));
-      await writeFile(file, bytes);
+      const file = join(dir, fileName(asset, rendition.type));
+      await writeTemp(file, rendition);
       return file;
     },
     [asset.id],
@@ -220,7 +228,7 @@ export function AssetList({ albumId, navigationTitle }: { albumId?: string; navi
   }, []);
 
   const { data, isLoading, error, pagination, revalidate } = useCachedPromise(
-    (q: string, type: Filter, album?: string) =>
+    (_library: string, q: string, type: Filter, album?: string) =>
       async ({ page }: { page: number }) => {
         const { api } = await getSession();
         const result = await api.assets({
@@ -232,17 +240,14 @@ export function AssetList({ albumId, navigationTitle }: { albumId?: string; navi
         });
         return { data: result.items, hasMore: (page + 1) * PAGE_SIZE < result.total };
       },
-    [query, filter, albumId],
-    {
-      keepPreviousData: true,
-      onError: (failure) => void showToast({ style: Toast.Style.Failure, title: errorText(failure) }),
-    },
+    [libraryKey(), query, filter, albumId],
+    { keepPreviousData: true, onError: (failure) => showFailure(failure, reload) },
   );
 
-  const reload = () => {
+  function reload() {
     refreshSession();
     revalidate();
-  };
+  }
 
   return (
     <List
