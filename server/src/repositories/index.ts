@@ -117,6 +117,7 @@ import { PhotoLocationsRepository } from 'src/repositories/photo-locations.repos
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { PhotographyCampaignRepository } from 'src/repositories/photography-campaign.repository.js';
+import { PhotographyPaymentRepository } from 'src/repositories/photography-payment.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
@@ -166,6 +167,7 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
   PhotographyCampaignRepository,
+  PhotographyPaymentRepository,
   MediaDownloaderRepository,
   MediaSessionRepository,
   MediaImportRepository,

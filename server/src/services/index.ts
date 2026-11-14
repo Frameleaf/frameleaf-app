@@ -148,6 +148,7 @@ import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyBulkService } from 'src/services/photography-bulk.service.js';
 import { PhotographyCampaignService } from 'src/services/photography-campaign.service.js';
+import { PhotographyPaymentService } from 'src/services/photography-payment.service.js';
 import { PhotographyReminderService } from 'src/services/photography-reminder.service.js';
 import { PhotographySelfieService } from 'src/services/photography-selfie.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
@@ -267,6 +268,7 @@ export const services = [
   PhotographySelfieService,
   PhotographyBulkService,
   ClientsPaymentsService,
+  PhotographyPaymentService,
   PhotographyWorkflowService,
   PhotographySiteService,
   PhotographyReminderService,

@@ -115,6 +115,7 @@ import {
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
 import { PhotographyCampaignController } from 'src/controllers/photography-campaign.controller.js';
+import { PhotographyPaymentController } from 'src/controllers/photography-payment.controller.js';
 import { PhotographyWorkflowController } from 'src/controllers/photography-workflow.controller.js';
 import { PhotographyWorkspaceController } from 'src/controllers/photography-workspace.controller.js';
 import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
@@ -206,6 +207,7 @@ export const controllers = [
   FrameleafLibrarySetupController,
   PhotographyWorkspaceController,
   ClientsPaymentsController,
+  PhotographyPaymentController,
   PhotographyWorkflowController,
   AssetUploadResourceController,
   BackupDeviceAdminController,
