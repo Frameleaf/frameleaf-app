@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { AssetOrder, AssetVisibility, TimeBucketDateType } from 'src/enum.js';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { AssetRepository, TimeBucketItem } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -118,6 +118,79 @@ describe('bounded calendar pages', () => {
     },
     60_000,
   );
+
+  it('summarises days per page across months and locates within each month', async () => {
+    const { ctx } = newMediumService(BaseService, {
+      database: db,
+      real: [AssetRepository],
+      mock: [LoggingRepository],
+    });
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user: { id: user.id } });
+    const ids: Record<string, string> = {};
+    for (const [name, at] of [
+      ['feb11', '2024-02-11T12:00:00Z'],
+      ['feb10a', '2024-02-10T13:00:00Z'],
+      ['feb10b', '2024-02-10T12:00:00Z'],
+      ['jan05', '2024-01-05T12:00:00Z'],
+    ]) {
+      const date = new Date(at);
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: date,
+        localDateTime: date,
+        visibility: AssetVisibility.Timeline,
+      });
+      await ctx.newExif({ assetId: asset.id, timeZone: 'UTC' });
+      ids[name] = asset.id;
+    }
+    const repository = ctx.get(AssetRepository);
+    const options = { userIds: [user.id], visibility: AssetVisibility.Timeline, order: AssetOrder.Desc };
+    const byDay = (summaries: TimeBucketItem[]) =>
+      summaries.map((summary) => ({ ...summary, days: summary.days?.toSorted((a, b) => b.day - a.day) }));
+    const summaries = byDay(await repository.getTimeBuckets(options, auth, { pageSize: 2 }));
+    expect(summaries).toEqual([
+      {
+        timeBucket: '2024-02-01',
+        days: [
+          { day: 11, count: 1 },
+          { day: 10, count: 2 },
+        ],
+        count: 2,
+        page: 0,
+        after: null,
+        firstAssetId: ids.feb11,
+        lastAssetId: ids.feb10a,
+      },
+      {
+        timeBucket: '2024-02-01',
+        days: [{ day: 10, count: 2 }],
+        count: 1,
+        page: 1,
+        after: ids.feb10a,
+        firstAssetId: ids.feb10b,
+        lastAssetId: ids.feb10b,
+      },
+      {
+        timeBucket: '2024-01-01',
+        days: [{ day: 5, count: 1 }],
+        count: 1,
+        page: 0,
+        after: null,
+        firstAssetId: ids.jan05,
+        lastAssetId: ids.jan05,
+      },
+    ]);
+    for (const [name, page] of [
+      ['feb11', 0],
+      ['feb10a', 0],
+      ['feb10b', 1],
+      ['jan05', 2],
+    ] as const) {
+      const located = await repository.getTimeBuckets(options, auth, { pageSize: 2, locateAssetId: ids[name] });
+      expect(byDay(located)).toEqual([summaries[page]]);
+    }
+  });
 
   it.each([TimeBucketDateType.Taken, TimeBucketDateType.Added])(
     'retains microsecond precision for %s date cursors',
