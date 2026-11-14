@@ -92,6 +92,7 @@
   "/link": 445680,
   "/maintenance": 459986,
   "/photography/gallery/[id]": 463510,
+  "/photography/pay/[slug]": 453494,
   "/photography/sign/[token]": 454240,
   "/studio/[id]": 458849
 }

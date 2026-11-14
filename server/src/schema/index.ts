@@ -237,6 +237,7 @@ import {
   PhotographyContractTable,
   PhotographyContractTemplateTable,
 } from 'src/schema/tables/photography-contract.table.js';
+import { PhotographyPaymentLinkTable, PhotographyPaymentTable } from 'src/schema/tables/photography-payment.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
@@ -363,6 +364,8 @@ export class ImmichDatabase {
     PhotographyContactTable,
     PhotographyCampaignTable,
     PhotographyCampaignDeliveryTable,
+    PhotographyPaymentLinkTable,
+    PhotographyPaymentTable,
     PhotographyContractTemplateTable,
     PhotographyContractTable,
     PhotographyContractEventTable,
@@ -674,6 +677,8 @@ export interface DB extends QueueDatabase {
   photography_campaign: PhotographyCampaignTable;
   photography_contact: PhotographyContactTable;
   photography_campaign_delivery: PhotographyCampaignDeliveryTable;
+  photography_payment_link: PhotographyPaymentLinkTable;
+  photography_payment: PhotographyPaymentTable;
   photography_contract_template: PhotographyContractTemplateTable;
   photography_contract: PhotographyContractTable;
   photography_contract_event: PhotographyContractEventTable;
