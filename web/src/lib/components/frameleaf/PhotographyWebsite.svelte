@@ -7,7 +7,10 @@
   import { PhotographyError } from '$lib/frameleaf/photography/errors';
   import {
     MAX_SITE_PHOTOS,
+    fromSectionRows,
     moveSection,
+    sectionRows,
+    type SectionRow,
     requiredSections,
     seoPreview,
     siteAddress,
@@ -27,7 +30,6 @@
     type Site,
     type SiteItem,
     type SitePhoto,
-    type SiteSectionId,
     type StudioSite as StoredSite,
     type Workflow,
   } from '$lib/frameleaf/photography/workflow-api';
@@ -94,7 +96,14 @@
   let collectionId = $state<string | null>(null);
   let pickShoot = $state('');
   let consent = $state(false);
-  let dragging = $state<SiteSectionId | null>(null);
+  let dragging = $state<SectionRow['id'] | null>(null);
+  /** FL-1606: the Sections list with Booking among the sections, though the site stores it apart. */
+  const rows = $derived(draft ? sectionRows(draft) : []);
+  const setRows = (next: SectionRow[]) => {
+    if (draft) {
+      Object.assign(draft, fromSectionRows(next));
+    }
+  };
   let disposed = false;
 
   const dirty = $derived(!!stored && !!draft && JSON.stringify(stored.site) !== JSON.stringify(draft));
@@ -215,6 +224,7 @@
       faq: site.faq.filter((item) => item.q.trim()),
       trustedBy: site.trustedBy,
       booking: site.booking,
+      bookingAfter: site.bookingAfter,
       cover: site.cover ? photo(site.cover, site.title) : null,
       collections: site.collections.map((item) => ({
         id: item.id,
@@ -519,7 +529,7 @@
             <h2>{$t('frameleaf_studio_site_sections')}</h2>
             <p class="sse-help">{$t('frameleaf_studio_site_sections_hint')}</p>
             <ol class="sse-sections">
-              {#each draft.sections as section, index (section.id)}
+              {#each rows as section, index (section.id)}
                 {@const label = $t(`frameleaf_studio_site_section_${section.id}`)}
                 <li
                   draggable={index > 0}
@@ -531,23 +541,27 @@
                       return;
                     }
                     event.preventDefault();
-                    const from = draft!.sections.findIndex((item) => item.id === dragging);
-                    draft!.sections = moveSection(draft!.sections, dragging, index - from);
+                    const from = rows.findIndex((item) => item.id === dragging);
+                    setRows(moveSection(rows, dragging, index - from));
                   }}
                 >
                   <Icon icon={index ? mdiDragVertical : mdiPin} size="16" aria-hidden={true} />
-                  <Icon icon={siteSectionIcons[section.id]} size="16" aria-hidden={true} />
+                  <Icon
+                    icon={section.id === 'booking' ? mdiCalendarCheckOutline : siteSectionIcons[section.id]}
+                    size="16"
+                    aria-hidden={true}
+                  />
                   <span>{label}</span>
                   <Button
                     label={$t('frameleaf_studio_site_move_up', { values: { section: label } })}
                     disabled={index < 2}
-                    onclick={() => (draft!.sections = moveSection(draft!.sections, section.id, -1))}
+                    onclick={() => setRows(moveSection(rows, section.id, -1))}
                     ><Icon icon={mdiArrowUp} size="16" aria-hidden={true} /></Button
                   >
                   <Button
                     label={$t('frameleaf_studio_site_move_down', { values: { section: label } })}
-                    disabled={index < 1 || index === draft.sections.length - 1}
-                    onclick={() => (draft!.sections = moveSection(draft!.sections, section.id, 1))}
+                    disabled={index < 1 || index === rows.length - 1}
+                    onclick={() => setRows(moveSection(rows, section.id, 1))}
                     ><Icon icon={mdiArrowDown} size="16" aria-hidden={true} /></Button
                   >
                   <input
@@ -555,28 +569,13 @@
                     role="switch"
                     aria-label={$t('frameleaf_studio_site_show_section', { values: { section: label } })}
                     checked={section.on}
-                    disabled={requiredSections.includes(section.id)}
-                    onchange={() => (draft!.sections = toggleSection(draft!.sections, section.id))}
+                    disabled={section.id !== 'booking' && requiredSections.includes(section.id)}
+                    onchange={() =>
+                      section.id === 'booking'
+                        ? (draft!.booking = !draft!.booking)
+                        : (draft!.sections = toggleSection(draft!.sections, section.id))}
                   />
                 </li>
-                {#if section.id === 'services'}
-                  {@const bookingLabel = $t('frameleaf_studio_site_section_booking')}
-                  <!-- FL-1606: Booking always follows Services, so it has no drag handle or arrows. -->
-                  <li>
-                    <Icon icon={mdiPin} size="16" aria-hidden={true} />
-                    <Icon icon={mdiCalendarCheckOutline} size="16" aria-hidden={true} />
-                    <span>{bookingLabel}</span>
-                    <span></span>
-                    <span></span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      aria-label={$t('frameleaf_studio_site_show_section', { values: { section: bookingLabel } })}
-                      checked={draft.booking}
-                      onchange={(event) => (draft!.booking = event.currentTarget.checked)}
-                    />
-                  </li>
-                {/if}
               {/each}
             </ol>
             {#if draft.booking}

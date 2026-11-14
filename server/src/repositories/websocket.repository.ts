@@ -84,7 +84,7 @@ export interface ClientEventMap {
    * preferences. Nothing else travels; the account's open sessions read their preferences again.
    */
   on_user_preferences_update: [];
-  /** FL-1606: a client booked a session on the studio website. Only the booking id travels; the list asks again. */
+  /** FL-1606: a booking arrived from the studio website or its deposit changed. Only the id travels; the list asks again. */
   on_photography_booking: [string];
 
   LibraryAssetUpdateV1: [AssetResponseDto];

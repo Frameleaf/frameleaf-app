@@ -30,6 +30,7 @@ const site = (patch: Partial<PublicSite> = {}): PublicSite => ({
   faq: [{ q: 'Do you travel?', a: 'Yes.' }],
   trustedBy: ['Northbound Journal'],
   booking: true,
+  bookingAfter: 'services',
   cover: photo('s:a', 'Jamie by the lake'),
   collections: [
     { id: 'weddings', name: 'Weddings', photos: [photo('s:a', 'Jamie by the lake'), photo('s:b', 'First dance')] },
@@ -103,6 +104,10 @@ describe('StudioSite (FL-702)', () => {
       expect(screen.queryByRole('button', { name: 'Book a session' })).not.toBeInTheDocument();
       view.unmount();
     }
+    // Moved in the editor: it follows the section it names.
+    const moved = render(StudioSite, { site: site({ bookingAfter: 'portfolio' }), bookings, onBook });
+    expect(document.querySelector('#ss-booking')!.previousElementSibling).toHaveClass('ss-portfolio');
+    moved.unmount();
     render(StudioSite, { site: site(), bookings, onBook });
     await fireEvent.click(screen.getAllByRole('button', { name: 'Book' })[1]);
     expect(onBook).toHaveBeenCalledWith('t2');

@@ -21,8 +21,9 @@ import {
 } from 'src/repositories/photography-booking.repository.js';
 import { PhotographyPaymentRepository } from 'src/repositories/photography-payment.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
-import { ClientsPaymentsService } from 'src/services/clients-payments.service.js';
+import { type ClientsPaymentEvent, ClientsPaymentsService } from 'src/services/clients-payments.service.js';
 import { PhotographyInvoiceService } from 'src/services/photography-invoice.service.js';
+import { PhotographyPaymentService } from 'src/services/photography-payment.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 
 const typeView = (t: BookingTypeRow) => ({
@@ -74,8 +75,21 @@ export class PhotographyBookingService {
     private clients: ClientsPaymentsService,
     private websocket: WebsocketRepository,
     private invoices: PhotographyInvoiceService,
+    private depositPayments: PhotographyPaymentService,
     private logger?: LoggingRepository,
-  ) {}
+  ) {
+    this.clients.onPayment('booking', (event) => this.depositEvent(event));
+  }
+
+  /** A deposit is an ordinary payment (FL-1041); an open Bookings list then reads its new state (FL-1606). */
+  async depositEvent(event: ClientsPaymentEvent) {
+    await this.depositPayments.paymentEvent(event);
+    const paymentId = event.reference?.split(':', 2)[1] ?? '';
+    if (!/^[a-f0-9-]{36}$/.test(paymentId)) return;
+    const booking = await this.repository.bookingForPayment(paymentId);
+    if (booking && booking.ownerId === event.ownerId)
+      this.websocket.clientSend('on_photography_booking', booking.ownerId, booking.id);
+  }
 
   private studio(auth: AuthDto) {
     if (!auth.session || auth.apiKey || auth.sharedLink) throw new ForbiddenException('Studio session required');

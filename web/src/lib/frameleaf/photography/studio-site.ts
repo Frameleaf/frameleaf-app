@@ -38,7 +38,7 @@ export const siteSectionIcons: Record<SiteSectionId, string> = {
 export const requiredSections: SiteSectionId[] = ['cover', 'portfolio'];
 export const MAX_SITE_PHOTOS = 200;
 
-export function moveSection(sections: Site['sections'], id: SiteSectionId, direction: number) {
+export function moveSection<T extends { id: string }>(sections: T[], id: T['id'], direction: number) {
   const index = sections.findIndex((section) => section.id === id);
   const next = index + direction;
   if (index < 1 || next < 1 || next >= sections.length) {
@@ -49,6 +49,25 @@ export function moveSection(sections: Site['sections'], id: SiteSectionId, direc
   result[index] = result[next];
   result[next] = moved;
   return result;
+}
+
+/** FL-1606: a row in the editor's Sections list; Booking is stored apart (`booking`, `bookingAfter`). */
+export type SectionRow = { id: SiteSectionId | 'booking'; on: boolean };
+
+/** The editor's list: the sections, with Booking right after the one it follows. */
+export const sectionRows = (site: Pick<Site, 'sections' | 'booking' | 'bookingAfter'>): SectionRow[] =>
+  site.sections.flatMap((section) =>
+    section.id === site.bookingAfter ? [section, { id: 'booking' as const, on: site.booking }] : [section],
+  );
+
+/** Back from the editor's list to what the site stores. */
+export function fromSectionRows(rows: SectionRow[]): Pick<Site, 'sections' | 'booking' | 'bookingAfter'> {
+  const index = rows.findIndex((row) => row.id === 'booking');
+  return {
+    sections: rows.filter((row): row is Site['sections'][number] => row.id !== 'booking'),
+    booking: rows[index].on,
+    bookingAfter: rows[index - 1].id as SiteSectionId,
+  };
 }
 
 export const toggleSection = (sections: Site['sections'], id: SiteSectionId) =>

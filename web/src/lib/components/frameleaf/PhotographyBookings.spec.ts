@@ -102,7 +102,7 @@ describe('PhotographyBookings (FL-1606)', () => {
     expect(await screen.findByText('No booking requests yet')).toBeInTheDocument();
     sdkMock.photographyBookings.mockResolvedValue({
       mailReady: true,
-      bookings: [booking('b5', { clientName: 'Taylor Chen' })],
+      bookings: [booking('b5', { clientName: 'Taylor Chen', depositStatus: 'unpaid' })],
     });
     handlers.get('on_photography_booking')?.('b5');
     expect(await screen.findByText('Taylor Chen')).toBeInTheDocument();
@@ -111,5 +111,15 @@ describe('PhotographyBookings (FL-1606)', () => {
       expect.objectContaining({ description: 'New booking request from Taylor Chen' }),
       { timeout: 6000 },
     );
+
+    // Its deposit is paid: the row updates without another announcement.
+    vi.mocked(toastManager.primary).mockClear();
+    sdkMock.photographyBookings.mockResolvedValue({
+      mailReady: true,
+      bookings: [booking('b5', { clientName: 'Taylor Chen', depositStatus: 'paid' })],
+    });
+    handlers.get('on_photography_booking')?.('b5');
+    expect(await screen.findByText('Deposit paid')).toBeInTheDocument();
+    expect(toastManager.primary).not.toHaveBeenCalled();
   });
 });

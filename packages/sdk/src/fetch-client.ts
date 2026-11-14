@@ -15162,6 +15162,7 @@ export type PhotographySiteDto = {
     site: {
         about: string;
         booking?: boolean;
+        bookingAfter?: PhotographySiteSectionId;
         collections: {
             id: string;
             items: {
@@ -15211,6 +15212,7 @@ export type PhotographySiteSaveDto = {
     site: {
         about: string;
         booking?: boolean;
+        bookingAfter?: PhotographySiteSectionId;
         collections: {
             id: string;
             items: {
@@ -15274,6 +15276,7 @@ export type StudioSiteDomainResponseDto = {
 export type PhotographyPublicSiteDto = {
     about: string;
     booking?: boolean;
+    bookingAfter?: PhotographySiteSectionId;
     brand: {
         background: string;
         color: string;
@@ -46933,10 +46936,6 @@ export enum PhotographySiteInquiryKind {
     Inquiry = "inquiry",
     GalleryLink = "gallery-link"
 }
-export enum PhotographySiteColours {
-    Template = "template",
-    Brand = "brand"
-}
 export enum PhotographySiteSectionId {
     Cover = "cover",
     Portfolio = "portfolio",
@@ -46946,6 +46945,10 @@ export enum PhotographySiteSectionId {
     Faq = "faq",
     Inquiry = "inquiry",
     Clients = "clients"
+}
+export enum PhotographySiteColours {
+    Template = "template",
+    Brand = "brand"
 }
 export enum PhotographySiteTemplate {
     Editorial = "editorial",

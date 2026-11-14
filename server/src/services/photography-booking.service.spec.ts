@@ -46,6 +46,9 @@ const setup = (ready = true) => {
       booking.depositPaymentId ??= randomUUID();
       return Promise.resolve(booking.depositPaymentId);
     }),
+    bookingForPayment: vi.fn((paymentId: string) =>
+      Promise.resolve(bookings.find((b) => b.depositPaymentId === paymentId)),
+    ),
     bookings: vi.fn((owner: string) => Promise.resolve(bookings.filter((b) => b.ownerId === owner))),
     setStatus: vi.fn((id: string, owner: string, status: BookingRow['status']) => {
       const booking = bookings.find((b) => b.id === id && b.ownerId === owner);
@@ -61,6 +64,7 @@ const setup = (ready = true) => {
     addInquiry: vi.fn(() => Promise.resolve()),
   };
   const clients = {
+    onPayment: vi.fn(),
     ready: vi.fn(() => Promise.resolve(ready)),
     publicUrl: vi.fn(() => Promise.resolve('https://photos.example')),
     checkout: vi.fn(() =>
@@ -82,6 +86,7 @@ const setup = (ready = true) => {
       },
     ),
   };
+  const depositPayments = { paymentEvent: vi.fn(() => Promise.resolve()) };
   const service = new PhotographyBookingService(
     repository as never,
     payments as never,
@@ -89,8 +94,9 @@ const setup = (ready = true) => {
     clients as never,
     websocket as never,
     invoices as never,
+    depositPayments as never,
   );
-  return { service, repository, payments, site, clients, websocket, invoices, sent, types, bookings };
+  return { service, repository, payments, site, clients, websocket, invoices, depositPayments, sent, types, bookings };
 };
 
 const mini = {
@@ -149,6 +155,24 @@ describe(PhotographyBookingService.name, () => {
     );
     // FL-1606: an open Bookings list hears about it at once.
     expect(s.websocket.clientSend).toHaveBeenCalledWith('on_photography_booking', ownerId, s.bookings[0].id);
+  });
+
+  it('settles a paid deposit as a payment and tells an open Bookings list (FL-1606)', async () => {
+    const s = setup();
+    expect(s.clients.onPayment).toHaveBeenCalledWith('booking', expect.any(Function));
+    const type = await s.service.createType(auth, mini);
+    await s.service.request('cedar', request(type.id), 'https://photos.example');
+    const booking = s.bookings[0];
+    s.websocket.clientSend.mockClear();
+    const event = { reference: `booking:${booking.depositPaymentId}`, ownerId, type: 'payment.succeeded' };
+    await s.service.depositEvent(event as never);
+    expect(s.depositPayments.paymentEvent).toHaveBeenCalledWith(event);
+    expect(s.websocket.clientSend).toHaveBeenCalledWith('on_photography_booking', ownerId, booking.id);
+    // Another studio's event, or an unknown payment, reaches no one's list.
+    s.websocket.clientSend.mockClear();
+    await s.service.depositEvent({ ...event, ownerId: randomUUID() } as never);
+    await s.service.depositEvent({ ...event, reference: `booking:${randomUUID()}` } as never);
+    expect(s.websocket.clientSend).not.toHaveBeenCalled();
   });
 
   it('confirms and declines, emailing the client only when asked and only when email is set up (FL-1606)', async () => {

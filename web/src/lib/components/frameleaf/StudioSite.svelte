@@ -463,7 +463,7 @@
       {:else if section.id === 'inquiry'}{@render inquirySection()}
       {:else if section.id === 'clients'}{@render clients()}
       {/if}
-      {#if section.id === 'services' && showBooking}{@render bookingSection()}{/if}
+      {#if section.id === site.bookingAfter && showBooking}{@render bookingSection()}{/if}
     {/each}
     <footer class="ss-footer">
       <span>© {new Date().getFullYear()} {site.brand.name}</span>

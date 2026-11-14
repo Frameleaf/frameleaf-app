@@ -413,6 +413,7 @@ export class PhotographySiteService {
       faq: site.faq,
       trustedBy: site.trustedBy,
       booking: site.booking,
+      bookingAfter: site.bookingAfter,
       cover: site.cover ? photo(site.cover, site.title) : null,
       collections: site.collections.map((collection) => {
         const photos = collection.items.map((item, index) => photo(item, `${collection.name}, ${index + 1}`));

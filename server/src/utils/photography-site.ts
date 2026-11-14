@@ -75,10 +75,12 @@ export const PhotographySiteFields = z.strictObject({
   /** "Trusted by" on the Commercial template: typed by the photographer, never read from client records. */
   trustedBy: z.array(z.string().trim().min(1).max(60)).max(12),
   /**
-   * FL-1606: the Booking section, a card for each active booking type, right after Services. A field of its own
-   * rather than a section id: a new value in the sections enum would break apps that decode it strictly.
+   * FL-1606: the Booking section, a card for each active booking type, shown right after the section `bookingAfter`
+   * names (whether that one is on or not). Fields of their own rather than a section id: a new value in the
+   * sections enum would break apps that decode it strictly.
    */
   booking: z.boolean().default(true),
+  bookingAfter: SiteSectionIdSchema.default('services'),
   slug: z.string().regex(SITE_SLUG),
   /** FL-701 decision A: served through the Frameleaf Cloud relay for subscribers. */
   domain: z
@@ -138,6 +140,7 @@ export function defaultPhotographySite(title: string): PhotographySite {
     faq: [],
     trustedBy: [],
     booking: true,
+    bookingAfter: 'services',
     slug: siteSlug(title),
     domain: '',
     seoTitle: '',

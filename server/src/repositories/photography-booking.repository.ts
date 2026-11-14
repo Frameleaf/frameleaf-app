@@ -134,6 +134,12 @@ export class PhotographyBookingRepository {
       return payment[0].id;
     });
   }
+  /** FL-1606: the booking a deposit payment belongs to. */
+  async bookingForPayment(paymentId: string) {
+    const { rows } = await sql<{ id: string; ownerId: string }>`SELECT id, "ownerId" FROM photography_booking
+      WHERE "depositPaymentId"=${paymentId}::uuid`.execute(this.db);
+    return rows[0];
+  }
   async setStatus(id: string, ownerId: string, status: BookingStatus) {
     const { rows } = await sql<BookingRow>`WITH updated AS (UPDATE photography_booking SET status=${status}
         WHERE id=${id}::uuid AND "ownerId"=${ownerId}::uuid RETURNING *)

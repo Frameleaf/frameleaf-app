@@ -33,6 +33,7 @@ const site = {
   faq: [],
   trustedBy: [],
   booking: true,
+  bookingAfter: 'services',
   slug: 'cedar-and-light',
   domain: '',
   seoTitle: '',
@@ -51,7 +52,7 @@ beforeEach(() => {
   sdkMock.photographyBookingTypes.mockResolvedValue({ types: [] });
 });
 
-it('lists Booking after Services, and says when it stays hidden (FL-1606)', async () => {
+it('lists Booking after Services, moves it, and says when it stays hidden (FL-1606)', async () => {
   vi.mocked(siteRequest).mockResolvedValue({
     revision: 's1',
     site: { ...site, sections: ['cover', 'services', 'inquiry'].map((id) => ({ id, on: true })) },
@@ -63,6 +64,13 @@ it('lists Booking after Services, and says when it stays hidden (FL-1606)', asyn
   const rows = screen.getAllByRole('switch', { name: /^Show / }).map((item) => item.getAttribute('aria-label'));
   expect(rows).toEqual(['Show Cover', 'Show Services and packages', 'Show Booking', 'Show Inquiry form']);
   expect(screen.getByText('Booking stays hidden until you add a booking type in Bookings.')).toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Move Booking up' }));
+  expect(screen.getAllByRole('switch', { name: /^Show / }).map((item) => item.getAttribute('aria-label'))).toEqual([
+    'Show Cover',
+    'Show Booking',
+    'Show Services and packages',
+    'Show Inquiry form',
+  ]);
   await fireEvent.click(screen.getByRole('switch', { name: 'Show Booking' }));
   expect(screen.queryByText(/Booking stays hidden/)).not.toBeInTheDocument();
 });

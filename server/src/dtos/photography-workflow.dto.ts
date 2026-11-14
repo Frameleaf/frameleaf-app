@@ -568,6 +568,7 @@ export class PhotographyPublicSiteDto extends createZodDto(
       faq: true,
       trustedBy: true,
       booking: true,
+      bookingAfter: true,
     }).shape,
     ownerId: Id,
     cover: PublicSitePhotoSchema.nullable(),

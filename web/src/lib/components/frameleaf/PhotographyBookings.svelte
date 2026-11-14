@@ -87,10 +87,12 @@
     }
   }
 
+  /** A new booking, or a change to one already listed (its deposit was paid): only a new one is announced. */
   async function arrived(id: string) {
+    const known = bookings?.some((b) => b.id === id);
     await load();
     const booking = bookings?.find((b) => b.id === id);
-    if (!booking) {
+    if (!booking || known) {
       return;
     }
     fresh = [...fresh, id];

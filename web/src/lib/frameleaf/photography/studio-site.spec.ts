@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  fromSectionRows,
   inquiryProblems,
   moveSection,
+  sectionRows,
   seoPreview,
   siteAddress,
   siteItems,
@@ -17,6 +19,18 @@ const sections: Site['sections'] = (
 ).map((id) => ({ id, on: id !== 'faq' }));
 
 describe('studio site helpers', () => {
+  it('places Booking among the sections for the editor and stores where it went (FL-1606)', () => {
+    const rows = sectionRows({ sections, booking: true, bookingAfter: 'services' });
+    expect(rows.map((row) => row.id).slice(2, 6)).toEqual(['about', 'services', 'booking', 'testimonials']);
+    expect(fromSectionRows(rows)).toEqual({ sections, booking: true, bookingAfter: 'services' });
+    // Up past About: it now follows Portfolio, and the sections themselves keep their order.
+    const moved = fromSectionRows(moveSection(moveSection(rows, 'booking', -1), 'booking', -1));
+    expect(moved).toEqual({ sections, booking: true, bookingAfter: 'portfolio' });
+    // Never above the cover.
+    const top = moveSection(sectionRows({ sections, booking: false, bookingAfter: 'cover' }), 'booking', -1);
+    expect(fromSectionRows(top)).toMatchObject({ booking: false, bookingAfter: 'cover' });
+  });
+
   it('keeps the cover first when moving sections', () => {
     expect(moveSection(sections, 'cover', 1)).toBe(sections);
     expect(moveSection(sections, 'portfolio', -1)).toBe(sections);

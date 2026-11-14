@@ -144412,6 +144412,10 @@
             "default": true,
             "type": "boolean"
           },
+          "bookingAfter": {
+            "$ref": "#/components/schemas/PhotographySiteSectionId",
+            "default": "services"
+          },
           "brand": {
             "properties": {
               "background": {
@@ -145110,6 +145114,10 @@
                 "default": true,
                 "type": "boolean"
               },
+              "bookingAfter": {
+                "$ref": "#/components/schemas/PhotographySiteSectionId",
+                "default": "services"
+              },
               "collections": {
                 "items": {
                   "additionalProperties": false,
@@ -145381,6 +145389,10 @@
               "booking": {
                 "default": true,
                 "type": "boolean"
+              },
+              "bookingAfter": {
+                "$ref": "#/components/schemas/PhotographySiteSectionId",
+                "default": "services"
               },
               "collections": {
                 "items": {
