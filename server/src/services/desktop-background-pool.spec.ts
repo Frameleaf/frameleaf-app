@@ -1,4 +1,7 @@
 import { readFileSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { QueueExecution } from 'src/queue/types.js';
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
 import { defaults } from 'src/config.js';
@@ -7,6 +10,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
+import { faceEntries } from 'src/utils/desktop-face.js';
 import { desktopSourceSnapshot } from 'test/desktop-source-authority.js';
 
 const ownerId = '8da8d162-c2c3-4d1d-b6e1-9148b0bfd327';
@@ -228,5 +232,68 @@ describe('when the processing order sends the job to the helpers (FL-456)', () =
   it('hands the job back for the next place when none is ready', async () => {
     ready.mockResolvedValue(false);
     await queueExecution.run(context, async () => expect(await selectReady()).toBe(selection));
+  });
+});
+
+describe('a gallery guest selfie (FL-1058)', () => {
+  const broker = {
+    hasReadyWorker: vi.fn(),
+    create: vi.fn(),
+    result: vi.fn(),
+    cancel: vi.fn(),
+    discard: vi.fn(),
+    assertAdoption: vi.fn(),
+  };
+  const face = defaults.machineLearning.facialRecognition;
+  const guest = (requireReady = true) =>
+    service.selectBackgroundPool(selection, {
+      guestOwnerId: ownerId,
+      requireReady,
+      modelName: face.modelName,
+      face,
+      assertConfig,
+    });
+  beforeEach(() => {
+    selection.workload = MlWorkload.Face;
+    routes.getRouteStates.mockResolvedValue([
+      { workload: MlWorkload.Face, destinationId: 'nas', origin: 'default', revisionId: 'route' },
+    ]);
+    broker.hasReadyWorker.mockResolvedValue(true);
+    broker.create.mockResolvedValue({ id: 'task' });
+    service = new DesktopMlService(broker as never, index as never, policies as never, routes as never);
+  });
+
+  it('runs on the owner own helpers outside the queue and discards the task', async () => {
+    const chosen = await guest();
+    expect(broker.hasReadyWorker).toHaveBeenCalledWith(ownerId, expect.stringMatching(/^face:/), { household: false });
+    const result = { imageWidth: 1, imageHeight: 1, 'facial-recognition': [] };
+    broker.result.mockImplementation(() => {
+      const { authorityKey, modelKey } = broker.create.mock.calls[0]![0];
+      return Promise.resolve({ state: 'completed', result, authorityKey, modelKey });
+    });
+    const folder = await mkdtemp(join(tmpdir(), 'guest-'));
+    const imagePath = join(folder, 'selfie.jpg');
+    await writeFile(imagePath, 'selfie');
+    try {
+      await expect(chosen.desktopFace!({ imagePath }, faceEntries(face))).resolves.toEqual(result);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+    const [request] = broker.create.mock.calls[0]!;
+    expect(request.disclosure).toMatchObject({ version: 4, workload: 'guest-face', policyRevision: 'consent' });
+    expect(request.disclosure).not.toHaveProperty('source');
+    expect(request.disclosure).not.toHaveProperty('job');
+    expect(request.deadlineAt.getTime() - Date.now()).toBeLessThanOrEqual(25_000);
+    expect(broker.discard).toHaveBeenCalledWith('task');
+    expect(routes.assertDefaultRoute).toHaveBeenCalledWith(selection, 'route', undefined, MlWorkload.Face);
+  });
+
+  it('never uses a household computer or an unready helper', async () => {
+    policies.snapshot.mockResolvedValue({ accounts: {}, household: { revisionId: 'home', devices: ['device'] } });
+    expect((await guest()).desktopFace).toBeUndefined();
+    policies.snapshot.mockResolvedValue(structuredClone(policy));
+    broker.hasReadyWorker.mockResolvedValue(false);
+    expect((await guest()).desktopFace).toBeUndefined();
+    expect(broker.create).not.toHaveBeenCalled();
   });
 });

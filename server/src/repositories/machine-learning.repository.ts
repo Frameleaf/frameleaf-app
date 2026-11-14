@@ -297,6 +297,8 @@ export type DesktopPoolOptions = {
   ocr?: MachineLearningConfig['ocr'];
   face?: MachineLearningConfig['facialRecognition'];
   assertConfig: (tx?: Transaction<DB>) => Promise<void>;
+  /** FL-1058: a gallery guest's selfie for this photographer, outside any queued job. */
+  guestOwnerId?: string;
 };
 export type DesktopPoolSelector = (selection: MlSelection, options: DesktopPoolOptions) => Promise<MlSelection>;
 
@@ -1961,6 +1963,20 @@ export class MachineLearningRepository implements RestorationInference {
 
   setDesktopPoolSelector(selector: DesktopPoolSelector | null) {
     this.desktopPoolSelector = selector;
+  }
+
+  /** FL-1058: the owner's own Frameleaf Desktop helpers take a gallery guest's selfie, outside the queue. */
+  selectGuestFacePool(selection: MlSelection, ownerId: string, requireReady = false): Promise<MlSelection> {
+    if (selection.workload !== MlWorkload.Face) return Promise.resolve(selection);
+    if (!this.desktopPoolSelector) throw new Error('desktop_pool_authority_unavailable');
+    const face = structuredClone(this.config.facialRecognition);
+    return this.desktopPoolSelector(selection, {
+      guestOwnerId: ownerId,
+      requireReady,
+      modelName: face.modelName,
+      face,
+      assertConfig: (tx?: Transaction<DB>) => this.assertDesktopFaceConfig(selection, faceEntries(face), tx, face),
+    });
   }
 
   async selectBackgroundPool(

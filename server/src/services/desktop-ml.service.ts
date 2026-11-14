@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { type Transaction, sql } from 'kysely';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
 import z from 'zod';
@@ -68,6 +68,7 @@ export class DesktopMlService {
   }
 
   async selectBackgroundPool(selection: MlSelection, options: DesktopPoolOptions): Promise<MlSelection> {
+    if (options.guestOwnerId !== undefined) return this.selectGuestFacePool(selection, options);
     const context = queueExecution.getStore();
     if (
       !context ||
@@ -197,6 +198,84 @@ export class DesktopMlService {
         job: { id: context.claim.id, token: context.claim.token },
       },
       assertAuthority,
+    });
+  }
+
+  /**
+   * FL-1058: a gallery guest's selfie goes to the photographer's own Frameleaf Desktop helpers (never a
+   * household computer) when the Face route sends work there. The waiting request owns the task: it is
+   * discarded with the result, and no queued job or library photo stands behind it.
+   */
+  private async selectGuestFacePool(selection: MlSelection, options: DesktopPoolOptions): Promise<MlSelection> {
+    if (
+      selection.workload !== MlWorkload.Face ||
+      ![MlDestinationKind.Local, MlDestinationKind.Lan].includes(selection.kind) ||
+      selection.endpoint.cloud ||
+      !options.face
+    )
+      return selection;
+    if (!this.policies || !this.routes) throw new Error('desktop_pool_authority_unavailable');
+    const ownerId = z.uuid().parse(options.guestOwnerId);
+    const route = (await this.routes.getRouteStates()).find((route) => route.workload === MlWorkload.Face);
+    if (route?.origin !== 'default' || route.destinationId !== selection.destinationId || !route.revisionId)
+      return selection;
+    const account = (await this.policies.snapshot()).accounts[ownerId];
+    if (!account) return selection;
+    let profile: DesktopModelProfile;
+    try {
+      profile = desktopFaceProfile(options.face);
+    } catch {
+      return selection;
+    }
+    if (
+      options.requireReady &&
+      !(await this.repository.hasReadyWorker(ownerId, profile.modelKey, { household: false }))
+    )
+      return selection;
+    const revisionId = route.revisionId;
+    const endpoint = Object.freeze({ ...selection.endpoint });
+    const disclosure: DesktopMlDisclosure = {
+      version: 4,
+      workload: 'guest-face',
+      policyRevision: account.revisionId,
+      routeRevision: revisionId,
+      destinationId: selection.destinationId,
+      kind: selection.kind as MlDestinationKind.Local | MlDestinationKind.Lan,
+      endpointSha256: desktopEndpointDigest(endpoint),
+      modelName: options.modelName,
+      modelKey: profile.modelKey,
+      face: structuredClone(options.face),
+    };
+    const assertAuthority = async (tx?: Transaction<DB>) => {
+      await this.policies!.assertCurrent(ownerId, account.revisionId, tx);
+      await this.routes!.assertDefaultRoute(selection, revisionId, tx, MlWorkload.Face);
+      await options.assertConfig(tx);
+      await endpoint.assertAuthority?.();
+    };
+    await assertAuthority();
+    return Object.freeze({
+      ...selection,
+      endpoint,
+      desktopFace: async (payload: ModelPayload, entries: unknown) => {
+        if (!('imagePath' in payload) || canonicalJson(entries) !== canonicalJson(profile.spec.entries))
+          throw new Error('desktop_pool_profile_changed');
+        await assertAuthority();
+        return this.dispatch({
+          request: {
+            ownerId,
+            // Unique per search: a guest task never matches another search's result.
+            authorityKey: randomUUID(),
+            disclosure,
+            modelKey: profile.modelKey,
+            config: profile.spec.entries,
+            input: await readClipInput(payload),
+            inputKind: 'image',
+            deadlineAt: new Date(Date.now() + 25_000),
+          },
+          assertAuthority,
+          decodeResult: parseBoundFaceResult,
+        });
+      },
     });
   }
 
@@ -392,7 +471,7 @@ export class DesktopMlService {
         throw new Error('desktop_pool_destination_changed');
       const selection = { destinationId: destination.id, kind: destination.kind, endpoint };
       await routes.assertRecoveryAuthority(destination);
-      if (authority.version === 3) {
+      if (authority.version === 4 || authority.version === 3) {
         await routes.assertDefaultRoute(selection, authority.routeRevision, tx, MlWorkload.Face);
         const profile = desktopFaceProfile(authority.face, authority.modelKey);
         if (
@@ -403,6 +482,8 @@ export class DesktopMlService {
         )
           throw new Error('desktop_pool_profile_changed');
         await this.machineLearning.assertDesktopFaceConfig(selection, profile.spec.entries, tx, authority.face);
+        // FL-1058: a guest selfie has no library photo or queued job; its request discards the task when done.
+        if (authority.version === 4) return;
       } else if (authority.version === 2) {
         await routes.assertDefaultRoute(selection, authority.routeRevision, tx, MlWorkload.Ocr);
         const profile = desktopOcrProfile(authority.ocr, authority.modelKey);
