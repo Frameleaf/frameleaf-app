@@ -8,6 +8,7 @@ import {
   MediaOperationKind,
   QueueName,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { finishRuns } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -185,5 +186,40 @@ describe('library scan jobs', () => {
     expect(await run(scan.identity.operationId)).toMatchObject({ enumerationDone: false, finishedAt: null });
     await jobs.settleLibraryScanSource(scan.identity.operationId, () => Promise.resolve('failed'), requeued);
     expect(await run(scan.identity.operationId)).toMatchObject({ enumerationDone: true });
+  });
+
+  it('renews the scan job lease with every batch, so a long scan keeps its claim', async () => {
+    // The worker heartbeat skips a locked job row; back-to-back batches used to starve it until the lease ran out
+    // mid-batch ("Producer lost its claim").
+    const scan = await newScan();
+    jobs['handlers'][JobName.LibraryScanRun] = { queueName: QueueName.Library } as never;
+    await store.pause(QueueName.Library, false);
+    await jobs.queue({ name: JobName.LibraryScanRun, data: {} });
+    const [claim] = await store.claim(QueueName.Library, workerId);
+    await sql`update job set "leaseExpiresAt" = now() + interval '1 second' where id = ${claim.id}::uuid`.execute(db);
+    const context = {
+      claim,
+      signal: new AbortController().signal,
+      progress: () => {},
+      progressUnits: 0,
+      adoptions: [],
+      followups: [],
+      buffering: false,
+    };
+
+    const imported = await queueExecution.run(context, () =>
+      jobs.commitLibraryScanBatch(scan.identity, 1, async (tx) => {
+        await new Promise((resolve) => setTimeout(resolve, 1500)); // a batch outliving the lease it started with
+        const asset = mediumFactory.assetInsert({
+          ownerId: scan.ownerId,
+          libraryId: scan.identity.libraryId,
+          isExternal: true,
+        });
+        await tx.insertInto('asset').values(asset).execute();
+        return { value: [asset.id!], assetIds: [asset.id!], accepted: true };
+      }),
+    );
+    expect(imported).toHaveLength(1);
+    expect(await store.complete(claim, [])).toBe(true);
   });
 });

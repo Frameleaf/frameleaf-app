@@ -798,6 +798,12 @@ export class JobRepository {
         ${lock ? sql`for update` : sql``}`.execute(tx);
     return this.store.db.transaction().execute(async (tx) => {
       if (context && (await claimHeld(tx, true)).rows.length === 0) throw new Error('Producer lost its claim');
+      if (context) {
+        // The worker heartbeat skips a locked claim, so back-to-back fences (a library scan's batches) would starve
+        // its lease until it expired mid-scan. Holding the fence proves the executor is alive: renew the lease here.
+        await sql`update job set "leaseExpiresAt" = greatest("leaseExpiresAt", now() + interval '60 seconds')
+          where id = ${context.claim.id}::uuid`.execute(tx);
+      }
       const value = await work(tx);
       if (context) {
         context.signal.throwIfAborted();
