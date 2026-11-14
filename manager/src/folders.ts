@@ -49,6 +49,8 @@ export function inside(path: string, parent: string): boolean {
   const [child, outer] = [shareView(path), shareView(parent)];
   return !!child && !!outer && (combined(child.view) || combined(outer.view)) && within(child.path, outer.path);
 }
+/** Unraid's exclusive shares (6.12+) make /mnt/user/<share> a link to the pool, e.g. /mnt/user/appdata -> /mnt/cache/appdata. */
+export const sameFiles = (a: string, b: string) => inside(a, b) && inside(b, a);
 /** The share, pool or drive holding `path`. On Unraid /mnt/disks/UD01 is one drive and /mnt/remotes/nas one share, a level deeper than /mnt/user. */
 const volume = (path: string) => {
   const roots = broadRootList();
@@ -134,7 +136,9 @@ export async function ensureChosenFolder(path: string): Promise<void> {
   if (!(await stat(place).then((s) => s.isDirectory(), () => false)) || (await poolAbsent(place)))
     throw new Refusal('storage_volume_missing', 409, folderDetail(path));
   // A link could lead outside /mnt or into another chosen folder, past the checks that compare these paths.
-  if ((await realTarget(path)) !== path) throw new Refusal('invalid_storage_path', 409, folderDetail(path));
+  // An Unraid exclusive share is the one link allowed: it leads to the same share on its pool.
+  const real = await realTarget(path);
+  if (real !== path && !sameFiles(path, real)) throw new Refusal('invalid_storage_path', 409, folderDetail(path));
   await mkdir(path, { recursive: true });
 }
 

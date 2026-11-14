@@ -12,6 +12,7 @@ import { folderDetail } from './host-paths.js';
 import { UNRAID_ICON, containerName } from './dockerman.js';
 import { managerPlatform } from './server-check.js';
 import { importsFolder } from './mounts.js';
+import { sameFiles } from './folders.js';
 
 export type Acceleration = 'cpu' | 'cuda' | 'rocm' | 'openvino';
 /** Match hwaccel.transcoding.yml; video acceleration does not require an ML variant or AMD's KFD. */
@@ -354,7 +355,8 @@ export async function storagePath(path: string, roots: string[], bytes: number):
   const actual = await realpath(path).catch(() => {
     throw new Refusal('storage_inaccessible', 409, folderDetail(path, roots));
   });
-  if (!roots.some((root) => actual === root || actual.startsWith(`${root}/`)) || actual !== path)
+  // An Unraid exclusive share resolves to its pool (/mnt/user/appdata -> /mnt/cache/appdata); the roots name the share path.
+  if (!roots.some((root) => path === root || path.startsWith(`${root}/`)) || (actual !== path && !sameFiles(path, actual)))
     throw new Refusal('storage_outside_approved_roots', 409, folderDetail(path, roots));
   await access(actual, constants.R_OK | constants.W_OK | constants.X_OK).catch(() => {
     throw new Refusal('storage_permissions', 409, folderDetail(path, roots));
