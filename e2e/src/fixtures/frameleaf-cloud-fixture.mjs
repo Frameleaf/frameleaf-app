@@ -13,6 +13,9 @@
  *
  * Test-only control (never part of the contract): POST /__fixture/consent {"requiredVersion"} bumps the
  * version the cloud requires, GET /__fixture/state reads the state, POST /__fixture/reset restores it.
+ *
+ * FL-1606: the Clients payments relay (account, checkout, events, events/ack) treats every studio as a connected,
+ * active Stripe account; POST /__fixture/clients/pay {"sessionId"} queues that checkout's payment.succeeded event.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -271,7 +274,13 @@ const descriptionRoute = async (request, response, url) => {
 };
 
 const INITIAL_VERSION = fixture('ml/consent-current.json').requiredVersion;
-const initialState = () => ({ requiredVersion: INITIAL_VERSION, recorded: null, requests: [] });
+const initialState = () => ({
+  requiredVersion: INITIAL_VERSION,
+  recorded: null,
+  requests: [],
+  // FL-1606: Clients payments (FL-1037 relay contract). Every studio is a connected, active Stripe account here.
+  clients: { checkouts: [], events: [] },
+});
 let state = initialState();
 
 const send = (response, status, body, headers = {}) => {
@@ -343,6 +352,15 @@ const capabilities = () => {
       features: state.recorded?.features ?? answer.consent.features,
     },
   };
+};
+
+const clientsAccount = {
+  status: 'active',
+  chargesEnabled: true,
+  payoutsEnabled: true,
+  requirementsDue: [],
+  country: 'CA',
+  defaultCurrency: 'cad',
 };
 
 const routes = {
@@ -437,6 +455,48 @@ const routes = {
       descriptionState.estimates.set(estimate.estimate, { body, used: false });
     }
     send(response, 200, { ...estimate, expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() });
+  },
+  // FL-1606: the Clients payments relay (frameleaf-cloud FC-276), enough for a booking deposit end to end.
+  'GET /v1/instance/clients/payments/account': (_request, response) => send(response, 200, clientsAccount),
+  'POST /v1/instance/clients/payments/checkout': async (request, response) => {
+    const body = JSON.parse((await readBody(request)) || '{}');
+    const id = `cs_test_fixture_${state.clients.checkouts.length + 1}`;
+    state.clients.checkouts.push({ ...body, id, owner: String(request.headers['x-frameleaf-user-fingerprint'] ?? '') });
+    send(response, 200, {
+      id,
+      url: `https://checkout.stripe.com/c/pay/${id}`,
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+  },
+  'GET /v1/instance/clients/payments/events': (_request, response) =>
+    send(response, 200, { events: state.clients.events.slice(0, 50) }),
+  'POST /v1/instance/clients/payments/events/ack': async (request, response) => {
+    const { ids = [] } = JSON.parse((await readBody(request)) || '{}');
+    state.clients.events = state.clients.events.filter((event) => !ids.includes(event.id));
+    send(response, 200, { acknowledged: ids.length });
+  },
+  // test-only: the payer completes a checkout, as Stripe's checkout.session.completed would report it
+  'POST /__fixture/clients/pay': async (request, response) => {
+    const { sessionId } = JSON.parse((await readBody(request)) || '{}');
+    const checkout = state.clients.checkouts.find((c) => c.id === sessionId);
+    if (!checkout) {
+      send(response, 404, { message: 'no such checkout' });
+      return;
+    }
+    state.clients.events.push({
+      id: `evt_fixture_${randomUUID()}`,
+      type: 'payment.succeeded',
+      owner: checkout.owner,
+      createdAt: new Date().toISOString(),
+      reference: checkout.reference,
+      sessionId: checkout.id,
+      paymentIntent: `pi_fixture_${checkout.id}`,
+      amount: checkout.amount,
+      currency: checkout.currency,
+      payerEmail: checkout.customerEmail ?? null,
+      account: null,
+    });
+    send(response, 200, { queued: state.clients.events.length });
   },
   // test-only control, not part of the contract
   'POST /__fixture/consent': async (request, response) => {
