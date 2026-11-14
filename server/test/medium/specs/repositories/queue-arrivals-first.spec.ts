@@ -65,6 +65,20 @@ describe('arrivals first', () => {
     expect(order.slice(2).toSorted()).toEqual(['backlog-1', 'backlog-2', 'backlog-3']);
   });
 
+  it.each(['library', 'import'])(
+    'runs an upload ahead of an earlier %s run, which queues as backlog',
+    async (origin) => {
+      const scan = await createRun(origin);
+      await store.enqueue([intent('scan-1', scan), intent('scan-2', scan)]);
+      const upload = await createRun('phone');
+      await store.enqueue([intent('upload-1', upload)]);
+
+      const order = await claimAll();
+      expect(order[0]).toBe('upload-1');
+      expect(order.slice(1).toSorted()).toEqual(['scan-1', 'scan-2']);
+    },
+  );
+
   it('keeps a requested delay for arrival work', async () => {
     const upload = await createRun('computer');
     await store.enqueue([intent('later', upload, 60_000)]);

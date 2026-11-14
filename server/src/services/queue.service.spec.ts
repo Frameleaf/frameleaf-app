@@ -139,6 +139,7 @@ describe(QueueService.name, () => {
         { name: JobName.SessionCleanup },
         { name: JobName.HlsSessionCleanup },
         { name: JobName.AuditTableCleanup },
+        { name: JobName.NotificationsCleanup },
         { name: JobName.MemoryGenerate },
         { name: JobName.UserSyncUsage },
         // the unfinished-work check queues missing thumbnails itself

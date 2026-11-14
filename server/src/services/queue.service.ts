@@ -688,6 +688,8 @@ export class QueueService extends BaseService {
         { name: JobName.SessionCleanup },
         { name: JobName.HlsSessionCleanup },
         { name: JobName.AuditTableCleanup },
+        // FL-1603: it had a handler but nothing ever queued it, so the notification table only grew
+        { name: JobName.NotificationsCleanup },
       );
       // FL-32: cleanups that are not queue jobs, so the public job names stay as they are. Emitted after the
       // jobs below are queued: a slow or failing handler must not keep the night's deletes and sweeps from running.

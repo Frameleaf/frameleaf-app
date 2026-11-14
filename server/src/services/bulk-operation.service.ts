@@ -254,10 +254,14 @@ export class BulkOperationService {
       } catch (error) {
         // An unexpected error is the job's failure, not the worker's: record it and move on.
         this.logger.error(`Bulk operation ${claim.operation.id} failed: ${bulkErrorMessage(error)}`);
-        await this.operations.fail(claim.operation.id, claim.claimToken, {
-          error: bulkErrorMessage(error),
-          errorCode: 'bulk_failed',
-        });
+        // FL-1603: the one automatic retry promised above; the next claim resumes from the recorded batch. Refusals a
+        // retry cannot fix (revoked key, album gone, owner deleted) are reported at once where they are found.
+        await this.operations.fail(
+          claim.operation.id,
+          claim.claimToken,
+          { error: bulkErrorMessage(error), errorCode: 'bulk_failed' },
+          { resumable: true },
+        );
       }
     }
   }

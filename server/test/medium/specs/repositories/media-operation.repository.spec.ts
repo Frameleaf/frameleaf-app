@@ -1502,19 +1502,23 @@ describe(MediaOperationRepository.name, () => {
       const { user } = await ctx.newUser();
       await newBulk(sut, user.id, ['a']);
       await newOperation(sut, user.id);
+      await newOperation(sut, user.id, { kind: MediaOperationKind.Restoration });
       await sut.claimNext({ kinds: [MediaOperationKind.Bulk], workerId: 'bulk-1', leaseMs: 1 });
       await sut.claimNext({ kinds: [MediaOperationKind.StudioExport], workerId: 'render-1', leaseMs: 1 });
+      await sut.claimNext({ kinds: [MediaOperationKind.Restoration], workerId: 'render-2', leaseMs: 1 });
       await new Promise((resolve) => setTimeout(resolve, 20));
 
       const recovered = await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
 
-      // Other tests' rows may share the database, so only this owner's two are counted on.
-      expect(recovered.retried).toBeGreaterThanOrEqual(1);
+      // Other tests' rows may share the database, so only this owner's three are counted on.
+      expect(recovered.retried).toBeGreaterThanOrEqual(2);
       expect(recovered.failed).toBeGreaterThanOrEqual(1);
       const { items } = await sut.list({ ownerId: user.id, take: 10, skip: 0 });
       const byKind = Object.fromEntries(items.map((item) => [item.kind, item.status]));
-      expect(byKind[MediaOperationKind.Bulk]).toBe(MediaOperationStatus.Failed);
+      // FL-1603: a bulk edit resumes from its cursor, so it gets the one retry like a safe render
+      expect(byKind[MediaOperationKind.Bulk]).toBe(MediaOperationStatus.Queued);
       expect(byKind[MediaOperationKind.StudioExport]).toBe(MediaOperationStatus.Queued);
+      expect(byKind[MediaOperationKind.Restoration]).toBe(MediaOperationStatus.Failed);
     });
   });
 

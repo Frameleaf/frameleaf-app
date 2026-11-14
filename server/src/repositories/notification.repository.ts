@@ -19,17 +19,15 @@ export class NotificationRepository {
           // remove soft-deleted notifications
           eb.and([eb('deletedAt', 'is not', null), eb('deletedAt', '<', DateTime.now().minus({ days: 3 }).toJSDate())]),
 
-          // Compatibility policy: old notifications read within the last two days.
+          // FL-1603: read notifications, two days after they were read, once at least 15 days old (the old
+          // `readAt >` kept every notification read more than two days ago, forever)
           eb.and([
-            eb('readAt', '>', DateTime.now().minus({ days: 2 }).toJSDate()),
+            eb('readAt', '<', DateTime.now().minus({ days: 2 }).toJSDate()),
             eb('createdAt', '<', DateTime.now().minus({ days: 15 }).toJSDate()),
           ]),
 
-          eb.and([
-            // Retained compatibility predicate: SQL '= NULL' does not match unread rows.
-            eb('readAt', '=', null),
-            eb('createdAt', '<', DateTime.now().minus({ days: 30 }).toJSDate()),
-          ]),
+          // unread notifications after 30 days (`= null` never matched, so they were kept forever)
+          eb.and([eb('readAt', 'is', null), eb('createdAt', '<', DateTime.now().minus({ days: 30 }).toJSDate())]),
         ]),
       )
       .execute();
