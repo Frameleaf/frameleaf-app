@@ -33,3 +33,30 @@ def test_evaluation_keeps_producer_identity_and_rank_improvement():
 def test_spearman_rejects_constant_scores():
     with pytest.raises(ValueError, match="nonconstant"):
         qualification.spearman(np.ones(3), np.arange(3))
+
+
+def test_trained_head_passes_qualification_and_keeps_v1_calibration(tmp_path):
+    spec = spec_from_file_location("build_aesthetic_head", Path(__file__).parent / "scripts/build-aesthetic-head.py")
+    build = module_from_spec(spec)
+    spec.loader.exec_module(build)
+    key = f"clip:{'a' * 64}"
+    rng = np.random.default_rng(0)
+    embeddings = rng.normal(size=(1200, 8))
+    ratings = embeddings @ rng.normal(size=8) + rng.normal(scale=0.3, size=1200)
+    np.savez(tmp_path / "train.npz", embeddings=embeddings[:600], ratings=ratings[:600], producer=key, model="m")
+    build.train(
+        build.argparse.Namespace(train=tmp_path / "train.npz", head=tmp_path / "head.json", dataset="synthetic")
+    )
+    head = build.json.loads((tmp_path / "head.json").read_text())
+
+    held_out = [
+        {"id": str(i), "embedding": list(e), "v1": 0.5, "rating": r}
+        for i, (e, r) in enumerate(zip(embeddings[600:], ratings[600:]))
+    ]
+    held_out[0]["v1"] = 0.6  # Spearman needs a nonconstant baseline
+    evidence = qualification.evaluate(head, {"producerModelKey": key, "samples": held_out})
+    assert evidence["v2"] > 0.9
+
+    logits = embeddings[:600] @ np.array(head["layers"][0]["weights"])[:, 0] + head["layers"][0]["bias"][0]
+    assert abs(np.median(logits)) < 1e-6
+    assert np.percentile(logits, 98) == pytest.approx(3.18)

@@ -4723,6 +4723,7 @@
   "frameleaf_best_moments_intro": "El mejor fotograma de cada vídeo clasificado.",
   "frameleaf_best_moments_play": "Reproducir {name} desde {time}",
   "frameleaf_best_moments_title": "Mejores momentos de tus vídeos",
+  "frameleaf_best_photos_aesthetic_note": "La puntuación estética puede favorecer algunas tradiciones fotográficas y pasar por alto cualidades que valoras en otras.",
   "frameleaf_best_photos_empty_body": "Tus mejores fotos aparecen aquí cuando se haya revisado tu biblioteca.",
   "frameleaf_best_photos_empty_title": "Aún no hay mejores fotos",
   "frameleaf_best_photos_failed_title": "No se pudieron cargar tus mejores fotos",

@@ -8063,6 +8063,7 @@ export type ValidateAccessTokenResponseDto = {
 };
 export type BestPhotoScoreDto = {
     aestheticScore: number | null;
+    aestheticScoreVersion: number;
     bestFrameTimestampMs: number | null;
     computedAt: string;
     diversityScore: number | null;

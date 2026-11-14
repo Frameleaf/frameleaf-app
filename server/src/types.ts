@@ -674,7 +674,7 @@ export type JobItem =
 
   // Best Photos
   | { name: JobName.BestPhotosScoreQueueAll; data: IBaseJob }
-  | { name: JobName.BestPhotosScore; data: IEntityJob }
+  | { name: JobName.BestPhotosScore; data: IEntityJob & { embeddingChanged?: boolean } }
 
   // Media Health
   | { name: JobName.MediaHealthScanMissing; data: IMediaHealthScanJob }
