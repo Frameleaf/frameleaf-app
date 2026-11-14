@@ -20,6 +20,7 @@ afterAll(async () => {
 });
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 const request = { ip: '203.0.113.9', userAgent: 'Test' };
+const studio = { name: 'Cedar & Light', email: 'studio@example.test' };
 const signer = (documentSha256: string) => ({
   name: 'Morgan Ellis',
   signatureType: 'typed' as const,
@@ -37,15 +38,18 @@ it('signs once, then refuses every change, and keeps an unbroken event chain', a
   await expect(repository.template(other.id, template.id)).rejects.toBeInstanceOf(NotFoundException);
 
   const body = 'Hi Morgan';
-  const created = await repository.create({
-    ownerId: user.id,
-    templateId: template.id,
-    name: 'Agreement',
-    clientName: 'Morgan Ellis',
-    clientEmail: 'morgan@example.test',
-    body,
-    documentSha256: sha256(body),
-  });
+  const created = await repository.create(
+    {
+      ownerId: user.id,
+      templateId: template.id,
+      name: 'Agreement',
+      clientName: 'Morgan Ellis',
+      clientEmail: 'morgan@example.test',
+      body,
+      documentSha256: sha256(body),
+    },
+    studio,
+  );
   await expect(repository.get(other.id, created.id)).rejects.toBeInstanceOf(NotFoundException);
   expect(
     await repository.send(other.id, created.id, sha256('t'), new Date(Date.now() + 60_000)).catch(() => null),
@@ -91,19 +95,58 @@ it('stops an expired or voided link from opening the contract', async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   const { user } = await ctx.newUser();
   const repository = new PhotographyContractRepository(db);
-  const contract = await repository.create({
-    ownerId: user.id,
-    templateId: null,
-    name: 'Agreement',
-    clientName: 'Morgan',
-    clientEmail: 'morgan@example.test',
-    body: 'Text',
-    documentSha256: sha256('Text'),
-  });
+  const contract = await repository.create(
+    {
+      ownerId: user.id,
+      templateId: null,
+      name: 'Agreement',
+      clientName: 'Morgan',
+      clientEmail: 'morgan@example.test',
+      body: 'Text',
+      documentSha256: sha256('Text'),
+    },
+    studio,
+  );
   await repository.send(user.id, contract.id, sha256('expired'), new Date(Date.now() - 1000));
   expect(await repository.byToken(sha256('expired'))).toBeUndefined();
   await repository.send(user.id, contract.id, sha256('live'), new Date(Date.now() + 60_000));
   expect(await repository.byToken(sha256('expired'))).toBeUndefined();
   await repository.void(user.id, contract.id);
   expect(await repository.byToken(sha256('live'))).toBeUndefined();
+});
+
+it('closes links of a deactivated studio and deletes only after the file is gone', async () => {
+  const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+  const { user } = await ctx.newUser();
+  const repository = new PhotographyContractRepository(db);
+  const contract = await repository.create(
+    {
+      ownerId: user.id,
+      templateId: null,
+      name: 'Agreement',
+      clientName: 'Morgan',
+      clientEmail: 'morgan@example.test',
+      body: 'Text',
+      documentSha256: sha256('Text'),
+    },
+    studio,
+  );
+  expect((await repository.events(contract.id))[0].data).toEqual({ documentSha256: sha256('Text'), studio });
+  await repository.send(user.id, contract.id, sha256('live'), new Date(Date.now() + 60_000));
+  expect(await repository.byToken(sha256('live'))).toBeDefined();
+  await db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', user.id).execute();
+  expect(await repository.byToken(sha256('live'))).toBeUndefined();
+
+  await db.updateTable('photography_contract').set({ pdfPath: '/sealed.pdf' }).where('id', '=', contract.id).execute();
+  await expect(repository.delete(user.id, contract.id, () => Promise.reject(new Error('EPERM')))).rejects.toThrow(
+    'EPERM',
+  );
+  expect((await repository.get(user.id, contract.id)).pdfPath).toBe('/sealed.pdf');
+  const removed: string[] = [];
+  await repository.delete(user.id, contract.id, (path) => {
+    removed.push(path);
+    return Promise.resolve();
+  });
+  expect(removed).toEqual(['/sealed.pdf']);
+  await expect(repository.get(user.id, contract.id)).rejects.toBeInstanceOf(NotFoundException);
 });
