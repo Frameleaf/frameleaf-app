@@ -1416,8 +1416,17 @@ export class CloudBackupService {
     if (!on) {
       return { on, busy: false };
     }
-    const run = (await this.getStatus()).activeRun;
-    return { on, busy: !!run && run.task === 'backup' && (run.state === 'queued' || run.state === 'running') };
+    const active = await this.operations.getActiveOfKind(KIND);
+    const row = active ? await this.operations.getOfKind(active.id, KIND) : undefined;
+    if (!row || taskOf(row) !== 'backup') {
+      return { on, busy: false };
+    }
+    // A run put back to wait (for its key after a restart, or for managed storage) is waiting, not being made: as
+    // busy it held the whole schedule, so the local database copy and Buddy Backup stopped running every night.
+    const waiting =
+      row.status === MediaOperationStatus.Queued && !!row.retryAt && new Date(row.retryAt).getTime() > Date.now();
+    const state = runState(row.status as MediaOperationStatus, !!row.pauseRequestedAt);
+    return { on, busy: !waiting && (state === 'queued' || state === 'running') };
   }
 
   /**
@@ -1697,7 +1706,7 @@ export class CloudBackupService {
     this.tick();
   }
 
-  /** Stop taking work and let the file in hand land; the lease hands the run to the next worker. */
+  /** Stop taking work and let the file in hand land; the run in hand is handed back for the next worker (`run`). */
   @OnEvent({ name: 'AppShutdown' })
   async onShutdown() {
     this.stopping = true;
@@ -1758,7 +1767,20 @@ export class CloudBackupService {
           this.operations.heartbeat(operation.id, claimToken, CLOUD_BACKUP_LEASE_MS, { requireActiveClaim: true }),
         stopped: () => this.stopping,
       },
-      () => this.runClaim(operation, claimToken),
+      async () => {
+        try {
+          await this.runClaim(operation, claimToken);
+        } finally {
+          // Stopped mid-run (an upgrade, a restart): hand the run back now so the next worker resumes it from its
+          // checkpoint. Left to lapse, the lease sweep fails this kind outright. A run that settled itself no
+          // longer holds this claim, so this changes nothing for it.
+          if (this.stopping) {
+            await this.operations
+              .requeue(operation.id, claimToken, { delayMs: 0, returnAttempt: true, requireActiveClaim: true })
+              .catch((error) => this.logger.warn(`Cloud backup run ${operation.id} was not handed back: ${error}`));
+          }
+        }
+      },
     ).finally(() => this.clearOperationKeys());
   }
 

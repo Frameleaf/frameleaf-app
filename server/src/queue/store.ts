@@ -547,9 +547,13 @@ export class SqlQueueStore {
     if (!Number.isSafeInteger(units) || units < 0) {
       return;
     }
+    // Skip a row its completion holds, like heartbeat and deadlines (FL-1590): waiting out the lock timeout here
+    // would throw out of the coordinator's dispatch tick, and the completion settles the job anyway.
     await sql`update job set "progressAt" = now(), "progressUnits" = ${units}
-      where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
-      and "leaseExpiresAt" > clock_timestamp() and "progressUnits" < ${units}`.execute(this.db);
+      where id = (select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
+        and "leaseExpiresAt" > clock_timestamp() and "progressUnits" < ${units} for no key update skip locked)`.execute(
+      this.db,
+    );
   }
 
   /**
@@ -646,7 +650,8 @@ export class SqlQueueStore {
       const { rows } = await sql`update job set state = 'pending', token = null, "leaseExpiresAt" = null,
         "workerId" = null, "cancelRequestedAt" = null, "cancelReason" = null, "finishedAt" = null, error = null,
         "retryBaseAttempt" = "retryBaseAttempt" + 1, "dependencyReason" = ${reason},
-        "availableAt" = clock_timestamp() + ${deferralDelay(reason)}, "resumeAt" = ${KEEP_PLACE}
+        "availableAt" = case when ${stageHeld(sql`job."runId"`, sql`job.name`)} then ${HELD}
+          else clock_timestamp() + ${deferralDelay(reason)} end, "resumeAt" = ${KEEP_PLACE}
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
           and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null returning id`.execute(tx);
       if (rows.length === 0) return false;
@@ -773,7 +778,8 @@ export class SqlQueueStore {
       const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
         state = case when ${unconfirmedAttention} then 'needs_attention' when ${job.cancelled} then 'cancelled'
           when not "safeToRetry" then 'needs_attention' when ${setAside} then 'failed' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
-        "availableAt" = now() + interval '30 seconds', "dependencyReason" = null, token = null, "leaseExpiresAt" = null,
+        "availableAt" = case when ${stageHeld(sql`job."runId"`, sql`job.name`)} then ${HELD} else now() + interval '30 seconds' end,
+        "dependencyReason" = null, token = null, "leaseExpiresAt" = null,
         "finishedAt" = case when ${settled} then now() else null end,
         "resumeAt" = case when not (${settled}) then ${KEEP_PLACE} end,
         error = case when sensitive then 'Job failed; sensitive details omitted' else ${reason.slice(0, 500)} end,
@@ -858,16 +864,21 @@ export class SqlQueueStore {
 
   /** Only the coordinator observes persisted deadlines; no handler event-loop timer is trusted. */
   async deadlines(workerId: string) {
+    // Rows already asked to stop are sent the cancel again without being rewritten (a new row version every tick).
     const { rows } = await sql<{ id: string; token: string; cancelRequestedAt: Date | null }>`
-      update job set "cancelRequestedAt" = coalesce("cancelRequestedAt", now()),
-        "cancelReason" = case when "cancelRequestedAt" is null then 'deadline' else "cancelReason" end
-      where id in (select id from job where state = 'active' and "workerId" = ${workerId}::uuid and (
+      with due as materialized (select id, token, "cancelRequestedAt" from job
+        where state = 'active' and "workerId" = ${workerId}::uuid and (
         "cancelRequestedAt" is not null or "leaseExpiresAt" <= now() or
         ("progressUnits" = 0 and "startedAt" + "deadlineMs" * interval '1 millisecond' <= now()) or
         ("progressUnits" > 0 and "progressAt" + ${QUEUE_TIMING.noProgressDeadline} * interval '1 millisecond' <= now())
       -- FL-1590: a fenced batch holds its job row; skip it until a later poll rather than stall dispatch on the lock
       -- (the batch's own closing claim check sees any cancel).
-      ) for update skip locked) returning id, token, "cancelRequestedAt"
+      ) for update skip locked), marked as (
+        update job j set "cancelRequestedAt" = now(), "cancelReason" = 'deadline'
+        from due where j.id = due.id and due."cancelRequestedAt" is null
+        returning j.id, j.token, j."cancelRequestedAt")
+      select id, token, "cancelRequestedAt" from marked
+      union all select id, token, "cancelRequestedAt" from due where "cancelRequestedAt" is not null
     `.execute(this.db);
     return rows;
   }
@@ -877,14 +888,21 @@ export class SqlQueueStore {
       where state = 'active' and "leaseExpiresAt" < now() order by "leaseExpiresAt" limit ${QUEUE_BATCH}`.execute(
       this.db,
     );
+    // Each row on its own: the oldest expiry comes first every sweep, so one that cannot settle must not stop the rest.
+    let failure: unknown;
     for (const claim of rows) {
-      await this.fail(claim, 'Worker lease expired after confirmed executor stop', undefined, {
-        expiredRecovery: true,
-      });
+      try {
+        await this.fail(claim, 'Worker lease expired after confirmed executor stop', undefined, {
+          expiredRecovery: true,
+        });
+      } catch (error) {
+        failure ??= error;
+      }
     }
     await sql`update job_worker set state = 'lost' where "heartbeatAt" < now() - interval '60 seconds'`.execute(
       this.db,
     );
+    if (failure) throw failure;
   }
 
   private async settleDependencies(tx: Executor, parentIds: string[]) {
@@ -1230,7 +1248,8 @@ export class SqlQueueStore {
   async clear(queue: string, states: QueueState[], entityIds?: string[]) {
     if (entityIds?.length === 0) return;
     const about = entityIds
-      ? sql`and j.data ->> 'id' = any(${entityIds}::text[])`
+      ? // the expression of `job_live_asset_step`, so removing items during an import does not scan every live job
+        sql`and lower(j.data ->> 'id') collate "C" = any(${entityIds.map((id) => id.toLowerCase())}::text[])`
       : sql`and j."availableAt" <> ${HELD}`;
     await this.cancel(queue, states, about);
     this.forgetRunReads();
@@ -1427,7 +1446,7 @@ export class SqlQueueStore {
    */
   async findOpenJob(queue: string, name: string, itemId: string): Promise<{ id: string; active: boolean } | undefined> {
     const { rows } = await sql<{ id: string; active: boolean }>`select id, state = 'active' as active from job
-      where queue = ${queue} and name = ${name} and state in ${LIVE} and data->>'id' = ${itemId}
+      where queue = ${queue} and name = ${name} and state in ${LIVE} and lower(data->>'id') collate "C" = ${itemId.toLowerCase()}
       order by state = 'active' desc, "createdAt" desc, id desc limit 1`.execute(this.db);
     return rows[0];
   }
@@ -1497,7 +1516,8 @@ export async function resetQueueAfterRestore(db: QueryExecutorProvider) {
         and attempt < "retryBaseAttempt" + 2 then 'pending' else 'needs_attention' end,
     "safeToRetry" = "safeToRetry" or (${backup} and not (data ? 'operationId')),
     token = null, "leaseExpiresAt" = null, "workerId" = null, "cancelRequestedAt" = null, "cancelReason" = null,
-    "availableAt" = case when state != 'active' and "availableAt" = ${HELD} then "availableAt" else now() + interval '30 seconds' end,
+    "availableAt" = case when (state != 'active' and "availableAt" = ${HELD}) or ${stageHeld(sql`j."runId"`, sql`j.name`)} then ${HELD}
+      else now() + interval '30 seconds' end,
     "resumeAt" = ${KEEP_PLACE},
     "latestPending" = null,
     "finishedAt" = case when not ${discardBackup} and not ${cancelled} and ${repeatable} and attempt < "retryBaseAttempt" + 2 then null else now() end,

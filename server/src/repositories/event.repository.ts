@@ -259,7 +259,12 @@ export type EventItem<T extends EmitEvent> = {
  * even when an earlier one throws; a failure is logged and never reaches the emitter, which could not
  * repeat the change anyway. Other events keep stopping at, and rethrowing, the first failure.
  */
-const ISOLATED_EVENTS: ReadonlySet<EmitEvent> = new Set<EmitEvent>(['AssetDelete', 'AssetDevelopCurrentChanged']);
+const ISOLATED_EVENTS: ReadonlySet<EmitEvent> = new Set<EmitEvent>([
+  'AssetDelete',
+  'AssetDevelopCurrentChanged',
+  // ~20 independent nightly tidy-ups: one that throws must not skip the others
+  'NightlyDatabaseCleanup',
+]);
 
 export type AuthFn = (client: Socket) => Promise<AuthDto>;
 

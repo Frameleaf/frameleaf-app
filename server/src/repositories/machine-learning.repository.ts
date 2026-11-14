@@ -1951,8 +1951,7 @@ export class MachineLearningRepository implements RestorationInference {
       } finally {
         selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
       }
-    } else
-      response = await this.predict<FacialRecognitionResponse>(selection, { imagePath }, request, undefined, signal);
+    } else response = await this.predictOrWait<FacialRecognitionResponse>(selection, { imagePath }, request, signal);
     signal?.throwIfAborted();
     return {
       imageHeight: response.imageHeight,
@@ -2123,6 +2122,27 @@ export class MachineLearningRepository implements RestorationInference {
       .parse(await response.json()).dimSize;
   }
 
+  /**
+   * One request of a step that records processing failures (search, faces, text). A worker that dropped the
+   * connection (restarting, out of memory) makes the job wait and try again a few times, as descriptions do
+   * (FL-676), instead of counting toward setting the photo aside as unreadable.
+   */
+  private async predictOrWait<T>(
+    selection: MlSelection,
+    payload: ModelPayload,
+    request: MachineLearningRequest,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    try {
+      return await this.predict<T>(selection, payload, request, undefined, signal);
+    } catch (error) {
+      if (error instanceof MachineLearningTransportError) {
+        deferJobOnTransientFailure('destination-unavailable', TRANSPORT_DEFERRAL_ATTEMPTS);
+      }
+      throw error;
+    }
+  }
+
   async encodeImage(selection: MlSelection, imagePath: string, { modelName }: MachineLearningConfig['clip']) {
     const selected = await this.clipIndex?.selectProfile(modelName, 'image');
     if (selected) {
@@ -2131,7 +2151,7 @@ export class MachineLearningRepository implements RestorationInference {
       return result;
     }
     const request = { [ModelTask.SEARCH]: { [ModelType.VISUAL]: { modelName } } };
-    const response = await this.predict<ClipVisualResponse>(selection, { imagePath }, request);
+    const response = await this.predictOrWait<ClipVisualResponse>(selection, { imagePath }, request);
     if (await this.clipIndex?.getActive()) throw new Error('desktop_clip_index_changed');
     return response[ModelTask.SEARCH];
   }
@@ -2223,7 +2243,7 @@ export class MachineLearningRepository implements RestorationInference {
         selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
       }
     }
-    const response = await this.predict<OcrResponse>(selection, { imagePath }, request);
+    const response = await this.predictOrWait<OcrResponse>(selection, { imagePath }, request);
     return response[ModelTask.OCR];
   }
 

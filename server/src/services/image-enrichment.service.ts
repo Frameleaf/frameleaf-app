@@ -782,7 +782,7 @@ export class ImageEnrichmentService extends BaseService {
       if (home.length > 0) {
         await this.jobRepository.queueSelection(
           JobName.ImageDescription,
-          this.assetJobRepository.selectionForImageDescriptionJob(force, home),
+          this.assetJobRepository.selectionForImageDescriptionJob(force, home).clearOrderBy(),
         );
       }
       this.logger.log(
@@ -797,7 +797,8 @@ export class ImageEnrichmentService extends BaseService {
     const onlyAffected = !!force && libraryCare.incrementalEnrichment;
     await this.jobRepository.queueSelection(
       JobName.ImageDescription,
-      this.assetJobRepository.selectionForImageDescriptionJob(force),
+      // paged by id: an inner sort would be redone over every remaining row for each page
+      this.assetJobRepository.selectionForImageDescriptionJob(force).clearOrderBy(),
       { ...(onlyAffected && { onlyAffected }) },
     );
     return JobStatus.Success;
@@ -812,7 +813,7 @@ export class ImageEnrichmentService extends BaseService {
 
     await this.jobRepository.queueSelection(
       JobName.NsfwDetection,
-      this.assetJobRepository.selectionForNsfwDetectionJob(force),
+      this.assetJobRepository.selectionForNsfwDetectionJob(force).clearOrderBy(),
     );
     return JobStatus.Success;
   }

@@ -1328,7 +1328,8 @@ export class PersonService extends BaseService {
     // Per-asset publication refreshes ML faces while retaining explicit decisions.
     await this.jobRepository.queueSelection(
       JobName.AssetDetectFaces,
-      this.assetJobRepository.selectionForDetectFacesJob(force),
+      // paged by id: an inner sort would be redone over every remaining row for each page
+      this.assetJobRepository.selectionForDetectFacesJob(force).clearOrderBy(),
       ...processingSetAsideOverride(force, includeSetAside),
     );
 

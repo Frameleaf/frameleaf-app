@@ -85,6 +85,23 @@ describe('queue holds', () => {
     expect(await store.releaseRun(randomUUID())).toBe('not_found');
   });
 
+  it('keeps a hold set while a job ran: its retry and its deferral come back held', async () => {
+    const runId = await store.createRun('immich-import-derived', {});
+    await store.enqueue([intent(runId, 'a'), intent(runId, 'b')]);
+    await sql`update job_queue set concurrency = 2 where name = ${queue}`.execute(db);
+    const [first, second] = await store.claim(queue, worker, 2);
+    // the hold lands while both are running; reconciliation leaves running jobs alone
+    await store.setRunHolds(runId, { AssetGenerateThumbnails: 'setup' }, db);
+    await store.reconcileHolds(1000);
+    await store.fail(first, 'fixture failure');
+    await store.defer(second, 'destination-unavailable');
+    expect(await held(runId)).toEqual([
+      { itemKey: 'a', held: true },
+      { itemKey: 'b', held: true },
+    ]);
+    expect(await store.claim(queue, worker)).toEqual([]);
+  });
+
   it('holds and releases jobs already queued when the descriptor changes, and finishes a pass across pages', async () => {
     const runId = await store.createRun('library-import-derived', {});
     await store.enqueue(Array.from({ length: 2500 }, (_, index) => intent(runId, String(index).padStart(4, '0'))));

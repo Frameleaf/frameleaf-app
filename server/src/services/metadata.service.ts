@@ -35,7 +35,7 @@ import {
 import { afterJobCommit, attemptOutputPath, jobSignal, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
-import { assertPublicationSource } from 'src/queue/transaction.js';
+import { assertPublicationSource, lockLivePhotoPairing } from 'src/queue/transaction.js';
 import { ReverseGeocodeResult } from 'src/repositories/map.repository.js';
 import { ImmichTags, SidecarTags } from 'src/repositories/metadata.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -295,6 +295,7 @@ export class MetadataService extends BaseService {
       return;
     }
 
+    await lockLivePhotoPairing(asset.ownerId, exifInfo.livePhotoCID);
     const otherType = asset.type === AssetType.Video ? AssetType.Image : AssetType.Video;
     const match = await this.assetRepository.findLivePhotoMatch({
       livePhotoCID: exifInfo.livePhotoCID,

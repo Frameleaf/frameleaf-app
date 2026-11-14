@@ -178,6 +178,15 @@ export class StorageTemplateService extends BaseService {
 
   @OnEvent({ name: 'AssetMetadataExtracted' })
   async onAssetMetadataExtracted({ source, assetId }: ArgOf<'AssetMetadataExtracted'>) {
+    const { storageTemplate } = await this.getConfig({ withCache: true });
+    if (!storageTemplate.enabled) {
+      // Nothing to move: go straight to what the move's follow-up queues (see JobService.onDone) rather than through
+      // a one-at-a-time queue for every file of an import before any thumbnail can start.
+      if (source === 'upload' || source === 'copy') {
+        await this.jobRepository.queue({ name: JobName.AssetGenerateThumbnails, data: { source, id: assetId } });
+      }
+      return;
+    }
     await this.jobRepository.queue({ name: JobName.StorageTemplateMigrationSingle, data: { source, id: assetId } });
   }
 

@@ -360,10 +360,11 @@ describe('coordinator capacity admission', () => {
     await coordinate(coordinatorData);
     expect(fixture.port!.postMessage).toHaveBeenCalledWith({ type: 'unavailable' });
     expect(fixture.store.claim).toHaveBeenCalledTimes(coordinatorData.queues.length);
-    expect(pruneQueueHistoryPage).not.toHaveBeenCalled();
+    // a failing step does not stop the steps behind it
+    expect(pruneQueueHistoryPage).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(QUEUE_TIMING.sweep);
     expect(fixture.store.recoverExpired).toHaveBeenCalledTimes(2);
-    expect(pruneQueueHistoryPage).toHaveBeenCalledOnce();
+    expect(pruneQueueHistoryPage).toHaveBeenCalledTimes(2);
   });
 
   it('reports hold reconciliation failing three times in a row, without the error text', async () => {

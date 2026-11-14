@@ -33,11 +33,14 @@ completed operations report progress, in the submitting job/operation context.
 
 | Setting                            |     Default |               Valid range |
 | ---------------------------------- | ----------: | ------------------------: |
-| `FRAMELEAF_SHARP_WORKERS`          |           2 |                       1–8 |
+| `FRAMELEAF_SHARP_WORKERS`          |   automatic |                       1–8 |
 | `FRAMELEAF_SHARP_PENDING`          |           8 |                      0–64 |
 | `FRAMELEAF_SHARP_MAX_BUFFER_BYTES` |       1 GiB | 64 MiB–8 GiB |
 | `FRAMELEAF_SHARP_PENDING_BYTES`    |       1 GiB |              64 MiB–4 GiB |
 | `FRAMELEAF_SHARP_MAX_PIXELS`       | 200,000,000 |   1,000,000–1,000,000,000 |
+
+The automatic worker count is one per two cores and per 4 GiB of the container's
+memory limit (host memory when the container has none), between 2 and 8.
 
 The buffer bound applies to each IPC request/result, including raw buffers, and
 to the decoded pixels retained inside a thumbnail batch. The

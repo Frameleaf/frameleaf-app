@@ -675,6 +675,7 @@ export class QueueService extends BaseService {
     const config = await this.getConfig({ withCache: false });
     const jobs: JobItem[] = [];
     const tidy = cleanup && config.nightlyTasks.databaseCleanup;
+    let databaseCleanup = false;
 
     if (tidy) {
       // FL-363: Trash is emptied, and deleted accounts removed, only while that choice is on
@@ -688,8 +689,9 @@ export class QueueService extends BaseService {
         { name: JobName.HlsSessionCleanup },
         { name: JobName.AuditTableCleanup },
       );
-      // FL-32: cleanups that are not queue jobs, so the public job names stay as they are
-      await this.eventRepository.emit('NightlyDatabaseCleanup');
+      // FL-32: cleanups that are not queue jobs, so the public job names stay as they are. Emitted after the
+      // jobs below are queued: a slow or failing handler must not keep the night's deletes and sweeps from running.
+      databaseCleanup = true;
     }
 
     // FL-363: switching the tidy-up step off also stops these catching up (the page says so)
@@ -701,7 +703,10 @@ export class QueueService extends BaseService {
       jobs.push({ name: JobName.UserSyncUsage });
     }
 
-    if (tidy && config.nightlyTasks.missingThumbnails) {
+    // The unfinished-work check below already queues every missing thumbnail it can make, skipping photos whose
+    // thumbnail job is still waiting (a running import's backlog) and files known not to open; this run would queue
+    // a second full render for each of those.
+    if (tidy && config.nightlyTasks.missingThumbnails && !config.nightlyTasks.reprocessUnfinished) {
       jobs.push({ name: JobName.AssetGenerateThumbnailsQueueAll, data: { force: false } });
     }
 
@@ -720,6 +725,9 @@ export class QueueService extends BaseService {
     jobs.push({ name: JobName.PushBackupStaleCheck });
 
     await this.jobRepository.queueAll(jobs);
+    if (databaseCleanup) {
+      await this.eventRepository.emit('NightlyDatabaseCleanup');
+    }
     if (config.nightlyTasks.reprocessUnfinished) {
       await this.reconcileUnfinished(config);
     }

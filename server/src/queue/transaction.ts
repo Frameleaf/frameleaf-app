@@ -46,6 +46,15 @@ export async function assertPublicationSource(assetId: string, checksum: Buffer)
   }
 }
 
+/**
+ * Serialise Live Photo pairing on its content id. A photo and its video published at the same time each miss the
+ * other's uncommitted row; with this lock the second one waits, then sees the first one's committed row and pairs.
+ */
+export async function lockLivePhotoPairing(ownerId: string, livePhotoCID: string) {
+  const tx = publicationTransaction.getStore();
+  if (tx) await sql`select pg_advisory_xact_lock(-4, hashtext(${`${ownerId}/${livePhotoCID}`})::int)`.execute(tx);
+}
+
 /** Lock both sides of a Live Photo relationship before adopting pixels from its motion source. */
 export async function assertPublicationMotionSource(
   stillId: string,

@@ -90,12 +90,24 @@ describe(JobService.name, () => {
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.job.run.mockResolvedValue(JobStatus.Success);
 
-      await sut.onJobRun(QueueName.SmartSearch, { name: JobName.SmartSearch, data: { id: asset.id } });
+      await sut.onJobRun(QueueName.SmartSearch, { name: JobName.SmartSearchPostprocess, data: { id: asset.id } });
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.BestPhotosScore,
         data: { id: asset.id, embeddingChanged: true },
       });
+    });
+    it('queues nothing that reads the embedding while search waits for Frameleaf Cloud', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Image });
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.job.run.mockResolvedValue(JobStatus.Skipped);
+
+      await sut.onJobRun(QueueName.SmartSearch, {
+        name: JobName.SmartSearch,
+        data: { id: asset.id, source: 'upload' },
+      });
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
     it.each([
       [true, JobName.AssetVideoFingerprint],
@@ -264,13 +276,8 @@ describe(JobService.name, () => {
       },
       {
         item: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
-        jobs: [
-          JobName.SmartSearch,
-          JobName.AssetDetectFaces,
-          JobName.Ocr,
-          JobName.BestPhotosScore,
-          JobName.ImageDescription,
-        ],
+        // with faces on, face detection queues the photo's Best Photos score
+        jobs: [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr, JobName.ImageDescription],
         stub: [AssetFactory.create({ id: 'asset-1', livePhotoVideoId: newUuid() })],
       },
       {
@@ -309,7 +316,7 @@ describe(JobService.name, () => {
       },
       {
         // FL-58: a fresh CLIP embedding is read by pet recognition (a photo's is also scored, below)
-        item: { name: JobName.SmartSearch, data: { id: 'asset-1' } },
+        item: { name: JobName.SmartSearchPostprocess, data: { id: 'asset-1' } },
         jobs: [JobName.PetRecognition],
         stub: [AssetFactory.create({ id: 'asset-1', type: AssetType.Video })],
       },
@@ -373,7 +380,7 @@ describe(JobService.name, () => {
       {
         disabled: 'clip',
         type: AssetType.Image,
-        jobs: [JobName.AssetDetectFaces, JobName.Ocr, JobName.BestPhotosScore],
+        jobs: [JobName.AssetDetectFaces, JobName.Ocr],
       },
       {
         disabled: 'facialRecognition',
@@ -383,7 +390,7 @@ describe(JobService.name, () => {
       {
         disabled: 'ocr',
         type: AssetType.Image,
-        jobs: [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.BestPhotosScore],
+        jobs: [JobName.SmartSearch, JobName.AssetDetectFaces],
       },
       { disabled: 'enabled', type: AssetType.Video, jobs: [JobName.AssetEncodeVideo, JobName.BestPhotosScore] },
     ])('skips disabled $disabled automatic upload ML for $type', async ({ disabled, type, jobs }) => {
@@ -553,7 +560,7 @@ describe(JobService.name, () => {
       const { data } = await run();
 
       expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith(
-        [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr, JobName.BestPhotosScore].map((name) => ({
+        [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr].map((name) => ({
           name,
           data,
         })),
@@ -691,7 +698,6 @@ describe(JobService.name, () => {
         { name: JobName.SmartSearch, data: { id: asset.id, source: 'upload' } },
         { name: JobName.AssetDetectFaces, data: { id: asset.id, source: 'upload' } },
         { name: JobName.Ocr, data: { id: asset.id, source: 'upload' } },
-        { name: JobName.BestPhotosScore, data: { id: asset.id, source: 'upload' } },
         { name: JobName.ImageDescription, data: { id: asset.id, source: 'upload' } },
       ]);
     });
@@ -718,7 +724,6 @@ describe(JobService.name, () => {
         { name: JobName.SmartSearch, data: { id: asset.id, source: 'upload' } },
         { name: JobName.AssetDetectFaces, data: { id: asset.id, source: 'upload' } },
         { name: JobName.Ocr, data: { id: asset.id, source: 'upload' } },
-        { name: JobName.BestPhotosScore, data: { id: asset.id, source: 'upload' } },
         { name: JobName.NsfwDetection, data: { id: asset.id, source: 'upload' } },
       ]);
     });

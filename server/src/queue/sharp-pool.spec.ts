@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import sharp from 'sharp';
-import { sharpConfiguration } from 'src/queue/sharp-configuration.js';
+import { automaticSharpWorkers, sharpConfiguration } from 'src/queue/sharp-configuration.js';
 import { SharpProcessPool, imageWorkerEnvironment } from 'src/queue/sharp-pool.js';
 import { operationExecution } from 'src/utils/execution-signal.js';
 
@@ -342,6 +342,15 @@ describe('Sharp resource configuration', () => {
     const config = sharpConfiguration({});
     expect(config.maxBytes).toBeGreaterThan(100_000_000 * 3 * 2);
     expect(config.maxPixels).toBeGreaterThanOrEqual(200_000_000);
+  });
+  it.each([
+    [4, 4, 2], // small NAS
+    [16, 8, 2], // many cores, little memory
+    [16, 32, 8],
+    [64, 256, 8],
+    [8, 64, 4],
+  ])('defaults to %i cores and %i GiB -> %i image workers', (cpus, gib, workers) => {
+    expect(automaticSharpWorkers(cpus, gib * 1024 ** 3)).toBe(workers);
   });
   it.each(['NaN', '-1', 'Infinity', '1.5', '0', '99'])('rejects invalid worker limit %s', (value) => {
     expect(() => sharpConfiguration({ FRAMELEAF_SHARP_WORKERS: value })).toThrow('FRAMELEAF_SHARP_WORKERS');

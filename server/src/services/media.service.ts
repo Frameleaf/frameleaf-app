@@ -1583,10 +1583,11 @@ export class MediaService extends BaseService {
   @OnJob({ name: JobName.AssetEncodeVideoQueueAll, queue: QueueName.VideoConversion })
   async handleQueueVideoConversion(job: JobOf<JobName.AssetEncodeVideoQueueAll>): Promise<JobStatus> {
     const { force, includeSetAside } = job;
+    const { ffmpeg } = await this.getConfig({ withCache: true });
 
     await this.jobRepository.queueSelection(
       JobName.AssetEncodeVideo,
-      this.assetJobRepository.selectionForVideoConversion(force),
+      this.assetJobRepository.selectionForVideoConversion(force, force ? undefined : videoProcessingPolicy(ffmpeg)),
       ...processingSetAsideOverride(force, includeSetAside),
     );
     // FL-650: the same run makes seek-bar previews; a video whose previews exist is a quick cache hit
@@ -1673,6 +1674,8 @@ export class MediaService extends BaseService {
       );
     } catch (error: any) {
       await discard();
+      // A pause, shutdown or lost lease is not a failed transcode: recording it would block the proxy for a day
+      executionSignal()?.throwIfAborted();
       // FL-721: waiting for the Locked key is not a failed transcode
       if (isLockedKeyUnavailable(error)) {
         throw error;
@@ -1725,6 +1728,9 @@ export class MediaService extends BaseService {
     });
 
     const output = attemptOutputPath(StorageCore.getEncodedVideoPath(asset));
+    // The attempt owns this path: a failed or cancelled encode removes its partial file at once instead of
+    // leaving it (often gigabytes) for the background sweep, which can take weeks to reach it on a big library.
+    const discardOutput = () => this.storageRepository.unlink(output).catch(() => {});
 
     const { videoStream } = asset;
     const format = fromStoredFormat(asset.format);
@@ -1854,6 +1860,8 @@ export class MediaService extends BaseService {
           await this.noteVideoCard(true, accel);
         }
       } catch (error: any) {
+        // a cancelled encode is not a failed one, and no fallback encode should start after it
+        executionSignal()?.throwIfAborted();
         this.logger.error(`Error occurred during transcoding: ${error.message}`);
         if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
           if (cinemaRaw && !isUndecodableError(error)) {
@@ -1886,7 +1894,8 @@ export class MediaService extends BaseService {
         }
       }
       return true;
-    }).catch((error) => {
+    }).catch(async (error) => {
+      await discardOutput();
       executionSignal()?.throwIfAborted();
       if (!cinemaRaw || isLockedKeyUnavailable(error) || !isUndecodableError(error)) {
         throw error;
@@ -1894,6 +1903,7 @@ export class MediaService extends BaseService {
       return false;
     });
     if (!encoded) {
+      await discardOutput();
       if (cinemaRaw) {
         this.logger.log(`No playback copy for cinema RAW ${asset.id}: this server has no decoder for it`);
         return JobStatus.Skipped;

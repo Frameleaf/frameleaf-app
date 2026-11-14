@@ -230,6 +230,12 @@ export type AssetFileRelease = {
   files: (removed: RemovedAsset) => string[];
   /** Queues their deletion; a failure rolls the removal back. */
   queue: (files: string[]) => Promise<void>;
+  /**
+   * When given, the removal goes ahead only while the row's `deletedAt` is still this value, checked under the row
+   * lock: a restore from the trash (cleared), or a restore and trash again (a new keep time), since the caller read
+   * it stops the removal.
+   */
+  deletedAt?: Date | null;
 };
 export interface DescriptionStats {
   totalAssets: number;
@@ -993,7 +999,14 @@ export class AssetRepository {
       return [];
     }
     return this.inTransaction(async (tx) => {
-      const rows = await tx.insertInto('asset').values(assets).returning('id').execute();
+      // A path the watcher and a scan both reach, or a watcher change event on a known file, is already there:
+      // skip it rather than fail the whole batch on the unique index. Only inserted rows come back.
+      const rows = await tx
+        .insertInto('asset')
+        .values(assets)
+        .onConflict((oc) => oc.doNothing())
+        .returning('id')
+        .execute();
       const ids = rows.map(({ id }) => id);
       // FL-921: one statement for the whole batch; this is the library scan's insert
       await recordLedgerAdded(tx, ids, 'library-scan');
@@ -2111,6 +2124,16 @@ export class AssetRepository {
     const lockedAsset = await this.readRemovedPaths(tx, id, true);
     if (!lockedAsset) {
       return;
+    }
+    if (release && release.deletedAt !== undefined) {
+      const { deletedAt } = await tx
+        .selectFrom('asset')
+        .select('deletedAt')
+        .where('id', '=', asUuid(id))
+        .executeTakeFirstOrThrow();
+      if ((deletedAt?.getTime() ?? null) !== (release.deletedAt?.getTime() ?? null)) {
+        return;
+      }
     }
     const stackId = await this.getStackId(tx, id);
     await lockLate(release ? release.files(lockedAsset) : [], stackId);

@@ -155,13 +155,30 @@ export class AssetJobRepository {
     // Earlier pages only enqueue IDs below this cursor. Keep those rows out of the live-job lookup.
     const subject = sql`lower(job.data->>'id') collate "C"`;
     const liveRange = options.after ? sql`and ${subject} > ${options.after}` : sql``;
+    // A photo still waiting at an earlier step gets this one from that step's chain: queuing it here too would
+    // run it twice (an upload's thumbnails follow its storage template move, its metadata its sidecar check).
+    const earlier: QueueName[] =
+      name === JobName.AssetExtractMetadata
+        ? [QueueName.Sidecar]
+        : name === JobName.AssetGenerateThumbnails
+          ? [QueueName.Sidecar, QueueName.MetadataExtraction, QueueName.StorageTemplateMigration]
+          : [];
+    const waitingEarlier =
+      earlier.length > 0
+        ? sql`and not exists (
+        select 1 from job
+        where job.queue = any(${earlier}::text[]) and job.state in ('pending', 'waiting', 'active')
+          and ${subject} = asset.id::text ${liveRange}
+        offset 0
+      )`
+        : sql``;
     // Keep this indexed lookup correlated even before PostgreSQL has analyzed a newly filled job table.
     return selection.where(sql<boolean>`asset.status = 'active' and not asset."isOffline" and not exists (
         select 1 from job
         where job.queue = ${options.queue} and job.name = ${name} and job.state in ('pending', 'waiting', 'active')
           and ${subject} = asset.id::text ${liveRange}
         offset 0
-      )`);
+      ) ${waitingEarlier}`);
   }
 
   /**
@@ -848,7 +865,11 @@ export class AssetJobRepository {
     return this.selectionForVideoConversion(force).stream();
   }
 
-  selectionForVideoConversion(force?: boolean) {
+  /**
+   * `videoPolicy` (non-force only) leaves out videos the encoder already found playable as they are under that
+   * policy: they never get an encoded copy, so without it every "Missing" run re-checks each one.
+   */
+  selectionForVideoConversion(force?: boolean, videoPolicy?: string) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id'])
@@ -867,6 +888,21 @@ export class AssetJobRepository {
             ),
           )
           .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
+      )
+      .$if(!force && !!videoPolicy, (qb) =>
+        qb.where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('asset_job_status')
+                .select('asset_job_status.assetId')
+                .whereRef('asset_job_status.assetId', '=', 'asset.id')
+                .where(
+                  sql<boolean>`"asset_job_status"."transcodeSkippedFor" = (encode(asset.checksum, 'hex') || ':' || ${videoPolicy})`,
+                ),
+            ),
+          ),
+        ),
       )
       .where('asset.deletedAt', 'is', null);
   }

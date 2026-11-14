@@ -1252,6 +1252,8 @@ export class AssetService extends BaseService {
         // a path can be named twice (a version file that is also a generated file); delete it once
         return [...new Set(files.filter((file): file is string => !!file))];
       },
+      // the row must still be the one judged above: restored (or restored and trashed again) since, it stays
+      deletedAt: asset.deletedAt,
       queue: (files) =>
         this.jobRepository.queue({
           name: JobName.FileDelete,

@@ -546,6 +546,40 @@ describe(LibraryScanService.name, () => {
       );
     });
 
+    it('leaves an item alone when its file cannot be read for a reason other than being gone', async () => {
+      mocks.library.getAssetIdPage.mockResolvedValueOnce([{ id: 'flaky' }]).mockResolvedValue([]);
+      mocks.assetJob.getForSyncAssets.mockResolvedValue([
+        {
+          id: 'flaky',
+          originalPath: '/mnt/photos/flaky.jpg',
+          isOffline: false,
+          status: AssetStatus.Active,
+          fileModifiedAt: new Date('2024-01-01'),
+        },
+      ] as never);
+      mocks.asset.getExcludedExternalAssetIds.mockResolvedValue([]);
+      mocks.storage.stat.mockImplementation((path: string) =>
+        path === '/mnt/photos'
+          ? Promise.resolve(directory)
+          : Promise.reject(Object.assign(new Error('stale handle'), { code: 'ESTALE' })),
+      );
+
+      await sut.run(operationOf(), 'token');
+
+      expect(mocks.asset.updateAll).not.toHaveBeenCalledWith(['flaky'], expect.anything());
+    });
+
+    it('does not read known files again while crawling', async () => {
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/known.jpg']));
+      mocks.asset.filterNewExternalAssetPaths.mockResolvedValue([]);
+      mocks.library.getAssetIdPage.mockResolvedValue([]);
+
+      await sut.run(operationOf(), 'token');
+
+      expect(mocks.storage.stat).not.toHaveBeenCalledWith('/mnt/photos/known.jpg');
+      expect(mocks.storage.realpath).not.toHaveBeenCalledWith('/mnt/photos/known.jpg');
+    });
+
     it('imports new files, checks existing items and completes', async () => {
       const existing = { id: 'asset-1', isOffline: false, libraryId: library.id, status: AssetStatus.Active };
       mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/new.jpg', '/mnt/photos/old.jpg']));
