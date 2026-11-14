@@ -9,8 +9,11 @@ import { JobName, MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
-import { faceEntries } from 'src/utils/desktop-face.js';
+import { desktopFaceProfile, faceEntries } from 'src/utils/desktop-face.js';
+import { desktopEndpointDigest } from 'src/utils/desktop-ml-disclosure.js';
+import * as mlDestination from 'src/utils/ml-destination.js';
 import { desktopSourceSnapshot } from 'test/desktop-source-authority.js';
 
 const ownerId = '8da8d162-c2c3-4d1d-b6e1-9148b0bfd327';
@@ -284,7 +287,7 @@ describe('a gallery guest selfie (FL-1058)', () => {
     expect(request.disclosure).not.toHaveProperty('source');
     expect(request.disclosure).not.toHaveProperty('job');
     expect(request.deadlineAt.getTime() - Date.now()).toBeLessThanOrEqual(25_000);
-    expect(broker.discard).toHaveBeenCalledWith('task');
+    expect(broker.discard).toHaveBeenCalledWith('task', true);
     expect(routes.assertDefaultRoute).toHaveBeenCalledWith(selection, 'route', undefined, MlWorkload.Face);
   });
 
@@ -295,5 +298,56 @@ describe('a gallery guest selfie (FL-1058)', () => {
     broker.hasReadyWorker.mockResolvedValue(false);
     expect((await guest()).desktopFace).toBeUndefined();
     expect(broker.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('a helper reading a guest selfie (FL-1058)', () => {
+  it('rechecks policy, route and face settings without a library photo or queued job', async () => {
+    const face = defaults.machineLearning.facialRecognition;
+    const profile = desktopFaceProfile(face);
+    const endpoint = { url: 'https://unused.invalid' };
+    const authority = {
+      version: 4,
+      workload: 'guest-face',
+      policyRevision: '5f0c2b8e-1111-4c1d-9b1a-000000000001',
+      routeRevision: '5f0c2b8e-1111-4c1d-9b1a-000000000002',
+      destinationId: '5f0c2b8e-1111-4c1d-9b1a-000000000003',
+      kind: MlDestinationKind.Local,
+      endpointSha256: desktopEndpointDigest(endpoint),
+      modelName: face.modelName,
+      modelKey: profile.modelKey,
+      face,
+    };
+    const task = { ownerId, disclosure: authority, modelKey: profile.modelKey, config: profile.spec.entries };
+    const destination = { id: authority.destinationId, kind: MlDestinationKind.Local };
+    const tx = {};
+    vi.spyOn(MlDestinationRepository.prototype, 'getById').mockResolvedValue(destination as never);
+    vi.spyOn(MlDestinationRepository.prototype, 'assertRecoveryAuthority').mockResolvedValue();
+    const defaultRoute = vi.spyOn(MlDestinationRepository.prototype, 'assertDefaultRoute').mockResolvedValue();
+    vi.spyOn(mlDestination, 'resolveEndpoint').mockReturnValue(endpoint as never);
+    const assertDesktopFaceConfig = vi.fn();
+    const broker = {
+      input: vi.fn((_grant, _attempt, authorize: (task: unknown, tx: unknown) => Promise<void>) =>
+        authorize(task, tx).then(() => Buffer.from('selfie')),
+      ),
+    };
+    service = new DesktopMlService(
+      broker as never,
+      index as never,
+      policies as never,
+      routes as never,
+      {
+        assertDesktopFaceConfig,
+      } as never,
+    );
+    await expect(service.input({} as never, 'attempt')).resolves.toEqual(Buffer.from('selfie'));
+    expect(policies.assertCurrent).toHaveBeenCalledWith(ownerId, authority.policyRevision, tx);
+    expect(defaultRoute).toHaveBeenCalledWith(
+      expect.objectContaining({ destinationId: authority.destinationId }),
+      authority.routeRevision,
+      tx,
+      MlWorkload.Face,
+    );
+    expect(assertDesktopFaceConfig).toHaveBeenCalledOnce();
   });
 });

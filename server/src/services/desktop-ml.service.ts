@@ -274,6 +274,7 @@ export class DesktopMlService {
           },
           assertAuthority,
           decodeResult: parseBoundFaceResult,
+          forget: true,
         });
       },
     });
@@ -456,7 +457,8 @@ export class DesktopMlService {
       const parsed = desktopMlDisclosureSchema.safeParse(task.disclosure);
       if (!parsed.success) throw new Error('desktop_input_authority_invalid');
       const authority = parsed.data;
-      if (task.ownerId !== authority.source.ownerId) throw new Error('desktop_input_owner_changed');
+      if (authority.version !== 4 && task.ownerId !== authority.source.ownerId)
+        throw new Error('desktop_input_owner_changed');
       if (!this.policies || !this.machineLearning) throw new Error('desktop_input_authority_unavailable');
       await this.policies.assertCurrent(task.ownerId, authority.policyRevision, tx);
       const routes = new MlDestinationRepository(tx);
@@ -520,6 +522,8 @@ export class DesktopMlService {
     assertAuthority: (tx?: Transaction<DB>) => Promise<void>;
     decodeResult: (value: unknown) => T;
     signal?: AbortSignal;
+    /** Delete the task outright when done, keeping no consumed row. */
+    forget?: boolean;
   }): Promise<T> {
     const remaining = options.request.deadlineAt.getTime() - Date.now();
     if (!Number.isFinite(remaining) || remaining <= 0 || remaining > 600_000)
@@ -599,7 +603,7 @@ export class DesktopMlService {
       // No cleanup uses the cancelled parent signal: fencing the worker must still finish.
       if (!deferred) {
         await this.repository.cancel(task.id);
-        await this.repository.discard(task.id);
+        await (options.forget ? this.repository.discard(task.id, true) : this.repository.discard(task.id));
       }
     }
   }
