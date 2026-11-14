@@ -35092,7 +35092,7 @@ export function photographyCheckout({ xPhotographySession, id, orderId, photogra
     xPhotographySession: string;
     id: string;
     orderId: string;
-    photographyCheckoutRequestDto: PhotographyCheckoutRequestDto;
+    photographyCheckoutRequestDto?: PhotographyCheckoutRequestDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 201;
