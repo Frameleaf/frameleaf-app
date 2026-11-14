@@ -45,6 +45,7 @@
     mdiClipboardCheckOutline,
     mdiClockOutline,
     mdiCreditCardOutline,
+    mdiLinkVariant,
     mdiClose,
     mdiImport,
     mdiEmailOutline,
@@ -67,6 +68,7 @@
   } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import PhotographyCampaigns from '$lib/components/frameleaf/PhotographyCampaigns.svelte';
+  import PhotographyPaymentLinks from '$lib/components/frameleaf/PhotographyPaymentLinks.svelte';
   import PhotographyPayments from '$lib/components/frameleaf/PhotographyPayments.svelte';
   import PhotographyStyle from '$lib/components/frameleaf/PhotographyStyle.svelte';
   import PhotographyBranding from '$lib/components/frameleaf/PhotographyBranding.svelte';
@@ -117,6 +119,7 @@
   type ShootSection = Exclude<ShootTab, 'photos'>;
   type Section =
     | 'campaigns'
+    | 'payment-links'
     | 'payments'
     | 'shoots'
     | 'branding'
@@ -353,22 +356,24 @@
       ? $t('campaign_title')
       : section === 'payments'
         ? $t('frameleaf_clients_payments')
-        : section === 'settings'
-          ? $t('settings')
-          : section === 'branding'
-            ? $t('frameleaf_photography_branding')
-            : section === 'watermarks'
-              ? $t('frameleaf_photography_watermarks')
-              : section === 'website'
-                ? $t('frameleaf_photography_website')
-                : section === 'publishing'
-                  ? $t('frameleaf_photography_publishing')
-                  : isShootSection(section)
-                    ? $t(shootSectionKeys[section])
-                    : (active?.name ?? $t('frameleaf_photography_shoots')),
+        : section === 'payment-links'
+          ? $t('frameleaf_clients_payment_links')
+          : section === 'settings'
+            ? $t('settings')
+            : section === 'branding'
+              ? $t('frameleaf_photography_branding')
+              : section === 'watermarks'
+                ? $t('frameleaf_photography_watermarks')
+                : section === 'website'
+                  ? $t('frameleaf_photography_website')
+                  : section === 'publishing'
+                    ? $t('frameleaf_photography_publishing')
+                    : isShootSection(section)
+                      ? $t(shootSectionKeys[section])
+                      : (active?.name ?? $t('frameleaf_photography_shoots')),
   );
   const subtitle = $derived(
-    (['settings', 'campaigns', 'payments'] as Section[]).includes(section)
+    (['settings', 'campaigns', 'payments', 'payment-links'] as Section[]).includes(section)
       ? ''
       : section === 'branding'
         ? $t('frameleaf_photography_branding_lead')
@@ -960,7 +965,7 @@
         {/each}
       {/if}
       <p class="phw-rail-heading">{$t('frameleaf_photography_studio_heading')}</p>
-      {#each [['campaigns', $t('campaign_title'), mdiEmailOutline], ['payments', $t('frameleaf_clients_payments'), mdiCreditCardOutline], ['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
+      {#each [['campaigns', $t('campaign_title'), mdiEmailOutline], ['payment-links', $t('frameleaf_clients_payment_links'), mdiLinkVariant], ['payments', $t('frameleaf_clients_payments'), mdiCreditCardOutline], ['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
         <button
           type="button"
           aria-current={section === id ? 'page' : undefined}
@@ -1054,6 +1059,8 @@
         <PhotographyCampaigns shoots={workspace.shoots} />
       {:else if section === 'payments'}
         <PhotographyPayments studioName={studio?.name ?? ''} />
+      {:else if section === 'payment-links'}
+        <PhotographyPaymentLinks onSetUpPayments={() => (section = 'payments')} />
       {:else if isShootSection(section)}
         {#if active}{#key `${active.id}:${section}`}<PhotographyWorkflow
               shoot={active}
