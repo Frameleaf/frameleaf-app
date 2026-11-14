@@ -19,14 +19,14 @@ const authData = {
   refresh_token: "synthetic-refresh",
   token_type: "Bearer",
   expires_in: 3600,
-  scope: "library:read",
+  scope: "library:read library:download albums:write tags:write photos:upload boards:upload events:read",
 };
 const nextTokens = {
   access_token: "synthetic-next-access",
   refresh_token: "synthetic-next-refresh",
   token_type: "Bearer",
   expires_in: 3600,
-  scope: "library:read",
+  scope: "library:read library:download albums:write tags:write photos:upload boards:upload events:read",
 };
 
 test("real Zapier core sends bounded token exchange with the supplied PKCE verifier", async () => {

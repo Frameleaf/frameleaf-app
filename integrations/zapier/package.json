@@ -2,7 +2,7 @@
   "name": "frameleaf-zapier-connect",
   "version": "0.1.0",
   "private": true,
-  "description": "Frameleaf Connect OAuth connection foundation for Zapier",
+  "description": "Frameleaf Connect for Zapier: triggers, searches, actions and files",
   "main": "index.js",
   "license": "MIT",
   "engines": {
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.cjs",
-    "check": "node --check authentication.js && node --check index.js",
+    "check": "node --check app.js && node --check authentication.js && node --check connect.js && node --check index.js",
     "validate": "zapier-platform validate"
   },
   "dependencies": {

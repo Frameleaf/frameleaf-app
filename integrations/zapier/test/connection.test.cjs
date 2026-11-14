@@ -18,7 +18,7 @@ const tokens = {
   refresh_token: "synthetic-refresh",
   token_type: "Bearer",
   expires_in: 3600,
-  scope: "library:read",
+  scope: "library:read library:download albums:write tags:write photos:upload boards:upload events:read",
 };
 const bound = {
   ...tokens,
@@ -45,7 +45,7 @@ test("native PKCE and per-server public client inputs are read-only", () => {
   assert.equal(auth.type, "oauth2");
   assert.equal(auth.oauth2Config.enablePkce, true);
   assert.equal(auth.oauth2Config.autoRefresh, true);
-  assert.equal(auth.oauth2Config.scope, "library:read");
+  assert.equal(auth.oauth2Config.scope, "library:read library:download albums:write tags:write photos:upload boards:upload events:read");
   assert.deepEqual(
     auth.fields.filter((f) => !f.computed).map((f) => f.key),
     ["serverUrl", "frameleafClientId"],
@@ -69,7 +69,7 @@ test("authorization binds exact resource, client, state and platform callback", 
     state: input.state,
     response_type: "code",
     resource: origin + "/api/connect",
-    scope: "library:read",
+    scope: "library:read library:download albums:write tags:write photos:upload boards:upload events:read",
   }))
     assert.equal(url.searchParams.get(key), value);
   assert.equal(url.searchParams.has("client_secret"), false);
@@ -222,7 +222,7 @@ test("connection test signs only the pinned capabilities endpoint and returns a 
           grantId: "22222222-2222-4222-8222-222222222222",
           libraryUserId: "33333333-3333-4333-8333-333333333333",
         },
-        scopes: ["library:read"],
+        scopes: "library:read library:download albums:write tags:write photos:upload boards:upload events:read".split(" "),
         privateField: "omit",
       });
     }),
@@ -291,14 +291,28 @@ test("all eleven catalogues render static labels and translated help without cla
       module.exports.platformVersion,
       require("zapier-platform-core").version,
     );
+    assert.equal(
+      module.exports.triggers.asset_ready.display.label,
+      messages.assetReadyLabel,
+    );
+    assert.equal(
+      module.exports.creates.upload_file.operation.inputFields[1].helpText,
+      messages.fileHelp,
+    );
     assert.equal(translated.fields[0].label, messages.serverLabel);
     assert.equal(translated.fields[1].helpText, messages.clientHelp);
     const help = fs.readFileSync(
-      path.join(__dirname, "../../help/zapier", locale + ".md"),
+      path.join(__dirname, "../help", locale + ".md"),
       "utf8",
     );
-    assert.ok(help.includes(messages.qualification));
-    assert.ok(help.includes(messages.hosting));
+    assert.equal(
+      help,
+      require("node:child_process").execFileSync(
+        process.execPath,
+        [path.join(__dirname, "../render.cjs"), locale, "--help"],
+        { encoding: "utf8" },
+      ),
+    );
   }
   assert.throws(() => create("../en"));
   assert.throws(() => create("toString"));

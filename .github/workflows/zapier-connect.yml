@@ -4,13 +4,11 @@ on:
     branches: [main]
     paths:
       - 'integrations/zapier/**'
-      - 'integrations/help/zapier/**'
       - '.github/workflows/zapier-connect.yml'
   push:
     branches: [main]
     paths:
       - 'integrations/zapier/**'
-      - 'integrations/help/zapier/**'
       - '.github/workflows/zapier-connect.yml'
   workflow_dispatch:
 permissions:

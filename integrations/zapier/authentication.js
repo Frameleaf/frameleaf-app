@@ -1,105 +1,12 @@
-const { isIP } = require('node:net');
 const locales = require('./locales.json');
+const createConnect = require('./connect');
 module.exports = function createAuthentication(locale = 'en') {
   const text = locales[locale];
   if (!Object.hasOwn(locales, locale)) throw new Error('Unsupported locale');
-  const scope = 'library:read';
+  const { SCOPES, sameScopes, configuration, callback, request } =
+    createConnect(text);
+  const scope = SCOPES.join(' ');
 
-  function serverOrigin(value) {
-    let url;
-    try {
-      url = new URL(value);
-    } catch {
-      throw new Error(text.invalidServer);
-    }
-    if (
-      url.protocol !== 'https:' ||
-      url.origin !== value ||
-      url.username ||
-      url.password ||
-      isIP(url.hostname.replace(/^\[|\]$/g, '')) ||
-      !url.hostname.includes('.') ||
-      url.hostname.endsWith('.') ||
-      /(?:^|\.)(?:localhost|local|internal|home\.arpa)$/.test(url.hostname)
-    )
-      throw new Error(text.invalidServer);
-    return url.origin;
-  }
-  function clientId(value) {
-    if (typeof value !== 'string' || !/^[a-zA-Z0-9._~-]{1,200}$/.test(value))
-      throw new Error(text.invalidClient);
-    return value;
-  }
-  function configuration(bundle, stored = false) {
-    const data = stored
-      ? bundle.authData
-      : { ...bundle.authData, ...bundle.inputData };
-    const origin = serverOrigin(data?.serverUrl);
-    const client = clientId(data?.frameleafClientId);
-    const resource = origin + '/api/connect';
-    if (
-      stored &&
-      (data.frameleafResource !== resource ||
-        data.frameleafBoundClientId !== client)
-    )
-      throw new Error(text.reconnect);
-    return { origin, client, resource };
-  }
-  function callback(value) {
-    let url;
-    try {
-      url = new URL(value);
-    } catch {
-      throw new Error(text.invalidCallback);
-    }
-    if (
-      url.protocol !== 'https:' ||
-      url.host !== 'zapier.com' ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash ||
-      !url.pathname.startsWith('/dashboard/auth/oauth/return/')
-    )
-      throw new Error(text.invalidCallback);
-    return value;
-  }
-  async function request(z, options, tokenRequest = false) {
-    let response;
-    try {
-      response = await z.request({
-        ...options,
-        redirect: 'error',
-        timeout: 10000,
-        size: 65536,
-        skipThrowForStatus: true,
-        headers: { Accept: 'application/json', ...options.headers },
-      });
-    } catch (error) {
-      if (
-        !tokenRequest &&
-        (error instanceof z.errors.RefreshAuthError ||
-          error instanceof z.errors.ThrottledError)
-      )
-        throw error;
-      throw new z.errors.ExpiredAuthError(text.reconnect);
-    }
-    if (response.status === 401 && !tokenRequest)
-      throw new z.errors.RefreshAuthError();
-    if (response.status < 200 || response.status >= 300)
-      throw new z.errors.ExpiredAuthError(text.reconnect);
-    try {
-      const data =
-        typeof response.content === 'string'
-          ? JSON.parse(response.content)
-          : response.data;
-      if (!data || typeof data !== 'object' || Array.isArray(data))
-        throw new Error();
-      return data;
-    } catch {
-      throw new z.errors.ExpiredAuthError(text.reconnect);
-    }
-  }
   function credential(data, config, previous) {
     const valid = (value) =>
       typeof value === 'string' &&
@@ -114,7 +21,7 @@ module.exports = function createAuthentication(locale = 'en') {
       !Number.isSafeInteger(data.expires_in) ||
       data.expires_in < 1 ||
       data.expires_in > 86400 ||
-      data.scope !== scope
+      !sameScopes(data.scope)
     )
       throw new Error(text.reconnect);
     return {
@@ -245,8 +152,7 @@ module.exports = function createAuthentication(locale = 'en') {
       if (
         data.protocolVersion !== 1 ||
         !Array.isArray(data.scopes) ||
-        data.scopes.length !== 1 ||
-        data.scopes[0] !== scope ||
+        !sameScopes(data.scopes.join(' ')) ||
         !data.server?.id ||
         !data.connection?.grantId
       )
