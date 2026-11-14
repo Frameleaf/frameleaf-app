@@ -94085,14 +94085,7 @@
             "type": "array"
           },
           "status": {
-            "enum": [
-              "none",
-              "pending",
-              "active",
-              "disconnected",
-              "unavailable"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/ClientsPaymentAccountStatus"
           }
         },
         "required": [
@@ -94104,6 +94097,16 @@
           "status"
         ],
         "type": "object"
+      },
+      "ClientsPaymentAccountStatus": {
+        "enum": [
+          "none",
+          "pending",
+          "active",
+          "disconnected",
+          "unavailable"
+        ],
+        "type": "string"
       },
       "ClientsPaymentConnectDto": {
         "additionalProperties": false,

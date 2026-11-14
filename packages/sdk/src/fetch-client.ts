@@ -14050,7 +14050,7 @@ export type ClientsPaymentAccountDto = {
     defaultCurrency: string | null;
     legacy: boolean;
     requirementsDue: string[];
-    status: Status7;
+    status: ClientsPaymentAccountStatus;
 };
 export type ClientsPaymentConnectDto = {
     returnUrl: string;
@@ -15043,7 +15043,7 @@ export type PhotographyWorkflowDto = {
         readyCount: number;
         recipientId: string;
         roundId: string | null;
-        status: Status8;
+        status: Status7;
         terms: string;
         total: number;
     }[];
@@ -15197,7 +15197,7 @@ export type PhotographyWorkflowDto = {
         error: string | null;
         failedCaptureId: string | null;
         id: string;
-        status: Status9;
+        status: Status8;
         total: number;
     } | null;
     receipts: {
@@ -15886,7 +15886,7 @@ export type PhotographyInvitationDto = {
             readyCount: number;
             recipientId: string;
             roundId: string | null;
-            status: Status10;
+            status: Status9;
             terms: string;
             total: number;
         }[];
@@ -16040,7 +16040,7 @@ export type PhotographyInvitationDto = {
             error: string | null;
             failedCaptureId: string | null;
             id: string;
-            status: Status11;
+            status: Status10;
             total: number;
         } | null;
         receipts: {
@@ -17017,7 +17017,7 @@ export type RenderWorkerProgressDto = {
     processedUnits: number;
     /** Actual Studio export phase; never advances the publication state */
     stage?: StudioRenderStage;
-    status: Status12;
+    status: Status11;
     totalUnits: number | null;
     /** Present only when counted units are actual rendered frames */
     unit?: Unit2;
@@ -23101,7 +23101,7 @@ export type SyncAssetTrashStateV1 = {
     assetId: string;
     deletedAt: string;
     isOffline: boolean;
-    status: Status13;
+    status: Status12;
 };
 export type SyncAssetV1 = {
     /** Checksum */
@@ -45178,7 +45178,7 @@ export enum Status5 {
 export enum Status6 {
     Ready = "ready"
 }
-export enum Status7 {
+export enum ClientsPaymentAccountStatus {
     None = "none",
     Pending = "pending",
     Active = "active",
@@ -45430,7 +45430,7 @@ export enum Ordering {
     Manual = "manual",
     Chapters = "chapters"
 }
-export enum Status8 {
+export enum Status7 {
     Quoted = "quoted",
     Accepted = "accepted",
     Settled = "settled",
@@ -45461,7 +45461,7 @@ export enum Type12 {
     Logo = "logo",
     Both = "both"
 }
-export enum Status9 {
+export enum Status8 {
     Queued = "queued",
     Rendering = "rendering",
     Ready = "ready",
@@ -45550,7 +45550,7 @@ export enum Type18 {
     Logo = "logo",
     Both = "both"
 }
-export enum Status10 {
+export enum Status9 {
     Quoted = "quoted",
     Accepted = "accepted",
     Settled = "settled",
@@ -45581,7 +45581,7 @@ export enum Type20 {
     Logo = "logo",
     Both = "both"
 }
-export enum Status11 {
+export enum Status10 {
     Queued = "queued",
     Rendering = "rendering",
     Ready = "ready",
@@ -45921,7 +45921,7 @@ export enum QueueJobWorkerKind {
     Lan = "lan",
     FrameleafCloud = "frameleaf-cloud"
 }
-export enum Status12 {
+export enum Status11 {
     Preparing = "preparing",
     Rendering = "rendering"
 }
@@ -46949,7 +46949,7 @@ export enum StudioImportPublicationState {
     Published = "published",
     Aborted = "aborted"
 }
-export enum Status13 {
+export enum Status12 {
     Active = "active",
     Trashed = "trashed",
     Deleted = "deleted"

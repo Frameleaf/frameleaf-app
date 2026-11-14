@@ -53851,18 +53851,6 @@
       ],
       "indexes": [
         {
-          "name": "photography_campaign_owner_idx",
-          "definition": "CREATE INDEX photography_campaign_owner_idx ON public.photography_campaign USING btree (\"ownerId\", \"createdAt\" DESC)",
-          "tableName": "photography_campaign",
-          "columnNames": [
-            "ownerId",
-            "createdAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
           "name": "photography_campaign_due_idx",
           "definition": "CREATE INDEX photography_campaign_due_idx ON public.photography_campaign USING btree (\"scheduledFor\") WHERE (status = 'scheduled'::text)",
           "tableName": "photography_campaign",
@@ -53871,6 +53859,18 @@
           ],
           "using": "btree",
           "where": "(status = 'scheduled'::text)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "photography_campaign_owner_idx",
+          "definition": "CREATE INDEX photography_campaign_owner_idx ON public.photography_campaign USING btree (\"ownerId\", \"createdAt\" DESC)",
+          "tableName": "photography_campaign",
+          "columnNames": [
+            "ownerId",
+            "createdAt"
+          ],
+          "using": "btree",
           "unique": false,
           "synchronize": true
         }
