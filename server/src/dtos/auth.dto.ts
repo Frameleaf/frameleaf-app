@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import type { ConnectAccessPolicy } from 'src/utils/connect-policy.js';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AuthApiKey, AuthSession, AuthSharedLink, AuthUser, UserAdmin } from 'src/database.js';
 import { AuthCookie, UserMetadataKey } from 'src/enum.js';
@@ -35,6 +36,8 @@ export type AuthOAuthApp = {
   scopes: string[];
   /** The resource (RFC 8707) the app's access was issued for, if it named one. */
   resource: string | null;
+  accessPolicy?: ConnectAccessPolicy | null;
+  policyRevision?: number;
 };
 
 export type AuthDto = {

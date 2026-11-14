@@ -32,6 +32,19 @@ const ADMIN_OR_DANGEROUS = [
 ];
 
 describe('oauth-apps', () => {
+  it('accepts only the exact Lightroom native return address', () => {
+    expect(checkRegisteredRedirectUri('lightroom://net.frameleaf.connect/oauth/callback')).toBe(
+      'lightroom://net.frameleaf.connect/oauth/callback',
+    );
+    for (const uri of [
+      'lightroom://net.frameleaf.connect/oauth/callback?x=1',
+      'lightroom://elsewhere/oauth/callback',
+      'lightroom://net.frameleaf.connect/other',
+    ]) {
+      expect(checkRegisteredRedirectUri(uri)).toBeNull();
+    }
+  });
+
   describe('scopes', () => {
     it('never carry admin, sharing, deleting or sign-in permissions', () => {
       const all = Object.values(OAUTH_APP_SCOPES).flat();

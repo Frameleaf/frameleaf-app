@@ -1,4 +1,4 @@
-import { Check, Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique } from '@frameleaf/sql-tools';
+import { Check, Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Trigger, Unique } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
@@ -10,6 +10,7 @@ import {
   StudioExportVersionState,
 } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { connect_event_studio_published } from 'src/schema/tables/connect-event.table.js';
 import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { StudioProjectTable } from 'src/schema/tables/studio-project.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -39,6 +40,13 @@ import { UserTable } from 'src/schema/tables/user.table.js';
   name: 'studio_export_version_subtitle_identity_check',
   expression:
     '("subtitlePath" IS NULL AND "subtitleChecksum" IS NULL AND "subtitleSizeInBytes" IS NULL) OR ("subtitlePath" IS NOT NULL AND "subtitleChecksum" IS NOT NULL AND "subtitleSizeInBytes" IS NOT NULL AND octet_length("subtitleChecksum")=32 AND "subtitleSizeInBytes">=0)',
+})
+@Trigger({
+  name: 'connect_event_studio_published',
+  timing: 'after',
+  actions: ['insert', 'update'],
+  scope: 'row',
+  functionName: connect_event_studio_published.name,
 })
 @Table('studio_export_version')
 export class StudioExportVersionTable {

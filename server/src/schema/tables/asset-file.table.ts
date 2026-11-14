@@ -5,6 +5,7 @@ import {
   Index,
   PrimaryGeneratedColumn,
   Table,
+  Trigger,
   Unique,
   UpdateDateColumn,
 } from '@frameleaf/sql-tools';
@@ -12,8 +13,16 @@ import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetFileType } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { connect_event_asset_ready } from 'src/schema/tables/connect-event.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 
+@Trigger({
+  name: 'connect_event_asset_file_ready',
+  timing: 'after',
+  actions: ['insert', 'update'],
+  scope: 'row',
+  functionName: connect_event_asset_ready.name,
+})
 @Table('asset_file')
 @Unique({ columns: ['assetId', 'type', 'isEdited'] })
 // FL-179 (migration 2100000000640): storage moves and FileDelete look file rows up by path

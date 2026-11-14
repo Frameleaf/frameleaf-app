@@ -51,6 +51,9 @@ import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
 import { CloudMlJobService } from 'src/services/cloud-ml-job.service.js';
 import { CloudMlService } from 'src/services/cloud-ml.service.js';
 import { ClusterGroupService } from 'src/services/cluster-group.service.js';
+import { ConnectEventService } from 'src/services/connect-event.service.js';
+import { ConnectMediaService } from 'src/services/connect-media.service.js';
+import { ConnectService } from 'src/services/connect.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
@@ -239,6 +242,9 @@ export const services = [
   McpService,
   McpPreviewService,
   OAuthAppService,
+  ConnectService,
+  ConnectEventService,
+  ConnectMediaService,
   AlbumItemsService,
   AssetSourceService,
   BookmarkService,

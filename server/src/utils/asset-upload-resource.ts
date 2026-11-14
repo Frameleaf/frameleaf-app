@@ -41,7 +41,16 @@ export const UploadSourceIdentitySchema = z.discriminatedUnion('kind', [
 ]);
 export type UploadSourceIdentity = z.infer<typeof UploadSourceIdentitySchema>;
 export type AssetUploadMetadata = AssetMediaCreateDto & {
-  publication?: 'live-photo' | 'capture' | 'media-import';
+  publication?: 'live-photo' | 'capture' | 'media-import' | 'connect';
+  /** Internal Connect authority; never accepted from public upload metadata. */
+  connect?: {
+    grantId: string;
+    actor: string;
+    requestId: string;
+    albumId: string;
+    workspace: 'photo' | 'design';
+    provenance?: import('src/dtos/connect-media.dto.js').ConnectProvenance;
+  };
   /** Internal only; public upload headers cannot choose this authority. */
   mediaImportItemId?: string;
   /** Server-bound actor, never accepted from the Asset-Metadata header. */

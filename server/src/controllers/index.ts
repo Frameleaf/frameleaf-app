@@ -42,6 +42,9 @@ import { ClusterGroupController } from 'src/controllers/cluster-group.controller
 import { ConfigAdminController } from 'src/controllers/config-admin.controller.js';
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
+import { ConnectEventController } from 'src/controllers/connect-event.controller.js';
+import { ConnectMediaController } from 'src/controllers/connect-media.controller.js';
+import { ConnectController } from 'src/controllers/connect.controller.js';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
 import { DateDoctorController } from 'src/controllers/date-doctor.controller.js';
 import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
@@ -188,6 +191,9 @@ export const controllers = [
   BrowserExtensionSignInController,
   McpController,
   OAuthAppController,
+  ConnectController,
+  ConnectEventController,
+  ConnectMediaController,
   OAuthAppAdminController,
   OAuthAppWellKnownController,
   AlbumItemsController,

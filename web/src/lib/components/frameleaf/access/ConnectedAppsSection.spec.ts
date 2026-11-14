@@ -1,4 +1,4 @@
-import type { OAuthAppGrantDto } from '@frameleaf/sdk';
+import { ConnectAlbumWorkspace, type OAuthAppGrantDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,6 +22,10 @@ const grant = (overrides: Partial<OAuthAppGrantDto> = {}): OAuthAppGrantDto => (
     returnTo: 'claude.ai',
   },
   scopes: ['library:read', 'people:read'],
+  resource: null,
+  accessPolicy: null,
+  policyRevision: 0,
+  availableAlbums: [],
   createdAt: '2026-11-04T10:00:00.000Z',
   lastUsedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
   lastUsedVia: 'relay',
@@ -46,6 +50,117 @@ beforeEach(() => {
 });
 
 describe('ConnectedAppsSection (FL-860)', () => {
+  it('removes unavailable album selections when saving reduced access', async () => {
+    const policy = {
+      version: 1 as const,
+      allLibraryRead: false,
+      readAlbumIds: ['read', 'locked'],
+      writableAlbumIds: ['deleted', 'mixed'],
+      writeWorkspaces: [],
+    };
+    sdkMock.getOAuthAppGrants.mockResolvedValue([
+      grant({
+        scopes: ['library:read', 'boards:upload'],
+        accessPolicy: policy,
+        availableAlbums: [
+          { id: 'read', name: 'Holiday', workspace: ConnectAlbumWorkspace.Photo, canWrite: true },
+          { id: 'mixed', name: 'Mixed', workspace: ConnectAlbumWorkspace.Both, canWrite: false },
+        ],
+      }),
+    ]);
+    render(ConnectedAppsSection);
+    await fireEvent.click(await screen.findByRole('button', { name: 'What Claude can do' }));
+    expect(
+      screen.getByText('Unavailable albums will be removed from this connection when you save.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Write to Mixed' })).not.toBeChecked();
+    sdkMock.narrowOAuthAppAccessPolicy.mockResolvedValue({
+      accessPolicy: { ...policy, readAlbumIds: [], writableAlbumIds: [] },
+      policyRevision: 2,
+    });
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Read Holiday' }));
+    await fireEvent.click(screen.getByRole('button', { name: en.save }));
+    expect(await screen.findByText(en.frameleaf_connect_policy_saved)).toBeInTheDocument();
+    expect(sdkMock.narrowOAuthAppAccessPolicy).toHaveBeenCalledWith({
+      id: 'grant-1',
+      connectAccessPolicy: { ...policy, readAlbumIds: [], writableAlbumIds: [] },
+    });
+  });
+
+  it('persists a narrowed policy and leaves the selected policy intact after a failed save', async () => {
+    const policy = {
+      version: 1 as const,
+      allLibraryRead: false,
+      readAlbumIds: ['read'],
+      writableAlbumIds: [] as string[],
+      writeWorkspaces: [],
+    };
+    sdkMock.getOAuthAppGrants.mockResolvedValue([
+      grant({
+        scopes: ['library:read'],
+        accessPolicy: policy,
+        availableAlbums: [{ id: 'read', name: 'Holiday', workspace: ConnectAlbumWorkspace.Photo, canWrite: true }],
+      }),
+    ]);
+    sdkMock.narrowOAuthAppAccessPolicy
+      .mockRejectedValueOnce({ status: 503 })
+      .mockResolvedValueOnce({ accessPolicy: { ...policy, readAlbumIds: [] }, policyRevision: 2 });
+    render(ConnectedAppsSection);
+    await fireEvent.click(await screen.findByRole('button', { name: 'What Claude can do' }));
+    await fireEvent.click(screen.getByRole('checkbox', { name: 'Read Holiday' }));
+    await fireEvent.click(screen.getByRole('button', { name: en.save }));
+    await waitFor(() => expect(handleError).toHaveBeenCalledWith({ status: 503 }, en.frameleaf_connect_policy_failed));
+    expect(screen.getByRole('checkbox', { name: 'Read Holiday' })).not.toBeChecked();
+    await fireEvent.click(screen.getByRole('button', { name: en.save }));
+    expect(await screen.findByText(en.frameleaf_connect_policy_saved)).toBeInTheDocument();
+    expect(sdkMock.narrowOAuthAppAccessPolicy).toHaveBeenLastCalledWith({
+      id: 'grant-1',
+      connectAccessPolicy: { ...policy, readAlbumIds: [] },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'What Claude can do' }));
+    expect(screen.queryByRole('checkbox', { name: 'Read Holiday' })).not.toBeInTheDocument();
+  });
+
+  it('offers only the currently granted albums when reducing access', async () => {
+    sdkMock.getOAuthAppGrants.mockResolvedValue([
+      grant({
+        scopes: ['library:read', 'boards:upload'],
+        accessPolicy: {
+          version: 1,
+          allLibraryRead: false,
+          readAlbumIds: ['read'],
+          writableAlbumIds: ['write'],
+          writeWorkspaces: [],
+        },
+        availableAlbums: [
+          { id: 'read', name: 'Holiday', workspace: ConnectAlbumWorkspace.Photo, canWrite: true },
+          { id: 'write', name: 'Artwork', workspace: ConnectAlbumWorkspace.Design, canWrite: true },
+          { id: 'other', name: 'Private', workspace: ConnectAlbumWorkspace.Photo, canWrite: true },
+        ],
+      }),
+    ]);
+    render(ConnectedAppsSection);
+    await fireEvent.click(await screen.findByRole('button', { name: 'What Claude can do' }));
+    expect(screen.getByRole('checkbox', { name: 'Read Holiday' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Write to Artwork' })).toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Read Private' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: en.frameleaf_connect_all_read })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: en.save })).toBeInTheDocument();
+  });
+
+  it('allows a configured HTTPS address without a Frameleaf relay plan', async () => {
+    plan(false, null);
+    vi.spyOn(serverConfigManager, 'value', 'get').mockReturnValue({
+      externalDomain: 'https://photos.example.com',
+      frameleaf: { publicUrl: null },
+    } as never);
+    sdkMock.getOAuthAppGrants.mockResolvedValue([]);
+    render(ConnectedAppsSection);
+    expect(await screen.findByText('https://photos.example.com/api/mcp')).toBeInTheDocument();
+    expect(screen.getByText(en.frameleaf_apps_setup_claude_1_title)).toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_apps_setup_needs_remote_title)).not.toBeInTheDocument();
+  });
+
   it('lists your apps with what they can do, when they were used and how they connected', async () => {
     sdkMock.getOAuthAppGrants.mockResolvedValue([grant()]);
     render(ConnectedAppsSection);
