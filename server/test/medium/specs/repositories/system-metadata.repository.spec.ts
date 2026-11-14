@@ -93,7 +93,8 @@ describe(SystemMetadataRepository.name, () => {
       );
       const { accounts } = (await sut.get(SystemMetadataKey.ClientsPayments))!;
       expect(Object.keys(accounts).sort()).toEqual([...owners, ...(existing ? ['kept'] : [])].sort());
-      expect(accounts['owner-3'].fingerprint).toBe(entry(3).fingerprint);
+      for (const [n, owner] of owners.entries()) expect(accounts[owner].fingerprint).toBe(entry(n).fingerprint);
+      if (existing) expect(accounts.kept.fingerprint).toBe(entry(9).fingerprint);
     }
   });
 });

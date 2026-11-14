@@ -117,6 +117,24 @@ describe(ClientsPaymentsService.name, () => {
     expect(await s.service.ready(ownerId)).toBe(false);
   });
 
+  it('still routes and acknowledges a payment after Cloud reports no account for that studio', async () => {
+    const answers: Record<string, unknown> = {
+      'GET /v1/instance/clients/payments/account': account,
+      'GET /v1/instance/clients/payments/events': { events: [event('evt_after_none', {})] },
+      'POST /v1/instance/clients/payments/events/ack': {},
+    };
+    const s = setup(answers);
+    await s.service.account(auth);
+    answers['GET /v1/instance/clients/payments/account'] = { ...account, status: 'none', chargesEnabled: false };
+    await s.service.account(auth);
+    expect(s.state()!.accounts[ownerId]).toMatchObject({ fingerprint });
+    const handler = vi.fn(() => Promise.resolve());
+    s.service.onPayment('order', handler);
+    await s.service.collect();
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ id: 'evt_after_none', ownerId }));
+    expect(s.requests.find((r) => r.url.endsWith('/events/ack'))!.body).toEqual({ ids: ['evt_after_none'] });
+  });
+
   it('does not contact Frameleaf Cloud while no studio has an account', async () => {
     const s = setup({});
     await s.service.collect();
