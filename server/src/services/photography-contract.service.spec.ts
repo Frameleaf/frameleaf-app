@@ -216,6 +216,12 @@ describe(PhotographyContractService.name, () => {
     contracts.get.mockResolvedValue({ ...signed, pdfPath: null });
     await expect(sut.publicPdf(token)).rejects.toThrow('connection reset');
     expect(mocks.storage.unlinkIfExists).toHaveBeenCalledOnce();
+    contracts.get.mockRejectedValue(new NotFoundException());
+    await expect(sut.publicPdf(token)).rejects.toThrow('connection reset');
+    expect(mocks.storage.unlinkIfExists).toHaveBeenCalledTimes(2);
+    contracts.get.mockRejectedValue(new Error('database unavailable'));
+    await expect(sut.publicPdf(token)).rejects.toThrow('connection reset');
+    expect(mocks.storage.unlinkIfExists).toHaveBeenCalledTimes(2);
   });
 
   it('chains each audit event to the one before', () => {

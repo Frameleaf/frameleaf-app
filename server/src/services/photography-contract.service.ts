@@ -288,9 +288,13 @@ export class PhotographyContractService extends BaseService {
     try {
       sealed = await this.contracts.finalize(row.id, path, sha256(pdf));
     } catch (error) {
-      // Remove the file only once the database is known not to reference it (the commit may have landed).
-      const current = await this.contracts.get(row.ownerId, row.id).catch(() => null);
-      if (current && current.pdfPath !== path) {
+      // Remove the file only once the database is known not to reference it (the commit may have landed):
+      // the contract is gone, or it points at another file. If the re-read fails too, keep the file.
+      const committed = await this.contracts
+        .get(row.ownerId, row.id)
+        .then((current): string | null => current.pdfPath)
+        .catch((readError: unknown) => (readError instanceof NotFoundException ? null : path));
+      if (committed !== path) {
         await this.storageRepository.unlinkIfExists(path);
       }
       throw error;
