@@ -134450,6 +134450,9 @@
           "clientEmail": {
             "type": "string"
           },
+          "clientEmailed": {
+            "type": "boolean"
+          },
           "clientName": {
             "type": "string"
           },
@@ -134497,6 +134500,7 @@
           "addOns",
           "bookingTypeId",
           "clientEmail",
+          "clientEmailed",
           "clientName",
           "currency",
           "deposit",
@@ -134617,10 +134621,14 @@
               "type": "object"
             },
             "type": "array"
+          },
+          "mailReady": {
+            "type": "boolean"
           }
         },
         "required": [
-          "bookings"
+          "bookings",
+          "mailReady"
         ],
         "type": "object"
       },
@@ -134734,6 +134742,10 @@
       "PhotographyBookingStatusDto": {
         "additionalProperties": false,
         "properties": {
+          "notifyClient": {
+            "default": false,
+            "type": "boolean"
+          },
           "status": {
             "$ref": "#/components/schemas/PhotographyBookingStatus"
           }
@@ -144396,6 +144408,10 @@
             "maxLength": 10000,
             "type": "string"
           },
+          "booking": {
+            "default": true,
+            "type": "boolean"
+          },
           "brand": {
             "properties": {
               "background": {
@@ -145090,6 +145106,10 @@
                 "maxLength": 10000,
                 "type": "string"
               },
+              "booking": {
+                "default": true,
+                "type": "boolean"
+              },
               "collections": {
                 "items": {
                   "additionalProperties": false,
@@ -145357,6 +145377,10 @@
               "about": {
                 "maxLength": 10000,
                 "type": "string"
+              },
+              "booking": {
+                "default": true,
+                "type": "boolean"
               },
               "collections": {
                 "items": {

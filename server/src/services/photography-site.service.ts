@@ -412,6 +412,7 @@ export class PhotographySiteService {
       testimonials: site.testimonials,
       faq: site.faq,
       trustedBy: site.trustedBy,
+      booking: site.booking,
       cover: site.cover ? photo(site.cover, site.title) : null,
       collections: site.collections.map((collection) => {
         const photos = collection.items.map((item, index) => photo(item, `${collection.name}, ${index + 1}`));
@@ -468,12 +469,18 @@ export class PhotographySiteService {
   }
 
   /** FL-1049: saves a lead on the studio's inquiry list and tells the studio, as a website inquiry does. */
-  async addInquiry(ownerId: string, site: PhotographySite, inquiry: Omit<PhotographyInquiry, 'id' | 'createdAt'>) {
+  async addInquiry(
+    ownerId: string,
+    site: PhotographySite,
+    inquiry: Omit<PhotographyInquiry, 'id' | 'createdAt'>,
+    /** FL-1606: the workspace section the bell and the email open (a booking opens Bookings). */
+    section = 'website',
+  ) {
     const saved: PhotographyInquiry = { id: randomUUID(), createdAt: new Date().toISOString(), ...inquiry };
     await this.repository.mutateStudio(ownerId, undefined, (record) => {
       record.inquiries = [saved, ...(record.inquiries ?? [])].slice(0, MAX_INQUIRIES);
     });
-    await this.tell(ownerId, site, saved);
+    await this.tell(ownerId, site, saved, section);
   }
 
   async inquire(idOrSlug: string, input: PhotographyInquiryCreateDto) {
@@ -502,7 +509,7 @@ export class PhotographySiteService {
   }
 
   /** The studio hears about it in Frameleaf and, when email is set up, by email (FL-701 decision B). */
-  private async tell(ownerId: string, site: PhotographySite, inquiry: PhotographyInquiry) {
+  private async tell(ownerId: string, site: PhotographySite, inquiry: PhotographyInquiry, section = 'website') {
     const title =
       inquiry.kind === 'gallery-link' ? 'Gallery link requested' : `New inquiry from ${inquiry.name || inquiry.email}`;
     // The inquiry is already saved: a notification or mail problem is logged, never sent back to the visitor,
@@ -517,7 +524,7 @@ export class PhotographySiteService {
           inquiry.kind === 'gallery-link'
             ? `${inquiry.email} asked your website for their gallery link.`
             : inquiry.message.slice(0, 200),
-        data: JSON.stringify({ link: '/photography?section=website' }),
+        data: JSON.stringify({ link: `/photography?section=${section}` }),
       });
       this.websocket.clientSend('on_notification', ownerId, mapNotification(item));
     } catch (error) {
@@ -538,7 +545,7 @@ export class PhotographySiteService {
           showBranding: templates.email.showBranding,
           studioName: site.title,
           ...inquiry,
-          link: baseUrl ? `${baseUrl}/photography?section=website` : undefined,
+          link: baseUrl ? `${baseUrl}/photography?section=${section}` : undefined,
         },
       });
       await this.jobs.queue({ name: JobName.SendMail, data: { to: owner.email, subject: title, html, text } });

@@ -33,7 +33,7 @@
   } from '$lib/frameleaf/photography/workflow-api';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
-  import { AssetMediaSize } from '@frameleaf/sdk';
+  import { AssetMediaSize, photographyBookingTypes, type PhotographyPublicBookingTypeListDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { DateTime } from 'luxon';
   import {
@@ -41,6 +41,7 @@
     mdiArrowDown,
     mdiArrowExpand,
     mdiArrowUp,
+    mdiCalendarCheckOutline,
     mdiCheckCircleOutline,
     mdiCellphone,
     mdiDragVertical,
@@ -170,6 +171,30 @@
       : null;
   }
 
+  /** FL-1606: the active booking types, which the Booking section shows. */
+  let bookingTypes = $state<PhotographyPublicBookingTypeListDto['types']>([]);
+  async function loadBookingTypes() {
+    try {
+      const answer = await photographyBookingTypes();
+      if (!disposed) {
+        bookingTypes = answer.types
+          .filter((type) => type.active !== false)
+          .map((type) => ({
+            id: type.id,
+            name: type.name,
+            description: type.description ?? '',
+            durationMinutes: type.durationMinutes,
+            price: type.price,
+            deposit: type.deposit ?? 0,
+            currency: type.currency,
+            addOns: type.addOns ?? [],
+          }));
+      }
+    } catch {
+      // The preview simply shows no Booking section.
+    }
+  }
+
   /** The preview shows the draft with the owner's own previews; the public site uses its own copies. */
   const preview = $derived.by((): PublicSite | null => {
     if (!draft) {
@@ -189,6 +214,7 @@
       testimonials: site.testimonials.filter((item) => item.quote.trim()),
       faq: site.faq.filter((item) => item.q.trim()),
       trustedBy: site.trustedBy,
+      booking: site.booking,
       cover: site.cover ? photo(site.cover, site.title) : null,
       collections: site.collections.map((item) => ({
         id: item.id,
@@ -331,6 +357,7 @@
 
   onMount(() => {
     void reload();
+    void loadBookingTypes();
   });
   onDestroy(() => {
     disposed = true;
@@ -401,7 +428,11 @@
         </div>
         <div class="sse-fullscreen" bind:this={stage}>
           <div class="sse-frame" class:is-phone={phone}>
-            <StudioSite site={preview} emptyWork={$t('frameleaf_studio_site_preview_no_work')} />
+            <StudioSite
+              site={preview}
+              bookings={bookingTypes}
+              emptyWork={$t('frameleaf_studio_site_preview_no_work')}
+            />
           </div>
         </div>
       </section>
@@ -422,7 +453,7 @@
               {#each siteTemplates as template (template.id)}
                 <div class="sse-template" data-selected={draft.template === template.id || undefined}>
                   <span class="sse-template-view" aria-hidden="true">
-                    <StudioSite thumbnail site={{ ...preview, template: template.id }} />
+                    <StudioSite thumbnail site={{ ...preview, template: template.id }} bookings={bookingTypes} />
                   </span>
                   <button
                     type="button"
@@ -528,8 +559,33 @@
                     onchange={() => (draft!.sections = toggleSection(draft!.sections, section.id))}
                   />
                 </li>
+                {#if section.id === 'services'}
+                  {@const bookingLabel = $t('frameleaf_studio_site_section_booking')}
+                  <!-- FL-1606: Booking always follows Services, so it has no drag handle or arrows. -->
+                  <li>
+                    <Icon icon={mdiPin} size="16" aria-hidden={true} />
+                    <Icon icon={mdiCalendarCheckOutline} size="16" aria-hidden={true} />
+                    <span>{bookingLabel}</span>
+                    <span></span>
+                    <span></span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      aria-label={$t('frameleaf_studio_site_show_section', { values: { section: bookingLabel } })}
+                      checked={draft.booking}
+                      onchange={(event) => (draft!.booking = event.currentTarget.checked)}
+                    />
+                  </li>
+                {/if}
               {/each}
             </ol>
+            {#if draft.booking}
+              <p class="sse-help">
+                {bookingTypes.length > 0
+                  ? $t('frameleaf_studio_site_booking_hint', { values: { count: bookingTypes.length } })
+                  : $t('frameleaf_studio_site_booking_hidden')}
+              </p>
+            {/if}
           {:else if tab === 'work'}
             <h2>{$t('frameleaf_studio_site_collections')}</h2>
             <p class="sse-help">{$t('frameleaf_studio_site_collections_hint')}</p>

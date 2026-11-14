@@ -12,6 +12,7 @@ import {
   PhotographyBookingStatusDto,
   PhotographyBookingTypeSaveDto,
 } from 'src/dtos/photography-booking.dto.js';
+import { emailText } from 'src/emails/components/email-locale.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   type BookingRow,
@@ -19,7 +20,9 @@ import {
   PhotographyBookingRepository,
 } from 'src/repositories/photography-booking.repository.js';
 import { PhotographyPaymentRepository } from 'src/repositories/photography-payment.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { ClientsPaymentsService } from 'src/services/clients-payments.service.js';
+import { PhotographyInvoiceService } from 'src/services/photography-invoice.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 
 const typeView = (t: BookingTypeRow) => ({
@@ -69,6 +72,8 @@ export class PhotographyBookingService {
     private payments: PhotographyPaymentRepository,
     private site: PhotographySiteService,
     private clients: ClientsPaymentsService,
+    private websocket: WebsocketRepository,
+    private invoices: PhotographyInvoiceService,
     private logger?: LoggingRepository,
   ) {}
 
@@ -96,13 +101,39 @@ export class PhotographyBookingService {
   }
 
   async bookings(auth: AuthDto) {
-    return { bookings: (await this.repository.bookings(this.studio(auth))).map((b) => bookingView(b)) };
+    const [rows, mailReady] = await Promise.all([
+      this.repository.bookings(this.studio(auth)),
+      this.invoices.mailReady(),
+    ]);
+    return { bookings: rows.map((b) => bookingView(b)), mailReady };
   }
 
+  /** FL-1606: confirming or declining can email the client; the status is saved whether or not the email goes. */
   async setStatus(auth: AuthDto, id: string, dto: PhotographyBookingStatusDto) {
     const updated = await this.repository.setStatus(id, this.studio(auth), dto.status);
     if (!updated) throw new NotFoundException();
-    return bookingView(updated);
+    let clientEmailed = false;
+    if (dto.notifyClient && (dto.status === 'confirmed' || dto.status === 'declined')) {
+      try {
+        clientEmailed = await this.invoices.emailClient(updated.ownerId, updated.clientEmail, ({ locale, name }) => {
+          const values = { studio: name, session: updated.typeName };
+          return dto.status === 'confirmed'
+            ? {
+                subject: emailText(locale, 'booking_confirmed_subject', values),
+                heading: emailText(locale, 'booking_confirmed_heading'),
+                body: emailText(locale, 'booking_confirmed_body', values),
+              }
+            : {
+                subject: emailText(locale, 'booking_declined_subject', values),
+                heading: emailText(locale, 'booking_declined_heading'),
+                body: emailText(locale, 'booking_declined_body', values),
+              };
+        });
+      } catch (error) {
+        this.logger?.warn(`Booking ${updated.id} ${dto.status} without its client email: ${(error as Error).message}`);
+      }
+    }
+    return { ...bookingView(updated), clientEmailed };
   }
 
   /** `GET /photography/studios/:site/booking-types`: the active types, for the website's booking form. */
@@ -172,17 +203,24 @@ export class PhotographyBookingService {
       // The booking is the record; the lead on the inquiry list is a convenience, so a failure there is logged and
       // never turned into an error that would make the client send the booking again.
       try {
-        await this.site.addInquiry(ownerId, site, {
-          kind: 'inquiry',
-          name: dto.name,
-          email: dto.email,
-          date: dto.preferredDates[0] ?? '',
-          type: type.name.slice(0, 60),
-          message: lines.join('\n').slice(0, 5000),
-        });
+        await this.site.addInquiry(
+          ownerId,
+          site,
+          {
+            kind: 'inquiry',
+            name: dto.name,
+            email: dto.email,
+            date: dto.preferredDates[0] ?? '',
+            type: type.name.slice(0, 60),
+            message: lines.join('\n').slice(0, 5000),
+          },
+          'booking-types',
+        );
       } catch (error) {
         this.logger?.warn(`Booking ${booking.id} saved without its inquiry lead: ${(error as Error).message}`);
       }
+      // FL-1606: an open Bookings list shows it at once. Only the id travels; the list asks again.
+      this.websocket.clientSend('on_photography_booking', ownerId, booking.id);
     }
 
     let checkoutUrl: string | null = null;

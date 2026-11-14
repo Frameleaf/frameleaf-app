@@ -311,6 +311,27 @@ export class PhotographyInvoiceService extends BaseService implements OnModuleIn
     }
   }
 
+  /** Whether this server can email clients now (FL-1606 shows the booking email choice only then). */
+  async mailReady() {
+    return (await this.campaigns.delivery()).ready;
+  }
+
+  /**
+   * FL-1606: a short message to a client in the studio's name, language and colour, without a button. False when
+   * email isn't set up; a send failure is thrown for the caller to log.
+   */
+  async emailClient(
+    ownerId: string,
+    to: string,
+    compose: (studio: { locale: string; name: string }) => { subject: string; heading: string; body: string },
+  ) {
+    const delivery = await this.campaigns.delivery();
+    if (!delivery.ready) return false;
+    const studio = await this.studio(ownerId);
+    await this.mail(delivery, to, studio, compose(studio));
+    return true;
+  }
+
   private money(amount: number, currency: string, locale: string) {
     return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount / 100);
   }
@@ -346,7 +367,7 @@ export class PhotographyInvoiceService extends BaseService implements OnModuleIn
     delivery: Delivery,
     to: string,
     studio: { name: string; color: string; email: string; locale: string },
-    message: { subject: string; heading: string; body: string; url: string },
+    message: { subject: string; heading: string; body: string; url?: string },
   ) {
     const html = await render(
       createElement(
@@ -357,7 +378,7 @@ export class PhotographyInvoiceService extends BaseService implements OnModuleIn
           color: studio.color,
           heading: message.heading,
           body: message.body,
-          button: emailText(studio.locale, 'invoice_email_button'),
+          button: message.url ? emailText(studio.locale, 'invoice_email_button') : undefined,
           url: message.url,
         }),
       ),

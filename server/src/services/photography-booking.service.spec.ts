@@ -46,6 +46,12 @@ const setup = (ready = true) => {
       booking.depositPaymentId ??= randomUUID();
       return Promise.resolve(booking.depositPaymentId);
     }),
+    bookings: vi.fn((owner: string) => Promise.resolve(bookings.filter((b) => b.ownerId === owner))),
+    setStatus: vi.fn((id: string, owner: string, status: BookingRow['status']) => {
+      const booking = bookings.find((b) => b.id === id && b.ownerId === owner);
+      if (booking) booking.status = status;
+      return Promise.resolve(booking);
+    }),
   };
   const payments = {
     setCheckout: vi.fn(() => Promise.resolve()),
@@ -61,13 +67,30 @@ const setup = (ready = true) => {
       Promise.resolve({ id: 'cs_1', url: 'https://checkout.stripe.com/c/pay/cs_1', expiresAt: '' }),
     ),
   };
+  const websocket = { clientSend: vi.fn() };
+  const sent: { to: string; subject: string; heading: string; body: string }[] = [];
+  const invoices = {
+    mailReady: vi.fn(() => Promise.resolve(true)),
+    emailClient: vi.fn(
+      (
+        _owner: string,
+        to: string,
+        compose: (studio: { locale: string; name: string }) => { subject: string; heading: string; body: string },
+      ) => {
+        sent.push({ to, ...compose({ locale: 'en', name: 'Cedar & Light' }) });
+        return Promise.resolve(true);
+      },
+    ),
+  };
   const service = new PhotographyBookingService(
     repository as never,
     payments as never,
     site as never,
     clients as never,
+    websocket as never,
+    invoices as never,
   );
-  return { service, repository, payments, site, clients, types, bookings };
+  return { service, repository, payments, site, clients, websocket, invoices, sent, types, bookings };
 };
 
 const mini = {
@@ -122,7 +145,49 @@ describe(PhotographyBookingService.name, () => {
       ownerId,
       expect.anything(),
       expect.objectContaining({ name: 'Sam', type: 'Mini session' }),
+      'booking-types',
     );
+    // FL-1606: an open Bookings list hears about it at once.
+    expect(s.websocket.clientSend).toHaveBeenCalledWith('on_photography_booking', ownerId, s.bookings[0].id);
+  });
+
+  it('confirms and declines, emailing the client only when asked and only when email is set up (FL-1606)', async () => {
+    const s = setup();
+    const type = await s.service.createType(auth, mini);
+    await s.service.request('cedar', request(type.id), null);
+    const id = s.bookings[0].id;
+    expect(await s.service.bookings(auth)).toMatchObject({ mailReady: true, bookings: [{ id, status: 'requested' }] });
+
+    expect(await s.service.setStatus(auth, id, { status: 'confirmed', notifyClient: false })).toMatchObject({
+      status: 'confirmed',
+      clientEmailed: false,
+    });
+    expect(s.sent).toHaveLength(0);
+
+    expect(await s.service.setStatus(auth, id, { status: 'confirmed', notifyClient: true })).toMatchObject({
+      clientEmailed: true,
+    });
+    expect(s.sent[0]).toEqual({
+      to: 'sam@example.com',
+      subject: 'Cedar & Light confirmed your Mini session',
+      heading: 'Your booking is confirmed',
+      body: expect.stringContaining('Cedar & Light confirmed your Mini session'),
+    });
+
+    await s.service.setStatus(auth, id, { status: 'declined', notifyClient: true });
+    expect(s.sent[1].subject).toBe('Cedar & Light can’t take your Mini session booking');
+
+    // A cancellation never emails; a send failure still saves the status.
+    await s.service.setStatus(auth, id, { status: 'cancelled', notifyClient: true });
+    expect(s.sent).toHaveLength(2);
+    s.invoices.emailClient.mockRejectedValueOnce(new Error('SMTP down'));
+    expect(await s.service.setStatus(auth, id, { status: 'confirmed', notifyClient: true })).toMatchObject({
+      status: 'confirmed',
+      clientEmailed: false,
+    });
+    await expect(
+      s.service.setStatus(auth, randomUUID(), { status: 'confirmed', notifyClient: false }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('refuses unknown add-ons, quantities over the limit and inactive or foreign types', async () => {

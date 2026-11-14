@@ -337,6 +337,14 @@ button.ss-login {
 .ss-packages p {
   color: var(--ss-soft);
 }
+/* FL-1606: Booking cards are Services cards with a Book button under the length and deposit. */
+.ss-booking .ss-packages article {
+  align-content: start;
+}
+.ss-booking .ss-book {
+  justify-self: start;
+  margin-top: 8px;
+}
 .ss-testimonials {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

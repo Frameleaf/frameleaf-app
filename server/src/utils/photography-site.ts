@@ -74,6 +74,11 @@ export const PhotographySiteFields = z.strictObject({
   faq: z.array(z.strictObject({ q: z.string().max(200), a: z.string().max(2000) })).max(20),
   /** "Trusted by" on the Commercial template: typed by the photographer, never read from client records. */
   trustedBy: z.array(z.string().trim().min(1).max(60)).max(12),
+  /**
+   * FL-1606: the Booking section, a card for each active booking type, right after Services. A field of its own
+   * rather than a section id: a new value in the sections enum would break apps that decode it strictly.
+   */
+  booking: z.boolean().default(true),
   slug: z.string().regex(SITE_SLUG),
   /** FL-701 decision A: served through the Frameleaf Cloud relay for subscribers. */
   domain: z
@@ -132,6 +137,7 @@ export function defaultPhotographySite(title: string): PhotographySite {
     testimonials: [],
     faq: [],
     trustedBy: [],
+    booking: true,
     slug: siteSlug(title),
     domain: '',
     seoTitle: '',

@@ -18,6 +18,7 @@
   let returned = $state(new URLSearchParams(location.search).get('booking') === 'sent');
   // svelte-ignore state_referenced_locally
   let booking = $state(returned);
+  let chosen = $state('');
   let disposed = false;
 
   async function reload() {
@@ -57,14 +58,22 @@
   <StudioSite
     {site}
     onInquiry={(inquiry) => sendInquiry(address, inquiry)}
+    bookings={bookingTypes}
     onBook={bookingTypes.length > 0
-      ? () => {
+      ? (typeId) => {
           returned = false;
+          chosen = typeId ?? '';
           booking = true;
         }
       : undefined}
   />
-  {#if booking}<PhotographyStudioBooking bind:open={booking} site={address} types={bookingTypes} sent={returned} />{/if}
+  {#if booking}<PhotographyStudioBooking
+      bind:open={booking}
+      site={address}
+      types={bookingTypes}
+      sent={returned}
+      {chosen}
+    />{/if}
 {:else}<div class="pc pc-gate">
     <main class="pc-access">
       <h1>{error || $t('frameleaf_photography_public_opening')}</h1>

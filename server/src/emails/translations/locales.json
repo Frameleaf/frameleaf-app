@@ -148,7 +148,13 @@
     "invoice_pdf_paid": "Payé",
     "invoice_pdf_balance": "Solde dû",
     "invoice_pdf_schedule": "Échéancier",
-    "invoice_pdf_due": "Échéance le {date}"
+    "invoice_pdf_due": "Échéance le {date}",
+    "booking_confirmed_subject": "{studio} a confirmé votre séance « {session} »",
+    "booking_confirmed_heading": "Votre réservation est confirmée",
+    "booking_confirmed_body": "{studio} a confirmé votre séance « {session} » et vous contactera pour les détails. Répondez à cet e-mail pour toute question.",
+    "booking_declined_subject": "{studio} ne peut pas accepter votre réservation « {session} »",
+    "booking_declined_heading": "Votre réservation n’a pas été confirmée",
+    "booking_declined_body": "{studio} ne peut pas accepter votre réservation « {session} » aux dates demandées. Répondez à cet e-mail pour trouver une autre date."
   },
   "es": {
     "greeting": "¡Hola, {name}!",
@@ -299,7 +305,13 @@
     "invoice_pdf_paid": "Pagado",
     "invoice_pdf_balance": "Saldo pendiente",
     "invoice_pdf_schedule": "Calendario de pagos",
-    "invoice_pdf_due": "Vence el {date}"
+    "invoice_pdf_due": "Vence el {date}",
+    "booking_confirmed_subject": "{studio} ha confirmado tu sesión «{session}»",
+    "booking_confirmed_heading": "Tu reserva está confirmada",
+    "booking_confirmed_body": "{studio} ha confirmado tu sesión «{session}» y se pondrá en contacto contigo con los detalles. Responde a este correo si tienes alguna pregunta.",
+    "booking_declined_subject": "{studio} no puede aceptar tu reserva de «{session}»",
+    "booking_declined_heading": "Tu reserva no se ha confirmado",
+    "booking_declined_body": "{studio} no puede aceptar tu reserva de «{session}» en las fechas que pediste. Responde a este correo para buscar otra fecha."
   },
   "de": {
     "greeting": "Hey {name}!",
@@ -450,7 +462,13 @@
     "invoice_pdf_paid": "Bezahlt",
     "invoice_pdf_balance": "Offener Betrag",
     "invoice_pdf_schedule": "Zahlungsplan",
-    "invoice_pdf_due": "Fällig am {date}"
+    "invoice_pdf_due": "Fällig am {date}",
+    "booking_confirmed_subject": "{studio} hat deinen Termin „{session}“ bestätigt",
+    "booking_confirmed_heading": "Deine Buchung ist bestätigt",
+    "booking_confirmed_body": "{studio} hat deinen Termin „{session}“ bestätigt und meldet sich mit den Details. Antworte auf diese E-Mail, wenn du Fragen hast.",
+    "booking_declined_subject": "{studio} kann deine Buchung „{session}“ nicht annehmen",
+    "booking_declined_heading": "Deine Buchung wurde nicht bestätigt",
+    "booking_declined_body": "{studio} kann deine Buchung „{session}“ zu den gewünschten Terminen nicht annehmen. Antworte auf diese E-Mail, um einen anderen Termin zu finden."
   },
   "it": {
     "greeting": "Ciao {name}!",
@@ -601,7 +619,13 @@
     "invoice_pdf_paid": "Pagato",
     "invoice_pdf_balance": "Saldo dovuto",
     "invoice_pdf_schedule": "Piano dei pagamenti",
-    "invoice_pdf_due": "Scadenza {date}"
+    "invoice_pdf_due": "Scadenza {date}",
+    "booking_confirmed_subject": "{studio} ha confermato la tua sessione «{session}»",
+    "booking_confirmed_heading": "La tua prenotazione è confermata",
+    "booking_confirmed_body": "{studio} ha confermato la tua sessione «{session}» e ti contatterà con i dettagli. Rispondi a questa email per qualsiasi domanda.",
+    "booking_declined_subject": "{studio} non può accettare la tua prenotazione «{session}»",
+    "booking_declined_heading": "La tua prenotazione non è stata confermata",
+    "booking_declined_body": "{studio} non può accettare la tua prenotazione «{session}» nelle date richieste. Rispondi a questa email per trovare un’altra data."
   },
   "pt": {
     "greeting": "Olá, {name}!",
@@ -752,7 +776,13 @@
     "invoice_pdf_paid": "Pago",
     "invoice_pdf_balance": "Saldo em dívida",
     "invoice_pdf_schedule": "Plano de pagamentos",
-    "invoice_pdf_due": "Vence a {date}"
+    "invoice_pdf_due": "Vence a {date}",
+    "booking_confirmed_subject": "{studio} confirmou a sua sessão «{session}»",
+    "booking_confirmed_heading": "A sua marcação está confirmada",
+    "booking_confirmed_body": "{studio} confirmou a sua sessão «{session}» e entrará em contacto com os detalhes. Responda a este e-mail se tiver alguma dúvida.",
+    "booking_declined_subject": "{studio} não pode aceitar a sua marcação «{session}»",
+    "booking_declined_heading": "A sua marcação não foi confirmada",
+    "booking_declined_body": "{studio} não pode aceitar a sua marcação «{session}» nas datas pedidas. Responda a este e-mail para encontrar outra data."
   },
   "nl": {
     "greeting": "Hoi {name}!",
@@ -903,7 +933,13 @@
     "invoice_pdf_paid": "Betaald",
     "invoice_pdf_balance": "Openstaand saldo",
     "invoice_pdf_schedule": "Betalingsschema",
-    "invoice_pdf_due": "Vervalt op {date}"
+    "invoice_pdf_due": "Vervalt op {date}",
+    "booking_confirmed_subject": "{studio} heeft je sessie ‘{session}’ bevestigd",
+    "booking_confirmed_heading": "Je boeking is bevestigd",
+    "booking_confirmed_body": "{studio} heeft je sessie ‘{session}’ bevestigd en neemt contact met je op over de details. Beantwoord deze e-mail als je vragen hebt.",
+    "booking_declined_subject": "{studio} kan je boeking ‘{session}’ niet aannemen",
+    "booking_declined_heading": "Je boeking is niet bevestigd",
+    "booking_declined_body": "{studio} kan je boeking ‘{session}’ op de gevraagde data niet aannemen. Beantwoord deze e-mail om een ander moment te vinden."
   },
   "pl": {
     "greeting": "Cześć, {name}!",
@@ -1054,7 +1090,13 @@
     "invoice_pdf_paid": "Zapłacono",
     "invoice_pdf_balance": "Pozostało do zapłaty",
     "invoice_pdf_schedule": "Harmonogram płatności",
-    "invoice_pdf_due": "Termin: {date}"
+    "invoice_pdf_due": "Termin: {date}",
+    "booking_confirmed_subject": "{studio} potwierdza Twoją sesję „{session}”",
+    "booking_confirmed_heading": "Twoja rezerwacja jest potwierdzona",
+    "booking_confirmed_body": "{studio} potwierdza Twoją sesję „{session}” i skontaktuje się w sprawie szczegółów. Odpowiedz na tego e-maila, jeśli masz pytania.",
+    "booking_declined_subject": "{studio} nie może przyjąć Twojej rezerwacji „{session}”",
+    "booking_declined_heading": "Twoja rezerwacja nie została potwierdzona",
+    "booking_declined_body": "{studio} nie może przyjąć Twojej rezerwacji „{session}” w wybranych terminach. Odpowiedz na tego e-maila, aby znaleźć inny termin."
   },
   "sv": {
     "greeting": "Hej {name}!",
@@ -1205,7 +1247,13 @@
     "invoice_pdf_paid": "Betalt",
     "invoice_pdf_balance": "Kvar att betala",
     "invoice_pdf_schedule": "Betalningsplan",
-    "invoice_pdf_due": "Förfaller {date}"
+    "invoice_pdf_due": "Förfaller {date}",
+    "booking_confirmed_subject": "{studio} har bekräftat din session ”{session}”",
+    "booking_confirmed_heading": "Din bokning är bekräftad",
+    "booking_confirmed_body": "{studio} har bekräftat din session ”{session}” och hör av sig med detaljerna. Svara på det här mejlet om du har frågor.",
+    "booking_declined_subject": "{studio} kan inte ta emot din bokning ”{session}”",
+    "booking_declined_heading": "Din bokning bekräftades inte",
+    "booking_declined_body": "{studio} kan inte ta emot din bokning ”{session}” på de datum du bad om. Svara på det här mejlet för att hitta en annan tid."
   },
   "da": {
     "greeting": "Hej {name}!",
@@ -1356,7 +1404,13 @@
     "invoice_pdf_paid": "Betalt",
     "invoice_pdf_balance": "Restbeløb",
     "invoice_pdf_schedule": "Betalingsplan",
-    "invoice_pdf_due": "Forfalder {date}"
+    "invoice_pdf_due": "Forfalder {date}",
+    "booking_confirmed_subject": "{studio} har bekræftet din session “{session}”",
+    "booking_confirmed_heading": "Din booking er bekræftet",
+    "booking_confirmed_body": "{studio} har bekræftet din session “{session}” og kontakter dig med detaljerne. Svar på denne e-mail, hvis du har spørgsmål.",
+    "booking_declined_subject": "{studio} kan ikke tage imod din booking “{session}”",
+    "booking_declined_heading": "Din booking blev ikke bekræftet",
+    "booking_declined_body": "{studio} kan ikke tage imod din booking “{session}” på de ønskede datoer. Svar på denne e-mail for at finde et andet tidspunkt."
   },
   "nb-NO": {
     "greeting": "Hei {name}!",
@@ -1507,6 +1561,12 @@
     "invoice_pdf_paid": "Betalt",
     "invoice_pdf_balance": "Gjenstående",
     "invoice_pdf_schedule": "Betalingsplan",
-    "invoice_pdf_due": "Forfaller {date}"
+    "invoice_pdf_due": "Forfaller {date}",
+    "booking_confirmed_subject": "{studio} har bekreftet økten din «{session}»",
+    "booking_confirmed_heading": "Bestillingen din er bekreftet",
+    "booking_confirmed_body": "{studio} har bekreftet økten din «{session}» og tar kontakt med detaljene. Svar på denne e-posten hvis du har spørsmål.",
+    "booking_declined_subject": "{studio} kan ikke ta imot bestillingen din «{session}»",
+    "booking_declined_heading": "Bestillingen din ble ikke bekreftet",
+    "booking_declined_body": "{studio} kan ikke ta imot bestillingen din «{session}» på datoene du ba om. Svar på denne e-posten for å finne et annet tidspunkt."
   }
 }

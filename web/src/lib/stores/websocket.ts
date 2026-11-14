@@ -54,6 +54,8 @@ export interface Events {
   // FL-34: this session's elevated (PIN-unlocked) access was revoked, here or in another tab
   on_session_lock: () => void;
   on_notification: (notification: NotificationDto) => void;
+  /** FL-1606: a client booked a session on the studio website; only the booking id arrives. */
+  on_photography_booking: (bookingId: string) => void;
   /** FL-43: one of this account's jobs changed. Only the id arrives; Activity asks for the list again. */
   on_media_operation_update: (id: string) => void;
   on_speech_index_change: () => void;

@@ -39,6 +39,9 @@
   const units = (value: number) => (value / 100).toFixed(2);
   const newId = () => `x${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`;
 
+  /** FL-1606: inside Bookings' tab, which already gives the page its width and padding. */
+  let { embedded = false }: { embedded?: boolean } = $props();
+
   let types = $state<PhotographyBookingTypeDto[]>();
   let failed = $state(false);
   let busy = $state(false);
@@ -117,7 +120,7 @@
   onMount(load);
 </script>
 
-<div class="bookings">
+<div class="bookings" class:embedded>
   {#if failed}
     <div class="status" role="alert">
       <Icon icon={mdiAlertCircleOutline} size="1.5rem" aria-hidden={true} />
@@ -247,6 +250,11 @@
     max-width: 51.25rem;
     margin: 0.75rem auto;
     padding: 1.5rem;
+  }
+  .bookings.embedded {
+    max-width: none;
+    margin: 0;
+    padding: 0;
   }
   .status,
   .list {

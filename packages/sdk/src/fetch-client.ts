@@ -13964,8 +13964,10 @@ export type PhotographyBookingListDto = {
         total: number;
         typeName: string;
     }[];
+    mailReady: boolean;
 };
 export type PhotographyBookingStatusDto = {
+    notifyClient?: boolean;
     status: PhotographyBookingStatus;
 };
 export type PhotographyBookingDto = {
@@ -13977,6 +13979,7 @@ export type PhotographyBookingDto = {
     }[];
     bookingTypeId: string | null;
     clientEmail: string;
+    clientEmailed: boolean;
     clientName: string;
     currency: string;
     deposit: number;
@@ -15158,6 +15161,7 @@ export type PhotographySiteDto = {
     revision: string | null;
     site: {
         about: string;
+        booking?: boolean;
         collections: {
             id: string;
             items: {
@@ -15206,6 +15210,7 @@ export type PhotographySiteSaveDto = {
     expectedRevision: string | null;
     site: {
         about: string;
+        booking?: boolean;
         collections: {
             id: string;
             items: {
@@ -15268,6 +15273,7 @@ export type StudioSiteDomainResponseDto = {
 };
 export type PhotographyPublicSiteDto = {
     about: string;
+    booking?: boolean;
     brand: {
         background: string;
         color: string;
