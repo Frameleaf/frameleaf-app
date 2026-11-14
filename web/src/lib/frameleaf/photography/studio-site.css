@@ -113,6 +113,13 @@
   border-radius: 999px;
   padding: 7px 14px;
 }
+/* FL-1053: "Book a session" is a button that looks like the header's client-login pill. */
+button.ss-login {
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
 
 /* Covers */
 .ss .ss-cover {
