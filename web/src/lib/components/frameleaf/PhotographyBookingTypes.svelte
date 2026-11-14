@@ -66,9 +66,9 @@
           name: type.name,
           minutes: String(type.durationMinutes),
           price: units(type.price),
-          deposit: units(type.deposit),
+          deposit: units(type.deposit ?? 0),
           currency: type.currency as PhotographyPaymentLinkCurrency,
-          addOns: type.addOns.map((a) => ({
+          addOns: (type.addOns ?? []).map((a) => ({
             id: a.id,
             name: a.name,
             price: units(a.price),
@@ -151,7 +151,7 @@
             <strong>{type.name}</strong>
             <small
               >{$t('frameleaf_clients_booking_summary', {
-                values: { minutes: type.durationMinutes, count: type.addOns.length },
+                values: { minutes: type.durationMinutes, count: type.addOns?.length ?? 0 },
               })}</small
             >
           </div>
