@@ -13764,6 +13764,65 @@ export type PhotographyCampaignScheduleDto = {
     expectedRevision: string;
     scheduledFor?: string;
 };
+export type PhotographyContractTemplateListDto = {
+    fields: PhotographyContractMergeField[];
+    items: {
+        body: string;
+        id: string;
+        name: string;
+        updatedAt: string;
+    }[];
+};
+export type PhotographyContractTemplateSaveDto = {
+    body: string;
+    name: string;
+};
+export type PhotographyContractTemplateDto = {
+    body: string;
+    id: string;
+    name: string;
+    updatedAt: string;
+};
+export type PhotographyContractListDto = {
+    items: {
+        body: string;
+        clientEmail: string;
+        clientName: string;
+        createdAt: string;
+        documentSha256: string;
+        finalPdfSha256: string | null;
+        id: string;
+        name: string;
+        sentAt: string | null;
+        signedAt: string | null;
+        signerName: string | null;
+        status: PhotographyContractStatus;
+        templateId: string | null;
+    }[];
+    mailReady: boolean;
+};
+export type PhotographyContractCreateDto = {
+    clientEmail: string;
+    clientName: string;
+    sessionDate?: string;
+    templateId: string;
+    total?: string;
+};
+export type PhotographyContractDto = {
+    body: string;
+    clientEmail: string;
+    clientName: string;
+    createdAt: string;
+    documentSha256: string;
+    finalPdfSha256: string | null;
+    id: string;
+    name: string;
+    sentAt: string | null;
+    signedAt: string | null;
+    signerName: string | null;
+    status: PhotographyContractStatus;
+    templateId: string | null;
+};
 export type PhotographyGalleryDto = {
     brand: {
         background: string;
@@ -14554,6 +14613,32 @@ export type PhotographyPhotosDto = {
 export type PhotographyRatingDto = {
     assetId: string;
     rating: number | null;
+};
+export type PhotographyPublicContractDto = {
+    body: string;
+    documentSha256: string;
+    history: {
+        at: string;
+        "type": PhotographyContractEventType;
+    }[];
+    name: string;
+    signed: boolean;
+    signedAt: string | null;
+    signerName: string | null;
+    studio: {
+        color: string;
+        email: string;
+        name: string;
+    };
+};
+export type PhotographyContractSignDto = {
+    consent: true;
+    /** The hash of the text the signer read */
+    documentSha256: string;
+    name: string;
+    /** A PNG data URL; required for a drawn signature */
+    signaturePng?: string;
+    signatureType: PhotographyContractSignatureType;
 };
 export type PhotographySiteDto = {
     /** Newest first */
@@ -34991,6 +35076,136 @@ export function photographyTestCampaign({ id }: {
         method: "POST"
     }));
 }
+export function photographyContractTemplates(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyContractTemplateListDto;
+    }>("/photography/contract-templates", {
+        ...opts
+    }));
+}
+export function photographyCreateContractTemplate({ photographyContractTemplateSaveDto }: {
+    photographyContractTemplateSaveDto: PhotographyContractTemplateSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyContractTemplateDto;
+    }>("/photography/contract-templates", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyContractTemplateSaveDto
+    })));
+}
+export function photographyDeleteContractTemplate({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/contract-templates/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+export function photographyUpdateContractTemplate({ id, photographyContractTemplateSaveDto }: {
+    id: string;
+    photographyContractTemplateSaveDto: PhotographyContractTemplateSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyContractTemplateDto;
+    }>(`/photography/contract-templates/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographyContractTemplateSaveDto
+    })));
+}
+export function photographyContracts(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyContractListDto;
+    }>("/photography/contracts", {
+        ...opts
+    }));
+}
+/**
+ * Fills a template; the text is then frozen.
+ */
+export function photographyCreateContract({ photographyContractCreateDto }: {
+    photographyContractCreateDto: PhotographyContractCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyContractDto;
+    }>("/photography/contracts", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyContractCreateDto
+    })));
+}
+export function photographyDeleteContract({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/contracts/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+export function photographyContract({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyContractDto;
+    }>(`/photography/contracts/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * The signed PDF, audit.json and SHA256SUMS in one archive.
+ */
+export function photographyContractExport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/contracts/${encodeURIComponent(id)}/export`, {
+        ...opts
+    }));
+}
+export function photographyContractPdf({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/contracts/${encodeURIComponent(id)}/pdf`, {
+        ...opts
+    }));
+}
+/**
+ * Emails a signing link that works for 30 days. Sending again replaces the earlier link.
+ */
+export function photographySendContract({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyContractDto;
+    }>(`/photography/contracts/${encodeURIComponent(id)}/send`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+export function photographyVoidContract({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyContractDto;
+    }>(`/photography/contracts/${encodeURIComponent(id)}/void`, {
+        ...opts,
+        method: "POST"
+    }));
+}
 export function photographyGallery({ xPhotographySession, id }: {
     xPhotographySession: string;
     id: string;
@@ -35419,6 +35634,39 @@ export function ratePhotographyPhoto({ id, photographyRatingDto }: {
         method: "PATCH",
         body: photographyRatingDto
     })));
+}
+export function photographyPublicContract({ token }: {
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPublicContractDto;
+    }>(`/photography/sign/${encodeURIComponent(token)}`, {
+        ...opts
+    }));
+}
+export function photographySignContract({ token, photographyContractSignDto }: {
+    token: string;
+    photographyContractSignDto: PhotographyContractSignDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyPublicContractDto;
+    }>(`/photography/sign/${encodeURIComponent(token)}`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyContractSignDto
+    })));
+}
+export function photographyPublicContractPdf({ token }: {
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/sign/${encodeURIComponent(token)}/pdf`, {
+        ...opts
+    }));
 }
 export function photographySite(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -45036,6 +45284,18 @@ export enum PhotographyCampaignDeliveryStatus {
     Uncertain = "uncertain",
     Unsubscribed = "unsubscribed"
 }
+export enum PhotographyContractMergeField {
+    ClientName = "client_name",
+    SessionDate = "session_date",
+    Total = "total"
+}
+export enum PhotographyContractStatus {
+    Draft = "draft",
+    Sent = "sent",
+    Viewed = "viewed",
+    Signed = "signed",
+    Void = "void"
+}
 export enum Mode2 {
     EditedDelivery = "edited-delivery",
     SelectBeforeEditing = "select-before-editing",
@@ -45292,6 +45552,20 @@ export enum Processing {
     Ready = "ready",
     Pending = "pending",
     Failed = "failed"
+}
+export enum PhotographyContractEventType {
+    Created = "created",
+    Sent = "sent",
+    EmailVerified = "email_verified",
+    Viewed = "viewed",
+    Consented = "consented",
+    Signed = "signed",
+    Finalized = "finalized",
+    Voided = "voided"
+}
+export enum PhotographyContractSignatureType {
+    Typed = "typed",
+    Drawn = "drawn"
 }
 export enum PhotographySiteInquiryKind {
     Inquiry = "inquiry",

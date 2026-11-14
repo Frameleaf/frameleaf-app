@@ -217,6 +217,11 @@ import {
   PhotographyCampaignTable,
   PhotographyContactTable,
 } from 'src/schema/tables/photography-campaign.table.js';
+import {
+  PhotographyContractEventTable,
+  PhotographyContractTable,
+  PhotographyContractTemplateTable,
+} from 'src/schema/tables/photography-contract.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
@@ -336,6 +341,9 @@ export class ImmichDatabase {
     PhotographyContactTable,
     PhotographyCampaignTable,
     PhotographyCampaignDeliveryTable,
+    PhotographyContractTemplateTable,
+    PhotographyContractTable,
+    PhotographyContractEventTable,
     PhotoLocationEstimateTable,
     PhotoLocationScanTable,
     PhotoLocationScanItemTable,
@@ -640,6 +648,9 @@ export interface DB extends QueueDatabase {
   photography_campaign: PhotographyCampaignTable;
   photography_contact: PhotographyContactTable;
   photography_campaign_delivery: PhotographyCampaignDeliveryTable;
+  photography_contract_template: PhotographyContractTemplateTable;
+  photography_contract: PhotographyContractTable;
+  photography_contract_event: PhotographyContractEventTable;
   desktop_clip_index: DesktopClipIndexTable;
   desktop_clip_producer: DesktopClipProducerTable;
   desktop_device: DesktopDeviceTable;
