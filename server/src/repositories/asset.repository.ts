@@ -3059,25 +3059,38 @@ export class AssetRepository {
             eb.selectFrom('asset_exif').select('asset_exif.assetId').whereRef('asset_exif.assetId', '=', 'asset.id'),
           ),
         )
+        // FL-820: positions restart every month, so a lookup only needs to rank the located asset's month.
+        // Inside the subquery `asset` is the inner row, so the bucket expression reads the located asset.
+        .$if(!!pages.locateAssetId, (qb) =>
+          qb.where(
+            sql<boolean>`${bucketDate} = (select ${bucketDate} from asset where asset.id = ${pages.locateAssetId}::uuid)`,
+          ),
+        )
         .select([
           'asset.id',
           sql<number>`row_number() over (${window})`.as('position'),
           sql<string | null>`lag(asset.id) over (${window})`.as('previousId'),
+          sql<string | null>`lead(asset.id) over (${window})`.as('nextId'),
+          sql<Date | null>`lag(${day}) over (${window})`.as('previousDay'),
+          sql<Date>`${day}`.as('dayDate'),
           sql<number>`extract(day from ${day})::integer`.as('dayNumber'),
           sql<number>`count(*) over (partition by ${bucketDate}, ${day})`.as('dayCount'),
         ]);
-      // Rank narrow IDs once; each summary lets the client jump directly to a bounded page.
+      // Rank narrow IDs once; each summary lets the client jump directly to a bounded page. FL-820: aggregate
+      // only each page's boundary rows and each day's first row, not every ranked row (a third of the time at 1M).
       const { rows } = await sql<TimeBucketItem>`
         with ranked as (${selection}),
         numbered as (
-          select *, ((position - 1) / ${pages.pageSize})::integer as page from ranked
+          select *, ((position - 1) / ${pages.pageSize})::integer as page,
+            (position - 1) % ${pages.pageSize} = 0 as "pageStart" from ranked
         )
         select ("timeBucket" at time zone 'UTC')::date::text as "timeBucket",
           count(*)::integer as count, page,
-          (array_agg("previousId" order by position))[1] as after,
-          (array_agg(id order by position))[1] as "firstAssetId",
-          (array_agg(id order by position desc))[1] as "lastAssetId",
-          jsonb_agg(distinct jsonb_build_object('day', "dayNumber", 'count', "dayCount")) as days
+          (array_agg("previousId") filter (where "pageStart"))[1] as after,
+          (array_agg(id) filter (where "pageStart"))[1] as "firstAssetId",
+          (array_agg(id) filter (where position % ${pages.pageSize} = 0 or "nextId" is null))[1] as "lastAssetId",
+          jsonb_agg(jsonb_build_object('day', "dayNumber", 'count', "dayCount"))
+            filter (where "pageStart" or "previousDay" is distinct from "dayDate") as days
         from numbered
         ${
           pages.locateAssetId

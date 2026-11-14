@@ -9,6 +9,7 @@ import {
   Table,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { ConnectAccessPolicy } from 'src/utils/connect-policy.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -70,6 +71,12 @@ export class OAuthGrantTable {
   @Column({ nullable: true })
   resource!: string | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  accessPolicy!: Generated<ConnectAccessPolicy | null>;
+
+  @Column({ type: 'integer', default: 0 })
+  policyRevision!: Generated<number>;
+
   /** Marketplace grants stay bound to the account that approved them. */
   @Column({ nullable: true })
   frameleafAccountId!: string | null;
@@ -130,6 +137,9 @@ export class OAuthAuthorizationCodeTable {
 
   @Column({ nullable: true })
   resource!: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  accessPolicy!: Generated<ConnectAccessPolicy | null>;
 
   /** Marketplace grants stay bound to the account that approved them. */
   @Column({ nullable: true })

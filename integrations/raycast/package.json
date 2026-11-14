@@ -1,0 +1,85 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "frameleaf",
+  "title": "Frameleaf",
+  "description": "Search, browse, open, copy and download photos from the albums you authorize in your Frameleaf Library.",
+  "icon": "extension-icon.png",
+  "author": "frameleaf",
+  "categories": [
+    "Media",
+    "Productivity"
+  ],
+  "license": "MIT",
+  "platforms": [
+    "macOS",
+    "Windows"
+  ],
+  "commands": [
+    {
+      "name": "search-library",
+      "title": "Search Photos",
+      "subtitle": "Frameleaf",
+      "description": "Search photos and videos in the albums you authorized.",
+      "mode": "view"
+    },
+    {
+      "name": "browse-albums",
+      "title": "Browse Albums",
+      "subtitle": "Frameleaf",
+      "description": "Browse the albums you authorized.",
+      "mode": "view"
+    },
+    {
+      "name": "disconnect",
+      "title": "Disconnect Library",
+      "subtitle": "Frameleaf",
+      "description": "Revoke this extension's access to your Library and forget its sign-in.",
+      "mode": "no-view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "libraryUrl",
+      "title": "Library address",
+      "description": "The HTTPS address you use to open your Library, for example https://photos.example.com.",
+      "type": "textfield",
+      "required": true,
+      "placeholder": "https://photos.example.com"
+    },
+    {
+      "name": "clientId",
+      "title": "Client ID",
+      "description": "Only needed when your Library doesn't let apps register themselves. Ask its administrator to register the return address https://raycast.com/redirect?packageName=Extension.",
+      "type": "textfield",
+      "required": false
+    },
+    {
+      "name": "allowOriginals",
+      "title": "Original downloads",
+      "label": "Ask to download originals",
+      "description": "Originals keep their location and camera details. When turned on, your Library asks you to allow it the next time you connect.",
+      "type": "checkbox",
+      "default": false,
+      "required": false
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "2.12.1",
+    "@raycast/utils": "2.3.3"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "2.2.0",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "eslint": "9.39.5",
+    "prettier": "3.10.1",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  }
+}

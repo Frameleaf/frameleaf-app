@@ -629,8 +629,14 @@ export const resumeSetup = (
   saved: { server?: FrameleafSetupProgressDto | null; local?: SetupState | null },
   signedIn: boolean,
 ): SetupState => {
-  // A signed-in administrator exists and has signed in, whatever the saved copy recorded.
-  const signedInChoices = signedIn ? (flow === 'existing' ? { signedIn: true } : { accountCreated: true }) : {};
+  // The account and sign-in facts come from this visit, never from a saved copy: a browser's copy can
+  // outlive its server (reinstalled at the same address), and resuming "account created" there skips
+  // the administrator form, so setup ends on a stale cookie's "Invalid user token".
+  const signedInChoices = signedIn
+    ? flow === 'existing'
+      ? { signedIn: true }
+      : { accountCreated: true }
+    : { signedIn: false, accountCreated: false };
   const patch = (source: { choices?: object } & Record<string, unknown>) => ({
     ...source,
     flow,

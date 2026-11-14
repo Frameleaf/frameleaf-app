@@ -3396,6 +3396,17 @@ export type OAuthAppAdminClientDto = {
     /** The app registered itself */
     selfRegistered: boolean;
 };
+export type OAuthAppCreateClientDto = {
+    name: string;
+    preset?: Preset;
+    redirectUris: string[];
+};
+export type OAuthAppCreateClientResponseDto = {
+    clientId: string;
+    name: string;
+    redirectUris: string[];
+    tokenEndpointAuthMethod: TokenEndpointAuthMethod;
+};
 export type OvernightResultsDto = {
     cleanup?: OvernightStepResult;
     fileChecks?: OvernightStepResult;
@@ -9097,6 +9108,167 @@ export type UserConfigDto = {
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
 };
+export type ConnectAlbum = {
+    canRead: boolean;
+    canWrite: boolean;
+    id: string;
+    name: string;
+    workspace: ConnectAlbumWorkspace;
+};
+export type ConnectAlbumsDto = {
+    items: ConnectAlbum[];
+};
+export type ConnectAlbumCreateDto = {
+    name: string;
+    requestId: string;
+    workspace: Workspace;
+};
+export type ConnectAddAssetsDto = {
+    assetIds: string[];
+};
+export type ConnectAsset = {
+    createdAt: string;
+    description: string | null;
+    duration: number | null;
+    height: number | null;
+    id: string;
+    title: string | null;
+    "type": ConnectAssetType;
+    updatedAt: string;
+    width: number | null;
+};
+export type ConnectAssetsDto = {
+    items: ConnectAsset[];
+    page: number;
+    size: number;
+    total: number;
+};
+export type ConnectRenditionDto = {
+    variant: Variant;
+};
+export type ConnectRenditionTicketDto = {
+    expiresAt: string;
+    url: string;
+};
+export type ConnectAddTagsDto = {
+    tags: string[];
+};
+export type ConnectTagResultDto = {
+    tagIds: string[];
+};
+export type ConnectAccessPolicy = {
+    allLibraryRead: boolean;
+    readAlbumIds: string[];
+    version: Version;
+    writableAlbumIds: string[];
+    writeWorkspaces: WriteWorkspaces[];
+};
+export type ConnectCapabilitiesDto = {
+    accessPolicy: ConnectAccessPolicy;
+    albums: ConnectAlbum[];
+    connection: {
+        grantId: string;
+        libraryUserId: string;
+    };
+    displayIdentity: {
+        name: string;
+    };
+    limits: {
+        maxAppendBytes: number;
+        maxPageSize: MaxPageSize;
+        maxUploadBytes: number;
+        originalsAllowed: boolean;
+        receiptWindowSeconds: number;
+        renditionTicketSeconds: number;
+        uploadExpiresAfterSeconds: number;
+    };
+    policyRevision: number;
+    protocolVersion: ProtocolVersion;
+    scopes: string[];
+    server: {
+        id: string;
+        name: string;
+    };
+    supportedTypes: {
+        read: string[];
+        upload: {
+            design: string[];
+            photo: string[];
+        };
+    };
+};
+export type ConnectEventPageDto = {
+    bounded: boolean;
+    hasMore: boolean;
+    items: {
+        deliveryId: string;
+        detail: {
+            [key: string]: (string | number | boolean) | null;
+        };
+        event: Event;
+        occurredAt: string;
+        subject: {
+            id: string;
+            kind: ConnectEventSubjectKind;
+            /** Reserved; always null in Connect protocol 1 */
+            name: string | null;
+        };
+    }[];
+    nextCursor: string | null;
+};
+export type ConnectEventSampleDto = {
+    items: {
+        deliveryId: string;
+        detail: {
+            [key: string]: (string | number | boolean) | null;
+        };
+        event: Event;
+        occurredAt: string;
+        subject: {
+            id: string;
+            kind: ConnectEventSubjectKind;
+            /** Reserved; always null in Connect protocol 1 */
+            name: string | null;
+        };
+    }[];
+};
+export type ConnectUploadStartDto = {
+    albumId: string;
+    contentType: ConnectUploadContentType;
+    fileCreatedAt: string;
+    fileModifiedAt: string;
+    filename: string;
+    provenance?: {
+        entryLabel: string;
+        entryOrdinal: number;
+        exportedAt: string;
+        externalId: string;
+        pageUrl?: string;
+        provider: ConnectProvenanceProvider;
+        title: string;
+    };
+    requestId: string;
+    sha256: string;
+    size: number;
+    workspace: Workspace;
+};
+export type ConnectMediaReceiptDto = {
+    assetId: string;
+    sha256: string;
+    status: ConnectReceiptStatus;
+};
+export type ConnectUploadStateDto = {
+    expiresAt: string;
+    id: string;
+    offset: number;
+    receipt?: ConnectMediaReceiptDto;
+    size: number;
+    state: ConnectUploadState;
+};
+export type ConnectUploadCommitDto = {
+    requestId: string;
+    sha256: string;
+};
 export type DateDoctorFixDto = {
     /** The photos to fix */
     assetIds: string[];
@@ -12918,6 +13090,7 @@ export type NotificationUpdateDto = {
     readAt?: string | null;
 };
 export type OAuthAppAuthorizeDto = {
+    accessPolicy?: ConnectAccessPolicy;
     /** true for Allow, false for Deny */
     allow: boolean;
     /** The app’s client id */
@@ -12960,11 +13133,26 @@ export type OAuthAppAuthorizeStartDto = {
     state?: string;
 };
 export type OAuthAppAuthorizeStartResponseDto = {
+    availableAlbums: {
+        canWrite: boolean;
+        id: string;
+        name: string;
+        workspace: ConnectAlbumWorkspace;
+    }[];
     client: OAuthAppClientDto;
+    requiresAccessPolicy: boolean;
+    resource: string | null;
     /** The scopes the app asked for, all of which this server offers */
     scopes: string[];
 };
 export type OAuthAppGrantDto = {
+    accessPolicy: (ConnectAccessPolicy) | null;
+    availableAlbums: {
+        canWrite: boolean;
+        id: string;
+        name: string;
+        workspace: ConnectAlbumWorkspace;
+    }[];
     client: OAuthAppClientDto;
     /** When you chose Allow */
     createdAt: string;
@@ -12974,8 +13162,14 @@ export type OAuthAppGrantDto = {
     lastUsedAt: string | null;
     /** How it last connected, as free text: home, direct or relay (remote access); null if unknown */
     lastUsedVia: string | null;
+    policyRevision: number;
+    resource: string | null;
     /** What you allowed */
     scopes: string[];
+};
+export type OAuthAppAccessPolicyResponseDto = {
+    accessPolicy: ConnectAccessPolicy;
+    policyRevision: number;
 };
 export type OAuthConfigDto = {
     /** OAuth code challenge (PKCE) */
@@ -21832,6 +22026,13 @@ export type CloudMlConsentTermsQueryDto = {
 export type ConfigCredentialParamDto = {
     name: ConfigCredential;
 };
+export type ConnectSearchDto = {
+    albumId?: string;
+    page?: number;
+    q?: string;
+    size?: number;
+    "type"?: ConnectAssetType;
+};
 export type DocumentRevisionDto = {
     /** Revision of the decision being removed */
     revision: number;
@@ -26285,6 +26486,21 @@ export function getOAuthAppClients(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Register a public app client
+ */
+export function createOAuthAppClient({ oAuthAppCreateClientDto }: {
+    oAuthAppCreateClientDto: OAuthAppCreateClientDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: OAuthAppCreateClientResponseDto;
+    }>("/admin/oauth/apps", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: oAuthAppCreateClientDto
+    })));
+}
+/**
  * Remove a registered app
  */
 export function deleteOAuthAppClient({ id }: {
@@ -30485,6 +30701,308 @@ export function getUserConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List authorized Connect albums
+ */
+export function getConnectAlbums(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectAlbumsDto;
+    }>("/connect/albums", {
+        ...opts
+    }));
+}
+/**
+ * Create an authorized album with a retry receipt
+ */
+export function createConnectAlbum({ connectAlbumCreateDto }: {
+    connectAlbumCreateDto: ConnectAlbumCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ConnectAlbum;
+    }>("/connect/albums", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: connectAlbumCreateDto
+    })));
+}
+/**
+ * Add readable assets to a writable album
+ */
+export function addConnectAlbumAssets({ id, connectAddAssetsDto }: {
+    id: string;
+    connectAddAssetsDto: ConnectAddAssetsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BulkIdResponseDto[];
+    }>(`/connect/albums/${encodeURIComponent(id)}/assets`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: connectAddAssetsDto
+    })));
+}
+/**
+ * Search authorized Connect assets
+ */
+export function searchConnectAssets({ albumId, page, q, size, $type }: {
+    albumId?: string;
+    page?: number;
+    q?: string;
+    size?: number;
+    $type?: ConnectAssetType;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectAssetsDto;
+    }>(`/connect/assets${QS.query(QS.explode({
+        albumId,
+        page,
+        q,
+        size,
+        "type": $type
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get authorized Connect asset metadata
+ */
+export function getConnectAsset({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectAsset;
+    }>(`/connect/assets/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Read an authorized rendition or permitted original
+ */
+export function getConnectRendition({ id, variant }: {
+    id: string;
+    variant: "thumbnail" | "preview" | "display" | "original";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/connect/assets/${encodeURIComponent(id)}/rendition${QS.query(QS.explode({
+        variant
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Create a short-lived grant-bound rendition ticket
+ */
+export function createConnectRenditionTicket({ id, connectRenditionDto }: {
+    id: string;
+    connectRenditionDto: ConnectRenditionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ConnectRenditionTicketDto;
+    }>(`/connect/assets/${encodeURIComponent(id)}/rendition-ticket`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: connectRenditionDto
+    })));
+}
+/**
+ * Add tags to a writable readable asset
+ */
+export function addConnectAssetTags({ id, connectAddTagsDto }: {
+    id: string;
+    connectAddTagsDto: ConnectAddTagsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ConnectTagResultDto;
+    }>(`/connect/assets/${encodeURIComponent(id)}/tags`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: connectAddTagsDto
+    })));
+}
+/**
+ * Get Connect capabilities
+ */
+export function getConnectCapabilities(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectCapabilitiesDto;
+    }>("/connect/capabilities", {
+        ...opts
+    }));
+}
+/**
+ * Initialize or drain a durable Connect event checkpoint
+ */
+export function getConnectEvents({ albumId, cursor, limit, start, $type }: {
+    albumId?: string;
+    cursor?: string;
+    limit?: number;
+    start?: "now";
+    $type?: "asset.ready" | "album.asset.added" | "studio.export.completed";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectEventPageDto;
+    }>(`/connect/events${QS.query(QS.explode({
+        albumId,
+        cursor,
+        limit,
+        start,
+        "type": $type
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Read at most the newest 1000 authorized events across ten pages
+ */
+export function getLatestConnectEvents({ albumId, cursor, $type }: {
+    albumId?: string;
+    cursor?: string;
+    $type?: "asset.ready" | "album.asset.added" | "studio.export.completed";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectEventPageDto;
+    }>(`/connect/events/latest${QS.query(QS.explode({
+        albumId,
+        cursor,
+        "type": $type
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Read one current event without changing a polling checkpoint
+ */
+export function getConnectEventSample({ albumId, $type }: {
+    albumId?: string;
+    $type?: "asset.ready" | "album.asset.added" | "studio.export.completed";
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectEventSampleDto;
+    }>(`/connect/events/sample${QS.query(QS.explode({
+        albumId,
+        "type": $type
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Read a ticket rendition after current grant authorization
+ */
+export function getConnectTicketRendition({ ticket }: {
+    ticket: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/connect/renditions/${encodeURIComponent(ticket)}`, {
+        ...opts
+    }));
+}
+/**
+ * Start a private resumable Connect upload
+ */
+export function startConnectUpload({ connectUploadStartDto }: {
+    connectUploadStartDto: ConnectUploadStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ConnectUploadStateDto;
+    }>("/connect/uploads", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: connectUploadStartDto
+    })));
+}
+/**
+ * Cancel unpublished staging, preserving committed media
+ */
+export function cancelConnectUpload({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectUploadStateDto;
+    }>(`/connect/uploads/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get Connect upload state and its committed receipt
+ */
+export function getConnectUpload({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectUploadStateDto;
+    }>(`/connect/uploads/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Get the durable Connect upload offset
+ */
+export function headConnectUpload({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/connect/uploads/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "HEAD"
+    }));
+}
+/**
+ * Append bytes at the durable offset without publishing
+ */
+export function appendConnectUpload({ uploadComplete, uploadDraftInteropVersion, uploadOffset, id, body }: {
+    uploadComplete: "?0" | "?1";
+    uploadDraftInteropVersion: "9";
+    uploadOffset: number;
+    id: string;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectUploadStateDto;
+    }>(`/connect/uploads/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "PATCH",
+        body,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "Upload-Complete": uploadComplete,
+            "Upload-Draft-Interop-Version": uploadDraftInteropVersion,
+            "Upload-Offset": uploadOffset
+        })
+    }));
+}
+/**
+ * Commit verified bytes to their authorized destination
+ */
+export function commitConnectUpload({ id, connectUploadCommitDto }: {
+    id: string;
+    connectUploadCommitDto: ConnectUploadCommitDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ConnectMediaReceiptDto;
+    }>(`/connect/uploads/${encodeURIComponent(id)}/commit`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: connectUploadCommitDto
+    })));
+}
+/**
  * Fix dates
  */
 export function applyDateFix({ dateDoctorFixDto }: {
@@ -34033,6 +34551,22 @@ export function revokeOAuthAppGrant({ id }: {
         ...opts,
         method: "DELETE"
     }));
+}
+/**
+ * Reduce a connected app’s access
+ */
+export function narrowOAuthAppAccessPolicy({ id, connectAccessPolicy }: {
+    id: string;
+    connectAccessPolicy: ConnectAccessPolicy;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OAuthAppAccessPolicyResponseDto;
+    }>(`/oauth/apps/grants/${encodeURIComponent(id)}/access-policy`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: connectAccessPolicy
+    })));
 }
 /**
  * Start OAuth
@@ -43003,6 +43537,13 @@ export enum MailSignInUnavailableReason {
     NotLinked = "not-linked",
     CloudUnreachable = "cloud-unreachable"
 }
+export enum Preset {
+    Make = "make",
+    Zapier = "zapier"
+}
+export enum TokenEndpointAuthMethod {
+    None = "none"
+}
 export enum OvernightStepResult {
     Done = "done",
     Off = "off",
@@ -44345,6 +44886,64 @@ export enum ClassificationReviewDecision {
 export enum Unit {
     Photo = "photo",
     Minute = "minute"
+}
+export enum ConnectAlbumWorkspace {
+    Photo = "photo",
+    Design = "design",
+    Both = "both"
+}
+export enum Workspace {
+    Photo = "photo",
+    Design = "design"
+}
+export enum ConnectAssetType {
+    Image = "IMAGE",
+    Video = "VIDEO"
+}
+export enum Variant {
+    Thumbnail = "thumbnail",
+    Preview = "preview",
+    Display = "display",
+    Original = "original"
+}
+export enum WriteWorkspaces {
+    Photo = "photo",
+    Design = "design"
+}
+export enum MaxPageSize {
+    $100 = 100
+}
+export enum ProtocolVersion {
+    $1 = 1
+}
+export enum Event {
+    AssetReady = "asset.ready",
+    AlbumAssetAdded = "album.asset.added",
+    StudioExportCompleted = "studio.export.completed"
+}
+export enum ConnectEventSubjectKind {
+    Asset = "asset"
+}
+export enum ConnectUploadContentType {
+    ImageJpeg = "image/jpeg",
+    ImagePng = "image/png",
+    ApplicationPdf = "application/pdf",
+    VideoMp4 = "video/mp4"
+}
+export enum ConnectProvenanceProvider {
+    Canva = "canva"
+}
+export enum ConnectReceiptStatus {
+    Created = "created",
+    Duplicate = "duplicate"
+}
+export enum ConnectUploadState {
+    Receiving = "receiving",
+    Finalizing = "finalizing",
+    Verified = "verified",
+    Published = "published",
+    Rejected = "rejected",
+    Cancelled = "cancelled"
 }
 export enum DateFindingCause {
     OffsetMismatch = "offset-mismatch",

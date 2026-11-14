@@ -34,7 +34,8 @@ it.each(['pre-campaign', 'already-campaign', 'partial-campaign'])(
       const migrations = await provider.getMigrations();
       const campaignName = Object.keys(migrations).find((name) => name.endsWith('-PhotographyCampaign'))!;
       const legacyName = '1794530000000-PhotographyCampaign';
-      const beforeCampaign = Object.fromEntries(Object.entries(migrations).filter(([name]) => name !== campaignName));
+      // A pre-campaign server never ran anything named after the campaign migration.
+      const beforeCampaign = Object.fromEntries(Object.entries(migrations).filter(([name]) => name < campaignName));
       const migrate = (selected: typeof migrations) =>
         new Migrator({
           db: db!,

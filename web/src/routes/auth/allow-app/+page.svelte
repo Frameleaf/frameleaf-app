@@ -26,6 +26,7 @@
     mdiShieldAlertOutline,
   } from '@mdi/js';
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
+  import ConnectAlbumAccess from '$lib/components/frameleaf/access/ConnectAlbumAccess.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { ALLOW_REQUEST_TTL_MS, isReturnTo, neverAllowed, plainAccess } from '$lib/frameleaf/connected-apps';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -34,6 +35,7 @@
     authorizeOAuthApp,
     startOAuthAppAuthorization,
     type OAuthAppAuthorizeStartResponseDto,
+    type OAuthAppGrantDto,
   } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -44,6 +46,14 @@
   type Phase = 'checking' | 'ask' | 'working' | 'allowed' | 'denied' | 'expired' | 'invalid';
   let phase = $state<Phase>('checking');
   let app = $state<OAuthAppAuthorizeStartResponseDto>();
+  let creatingDestination = $state(false);
+  let accessPolicy = $state<NonNullable<OAuthAppGrantDto['accessPolicy']>>({
+    version: 1 as const,
+    readAlbumIds: [] as string[],
+    allLibraryRead: false,
+    writableAlbumIds: [] as string[],
+    writeWorkspaces: [],
+  });
   const openedAt = Date.now();
   const DONE: Phase[] = ['allowed', 'denied', 'expired', 'invalid'];
 
@@ -65,7 +75,7 @@
   const appIcon = $derived((app?.client.knownApp && ICONS[app.client.knownApp]) || mdiApplicationOutline);
 
   const decide = async (allow: boolean) => {
-    if (!request || !app) {
+    if (!request || !app || (allow && creatingDestination)) {
       return;
     }
     if (Date.now() - openedAt > ALLOW_REQUEST_TTL_MS) {
@@ -74,7 +84,13 @@
     }
     phase = 'working';
     try {
-      const { redirectUrl } = await authorizeOAuthApp({ oAuthAppAuthorizeDto: { ...request, allow } });
+      const { redirectUrl } = await authorizeOAuthApp({
+        oAuthAppAuthorizeDto: {
+          ...request,
+          allow,
+          ...(allow && app.requiresAccessPolicy && { accessPolicy }),
+        },
+      });
       // The browser only ever goes back to the app that asked.
       if (!isReturnTo(redirectUrl, request.redirectUri)) {
         phase = 'invalid';
@@ -215,6 +231,15 @@
             {/if}
           </ul>
         </section>
+        {#if app.requiresAccessPolicy}
+          <ConnectAlbumAccess
+            bind:creating={creatingDestination}
+            bind:policy={accessPolicy}
+            albums={app.availableAlbums}
+            scopes={app.scopes}
+            disabled={phase === 'working'}
+          />
+        {/if}
         <section aria-labelledby="allow-app-cant">
           <h2 id="allow-app-cant">{$t('frameleaf_apps_allow_cant_title')}</h2>
           <ul aria-labelledby="allow-app-cant">
@@ -259,7 +284,7 @@
             type="button"
             class="button"
             class:primary={app.client.verified}
-            disabled={phase === 'working'}
+            disabled={phase === 'working' || creatingDestination}
             onclick={() => decide(true)}>{$t('frameleaf_apps_allow_allow')}</button
           >
         </div>
