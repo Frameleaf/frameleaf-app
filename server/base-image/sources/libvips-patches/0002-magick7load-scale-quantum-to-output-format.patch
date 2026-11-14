@@ -1,0 +1,71 @@
+Subject: [PATCH] magick7load: scale quantum to the output format
+
+A cast from Quantum keeps only the low byte in an 8-bit output, so an
+image whose samples are not exact multiples of 257 (an RGB565 BMP, whose
+5- and 6-bit channels ImageMagick widens by bit replication) loads with
+the wrong colours. FL-1374.
+
+---
+diff --git a/libvips/foreign/magick7load.c b/libvips/foreign/magick7load.c
+index e06ae4e..fe96957 100644
+--- a/libvips/foreign/magick7load.c
++++ b/libvips/foreign/magick7load.c
+@@ -642,7 +642,24 @@ vips_foreign_load_magick7_parse(VipsForeignLoadMagick7 *magick7,
+  * We do skip index channels. Palette images add extra index channels
+  * containing the index value from the file before colourmap lookup.
+  */
+-#define UNPACK(TYPE) \
++/* Quantum is the build's sample type (0 - 65535 in a Q16 build) whatever
++ * the image's depth, so it must be scaled down for an 8- or 16-bit output,
++ * not just cast. A cast keeps only the low byte, which is right only when
++ * the coder stored exact multiples of 257 (an RGB565 BMP does not).
++ */
++#define NOSCALE(V) (V)
++
++/* ScaleQuantumToShort() is private to MagickCore, so do it here (NaN -> 0).
++ */
++static inline unsigned short
++vips_magick7_quantum_to_short(Quantum v)
++{
++	double s = (double) v * 65535.0 / QuantumRange;
++
++	return !(s > 0.0) ? 0 : s >= 65535.0 ? 65535 : (unsigned short) (s + 0.5);
++}
++
++#define UNPACK(TYPE, SCALE) \
+ 	{ \
+ 		TYPE *restrict tq = (TYPE *) q; \
+ 		int x; \
+@@ -654,7 +671,7 @@ vips_foreign_load_magick7_parse(VipsForeignLoadMagick7 *magick7,
+ 					GetPixelChannelChannel(image, b); \
+ \
+ 				if (channel != IndexPixelChannel) \
+-					*tq++ = p[b]; \
++					*tq++ = SCALE(p[b]); \
+ 			} \
+ \
+ 			p += GetPixelChannels(image); \
+@@ -699,19 +716,19 @@ vips_foreign_load_magick7_fill_region(VipsRegion *out_region,
+ 
+ 		switch (im->BandFmt) {
+ 		case VIPS_FORMAT_UCHAR:
+-			UNPACK(unsigned char);
++			UNPACK(unsigned char, ScaleQuantumToChar);
+ 			break;
+ 
+ 		case VIPS_FORMAT_USHORT:
+-			UNPACK(unsigned short);
++			UNPACK(unsigned short, vips_magick7_quantum_to_short);
+ 			break;
+ 
+ 		case VIPS_FORMAT_FLOAT:
+-			UNPACK(float);
++			UNPACK(float, NOSCALE);
+ 			break;
+ 
+ 		case VIPS_FORMAT_DOUBLE:
+-			UNPACK(double);
++			UNPACK(double, NOSCALE);
+ 			break;
+ 
+ 		default:
