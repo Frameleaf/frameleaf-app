@@ -1,0 +1,22 @@
+{
+  "url": "/assets",
+  "method": "GET",
+  "qs": {
+    "q": "{{parameters.q}}",
+    "albumId": "{{parameters.albumId}}",
+    "type": "{{parameters.type}}",
+    "page": 1,
+    "size": 100
+  },
+  "response": {
+    "limit": "{{parameters.limit}}",
+    "iterate": "{{body.items}}",
+    "output": "{{item}}"
+  },
+  "pagination": {
+    "qs": {
+      "page": "{{body.page + 1}}"
+    },
+    "condition": "{{body.page * body.size < body.total}}"
+  }
+}

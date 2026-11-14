@@ -1,0 +1,9 @@
+{
+  "label": "Upload a photo or video",
+  "description": "Uploads a JPEG, PNG or MP4 file to an album this connection can add to. Retrying with the same Source ID never creates a duplicate.",
+  "moduleType": "action",
+  "actionCrud": "create",
+  "scope": [
+    "photos:upload"
+  ]
+}

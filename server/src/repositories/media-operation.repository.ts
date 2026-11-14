@@ -1208,7 +1208,8 @@ export class MediaOperationRepository {
           totalUnits: String(patch.totalUnits),
           progress: patch.progress,
           heartbeatAt: sql<Date>`now()`,
-          claimExpiresAt: sql<Date>`now() + ${sql.lit(patch.leaseMs)} * interval '1 millisecond'`,
+          // FL-1590: a batch's closing write runs late in its transaction; now() would date the lease from its start.
+          claimExpiresAt: sql<Date>`clock_timestamp() + ${sql.lit(patch.leaseMs)} * interval '1 millisecond'`,
         })
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)

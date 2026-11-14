@@ -1,0 +1,8 @@
+{
+  "label": "Watch events",
+  "description": "Triggers when a photo is ready, is added to an album, or a Studio export completes, within the albums this connection can read.",
+  "moduleType": "trigger",
+  "scope": [
+    "events:read"
+  ]
+}

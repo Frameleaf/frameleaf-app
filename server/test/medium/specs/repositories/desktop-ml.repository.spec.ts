@@ -1361,6 +1361,26 @@ describe("a computer that works on everyone's photos (FL-1484)", () => {
     }
   });
 
+  it('never takes another account’s gallery guest selfie (FL-1058)', async () => {
+    const own = await setup();
+    const other = await setup();
+    const modelKey = own.request.modelKey;
+    const deviceId = own.grants[0].deviceId;
+    const task = await own.sut.create({ ...other.request, modelKey });
+    await brokerDb
+      .updateTable('desktop_ml_task')
+      .set({ disclosure: sql`jsonb_build_object('workload', 'guest-face')` })
+      .where('id', '=', task.id)
+      .execute();
+    try {
+      await household(deviceId, true);
+      const helping = await own.regrant(deviceId);
+      expect(await own.sut.claim(helping, [modelKey])).toBeUndefined();
+    } finally {
+      await household(deviceId, false);
+    }
+  });
+
   it('lets a revoked computer be taken off the list, and never adds one', async () => {
     const own = await setup();
     const deviceId = own.grants[0].deviceId;

@@ -1,0 +1,4 @@
+{ "description": "Downloads the display JPEG as a Make file.",
+  "parameters": { "assetId": "00000000-0000-4000-8000-000000000001", "variant": "display" },
+  "requests": [["GET", "/api/connect/assets/00000000-0000-4000-8000-000000000001/rendition"]],
+  "output": { "fileName": "00000000-0000-4000-8000-000000000001.jpg", "contentType": "image/jpeg" }, "binary": "data" }

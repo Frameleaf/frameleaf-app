@@ -203,6 +203,8 @@ export type MlSelectionRequest = {
    * Unset: as before FL-456, the pool takes it whenever the owner's desktop assistance allows.
    */
   desktopPool?: 'skip' | 'only';
+  /** FL-1058: a gallery guest's selfie for `ownerId`, which the Desktop pool takes outside any queued job. */
+  guestFace?: boolean;
 };
 
 export type MlSelectionDeps = {

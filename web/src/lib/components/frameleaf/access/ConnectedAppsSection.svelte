@@ -4,13 +4,12 @@
    * (`settings-v2/cloud/ConnectedApps.jsx`). The apps you allowed into your library, each with what
    * it can do, when and how it last connected, Details and Remove (which revokes its access on its
    * next request); how to connect an AI assistant (the library's assistant address, and steps for
-   * Claude, ChatGPT and an app on your computer); and Home Assistant. Without remote access (a
-   * Frameleaf plan) only the home-network address is shown, and the steps for assistants that run
-   * on the web are replaced by why they can't reach the server.
+   * Claude, ChatGPT and an app on your computer); and Home Assistant.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import ConnectAlbumAccess from '$lib/components/frameleaf/access/ConnectAlbumAccess.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
@@ -37,7 +36,13 @@
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { copyToClipboard } from '$lib/utils';
-  import { getOAuthAppGrants, isHttpError, revokeOAuthAppGrant, type OAuthAppGrantDto } from '@frameleaf/sdk';
+  import {
+    getOAuthAppGrants,
+    isHttpError,
+    narrowOAuthAppAccessPolicy,
+    revokeOAuthAppGrant,
+    type OAuthAppGrantDto,
+  } from '@frameleaf/sdk';
   import { handleError } from '$lib/utils/handle-error';
   import { Icon } from '@frameleaf/ui';
   import {
@@ -65,6 +70,8 @@
   let dialogOpen = $state(false);
   let working = $state(false);
   let said = $state('');
+  let accessPolicy = $state<NonNullable<OAuthAppGrantDto['accessPolicy']>>();
+  let unavailableAlbumsRemoved = $state(false);
 
   const refresh = async () => {
     load = 'loading';
@@ -94,18 +101,18 @@
     void checkAssistant();
   });
 
-  /**
-   * Remote access comes with a Frameleaf plan: then the assistant address is the published remote
-   * one. Without it the server answers on the home network only, at the address this page uses.
-   */
+  // A customer-configured HTTPS origin does not require the Frameleaf relay.
   const remoteUrl = $derived(
     featureFlagsManager.value.remoteAccess ? serverConfigManager.value.frameleaf?.publicUrl : null,
   );
   const homeOrigin = $derived(
     serverConfigManager.value.externalDomain || (typeof location === 'undefined' ? '' : location.origin),
   );
-  const remote = $derived(!!remoteUrl);
-  const address = $derived(assistantAddress(remoteUrl || homeOrigin));
+  const directHttps = $derived(
+    serverConfigManager.value.externalDomain?.startsWith('https://') ? serverConfigManager.value.externalDomain : null,
+  );
+  const remote = $derived(!!(remoteUrl || directHttps));
+  const address = $derived(assistantAddress(remoteUrl || directHttps || homeOrigin));
   const blocked = $derived(!remote && WEB_ASSISTANTS.includes(client));
   const clientName = $derived(
     client === 'claude' ? 'Claude' : client === 'chatgpt' ? 'ChatGPT' : $t('frameleaf_apps_setup_local'),
@@ -178,7 +185,36 @@
 
   const open = (step: 'details' | 'remove', grant: OAuthAppGrantDto) => {
     showing = { step, grant };
+    accessPolicy = grant.accessPolicy ? structuredClone($state.snapshot(grant.accessPolicy)) : undefined;
+    unavailableAlbumsRemoved = false;
+    if (accessPolicy) {
+      const readable = new Set(grant.availableAlbums.map((album) => album.id));
+      const writable = new Set(grant.availableAlbums.filter((album) => album.canWrite).map((album) => album.id));
+      const readAlbumIds = accessPolicy.readAlbumIds.filter((id) => readable.has(id));
+      const writableAlbumIds = accessPolicy.writableAlbumIds.filter((id) => writable.has(id));
+      unavailableAlbumsRemoved =
+        readAlbumIds.length !== accessPolicy.readAlbumIds.length ||
+        writableAlbumIds.length !== accessPolicy.writableAlbumIds.length;
+      accessPolicy = { ...accessPolicy, readAlbumIds, writableAlbumIds };
+    }
     dialogOpen = true;
+  };
+
+  const saveAccess = async (grant: OAuthAppGrantDto) => {
+    if (!accessPolicy) {
+      return;
+    }
+    working = true;
+    try {
+      const result = await narrowOAuthAppAccessPolicy({ id: grant.id, connectAccessPolicy: accessPolicy });
+      grants = grants.map((item) => (item.id === grant.id ? { ...item, ...result } : item));
+      dialogOpen = false;
+      said = $t('frameleaf_connect_policy_saved');
+    } catch (error) {
+      handleError(error, $t('frameleaf_connect_policy_failed'));
+    } finally {
+      working = false;
+    }
   };
 
   const remove = async (grant: OAuthAppGrantDto) => {
@@ -326,7 +362,11 @@
             >
           </div>
           <p class="hint">
-            {remote ? $t('frameleaf_apps_setup_address_remote') : $t('frameleaf_apps_setup_address_home')}
+            {remoteUrl
+              ? $t('frameleaf_apps_setup_address_remote')
+              : directHttps
+                ? $t('frameleaf_connect_direct_https')
+                : $t('frameleaf_apps_setup_address_home')}
           </p>
         </div>
         {#if !remote}
@@ -395,6 +435,16 @@
         </p>
         <h3>{$t('frameleaf_apps_details_can')}</h3>
         <Points rows={plainAccess($t, grant.scopes).can.map((text) => ({ text }))} />
+        {#if accessPolicy && grant.accessPolicy}
+          {#if unavailableAlbumsRemoved}<p>{$t('frameleaf_connect_unavailable_removed')}</p>{/if}
+          <ConnectAlbumAccess
+            bind:policy={accessPolicy}
+            original={grant.accessPolicy}
+            albums={grant.availableAlbums}
+            scopes={grant.scopes}
+            disabled={working}
+          />
+        {/if}
         <h3>{$t('frameleaf_apps_details_cant')}</h3>
         <Points rows={neverAllowed($t).map((text) => ({ text, not: true }))} />
       </div>
@@ -402,7 +452,13 @@
         <Button onclick={() => open('remove', grant)}
           ><Icon icon={mdiLinkVariantOff} size="1.1em" aria-hidden />{$t('frameleaf_apps_remove_access_more')}</Button
         >
-        <Button variant="primary" initialFocus onclick={() => (dialogOpen = false)}>{$t('frameleaf_apps_done')}</Button>
+        {#if accessPolicy}
+          <Button variant="primary" disabled={working} onclick={() => saveAccess(grant)}>{$t('save')}</Button>
+        {:else}
+          <Button variant="primary" initialFocus onclick={() => (dialogOpen = false)}
+            >{$t('frameleaf_apps_done')}</Button
+          >
+        {/if}
       {/snippet}
     </Dialog>
   {:else}

@@ -103,3 +103,17 @@ it('refuses an unsupported ephemeral destination without sending a selfie or fal
   });
   expect(detectFaces).not.toHaveBeenCalled();
 });
+
+it('sends the selfie to the photographer desktop helpers when the Face route reaches them', async () => {
+  const { image, workflow, rate, detectFaces, service, resolveRoute } = await setup();
+  resolveRoute.mockResolvedValueOnce([
+    { source: 'desktops', destinationId: 'nas', available: true, desktopPool: true },
+  ]);
+  await expect(service.search(workflow as never, rate as never, id, token, image)).resolves.toBeDefined();
+  expect(
+    (service as unknown as { selectMlDestination: ReturnType<typeof vi.fn> }).selectMlDestination,
+  ).toHaveBeenCalledWith(
+    expect.objectContaining({ destinationId: 'nas', ownerId, desktopPool: 'only', guestFace: true }),
+  );
+  expect(detectFaces).toHaveBeenCalledOnce();
+});

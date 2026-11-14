@@ -1,0 +1,37 @@
+name: Connect Obsidian
+
+on:
+  pull_request:
+    paths:
+      - integrations/obsidian/**
+      - .github/workflows/connect-obsidian.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    name: ${{ matrix.runner }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS is not an allowed runner here (check-runners.cjs); it is qualified locally.
+        runner: [ubuntu-24.04, windows-latest]
+        node: [22]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - run: node --check integrations/obsidian/main.js
+      - run: node --test integrations/obsidian/test/plugin.test.mjs
+      - run: node integrations/obsidian/scripts/release.mjs "${{ runner.temp }}/frameleaf-images"
+        shell: bash
+      - if: runner.os == 'Linux'
+        run: bash .github/check-repository-hygiene.sh

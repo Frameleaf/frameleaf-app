@@ -1,0 +1,41 @@
+[
+  {
+    "name": "q",
+    "type": "text",
+    "label": "Search text",
+    "validate": {
+      "max": 200
+    }
+  },
+  {
+    "name": "albumId",
+    "type": "select",
+    "label": "Album",
+    "options": "rpc://albums"
+  },
+  {
+    "name": "type",
+    "type": "select",
+    "label": "Type",
+    "options": [
+      {
+        "label": "Photo",
+        "value": "IMAGE"
+      },
+      {
+        "label": "Video",
+        "value": "VIDEO"
+      }
+    ]
+  },
+  {
+    "name": "limit",
+    "type": "uinteger",
+    "label": "Limit",
+    "default": 50,
+    "required": true,
+    "validate": {
+      "max": 3200
+    }
+  }
+]

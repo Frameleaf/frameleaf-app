@@ -1,0 +1,32 @@
+[
+  {
+    "name": "assetId",
+    "type": "text",
+    "label": "Photo or video ID",
+    "required": true,
+    "validate": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\\s\\S])"
+    }
+  },
+  {
+    "name": "variant",
+    "type": "select",
+    "label": "Size",
+    "required": true,
+    "default": "display",
+    "options": [
+      {
+        "label": "Display JPEG (up to 1920 px)",
+        "value": "display"
+      },
+      {
+        "label": "Preview",
+        "value": "preview"
+      },
+      {
+        "label": "Thumbnail",
+        "value": "thumbnail"
+      }
+    ]
+  }
+]

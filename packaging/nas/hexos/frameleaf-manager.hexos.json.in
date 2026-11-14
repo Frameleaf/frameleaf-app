@@ -62,10 +62,10 @@
     "labels": [{ "key": "app.frameleaf.manager.role", "value": "controller" }],
     "host_network": false,
     "ports": [
-      { "bind_mode": "published", "port_number": 2282, "container_port": 9443, "protocol": "tcp", "host_ips": [] }
+      { "bind_mode": "published", "port_number": "$PORT(2282)", "container_port": 9443, "protocol": "tcp", "host_ips": [] }
     ],
     "portals": [
-      { "name": "Manager", "scheme": "https", "use_node_ip": true, "host": "", "port": 2282, "path": "/" }
+      { "name": "Manager", "scheme": "https", "use_node_ip": true, "host": "", "port": "$PORT(2282)", "path": "/" }
     ],
     "envs": [
       { "name": "MANAGER_BIND_ADDRESS", "value": "0.0.0.0" },

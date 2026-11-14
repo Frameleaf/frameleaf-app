@@ -264,7 +264,7 @@ export class LibraryRepository {
 
   /** Fence scan mutations against cancellation, replacement claims and changed library settings. */
   async withScanClaim<T>(
-    claim: { operationId: string; claimToken: string; libraryId: string; fingerprint: string },
+    claim: { operationId: string; claimToken: string; libraryId: string; fingerprint: string; leaseMs?: number },
     mutate: (assets: AssetRepository, library: LibraryRepository) => Promise<T>,
     executor?: Transaction<DB>,
   ): Promise<{ value: T } | { stopReason: LibraryScanStopReason } | undefined> {
@@ -284,6 +284,18 @@ export class LibraryRepository {
         .forUpdate()
         .executeTakeFirst();
       if (!operation) return;
+      if (claim.leaseMs) {
+        // FL-1590: the scan's keep-alive waits on this row lock, so a long batch renews the claim it holds itself.
+        await tx
+          .updateTable('media_operation')
+          .set({
+            // clock_timestamp(): now() is when this transaction began, before any wait for the lock
+            heartbeatAt: sql<Date>`clock_timestamp()`,
+            claimExpiresAt: sql<Date>`greatest("claimExpiresAt", clock_timestamp() + ${sql.lit(claim.leaseMs)} * interval '1 millisecond')`,
+          })
+          .where('id', '=', claim.operationId)
+          .execute();
+      }
       const library = await tx
         .selectFrom('library')
         .selectAll()

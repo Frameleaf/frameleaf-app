@@ -1,0 +1,9 @@
+{
+  "label": "Get a photo or video",
+  "description": "Gets the details of a photo or video this connection can read.",
+  "moduleType": "action",
+  "actionCrud": "read",
+  "scope": [
+    "library:read"
+  ]
+}
