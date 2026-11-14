@@ -203,6 +203,21 @@ describe(PhotographyContractService.name, () => {
     expect(mocks.email.sendEmail).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the sealed file when the seal committed but the request still failed', async () => {
+    const signed = { ...contract, status: 'signed', signatureType: 'typed', signerName: 'M', signedAt: new Date() };
+    mocks.storage.createFile.mockResolvedValue(undefined);
+    contracts.finalize.mockRejectedValue(new Error('connection reset'));
+    contracts.get.mockImplementation(() =>
+      Promise.resolve({ ...signed, pdfPath: mocks.storage.createFile.mock.calls[0][0] }),
+    );
+    contracts.byToken.mockResolvedValue(signed);
+    await expect(sut.publicPdf(token)).rejects.toThrow('connection reset');
+    expect(mocks.storage.unlinkIfExists).not.toHaveBeenCalled();
+    contracts.get.mockResolvedValue({ ...signed, pdfPath: null });
+    await expect(sut.publicPdf(token)).rejects.toThrow('connection reset');
+    expect(mocks.storage.unlinkIfExists).toHaveBeenCalledOnce();
+  });
+
   it('chains each audit event to the one before', () => {
     const first = {
       seq: 1,

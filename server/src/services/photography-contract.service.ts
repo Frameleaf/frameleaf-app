@@ -288,7 +288,11 @@ export class PhotographyContractService extends BaseService {
     try {
       sealed = await this.contracts.finalize(row.id, path, sha256(pdf));
     } catch (error) {
-      await this.storageRepository.unlinkIfExists(path);
+      // Remove the file only once the database is known not to reference it (the commit may have landed).
+      const current = await this.contracts.get(row.ownerId, row.id).catch(() => null);
+      if (current && current.pdfPath !== path) {
+        await this.storageRepository.unlinkIfExists(path);
+      }
       throw error;
     }
     if (!sealed) {
@@ -341,8 +345,12 @@ export class PhotographyContractService extends BaseService {
       studio,
       attachment: row.pdfPath,
     };
-    await this.mail(delivery, row.clientEmail, studio.locale, message);
-    if (studio.ownerEmail) await this.mail(delivery, studio.ownerEmail, studio.locale, message);
+    // Each recipient is attempted on its own, so one failed address doesn't stop the other.
+    const recipients = [row.clientEmail, studio.ownerEmail].filter(Boolean);
+    const results = await Promise.allSettled(recipients.map((to) => this.mail(delivery, to, studio.locale, message)));
+    if (results.some(({ status }) => status === 'rejected')) {
+      this.logger.warn('A signed-contract email could not be sent');
+    }
   }
   private async mail(
     delivery: Awaited<ReturnType<PhotographyCampaignService['delivery']>>,
