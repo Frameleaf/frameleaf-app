@@ -31,7 +31,7 @@ export class PhotographyPaymentLinkCreateDto extends createZodDto(
     description: z.string().trim().max(300).default(''),
     /** Smallest currency unit (cents). */
     amount: z.int().min(50).max(99_999_999),
-    currency: z.enum(PAYMENT_LINK_CURRENCIES),
+    currency: z.enum(PAYMENT_LINK_CURRENCIES).meta({ id: 'PhotographyPaymentLinkCurrency' }),
     reusable: z.boolean(),
   }),
 ) {}
@@ -52,7 +52,7 @@ export class PhotographyPaymentListDto extends createZodDto(
         amount: z.int(),
         currency: z.string(),
         payerEmail: z.string(),
-        status: z.enum(['paid', 'failed', 'expired', 'refunded']),
+        status: z.enum(['paid', 'failed', 'expired', 'refunded']).meta({ id: 'PhotographyPaymentListStatus' }),
         createdAt: z.string(),
       }),
     ),
@@ -80,7 +80,7 @@ export class PhotographyPayCheckoutResponseDto extends createZodDto(
 ) {}
 export class PhotographyPayStatusDto extends createZodDto(
   z.object({
-    status: z.enum(['pending', 'paid', 'failed', 'expired', 'refunded']),
+    status: z.enum(['pending', 'paid', 'failed', 'expired', 'refunded']).meta({ id: 'PhotographyPaymentStatus' }),
     amount: z.int(),
     currency: z.string(),
   }),
