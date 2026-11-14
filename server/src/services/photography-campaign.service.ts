@@ -77,7 +77,7 @@ export class PhotographyCampaignService extends BaseService {
       throw new BadRequestException('Choose a shoot');
     return view(await this.campaigns.save(ownerId, id, draft));
   }
-  private async delivery() {
+  async delivery() {
     const { notifications, server } = await this.getConfig({ withCache: false });
     const smtp = notifications.smtp;
     const baseUrl = await this.getPublicUrl(server);
