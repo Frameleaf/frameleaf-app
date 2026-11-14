@@ -1,0 +1,84 @@
+name: Lightroom Connect
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - integrations/lightroom/**
+      - package.json
+      - .github/workflows/lightroom-connect.yml
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: 'Attach the plugin to this frameleaf-v<version> release (empty: test only)'
+        required: false
+  # Production publishes the release with GITHUB_TOKEN, which starts no `release` event; follow the run instead.
+  workflow_run:
+    workflows: [Deploy production]
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: lightroom-connect-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  plugin:
+    if: github.event_name != 'workflow_run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install Lua 5.1 (Lightroom's runtime) and busted
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.1 liblua5.1-0-dev luarocks zip
+          sudo luarocks --lua-version=5.1 install busted
+      - name: Syntax
+        run: for f in integrations/lightroom/frameleaf.lrplugin/*.lua integrations/lightroom/spec/*.lua; do luac5.1 -p "$f"; done
+      - name: Unit and catalogue tests
+        working-directory: integrations/lightroom
+        run: busted --lua=lua5.1 spec
+      - name: Package
+        run: |
+          integrations/lightroom/scripts/package.sh "$RUNNER_TEMP/lightroom"
+          (cd "$RUNNER_TEMP/lightroom" && shasum -a 256 -c ./*.sha256 && unzip -l ./*.zip)
+  attach:
+    # Gives the docs a stable link: releases/latest/download/frameleaf-lightroom.zip
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch' && inputs['release-tag'] != '')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Find the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs['release-tag'] }}
+        run: |
+          tag="${REQUESTED:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)}"
+          [[ "$tag" =~ ^frameleaf-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Not a Frameleaf release: $tag"; exit 1; }
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          persist-credentials: false
+      - name: Build and attach
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          # The plugin needs the Library's Connect API; releases without it get no plugin.
+          if [[ ! -f server/src/controllers/connect.controller.ts || ! -f integrations/lightroom/scripts/package.sh ]]; then
+            echo "$TAG has no Connect API or plugin; nothing to attach."
+            exit 0
+          fi
+          out="$RUNNER_TEMP/lightroom"
+          zip="$(integrations/lightroom/scripts/package.sh "$out")"
+          cp "$zip" "$out/frameleaf-lightroom.zip"
+          (cd "$out" && shasum -a 256 frameleaf-lightroom.zip >frameleaf-lightroom.zip.sha256)
+          gh release upload "$TAG" "$zip" "$zip.sha256" "$out/frameleaf-lightroom.zip" "$out/frameleaf-lightroom.zip.sha256" \
+            --repo "$GITHUB_REPOSITORY" --clobber
