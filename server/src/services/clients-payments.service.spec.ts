@@ -85,6 +85,10 @@ describe(ClientsPaymentsService.name, () => {
           event('evt_fail', { reference: 'order:2' }),
           event('evt_unknown_kind', { reference: 'invoice:3' }),
           event('evt_stranger', { owner: 'f'.repeat(64) }),
+          event('evt_stale_stranger', {
+            owner: 'f'.repeat(64),
+            createdAt: new Date(Date.now() - 8 * 86_400_000).toISOString(),
+          }),
           event('evt_account', {
             type: 'account.updated',
             reference: null,
@@ -107,7 +111,8 @@ describe(ClientsPaymentsService.name, () => {
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({ id: 'evt_ok', ownerId }));
     const ack = s.requests.find((r) => r.url.endsWith('/events/ack'))!;
     // A failed handler, a kind nobody handles and an unknown studio stay for the next collection.
-    expect(ack.body).toEqual({ ids: ['evt_ok', 'evt_account'] });
+    // …except one a week old that nothing here can store, so it can't hold back newer payments.
+    expect(ack.body).toEqual({ ids: ['evt_ok', 'evt_stale_stranger', 'evt_account'] });
     expect(s.state()!.accounts[ownerId]).toMatchObject({ status: 'pending', chargesEnabled: false });
     expect(await s.service.ready(ownerId)).toBe(false);
   });

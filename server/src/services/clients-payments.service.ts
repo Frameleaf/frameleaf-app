@@ -20,6 +20,8 @@ import { getExternalDomain } from 'src/utils/misc.js';
 const BASE = '/v1/instance/clients/payments';
 /** How often the server collects payment events from Frameleaf Cloud while a studio has an account connected. */
 export const CLIENTS_PAYMENTS_PULL_MS = 30_000;
+/** An event nothing on this server can store is acknowledged after this long, so it can't block newer ones. */
+export const UNHANDLED_EVENT_LIMIT_MS = 7 * 86_400_000;
 
 const cloudAccountSchema = z.object({
   status: z.enum(['none', 'pending', 'active', 'disconnected']),
@@ -285,8 +287,14 @@ export class ClientsPaymentsService {
     for (const event of events) {
       const ownerId = owners.get(event.owner);
       try {
-        // Acknowledged only once something stored it; anything else comes back on the next collection.
+        // Acknowledged only once something stored it; anything else comes back on the next collection. Cloud
+        // sends the oldest 50 waiting events, so one nothing here can ever store is let go after a week, or it
+        // would hold back newer payments.
         if (ownerId && (await this.handle({ ...event, ownerId }))) handled.push(event.id);
+        else if (Date.now() - Date.parse(event.createdAt) > UNHANDLED_EVENT_LIMIT_MS) {
+          this.logger.warn(`Payment event ${event.id} (${event.type}) had no handler for a week; letting it go`);
+          handled.push(event.id);
+        }
       } catch (error) {
         this.logger.warn(`Payment event ${event.id} left for the next collection: ${(error as Error).message}`);
       }
