@@ -29,6 +29,7 @@ import {
   CloudJobStatus,
   CloudJobView,
   CloudOutputDownload,
+  type CloudSelfieFaces,
   CloudStorageHeaders,
   CloudUpgradeEstimate,
   CloudUploadTarget,
@@ -56,6 +57,7 @@ import {
   jobCreateRequestSchema,
   jobStatusSchema,
   jobViewSchema,
+  selfieFacesSchema,
   upgradeEstimateResponseSchema,
   upgradeRequestSchema,
   uploadTargetSchema,
@@ -621,6 +623,26 @@ export class FrameleafCloudMlRepository {
       method: 'DELETE',
       url: this.jobUrl(gateway, jobId),
       dpop: gateway.token,
+    });
+  }
+
+  /**
+   * FL-1058, FC-277: `POST /v2/faces/selfie`, the faces of one gallery guest's selfie on CPU in the
+   * owner's region, while the guest waits. The body is the JPEG itself; nothing is kept on either side.
+   */
+  detectSelfieFaces(
+    gateway: CloudMlGateway,
+    image: Uint8Array<ArrayBuffer>,
+    minScore: number,
+  ): Promise<CloudSelfieFaces> {
+    return this.request(gateway, selfieFacesSchema, {
+      method: 'POST',
+      url: `${gateway.url}/v2/faces/selfie`,
+      dpop: gateway.token,
+      headers: { 'X-Frameleaf-Min-Score': String(minScore) },
+      raw: { contentType: 'image/jpeg', body: image },
+      // The gateway waits up to 20 s for one CPU inference.
+      timeoutMs: 25_000,
     });
   }
 

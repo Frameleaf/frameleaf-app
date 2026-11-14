@@ -2,7 +2,7 @@
 
 Connect integrations use the Library's OAuth authorization code flow with PKCE S256. Direct connections to a Library on the local network or customer HTTPS do not require a Cloud plan. Existing remote-access and original-transfer policies still apply when the connection uses Frameleaf relay.
 
-Discover the protected resource at `/.well-known/oauth-protected-resource/api/connect` and use its exact `resource` in authorization and token requests. Authorization-server discovery is at `/.well-known/oauth-authorization-server`. Public clients register exact HTTPS callbacks, HTTP loopback callbacks, or the exact native Lightroom callback `lightroom://net.frameleaf.connect/oauth/callback`. Loopback listeners may choose their port. A client ID is public and specific to the Library. Administrators can register clients when dynamic registration is disabled; clients must never work around that setting.
+Discover the protected resource at `/.well-known/oauth-protected-resource/api/connect` and use its exact `resource` in authorization and token requests. Its `frameleaf_server_id` equals `server.id` in capabilities; a client that pinned a Library should compare it before sending any token. Authorization-server discovery is at `/.well-known/oauth-authorization-server`. Public clients register exact HTTPS callbacks, HTTP loopback callbacks, or the exact native Lightroom callback `lightroom://net.frameleaf.connect/oauth/callback`. Loopback listeners may choose their port. A client ID is public and specific to the Library. Administrators can register clients when dynamic registration is disabled; clients must never work around that setting.
 
 The signed-in consent page binds a policy to the authorization code and grant:
 

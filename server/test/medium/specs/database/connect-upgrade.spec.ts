@@ -59,7 +59,8 @@ describe('Connect upgrade from the supported baseline', () => {
 
     const upgrade = await migrator().migrateToLatest();
     expect(upgrade.error).toBeUndefined();
-    expect(upgrade.results?.map(({ migrationName }) => migrationName)).toEqual([
+    // Later migrations (FL-1076 onward) also apply; the three Connect ones come first, in order.
+    expect(upgrade.results?.map(({ migrationName }) => migrationName).slice(0, 3)).toEqual([
       '1794580000000-ConnectAccessPolicy',
       '1794590000000-ConnectMedia',
       '1794600000000-ConnectEvents',

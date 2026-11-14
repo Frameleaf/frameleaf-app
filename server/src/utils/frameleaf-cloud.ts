@@ -1570,6 +1570,24 @@ export const decodeCloudEmbedding = (embedding: CloudEmbedding): number[] => {
   return values;
 };
 
+/**
+ * FL-1058, FC-277: `POST /v2/faces/selfie`, one gallery guest's selfie: the face jobs' item without an input id.
+ */
+export const selfieFacesSchema = z.strictObject({
+  image: z.strictObject({ width: z.number().int().min(1), height: z.number().int().min(1) }).nullable(),
+  faces: z
+    .array(
+      z.strictObject({
+        boundingBox: z.strictObject({ x1: z.number(), y1: z.number(), x2: z.number(), y2: z.number() }),
+        score: z.number().min(0).max(1),
+        embedding: cloudEmbeddingSchema,
+      }),
+    )
+    .max(2000),
+  warnings: z.array(z.string().max(64)).max(32),
+});
+export type CloudSelfieFaces = z.infer<typeof selfieFacesSchema>;
+
 const libraryInputId = z.string().regex(/^[\w-]{1,64}$/);
 const librarySide = z.number().int().min(1).max(65_536);
 const libraryWarnings = z

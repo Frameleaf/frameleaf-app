@@ -155,6 +155,8 @@ export interface EnvData {
   /** FL-159: Frameleaf Cloud deployment configuration. `url` null means not configured. */
   frameleafCloud: {
     url: string | null;
+    /** FL-1058: gallery guest selfies may use Frameleaf Cloud (`FRAMELEAF_GUEST_SELFIE_CLOUD`, default off). */
+    guestSelfies: boolean;
     /** FL-293: the push gateway's address (`FRAMELEAF_PUSH_URL`), or null: discovery's, else push is off. */
     pushUrl: string | null;
     identityDir: string | null;
@@ -347,6 +349,8 @@ const getEnv = (): EnvData => {
 
     frameleafCloud: {
       url: dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, ''),
+      // FL-1058: read directly, not through EnvSchema, whose keys are a published response enum.
+      guestSelfies: /^(true|1|yes|on)$/i.test(process.env.FRAMELEAF_GUEST_SELFIE_CLOUD?.trim() ?? ''),
       pushUrl: dto.FRAMELEAF_PUSH_URL ? dto.FRAMELEAF_PUSH_URL.replace(/\/+$/, '') : null,
       identityDir: dto.FRAMELEAF_IDENTITY_DIR ?? null,
       linkToken: dto.FRAMELEAF_LINK_TOKEN ?? null,
