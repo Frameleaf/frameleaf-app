@@ -22,14 +22,14 @@ index e06ae4e..fe96957 100644
 + */
 +#define NOSCALE(V) (V)
 +
-+/* ScaleQuantumToShort() is private to MagickCore, so do it here.
++/* ScaleQuantumToShort() is private to MagickCore, so do it here (NaN -> 0).
 + */
 +static inline unsigned short
 +vips_magick7_quantum_to_short(Quantum v)
 +{
 +	double s = (double) v * 65535.0 / QuantumRange;
 +
-+	return s <= 0.0 ? 0 : s >= 65535.0 ? 65535 : (unsigned short) (s + 0.5);
++	return !(s > 0.0) ? 0 : s >= 65535.0 ? 65535 : (unsigned short) (s + 0.5);
 +}
 +
 +#define UNPACK(TYPE, SCALE) \
