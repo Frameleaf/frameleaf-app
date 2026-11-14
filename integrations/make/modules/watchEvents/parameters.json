@@ -1,0 +1,38 @@
+[
+  {
+    "name": "type",
+    "type": "select",
+    "label": "Event",
+    "options": [
+      {
+        "label": "Photo or video ready",
+        "value": "asset.ready"
+      },
+      {
+        "label": "Added to an album",
+        "value": "album.asset.added"
+      },
+      {
+        "label": "Studio export completed",
+        "value": "studio.export.completed"
+      }
+    ]
+  },
+  {
+    "name": "albumId",
+    "type": "select",
+    "label": "Album",
+    "options": "rpc://albums"
+  },
+  {
+    "name": "limit",
+    "type": "uinteger",
+    "label": "Limit",
+    "help": "Maximum events per run. The Library keeps the newest 1000.",
+    "default": 100,
+    "required": true,
+    "validate": {
+      "max": 1000
+    }
+  }
+]

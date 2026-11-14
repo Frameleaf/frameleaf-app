@@ -1,0 +1,4 @@
+{ "description": "Adds a readable photo to a writable album.",
+  "parameters": { "albumId": "00000000-0000-4000-8000-000000009001", "assetIds": ["00000000-0000-4000-8000-000000000001"] },
+  "requests": [["POST", "/api/connect/albums/00000000-0000-4000-8000-000000009001/assets"]],
+  "output": { "results": [{ "id": "00000000-0000-4000-8000-000000000001", "success": true }] } }

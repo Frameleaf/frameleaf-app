@@ -1,0 +1,35 @@
+.frameleaf-images-bar {
+  display: flex;
+  gap: var(--size-4-2);
+  margin-bottom: var(--size-4-3);
+}
+.frameleaf-images-bar input {
+  flex: 1;
+}
+.frameleaf-images-status {
+  color: var(--text-muted);
+  min-height: 1.5em;
+}
+.frameleaf-images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: var(--size-4-2);
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-bottom: var(--size-4-3);
+}
+.frameleaf-images-tile {
+  aspect-ratio: 1;
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+  background: var(--background-secondary);
+}
+.frameleaf-images-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.frameleaf-images-tile.is-missing {
+  opacity: 0.5;
+}

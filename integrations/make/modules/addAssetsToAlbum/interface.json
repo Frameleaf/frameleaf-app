@@ -1,0 +1,24 @@
+[
+  {
+    "name": "results",
+    "type": "array",
+    "label": "Results",
+    "spec": [
+      {
+        "name": "id",
+        "type": "text",
+        "label": "ID"
+      },
+      {
+        "name": "success",
+        "type": "boolean",
+        "label": "Added"
+      },
+      {
+        "name": "error",
+        "type": "text",
+        "label": "Reason"
+      }
+    ]
+  }
+]

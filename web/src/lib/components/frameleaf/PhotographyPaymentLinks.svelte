@@ -5,6 +5,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     photographyCreatePaymentLink,
+    PhotographyPaymentLinkCurrency,
     photographyPaymentLinks,
     type PhotographyPaymentLinkCreateDto,
     type PhotographyPaymentLinkListDto,
@@ -16,11 +17,11 @@
 
   let { onSetUpPayments }: { onSetUpPayments: () => void } = $props();
 
-  const currencies = ['CAD', 'USD', 'EUR', 'GBP'] as const;
+  const currencies = Object.values(PhotographyPaymentLinkCurrency);
   const blank = () => ({
     title: '',
     amount: '',
-    currency: 'CAD' as (typeof currencies)[number],
+    currency: PhotographyPaymentLinkCurrency.Cad as PhotographyPaymentLinkCurrency,
     note: '',
     use: 'reusable',
   });

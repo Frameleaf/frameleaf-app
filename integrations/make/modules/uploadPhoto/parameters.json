@@ -1,0 +1,51 @@
+[
+  {
+    "name": "sourceId",
+    "type": "text",
+    "label": "Source ID",
+    "help": "A stable ID from the source record, such as its ID in the previous module. The same Source ID and file never upload twice.",
+    "required": true,
+    "validate": {
+      "min": 1,
+      "max": 200
+    }
+  },
+  {
+    "name": "albumId",
+    "type": "select",
+    "label": "Album",
+    "options": {
+      "store": "rpc://albums?writable=true",
+      "nested": []
+    },
+    "required": true,
+    "validate": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\\s\\S])"
+    }
+  },
+  {
+    "name": "fileName",
+    "type": "filename",
+    "label": "File name",
+    "semantic": "file:name",
+    "required": true,
+    "validate": {
+      "max": 255,
+      "pattern": "^[^/\\\\\\u0000-\\u001f]+\\.(?:[Jj][Pp][Ee]?[Gg]|[Pp][Nn][Gg]|[Mm][Pp]4)$(?![\\s\\S])"
+    }
+  },
+  {
+    "name": "data",
+    "type": "buffer",
+    "label": "Data",
+    "semantic": "file:data",
+    "required": true
+  },
+  {
+    "name": "takenAt",
+    "type": "date",
+    "label": "Date taken",
+    "help": "Map the capture date from the source so retries send the same request.",
+    "required": true
+  }
+]

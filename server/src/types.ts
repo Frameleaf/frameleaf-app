@@ -87,6 +87,7 @@ export type StillRung = 'strict' | 'lenient' | 'djpeg' | 'jxrlib' | 'magick' | '
 
 export interface DecodeToBufferOptions extends DecodeImageOptions {
   size?: number;
+  fit?: 'inside';
   orientation?: ExifOrientation;
   /**
    * FL-1356: how far down the still ladder a decode may go. Left out, every rung is tried. `strict` stops

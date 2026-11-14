@@ -1,0 +1,31 @@
+[
+  {
+    "name": "albumId",
+    "type": "select",
+    "label": "Album",
+    "options": {
+      "store": "rpc://albums?writable=true",
+      "nested": []
+    },
+    "required": true,
+    "validate": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\\s\\S])"
+    }
+  },
+  {
+    "name": "assetIds",
+    "type": "array",
+    "label": "Photo or video IDs",
+    "required": true,
+    "spec": {
+      "type": "text",
+      "validate": {
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\\s\\S])"
+      }
+    },
+    "validate": {
+      "minItems": 1,
+      "maxItems": 100
+    }
+  }
+]

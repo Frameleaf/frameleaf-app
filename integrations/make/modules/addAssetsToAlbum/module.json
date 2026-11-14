@@ -1,0 +1,9 @@
+{
+  "label": "Add photos to an album",
+  "description": "Adds photos or videos this connection can read to an album it can add to.",
+  "moduleType": "action",
+  "actionCrud": "update",
+  "scope": [
+    "albums:write"
+  ]
+}

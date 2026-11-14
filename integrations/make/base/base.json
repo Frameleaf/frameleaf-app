@@ -1,0 +1,45 @@
+{
+  "baseUrl": "{{connection.serverUrl}}/api/connect",
+  "headers": {
+    "authorization": "Bearer {{connection.accessToken}}"
+  },
+  "response": {
+    "error": {
+      "type": "RuntimeError",
+      "message": "[{{statusCode}}] {{ifempty(body.message, 'The Library refused the request.')}}",
+      "401": {
+        "type": "InvalidAccessTokenError",
+        "message": "[401] The Library no longer accepts this connection. Reconnect it."
+      },
+      "403": {
+        "type": "InvalidConfigurationError",
+        "message": "[403] This connection was not given that access. Reconnect and choose the albums or permissions it needs."
+      },
+      "404": {
+        "type": "DataError",
+        "message": "[404] Not found, or not shared with this connection."
+      },
+      "409": {
+        "type": "RateLimitError",
+        "message": "[409] Album access is changing. Retry with the same Source ID."
+      },
+      "410": {
+        "type": "DataError",
+        "message": "[410] The event position expired or this connection's access changed."
+      },
+      "429": {
+        "type": "RateLimitError",
+        "message": "[429] The Library asked Make to slow down."
+      }
+    }
+  },
+  "log": {
+    "sanitize": [
+      "request.headers.authorization",
+      "request.qs.q",
+      "request.body",
+      "response.headers.content-disposition",
+      "response.body.url"
+    ]
+  }
+}

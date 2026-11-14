@@ -1,0 +1,9 @@
+{
+  "label": "Create an album",
+  "description": "Creates an album. Retrying with the same Source ID returns the same album.",
+  "moduleType": "action",
+  "actionCrud": "create",
+  "scope": [
+    "albums:write"
+  ]
+}

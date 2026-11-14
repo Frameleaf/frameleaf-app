@@ -213,7 +213,13 @@ describe(OAuthAppService.name, () => {
     clearConfigCache();
     ({ sut, mocks } = newTestService(OAuthAppService));
     repo = new FakeOAuthAppRepository();
-    Object.assign(sut, { oauthAppRepository: repo });
+    Object.assign(sut, {
+      oauthAppRepository: repo,
+      connectRepository: {
+        validateAlbums: vi.fn().mockResolvedValue(undefined),
+        availableAlbums: vi.fn().mockResolvedValue([]),
+      },
+    });
     mocks.crypto.randomBytesAsText.mockImplementation((bytes: number) =>
       randomBytes(bytes).toString('base64').replaceAll(/\W/g, ''),
     );
@@ -221,6 +227,95 @@ describe(OAuthAppService.name, () => {
     me = person('taylor');
     repo.users.set(me.user.id, me.user);
     mocks.user.get.mockImplementation((id: string) => Promise.resolve(repo.users.get(id) as never));
+  });
+
+  describe('Connect policy', () => {
+    const policy = { version: 1, readAlbumIds: [], allLibraryRead: false, writableAlbumIds: [], writeWorkspaces: [] };
+    it('requires an explicit consent policy for the Connect resource', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      await expect(connect(client, { scope: 'library:read', resource: `${ISSUER}/api/connect` })).rejects.toThrow();
+      expect(repo.grants).toHaveLength(0);
+    });
+    it('refuses policy on a legacy grant', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      await expect(connect(client, { scope: 'library:read', accessPolicy: policy })).rejects.toThrow();
+    });
+    it('refuses another origin masquerading as the Connect resource', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      await expect(
+        connect(client, { scope: 'library:read', resource: 'https://other.example/api/connect', accessPolicy: policy }),
+      ).rejects.toThrow();
+    });
+    it('never grants people access to Connect', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      await expect(connect(client, { resource: `${ISSUER}/api/connect`, accessPolicy: policy })).rejects.toThrow();
+    });
+    it('binds the consent policy through code exchange and rotating refresh', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      const { tokens } = await connect(client, {
+        scope: 'library:read photos:upload events:read',
+        resource: `${ISSUER}/api/connect`,
+        accessPolicy: policy,
+      });
+      expect((await sut.validateAccessToken(tokens.access_token, null)).oauthApp).toMatchObject({
+        accessPolicy: policy,
+      });
+      const next = await sut.token({
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refresh_token,
+        client_id: client.id,
+      });
+      expect((await sut.validateAccessToken(next.access_token, null)).oauthApp).toMatchObject({ accessPolicy: policy });
+    });
+    it('preserves code-approved scopes and policy when refresh asks for a subset', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      const { tokens } = await connect(client, {
+        scope: 'library:read photos:upload events:read',
+        resource: `${ISSUER}/api/connect`,
+        accessPolicy: policy,
+      });
+      const refreshed = await sut.token({
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refresh_token,
+        client_id: client.id,
+        scope: 'library:read',
+      });
+      expect(refreshed.scope).toBe(tokens.scope);
+      expect(repo.grants[0]).toMatchObject({
+        scopes: ['library:read', 'photos:upload', 'events:read'],
+        accessPolicy: policy,
+        frameleafAccountId: null,
+      });
+    });
+
+    it('refuses policy and resource changes during refresh', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      const { tokens } = await connect(client, {
+        scope: 'library:read',
+        resource: `${ISSUER}/api/connect`,
+        accessPolicy: policy,
+      });
+      const body = { grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id };
+      await expect(sut.token({ ...body, accessPolicy: { ...policy, allLibraryRead: true } })).rejects.toThrow();
+      await expect(sut.token({ ...body, resource: `${ISSUER}/api/mcp` })).rejects.toThrow();
+      expect((await sut.validateAccessToken(tokens.access_token, null)).oauthApp!.accessPolicy).toEqual(policy);
+    });
+
+    it('refuses Connect-only scopes on legacy grants', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      for (const scope of ['photos:upload', 'boards:upload', 'events:read']) {
+        for (const resource of [undefined, `${ISSUER}/api/mcp`, `${ISSUER}/api/mcp/assistant`]) {
+          await expect(connect(client, { scope, resource })).rejects.toThrow();
+        }
+      }
+    });
+
+    it('fails closed when a Connect grant lost its policy', async () => {
+      const client = repo.addClient([LOCAL_REDIRECT]);
+      const { tokens } = await connect(client, { scope: 'library:read' });
+      repo.grants[0].resource = `${ISSUER}/api/connect`;
+      await expect(sut.validateAccessToken(tokens.access_token, null)).rejects.toBeInstanceOf(UnauthorizedException);
+    });
   });
 
   it('requires a Server licence for official authorization and refresh but accepts an offline licence', async () => {
@@ -305,6 +400,94 @@ describe(OAuthAppService.name, () => {
     await expect(sut.validateAccessToken(tokens.access_token, null)).rejects.toThrow();
     enabled = true;
     await expect(sut.token(refresh, ISSUER)).resolves.toHaveProperty('access_token');
+  });
+
+  it.each([
+    'https://claude.ai/api/mcp/auth_callback',
+    'https://claude.com/api/mcp/auth_callback',
+    'https://chatgpt.com/connector_platform_oauth_redirect',
+    'https://my.home-assistant.io/redirect/oauth',
+    'lightroom://net.frameleaf.connect/oauth/callback',
+  ])('preserves the exact registered callback %s', async (callback) => {
+    const client = repo.addClient([callback]);
+    const { tokens } = await connect(client, { scope: 'library:read' });
+    await expect(sut.validateAccessToken(tokens.access_token, null)).resolves.toMatchObject({
+      oauthApp: { clientId: client.id },
+    });
+  });
+
+  it('advertises Connect-only scopes exclusively on the Connect resource', () => {
+    expect(sut.getProtectedResourceMetadata(ISSUER, '/api/mcp/assistant').scopes_supported).toEqual(['library:read']);
+    for (const path of ['', '/api/mcp', '/api/mcp/assistant']) {
+      const scopes = sut.getProtectedResourceMetadata(ISSUER, path).scopes_supported;
+      expect(scopes).not.toContain('photos:upload');
+      expect(scopes).not.toContain('boards:upload');
+      expect(scopes).not.toContain('events:read');
+    }
+    expect(sut.getProtectedResourceMetadata(ISSUER, '/api/connect').scopes_supported).toEqual(
+      expect.arrayContaining(['photos:upload', 'boards:upload', 'events:read']),
+    );
+  });
+
+  it.each([null, 'other-account'])(
+    'rechecks broker account binding at code exchange and refresh after link becomes %s',
+    async (linkedAccount) => {
+      const client = repo.addClient(['https://mcp.frameleaf.cloud/oauth/library/callback/claude']);
+      const resource = `${ISSUER}/api/mcp/assistant`;
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          key === SystemMetadataKey.FrameleafLicense
+            ? ({ key: { kind: 'server', claims: { lic_exp: null, exp: 0, ent: ['SUPPORTER_SERVER'] } } } as never)
+            : null,
+        ),
+      );
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: 'cloud-account' } as never);
+      const { tokens } = await connect(client, { resource, scope: 'library:read' });
+      const { dto, verifier } = request(client, { resource, scope: 'library:read' });
+      const { redirectUrl } = await sut.authorize(me, { ...dto, allow: true } as never, ISSUER);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue(
+        (linkedAccount ? { sub: linkedAccount } : undefined) as never,
+      );
+      await expect(
+        sut.token(
+          {
+            grant_type: 'authorization_code',
+            code: new URL(redirectUrl).searchParams.get('code'),
+            client_id: client.id,
+            redirect_uri: dto.redirectUri,
+            code_verifier: verifier,
+          },
+          ISSUER,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        sut.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id }, ISSUER),
+      ).rejects.toThrow();
+      expect(repo.rotate).not.toHaveBeenCalled();
+      expect(repo.grants).toHaveLength(1);
+    },
+  );
+
+  it('revokes only the original assistant grant using a consumed refresh after account unlink', async () => {
+    const client = repo.addClient(['https://mcp.frameleaf.cloud/oauth/library/callback/chatgpt']);
+    const resource = `${ISSUER}/api/mcp/assistant`;
+    mocks.systemMetadata.get.mockImplementation((key) =>
+      Promise.resolve(
+        key === SystemMetadataKey.FrameleafLicense
+          ? ({ key: { kind: 'server', claims: { lic_exp: null, exp: 0, ent: ['SUPPORTER_SERVER'] } } } as never)
+          : null,
+      ),
+    );
+    mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: 'cloud-account' } as never);
+    const { tokens } = await connect(client, { resource, scope: 'library:read' });
+    await connect(client, { resource, scope: 'library:read' });
+    await sut.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id }, ISSUER);
+    mocks.frameleafAccount.getLinkByUser.mockResolvedValue(undefined);
+    await sut.revoke({ token: tokens.refresh_token, client_id: randomUUID() });
+    expect(repo.grants[0].revokedAt).toBeNull();
+    await sut.revoke({ token: tokens.refresh_token, client_id: client.id });
+    expect(repo.grants[0].revokedAt).not.toBeNull();
+    expect(repo.grants[1].revokedAt).toBeNull();
   });
 
   describe('authorizeRedirect', () => {
@@ -641,6 +824,40 @@ describe(OAuthAppService.name, () => {
   });
 
   describe('revoke (RFC 7009)', () => {
+    it('revokes the same grant with a consumed refresh token after a lost rotation response', async () => {
+      const client = repo.addClient([CLAUDE_REDIRECT]);
+      const { tokens } = await connect(client);
+      const other = await connect(client);
+      const rotated = await sut.token({
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refresh_token,
+        client_id: client.id,
+      });
+      await sut.revoke({ token: tokens.refresh_token, client_id: randomUUID() });
+      await expect(sut.validateAccessToken(rotated.access_token, null)).resolves.toBeDefined();
+      await sut.revoke({ token: tokens.refresh_token, client_id: client.id });
+      await expect(sut.validateAccessToken(rotated.access_token, null)).rejects.toBeInstanceOf(UnauthorizedException);
+      await expect(sut.validateAccessToken(other.tokens.access_token, null)).resolves.toBeDefined();
+      await expect(
+        sut.token({
+          grant_type: 'refresh_token',
+          refresh_token: rotated.refresh_token,
+          client_id: client.id,
+        }),
+      ).rejects.toThrow();
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: AccountEventAction.AppDisconnected, detail: 'app-signed-out' }),
+      );
+    });
+
+    it('allows revocation with an expired current access token', async () => {
+      const client = repo.addClient([CLAUDE_REDIRECT]);
+      const { tokens } = await connect(client);
+      repo.grants[0].accessExpiresAt = new Date(Date.now() - 1) as never;
+      await sut.revoke({ token: tokens.access_token, client_id: client.id });
+      expect(repo.grants[0].revokedAt).not.toBeNull();
+    });
+
     it('lets an app sign itself out with either token', async () => {
       const client = repo.addClient([CLAUDE_REDIRECT]);
       const { tokens } = await connect(client);
@@ -697,6 +914,31 @@ describe(OAuthAppService.name, () => {
       clearConfigCache();
       mocks.systemMetadata.get.mockResolvedValue({ connectedApps: { allowRegistration: false } });
       expect(await sut.getAuthorizationServerMetadata(ISSUER)).not.toHaveProperty('registration_endpoint');
+    });
+  });
+
+  describe('administrator registration', () => {
+    it('allows an administrator to create an unverified public client while DCR stays disabled', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ connectedApps: { allowRegistration: false } });
+      const admin = person('admin', true);
+      const result = await sut.createClient(admin, {
+        name: 'My Zap',
+        preset: 'zapier',
+        redirectUris: ['https://zapier.com/dashboard/auth/oauth/return/App/'],
+      });
+      expect(result).toMatchObject({ name: 'My Zap', tokenEndpointAuthMethod: 'none' });
+      expect(repo.clients.get(result.clientId)).toMatchObject({ dynamic: false });
+      const display = (await sut.getClients()).find((item) => item.client.id === result.clientId);
+      expect(display?.client.verified).toBe(false);
+      await expect(sut.register({ redirect_uris: [LOCAL_REDIRECT] })).rejects.toThrow();
+    });
+    it('requires an administrator session and an exact allowed callback', async () => {
+      const dto = { name: 'App', redirectUris: [LOCAL_REDIRECT] };
+      await expect(sut.createClient(me, dto)).rejects.toThrow();
+      await expect(sut.createClient({ ...person('admin', true), session: undefined }, dto)).rejects.toThrow();
+      await expect(
+        sut.createClient(person('admin', true), { ...dto, redirectUris: ['http://evil.example/cb'] }),
+      ).rejects.toThrow();
     });
   });
 

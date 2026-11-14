@@ -1,0 +1,14 @@
+{
+  "url": "/albums",
+  "method": "GET",
+  "response": {
+    "iterate": {
+      "container": "{{body.items}}",
+      "condition": "{{!parameters.writable || item.canWrite}}"
+    },
+    "output": {
+      "label": "{{item.name}}",
+      "value": "{{item.id}}"
+    }
+  }
+}

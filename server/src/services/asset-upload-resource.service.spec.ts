@@ -122,6 +122,7 @@ describe('resumable asset byte commit boundaries', () => {
     };
     const storage = {
       checkDiskUsage: vi.fn().mockResolvedValue({ available: 1024 }),
+      readFile: vi.fn().mockResolvedValue(Buffer.from([0xff, 0xd8, 0xff])),
       unlink: vi.fn((path: string) => rm(path, { force: true })),
       utimes: vi.fn(() => {
         expect(locked).toBe(false);
@@ -159,6 +160,13 @@ describe('resumable asset byte commit boundaries', () => {
       assertActor: vi.fn().mockResolvedValue('key:capture-key'),
       assertNotCancelled: vi.fn().mockResolvedValue(undefined),
     };
+    const connectMedia = {
+      assertUpload: vi.fn().mockResolvedValue({ user: { id: 'owner' } }),
+      commit: vi.fn(async (_tx, _auth, _row, _dto, publish) => {
+        await publish();
+        return { assetId: 'asset', status: 'created', sha256: row.expectedChecksum.toString('hex') };
+      }),
+    };
     const service = new AssetUploadResourceService(
       uploads as never,
       media as never,
@@ -172,11 +180,13 @@ describe('resumable asset byte commit boundaries', () => {
       sources as never,
       captures as never,
       {} as never,
+      connectMedia as never,
     );
     vi.spyOn(service as unknown as { owner: (auth: AuthDto) => Promise<string> }, 'owner').mockResolvedValue('owner');
     vi.spyOn(service as unknown as { folder: (id: string) => string }, 'folder').mockReturnValue(folder);
     return {
       service,
+      connectMedia,
       sources,
       captures,
       media,
@@ -193,6 +203,129 @@ describe('resumable asset byte commit boundaries', () => {
     };
   };
   const auth = { user: { id: 'owner' } } as AuthDto;
+
+  it('keeps completed Connect bytes private until an explicit authorized commit', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'verified',
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: harness.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+      metadata: { ...harness.row().metadata, publication: 'connect' } as never,
+    });
+    await harness.service['finalize'](auth, harness.row().id, async () => {});
+    expect(harness.row().state).toBe('verified');
+    expect(harness.media.restoreLostOriginal).not.toHaveBeenCalled();
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+  });
+
+  it('does not restore or overwrite an original when explicitly committing Connect bytes', async () => {
+    const h = setup();
+    h.mutate({
+      state: 'verified',
+      contentType: 'image/jpeg',
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: h.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+      metadata: {
+        ...h.row().metadata,
+        publication: 'connect',
+        connect: { grantId: 'grant', actor: 'oauth:grant', requestId: 'save-1', albumId: 'album', workspace: 'design' },
+      },
+    });
+    await expect(
+      h.service.commitConnect(auth, h.row().id, {
+        requestId: 'save-1',
+        sha256: h.row().expectedChecksum.toString('hex'),
+      }),
+    ).resolves.toMatchObject({ assetId: 'asset' });
+    expect(h.media.restoreLostOriginal).not.toHaveBeenCalled();
+    expect(h.uploads.publishRestored).not.toHaveBeenCalled();
+    expect(h.uploads.publish).toHaveBeenCalledOnce();
+  });
+
+  it('refuses a Connect commit of an item its owner deleted while the bytes arrived', async () => {
+    const h = setup();
+    h.mutate({
+      state: 'verified',
+      contentType: 'image/jpeg',
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: h.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+      metadata: {
+        ...h.row().metadata,
+        publication: 'connect',
+        connect: { grantId: 'grant', actor: 'oauth:grant', requestId: 'save-1', albumId: 'album', workspace: 'design' },
+      },
+    });
+    h.media.refuseDeletedByOwner.mockRejectedValue(new ConflictException('deleted by its owner'));
+    await expect(
+      h.service.commitConnect(auth, h.row().id, {
+        requestId: 'save-1',
+        sha256: h.row().expectedChecksum.toString('hex'),
+      }),
+    ).rejects.toThrow('deleted by its owner');
+    expect(h.media.prepareUploadAsset).not.toHaveBeenCalled();
+    expect(h.uploads.publish).not.toHaveBeenCalled();
+  });
+
+  it('refuses content that does not match its declared media type before publication', async () => {
+    const h = setup();
+    h.storage.readFile.mockResolvedValue(Buffer.from('<html>not a photo</html>'));
+    h.mutate({
+      state: 'verified',
+      contentType: 'image/jpeg',
+      finalPath: join(folder, 'verified.jpg'),
+      verifiedChecksum: h.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+      metadata: {
+        ...h.row().metadata,
+        publication: 'connect',
+        connect: { grantId: 'grant', actor: 'oauth:grant', requestId: 'save-1', albumId: 'album', workspace: 'design' },
+      },
+    });
+    await expect(
+      h.service.commitConnect(auth, h.row().id, {
+        requestId: 'save-1',
+        sha256: h.row().expectedChecksum.toString('hex'),
+      }),
+    ).rejects.toThrow('does not match');
+    expect(h.uploads.publish).not.toHaveBeenCalled();
+    expect(h.media.restoreLostOriginal).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the Connect grant before accepting another byte or committing a completed resource', async () => {
+    const h = setup();
+    h.mutate({
+      metadata: {
+        ...h.row().metadata,
+        publication: 'connect',
+        connect: { grantId: 'grant', actor: 'oauth:grant', requestId: 'save-1', albumId: 'album', workspace: 'design' },
+      },
+    });
+    h.connectMedia.assertUpload.mockRejectedValue(new ForbiddenException('grant revoked'));
+    await expect(
+      h.service.append(
+        auth,
+        h.row().id,
+        {
+          'content-type': 'application/partial-upload',
+          'upload-draft-interop-version': '9',
+          'upload-offset': '0',
+          'upload-complete': '?1',
+        },
+        Readable.from(['abcd']),
+      ),
+    ).rejects.toThrow('grant revoked');
+    await expect(
+      h.service.commitConnect(auth, h.row().id, {
+        requestId: 'save-1',
+        sha256: h.row().expectedChecksum.toString('hex'),
+      }),
+    ).rejects.toThrow('grant revoked');
+    expect(h.inserts).toHaveLength(0);
+    expect(h.uploads.publish).not.toHaveBeenCalled();
+  });
 
   it('uses the persisted capture UUID for a recoverable creation URI and refuses that mode on normal uploads', async () => {
     const harness = setup();

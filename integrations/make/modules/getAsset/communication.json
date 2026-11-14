@@ -1,0 +1,7 @@
+{
+  "url": "/assets/{{encodeURL(parameters.assetId)}}",
+  "method": "GET",
+  "response": {
+    "output": "{{body}}"
+  }
+}
