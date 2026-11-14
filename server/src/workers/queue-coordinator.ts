@@ -60,6 +60,8 @@ export async function coordinate({
   let maintenance: Promise<void> | undefined;
   let progressBusy = false;
   let nextQueue = 0;
+  // front queues take turns too, on their own cursor: during an import nearly every queue is a front queue
+  let nextFront = 0;
   let reconciliationDue = true;
   // An idle server reconciles every queue less often: the 5 s scan doubles up to 30 s while full
   // passes find nothing to run, and the first claim brings it back. Wakes still check for work each scan.
@@ -116,22 +118,34 @@ export async function coordinate({
   const sweep = () => {
     if (stopping || maintenance || performance.now() - lastSweep < QUEUE_TIMING.sweep) return;
     maintenance = (async () => {
+      // Each step on its own: a step that keeps failing (a run too big to finish in time) must not stop lease
+      // recovery, pruning or the other steps behind it.
+      let failed = false;
+      const step = async (work: () => Promise<unknown>) => {
+        if (stopping) return;
+        try {
+          await work();
+        } catch {
+          if (!failed && !stopping) parentPort!.postMessage({ type: 'unavailable' });
+          failed = true;
+        }
+      };
       try {
-        await maintenanceStore.recoverExpired();
+        await step(() => maintenanceStore.recoverExpired());
         // FL-1213: one page per sweep cannot keep up after a big library scan (millions of jobs at 250
         // per 30 seconds), so keep going for a few seconds while pages are full and still deleting. A full
         // page that deleted nothing waits for the next sweep once its history is not yet due; one kept whole for
         // an open run goes on to the history behind it.
-        const deadline = performance.now() + QUEUE_TIMING.pruneBudget;
-        while (!stopping) {
-          const page = await pruneQueueHistoryPage(maintenanceDb);
-          if (!page?.fullPage || (page.pruned === 0 && !page.due) || performance.now() >= deadline) break;
-        }
+        await step(async () => {
+          const deadline = performance.now() + QUEUE_TIMING.pruneBudget;
+          while (!stopping) {
+            const page = await pruneQueueHistoryPage(maintenanceDb);
+            if (!page?.fullPage || (page.pruned === 0 && !page.due) || performance.now() >= deadline) break;
+          }
+        });
         // FL-1265: runs whose work has ended are finished, their counts written once.
-        if (!stopping) await finishRuns(maintenanceDb, 10);
-        if (!stopping) await maintenanceStore.settleTerminalLibrarySources();
-      } catch {
-        if (!stopping) parentPort!.postMessage({ type: 'unavailable' });
+        await step(() => finishRuns(maintenanceDb, 10));
+        await step(() => maintenanceStore.settleTerminalLibrarySources());
       } finally {
         lastSweep = performance.now();
         maintenance = undefined;
@@ -199,18 +213,19 @@ export async function coordinate({
         // FL-1479: queues holding work from the front of the line (started by hand, or photos that just came in) are
         // visited first, each up to how many it may run at once; the rest take turns as before.
         const front = new Set(await store.queuesWithFrontWork(queues));
-        const start = nextQueue;
-        const turns = Array.from({ length: queues.length }, (_, offset) => (start + offset) % queues.length);
+        const order = (start: number) =>
+          Array.from({ length: queues.length }, (_, offset) => (start + offset) % queues.length);
         for (const index of [
-          ...turns.filter((i) => front.has(queues[i])),
-          ...turns.filter((i) => !front.has(queues[i])),
+          ...order(nextFront).filter((i) => front.has(queues[i])),
+          ...order(nextQueue).filter((i) => !front.has(queues[i])),
         ]) {
           const capacity = executionCapacity - active.size;
           if (stopping || capacity <= 0) break;
           const queue = queues[index];
           if (outstanding && !outstanding.has(queue)) continue;
           // Resume at the next queue after filling the shared budget, so a deep queue cannot starve others.
-          if (!front.has(queue)) nextQueue = (index + 1) % queues.length;
+          if (front.has(queue)) nextFront = (index + 1) % queues.length;
+          else nextQueue = (index + 1) % queues.length;
           const claims = await store.claim(queue, workerId, capacity);
           claimed += claims.length;
           for (const claim of claims) {

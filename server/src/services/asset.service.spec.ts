@@ -2538,6 +2538,8 @@ describe(AssetService.name, () => {
       expect(mocks.asset.remove).toHaveBeenCalledWith(getForAssetDeletion(asset), {
         files: expect.any(Function),
         queue: expect.any(Function),
+        // removed only while it is still the trashed row judged here (a restore since keeps it)
+        deletedAt: getForAssetDeletion(asset).deletedAt,
       });
     });
 

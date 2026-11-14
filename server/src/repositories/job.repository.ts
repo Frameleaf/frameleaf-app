@@ -31,6 +31,7 @@ import { queueAdmission } from 'src/queue/admission.js';
 import { retryLockContention } from 'src/queue/catalogue.js';
 import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/queue/configuration.js';
 import { NO_FAILURE_REASON, deferJobAdoption, queueExecution } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
 import { listQueueProblems, queueHolds, queueProblemJobs } from 'src/queue/queue-problems.js';
 import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
@@ -930,7 +931,10 @@ export class JobRepository {
     const identity =
       options?.deduplication?.id ??
       options?.jobId ??
-      (item.name === JobName.LandmarkInfer ? item.data?.trigger : undefined);
+      (item.name === JobName.LandmarkInfer ? item.data?.trigger : undefined) ??
+      // the re-score once the embedding is stored is its own item: keyed by the photo alone it hit the score queued
+      // earlier (after thumbnails or faces) and was dropped, so the learned aesthetic never reached the score
+      (item.name === JobName.BestPhotosScore && item.data?.embeddingChanged ? 'embedding' : undefined);
     // One run can publish an asset's files more than once. A completed seal must not consume a
     // later publication's obligation; live deduplication still coalesces sealing by asset.
     const publication =
@@ -1388,6 +1392,9 @@ export class JobRepository {
   /** Held work (an import waiting for setup) is not waited for. */
   async waitForQueueCompletion(...queues: QueueName[]): Promise<void> {
     while ((await Promise.all(queues.map((queue) => this.store.hasUnfinishedWork(queue, false)))).some(Boolean)) {
+      // A queued job waits as a deferral (backing off to 10 minutes), not by sleeping in its slot: the sleep counted
+      // toward its 10-minute deadline, which a big import's detection backlog always outlasted, so it was cancelled.
+      deferJobUntilDependency('source-unavailable');
       queueExecution.getStore()?.signal.throwIfAborted();
       await sleep(QUEUE_TIMING.scan);
     }

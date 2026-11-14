@@ -84,10 +84,18 @@ describe(OcrService.name, () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForOcr.mockResolvedValue({ visibility: AssetVisibility.Timeline, previewFile: null });
 
-      expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Failed);
+      expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Skipped);
 
       expect(mocks.ocr.upsert).not.toHaveBeenCalled();
       expect(mocks.machineLearning.ocr).not.toHaveBeenCalled();
+    });
+
+    it('skips a hidden motion part without waiting for a preview it never gets', async () => {
+      mocks.assetJob.getForOcr.mockResolvedValue({ visibility: AssetVisibility.Hidden, previewFile: null });
+
+      expect(await sut.handleOcr({ id: 'motion-part' })).toEqual(JobStatus.Skipped);
+
+      expect(mocks.job.previewMayArrive).not.toHaveBeenCalled();
     });
 
     it('should save the returned objects', async () => {

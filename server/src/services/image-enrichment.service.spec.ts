@@ -30,6 +30,12 @@ import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
+/** A selection mock the service may call `clearOrderBy()` on before queuing it. */
+const orderable = <T extends object>(value: T) => {
+  const query: T & { clearOrderBy: () => unknown } = { ...value, clearOrderBy: () => query };
+  return query;
+};
+
 describe(ImageEnrichmentService.name, () => {
   let sut: ImageEnrichmentService;
   let mocks: ServiceMocks;
@@ -105,9 +111,9 @@ describe(ImageEnrichmentService.name, () => {
     mocks.systemMetadata.get.mockResolvedValue({
       machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
     });
-    mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue({
-      selected: [{ id: firstAssetId }, { id: secondAssetId }],
-    } as never);
+    mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue(
+      orderable({ selected: [{ id: firstAssetId }, { id: secondAssetId }] }) as never,
+    );
 
     await expect(sut.handleQueueImageDescription({ force: false })).resolves.toBe(JobStatus.Success);
 
@@ -662,7 +668,9 @@ describe(ImageEnrichmentService.name, () => {
         machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
         libraryCare: { incrementalEnrichment: true },
       });
-      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue({ selected: [{ id: assetId }] } as never);
+      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue(
+        orderable({ selected: [{ id: assetId }] }) as never,
+      );
 
       await sut.handleQueueImageDescription({ force: true });
 
@@ -678,7 +686,9 @@ describe(ImageEnrichmentService.name, () => {
         machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
         libraryCare: { incrementalEnrichment: false },
       });
-      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue({ selected: [{ id: assetId }] } as never);
+      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue(
+        orderable({ selected: [{ id: assetId }] }) as never,
+      );
 
       await sut.handleQueueImageDescription({ force: true });
 
@@ -2826,7 +2836,9 @@ describe(ImageEnrichmentService.name, () => {
 
     it('does not claim batches for describe-all while cloud processing is off (review re-check)', async () => {
       configure(false, { enabled: false });
-      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue({ selected: [{ id: assetId }] } as never);
+      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue(
+        orderable({ selected: [{ id: assetId }] }) as never,
+      );
 
       await expect(sut.handleQueueImageDescription({ force: false })).resolves.toBe(JobStatus.Success);
 
@@ -2964,7 +2976,9 @@ describe(ImageEnrichmentService.name, () => {
 
     it('queues no library-wide description jobs while descriptions are routed to Frameleaf Cloud', async () => {
       configure(false);
-      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue({ selected: [{ id: assetId }] } as never);
+      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue(
+        orderable({ selected: [{ id: assetId }] }) as never,
+      );
 
       await expect(sut.handleQueueImageDescription({ force: false })).resolves.toBe(JobStatus.Skipped);
 

@@ -79,7 +79,12 @@ import { OperationDeadlineError, settleOperationStop, withOperationExecution } f
 
 const KINDS = [MediaOperationKind.BuddyBackup, MediaOperationKind.BuddyRestore];
 const LEASE_MS = 300_000;
-class BuddyStopped extends Error {}
+class BuddyStopped extends Error {
+  /** How long the run waits before it is claimed again. */
+  constructor(readonly retryAfterMs = 30_000) {
+    super();
+  }
+}
 
 /** Frameleaf Cloud refusals the owner can act on; anything else stays a server error. */
 const BUDDY_CLIENT_STATUSES = new Set([400, 402, 403, 404, 409, 410, 422, 429]);
@@ -726,8 +731,14 @@ export class BuddyBackupService {
         }).format(new Date());
         const { windowStart: start, windowEnd: end } = state.settings!;
         const inside = start === end || (start < end ? time >= start && time < end : time >= start || time < end);
-        if (!inside || (await this.operations.getActiveOfKind(MediaOperationKind.BuddyRestore)))
-          throw new BuddyStopped();
+        if (!inside) {
+          // Wait for the window rather than claiming the run every 30 seconds all day; at most 15 minutes, so a
+          // window moved earlier still takes effect soon.
+          const minutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+          const untilOpen = ((minutes(start) - minutes(time) + 1440) % 1440) * 60_000;
+          throw new BuddyStopped(Math.min(15 * 60_000, Math.max(30_000, untilOpen)));
+        }
+        if (await this.operations.getActiveOfKind(MediaOperationKind.BuddyRestore)) throw new BuddyStopped();
       };
       await checkpoint();
       const ring = await this.keyring();
@@ -897,7 +908,7 @@ export class BuddyBackupService {
           await this.capture.release(id);
           await this.operations.acknowledgeCancel(id, token, { released: true });
         } else {
-          await this.operations.requeue(id, token, { delayMs: 30_000, returnAttempt: true });
+          await this.operations.requeue(id, token, { delayMs: error.retryAfterMs, returnAttempt: true });
         }
         await this.repository.update((current) => ({
           ...current,

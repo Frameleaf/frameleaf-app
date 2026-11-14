@@ -39,6 +39,12 @@ import {
 import { newDate, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
 
+/** A selection mock the service may call `clearOrderBy()` on before queuing it. */
+const orderable = <T extends object>(value: T) => {
+  const query: T & { clearOrderBy: () => unknown } = { ...value, clearOrderBy: () => query };
+  return query;
+};
+
 describe(PersonService.name, () => {
   let sut: PersonService;
   let mocks: ServiceMocks;
@@ -1961,7 +1967,7 @@ describe(PersonService.name, () => {
 
     it('should queue missing assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue({ selected: [asset] } as never);
+      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue(orderable({ selected: [asset] }) as never);
 
       await sut.handleQueueDetectFaces({ force: false });
 
@@ -1977,7 +1983,7 @@ describe(PersonService.name, () => {
       const asset = AssetFactory.create();
       const person = PersonFactory.create();
 
-      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue({ selected: [asset] } as never);
+      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue(orderable({ selected: [asset] }) as never);
       mocks.person.getAllWithoutFaces.mockResolvedValue([person]);
       mocks.person.delete.mockResolvedValue([person]);
 
@@ -1997,7 +2003,7 @@ describe(PersonService.name, () => {
 
     it('should refresh all assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue({ selected: [asset] } as never);
+      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue(orderable({ selected: [asset] }) as never);
 
       await sut.handleQueueDetectFaces({ force: undefined });
 
@@ -2022,7 +2028,7 @@ describe(PersonService.name, () => {
       mocks.person.selectionForFaces.mockReturnValue({
         clearSelect: () => ({ select: () => ({ selected: [face] }) }),
       } as never);
-      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue({ selected: [asset] } as never);
+      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue(orderable({ selected: [asset] }) as never);
       mocks.person.getAllWithoutFaces.mockResolvedValue([person]);
       mocks.person.delete.mockResolvedValue([person]);
       mocks.person.deleteFaces.mockResolvedValue();

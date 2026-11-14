@@ -41,12 +41,16 @@ export class OcrService extends BaseService {
 
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForOcr(id);
-    if (asset && !asset.previewFile) deferJobUntilDependency('source-unavailable');
-    if (!asset || !asset.previewFile) {
+    if (!asset) {
       return JobStatus.Failed;
     }
-
+    // Hidden first: a Live Photo's motion part never gets a preview, so waiting for one would never end
     if (asset.visibility === AssetVisibility.Hidden) {
+      return JobStatus.Skipped;
+    }
+    if (!asset.previewFile) {
+      // like search and faces: once this run's thumbnail step ended without a preview, none is coming
+      if (await this.jobRepository.previewMayArrive(id)) deferJobUntilDependency('source-unavailable');
       return JobStatus.Skipped;
     }
 

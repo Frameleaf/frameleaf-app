@@ -137,7 +137,8 @@ export class BestPhotosService {
     }
 
     if (!asset.previewFile) {
-      deferJobUntilDependency('source-unavailable');
+      // like search and faces: once this run's thumbnail step ended without a preview, none is coming
+      if (await this.jobRepository.previewMayArrive(id)) deferJobUntilDependency('source-unavailable');
       this.logger.warn(`Skipping Best Photos scoring for asset ${id}: preview file is missing`);
       return JobStatus.Skipped;
     }

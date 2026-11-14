@@ -492,7 +492,10 @@ export class JobService extends BaseService {
         }
 
         if (asset.type === AssetType.Image) {
-          if (asset.libraryScope !== LibraryScope.Design) jobs.push({ name: JobName.BestPhotosScore, data: item.data });
+          // with faces on, face detection queues the score once the face count it uses is known
+          if (asset.libraryScope !== LibraryScope.Design && !isFacialRecognitionEnabled(machineLearning)) {
+            jobs.push({ name: JobName.BestPhotosScore, data: item.data });
+          }
 
           if (isImageDescriptionEnabled(machineLearning)) {
             jobs.push({ name: JobName.ImageDescription, data: item.data });
@@ -581,20 +584,31 @@ export class JobService extends BaseService {
         break;
       }
 
-      case JobName.SmartSearch: {
+      case JobName.SmartSearchPostprocess: {
+        // Every stored embedding comes through here, this server's own and a Frameleaf Cloud result alike, so the
+        // work that reads it follows from here. A Skipped SmartSearch (routed to Frameleaf Cloud, or no preview yet)
+        // has no embedding to read.
+        if (response !== JobStatus.Success) break;
         // FL-58: a fresh CLIP embedding is what pet recognition reads. The handler returns at once
         // for an owner who has not confirmed a pet yet, before any destination is contacted.
         const asset = await this.assetRepository.getById(item.data.id);
         if (asset && asset.libraryScope !== LibraryScope.Design) {
           await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: item.data.id } });
           // FL-978: a new embedding (a new upload or a visual search model change) re-scores its aesthetics
-          if (asset.type === AssetType.Image && response === JobStatus.Success) {
+          if (asset.type === AssetType.Image) {
             await this.jobRepository.queue({
               name: JobName.BestPhotosScore,
               data: { id: item.data.id, embeddingChanged: true },
             });
           }
         }
+        break;
+      }
+
+      case JobName.SmartSearch: {
+        // The duplicate check compares embeddings: it would fail on one that is not stored yet
+        if (response !== JobStatus.Success) break;
+        const asset = await this.assetRepository.getById(item.data.id);
         if (item.data.source === 'upload') {
           // FL-651: a video is fingerprinted first, unless video comparison is off
           const fingerprint =

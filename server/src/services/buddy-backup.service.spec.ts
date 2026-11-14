@@ -634,7 +634,8 @@ describe('Buddy production run controls and checkpoints', () => {
     expect(transport.commits).toHaveLength(0);
     expect(operations.complete).not.toHaveBeenCalled();
     expect(operations.requeue).toHaveBeenCalledExactlyOnceWith(operation.id, 'first-claim', {
-      delayMs: 30_000,
+      // outside its window it waits for the window (22 hours away here), at most 15 minutes at a time
+      delayMs: reason === 'window' ? 15 * 60_000 : 30_000,
       returnAttempt: true,
     });
     expect(await repository.state()).toMatchObject({

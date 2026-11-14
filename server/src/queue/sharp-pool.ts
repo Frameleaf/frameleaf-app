@@ -39,6 +39,7 @@ type Task = {
   startedAt?: number;
   workerLifetimePeakRssBytes?: number;
   fallbackReason?: string;
+  interactive?: boolean;
   timer?: ReturnType<typeof setTimeout>;
   abort: () => void;
   progress: (units: number) => void;
@@ -171,9 +172,13 @@ export class SharpProcessPool {
     }
     const available =
       [...this.slots].some((slot) => !slot.task && !slot.retiring) || this.slots.size < this.options.workers;
+    // An edit or develop render someone is waiting on (operation-owned, so it can never be deferred) waits in
+    // front of background work instead of being refused while an import fills the queue. Bytes still bound it.
+    const interactive = !!queueExecution.getStore()?.claim.data.operationId;
     if (
       !available &&
-      (this.pending.length >= this.options.pending || this.pendingBytes + bytes > this.options.pendingBytes)
+      ((this.pending.length >= this.options.pending && !interactive) ||
+        this.pendingBytes + bytes > this.options.pendingBytes)
     ) {
       return refused(this.admissionFailure('process pool admission is full'));
     }
@@ -226,7 +231,10 @@ export class SharpProcessPool {
       );
       admittedTask.timer.unref();
       signal?.addEventListener('abort', admittedTask.abort, { once: true });
-      this.pending.push(admittedTask);
+      admittedTask.interactive = interactive;
+      const firstBackground = interactive ? this.pending.findIndex((entry) => !entry.interactive) : -1;
+      if (firstBackground === -1) this.pending.push(admittedTask);
+      else this.pending.splice(firstBackground, 0, admittedTask);
       this.pendingBytes += bytes;
       this.dispatch();
     });

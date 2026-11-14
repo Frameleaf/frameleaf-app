@@ -17,6 +17,7 @@ import {
 import { BaseService } from 'src/services/base.service.js';
 import { closeAttemptSweep } from 'src/utils/attempt-sweep.js';
 import { attemptIdentity } from 'src/utils/attempt-tree.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { discoverMediaLocation } from 'src/utils/media-location.js';
 import { FrameleafStartupError } from 'src/utils/misc.js';
@@ -214,6 +215,8 @@ export class StorageService extends BaseService {
           this.logger.debug(`Skipping delete for ${file}; ${references} reference(s) remain`);
         }
       } catch (error: any) {
+        // a cancelled job stops here and its retry deletes the rest; only a file's own failure is skipped
+        executionSignal()?.throwIfAborted();
         this.logger.warn('Unable to remove file from disk', error);
       }
     }

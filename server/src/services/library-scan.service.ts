@@ -709,8 +709,16 @@ export class LibraryScanService {
   ) {
     const assets = await this.assetJobRepository.getForSyncAssets(assetIds);
     signal.throwIfAborted();
+    // Gone or unreadable (null) is offline. Any other error (EIO, ESTALE, a share timing out) is `undefined`:
+    // the item is left as it is until a scan can read it, rather than sent to the Trash by a hiccup.
     const stats = await Promise.all(
-      assets.map((asset) => this.storageRepository.stat(asset.originalPath).catch(() => null)),
+      assets.map((asset) =>
+        this.storageRepository
+          .stat(asset.originalPath)
+          .catch((error: NodeJS.ErrnoException) =>
+            ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes(error?.code ?? '') ? null : undefined,
+          ),
+      ),
     );
     signal.throwIfAborted();
 
@@ -723,7 +731,9 @@ export class LibraryScanService {
     const everyFile = parseLibraryScanSnapshot(operation.snapshot).everyFile;
 
     for (const [index, asset] of assets.entries()) {
-      const outcome = checkExistingAsset(asset, stats[index]);
+      const stat = stats[index];
+      if (stat === undefined) continue;
+      const outcome = checkExistingAsset(asset, stat);
       switch (everyFile && outcome === AssetSyncResult.DO_NOTHING ? AssetSyncResult.UPDATE : outcome) {
         case AssetSyncResult.OFFLINE: {
           (asset.status === AssetStatus.Trashed ? trashedToOffline : toOffline).push(asset.id);
@@ -811,9 +821,14 @@ export class LibraryScanService {
 
     const rows: ReturnType<typeof libraryAssetFromFile>[] = [];
     const sizes = new Map<string, number>();
-    for (const filePath of paths) {
+    // A rescan walks every known file; skip those before the per-file realpath and stat (two serial calls per
+    // file on a NAS). The insert-time filter below still guards a file added between this read and the batch.
+    const unknownPaths = await this.assetRepository.filterNewExternalAssetPaths(
+      library.id,
+      paths.map((filePath) => path.normalize(filePath)),
+    );
+    for (const assetPath of unknownPaths) {
       signal.throwIfAborted();
-      const assetPath = path.normalize(filePath);
       try {
         if (await resolvesIntoMediaStorage(this.storageRepository, assetPath)) {
           this.logger.warn(`Skipping ${assetPath} for library ${library.id}: it links into the media storage`);

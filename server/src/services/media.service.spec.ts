@@ -3962,7 +3962,11 @@ describe(MediaService.name, () => {
       const query = {};
       mocks.assetJob.selectionForVideoConversion.mockReturnValue(query as never);
       await sut.handleQueueVideoConversion({ force });
-      expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(force);
+      // "Missing" leaves out videos already found playable under the current policy
+      expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(
+        force,
+        force ? undefined : expect.stringMatching(/^[\da-f]{64}$/),
+      );
       expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetEncodeVideo, query);
       // FL-650: every video's seek-bar previews, which are a cache hit where they exist
       expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(true);

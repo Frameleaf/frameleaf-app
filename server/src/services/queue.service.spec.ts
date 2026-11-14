@@ -141,11 +141,21 @@ describe(QueueService.name, () => {
         { name: JobName.AuditTableCleanup },
         { name: JobName.MemoryGenerate },
         { name: JobName.UserSyncUsage },
-        { name: JobName.AssetGenerateThumbnailsQueueAll, data: { force: false } },
+        // the unfinished-work check queues missing thumbnails itself
         { name: JobName.FacialRecognitionQueueAll, data: { force: false, nightly: true } },
         { name: JobName.AnalyticsCollect },
         { name: JobName.PushBackupStaleCheck },
       ]);
+    });
+
+    it('queues missing thumbnails itself when the unfinished-work check is off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ nightlyTasks: { reprocessUnfinished: false } });
+
+      await sut.handleNightlyJobs();
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith(
+        expect.arrayContaining([{ name: JobName.AssetGenerateThumbnailsQueueAll, data: { force: false } }]),
+      );
     });
 
     it('leaves the analytics collector out when local metrics are off (FL-71)', async () => {

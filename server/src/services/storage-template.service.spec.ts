@@ -162,6 +162,31 @@ describe(StorageTemplateService.name, () => {
     });
   });
 
+  describe('onAssetMetadataExtracted', () => {
+    it('queues the move while the template is on', async () => {
+      await sut.onAssetMetadataExtracted({ source: 'upload', assetId: 'asset-1' } as never);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.StorageTemplateMigrationSingle,
+        data: { source: 'upload', id: 'asset-1' },
+      });
+    });
+
+    it('goes straight to thumbnails while the template is off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ storageTemplate: { enabled: false } });
+      await sut.onAssetMetadataExtracted({ source: 'upload', assetId: 'asset-1' } as never);
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.AssetGenerateThumbnails,
+        data: { source: 'upload', id: 'asset-1' },
+      });
+    });
+
+    it('queues nothing for a re-read while the template is off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ storageTemplate: { enabled: false } });
+      await sut.onAssetMetadataExtracted({ source: 'sidecar-write', assetId: 'asset-1' } as never);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleMigrationSingle', () => {
     it.each(['../owner-sibling/{{filename}}', '../owner'])(
       'refuses destination outside its library: %s',
