@@ -72,4 +72,28 @@ describe(SystemMetadataRepository.name, () => {
       });
     });
   });
+
+  it('keeps every studio payment account when several are written at once (FL-1037)', async () => {
+    const sut = new SystemMetadataRepository(defaultDatabase);
+    const entry = (n: number) => ({
+      fingerprint: String(n).repeat(64).slice(0, 64),
+      status: 'pending' as const,
+      chargesEnabled: false,
+      requirementsDue: [],
+      country: null,
+      defaultCurrency: null,
+      updatedAt: new Date().toISOString(),
+    });
+    for (const existing of [false, true]) {
+      await sut.delete(SystemMetadataKey.ClientsPayments);
+      if (existing) await sut.set(SystemMetadataKey.ClientsPayments, { accounts: { kept: entry(9) } });
+      const owners = Array.from({ length: 12 }, (_, n) => `owner-${n}`);
+      await Promise.all(
+        owners.map((owner, n) => sut.setEntry(SystemMetadataKey.ClientsPayments, 'accounts', owner, entry(n))),
+      );
+      const { accounts } = (await sut.get(SystemMetadataKey.ClientsPayments))!;
+      expect(Object.keys(accounts).sort()).toEqual([...owners, ...(existing ? ['kept'] : [])].sort());
+      expect(accounts['owner-3'].fingerprint).toBe(entry(3).fingerprint);
+    }
+  });
 });
