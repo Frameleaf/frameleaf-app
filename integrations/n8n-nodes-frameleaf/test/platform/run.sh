@@ -1,7 +1,7 @@
 #!/bin/sh
 # Synthetic platform qualification only; no vendor account, Library data, or public callback.
 set -eu
-package_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+package_dir=$(CDPATH="" cd -- "$(dirname -- "$0")/../.." && pwd)
 image='docker.n8n.io/n8nio/n8n@sha256:e29e9cc965a16d07d989f115f729f8a1c7aff58688d4850247fa495d4d7aae2f'
 container_id=$(docker run -d \
   --tmpfs /home/node/.n8n:uid=1000,gid=1000,size=268435456 \
