@@ -5,16 +5,26 @@ import { MlDestinationKind } from 'src/enum.js';
 import { assetSourceSnapshotSchema } from 'src/utils/asset-source-authority.js';
 import { canonicalJson } from 'src/utils/object.js';
 
-const common = {
-  source: assetSourceSnapshotSchema,
+const route = {
   policyRevision: z.uuid(),
   routeRevision: z.uuid(),
   destinationId: z.uuid(),
   kind: z.enum([MlDestinationKind.Local, MlDestinationKind.Lan]),
   endpointSha256: z.string().regex(/^[a-f0-9]{64}$/),
   modelName: z.string().min(1).max(256),
+};
+const common = {
+  ...route,
+  source: assetSourceSnapshotSchema,
   job: z.strictObject({ id: z.uuid(), token: z.uuid() }),
 };
+const face = z.strictObject({
+  enabled: z.boolean(),
+  modelName: z.string().min(1).max(128),
+  minScore: z.number().min(0.1).max(1),
+  maxDistance: z.number().min(0.1).max(2),
+  minFaces: z.number().int().positive(),
+});
 export const desktopMlDisclosureSchema = z.discriminatedUnion('version', [
   z.strictObject({ ...common, version: z.literal(1), indexRevision: z.uuid(), spaceKey: z.string().min(1).max(256) }),
   z.strictObject({
@@ -36,13 +46,16 @@ export const desktopMlDisclosureSchema = z.discriminatedUnion('version', [
     version: z.literal(3),
     workload: z.literal('face'),
     modelKey: z.string().regex(/^face:[a-f0-9]{64}$/),
-    face: z.strictObject({
-      enabled: z.boolean(),
-      modelName: z.string().min(1).max(128),
-      minScore: z.number().min(0.1).max(1),
-      maxDistance: z.number().min(0.1).max(2),
-      minFaces: z.number().int().positive(),
-    }),
+    face,
+  }),
+  // FL-1058: a gallery guest's selfie. No library asset or queued job stands behind it; the request that
+  // holds it waits for the result and discards the task, so nothing about the selfie outlives the search.
+  z.strictObject({
+    ...route,
+    version: z.literal(4),
+    workload: z.literal('guest-face'),
+    modelKey: z.string().regex(/^face:[a-f0-9]{64}$/),
+    face,
   }),
 ]);
 export type DesktopMlDisclosure = z.infer<typeof desktopMlDisclosureSchema>;
