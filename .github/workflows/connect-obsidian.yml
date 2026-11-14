@@ -12,13 +12,14 @@ permissions:
 
 jobs:
   plugin:
-    name: ${{ matrix.os }} / Node ${{ matrix.node }}
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.runner }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-latest, windows-latest]
+        # macOS is not an allowed runner here (check-runners.cjs); it is qualified locally.
+        runner: [ubuntu-24.04, windows-latest]
         node: [22]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
