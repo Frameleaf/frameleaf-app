@@ -3531,6 +3531,43 @@ describe(MediaHealthService.name, () => {
     });
 
     it.each([
+      ['on', true, null],
+      ['off', false, 'c'],
+    ])(
+      'with the damage check %s, an unchanged photo in the night’s share is only looked for (FL-1586)',
+      async (_, enabled, unchangedRun) => {
+        clearConfigCache();
+        vi.mocked(mocks.systemMetadata.get).mockResolvedValue({
+          libraryCare: { checksumScan: true },
+          integrityChecks: { checksumFiles: { enabled } },
+        } as never);
+        const unchanged = AssetFactory.create({ id: 'a-1', updatedAt: new Date('2026-09-01T00:00:00.000Z') });
+        const changed = AssetFactory.create({ id: 'a-2', updatedAt: new Date('2026-09-21T00:00:00.000Z') });
+        vi.mocked(mediaHealthRepository.getAssetPage).mockResolvedValue([unchanged, changed] as never);
+        const scanAsset = vi.spyOn(sut as any, 'scanAsset').mockResolvedValue('healthy');
+        const snapshot = {
+          mode: 'scan' as const,
+          userId: 'user-id',
+          missingRunId: 'm',
+          corruptRunId: 'c',
+          changedSince: '2026-09-20T02:00:00.000Z',
+          slice: { after: null, to: 'z' },
+        };
+
+        await sut.scanPage(snapshot, null, 25);
+
+        expect(scanAsset).toHaveBeenNthCalledWith(1, unchanged, 'm', unchangedRun, { checksumScan: true });
+        // a photo whose record changed is still read in full
+        expect(scanAsset).toHaveBeenNthCalledWith(2, changed, 'm', 'c', { checksumScan: true });
+
+        // a scan without a share (Scan again, or an account's first) reads everything
+        scanAsset.mockClear();
+        await sut.scanPage({ ...snapshot, slice: undefined }, null, 25);
+        expect(scanAsset).toHaveBeenNthCalledWith(1, unchanged, 'm', 'c', { checksumScan: true });
+      },
+    );
+
+    it.each([
       ['a full scan', {}],
       ['an incremental scan', { changedSince: '2026-10-31T02:00:00.000Z' }],
     ])('keeps %s an account already has instead of starting a second one', async (_, extra) => {

@@ -4116,10 +4116,22 @@ export class MediaHealthService {
       ...(snapshot.changedSince && snapshot.slice && { slice: snapshot.slice }),
       ...(snapshot.assetIds && { assetIds: snapshot.assetIds }),
     });
-    const { checksumScan } = await this.careSettings();
+    const config = await getConfig(
+      { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
+      { withCache: true },
+    );
+    const { checksumScan } = config.libraryCare;
+    // FL-1586: a photo in the night's share whose record has not changed is only looked for when File checks'
+    // damage check is on. That check reads and hashes every original at its own pace, and a file whose bytes
+    // still match its checksum opens as it did, so reading it here as well read each original twice a night.
+    const changedSince = snapshot.slice && snapshot.changedSince ? new Date(snapshot.changedSince) : undefined;
+    const damageChecked = config.integrityChecks.checksumFiles.enabled;
     const page: MediaHealthScanPage = { checked: 0, missing: 0, corrupt: 0, lastId: afterId };
     for (const asset of assets) {
-      const found = await this.scanAsset(asset, snapshot.missingRunId, snapshot.corruptRunId, { checksumScan });
+      const onlyLookFor = damageChecked && !!changedSince && new Date(asset.updatedAt) <= changedSince;
+      const found = await this.scanAsset(asset, snapshot.missingRunId, onlyLookFor ? null : snapshot.corruptRunId, {
+        checksumScan,
+      });
       page.checked++;
       page.lastId = asset.id;
       if (found === 'missing') {
