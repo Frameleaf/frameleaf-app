@@ -152,6 +152,7 @@ import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyBulkService } from 'src/services/photography-bulk.service.js';
 import { PhotographyCampaignService } from 'src/services/photography-campaign.service.js';
 import { PhotographyContractService } from 'src/services/photography-contract.service.js';
+import { PhotographyInvoiceService } from 'src/services/photography-invoice.service.js';
 import { PhotographyPaymentService } from 'src/services/photography-payment.service.js';
 import { PhotographyReminderService } from 'src/services/photography-reminder.service.js';
 import { PhotographySelfieService } from 'src/services/photography-selfie.service.js';
@@ -233,6 +234,7 @@ import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.j
 export const services = [
   PhotographyCampaignService,
   PhotographyContractService,
+  PhotographyInvoiceService,
   MediaImportService,
   PrivateLogsService,
   PrivateMlLogsService,

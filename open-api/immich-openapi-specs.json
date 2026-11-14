@@ -48272,6 +48272,535 @@
         ]
       }
     },
+    "/photography/invoices": {
+      "get": {
+        "operationId": "photographyInvoices",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyInvoiceListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "post": {
+        "description": "Totals and tax are computed on the server.",
+        "operationId": "photographyCreateInvoice",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyInvoiceSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyInvoiceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/invoices/view/{token}": {
+      "get": {
+        "operationId": "photographyPublicInvoice",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPublicInvoiceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/invoices/view/{token}/checkout": {
+      "post": {
+        "description": "Checkout for the amount due now.",
+        "operationId": "photographyInvoiceCheckout",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyInvoiceCheckoutDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/invoices/view/{token}/payments/{paymentId}": {
+      "get": {
+        "operationId": "photographyInvoicePaymentStatus",
+        "parameters": [
+          {
+            "name": "paymentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyInvoicePaymentStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/invoices/view/{token}/pdf": {
+      "get": {
+        "operationId": "photographyPublicInvoicePdf",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/invoices/{id}": {
+      "delete": {
+        "description": "Drafts only; void a sent invoice.",
+        "operationId": "photographyDeleteInvoice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "get": {
+        "operationId": "photographyInvoice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyInvoiceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "put": {
+        "description": "Allowed until a payment is recorded.",
+        "operationId": "photographyUpdateInvoice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyInvoiceSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyInvoiceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/invoices/{id}/paid": {
+      "post": {
+        "description": "Records a payment received outside Frameleaf.",
+        "operationId": "photographyMarkInvoicePaid",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyInvoicePaidDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyInvoiceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/invoices/{id}/pdf": {
+      "get": {
+        "operationId": "photographyInvoicePdf",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/invoices/{id}/send": {
+      "post": {
+        "operationId": "photographySendInvoice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyInvoiceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/invoices/{id}/void": {
+      "post": {
+        "operationId": "photographyVoidInvoice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyInvoiceDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
     "/photography/pay/{slug}": {
       "get": {
         "operationId": "photographyPublicPaymentLink",
@@ -140375,6 +140904,465 @@
         ],
         "type": "object"
       },
+      "PhotographyInvoiceCheckoutDto": {
+        "properties": {
+          "paymentId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "paymentId",
+          "url"
+        ],
+        "type": "object"
+      },
+      "PhotographyInvoiceCurrency": {
+        "enum": [
+          "CAD",
+          "USD",
+          "EUR",
+          "GBP"
+        ],
+        "type": "string"
+      },
+      "PhotographyInvoiceDto": {
+        "properties": {
+          "clientEmail": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "properties": {
+                "description": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "quantity": {
+                  "maximum": 10000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "unitPrice": {
+                  "maximum": 99999999,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "description",
+                "quantity",
+                "unitPrice"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "number": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "paid": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "reminders": {
+            "type": "boolean"
+          },
+          "schedule": {
+            "items": {
+              "properties": {
+                "amount": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "dueOn": {
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "dueOn",
+                "amount"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "sentAt": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PhotographyInvoiceStatus"
+          },
+          "subtotal": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "tax": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "taxBasisPoints": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clientEmail",
+          "clientName",
+          "createdAt",
+          "currency",
+          "id",
+          "label",
+          "lines",
+          "number",
+          "overdue",
+          "paid",
+          "reminders",
+          "schedule",
+          "sentAt",
+          "status",
+          "subtotal",
+          "tax",
+          "taxBasisPoints",
+          "total"
+        ],
+        "type": "object"
+      },
+      "PhotographyInvoiceListDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "clientEmail": {
+                  "type": "string"
+                },
+                "clientName": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "lines": {
+                  "items": {
+                    "properties": {
+                      "description": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "quantity": {
+                        "maximum": 10000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "unitPrice": {
+                        "maximum": 99999999,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "description",
+                      "quantity",
+                      "unitPrice"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "number": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "overdue": {
+                  "type": "boolean"
+                },
+                "paid": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "reminders": {
+                  "type": "boolean"
+                },
+                "schedule": {
+                  "items": {
+                    "properties": {
+                      "amount": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      },
+                      "dueOn": {
+                        "format": "date",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "dueOn",
+                      "amount"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "sentAt": {
+                  "format": "date-time",
+                  "nullable": true,
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/PhotographyInvoiceStatus"
+                },
+                "subtotal": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "tax": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "taxBasisPoints": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "total": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "number",
+                "label",
+                "clientName",
+                "clientEmail",
+                "lines",
+                "taxBasisPoints",
+                "currency",
+                "subtotal",
+                "tax",
+                "total",
+                "schedule",
+                "reminders",
+                "status",
+                "paid",
+                "overdue",
+                "sentAt",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "mailReady": {
+            "type": "boolean"
+          },
+          "paymentsReady": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "mailReady",
+          "paymentsReady"
+        ],
+        "type": "object"
+      },
+      "PhotographyInvoicePaidDto": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "maximum": 99999999,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "amount"
+        ],
+        "type": "object"
+      },
+      "PhotographyInvoicePaymentStatus": {
+        "enum": [
+          "pending",
+          "paid",
+          "failed",
+          "expired",
+          "refunded"
+        ],
+        "type": "string"
+      },
+      "PhotographyInvoicePaymentStatusDto": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/PhotographyInvoicePaymentStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "PhotographyInvoiceSaveDto": {
+        "additionalProperties": false,
+        "properties": {
+          "balanceDue": {
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          },
+          "clientEmail": {
+            "format": "email",
+            "maxLength": 254,
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
+          },
+          "clientName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/PhotographyInvoiceCurrency"
+          },
+          "deposit": {
+            "maximum": 99999999,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "depositDue": {
+            "format": "date",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "properties": {
+                "description": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "quantity": {
+                  "maximum": 10000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "unitPrice": {
+                  "maximum": 99999999,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "description",
+                "quantity",
+                "unitPrice"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "reminders": {
+            "type": "boolean"
+          },
+          "taxBasisPoints": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "balanceDue",
+          "clientEmail",
+          "clientName",
+          "currency",
+          "deposit",
+          "depositDue",
+          "lines",
+          "reminders",
+          "taxBasisPoints"
+        ],
+        "type": "object"
+      },
+      "PhotographyInvoiceStatus": {
+        "enum": [
+          "draft",
+          "sent",
+          "part",
+          "paid",
+          "void"
+        ],
+        "type": "string"
+      },
       "PhotographyLogoCandidatesDto": {
         "properties": {
           "logos": {
@@ -142167,6 +143155,156 @@
           "signedAt",
           "signerName",
           "studio"
+        ],
+        "type": "object"
+      },
+      "PhotographyPublicInvoiceDto": {
+        "properties": {
+          "clientName": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "properties": {
+                "description": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "quantity": {
+                  "maximum": 10000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "unitPrice": {
+                  "maximum": 99999999,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "description",
+                "quantity",
+                "unitPrice"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "next": {
+            "nullable": true,
+            "properties": {
+              "amount": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "dueOn": {
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "amount",
+              "dueOn"
+            ],
+            "type": "object"
+          },
+          "paid": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "payOnline": {
+            "type": "boolean"
+          },
+          "schedule": {
+            "items": {
+              "properties": {
+                "amount": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "dueOn": {
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "dueOn",
+                "amount"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PhotographyInvoiceStatus"
+          },
+          "studio": {
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "color"
+            ],
+            "type": "object"
+          },
+          "subtotal": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "tax": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "taxBasisPoints": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clientName",
+          "currency",
+          "label",
+          "lines",
+          "next",
+          "paid",
+          "payOnline",
+          "schedule",
+          "status",
+          "studio",
+          "subtotal",
+          "tax",
+          "taxBasisPoints",
+          "total"
         ],
         "type": "object"
       },

@@ -312,6 +312,19 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'GET photography/pay/:slug': { bucket: 'photography-pay-page', limit: 120, windowSeconds: 600 },
   'GET photography/pay/:slug/payments/:paymentId': { bucket: 'photography-pay-page', limit: 120, windowSeconds: 600 },
   'POST photography/pay/:slug/checkout': { bucket: 'photography-pay-checkout', limit: 20, windowSeconds: 600 },
+  // FL-1081: invoice links are public bearer tokens.
+  'GET photography/invoices/view/:token': { bucket: 'photography-invoice-page', limit: 120, windowSeconds: 600 },
+  'GET photography/invoices/view/:token/pdf': { bucket: 'photography-invoice-page', limit: 120, windowSeconds: 600 },
+  'GET photography/invoices/view/:token/payments/:paymentId': {
+    bucket: 'photography-invoice-page',
+    limit: 120,
+    windowSeconds: 600,
+  },
+  'POST photography/invoices/view/:token/checkout': {
+    bucket: 'photography-invoice-checkout',
+    limit: 20,
+    windowSeconds: 600,
+  },
 };
 
 const isAdminPermission = (permission: AuthenticatedOptions['permission']) =>

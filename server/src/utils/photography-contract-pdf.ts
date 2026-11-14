@@ -35,6 +35,32 @@ const eventKey = {
   voided: 'contract_pdf_event_voided',
 } as const;
 
+/** A PDF/A-3b document with the bundled fonts registered as `serif`, `sans` and `script`, and its finished bytes. */
+export function createClientsPdf(locale: string, info: PDFKit.DocumentInfo) {
+  const doc = new PDFDocument({
+    pdfVersion: '1.7',
+    subset: 'PDF/A-3b',
+    font: serif,
+    size: 'LETTER',
+    margin: 64,
+    lang: locale,
+    displayTitle: true,
+    info,
+  });
+  const chunks: Buffer[] = [];
+  doc.on('data', (chunk: Buffer) => {
+    chunks.push(chunk);
+  });
+  const done = new Promise<Buffer>((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+  });
+  doc.registerFont('serif', serif);
+  doc.registerFont('sans', sans);
+  doc.registerFont('script', script);
+  return { doc, done };
+}
+
 /**
  * FL-1075 record: the contract text, the signature and a Signing certificate page, saved as PDF/A-3b with
  * `audit.json` attached. The caller stores the SHA-256 of the result; it is never written into the PDF itself.
@@ -51,27 +77,11 @@ export function renderContractPdf(input: {
   const t = (key: Parameters<typeof emailText>[1], values?: Record<string, string>) => emailText(locale, key, values);
   const when = (iso: string | Date) =>
     new Intl.DateTimeFormat(locale, { dateStyle: 'long', timeStyle: 'long', timeZone: 'UTC' }).format(new Date(iso));
-  const doc = new PDFDocument({
-    pdfVersion: '1.7',
-    subset: 'PDF/A-3b',
-    font: serif,
-    size: 'LETTER',
-    margin: 64,
-    lang: locale,
-    displayTitle: true,
-    info: { Title: audit.name, Author: audit.studio.name, Subject: CONTRACT_RECORD_FORMAT },
+  const { doc, done } = createClientsPdf(locale, {
+    Title: audit.name,
+    Author: audit.studio.name,
+    Subject: CONTRACT_RECORD_FORMAT,
   });
-  const chunks: Buffer[] = [];
-  doc.on('data', (chunk: Buffer) => {
-    chunks.push(chunk);
-  });
-  const done = new Promise<Buffer>((resolve, reject) => {
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-  });
-  doc.registerFont('serif', serif);
-  doc.registerFont('sans', sans);
-  doc.registerFont('script', script);
 
   doc.font('sans').fontSize(10).fillColor('#555555').text(audit.studio.name);
   doc.moveDown(0.5).font('sans').fontSize(20).fillColor('#111111').text(audit.name);
