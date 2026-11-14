@@ -1,21 +1,16 @@
-From 03e3de2f46ffa91c241692904afb4675bd96f76b Mon Sep 17 00:00:00 2001
-From: AJ Taylor <aj@ajtaylor.net>
-Date: Sat, 14 Nov 2026 15:09:25 -0600
 Subject: [PATCH] magick7load: scale quantum to the output format
 
 A cast from Quantum keeps only the low byte in an 8-bit output, so an
 image whose samples are not exact multiples of 257 (an RGB565 BMP, whose
 5- and 6-bit channels ImageMagick widens by bit replication) loads with
-the wrong colours.
----
- libvips/foreign/magick7load.c | 18 ++++++++++++------
- 1 file changed, 12 insertions(+), 6 deletions(-)
+the wrong colours. FL-1374.
 
+---
 diff --git a/libvips/foreign/magick7load.c b/libvips/foreign/magick7load.c
-index e06ae4e..2b08ce5 100644
+index e06ae4e..fe96957 100644
 --- a/libvips/foreign/magick7load.c
 +++ b/libvips/foreign/magick7load.c
-@@ -642,7 +642,13 @@ vips_foreign_load_magick7_parse(VipsForeignLoadMagick7 *magick7,
+@@ -642,7 +642,24 @@ vips_foreign_load_magick7_parse(VipsForeignLoadMagick7 *magick7,
   * We do skip index channels. Palette images add extra index channels
   * containing the index value from the file before colourmap lookup.
   */
@@ -26,11 +21,22 @@ index e06ae4e..2b08ce5 100644
 + * the coder stored exact multiples of 257 (an RGB565 BMP does not).
 + */
 +#define NOSCALE(V) (V)
++
++/* ScaleQuantumToShort() is private to MagickCore, so do it here.
++ */
++static inline unsigned short
++vips_magick7_quantum_to_short(Quantum v)
++{
++	double s = (double) v * 65535.0 / QuantumRange;
++
++	return s <= 0.0 ? 0 : s >= 65535.0 ? 65535 : (unsigned short) (s + 0.5);
++}
++
 +#define UNPACK(TYPE, SCALE) \
  	{ \
  		TYPE *restrict tq = (TYPE *) q; \
  		int x; \
-@@ -654,7 +660,7 @@ vips_foreign_load_magick7_parse(VipsForeignLoadMagick7 *magick7,
+@@ -654,7 +671,7 @@ vips_foreign_load_magick7_parse(VipsForeignLoadMagick7 *magick7,
  					GetPixelChannelChannel(image, b); \
  \
  				if (channel != IndexPixelChannel) \
@@ -39,7 +45,7 @@ index e06ae4e..2b08ce5 100644
  			} \
  \
  			p += GetPixelChannels(image); \
-@@ -699,19 +705,19 @@ vips_foreign_load_magick7_fill_region(VipsRegion *out_region,
+@@ -699,19 +716,19 @@ vips_foreign_load_magick7_fill_region(VipsRegion *out_region,
  
  		switch (im->BandFmt) {
  		case VIPS_FORMAT_UCHAR:
@@ -49,7 +55,7 @@ index e06ae4e..2b08ce5 100644
  
  		case VIPS_FORMAT_USHORT:
 -			UNPACK(unsigned short);
-+			UNPACK(unsigned short, ScaleQuantumToShort);
++			UNPACK(unsigned short, vips_magick7_quantum_to_short);
  			break;
  
  		case VIPS_FORMAT_FLOAT:
@@ -63,6 +69,3 @@ index e06ae4e..2b08ce5 100644
  			break;
  
  		default:
--- 
-2.55.0
-
