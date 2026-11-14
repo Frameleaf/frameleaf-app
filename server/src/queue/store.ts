@@ -861,11 +861,13 @@ export class SqlQueueStore {
     const { rows } = await sql<{ id: string; token: string; cancelRequestedAt: Date | null }>`
       update job set "cancelRequestedAt" = coalesce("cancelRequestedAt", now()),
         "cancelReason" = case when "cancelRequestedAt" is null then 'deadline' else "cancelReason" end
-      where state = 'active' and "workerId" = ${workerId}::uuid and (
+      where id in (select id from job where state = 'active' and "workerId" = ${workerId}::uuid and (
         "cancelRequestedAt" is not null or "leaseExpiresAt" <= now() or
         ("progressUnits" = 0 and "startedAt" + "deadlineMs" * interval '1 millisecond' <= now()) or
         ("progressUnits" > 0 and "progressAt" + ${QUEUE_TIMING.noProgressDeadline} * interval '1 millisecond' <= now())
-      ) returning id, token, "cancelRequestedAt"
+      -- FL-1590: a fenced batch holds its job row; skip it until a later poll rather than stall dispatch on the lock
+      -- (the batch's own closing claim check sees any cancel).
+      ) for update skip locked) returning id, token, "cancelRequestedAt"
     `.execute(this.db);
     return rows;
   }

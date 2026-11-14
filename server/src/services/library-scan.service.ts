@@ -957,7 +957,13 @@ export class LibraryScanService {
         async (tx) => {
           let sourceIds: string[] = [];
           const outcome = await this.libraryRepository.withScanClaim(
-            { operationId: operation.id, claimToken, libraryId: library.id, fingerprint: result.fingerprint! },
+            {
+              operationId: operation.id,
+              claimToken,
+              libraryId: library.id,
+              fingerprint: result.fingerprint!,
+              leaseMs: LIBRARY_SCAN_LEASE_MS,
+            },
             async (assets, repository) => {
               // Locks may have waited after the preflight check. Abort before and after mutation so
               // withScanClaim rolls back a cancelled in-flight transaction.

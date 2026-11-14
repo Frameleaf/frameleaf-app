@@ -1279,6 +1279,24 @@ describe(LibraryService.name, () => {
       },
     );
 
+    it('renews the scan claim for a batch that asks for a lease (FL-1590)', async () => {
+      const { ctx, claim } = await claimedScan();
+      const expiry = () =>
+        defaultDatabase
+          .selectFrom('media_operation')
+          .select('claimExpiresAt')
+          .where('id', '=', claim.operationId)
+          .executeTakeFirstOrThrow()
+          .then(({ claimExpiresAt }) => new Date(claimExpiresAt as unknown as Date).getTime());
+      const before = await expiry();
+      await ctx.get(LibraryRepository).withScanClaim(claim, () => Promise.resolve(true));
+      expect(await expiry()).toBe(before); // no lease asked for: the claim is left as it was
+      await expect(
+        ctx.get(LibraryRepository).withScanClaim({ ...claim, leaseMs: 300_000 }, () => Promise.resolve(true)),
+      ).resolves.toEqual({ value: true });
+      expect(await expiry()).toBeGreaterThan(before + 200_000);
+    });
+
     it('rolls back asset creation with its claim transaction', async () => {
       const { ctx, library, claim } = await claimedScan();
       await expect(

@@ -744,6 +744,31 @@ describe('PostgreSQL queue', () => {
     },
   );
 
+  it('skips a job a fenced batch holds instead of waiting on its lock (FL-1590)', async () => {
+    await store.setConcurrency(queue, 2);
+    await store.enqueue([intent(), intent()]);
+    const [held, free] = await store.claim(queue, workerA);
+    await sql`update job set "startedAt" = now() - interval '1 hour' where id in (${held.id}::uuid, ${free.id}::uuid)`.execute(
+      db,
+    );
+    const locked = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const fence = db.transaction().execute(async (tx) => {
+      await sql`select id from job where id = ${held.id}::uuid for update`.execute(tx);
+      locked.resolve();
+      await release.promise;
+    });
+    await locked.promise;
+    try {
+      expect((await store.deadlines(workerA)).map(({ id }) => id)).toEqual([free.id]);
+    } finally {
+      release.resolve();
+      await fence;
+    }
+    // Once the batch has committed, a later poll reaches it.
+    expect((await store.deadlines(workerA)).map(({ id }) => id).toSorted()).toEqual([held.id, free.id].toSorted());
+  });
+
   it('fences deadline output immediately, retries once after stopped proof, and lets an explicit request win', async () => {
     await store.enqueue([intent()]);
     const [first] = await store.claim(queue, workerA);
