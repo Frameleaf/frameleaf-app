@@ -14297,6 +14297,30 @@ export type PhotographyZipResponseDto = {
     status: Status6;
     url: string;
 };
+export type PhotographyPublicPaymentLinkDto = {
+    amount: number;
+    brand: {
+        color: string;
+        email: string;
+        logoInitials: string;
+        name: string;
+    };
+    currency: string;
+    description: string;
+    title: string;
+};
+export type PhotographyPayCheckoutDto = {
+    email: string;
+};
+export type PhotographyPayCheckoutResponseDto = {
+    paymentId: string;
+    url: string;
+};
+export type PhotographyPayStatusDto = {
+    amount: number;
+    currency: string;
+    status: PhotographyPaymentStatus;
+};
 export type ClientsPaymentAccountDto = {
     chargesEnabled: boolean;
     country: string | null;
@@ -14310,6 +14334,59 @@ export type ClientsPaymentConnectDto = {
 };
 export type ClientsPaymentConnectResponseDto = {
     url: string;
+};
+export type PhotographyPaymentLinkListDto = {
+    links: {
+        active: boolean;
+        amount: number;
+        collected: number;
+        createdAt: string;
+        currency: string;
+        description: string;
+        id: string;
+        payments: number;
+        reusable: boolean;
+        slug: string;
+        title: string;
+    }[];
+    ready: boolean;
+};
+export type PhotographyPaymentLinkCreateDto = {
+    amount: number;
+    currency: PhotographyPaymentLinkCurrency;
+    description?: string;
+    reusable: boolean;
+    title: string;
+};
+export type PhotographyPaymentLinkDto = {
+    active: boolean;
+    amount: number;
+    collected: number;
+    createdAt: string;
+    currency: string;
+    description: string;
+    id: string;
+    payments: number;
+    reusable: boolean;
+    slug: string;
+    title: string;
+};
+export type PhotographyPaymentLinkUpdateDto = {
+    active?: boolean;
+    description?: string;
+    title?: string;
+};
+export type PhotographyPaymentListDto = {
+    payments: {
+        amount: number;
+        createdAt: string;
+        currency: string;
+        id: string;
+        linkId: string | null;
+        payerEmail: string;
+        status: PhotographyPaymentListStatus;
+        title: string | null;
+    }[];
 };
 export type PhotographyCallbackDto = {
     received: boolean;
@@ -35992,6 +36069,40 @@ export function photographyArchive({ xPhotographySession, id, zipId }: {
         })
     }));
 }
+export function photographyPublicPaymentLink({ slug }: {
+    slug: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPublicPaymentLinkDto;
+    }>(`/photography/pay/${encodeURIComponent(slug)}`, {
+        ...opts
+    }));
+}
+export function photographyPayCheckout({ slug, photographyPayCheckoutDto }: {
+    slug: string;
+    photographyPayCheckoutDto: PhotographyPayCheckoutDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPayCheckoutResponseDto;
+    }>(`/photography/pay/${encodeURIComponent(slug)}/checkout`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyPayCheckoutDto
+    })));
+}
+export function photographyPayStatus({ paymentId, slug }: {
+    paymentId: string;
+    slug: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPayStatusDto;
+    }>(`/photography/pay/${encodeURIComponent(slug)}/payments/${encodeURIComponent(paymentId)}`, {
+        ...opts
+    }));
+}
 export function clientsPaymentAccountDisconnect(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
@@ -36020,6 +36131,55 @@ export function clientsPaymentAccountConnect({ clientsPaymentConnectDto }: {
         method: "POST",
         body: clientsPaymentConnectDto
     })));
+}
+export function photographyPaymentLinks(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPaymentLinkListDto;
+    }>("/photography/payment-links", {
+        ...opts
+    }));
+}
+export function photographyCreatePaymentLink({ photographyPaymentLinkCreateDto }: {
+    photographyPaymentLinkCreateDto: PhotographyPaymentLinkCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyPaymentLinkDto;
+    }>("/photography/payment-links", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyPaymentLinkCreateDto
+    })));
+}
+export function photographyDeletePaymentLink({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/payment-links/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+export function photographyUpdatePaymentLink({ id, photographyPaymentLinkUpdateDto }: {
+    id: string;
+    photographyPaymentLinkUpdateDto: PhotographyPaymentLinkUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPaymentLinkDto;
+    }>(`/photography/payment-links/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: photographyPaymentLinkUpdateDto
+    })));
+}
+export function photographyPayments(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPaymentListDto;
+    }>("/photography/payments", {
+        ...opts
+    }));
 }
 export function photographyCallback({ stripeSignature, body }: {
     stripeSignature: string;
@@ -46037,12 +46197,31 @@ export enum Status5 {
 export enum Status6 {
     Ready = "ready"
 }
+export enum PhotographyPaymentStatus {
+    Pending = "pending",
+    Paid = "paid",
+    Failed = "failed",
+    Expired = "expired",
+    Refunded = "refunded"
+}
 export enum ClientsPaymentAccountStatus {
     None = "none",
     Pending = "pending",
     Active = "active",
     Disconnected = "disconnected",
     Unavailable = "unavailable"
+}
+export enum PhotographyPaymentLinkCurrency {
+    Cad = "CAD",
+    Usd = "USD",
+    Eur = "EUR",
+    Gbp = "GBP"
+}
+export enum PhotographyPaymentListStatus {
+    Paid = "paid",
+    Failed = "failed",
+    Expired = "expired",
+    Refunded = "refunded"
 }
 export enum Alignment {
     Left = "left",

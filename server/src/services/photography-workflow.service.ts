@@ -2589,12 +2589,11 @@ export class PhotographyWorkflowService {
           : event.type === 'payment.expired'
             ? 'cancelled'
             : null;
-    // A refund that arrives before its payment was recorded is retried (thrown, so not acknowledged).
-    if (event.type === 'payment.refunded' && !order.paymentIntentId && order.status === 'accepted')
-      throw new ConflictException('Refund arrived before its payment; retrying');
+    // Stripe refunds only money it took, and Cloud read the reference from this order's own PaymentIntent, so a
+    // refund that arrives before its payment settles the order as refunded; the late success then changes nothing.
     const matches =
       event.type === 'payment.refunded'
-        ? !!event.paymentIntent && order.paymentIntentId === event.paymentIntent
+        ? !!event.paymentIntent && (!order.paymentIntentId || order.paymentIntentId === event.paymentIntent)
         : event.sessionId === order.checkoutId &&
           (event.type !== 'payment.succeeded' ||
             (event.amount === order.total && event.currency?.toUpperCase() === order.currency));

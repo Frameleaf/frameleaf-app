@@ -48272,6 +48272,114 @@
         ]
       }
     },
+    "/photography/pay/{slug}": {
+      "get": {
+        "operationId": "photographyPublicPaymentLink",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPublicPaymentLinkDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/pay/{slug}/checkout": {
+      "post": {
+        "operationId": "photographyPayCheckout",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyPayCheckoutDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPayCheckoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/pay/{slug}/payments/{paymentId}": {
+      "get": {
+        "operationId": "photographyPayStatus",
+        "parameters": [
+          {
+            "name": "paymentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPayStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
     "/photography/payment-account": {
       "delete": {
         "operationId": "clientsPaymentAccountDisconnect",
@@ -48354,6 +48462,193 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ClientsPaymentConnectResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/payment-links": {
+      "get": {
+        "operationId": "photographyPaymentLinks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPaymentLinkListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "post": {
+        "operationId": "photographyCreatePaymentLink",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyPaymentLinkCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPaymentLinkDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/payment-links/{id}": {
+      "delete": {
+        "operationId": "photographyDeletePaymentLink",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "patch": {
+        "operationId": "photographyUpdatePaymentLink",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyPaymentLinkUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPaymentLinkDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/payments": {
+      "get": {
+        "operationId": "photographyPayments",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyPaymentListDto"
                 }
               }
             },
@@ -140381,6 +140676,59 @@
         ],
         "type": "object"
       },
+      "PhotographyPayCheckoutDto": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "maxLength": 254,
+            "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "PhotographyPayCheckoutResponseDto": {
+        "properties": {
+          "paymentId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "paymentId",
+          "url"
+        ],
+        "type": "object"
+      },
+      "PhotographyPayStatusDto": {
+        "properties": {
+          "amount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PhotographyPaymentStatus"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "status"
+        ],
+        "type": "object"
+      },
       "PhotographyPaymentDto": {
         "additionalProperties": false,
         "properties": {
@@ -140410,6 +140758,276 @@
           "reference"
         ],
         "type": "object"
+      },
+      "PhotographyPaymentLinkCreateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "maximum": 99999999,
+            "minimum": 50,
+            "type": "integer"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/PhotographyPaymentLinkCurrency"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 300,
+            "type": "string"
+          },
+          "reusable": {
+            "type": "boolean"
+          },
+          "title": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "reusable",
+          "title"
+        ],
+        "type": "object"
+      },
+      "PhotographyPaymentLinkCurrency": {
+        "enum": [
+          "CAD",
+          "USD",
+          "EUR",
+          "GBP"
+        ],
+        "type": "string"
+      },
+      "PhotographyPaymentLinkDto": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "amount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "collected": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "payments": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "reusable": {
+            "type": "boolean"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "amount",
+          "collected",
+          "createdAt",
+          "currency",
+          "description",
+          "id",
+          "payments",
+          "reusable",
+          "slug",
+          "title"
+        ],
+        "type": "object"
+      },
+      "PhotographyPaymentLinkListDto": {
+        "properties": {
+          "links": {
+            "items": {
+              "properties": {
+                "active": {
+                  "type": "boolean"
+                },
+                "amount": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "collected": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "payments": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "reusable": {
+                  "type": "boolean"
+                },
+                "slug": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "title",
+                "description",
+                "amount",
+                "currency",
+                "reusable",
+                "active",
+                "payments",
+                "collected",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "links",
+          "ready"
+        ],
+        "type": "object"
+      },
+      "PhotographyPaymentLinkUpdateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "description": {
+            "maxLength": 300,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PhotographyPaymentListDto": {
+        "properties": {
+          "payments": {
+            "items": {
+              "properties": {
+                "amount": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "linkId": {
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "payerEmail": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/PhotographyPaymentListStatus"
+                },
+                "title": {
+                  "nullable": true,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "linkId",
+                "title",
+                "amount",
+                "currency",
+                "payerEmail",
+                "status",
+                "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "payments"
+        ],
+        "type": "object"
+      },
+      "PhotographyPaymentListStatus": {
+        "enum": [
+          "paid",
+          "failed",
+          "expired",
+          "refunded"
+        ],
+        "type": "string"
+      },
+      "PhotographyPaymentStatus": {
+        "enum": [
+          "pending",
+          "paid",
+          "failed",
+          "expired",
+          "refunded"
+        ],
+        "type": "string"
       },
       "PhotographyPhotosDto": {
         "properties": {
@@ -141543,6 +142161,55 @@
           "signedAt",
           "signerName",
           "studio"
+        ],
+        "type": "object"
+      },
+      "PhotographyPublicPaymentLinkDto": {
+        "properties": {
+          "amount": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "brand": {
+            "properties": {
+              "color": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "logoInitials": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "email",
+              "color",
+              "logoInitials"
+            ],
+            "type": "object"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "brand",
+          "currency",
+          "description",
+          "title"
         ],
         "type": "object"
       },

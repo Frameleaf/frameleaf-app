@@ -135,6 +135,28 @@ describe(ClientsPaymentsService.name, () => {
     expect(s.requests.find((r) => r.url.endsWith('/events/ack'))!.body).toEqual({ ids: ['evt_after_none'] });
   });
 
+  it('acknowledges a full batch of out-of-order refunds once stored, so later events come through', async () => {
+    const refunds = Array.from({ length: 50 }, (_, n) =>
+      event(`evt_refund_${n}`, { type: 'payment.refunded', reference: `link:${n}`, sessionId: null }),
+    );
+    const answers: Record<string, unknown> = {
+      'GET /v1/instance/clients/payments/account': account,
+      'GET /v1/instance/clients/payments/events': { events: refunds },
+      'POST /v1/instance/clients/payments/events/ack': {},
+    };
+    const s = setup(answers);
+    await s.service.account(auth);
+    const handler = vi.fn(() => Promise.resolve());
+    s.service.onPayment('link', handler);
+    await s.service.collect();
+    expect(s.requests.find((r) => r.url.endsWith('/events/ack'))!.body).toEqual({ ids: refunds.map((r) => r.id) });
+    // Cloud's next answer carries the success events that came after them.
+    answers['GET /v1/instance/clients/payments/events'] = { events: [event('evt_late_paid', { reference: 'link:7' })] };
+    await s.service.collect();
+    expect(handler).toHaveBeenCalledTimes(51);
+    expect(handler).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'evt_late_paid' }));
+  });
+
   it('does not contact Frameleaf Cloud while no studio has an account', async () => {
     const s = setup({});
     await s.service.collect();
