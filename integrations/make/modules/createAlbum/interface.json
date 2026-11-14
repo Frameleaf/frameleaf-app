@@ -1,0 +1,27 @@
+[
+  {
+    "name": "id",
+    "type": "text",
+    "label": "ID"
+  },
+  {
+    "name": "name",
+    "type": "text",
+    "label": "Name"
+  },
+  {
+    "name": "workspace",
+    "type": "text",
+    "label": "Workspace"
+  },
+  {
+    "name": "canRead",
+    "type": "boolean",
+    "label": "Can read"
+  },
+  {
+    "name": "canWrite",
+    "type": "boolean",
+    "label": "Can add"
+  }
+]

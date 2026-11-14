@@ -1,0 +1,17 @@
+[
+  {
+    "name": "assetId",
+    "type": "text",
+    "label": "Photo or video ID"
+  },
+  {
+    "name": "status",
+    "type": "text",
+    "label": "Status"
+  },
+  {
+    "name": "sha256",
+    "type": "text",
+    "label": "SHA-256"
+  }
+]

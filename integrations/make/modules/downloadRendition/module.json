@@ -1,0 +1,9 @@
+{
+  "label": "Download a photo",
+  "description": "Downloads a thumbnail, preview or display JPEG of a photo or video this connection can read. Originals are not offered.",
+  "moduleType": "action",
+  "actionCrud": "read",
+  "scope": [
+    "library:read"
+  ]
+}

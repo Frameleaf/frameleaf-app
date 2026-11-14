@@ -1,0 +1,4 @@
+{ "description": "Creates an album keyed by its Source ID.",
+  "parameters": { "sourceId": "row-42", "name": "From Make" },
+  "requests": [["POST", "/api/connect/albums"]],
+  "output": { "name": "From Make", "workspace": "photo", "canWrite": true } }

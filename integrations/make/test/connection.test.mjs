@@ -41,7 +41,7 @@ test('OAuth binds PKCE, exact callback and Connect resource without a client sec
   assert.equal(token.body.grant_type, 'authorization_code');
   assert.equal(refresh.body.grant_type, 'refresh_token');
   assert.equal(token.condition, undefined, 'authorization codes must never be retried as token.condition');
-  assert.equal(authorize.qs.scope, 'library:read');
+  assert.equal(authorize.qs.scope, "{{join(oauth.scope, ' ')}}");
   for (const step of [authorize.qs, token.body, refresh.body]) {
     assert.equal(step.client_id, '{{parameters.frameleafClientId}}');
     assert.equal(step.client_secret, undefined);

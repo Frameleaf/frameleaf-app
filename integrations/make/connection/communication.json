@@ -9,7 +9,7 @@
       "client_id": "{{parameters.frameleafClientId}}",
       "redirect_uri": "{{oauth.makeRedirectUri}}",
       "resource": "{{parameters.serverUrl}}/api/connect",
-      "scope": "library:read",
+      "scope": "{{join(oauth.scope, ' ')}}",
       "code_challenge": "{{base64url(sha256(temp.code_verifier, 'base64'))}}",
       "code_challenge_method": "S256"
     },

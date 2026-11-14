@@ -1,0 +1,4 @@
+{ "description": "Search pages through 230 photos at 100 per page until the limit.",
+  "parameters": { "q": "beach", "type": "IMAGE", "limit": 150 },
+  "requests": [["GET", "/api/connect/assets"], ["GET", "/api/connect/assets"]],
+  "count": 150, "output": { "id": "00000000-0000-4000-8000-000000000001", "description": "Photo 1" } }

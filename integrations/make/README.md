@@ -1,58 +1,62 @@
 # Frameleaf Connect for Make
 
-Connection source for a private Make custom app. Platform qualification is required before this connection can be used or any media modules can be added. This directory does not contain a complete Make integration.
+Source for a private Make custom app that uses Frameleaf Connect protocol 1 ([docs/developer/connect-api.md](../../docs/developer/connect-api.md)). It is independently written, MIT-licensed, imports no Library code or SDK, and needs no custom IML JavaScript functions. Nothing here is published; publication, the Make developer account and Make's app review are separate steps (see [APP-REVIEW.md](APP-REVIEW.md)).
 
-The independently written connection uses the Frameleaf Connect wire protocol and is licensed under MIT. It imports no Library code or SDK. No runtime dependencies or custom IML JavaScript functions are needed.
+## Components
 
-## Connection components
+Create the app in Make's app editor, then paste each file into the matching tab.
 
-Create an **OAuth 2.0** connection in the private app. Remove generated API-key sample authentication and leave the app Base as `{}` during connection qualification. Copy each file into the corresponding editor tab:
+| Component | Tab | Source |
+| --- | --- | --- |
+| Base | Base | `base/base.json` |
+| Connection (OAuth 2.0) | Communication / Parameters / Default scope / Scope list | `connection/communication.json`, `connection/parameters.json`, `connection/scope.json`, `connection/scopes.json` |
+| Common data | Common | `{}` (no shared secret) |
+| RPC `albums` | Communication / Parameters | `rpcs/albums/` |
+| Each module | Communication / Mappable or static parameters / Interface / Scope | `modules/<id>/communication.json`, `parameters.json`, `interface.json`, and `scope` from `module.json` |
+| Groups | Groups | `groups.json` |
 
-| Tab | Source |
-| --- | --- |
-| Communication | `connection/communication.json` |
-| Parameters | `connection/parameters.json` |
-| Default scope | `connection/scope.json` |
-| Common data | Empty object `{}`; no shared secret |
+`module.json` holds each module's label, description, type and its single minimum scope.
 
-The callback is exactly `https://www.make.com/oauth/cb/app`, paired with `oauth.makeRedirectUri`. A Frameleaf administrator registers this callback on each server and supplies its public client ID. The connection does not register clients automatically. The server URL is an immutable canonical HTTPS DNS origin, without a path, query, fragment, user information or trailing slash. Make must be able to reach it; a private LAN address alone is insufficient.
+| Module | Type | Scope | Connect route |
+| --- | --- | --- | --- |
+| Watch events | trigger | `events:read` | `GET events/latest` |
+| Search photos and videos | search | `library:read` | `GET assets` |
+| Get a photo or video | action | `library:read` | `GET assets/:id` |
+| Download a photo | action | `library:read` | `GET assets/:id/rendition` (thumbnail, preview, display) |
+| Upload a photo or video | action | `photos:upload` | `POST uploads`, `PATCH uploads/:id`, `POST uploads/:id/commit` |
+| Add tags | action | `tags:write` | `POST assets/:id/tags` |
+| List albums | search | `library:read` | `GET albums` |
+| Create an album | action | `albums:write` | `POST albums` |
+| Add photos to an album | action | `albums:write` | `POST albums/:id/assets` |
+| Make a Connect API call | universal | `library:read` | any path under `/api/connect` |
 
-The fixed `library:read` scope is for connection qualification only. Users select owned readable albums in Frameleaf consent. No write, download, event, legacy API or API-key access is requested. Each later operation must receive a separately reviewed minimum scope profile; changing this foundation into a broad default grant is not acceptable.
+## Connection
 
-The JSON uses only documented Make component fields. The `response.data` mapping hands both replacement tokens to Make's native connection store. It does **not** establish that rotation is atomic across scenarios. Ambiguous token or refresh failures must stop for reconnection or revocation; this source adds no retry of a possibly consumed token. The `invalidate` block requests revocation, but its lifecycle on deletion and failure must be verified. Revocation in Frameleaf Connected Apps remains the reliable user control.
+The callback is exactly `https://www.make.com/oauth/cb/app` (`oauth.makeRedirectUri`). A Frameleaf administrator registers it on each server and gives the person its public client ID. The server URL is a canonical HTTPS origin that Make can reach; a private LAN address alone is not enough. A direct customer HTTPS connection needs no Frameleaf Cloud plan; relay follows the existing Cloud entitlements.
 
-Make's documented PKCE example uses `uuid`. The candidate here concatenates three evaluations to fit the RFC 7636 43–128 character range with adequate entropy **if** they are independent cryptographically random UUIDv4 values. Neither that independence nor the cryptographic randomness is established by these files. Qualification must prove native expression evaluation and obtain authoritative entropy evidence before accepting this implementation.
+Authorization uses PKCE S256 and the Connect `resource`. The connection starts with `library:read`; Make asks the person to extend the grant when they add a module that needs another scope, and the Library's consent page decides which albums each grant covers. Originals, Boards uploads, people, sharing and deletion are not offered.
 
-## Translated connection text
+Refresh tokens rotate on every use. `token` and `refresh` store both new tokens together; a spent refresh token cannot be retried. Deleting the Make connection calls `invalidate`, which revokes the grant. Revoking in Frameleaf **Connected apps** remains the reliable control.
 
-`locales.json` supplies English, French, Spanish, German, Italian, Portuguese, Dutch, Polish, Swedish, Danish and Norwegian Bokmål text. Make's documented connection `label` and `help` fields are strings. This source does not invent a runtime localization extension or claim automatic language selection in Make.
+The verifier joins three `uuid` values (108 characters) to satisfy RFC 7636's 43–128 range. Make's documentation does not state that `uuid` is cryptographically random; native qualification must confirm it.
 
-Choose a language while configuring the private app and render its native JSON:
+## Behaviour
+
+- **Paths.** Every module URL is relative to `{{connection.serverUrl}}/api/connect`. IDs placed in a path must match a lowercase UUID and are URL-encoded. The universal module accepts only `/segment/segment` paths made of letters, digits, `_` and `-`, a query string built from `key`/`value` pairs, `GET`/`POST`/`DELETE`, and no custom headers, so it cannot reach other Library APIs, traverse paths or replace the bearer token.
+- **Source ID.** Create an album and Upload require a Source ID, sent as the Connect `requestId`. Retrying with the same Source ID returns the same album or receipt. Upload's date taken is a required mapped value so a retry sends an identical request.
+- **Files.** Download returns a Make file (`fileName`, `data`). Upload takes a mapped file (`.jpg`, `.jpeg`, `.png` or `.mp4`) and appends it in one request, so a file must fit within the Library's `maxAppendBytes`. An upload whose earlier attempt stopped part-way cannot resume in Make; use a new Source ID. After an interrupted run, Make skips the append when the Library already has the bytes and commits.
+- **Watch events.** The trigger reads the newest-first `events/latest` window (at most 1000 events), follows `nextCursor` while `hasMore`, and uses `deliveryId` and `occurredAt` as Make's persisted trigger position, so each event fires once.
+- **Pagination.** Search requests 100 per page and stops at `total` or the module limit.
+- **Errors.** 401 → `InvalidAccessTokenError` (reconnect), 403 → `InvalidConfigurationError`, 404 and 410 → `DataError`, 409 and 429 → `RateLimitError` so Make's retry repeats the same Source ID, anything else → `RuntimeError`. Messages never include tokens.
+- **Logs.** Base, token and refresh steps sanitize authorization headers, request bodies, search text, ticket URLs and filenames in response headers.
+- **Text.** Make custom apps have one language. Module text is English. Connection text is supplied in eleven languages through `locales.json` and `render.mjs` (for example `node integrations/make/render.mjs fr parameters`).
+
+## Tests
 
 ```sh
-node integrations/make/render.mjs fr parameters
-node integrations/make/render.mjs fr communication
-node integrations/make/render.mjs fr scope
-node integrations/make/render.mjs fr help
+node --test integrations/make/test/*.test.mjs
 ```
 
-The first three outputs belong in the matching connection tabs. The last is translated setup help for Frameleaf-controlled documentation. The renderer accepts only the eleven supplied locale identifiers and four named components; it never reads user-supplied filenames.
+`test/iml.mjs` executes the shipped JSON with a small IML subset and Make's documented runtime parameter validation; `test/library.mjs` is a synthetic Library with strict OAuth (PKCE, rotation, reuse revocation) and the Connect routes the modules use. `scenarios/` holds one test scenario per module. The suite also covers pagination, the event cursor across runs, error mapping, 409 retries, concurrent duplicate uploads, refresh rotation, stale-token revocation, disconnect, and the path restrictions.
 
-## Local validation
-
-```sh
-node --test integrations/make/test/connection.test.mjs
-```
-
-These tests check the connection contract, origin validation, scope boundary, token mappings, sanitized log paths and translated export shapes. They do not run Make's IML engine or prove a native OAuth exchange. Do not infer OAuth, concurrent refresh, deletion or end-to-end acceptance from them.
-
-Native qualification requires an owner-authorized publicly reachable strict synthetic OAuth provider or test Library, followed by an actual Make round trip, simultaneous scenarios sharing one expiring connection, another rotation after the concurrent runs, failure/revocation checks, redirect handling and sanitized-log inspection. Plans, native evidence, synthetic credentials and test media stay outside this repository. No publication or deployment is part of these sources.
-
-## Platform references
-
-- [Make custom-app OAuth 2.0](https://developers.make.com/custom-apps-documentation/app-components/connections/oauth2): callback variables, PKCE, native persistence and revocation directive.
-- [Make text parameters](https://developers.make.com/custom-apps-documentation/block-elements/parameters/text): supported input validation.
-- [Make response validation](https://developers.make.com/custom-apps-documentation/component-blocks/api/handling-responses/valid): response conditions.
-- [Make log sanitization](https://developers.make.com/custom-apps-documentation/app-components/base/sanitization): sensitive request and response fields.
-- [Make custom IML functions](https://developers.make.com/custom-apps-documentation/app-components/iml-functions): custom JavaScript is unavailable by default and requires vendor enablement.
-- [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636): verifier length, entropy and S256.
+This is not Make's engine. A native Make round trip is still required: see [APP-REVIEW.md](APP-REVIEW.md).

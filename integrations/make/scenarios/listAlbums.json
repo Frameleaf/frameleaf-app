@@ -1,0 +1,4 @@
+{ "description": "Lists the albums the person chose for this connection.",
+  "parameters": { "limit": 100 },
+  "requests": [["GET", "/api/connect/albums"]],
+  "count": 2, "output": { "id": "00000000-0000-4000-8000-000000009001", "canWrite": true } }

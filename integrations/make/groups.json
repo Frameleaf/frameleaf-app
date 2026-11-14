@@ -1,0 +1,6 @@
+[
+  { "label": "Events", "modules": ["watchEvents"] },
+  { "label": "Photos and videos", "modules": ["searchAssets", "getAsset", "downloadRendition", "uploadPhoto", "addTags"] },
+  { "label": "Albums", "modules": ["listAlbums", "createAlbum", "addAssetsToAlbum"] },
+  { "label": "Other", "modules": ["makeApiCall"] }
+]
