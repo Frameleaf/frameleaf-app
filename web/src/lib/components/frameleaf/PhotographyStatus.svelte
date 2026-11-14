@@ -97,6 +97,10 @@
     not_ready: 'frameleaf_photography_error_not_ready',
     watermark_preview: 'frameleaf_photography_error_watermark_preview',
     request_failed: 'frameleaf_photography_error_generic',
+    selfie_no_face: 'frameleaf_clients_selfie_no_face',
+    selfie_multiple_faces: 'frameleaf_clients_selfie_multiple_faces',
+    selfie_invalid_image: 'frameleaf_clients_selfie_invalid_image',
+    selfie_unavailable: 'frameleaf_clients_selfie_unavailable',
   };
 
   /** What to tell the person when a photography request fails. Never the raw response. */

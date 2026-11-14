@@ -250,12 +250,15 @@ export class EditOperationRun {
    * Hand the row back to the queue without using an attempt: the executor could not start yet (a
    * photo version still held by another render). It is dispatched again after `delayMs`.
    */
-  async release(delayMs: number): Promise<boolean> {
+  async release(delayMs: number, onCancelled?: () => Promise<void>): Promise<boolean> {
     if (this.done) {
       return false;
     }
     const released = await this.operations.requeue(this.id, this.claimToken, { delayMs, returnAttempt: true });
-    this.settle();
+    if (!released && (await this.cancelRequested())) {
+      await onCancelled?.();
+      await this.cancelled();
+    } else this.settle();
     return released;
   }
 

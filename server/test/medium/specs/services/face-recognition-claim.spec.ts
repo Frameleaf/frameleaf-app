@@ -38,7 +38,7 @@ describe('face recognition inside a queue claim', () => {
     await db?.destroy();
   });
 
-  const recognise = async (embedded: boolean) => {
+  const setup = async (embedded: boolean) => {
     const { sut, ctx } = newMediumService(PersonService, {
       database: db,
       real: [
@@ -69,12 +69,13 @@ describe('face recognition inside a queue claim', () => {
       faces.push(assetFace.id);
     }
 
-    // Each run has its own queues, and follow-up work has a queue of its own, so the claim below is this run's face.
+    // Each run has its own queues, and follow-up work has a queue of its own, so the claims below are this run's faces.
     const queue = `face-recognition-${randomUUID()}` as QueueName;
     const followups = `face-followups-${randomUUID()}` as QueueName;
     const store = new SqlQueueStore(db);
     const worker = randomUUID();
     await store.initialize([queue, followups], worker);
+    await store.setConcurrency(queue, 10);
     const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
     for (const name of [JobName.FacialRecognition, JobName.PersonGenerateThumbnail, JobName.PartnerPropagate]) {
       jobs['handlers'][name] = { queueName: name === JobName.FacialRecognition ? queue : followups } as never;
@@ -84,35 +85,48 @@ describe('face recognition inside a queue claim', () => {
     mock.queueAll.mockImplementation((items) => jobs.queueAll(items));
     mock.queueOutsideRun.mockImplementation((items) => jobs.queueOutsideRun(items));
 
-    const data = { id: faces[0], deferred: false };
-    await jobs.createRun('faces', {}, () => jobs.queue({ name: JobName.FacialRecognition, data }));
-    const [claim] = await store.claim(queue, worker);
-    expect(claim).toMatchObject({ name: JobName.FacialRecognition, data });
-    const context: QueueExecution = {
-      claim,
-      signal: new AbortController().signal,
-      progress: vi.fn(),
-      progressUnits: 0,
-      buffering: false,
-      adoptions: [],
-      followups: [],
+    /** Claims and runs one face's job; the returned `complete` publishes it in the claim's completion transaction. */
+    const start = async (faceId: string) => {
+      const data = { id: faceId, deferred: false };
+      // A run of its own, so completions never wait on a shared run row and the race below is real.
+      await jobs.createRun('faces', {}, () => jobs.queue({ name: JobName.FacialRecognition, data }));
+      const [claim] = await store.claim(queue, worker, 1);
+      expect(claim).toMatchObject({ name: JobName.FacialRecognition, data });
+      const context: QueueExecution = {
+        claim,
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        buffering: false,
+        adoptions: [],
+        followups: [],
+      };
+      await queueExecution.run(context, () => sut.handleRecognizeFaces(data));
+      return () =>
+        queueExecution.run(context, () =>
+          store.complete(claim, context.followups, (tx) =>
+            publicationTransaction.run(tx, async () => {
+              context.buffering = true;
+              for (const adopt of context.adoptions) await adopt(tx);
+            }),
+          ),
+        );
     };
-    await queueExecution.run(context, () => sut.handleRecognizeFaces(data));
-    const settled = await queueExecution.run(context, () =>
-      store.complete(claim, context.followups, (tx) =>
-        publicationTransaction.run(tx, async () => {
-          context.buffering = true;
-          for (const adopt of context.adoptions) await adopt(tx);
-        }),
-      ),
-    );
+    const personOf = async (faceId: string) => {
+      const face = await db
+        .selectFrom('asset_face')
+        .select('personGroupId')
+        .where('id', '=', faceId)
+        .executeTakeFirstOrThrow();
+      return face.personGroupId;
+    };
+    return { start, personOf, faces, user, ctx };
+  };
 
-    const face = await db
-      .selectFrom('asset_face')
-      .select('personGroupId')
-      .where('id', '=', faces[0])
-      .executeTakeFirstOrThrow();
-    return { settled, personGroupId: face.personGroupId };
+  const recognise = async (embedded: boolean) => {
+    const { start, personOf, faces } = await setup(embedded);
+    const settled = await (await start(faces[0]))();
+    return { settled, personGroupId: await personOf(faces[0]) };
   };
 
   it('gives a face its person when the claim completes', async () => {
@@ -126,5 +140,33 @@ describe('face recognition inside a queue claim', () => {
     const { settled, personGroupId } = await recognise(false);
     expect(settled).toBe(true);
     expect(personGroupId).toBeNull();
+  });
+
+  // Recognising people runs several faces at once; two faces of one new person must not each start a person of their own.
+  it('gives two faces of one new person the same person when they are recognised at the same time', async () => {
+    const { start, personOf, faces, user, ctx } = await setup(true);
+    // Both faces finish their first search, finding nobody, before either may go on to create a person: the race
+    // this guards against, every run.
+    const search = ctx.get(SearchRepository);
+    const searchFaces = search.searchFaces.bind(search);
+    const bothSearched = Promise.withResolvers<void>();
+    let searched = 0;
+    vi.spyOn(search, 'searchFaces').mockImplementation(async (options) => {
+      const matches = await searchFaces(options);
+      if (!options.hasPerson) {
+        if (++searched === 2) bothSearched.resolve();
+        await bothSearched.promise;
+      }
+      return matches;
+    });
+    const [first, second] = [await start(faces[0]), await start(faces[1])];
+    expect(await Promise.all([first(), second()])).toEqual([true, true]);
+    expect(searched).toBe(2);
+
+    const [a, b] = [await personOf(faces[0]), await personOf(faces[1])];
+    expect(a).not.toBeNull();
+    expect(b).toBe(a);
+    const people = await db.selectFrom('person').select('personGroupId').where('ownerId', '=', user.id).execute();
+    expect(people).toEqual([{ personGroupId: a }]);
   });
 });

@@ -263,6 +263,65 @@ def test_an_accelerator_report_needs_a_device_the_provider_can_have_used(
     assert accelerator_present(provider, facts) is present
 
 
+def test_native_cuda_sessions_keep_full_float32_precision(monkeypatch: pytest.MonkeyPatch) -> None:
+    from frameleaf_ml import native_ort
+
+    session = OrtSession.__new__(OrtSession)
+    session._providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    session.model_path = Path("model.onnx")
+    session.device_id = None
+    monkeypatch.setattr(native_ort, "_policy", None)
+    # A container keeps onnxruntime's default (TF32 on).
+    assert "use_tf32" not in session._provider_options_default[0]
+    monkeypatch.setattr(native_ort, "_policy", native_ort.NativeOrtPolicy("CUDAExecutionProvider", None))
+    # A native process is compared with a float32 reference.
+    assert session._provider_options_default[0]["use_tf32"] == "0"
+    assert "use_tf32" not in session._provider_options_default[1]
+
+
+def test_a_failed_qualification_says_why_on_stderr_and_in_its_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import sys
+
+    from frameleaf_ml import native_qualification
+
+    spec = {
+        "protocolVersion": 1,
+        "modelKey": "fixture",
+        "provider": "CUDAExecutionProvider",
+        "models": [{"name": "model", "task": "clip", "type": "textual", "artifacts": {"model.onnx": "a" * 64}}],
+        "entries": {"clip": {"textual": {"modelName": "model"}}},
+        "preprocessingSha256": "b" * 64,
+        "fixtureFile": "fixture.txt",
+        "fixtureKind": "text",
+        "fixtureSha256": "c" * 64,
+        "expectedOutput": {"clip": "[1.0]"},
+        "minMemoryBytes": 1,
+        "deadlineSeconds": 30,
+    }
+    (tmp_path / "spec.json").write_text(json.dumps(spec))
+    report = tmp_path / "report.json"
+    arguments = ["qualify", "--spec", str(tmp_path / "spec.json"), "--cache-dir", str(tmp_path), "--output", str(report)]
+    monkeypatch.setattr(sys, "argv", arguments)
+    for failure, code, shown in [
+        (RuntimeError("CUDA failure 2: out of memory"), "native_qualification_failed", "RuntimeError: CUDA failure 2"),
+        (ValueError("native_output_value_mismatch"), "native_output_value_mismatch", "native_output_value_mismatch"),
+    ]:
+
+        async def fail(*args: object, **kwargs: object) -> dict[str, object]:
+            raise failure
+
+        monkeypatch.setattr(native_qualification, "qualify", fail)
+        with pytest.raises(SystemExit) as stopped:
+            native_qualification.main()
+        assert stopped.value.code == 1
+        assert json.loads(report.read_text())["reason"] == code
+        assert json.loads(report.read_text())["detail"] == f"{type(failure).__name__}: {failure}"
+        error = capsys.readouterr().err
+        assert shown in error and f"native qualification incompatible: {code}" in error
+
+
 def test_driver_changes_invalidate_fingerprint_without_using_free_memory() -> None:
     from frameleaf_ml.native_hardware import fingerprint
 
@@ -422,3 +481,94 @@ module.main()
     )
     assert result.returncode == 124
     assert not report.exists()
+
+
+def test_a_refused_session_closes_its_profile_while_the_refusal_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without a card the CUDA provider fails and ONNX Runtime retries on the processor.
+
+    The policy refuses that session, and the refusal's traceback keeps the half-built OrtSession
+    alive while qualification removes its profile folder. Windows cannot delete an open file, so the
+    profile must already be closed here (WinError 32 otherwise replaced the real reason).
+    """
+    import psutil
+
+    from frameleaf_ml import native_ort
+
+    profiles = tmp_path / "profiles"
+    profiles.mkdir()
+    monkeypatch.setattr(native_ort, "_policy", native_ort.NativeOrtPolicy("CUDAExecutionProvider", profiles))
+    model = tmp_path / "model.onnx"
+    graph(model)
+    with pytest.raises(RuntimeError, match="native_provider_not_loaded") as refused:
+        OrtSession(model, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+    assert refused.value.__traceback__ is not None
+    written = {path.resolve() for path in profiles.iterdir()}
+    assert written
+    assert not written & {Path(item.path).resolve() for item in psutil.Process().open_files()}
+    assert native_ort.current_policy().sessions == []
+
+
+def test_profiles_are_closed_before_their_folder_goes_and_a_windows_sharing_violation_is_waited_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import shutil
+    from unittest.mock import Mock
+
+    from frameleaf_ml import native_ort, native_qualification
+
+    folder = tmp_path / "qualification"
+    (folder / "profiles").mkdir(parents=True)
+    (folder / "profiles" / "native.json").write_text("[]")
+    events: list[str] = []
+    tracked = Mock()
+    tracked.session.end_profiling.side_effect = lambda: events.append("closed") or ""
+    policy = native_ort.NativeOrtPolicy("CUDAExecutionProvider", folder / "profiles", sessions=[tracked])
+    remove = shutil.rmtree
+
+    def rmtree(path: Path) -> None:
+        events.append("remove")
+        if events.count("remove") < 3:
+            error = PermissionError(13, "The process cannot access the file", str(path))
+            error.winerror = 32  # type: ignore[attr-defined]
+            raise error
+        remove(path)
+
+    monkeypatch.setattr(native_qualification.shutil, "rmtree", rmtree)
+    monkeypatch.setattr(native_qualification, "sleep", lambda seconds: None)
+    native_qualification.remove_profiles(policy, folder, raise_errors=True)
+    assert events == ["closed", "remove", "remove", "remove"]
+    assert not folder.exists()
+    assert policy.sessions == []
+
+
+def test_a_profile_that_stays_open_fails_a_passed_qualification_but_never_hides_a_failed_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from frameleaf_ml import native_qualification
+
+    calls: list[Path] = []
+
+    def in_use(path: Path) -> None:
+        calls.append(path)
+        error = PermissionError(13, "The process cannot access the file", str(path))
+        error.winerror = 32  # type: ignore[attr-defined]
+        raise error
+
+    def denied(path: Path) -> None:
+        calls.append(path)
+        raise PermissionError(13, "Access is denied", str(path))
+
+    monkeypatch.setattr(native_qualification, "sleep", lambda seconds: None)
+    monkeypatch.setattr(native_qualification.shutil, "rmtree", in_use)
+    with pytest.raises(PermissionError):
+        native_qualification.remove_profiles(None, tmp_path, raise_errors=True)
+    assert len(calls) == 5
+    native_qualification.remove_profiles(None, tmp_path, raise_errors=False)
+    assert "native qualification cleanup failed: PermissionError" in capsys.readouterr().err
+    calls.clear()
+    monkeypatch.setattr(native_qualification.shutil, "rmtree", denied)
+    with pytest.raises(PermissionError):
+        native_qualification.remove_profiles(None, tmp_path, raise_errors=True)
+    assert len(calls) == 1

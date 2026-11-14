@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.2.20
+ * 1.2.22
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
@@ -1900,6 +1900,8 @@ export type AdminConfigLibraryCareDto = {
     autoRepair?: boolean;
     /** Health scans verify each original against its recorded checksum */
     checksumScan: boolean;
+    /** Clear previews for photos that are gone */
+    clearGonePreviews?: boolean;
     /** Group near-duplicates for review; deletion stays explicit */
     duplicateReview: boolean;
     /** Schedule incremental health scans of every account; each resumes from its recorded checkpoints */
@@ -1914,6 +1916,8 @@ export type AdminConfigLibraryCareDto = {
     livePhotoRepair: boolean;
     /** A description rerun replaces only generated text and keeps manual text */
     manualMetadata: boolean;
+    /** Put photos found on the drive that no library lists back by themselves */
+    putBackFoundFiles?: boolean;
     /** Search for recoverable copies of RAW originals when locating originals */
     rawRecovery: boolean;
 };
@@ -2598,6 +2602,120 @@ export type FileTrashEmptyResponseDto = {
 export type FileTrashRestoreResponseDto = {
     /** The new asset the file was restored as, in its last owner’s library */
     assetId: string;
+};
+export type FoundFileGroupDto = {
+    count: number;
+    /** The folder no account uses; null when the files have an account */
+    folder: string | null;
+    /** The account the files belong to; null for a folder no account uses */
+    ownerId: string | null;
+    reason: FoundFileReason;
+    sizeInBytes: number;
+};
+export type FoundFilesTidiedDto = {
+    previewSizeInBytes: number;
+    /** Previews cleared because their photo is gone */
+    previews: number;
+    /** XMP files joined to the photo of the same name */
+    sidecars: number;
+};
+export type FoundFilesSummaryResponseDto = {
+    /** Files added to a library as new photos */
+    added: number;
+    /** Files put back under a photo that was missing */
+    back: number;
+    /** The files waiting for a person, one group per decision */
+    groups: FoundFileGroupDto[];
+    /** Files a person chose to leave alone */
+    left: number;
+    /** Files waiting for a person */
+    needs: number;
+    /** Second copies of photos that are in a library */
+    spare: number;
+    spareSizeInBytes: number;
+    tidied: FoundFilesTidiedDto;
+};
+export type FoundFileResponseDto = {
+    /** The photo it went back under, became, or copies */
+    assetId: string | null;
+    fileName: string;
+    id: string;
+    outcome: FoundFileOutcome;
+    /** The account the file belongs to: its folder’s, else its photo’s; null when neither is known */
+    ownerId: string | null;
+    path: string;
+    reason: (FoundFileReason) | null;
+    sizeInBytes: number;
+    sortedAt: string;
+    /** Whether the person asking may see the picture: it is their own, or it belongs to no account */
+    viewable: boolean;
+};
+export type FoundFileListResponseDto = {
+    items: FoundFileResponseDto[];
+    /** Pass as `cursor` for the next page; null on the last page */
+    nextCursor: string | null;
+};
+export type FoundFileStepDto = {
+    at: string;
+    facts?: {
+        [key: string]: any;
+    };
+    outcome?: string;
+    /** What was done: found, read, back, added, spare, undone, again, … */
+    step: string;
+};
+export type FoundFileDetailResponseDto = {
+    /** The photo it went back under, became, or copies */
+    assetId: string | null;
+    fileName: string;
+    id: string;
+    outcome: FoundFileOutcome;
+    /** The account the file belongs to: its folder’s, else its photo’s; null when neither is known */
+    ownerId: string | null;
+    path: string;
+    /** Where the photo it went back under pointed before */
+    previousPath: string | null;
+    reason: (FoundFileReason) | null;
+    sizeInBytes: number;
+    sortedAt: string;
+    /** What was done with the file, oldest first */
+    steps: FoundFileStepDto[];
+    /** Whether the person asking may see the picture: it is their own, or it belongs to no account */
+    viewable: boolean;
+};
+export type FoundFilesResolveDto = {
+    /** `nextCursor` of the call before */
+    cursor?: string;
+    /** With no-owner: the folder the files are in */
+    folder?: string;
+    /** With no-owner: the account whose library the files go to. With over-limit: the account */
+    ownerId?: string;
+    reason: FoundFileDecision;
+};
+export type FoundFilesResolveResponseDto = {
+    added: number;
+    back: number;
+    /** Call again with this as `cursor`; null when the group is done */
+    nextCursor: string | null;
+    /** Files that changed or went since they were read; the next check sorts them */
+    skipped: number;
+    spare: number;
+    /** Files that still wait for a person */
+    waiting: number;
+};
+export type FoundFilesDeleteSpareDto = {
+    /** `nextCursor` of the call before */
+    cursor?: string;
+    /** Only these spare copies; left out, all of them */
+    ids?: string[];
+};
+export type FoundFilesDeleteSpareResponseDto = {
+    deleted: number;
+    freedBytes: number;
+    /** Copies kept: the photo they copy could not be shown to be there and open */
+    kept: number;
+    /** Call again with this as `cursor`; null when all were looked at */
+    nextCursor: string | null;
 };
 export type HardwareWorkloadBenchmarkDto = {
     error: string | null;
@@ -4363,6 +4481,9 @@ export type UserPreferencesResponseDto = {
     cast: CastResponse;
     clients?: ClientsResponse;
     cloudProcessing?: CloudProcessingResponse;
+    develop?: {
+        importXmpEdits: boolean;
+    };
     display?: DisplayPreferencesResponse;
     download: DownloadResponse;
     emailNotifications: EmailNotificationsResponse;
@@ -4569,6 +4690,9 @@ export type UserPreferencesUpdateDto = {
     cast?: CastUpdate;
     clients?: ClientsUpdate;
     cloudProcessing?: CloudProcessingUpdate;
+    develop?: {
+        importXmpEdits?: boolean;
+    };
     display?: DisplayPreferencesUpdate;
     download?: DownloadUpdate;
     emailNotifications?: EmailNotificationsUpdate;
@@ -6696,6 +6820,30 @@ export type AssetDevelopKeyFrame = {
     timeMs: number;
 };
 export type AssetDevelopRecipeDto = {
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        lightroom?: {
+            [key: string]: any;
+        };
+        darktable?: {
+            [key: string]: any;
+        };
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+        }[];
+    };
     version: Version;
     exposure?: number;
     contrast?: number;
@@ -13737,6 +13885,77 @@ export type PhotoSourceReceiptDto = {
     uploadResourceId: string;
     verifiedAt: string;
 };
+export type PhotographyCampaignListDto = {
+    clients: number;
+    items: {
+        audience: {
+            source: PhotographyCampaignAudienceSource;
+            workflowId?: string;
+        };
+        body: string;
+        failedCount: number;
+        id: string;
+        name: string;
+        pendingCount: number;
+        revision: string;
+        scheduledFor: string | null;
+        sentCount: number;
+        status: PhotographyCampaignStatus;
+        subject: string;
+        templateKey: PhotographyCampaignTemplate;
+        uncertainCount: number;
+        unsubscribedCount: number;
+    }[];
+    leads: number;
+    mailReady: boolean;
+    sender: string;
+};
+export type PhotographyCampaignSaveDto = {
+    audience: {
+        source: PhotographyCampaignAudienceSource;
+        workflowId?: string;
+    };
+    body: string;
+    name: string;
+    subject: string;
+    templateKey: PhotographyCampaignTemplate;
+};
+export type PhotographyCampaignDto = {
+    audience: {
+        source: PhotographyCampaignAudienceSource;
+        workflowId?: string;
+    };
+    body: string;
+    failedCount: number;
+    id: string;
+    name: string;
+    pendingCount: number;
+    revision: string;
+    scheduledFor: string | null;
+    sentCount: number;
+    status: PhotographyCampaignStatus;
+    subject: string;
+    templateKey: PhotographyCampaignTemplate;
+    uncertainCount: number;
+    unsubscribedCount: number;
+};
+export type PhotographyCampaignDeliveriesDto = {
+    items: {
+        email: string;
+        name: string;
+        status: PhotographyCampaignDeliveryStatus;
+    }[];
+};
+export type PhotographyCampaignPreviewDto = {
+    html: string;
+    recipients: number;
+    sender: string;
+    text: string;
+};
+export type PhotographyCampaignScheduleDto = {
+    expectedRevision: string;
+    scheduledFor?: string;
+};
 export type PhotographyGalleryDto = {
     brand: {
         background: string;
@@ -13937,6 +14156,7 @@ export type PhotographyGalleryDto = {
         "number": number;
         recipientId: string;
     }[];
+    selfieSearch?: boolean;
     title: string;
     /** The studio's welcome for this gallery; empty for none */
     welcomeMessage: string;
@@ -13968,6 +14188,9 @@ export type PhotographyOrderAcceptDto = {
 };
 export type PhotographyCheckoutDto = {
     url: string;
+};
+export type PhotographySelfieSearchDto = {
+    captureIds: string[];
 };
 export type PhotographyGallerySessionDto = {
     password?: string;
@@ -14126,6 +14349,8 @@ export type PhotographyStudioPresetsDto = {
                 selection: boolean;
             };
             selectionDeadline: string | null;
+            /** Let a guest use a selfie to find photographs in this gallery */
+            selfieSearch?: boolean;
             terms: string;
             title: string;
             turnaroundDays: number;
@@ -14270,6 +14495,8 @@ export type PhotographyPresetSaveDto = {
             selection: boolean;
         };
         selectionDeadline: string | null;
+        /** Let a guest use a selfie to find photographs in this gallery */
+        selfieSearch?: boolean;
         terms: string;
         title: string;
         turnaroundDays: number;
@@ -14908,6 +15135,8 @@ export type PhotographyWorkflowDto = {
             selection: boolean;
         };
         selectionDeadline: string | null;
+        /** Let a guest use a selfie to find photographs in this gallery */
+        selfieSearch?: boolean;
         terms: string;
         title: string;
         turnaroundDays: number;
@@ -15106,6 +15335,8 @@ export type PhotographyWorkflowDto = {
                 selection: boolean;
             };
             selectionDeadline: string | null;
+            /** Let a guest use a selfie to find photographs in this gallery */
+            selfieSearch?: boolean;
             terms: string;
             title: string;
             turnaroundDays: number;
@@ -15309,6 +15540,8 @@ export type PhotographyWorkflowDto = {
                     selection: boolean;
                 };
                 selectionDeadline: string | null;
+                /** Let a guest use a selfie to find photographs in this gallery */
+                selfieSearch?: boolean;
                 terms: string;
                 title: string;
                 turnaroundDays: number;
@@ -15481,6 +15714,8 @@ export type PhotographyWorkflowConfigDto = {
             selection: boolean;
         };
         selectionDeadline: string | null;
+        /** Let a guest use a selfie to find photographs in this gallery */
+        selfieSearch?: boolean;
         terms: string;
         title: string;
         turnaroundDays: number;
@@ -15743,6 +15978,8 @@ export type PhotographyInvitationDto = {
                 selection: boolean;
             };
             selectionDeadline: string | null;
+            /** Let a guest use a selfie to find photographs in this gallery */
+            selfieSearch?: boolean;
             terms: string;
             title: string;
             turnaroundDays: number;
@@ -15941,6 +16178,8 @@ export type PhotographyInvitationDto = {
                     selection: boolean;
                 };
                 selectionDeadline: string | null;
+                /** Let a guest use a selfie to find photographs in this gallery */
+                selfieSearch?: boolean;
                 terms: string;
                 title: string;
                 turnaroundDays: number;
@@ -16144,6 +16383,8 @@ export type PhotographyInvitationDto = {
                         selection: boolean;
                     };
                     selectionDeadline: string | null;
+                    /** Let a guest use a selfie to find photographs in this gallery */
+                    selfieSearch?: boolean;
                     terms: string;
                     title: string;
                     turnaroundDays: number;
@@ -21742,6 +21983,24 @@ export type FileTrashListQueryDto = {
     /** Entries per page */
     size?: number;
 };
+export type FoundFileListDto = {
+    /** The id of the last file of the page before */
+    cursor?: string;
+    /** Only the files in this folder no account uses */
+    folder?: string;
+    outcome: FoundFileOutcome;
+    /** Only the files in this account’s folders */
+    ownerId?: string;
+    reason?: FoundFileReason;
+    /** Files per page */
+    size?: number;
+};
+export type FoundFilesArchiveDto = {
+    /** Only the files in this folder no account uses */
+    folder?: string;
+    /** Only the files in this account’s folders */
+    ownerId?: string;
+};
 export type GetAlbumInfoDto = {
     /** Return album metadata for suppressed content only */
     suppressedOnly?: boolean;
@@ -21805,6 +22064,30 @@ export type HdrAssetDevelopRecipe = {
     };
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        darktable?: {
+            [key: string]: any;
+        };
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+        }[];
+        lightroom?: {
+            [key: string]: any;
+        };
+    };
     /** Selective adjustments, applied in order after the global develop */
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
@@ -21867,6 +22150,30 @@ export type HdrAssetDevelopRecipeV4 = {
     };
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        darktable?: {
+            [key: string]: any;
+        };
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+        }[];
+        lightroom?: {
+            [key: string]: any;
+        };
+    };
     /** Selective adjustments, applied in order after the global develop */
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
@@ -21929,6 +22236,30 @@ export type HdrAssetDevelopRecipeV5 = {
     };
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        darktable?: {
+            [key: string]: any;
+        };
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+        }[];
+        lightroom?: {
+            [key: string]: any;
+        };
+    };
     /** Selective adjustments, applied in order after the global develop */
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
@@ -21991,6 +22322,30 @@ export type HdrAssetDevelopRecipeV6 = {
     };
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        darktable?: {
+            [key: string]: any;
+        };
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+        }[];
+        lightroom?: {
+            [key: string]: any;
+        };
+    };
     /** Selective adjustments, applied in order after the global develop */
     masks?: AssetDevelopMask[];
     /** Luminance noise reduction amount */
@@ -22081,6 +22436,30 @@ export type KnownAssetDevelopRecipe = {
     grain?: number;
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
+    /** Preserved external XMP settings and approximated colour controls */
+    imported?: {
+        checksum?: string;
+        curve?: {
+            /** Input */
+            x: number;
+            /** Output */
+            y: number;
+        }[];
+        darktable?: {
+            [key: string]: any;
+        };
+        hsl?: {
+            /** Hue adjustment */
+            hue?: number;
+            /** Luminance adjustment */
+            luminance?: number;
+            /** Saturation adjustment */
+            saturation?: number;
+        }[];
+        lightroom?: {
+            [key: string]: any;
+        };
+    };
     /** Live and Motion Photos: the frame of the motion clip the still is rendered from */
     keyFrame?: AssetDevelopKeyFrame;
     /** Selective adjustments, applied in order after the global develop */
@@ -25193,6 +25572,143 @@ export function restoreFileTrashItem({ id }: {
     }>(`/admin/file-trash/${encodeURIComponent(id)}/restore`, {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Get the found files summary
+ */
+export function getFoundFilesSummary(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFilesSummaryResponseDto;
+    }>("/admin/found-files", {
+        ...opts
+    }));
+}
+/**
+ * List found files
+ */
+export function getFoundFiles({ cursor, folder, outcome, ownerId, reason, size }: {
+    cursor?: string;
+    folder?: string;
+    outcome: FoundFileOutcome;
+    ownerId?: string;
+    reason?: FoundFileReason;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFileListResponseDto;
+    }>(`/admin/found-files/files${QS.query(QS.explode({
+        cursor,
+        folder,
+        outcome,
+        ownerId,
+        reason,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get one found file
+ */
+export function getFoundFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFileDetailResponseDto;
+    }>(`/admin/found-files/files/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Download a found file
+ */
+export function downloadFoundFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/admin/found-files/files/${encodeURIComponent(id)}/file`, {
+        ...opts
+    }));
+}
+/**
+ * Sort a found file that was left alone again
+ */
+export function sortFoundFileAgain({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFileDetailResponseDto;
+    }>(`/admin/found-files/files/${encodeURIComponent(id)}/sort-again`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Undo what was done with a found file
+ */
+export function undoFoundFile({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFileDetailResponseDto;
+    }>(`/admin/found-files/files/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Decide about a group of found files
+ */
+export function resolveFoundFiles({ foundFilesResolveDto }: {
+    foundFilesResolveDto: FoundFilesResolveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFilesResolveResponseDto;
+    }>("/admin/found-files/resolve", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: foundFilesResolveDto
+    })));
+}
+/**
+ * Delete spare copies
+ */
+export function deleteSpareFoundFiles({ foundFilesDeleteSpareDto }: {
+    foundFilesDeleteSpareDto: FoundFilesDeleteSpareDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FoundFilesDeleteSpareResponseDto;
+    }>("/admin/found-files/spare/delete", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: foundFilesDeleteSpareDto
+    })));
+}
+/**
+ * Download the found files that won’t open
+ */
+export function downloadFoundFilesThatWontOpen({ folder, ownerId }: {
+    folder?: string;
+    ownerId?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/admin/found-files/wont-open/archive${QS.query(QS.explode({
+        folder,
+        ownerId
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -34934,6 +35450,79 @@ export function verifyPhotoSourceCopy({ id, itemId, runId, photoSourceVerifyDto 
         body: photoSourceVerifyDto
     })));
 }
+export function photographyCampaigns(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyCampaignListDto;
+    }>("/photography/campaigns", {
+        ...opts
+    }));
+}
+export function photographySaveCampaign({ id, photographyCampaignSaveDto }: {
+    id: string;
+    photographyCampaignSaveDto: PhotographyCampaignSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyCampaignDto;
+    }>(`/photography/campaigns/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographyCampaignSaveDto
+    })));
+}
+export function photographyCancelCampaign({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyCampaignDto;
+    }>(`/photography/campaigns/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+export function photographyCampaignDeliveries({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyCampaignDeliveriesDto;
+    }>(`/photography/campaigns/${encodeURIComponent(id)}/deliveries`, {
+        ...opts
+    }));
+}
+export function photographyPreviewCampaign({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyCampaignPreviewDto;
+    }>(`/photography/campaigns/${encodeURIComponent(id)}/preview`, {
+        ...opts
+    }));
+}
+export function photographyScheduleCampaign({ id, photographyCampaignScheduleDto }: {
+    id: string;
+    photographyCampaignScheduleDto: PhotographyCampaignScheduleDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyCampaignDto;
+    }>(`/photography/campaigns/${encodeURIComponent(id)}/schedule`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyCampaignScheduleDto
+    })));
+}
+export function photographyTestCampaign({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/campaigns/${encodeURIComponent(id)}/test`, {
+        ...opts,
+        method: "POST"
+    }));
+}
 export function photographyGallery({ xPhotographySession, id }: {
     xPhotographySession: string;
     id: string;
@@ -35077,6 +35666,25 @@ export function photographyFile({ xPhotographySession, captureId, id, kind }: {
             "X-Photography-Session": xPhotographySession
         })
     }));
+}
+export function photographySelfieSearch({ xPhotographySession, id, body }: {
+    xPhotographySession: string;
+    id: string;
+    body: {
+        file: Blob;
+    };
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographySelfieSearchDto;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/selfie-search`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    })));
 }
 /**
  * Exchanges an invitation for a gallery session. A valid invitation with a missing or wrong password answers 401 with passwordRequired and the studio brand; an invalid, expired, or revoked invitation answers 403.
@@ -35500,6 +36108,27 @@ export function applyDevelopStyle({ id, developStyleApplyDto }: {
         method: "POST",
         body: developStyleApplyDto
     })));
+}
+export function photographyUnsubscribePage({ locale, token }: {
+    locale?: any;
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/unsubscribe/${encodeURIComponent(token)}${QS.query(QS.explode({
+        locale
+    }))}`, {
+        ...opts
+    }));
+}
+export function photographyUnsubscribe({ locale, token }: {
+    locale?: any;
+    token: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/unsubscribe/${encodeURIComponent(token)}${QS.query(QS.explode({
+        locale
+    }))}`, {
+        ...opts,
+        method: "POST"
+    }));
 }
 export function photographyList(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -42427,6 +43056,24 @@ export enum DuplicateRecompareWhen {
     Now = "now",
     Tonight = "tonight"
 }
+export enum FoundFileReason {
+    NoOwner = "no-owner",
+    WontOpen = "wont-open",
+    OverLimit = "over-limit",
+    Asked = "asked"
+}
+export enum FoundFileOutcome {
+    Back = "back",
+    Added = "added",
+    Spare = "spare",
+    Needs = "needs",
+    Left = "left"
+}
+export enum FoundFileDecision {
+    NoOwner = "no-owner",
+    OverLimit = "over-limit",
+    Asked = "asked"
+}
 export enum HardwareRunsOn {
     Gpu = "gpu",
     Cpu = "cpu"
@@ -44961,6 +45608,30 @@ export enum PhotoSourceItemState {
 }
 export enum PhotoSourceStorage {
     Managed = "managed"
+}
+export enum PhotographyCampaignAudienceSource {
+    All = "all",
+    Clients = "clients",
+    Leads = "leads",
+    Shoot = "shoot"
+}
+export enum PhotographyCampaignStatus {
+    Draft = "draft",
+    Scheduled = "scheduled",
+    Completed = "completed",
+    Cancelled = "cancelled"
+}
+export enum PhotographyCampaignTemplate {
+    PrintSale = "print-sale",
+    ReviewRequest = "review-request",
+    MiniSession = "mini-session"
+}
+export enum PhotographyCampaignDeliveryStatus {
+    Pending = "pending",
+    Sent = "sent",
+    Failed = "failed",
+    Uncertain = "uncertain",
+    Unsubscribed = "unsubscribed"
 }
 export enum Mode2 {
     EditedDelivery = "edited-delivery",

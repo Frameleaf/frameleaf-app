@@ -53,7 +53,7 @@ describe(QueueService.name, () => {
       sut.onConfigUpdate({ newConfig: defaults, oldConfig: {} as SystemConfig });
 
       expect(mocks.job.setConcurrency).toHaveBeenCalledTimes(25);
-      expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(5, QueueName.FacialRecognition, 1);
+      expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(5, QueueName.FacialRecognition, 4);
       expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(7, QueueName.DuplicateDetection, 1);
       expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(8, QueueName.VideoDuplicateDetection, 1);
       expect(mocks.job.setConcurrency).toHaveBeenNthCalledWith(9, QueueName.BackgroundTask, 5);

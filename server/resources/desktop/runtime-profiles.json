@@ -26,7 +26,7 @@
     "cuda-ort": {
       "python": "3.12.13",
       "uv": "0.11.2",
-      "extra": "cuda",
+      "extra": "desktop-cuda",
       "provider": "CUDAExecutionProvider",
       "targets": [
         "windows-x86_64",
@@ -36,7 +36,7 @@
     "openvino-ort": {
       "python": "3.12.13",
       "uv": "0.11.2",
-      "extra": "openvino",
+      "extra": "desktop-openvino",
       "provider": "OpenVINOExecutionProvider",
       "targets": [
         "windows-x86_64",

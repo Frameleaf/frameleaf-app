@@ -68,6 +68,7 @@ import { DesktopQualificationService } from 'src/services/desktop-qualification.
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { DevelopBatchService } from 'src/services/develop-batch.service.js';
+import { DevelopImportService } from 'src/services/develop-import.service.js';
 import { DevelopStyleService } from 'src/services/develop-style.service.js';
 import { DocumentService } from 'src/services/document.service.js';
 import { DownloadService } from 'src/services/download.service.js';
@@ -76,6 +77,7 @@ import { DuplicateService } from 'src/services/duplicate.service.js';
 import { EagleImportWorkerService } from 'src/services/eagle-import-worker.service.js';
 import { EagleImportService } from 'src/services/eagle-import.service.js';
 import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
+import { FoundFilesService } from 'src/services/found-files.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
 import { FrameleafCloudService } from 'src/services/frameleaf-cloud.service.js';
@@ -147,7 +149,9 @@ import { PhotoLocationsService } from 'src/services/photo-locations.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyBulkService } from 'src/services/photography-bulk.service.js';
+import { PhotographyCampaignService } from 'src/services/photography-campaign.service.js';
 import { PhotographyReminderService } from 'src/services/photography-reminder.service.js';
+import { PhotographySelfieService } from 'src/services/photography-selfie.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
@@ -224,6 +228,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  PhotographyCampaignService,
   MediaImportService,
   PrivateLogsService,
   PrivateMlLogsService,
@@ -245,6 +250,7 @@ export const services = [
   BookmarkService,
   DevelopBatchService,
   DevelopStyleService,
+  DevelopImportService,
   DesktopAssistanceActivationService,
   DesktopAssistancePolicyService,
   DesktopDeviceService,
@@ -263,6 +269,7 @@ export const services = [
   ICloudScheduledWorkerService,
   ICloudIdentityAdoptionService,
   PhotographyWorkspaceService,
+  PhotographySelfieService,
   PhotographyBulkService,
   PhotographyWorkflowService,
   PhotographySiteService,
@@ -399,6 +406,7 @@ export const services = [
   AlbumCleanupService,
   DateDoctorService,
   AssetLedgerService,
+  FoundFilesService,
   AlbumMergeService,
   SharedSpaceService,
   SmartAlbumService,

@@ -112,7 +112,7 @@ describe('IntegrityReportSection (FL-81)', () => {
     sdkMock.dismissIntegrityReport.mockResolvedValue(undefined as never);
 
     render(IntegrityReportSection, { type: IntegrityReport.UntrackedFile, pollMs: 60_000 });
-    expect(await screen.findByRole('heading', { name: 'Stray files report' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Files not in a library report' })).toBeInTheDocument();
 
     await fireEvent.click(await screen.findByRole('button', { name: 'Remove from list /data/upload/a.png' }));
     expect(sdkMock.dismissIntegrityReport).toHaveBeenCalledWith({ id: 'a' });

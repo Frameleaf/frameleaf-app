@@ -388,12 +388,11 @@ export class MetadataService extends BaseService {
     previous: Awaited<ReturnType<AssetRepository['getForMetadataExtractionTags']>>,
   ) {
     const source = plainOriginal === asset.originalPath ? asset : { ...asset, originalPath: plainOriginal };
-    const [exifResult, stats, creditDefaults] = await Promise.all([
+    const [exifResult, stats] = await Promise.all([
       this.getExifTags(source),
       // FL-721: the plain copy's size is the file's real size (a sealed file is larger), and it
       // carries the stored file's mtime; motion-photo offsets and fileSizeInByte depend on it
       this.storageRepository.stat(plainOriginal),
-      this.assetRepository.getMetadataByKey(asset.id, PHOTOGRAPHY_INTAKE_CREDITS_KEY),
     ]);
     const {
       tags: exifTags,
@@ -577,9 +576,6 @@ export class MetadataService extends BaseService {
       // FL-1196: altitude, shutter count and the other details cameras record
       ...captureDetails(exifTags as Record<string, unknown>),
     };
-    const { artist: defaultArtist, copyright: defaultCopyright } = creditDefaults?.value ?? {};
-    if (exifData.artist === null && typeof defaultArtist === 'string') exifData.artist = defaultArtist;
-    if (exifData.copyright === null && typeof defaultCopyright === 'string') exifData.copyright = defaultCopyright;
     // FL-1284: slow motion, panorama, burst, portrait … as the file's own metadata records them
     exifData.mediaKinds = detectMediaKinds(exifTags as Record<string, unknown>, {
       type: asset.type,
@@ -651,6 +647,11 @@ export class MetadataService extends BaseService {
     }
     await publishJobResult(async () => {
       await assertPublicationSource(asset.id, asset.checksum);
+      // Intake takes this same asset lock: read its defaults after it commits, before the EXIF revision advances.
+      const creditDefaults = await this.assetRepository.getMetadataByKey(asset.id, PHOTOGRAPHY_INTAKE_CREDITS_KEY);
+      const { artist: defaultArtist, copyright: defaultCopyright } = creditDefaults?.value ?? {};
+      if (exifData.artist === null && typeof defaultArtist === 'string') exifData.artist = defaultArtist;
+      if (exifData.copyright === null && typeof defaultCopyright === 'string') exifData.copyright = defaultCopyright;
       const current = await this.assetJobRepository.getForMetadataExtraction(asset.id);
       if (!current || !current.checksum.equals(asset.checksum) || current.originalPath !== asset.originalPath) {
         throw new Error('Metadata source changed before publication');
@@ -830,12 +831,14 @@ export class MetadataService extends BaseService {
     }
 
     if (!isChanged) {
+      if (sidecarFile?.path) await this.jobRepository.queue({ name: JobName.DevelopImport, data: { id: asset.id } });
       return JobStatus.Skipped;
     }
 
     await (sidecarPath === null
       ? this.assetRepository.deleteFile({ assetId: asset.id, type: AssetFileType.Sidecar })
       : this.assetRepository.upsertFile({ assetId: asset.id, type: AssetFileType.Sidecar, path: sidecarPath }));
+    if (sidecarPath) await this.jobRepository.queue({ name: JobName.DevelopImport, data: { id: asset.id } });
 
     return JobStatus.Success;
   }

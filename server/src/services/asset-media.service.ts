@@ -111,16 +111,23 @@ export class AssetMediaService extends BaseService {
       return;
     }
 
+    // Upstream Immich clients send SHA-1: match the stored SHA-256 it was recorded for, as bulkUploadCheck does
+    const submitted = fromChecksum(checksum);
+    const [alias] = await this.forkSchemaRepository.getChecksumTranslations(auth.user.id, [submitted]);
+    const digest = alias?.checksum ?? submitted;
     const duplicateOptions = this.getDuplicateCheckOptions(auth);
     const assetId = duplicateOptions
-      ? await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, fromChecksum(checksum), duplicateOptions)
-      : await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, fromChecksum(checksum));
+      ? await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, digest, duplicateOptions)
+      : await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, digest);
     if (!assetId) {
-      return;
+      // A hidden match: the upload would only come back as this same hidden duplicate, so spare the bytes
+      return (await this.withheldDuplicates(auth, [digest])).size > 0
+        ? { id: '00000000-0000-0000-0000-000000000000', status: AssetMediaStatus.DUPLICATE }
+        : undefined;
     }
     // Its original is gone, or (FL-556) the account lets uploads bring photos back from the Trash:
     // let the file come, the upload restores the photo.
-    const checksums = [fromChecksum(checksum)];
+    const checksums = [digest];
     if (
       (await this.lostOriginalMatches(auth, checksums)).length > 0 ||
       (await this.trashedMatches(auth, checksums)).length > 0
@@ -1375,6 +1382,10 @@ export class AssetMediaService extends BaseService {
       }
     }
 
+    const withheld = await this.withheldDuplicates(
+      auth,
+      lookups.filter((checksum) => results.every((match) => !match.checksum.equals(checksum))),
+    );
     // FL-813: what the account deleted and asked not to have uploaded again would be refused
     const deleted = new Set((await this.deletedByOwner(auth, lookups)).map((checksum) => checksum.toString('hex')));
 
@@ -1385,6 +1396,9 @@ export class AssetMediaService extends BaseService {
       }
       if (deleted.has(checksum.toString('hex'))) {
         deleted.add(sha1.toString('hex'));
+      }
+      if (withheld.has(checksum.toString('hex'))) {
+        withheld.add(sha1.toString('hex'));
       }
     }
 
@@ -1399,6 +1413,10 @@ export class AssetMediaService extends BaseService {
             assetId: duplicate.id,
             isTrashed: duplicate.isTrashed,
           };
+        }
+        if (withheld.has(checksums[index].toString('hex'))) {
+          // no id and no Trash flag: the match stays unnamed, as the upload itself would answer
+          return { id, action: AssetUploadAction.REJECT, reason: AssetRejectReason.DUPLICATE };
         }
         if (deleted.has(checksums[index].toString('hex'))) {
           // a new field, not a new reason: apps decode `reason` strictly
@@ -1451,6 +1469,28 @@ export class AssetMediaService extends BaseService {
       lockedOwnerId: auth.user.id,
     });
     return !!lockedId;
+  }
+
+  /**
+   * Of these bytes (ones the named lookup found nothing for), those an upload would answer as a hidden
+   * duplicate: the owner's copy is Locked media this session has not unlocked, or hidden by NSFW privacy
+   * mode, and its file is good or it is in the Trash. Telling the client before it sends the file names
+   * nothing the upload's own answer does not; it only spares the transfer. A lost or damaged original is
+   * left out: the upload repairs it. Never for a shared link, which must send the file first.
+   */
+  private async withheldDuplicates(auth: AuthDto, checksums: Buffer[]): Promise<Set<string>> {
+    if (auth.sharedLink || checksums.length === 0 || (getLockedOwnerId(auth) && !auth.hideNsfwAssets)) {
+      return new Set();
+    }
+    const matches = (
+      await this.assetRepository.getByChecksums(auth.user.id, checksums, { lockedOwnerId: auth.user.id })
+    ).filter(({ libraryId, isExternal }) => !libraryId && !isExternal);
+    const files = await this.originalFiles(matches);
+    return new Set(
+      matches
+        .filter(({ deletedAt }, index) => deletedAt || files[index] === 'good')
+        .map(({ checksum }) => checksum.toString('hex')),
+    );
   }
 
   private getDuplicateCheckOptions(auth: AuthDto) {

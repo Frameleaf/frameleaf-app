@@ -6433,6 +6433,585 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/found-files": {
+      "get": {
+        "description": "How many files found on the drive were put back, added, left as spare copies or wait for a person, what was tidied without asking, and the groups that wait for one decision each.",
+        "operationId": "getFoundFilesSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoundFilesSummaryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the found files summary",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/found-files/files": {
+      "get": {
+        "description": "A page of the found files with one outcome, oldest first. Each says whether the person asking may see its picture: another account’s is never shown.",
+        "operationId": "getFoundFiles",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "The id of the last file of the page before",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "folder",
+            "required": false,
+            "in": "query",
+            "description": "Only the files in this folder no account uses",
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcome",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/FoundFileOutcome"
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": false,
+            "in": "query",
+            "description": "Only the files in this account’s folders",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "reason",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/FoundFileReason"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "description": "Files per page",
+            "schema": {
+              "maximum": 500,
+              "exclusiveMinimum": true,
+              "default": 100,
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoundFileListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List found files",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/found-files/files/{id}": {
+      "get": {
+        "description": "One found file with everything that was done with it, oldest first.",
+        "operationId": "getFoundFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoundFileDetailResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get one found file",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/found-files/files/{id}/file": {
+      "get": {
+        "description": "The file itself, to show its picture. Refused for a file that belongs to another account than the person asking.",
+        "operationId": "downloadFoundFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download a found file",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/found-files/files/{id}/sort-again": {
+      "post": {
+        "description": "A file that was left alone after an undo is placed as a file found for the first time would be: back under a photo that is missing, added as a new photo, a spare copy, or waiting for a person. Refused when the file changed since it was read.",
+        "operationId": "sortFoundFileAgain",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoundFileDetailResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Sort a found file that was left alone again",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/found-files/files/{id}/undo": {
+      "post": {
+        "description": "A file that was put back under a missing photo: the photo points where it did before. A file that was added: the photo leaves the library. The file stays on the drive and is not sorted again.",
+        "operationId": "undoFoundFile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoundFileDetailResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo what was done with a found file",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/found-files/resolve": {
+      "post": {
+        "description": "Choose the account the files of a folder no account uses go to, add an account’s files over its storage limit this once, or sort the files held back while putting back was switched off. Works through a batch; call again with `nextCursor` until it is null.",
+        "operationId": "resolveFoundFiles",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FoundFilesResolveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoundFilesResolveResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Decide about a group of found files",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/found-files/spare/delete": {
+      "post": {
+        "description": "Delete second copies of photos that are in a library. Each is deleted only after the photo it copies is read again and opens; a copy that cannot be shown to be spare is kept. Works through a batch; call again with `nextCursor` until it is null.",
+        "operationId": "deleteSpareFoundFiles",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FoundFilesDeleteSpareDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoundFilesDeleteSpareResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete spare copies",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/found-files/wont-open/archive": {
+      "get": {
+        "description": "The files that are named like photos but do not open, as they are, in one archive: those of one account, of one folder no account uses, or all of them. Files that belong to another account than the person asking are left out.",
+        "operationId": "downloadFoundFilesThatWontOpen",
+        "parameters": [
+          {
+            "name": "folder",
+            "required": false,
+            "in": "query",
+            "description": "Only the files in this folder no account uses",
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "name": "ownerId",
+            "required": false,
+            "in": "query",
+            "description": "Only the files in this account’s folders",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download the found files that won’t open",
+        "tags": [
+          "Maintenance (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/hardware": {
       "get": {
         "description": "The last check of the GPU the server container and the ML container can each use, with any set-up problems found and the last benchmark. Runs a first check when there is none.",
@@ -46176,6 +46755,309 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/photography/campaigns": {
+      "get": {
+        "operationId": "photographyCampaigns",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyCampaignListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/campaigns/{id}": {
+      "put": {
+        "operationId": "photographySaveCampaign",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyCampaignSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyCampaignDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/campaigns/{id}/cancel": {
+      "post": {
+        "operationId": "photographyCancelCampaign",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyCampaignDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/campaigns/{id}/deliveries": {
+      "get": {
+        "operationId": "photographyCampaignDeliveries",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyCampaignDeliveriesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/campaigns/{id}/preview": {
+      "get": {
+        "operationId": "photographyPreviewCampaign",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyCampaignPreviewDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/campaigns/{id}/schedule": {
+      "post": {
+        "operationId": "photographyScheduleCampaign",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyCampaignScheduleDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyCampaignDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/campaigns/{id}/test": {
+      "post": {
+        "operationId": "photographyTestCampaign",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
     "/photography/galleries/{id}": {
       "get": {
         "operationId": "photographyGallery",
@@ -46614,6 +47496,64 @@
                 "schema": {
                   "format": "binary",
                   "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      }
+    },
+    "/photography/galleries/{id}/selfie-search": {
+      "post": {
+        "operationId": "photographySelfieSearch",
+        "parameters": [
+          {
+            "name": "X-Photography-Session",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographySelfieSearchDto"
                 }
               }
             },
@@ -48112,6 +49052,62 @@
         ],
         "x-immich-permission": "asset.edit.create",
         "x-immich-state": "Alpha"
+      }
+    },
+    "/photography/unsubscribe/{token}": {
+      "get": {
+        "operationId": "photographyUnsubscribePage",
+        "parameters": [
+          {
+            "name": "locale",
+            "required": false,
+            "in": "query",
+            "schema": {}
+          },
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
+      },
+      "post": {
+        "operationId": "photographyUnsubscribe",
+        "parameters": [
+          {
+            "name": "locale",
+            "required": false,
+            "in": "query",
+            "schema": {}
+          },
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Studio projects"
+        ]
       }
     },
     "/photography/workflows": {
@@ -74167,7 +75163,7 @@
   "info": {
     "title": "Frameleaf",
     "description": "Frameleaf API",
-    "version": "1.2.20",
+    "version": "1.2.22",
     "contact": {}
   },
   "tags": [
@@ -76542,6 +77538,10 @@
             "description": "Health scans verify each original against its recorded checksum",
             "type": "boolean"
           },
+          "clearGonePreviews": {
+            "description": "Clear previews for photos that are gone",
+            "type": "boolean"
+          },
           "duplicateReview": {
             "description": "Group near-duplicates for review; deletion stays explicit",
             "type": "boolean"
@@ -76568,6 +77568,10 @@
           },
           "manualMetadata": {
             "description": "A description rerun replaces only generated text and keeps manual text",
+            "type": "boolean"
+          },
+          "putBackFoundFiles": {
+            "description": "Put photos found on the drive that no library lists back by themselves",
             "type": "boolean"
           },
           "rawRecovery": {
@@ -84491,6 +85495,88 @@
           {
             "type": "object",
             "properties": {
+              "imported": {
+                "description": "Preserved external XMP settings and approximated colour controls",
+                "type": "object",
+                "properties": {
+                  "lightroom": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "darktable": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "checksum": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "curve": {
+                    "minItems": 2,
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1,
+                          "format": "double",
+                          "description": "Input"
+                        },
+                        "y": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1,
+                          "format": "double",
+                          "description": "Output"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "hsl": {
+                    "minItems": 8,
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "hue": {
+                          "default": 0,
+                          "description": "Hue adjustment",
+                          "type": "number",
+                          "minimum": -100,
+                          "maximum": 100,
+                          "format": "double"
+                        },
+                        "saturation": {
+                          "default": 0,
+                          "description": "Saturation adjustment",
+                          "type": "number",
+                          "minimum": -100,
+                          "maximum": 100,
+                          "format": "double"
+                        },
+                        "luminance": {
+                          "default": 0,
+                          "description": "Luminance adjustment",
+                          "type": "number",
+                          "minimum": -100,
+                          "maximum": 100,
+                          "format": "double"
+                        }
+                      }
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
               "version": {
                 "type": "number",
                 "enum": [
@@ -106366,6 +107452,537 @@
         },
         "type": "object"
       },
+      "FoundFileDecision": {
+        "enum": [
+          "no-owner",
+          "over-limit",
+          "asked"
+        ],
+        "type": "string"
+      },
+      "FoundFileDetailResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo it went back under, became, or copies",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FoundFileOutcome"
+          },
+          "ownerId": {
+            "description": "The account the file belongs to: its folder’s, else its photo’s; null when neither is known",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "previousPath": {
+            "description": "Where the photo it went back under pointed before",
+            "nullable": true,
+            "type": "string"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FoundFileReason"
+              }
+            ],
+            "nullable": true
+          },
+          "sizeInBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sortedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "steps": {
+            "description": "What was done with the file, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/FoundFileStepDto"
+            },
+            "type": "array"
+          },
+          "viewable": {
+            "description": "Whether the person asking may see the picture: it is their own, or it belongs to no account",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assetId",
+          "fileName",
+          "id",
+          "outcome",
+          "ownerId",
+          "path",
+          "previousPath",
+          "reason",
+          "sizeInBytes",
+          "sortedAt",
+          "steps",
+          "viewable"
+        ],
+        "type": "object"
+      },
+      "FoundFileGroupDto": {
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "folder": {
+            "description": "The folder no account uses; null when the files have an account",
+            "nullable": true,
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "The account the files belong to; null for a folder no account uses",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/FoundFileReason"
+          },
+          "sizeInBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "folder",
+          "ownerId",
+          "reason",
+          "sizeInBytes"
+        ],
+        "type": "object"
+      },
+      "FoundFileListDto": {
+        "properties": {
+          "cursor": {
+            "description": "The id of the last file of the page before",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "folder": {
+            "description": "Only the files in this folder no account uses",
+            "minLength": 1,
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FoundFileOutcome"
+          },
+          "ownerId": {
+            "description": "Only the files in this account’s folders",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/FoundFileReason"
+          },
+          "size": {
+            "default": 100,
+            "description": "Files per page",
+            "exclusiveMinimum": true,
+            "maximum": 500,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "FoundFileListResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FoundFileResponseDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "description": "Pass as `cursor` for the next page; null on the last page",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "FoundFileOutcome": {
+        "description": "What became of the file: put back under a photo that was missing, added as a new photo, a spare copy of a photo that is there, waiting for a person, or left alone at a person’s word",
+        "enum": [
+          "back",
+          "added",
+          "spare",
+          "needs",
+          "left"
+        ],
+        "type": "string"
+      },
+      "FoundFileReason": {
+        "description": "Why a file waits for a person: its folder belongs to no account, it does not open, its account has no room for it, or putting photos back by themselves is switched off",
+        "enum": [
+          "no-owner",
+          "wont-open",
+          "over-limit",
+          "asked"
+        ],
+        "type": "string"
+      },
+      "FoundFileResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo it went back under, became, or copies",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/FoundFileOutcome"
+          },
+          "ownerId": {
+            "description": "The account the file belongs to: its folder’s, else its photo’s; null when neither is known",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FoundFileReason"
+              }
+            ],
+            "nullable": true
+          },
+          "sizeInBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sortedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "viewable": {
+            "description": "Whether the person asking may see the picture: it is their own, or it belongs to no account",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assetId",
+          "fileName",
+          "id",
+          "outcome",
+          "ownerId",
+          "path",
+          "reason",
+          "sizeInBytes",
+          "sortedAt",
+          "viewable"
+        ],
+        "type": "object"
+      },
+      "FoundFileStepDto": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "facts": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "step": {
+            "description": "What was done: found, read, back, added, spare, undone, again, …",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "step"
+        ],
+        "type": "object"
+      },
+      "FoundFilesArchiveDto": {
+        "properties": {
+          "folder": {
+            "description": "Only the files in this folder no account uses",
+            "minLength": 1,
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "Only the files in this account’s folders",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FoundFilesDeleteSpareDto": {
+        "properties": {
+          "cursor": {
+            "description": "`nextCursor` of the call before",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "ids": {
+            "description": "Only these spare copies; left out, all of them",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "FoundFilesDeleteSpareResponseDto": {
+        "properties": {
+          "deleted": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "freedBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kept": {
+            "description": "Copies kept: the photo they copy could not be shown to be there and open",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "nextCursor": {
+            "description": "Call again with this as `cursor`; null when all were looked at",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deleted",
+          "freedBytes",
+          "kept",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "FoundFilesResolveDto": {
+        "properties": {
+          "cursor": {
+            "description": "`nextCursor` of the call before",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "folder": {
+            "description": "With no-owner: the folder the files are in",
+            "minLength": 1,
+            "type": "string"
+          },
+          "ownerId": {
+            "description": "With no-owner: the account whose library the files go to. With over-limit: the account",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/FoundFileDecision"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "FoundFilesResolveResponseDto": {
+        "properties": {
+          "added": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "back": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "nextCursor": {
+            "description": "Call again with this as `cursor`; null when the group is done",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "skipped": {
+            "description": "Files that changed or went since they were read; the next check sorts them",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spare": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "waiting": {
+            "description": "Files that still wait for a person",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added",
+          "back",
+          "nextCursor",
+          "skipped",
+          "spare",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "FoundFilesSummaryResponseDto": {
+        "properties": {
+          "added": {
+            "description": "Files added to a library as new photos",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "back": {
+            "description": "Files put back under a photo that was missing",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "groups": {
+            "description": "The files waiting for a person, one group per decision",
+            "items": {
+              "$ref": "#/components/schemas/FoundFileGroupDto"
+            },
+            "type": "array"
+          },
+          "left": {
+            "description": "Files a person chose to leave alone",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "needs": {
+            "description": "Files waiting for a person",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spare": {
+            "description": "Second copies of photos that are in a library",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spareSizeInBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tidied": {
+            "$ref": "#/components/schemas/FoundFilesTidiedDto"
+          }
+        },
+        "required": [
+          "added",
+          "back",
+          "groups",
+          "left",
+          "needs",
+          "spare",
+          "spareSizeInBytes",
+          "tidied"
+        ],
+        "type": "object"
+      },
+      "FoundFilesTidiedDto": {
+        "properties": {
+          "previewSizeInBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "previews": {
+            "description": "Previews cleared because their photo is gone",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sidecars": {
+            "description": "XMP files joined to the photo of the same name",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "previewSizeInBytes",
+          "previews",
+          "sidecars"
+        ],
+        "type": "object"
+      },
       "FrameleafAccountLinkResponseDto": {
         "properties": {
           "available": {
@@ -107928,6 +109545,88 @@
             "minimum": -100,
             "type": "number"
           },
+          "imported": {
+            "additionalProperties": false,
+            "description": "Preserved external XMP settings and approximated colour controls",
+            "properties": {
+              "checksum": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "curve": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "description": "Input",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Output",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "darktable": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "hsl": {
+                "items": {
+                  "properties": {
+                    "hue": {
+                      "default": 0,
+                      "description": "Hue adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "luminance": {
+                      "default": 0,
+                      "description": "Luminance adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "saturation": {
+                      "default": 0,
+                      "description": "Saturation adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "lightroom": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
           "masks": {
             "default": [],
             "description": "Selective adjustments, applied in order after the global develop",
@@ -108190,6 +109889,88 @@
             "maximum": 100,
             "minimum": -100,
             "type": "number"
+          },
+          "imported": {
+            "additionalProperties": false,
+            "description": "Preserved external XMP settings and approximated colour controls",
+            "properties": {
+              "checksum": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "curve": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "description": "Input",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Output",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "darktable": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "hsl": {
+                "items": {
+                  "properties": {
+                    "hue": {
+                      "default": 0,
+                      "description": "Hue adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "luminance": {
+                      "default": 0,
+                      "description": "Luminance adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "saturation": {
+                      "default": 0,
+                      "description": "Saturation adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "lightroom": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            },
+            "type": "object"
           },
           "masks": {
             "default": [],
@@ -108454,6 +110235,88 @@
             "minimum": -100,
             "type": "number"
           },
+          "imported": {
+            "additionalProperties": false,
+            "description": "Preserved external XMP settings and approximated colour controls",
+            "properties": {
+              "checksum": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "curve": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "description": "Input",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Output",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "darktable": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "hsl": {
+                "items": {
+                  "properties": {
+                    "hue": {
+                      "default": 0,
+                      "description": "Hue adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "luminance": {
+                      "default": 0,
+                      "description": "Luminance adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "saturation": {
+                      "default": 0,
+                      "description": "Saturation adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "lightroom": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
           "masks": {
             "default": [],
             "description": "Selective adjustments, applied in order after the global develop",
@@ -108716,6 +110579,88 @@
             "maximum": 100,
             "minimum": -100,
             "type": "number"
+          },
+          "imported": {
+            "additionalProperties": false,
+            "description": "Preserved external XMP settings and approximated colour controls",
+            "properties": {
+              "checksum": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "curve": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "description": "Input",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Output",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "darktable": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "hsl": {
+                "items": {
+                  "properties": {
+                    "hue": {
+                      "default": 0,
+                      "description": "Hue adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "luminance": {
+                      "default": 0,
+                      "description": "Luminance adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "saturation": {
+                      "default": 0,
+                      "description": "Saturation adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "lightroom": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            },
+            "type": "object"
           },
           "masks": {
             "default": [],
@@ -113962,6 +115907,88 @@
             "maximum": 100,
             "minimum": -100,
             "type": "number"
+          },
+          "imported": {
+            "additionalProperties": false,
+            "description": "Preserved external XMP settings and approximated colour controls",
+            "properties": {
+              "checksum": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "curve": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "x": {
+                      "description": "Input",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Output",
+                      "format": "double",
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "darktable": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "hsl": {
+                "items": {
+                  "properties": {
+                    "hue": {
+                      "default": 0,
+                      "description": "Hue adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "luminance": {
+                      "default": 0,
+                      "description": "Luminance adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    },
+                    "saturation": {
+                      "default": 0,
+                      "description": "Saturation adjustment",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": -100,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 8,
+                "type": "array"
+              },
+              "lightroom": {
+                "additionalProperties": {},
+                "type": "object"
+              }
+            },
+            "type": "object"
           },
           "keyFrame": {
             "$ref": "#/components/schemas/AssetDevelopKeyFrame",
@@ -131248,6 +133275,390 @@
         ],
         "type": "object"
       },
+      "PhotographyCampaignAudienceSource": {
+        "enum": [
+          "all",
+          "clients",
+          "leads",
+          "shoot"
+        ],
+        "type": "string"
+      },
+      "PhotographyCampaignDeliveriesDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/PhotographyCampaignDeliveryStatus"
+                }
+              },
+              "required": [
+                "email",
+                "name",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "PhotographyCampaignDeliveryStatus": {
+        "enum": [
+          "pending",
+          "sent",
+          "failed",
+          "uncertain",
+          "unsubscribed"
+        ],
+        "type": "string"
+      },
+      "PhotographyCampaignDto": {
+        "properties": {
+          "audience": {
+            "properties": {
+              "source": {
+                "$ref": "#/components/schemas/PhotographyCampaignAudienceSource"
+              },
+              "workflowId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source"
+            ],
+            "type": "object"
+          },
+          "body": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "failedCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pendingCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "scheduledFor": {
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "sentCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PhotographyCampaignStatus"
+          },
+          "subject": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "templateKey": {
+            "$ref": "#/components/schemas/PhotographyCampaignTemplate"
+          },
+          "uncertainCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unsubscribedCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "audience",
+          "body",
+          "failedCount",
+          "id",
+          "name",
+          "pendingCount",
+          "revision",
+          "scheduledFor",
+          "sentCount",
+          "status",
+          "subject",
+          "templateKey",
+          "uncertainCount",
+          "unsubscribedCount"
+        ],
+        "type": "object"
+      },
+      "PhotographyCampaignListDto": {
+        "properties": {
+          "clients": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "audience": {
+                  "properties": {
+                    "source": {
+                      "$ref": "#/components/schemas/PhotographyCampaignAudienceSource"
+                    },
+                    "workflowId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "body": {
+                  "maxLength": 10000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "failedCount": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "pendingCount": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "revision": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                },
+                "scheduledFor": {
+                  "format": "date-time",
+                  "nullable": true,
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "type": "string"
+                },
+                "sentCount": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/PhotographyCampaignStatus"
+                },
+                "subject": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "templateKey": {
+                  "$ref": "#/components/schemas/PhotographyCampaignTemplate"
+                },
+                "uncertainCount": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "unsubscribedCount": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "templateKey",
+                "subject",
+                "body",
+                "audience",
+                "id",
+                "revision",
+                "status",
+                "scheduledFor",
+                "sentCount",
+                "failedCount",
+                "pendingCount",
+                "uncertainCount",
+                "unsubscribedCount"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "leads": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mailReady": {
+            "type": "boolean"
+          },
+          "sender": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clients",
+          "items",
+          "leads",
+          "mailReady",
+          "sender"
+        ],
+        "type": "object"
+      },
+      "PhotographyCampaignPreviewDto": {
+        "properties": {
+          "html": {
+            "type": "string"
+          },
+          "recipients": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "html",
+          "recipients",
+          "sender",
+          "text"
+        ],
+        "type": "object"
+      },
+      "PhotographyCampaignSaveDto": {
+        "properties": {
+          "audience": {
+            "properties": {
+              "source": {
+                "$ref": "#/components/schemas/PhotographyCampaignAudienceSource"
+              },
+              "workflowId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source"
+            ],
+            "type": "object"
+          },
+          "body": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "subject": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "templateKey": {
+            "$ref": "#/components/schemas/PhotographyCampaignTemplate"
+          }
+        },
+        "required": [
+          "audience",
+          "body",
+          "name",
+          "subject",
+          "templateKey"
+        ],
+        "type": "object"
+      },
+      "PhotographyCampaignScheduleDto": {
+        "properties": {
+          "expectedRevision": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "scheduledFor": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
+      "PhotographyCampaignStatus": {
+        "enum": [
+          "draft",
+          "scheduled",
+          "completed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "PhotographyCampaignTemplate": {
+        "enum": [
+          "print-sale",
+          "review-request",
+          "mini-session"
+        ],
+        "type": "string"
+      },
       "PhotographyCheckoutDto": {
         "properties": {
           "url": {
@@ -132477,6 +134888,9 @@
               "type": "object"
             },
             "type": "array"
+          },
+          "selfieSearch": {
+            "type": "boolean"
           },
           "title": {
             "type": "string"
@@ -133723,6 +136137,10 @@
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                     "type": "string"
                   },
+                  "selfieSearch": {
+                    "description": "Let a guest use a selfie to find photographs in this gallery",
+                    "type": "boolean"
+                  },
                   "terms": {
                     "maxLength": 5000,
                     "type": "string"
@@ -134960,6 +137378,10 @@
                           "nullable": true,
                           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                           "type": "string"
+                        },
+                        "selfieSearch": {
+                          "description": "Let a guest use a selfie to find photographs in this gallery",
+                          "type": "boolean"
                         },
                         "terms": {
                           "maxLength": 5000,
@@ -136217,6 +138639,10 @@
                               "nullable": true,
                               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                               "type": "string"
+                            },
+                            "selfieSearch": {
+                              "description": "Let a guest use a selfie to find photographs in this gallery",
+                              "type": "boolean"
                             },
                             "terms": {
                               "maxLength": 5000,
@@ -137632,6 +140058,10 @@
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                 "type": "string"
               },
+              "selfieSearch": {
+                "description": "Let a guest use a selfie to find photographs in this gallery",
+                "type": "boolean"
+              },
               "terms": {
                 "maxLength": 5000,
                 "type": "string"
@@ -138472,6 +140902,23 @@
         },
         "required": [
           "watermark"
+        ],
+        "type": "object"
+      },
+      "PhotographySelfieSearchDto": {
+        "properties": {
+          "captureIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "captureIds"
         ],
         "type": "object"
       },
@@ -139814,6 +142261,10 @@
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                       "type": "string"
                     },
+                    "selfieSearch": {
+                      "description": "Let a guest use a selfie to find photographs in this gallery",
+                      "type": "boolean"
+                    },
                     "terms": {
                       "maxLength": 5000,
                       "type": "string"
@@ -140743,6 +143194,10 @@
                 "nullable": true,
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                 "type": "string"
+              },
+              "selfieSearch": {
+                "description": "Let a guest use a selfie to find photographs in this gallery",
+                "type": "boolean"
               },
               "terms": {
                 "maxLength": 5000,
@@ -141914,6 +144369,10 @@
                 "nullable": true,
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                 "type": "string"
+              },
+              "selfieSearch": {
+                "description": "Let a guest use a selfie to find photographs in this gallery",
+                "type": "boolean"
               },
               "terms": {
                 "maxLength": 5000,
@@ -143152,6 +145611,10 @@
                       "nullable": true,
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                       "type": "string"
+                    },
+                    "selfieSearch": {
+                      "description": "Let a guest use a selfie to find photographs in this gallery",
+                      "type": "boolean"
                     },
                     "terms": {
                       "maxLength": 5000,
@@ -144409,6 +146872,10 @@
                           "nullable": true,
                           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
                           "type": "string"
+                        },
+                        "selfieSearch": {
+                          "description": "Let a guest use a selfie to find photographs in this gallery",
+                          "type": "boolean"
                         },
                         "terms": {
                           "maxLength": 5000,
@@ -175139,6 +177606,17 @@
           "cloudProcessing": {
             "$ref": "#/components/schemas/CloudProcessingResponse"
           },
+          "develop": {
+            "properties": {
+              "importXmpEdits": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "importXmpEdits"
+            ],
+            "type": "object"
+          },
           "display": {
             "$ref": "#/components/schemas/DisplayPreferencesResponse"
           },
@@ -175289,6 +177767,14 @@
           },
           "cloudProcessing": {
             "$ref": "#/components/schemas/CloudProcessingUpdate"
+          },
+          "develop": {
+            "properties": {
+              "importXmpEdits": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
           },
           "display": {
             "$ref": "#/components/schemas/DisplayPreferencesUpdate"

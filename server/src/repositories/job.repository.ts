@@ -101,8 +101,11 @@ const COMMITTED_EFFECT_JOBS = new Set<JobName>([
 ]);
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
+  // Campaign retries claim only untouched recipients from the durable delivery ledger.
+  JobName.PhotographyCampaignSend,
   JobName.MediaImport,
   JobName.PhotographyBulkGallery,
+  JobName.DevelopImport,
   // FL-1300: a scan rewrites its whole snapshot, and an apply resumes from the last change it committed.
   JobName.AlbumCleanupScan,
   JobName.AlbumCleanupApply,
@@ -1309,6 +1312,7 @@ export class JobRepository {
 
   /** FL-930: `queueAll` committed with the caller's transaction, from a request (never from queued work). */
   async queueAllInTransaction(tx: Transaction<DB>, items: JobItem[]): Promise<void> {
+    if (items.length === 0) return;
     if (queueExecution.getStore() || runAdmission.getStore()) {
       throw new Error('Queued work and run admission queue through their own transaction');
     }
@@ -1557,7 +1561,7 @@ export class JobRepository {
         // under no key, so a later request can never overwrite where it was.
         return item.data.pending && !item.data.ids
           ? {
-              delay: FIX_SEARCH_DELAY_MS,
+              delay: item.data.delay ?? FIX_SEARCH_DELAY_MS,
               deduplication: {
                 id: `${JobName.MediaHealthLocateMissing}:pending:${item.data.userId}`,
                 keepLastIfActive: true,
@@ -1585,6 +1589,10 @@ export class JobRepository {
       case JobName.WorkflowEventDispatch: {
         return { deduplication: { id: `${JobName.WorkflowEventDispatch}:${item.data.event.deliveryId}` } };
       }
+      case JobName.PhotographyCampaignSend: {
+        return { deduplication: { id: item.name, keepLastIfActive: true } };
+      }
+      case JobName.DevelopImport:
       case JobName.PhotographyBulkGallery:
       case JobName.PhotographyWorkflowRender: {
         return {

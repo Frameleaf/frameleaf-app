@@ -2952,6 +2952,8 @@ describe(PersonService.name, () => {
       await sut.handleRecognizeFaces({ id: noPerson1.id });
 
       expect(mocks.person.create).not.toHaveBeenCalled();
+      // joining a person who exists runs alongside other faces, without the creation lock
+      expect(mocks.person.lockPersonCreation).not.toHaveBeenCalled();
       expect(mocks.person.reassignFaces).toHaveBeenCalledTimes(1);
       expect(mocks.person.reassignFaces).toHaveBeenCalledWith({
         faceIds: expect.arrayContaining([noPerson1.id]),
@@ -3053,6 +3055,11 @@ describe(PersonService.name, () => {
       await sut.handleRecognizeFaces({ id: noPerson1.id });
 
       expect(mocks.person.createGroup).toHaveBeenCalledWith(asset.ownerId);
+      // creating waits for the cluster group's creation lock first, so a face recognised alongside it finds this person
+      expect(mocks.person.lockPersonCreation).toHaveBeenCalledOnce();
+      expect(mocks.person.lockPersonCreation.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.person.createGroup.mock.invocationCallOrder[0],
+      );
       expect(mocks.person.create).toHaveBeenCalledWith({
         ownerId: asset.ownerId,
         faceAssetId: noPerson1.id,

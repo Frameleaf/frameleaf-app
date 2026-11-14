@@ -50,6 +50,22 @@ describe(JobRepository.name, () => {
     }
   });
 
+  it('does not require request-only admission for an empty transactional batch inside queued work', async () => {
+    await expect(
+      queueExecution.run(context(), () => sut.queueAllInTransaction({} as never, [])),
+    ).resolves.toBeUndefined();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('still refuses nonempty request-only transactional batches inside queued work', async () => {
+    await expect(
+      queueExecution.run(context(), () =>
+        sut.queueAllInTransaction({} as never, [{ name: JobName.AssetDetectFaces, data: { id: 'asset' } }]),
+      ),
+    ).rejects.toThrow('Queued work and run admission queue through their own transaction');
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
   it('retains delay and latest-pending deduplication options', async () => {
     await sut.queue({ name: JobName.ICloudSync, data: { id: 'account' } });
     expect(enqueue.mock.calls[0][0][0].options).toEqual({
@@ -81,6 +97,17 @@ describe(JobRepository.name, () => {
       { jobId: 'fix-asset', deduplication: { id: 'fix-asset', keepLastIfActive: true } },
       // and once it waits for another fix it puts itself back under a person's key, which Try again never cancels
       { jobId: 'fix-asset/ptry-2-1', delay: 60_000 },
+    ]);
+  });
+
+  it('lets the shared search wait longer under the same key while a scheduled scan runs (FL-1534)', async () => {
+    await sut.queue({
+      name: JobName.MediaHealthLocateMissing,
+      data: { userId: 'owner', pending: true, delay: 600_000 },
+    });
+
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { delay: 600_000, deduplication: { id: 'MediaHealthLocateMissing:pending:owner', keepLastIfActive: true } },
     ]);
   });
 
@@ -451,6 +478,24 @@ describe(JobRepository.name, () => {
       name: JobName.DatabaseBackup,
       queue: QueueName.BackupDatabase,
       safeToRetry: true,
+    });
+  });
+
+  it('resumes campaign batches through their durable recipient ledger', async () => {
+    await sut.queue({ name: JobName.PhotographyCampaignSend });
+    expect(enqueue.mock.calls[0][0][0]).toMatchObject({
+      safeToRetry: true,
+      options: { deduplication: { id: JobName.PhotographyCampaignSend, keepLastIfActive: true } },
+    });
+  });
+  it('keeps XMP import retries and coalescing scoped to the asset', async () => {
+    await sut.queue({ name: JobName.DevelopImport, data: { id: 'asset', delay: 2500 } });
+    expect(enqueue.mock.calls[0][0][0]).toMatchObject({
+      safeToRetry: true,
+      options: {
+        delay: 2500,
+        deduplication: { id: 'DevelopImport:asset', keepLastIfActive: true },
+      },
     });
   });
 

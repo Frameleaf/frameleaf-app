@@ -78,6 +78,71 @@ beforeAll(async () => {
 });
 
 describe(MediaHealthRepository.name, () => {
+  describe('a scheduled scan’s share of the library (FL-1534)', () => {
+    it('finds where a share ends, and scans it together with what changed', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const ids: string[] = [];
+      for (let index = 0; index < 5; index++) {
+        const { result } = await ctx.newAsset({ ownerId: user.id });
+        ids.push(result.id);
+      }
+      await ctx.newAsset({ ownerId: other.id });
+      ids.sort();
+      const never = new Date(Date.now() + 60 * 60_000);
+      const page = async (options: { changedSince?: Date; slice?: { after: string | null; to: string | null } }) =>
+        (await sut.getAssetPage({ ownerId: user.id, limit: 10, ...options })).map(({ id }) => id);
+
+      // a share of two from the beginning ends at the second photo; one that runs out of photos has no end
+      await expect(sut.getScanSliceEnd(user.id, null, 2)).resolves.toBe(ids[1]);
+      await expect(sut.getScanSliceEnd(user.id, ids[1], 2)).resolves.toBe(ids[3]);
+      await expect(sut.getScanSliceEnd(user.id, ids[3], 2)).resolves.toBeNull();
+
+      // nothing changed: only the share is scanned, whichever part of the library it is
+      await expect(page({ changedSince: never })).resolves.toEqual([]);
+      await expect(page({ changedSince: never, slice: { after: null, to: ids[1] } })).resolves.toEqual(ids.slice(0, 2));
+      await expect(page({ changedSince: never, slice: { after: ids[1], to: ids[3] } })).resolves.toEqual(
+        ids.slice(2, 4),
+      );
+      await expect(page({ changedSince: never, slice: { after: ids[3], to: null } })).resolves.toEqual([ids[4]]);
+      await expect(sut.countScanAssets(user.id, never, { after: ids[1], to: ids[3] })).resolves.toBe(2);
+      await expect(sut.countScanAssets(user.id, never)).resolves.toBe(0);
+
+      // what changed is scanned as well, wherever it is
+      await expect(page({ changedSince: new Date(0), slice: { after: ids[3], to: null } })).resolves.toEqual(ids);
+      await expect(sut.countScanAssets(user.id, new Date(0), { after: ids[3], to: null })).resolves.toBe(5);
+    });
+
+    it('says what a photo’s record holds for the file that is its original', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const sha1 = Buffer.alloc(20, 71);
+      const sha256 = Buffer.alloc(32, 72);
+      const folder = `/data/upload/${user.id}`;
+      const { result: read } = await ctx.newAsset({
+        ownerId: user.id,
+        checksum: sha1,
+        originalPath: `${folder}/read.jpg`,
+      });
+      const { result: unread } = await ctx.newAsset({ ownerId: user.id, originalPath: `${folder}/unread.jpg` });
+      await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+        VALUES (${read.id}::uuid, ${sha1}, ${sha256}, 4096, ARRAY[${read.originalPath}]::text[], 1, '{}'::jsonb, now(), now())`.execute(
+        defaultDatabase,
+      );
+
+      const rows = await sut.getOriginalDigestsByPaths([read.originalPath, unread.originalPath, `${folder}/stray.jpg`]);
+
+      expect(rows).toHaveLength(2);
+      const byPath = new Map(rows.map((row) => [row.originalPath, row]));
+      expect(byPath.get(read.originalPath)).toMatchObject({ sizeInBytes: 4096 });
+      expect(Buffer.from(byPath.get(read.originalPath)!.checksum).equals(sha1)).toBe(true);
+      expect(Buffer.from(byPath.get(read.originalPath)!.sha256!).equals(sha256)).toBe(true);
+      expect(byPath.get(unread.originalPath)).toMatchObject({ sha1: null, sha256: null, sizeInBytes: null });
+      await expect(sut.getOriginalDigestsByPaths([])).resolves.toEqual([]);
+    });
+  });
+
   describe('scan bookkeeping', () => {
     it('admits only one concurrent owner lookup during the cooldown, then permits another after expiry', async () => {
       const { ctx, sut } = setup();

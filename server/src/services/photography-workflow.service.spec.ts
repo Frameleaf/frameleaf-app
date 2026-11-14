@@ -749,6 +749,73 @@ describe('photography workflow integration boundaries', () => {
     expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
     expect((await s.service.file(s.shootId, client.session, s.captureId, 'download')).path).not.toBe(s.source);
   });
+  it.each([false, true])(
+    'skips an approval render superseded by a free delivery order (during failure settlement: %s)',
+    async (duringSettlement) => {
+      const s = await setup();
+      const client = await s.invitation();
+      await s.published();
+      await s.service.config(s.auth, s.shootId, {
+        expectedRevision: s.row().revision,
+        config: { ...s.row().value.config, mode: 'edited-delivery', includedCount: 1, additionalPrice: 0 },
+      });
+      await s.service.approval(s.auth, s.shootId, {
+        expectedRevision: s.row().revision,
+        captureId: s.captureId,
+        revisionId: s.revisionId,
+        requestClientApproval: false,
+      });
+      const started = Promise.withResolvers<void>();
+      const source = Promise.withResolvers<{ path: string }>();
+      s.repository.proofSource.mockImplementationOnce(() => {
+        started.resolve();
+        return source.promise;
+      });
+      const oldRender = s.service.render({ id: s.shootId });
+      await started.promise;
+      let replacement: WorkflowRow;
+      const order = async () => {
+        await s.service.order(s.auth, s.shootId, {
+          expectedRevision: s.row().revision,
+          roundId: null,
+          captureIds: [s.captureId],
+          recipientId: client.recipientId,
+          pricing: 'package',
+        });
+        replacement = structuredClone(s.row());
+      };
+      if (duringSettlement) {
+        const mutate = s.repository.mutateKeepingRevision.getMockImplementation()!;
+        s.repository.mutateKeepingRevision.mockImplementationOnce(async (...args) => {
+          await order();
+          return mutate(...args);
+        });
+        source.reject(new Error('Old proof source failed'));
+      } else {
+        await order();
+        source.resolve({ path: s.source });
+      }
+      expect(await oldRender).toBe(JobStatus.Skipped);
+      expect(s.row()).toEqual(replacement!);
+      expect(s.row().value.publication).toMatchObject({ status: 'queued', claim: null, error: null });
+      expect(s.row().value.orders[0]).toMatchObject({ status: 'free', total: 0 });
+      expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+      const gallery = await s.service.gallery(s.shootId, client.session);
+      expect(gallery.photos[0]).toMatchObject({ canDownload: true, blockedReason: null });
+      expect(gallery.photos[0].outputs[0]).toMatchObject({ ready: true, renderStatus: 'ready', canDownload: true });
+      expect((await s.service.file(s.shootId, client.session, s.captureId, 'download')).path).not.toBe(s.source);
+    },
+  );
+  it('skips failure settlement when the workflow disappeared during rendering', async () => {
+    const s = await setup();
+    await s.service.publish(s.auth, s.shootId, { expectedRevision: s.row().revision, scope: 'all-eligible' });
+    s.repository.proofSource.mockImplementationOnce(() => {
+      s.repository.get.mockResolvedValueOnce(undefined);
+      return Promise.reject(new Error('Proof source disappeared'));
+    });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Skipped);
+    expect(s.repository.mutateKeepingRevision).toHaveBeenCalledOnce();
+  });
   it('keeps published pixels intact when an expired renderer resumes after its replacement commits', async () => {
     const s = await setup();
     const client = await s.invitation();
@@ -773,7 +840,7 @@ describe('photography workflow integration boundaries', () => {
       publishedBytes = await readFile(publishedPath);
     } finally {
       oldSource.resolve({ path: s.source });
-      await oldRender;
+      expect(await oldRender).toBe(JobStatus.Skipped);
     }
     expect(s.row().value.publication!.status).toBe('ready');
     expect((await s.service.file(s.shootId, client.session, s.captureId, 'preview')).path).toBe(publishedPath);

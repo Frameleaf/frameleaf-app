@@ -40,6 +40,13 @@ describe('canonical migration discovery', () => {
     expect(released).toBe('a8b4132d8dd9dd1eb846843576a46265910e135370bfd0aaf35589f1492d69c9');
   });
 
+  it('preserves the pre-campaign main chain as an exact prefix', async () => {
+    const order = (await readFile(new URL('migrations/ORDER', import.meta.url), 'utf8')).trim().split('\n');
+    expect(createHash('sha256').update(order.slice(0, 47).join('\n')).digest('hex')).toBe(
+      '2e8c744c8b2c301d61b3164727375f1e20f644ee407bfe071cdceaa3fd34c0b2',
+    );
+  });
+
   it('checks ORDER before invoking an injected module loader', async () => {
     const load = vi.fn((path: string) => import(path));
     await writeFile(join(folder, '1700000000000-LegacyMigration.js'), 'export async function up() {}');
@@ -75,4 +82,14 @@ describe('canonical migration discovery', () => {
       await expect(createMigrationProvider(folder).getMigrations()).rejects.toThrow(/ORDER/);
     },
   );
+  it.each([
+    `${first} ${second}\n`,
+    `../outside ${first}\n`,
+    `0000000000002-Unknown 0000000000003-Missing\n`,
+    `0000000000002-Unknown ${first} extra\n`,
+    `0000000000002-Unknown ${first}\n0000000000002-Unknown ${first}\n`,
+  ])('rejects invalid migration renames %s', async (content) => {
+    await writeFile(join(folder, 'RENAMES'), content);
+    await expect(createMigrationProvider(folder).getMigrations()).rejects.toThrow('RENAMES');
+  });
 });

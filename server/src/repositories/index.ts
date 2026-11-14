@@ -63,6 +63,7 @@ import { EagleImportRepository } from 'src/repositories/eagle-import.repository.
 import { EagleLibraryRepository } from 'src/repositories/eagle-library.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { FoundFileRepository } from 'src/repositories/found-file.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
@@ -118,6 +119,7 @@ import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PhotoLocationsRepository } from 'src/repositories/photo-locations.repository.js';
 import { PhotoSourceRepository } from 'src/repositories/photo-source.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
+import { PhotographyCampaignRepository } from 'src/repositories/photography-campaign.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
@@ -166,6 +168,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  PhotographyCampaignRepository,
   MediaDownloaderRepository,
   MediaSessionRepository,
   MediaImportRepository,
@@ -311,6 +314,7 @@ export const repositories = [
   AlbumCleanupRepository,
   DateDoctorRepository,
   AssetLedgerRepository,
+  FoundFileRepository,
   AlbumMergeRepository,
   StackRepository,
   StudioPreviewRepository,

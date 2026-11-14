@@ -901,6 +901,17 @@ export class PersonRepository {
     }
     return this.db.insertInto('person').values(people).returningAll().execute();
   }
+  /**
+   * Recognition runs several faces at once. A face that would create a person (or a person group) holds this until
+   * its transaction ends, so the next one in the same cluster group searches again and finds that person instead of
+   * starting another. Outside a transaction it is released at once.
+   */
+  async lockPersonCreation(clusterGroupId: string) {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${'face-recognition-create:' + clusterGroupId}, 0))`.execute(
+      this.db,
+    );
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   createGroup(ownerId: string) {
     return this.db

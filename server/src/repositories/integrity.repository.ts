@@ -655,6 +655,17 @@ export class IntegrityRepository {
   deleteByIds(ids: string[]) {
     return this.db.deleteFrom('integrity_report').where('id', 'in', ids).execute();
   }
+  /** FL-1532: the stray-file findings for these paths go, once the files are in a library. */
+  async deleteUntrackedByPaths(paths: string[]): Promise<void> {
+    if (paths.length === 0) {
+      return;
+    }
+    await this.db
+      .deleteFrom('integrity_report')
+      .where('type', '=', IntegrityReport.UntrackedFile)
+      .where('path', 'in', paths)
+      .execute();
+  }
   /** Empties one check's list of findings. Only the rows go: no file or photo is touched. */
   @GenerateSql({ params: [IntegrityReport.MissingFile] })
   async deleteByType(type: IntegrityReport) {

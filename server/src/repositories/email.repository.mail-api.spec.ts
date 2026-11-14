@@ -105,6 +105,28 @@ describe(`${EmailRepository.name} (Gmail and Microsoft)`, () => {
     expect(error).toMatchObject({ status: 401, message: 'Gmail refused (401): Invalid Credentials' });
   });
 
+  it.each([
+    [{ code: 'ErrorAccessDenied' }, MailSignInProvider.Microsoft, 'ErrorAccessDenied'],
+    [
+      { code: 403, errors: [{ reason: 'insufficientPermissions' }] },
+      MailSignInProvider.Gmail,
+      'insufficientPermissions',
+    ],
+    [
+      { code: 403, details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }] },
+      MailSignInProvider.Gmail,
+      'ACCESS_TOKEN_SCOPE_INSUFFICIENT',
+    ],
+  ] as const)(
+    'retains the structured provider refusal code for account recovery (%j)',
+    async (error, provider, reasonCode) => {
+      fetchMock.mockResolvedValue(Response.json({ error }, { status: 403 }));
+      await expect(
+        sut.sendEmailWithAccount({ ...message, account: { provider, accessToken: ACCESS } }),
+      ).rejects.toMatchObject({ status: 403, reasonCode });
+    },
+  );
+
   it('reports a provider that does not answer', async () => {
     fetchMock.mockRejectedValue(new Error('getaddrinfo ENOTFOUND'));
     await expect(
@@ -146,5 +168,19 @@ describe(`${EmailRepository.name} (Gmail and Microsoft)`, () => {
       fetchMock.mockResolvedValue(Response.json({ mail: null }));
       await expect(sut.readMicrosoftAddress(ACCESS)).rejects.toThrow('did not say which address signed in');
     });
+  });
+  it('retains the provider Retry-After response for campaign pacing', async () => {
+    fetchMock.mockResolvedValueOnce(
+      Response.json(
+        { error: { message: 'Slow down' } },
+        {
+          status: 429,
+          headers: { 'Retry-After': '600' },
+        },
+      ),
+    );
+    await expect(
+      sut.sendEmailWithAccount({ ...message, account: { provider: MailSignInProvider.Gmail, accessToken: ACCESS } }),
+    ).rejects.toMatchObject({ status: 429, retryAfterSeconds: 600 });
   });
 });

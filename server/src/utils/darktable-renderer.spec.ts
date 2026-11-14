@@ -1,4 +1,5 @@
 import { ServiceUnavailableException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -8,9 +9,12 @@ import {
   DARKTABLE_TIMEOUT_MS,
   prepareNativeHistory,
   renderDarktable,
+  renderDarktableHistory,
   translateDarktableExposure,
   verifyDarktableVersion,
 } from 'src/utils/darktable-renderer.js';
+import { readNativeHistory } from 'src/utils/develop-import/native-history.js';
+import { readDevelopXmp } from 'src/utils/develop-import/xmp.js';
 import { resetLockedTmpCheck } from 'src/utils/locked-read.js';
 import { tryPromise } from 'src/utils/promise.js';
 
@@ -96,7 +100,7 @@ describe('pinned darktable adapter', () => {
       if (args[1].endsWith('bootstrap.png')) {
         historyDouble(args[args.indexOf('--library') + 1]);
       }
-      await writeFile(expandOutput(args[1]), 'unit-test output');
+      await writeFile(expandOutput(args[1].endsWith('.xmp') ? args[2] : args[1]), 'unit-test output');
       return { stdout: '', stderr: '' };
     });
   });
@@ -104,6 +108,39 @@ describe('pinned darktable adapter', () => {
   afterEach(async () => {
     mocks.tempRoot = undefined;
     await rm(directory, { recursive: true, force: true });
+  });
+  it('passes only a validated private sidecar to the same pinned native pipeline', async () => {
+    const history = readNativeHistory(
+      readDevelopXmp(readFileSync('test/fixtures/develop-import/darktable-native-canon.xmp')),
+    );
+    let sidecar = '';
+    const execute = mocks.exec.getMockImplementation()!;
+    mocks.exec.mockImplementation(async (...args) => {
+      const argv = args[1] as string[];
+      if (argv[1]?.endsWith('.xmp')) sidecar = await readFile(argv[1], 'utf8');
+      return execute(...args);
+    });
+    await expect(renderDarktableHistory(input, history)).resolves.toBeInstanceOf(Buffer);
+    expect(mocks.exec).toHaveBeenCalledTimes(2); // version + full history, no default-history projection
+    expect(readNativeHistory(readDevelopXmp(Buffer.from(sidecar)))).toEqual(history);
+    expect(sidecar).not.toContain('DateTimeOriginal');
+    expect(await readFile(input, 'utf8')).toBe('unit-test original');
+    await expect(readFile(nativeDirectory!)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+  it('refuses unsafe native history before touching the native binary', async () => {
+    await expect(renderDarktableHistory(input, { version: 1 })).rejects.toThrow();
+    expect(mocks.exec).not.toHaveBeenCalled();
+  });
+  it('refuses an out-of-range native highlights mode before any process starts', async () => {
+    const history = readNativeHistory(
+      readDevelopXmp(readFileSync('test/fixtures/develop-import/darktable-native-canon.xmp')),
+    );
+    const entry = history.entries.find((entry) => entry.operation === 'highlights')!;
+    const params = Buffer.from(entry.params, 'hex');
+    params.writeInt32LE(6, 0);
+    entry.params = params.toString('hex');
+    await expect(renderDarktableHistory(input, history)).rejects.toThrow();
+    expect(mocks.exec).not.toHaveBeenCalled();
   });
   it('preserves literal output paths containing native pattern syntax', async () => {
     mocks.tempRoot = join(directory, String.raw`literal\Photos-$(HOME)`);

@@ -204,11 +204,23 @@ class OrtSession:
         if native is not None:
             self.session.disable_fallback()
             if native.provider not in self.session.get_providers():
+                self._release_refused()
                 raise RuntimeError("native_provider_not_loaded")
             if native.profile_dir is not None:
                 if len(native.sessions) >= 64:
+                    self._release_refused()
                     raise RuntimeError("native_session_limit")
                 native.sessions.append(self)
+
+    def _release_refused(self) -> None:
+        """Close and drop a session the native policy refuses, before the refusal is raised.
+
+        ONNX Runtime opens a session's profile when it creates the session. The error raised here
+        keeps this object alive while it propagates, and Windows cannot delete an open file, so the
+        profile folder could not be removed and that failure would replace the real reason.
+        """
+        self.session.end_profiling()
+        del self.session
 
     def _open(
         self,
@@ -398,6 +410,8 @@ class OrtSession:
         previous_cache = self._coreml_cache
         self.session = session
         self._coreml_cache, self._coreml_shape = cache, signature
+        # The specialized session loaded the derived model again: prove it against its source again.
+        self.source_model_path = self._source_model_path
         if previous_cache is not None:
             previous_cache.cleanup()
 
@@ -440,6 +454,10 @@ class OrtSession:
                     options = {"arena_extend_strategy": "kSameAsRequested"}
                 case "CUDAExecutionProvider":
                     options = {"arena_extend_strategy": "kSameAsRequested", "device_id": settings.device_id}
+                    if native:
+                        # onnxruntime turns TF32 on by default: on cards that have it, convolutions and matrix
+                        # products keep 10 bits of mantissa. Native fixtures need float32 accuracy, as on CoreML.
+                        options["use_tf32"] = "0"
                 case "nv_tensorrt_rtx":
                     trt_rtx_dir = runtime_cache_dir(self.model_path) / "trt-rtx"
                     trt_rtx_dir.mkdir(parents=True, exist_ok=True)

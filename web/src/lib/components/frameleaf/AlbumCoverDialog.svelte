@@ -23,8 +23,8 @@
    *
    * The choices are the album's own items, read with the existing metadata search rather
    * than a new endpoint; the chosen id is written with `PATCH /albums/{id}`
-   * (`albumThumbnailAssetId`). A collection's own items are the union of its albums, so the
-   * caller passes those album ids and the cover may come from any of them.
+   * (`albumThumbnailAssetId`). The caller passes the album and every album nested under it (a
+   * collection has no items of its own), and the cover may come from any of them (FL-1584).
    *
    * "Always use the newest item" (FL-83, AL-13) is the prototype's `choice === null`: saved as
    * `coverFollowsNewest`, after which the server keeps the newest item as the cover. Picking an item
@@ -32,7 +32,7 @@
    */
   interface Props {
     album: AlbumResponseDto;
-    /** Albums whose items may be used. The album itself for an album, its children for a collection. */
+    /** Albums whose items may be used: the album and every album nested under it. */
     albumIds: string[];
     open?: boolean;
     onUpdated: (album: AlbumResponseDto) => void;
@@ -58,12 +58,16 @@
     loading = true;
     failed = false;
     try {
-      const results = await searchAssets({
-        metadataSearchDto: { albumIds, size: PAGE },
-      });
+      // FL-1584: several albumIds in one search means "in every one of them", so each album is
+      // searched on its own and the results joined.
+      // ponytail: one request per nested album; a union filter on the server if collections get large.
+      const pages = await Promise.all(
+        albumIds.map((id) => searchAssets({ metadataSearchDto: { albumIds: [id], size: PAGE } })),
+      );
+      const byId = new Map(pages.flatMap((page) => page.assets.items).map((asset) => [asset.id, asset]));
       // An album cover is never a Locked photo (owner decision, September 22, 2026); an unlocked
       // session's search includes them, so they are left out of the choices.
-      assets = results.assets.items.filter((asset) => asset.visibility !== AssetVisibility.Locked);
+      assets = [...byId.values()].filter((asset) => asset.visibility !== AssetVisibility.Locked).slice(0, PAGE);
     } catch {
       failed = true;
     } finally {

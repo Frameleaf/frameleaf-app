@@ -37,7 +37,7 @@ describe('Connect upgrade from the supported baseline', () => {
     await admin(`CREATE DATABASE ${name} TEMPLATE template0`);
     db = new Kysely(getKyselyConfig({ connectionType: 'url', url: new URL(`/${name}`, url).href }));
     expect((await migrator().migrateTo('0000000000000-FrameleafBaseline')).error).toBeUndefined();
-    expect((await migrator().migrateTo('1794520000000-DevelopStyleProfile')).error).toBeUndefined();
+    expect((await migrator().migrateTo('1794570000000-PhotographyCampaign')).error).toBeUndefined();
   });
   afterAll(async () => {
     await db?.destroy();
@@ -60,9 +60,9 @@ describe('Connect upgrade from the supported baseline', () => {
     const upgrade = await migrator().migrateToLatest();
     expect(upgrade.error).toBeUndefined();
     expect(upgrade.results?.map(({ migrationName }) => migrationName)).toEqual([
-      '1794550000000-ConnectAccessPolicy',
-      '1794560000000-ConnectMedia',
-      '1794570000000-ConnectEvents',
+      '1794580000000-ConnectAccessPolicy',
+      '1794590000000-ConnectMedia',
+      '1794600000000-ConnectEvents',
     ]);
     const oauth = new OAuthAppRepository(db);
     const grant = await oauth.getByAccessToken(accessTokenHash);

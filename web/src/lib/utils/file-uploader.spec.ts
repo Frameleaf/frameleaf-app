@@ -288,6 +288,36 @@ describe('fileUploader error handling', () => {
     }
   });
 
+  it('does not send a file whose only copy is Locked and not named (no asset id)', async () => {
+    authManager.setUser(mockUserObject);
+    class FakeWorker extends EventTarget {
+      postMessage() {
+        const result = { sha256: 'b'.repeat(64), sha1: 'a'.repeat(40) };
+        queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: { result } })));
+      }
+      terminate() {}
+    }
+    vi.stubGlobal('Worker', FakeWorker);
+    sdkMock.checkBulkUpload.mockResolvedValue({
+      results: [
+        { id: mockFile.name, action: 'reject', reason: 'duplicate' },
+        { id: mockFile.name, action: 'accept' },
+      ],
+    } as never);
+    const upload = vi.spyOn(utils, 'uploadRequest');
+    try {
+      const ids = await fileUploadHandler({ files: [mockFile] });
+
+      expect(upload).not.toHaveBeenCalled();
+      expect(ids).toEqual([]);
+      const [item] = get(uploadAssetsStore);
+      expect(item.state).toBe(UploadState.DUPLICATED);
+      expect(item.assetId).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('retrying a failed upload clears the previous error and re-runs the same file', async () => {
     authManager.setUser(mockUserObject);
     const uploadRequestSpy = vi

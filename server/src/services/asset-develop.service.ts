@@ -79,8 +79,10 @@ import { isGranted, requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
 import {
   DARKTABLE_RENDERER_VERSION,
+  NativeDevelopBusy,
   encodeNativeDevelopOutput,
   renderDarktable,
+  renderDarktableHistory,
 } from 'src/utils/darktable-renderer.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import {
@@ -100,6 +102,7 @@ import {
   renderDevelopProjection,
   renderHdrDevelopProjection,
 } from 'src/utils/develop-envelope.js';
+import { NATIVE_HISTORY_RENDERER_VERSION, nativeHistoryForRecipe } from 'src/utils/develop-import/native-history.js';
 import {
   DEVELOP_RENDERER_VERSION,
   applyDevelopMasks,
@@ -108,6 +111,7 @@ import {
   developMaskArtifacts,
   developRenderArtifacts,
   effectiveDevelop,
+  isIdentityDevelop,
   maskMappingFor,
   planDevelopDetail,
   planDevelopGeometry,
@@ -264,6 +268,24 @@ export class AssetDevelopService {
     return this.toRevisionDto(revision);
   }
 
+  async createImportedVersion(assetId: string, recipe: AssetDevelopRecipe, checksum: string, software: string) {
+    const asset = await this.requireEditableStill(assetId);
+    const envelope = developEnvelope(recipe);
+    const revision = await this.assetDevelopRepository.create({
+      assetId,
+      ownerId: asset.ownerId,
+      recipe: envelope,
+      recipeVersion: envelope.version,
+      importChecksum: checksum,
+      requireRenderable: true,
+      label: `From ${software}`,
+      software,
+      status: AssetDevelopRevisionStatus.Saved,
+    });
+    if (revision.status === AssetDevelopRevisionStatus.Saved) await this.queueRender(revision, asset.originalFileName);
+    return revision;
+  }
+
   async createStyleVersion(auth: AuthDto, assetId: string, batchId: string, recipe: AssetDevelopRecipe) {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
@@ -406,7 +428,11 @@ export class AssetDevelopService {
     // FL-721 M7: every read for this request uses the keys this viewer may use
     const viewerId = lockedViewerOf(auth);
     const native =
-      recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, viewerId, undefined, signal) : undefined;
+      recipe.version === 2
+        ? await this.renderNativeRecipe(source, recipe, viewerId, undefined, signal)
+        : recipe.version === 1 && nativeHistoryForRecipe(recipe)
+          ? await this.renderImportedNative(source, recipe, viewerId, 0, undefined, signal)
+          : undefined;
     // Legacy recipes decode at preview scale; native previews share the full-resolution final pipeline.
     const keyframe = recipe.version === 1 ? recipe.keyFrame : undefined;
     const decoded =
@@ -417,7 +443,7 @@ export class AssetDevelopService {
     const rendered =
       native ?? (await this.renderRecipe(decoded, renderDevelopProjection(dto.recipe), 0, source, viewerId));
     const format = image.preview.format;
-    const buffer = native
+    const buffer = native?.nativeBuffer
       ? await encodeNativeDevelopOutput(native.nativeBuffer, { format, quality: image.preview.quality, size: dto.size })
       : await this.mediaRepository.encodeDevelopOutput(rendered.data, rendered.info, {
           detail: rendered.detail,
@@ -616,17 +642,19 @@ export class AssetDevelopService {
     await assertPlainCopyPossible(source.originalPath);
     const revision = await this.assetDevelopRepository.beginAttempt(
       id,
-      existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 2
-        ? DARKTABLE_RENDERER_VERSION
-        : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 3
-          ? 'frameleaf-develop-hdr/1'
-          : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 4
-            ? 'frameleaf-develop-hdr/2'
-            : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 5
-              ? 'frameleaf-develop-hdr/3'
-              : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 6
-                ? 'frameleaf-develop-hdr/4'
-                : DEVELOP_RENDERER_VERSION,
+      existing.kind === AssetDevelopRevisionKind.Recipe && nativeHistoryForRecipe(existing.recipe)
+        ? `${DARKTABLE_RENDERER_VERSION};${NATIVE_HISTORY_RENDERER_VERSION};${DEVELOP_RENDERER_VERSION}`
+        : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 2
+          ? DARKTABLE_RENDERER_VERSION
+          : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 3
+            ? 'frameleaf-develop-hdr/1'
+            : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 4
+              ? 'frameleaf-develop-hdr/2'
+              : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 5
+                ? 'frameleaf-develop-hdr/3'
+                : existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 6
+                  ? 'frameleaf-develop-hdr/4'
+                  : DEVELOP_RENDERER_VERSION,
       DEVELOP_RENDER_LEASE_MS / 1000,
     );
     if (!revision) {
@@ -695,7 +723,11 @@ export class AssetDevelopService {
         if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
         if (!(external && (await this.assetDevelopRepository.publishBatchRendered(revision, publication)))) {
           await this.assetDevelopRepository.update(revision.id, publication);
-          if (!revision.styleBatchId) await this.assetDevelopRepository.setCurrent(revision.assetId, id);
+          if (
+            !revision.styleBatchId &&
+            !(revision.recipe.imported && ['Lightroom', 'darktable'].includes(revision.software ?? ''))
+          )
+            await this.assetDevelopRepository.setCurrent(revision.assetId, id);
         }
         if (!external) {
           const accepted = new Set([
@@ -735,6 +767,27 @@ export class AssetDevelopService {
       if (external && Number(revision.batchChargedBytes) > 0) await this.queueFileDelete([outputs.preview]);
       jobSignal()?.throwIfAborted();
       if (run?.done) return JobStatus.Skipped;
+      if (error instanceof NativeDevelopBusy) {
+        if (
+          run &&
+          !(await run.release(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS, async () => {
+            await this.assetDevelopRepository.cancelAttempt(revision, true);
+          }))
+        ) {
+          await this.assetDevelopRepository.cancelAttempt(revision);
+          return JobStatus.Skipped;
+        }
+        if (!(await this.assetDevelopRepository.deferAttempt(revision))) {
+          await this.assetDevelopRepository.cancelAttempt(revision);
+          return JobStatus.Skipped;
+        }
+        if (!run)
+          await this.jobRepository.queue({
+            name: JobName.AssetDevelopRender,
+            data: { id, delay: MEDIA_OPERATION_AUTO_RETRY_DELAY_MS },
+          });
+        return JobStatus.Skipped;
+      }
       if (error instanceof DevelopRenderCancelled || error instanceof BatchDevelopCancelled) {
         await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Cancelled, progress: 0 });
         await run?.cancelled();
@@ -1754,6 +1807,53 @@ export class AssetDevelopService {
     });
   }
 
+  /** Imported native pixels form the baseline. Later quick edits remain relative and preserve the history. */
+  private async renderImportedNative(
+    source: DevelopSource,
+    recipe: ReturnType<typeof renderDevelopProjection>,
+    viewerId: string | null | undefined,
+    seed: number,
+    revisionId?: string,
+    signal?: AbortSignal,
+  ): Promise<{
+    data: Buffer;
+    nativeBuffer?: Buffer;
+    info: RawImageInfo;
+    colorspace: Colorspace;
+    detail: ReturnType<typeof planDevelopDetail>;
+  }> {
+    const history = nativeHistoryForRecipe(recipe)!;
+    if (!mimeTypes.isRaw(source.originalFileName))
+      throw new BadRequestException('Native develop recipes require a RAW original');
+    return this.withRenderCancellation(revisionId, signal, async (abort) => {
+      const buffer = await renderDarktableHistory(source.originalPath, history, abort);
+      if (isIdentityDevelop(recipe)) {
+        const { width, height } = await this.mediaRepository.getImageMetadata(buffer);
+        return {
+          data: buffer,
+          nativeBuffer: buffer,
+          info: { width, height, channels: 3 } as RawImageInfo,
+          colorspace: Colorspace.Srgb,
+          detail: { median: 0 },
+        };
+      }
+      const decoded = await this.mediaRepository.decodeImage(buffer, {
+        colorspace: Colorspace.Srgb,
+        processInvalidImages: false,
+        ladder: 'pixels',
+      });
+      const rendered = await this.renderRecipe(
+        { data: decoded.data, info: decoded.info as RawImageInfo },
+        recipe,
+        seed,
+        source,
+        viewerId,
+      );
+      abort.throwIfAborted();
+      return { ...rendered, colorspace: Colorspace.Srgb };
+    });
+  }
+
   private async withRenderCancellation<T>(
     revisionId: string | undefined,
     signal: AbortSignal | undefined,
@@ -1965,7 +2065,12 @@ export class AssetDevelopService {
     // eslint-disable-next-line unicorn/prefer-includes-over-repeated-comparisons
     if (recipe.version === 3 || recipe.version === 4 || recipe.version === 5 || recipe.version === 6)
       return this.renderHdrRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
-    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, null, revision.id) : undefined;
+    const native =
+      recipe.version === 2
+        ? await this.renderNativeRecipe(source, recipe, null, revision.id)
+        : recipe.version === 1 && nativeHistoryForRecipe(recipe)
+          ? await this.renderImportedNative(source, recipe, null, revision.revision, revision.id)
+          : undefined;
     const keyframe = recipe.version === 1 ? recipe.keyFrame : undefined;
     const decoded =
       native ??

@@ -6,8 +6,8 @@ import { Graph, depthFirstSearch, hasCycle } from "graph-data-structure";
 import { createHash } from "node:crypto";
 import { Kysely, sql } from "kysely";
 import { Migrator as Migrator$1 } from "kysely/migration";
-import { createMigrationProvider } from "./canonical-provider.js";
-export { createMigrationProvider } from "./canonical-provider.js";
+import { adoptMigrationRenames, createMigrationProvider } from "./canonical-provider.js";
+export { adoptMigrationRenames, createMigrationProvider } from "./canonical-provider.js";
 import { PostgresJSDialect } from "kysely-postgres-js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
@@ -624,7 +624,7 @@ var UpdateDateColumn = (options = {}) => {
 var ORDER_FILENAME = "ORDER";
 var isEqual = (a, b) => a.length === b.length && a.every((item, i) => b[i] === item);
 var findDuplicates = (names) => [...new Set(names.filter((name, index) => names.indexOf(name) !== index))];
-var computeOrder = (fileNames) => fileNames.filter((name) => name !== ORDER_FILENAME).map((name) => parse$1(name).name).toSorted();
+var computeOrder = (fileNames) => fileNames.filter((name) => name !== ORDER_FILENAME && name !== "RENAMES").map((name) => parse$1(name).name).toSorted();
 var parseOrder = (content) => content.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
 var findPrefixViolation = (base, current) => {
 	if (base.length > current.length) return `${ORDER_FILENAME} has fewer entries (${current.length}) than the baseline (${base.length}); migrations cannot be removed`;
@@ -719,6 +719,7 @@ var Migrator = class {
 		return this.#db;
 	}
 	async runMigrations() {
+		await adoptMigrationRenames(this.#db, this.#migrationsFolder);
 		const { error, results } = await this.#migrator.migrateToLatest();
 		for (const result of results ?? []) if (result.status === "Success") console.log(`Migration "${result.migrationName}" succeeded`);
 		else if (result.status === "Error") console.warn(`Migration "${result.migrationName}" failed`);
@@ -729,6 +730,7 @@ var Migrator = class {
 		console.log("Finished running migrations");
 	}
 	async #revertLastMigration() {
+		await adoptMigrationRenames(this.#db, this.#migrationsFolder);
 		console.debug("Reverting last migration");
 		const { error, results } = await this.#migrator.migrateDown();
 		for (const result of results ?? []) if (result.status === "Success") console.log(`Reverted migration "${result.migrationName}"`);

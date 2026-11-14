@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   HttpCode,
   HttpStatus,
@@ -15,8 +16,11 @@ import {
   Req,
   Res,
   StreamableFile,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBody, ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes, ApiHeader, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StudioSiteDomainResponseDto } from 'src/dtos/frameleaf-remote-access.dto.js';
@@ -44,6 +48,7 @@ import {
   PhotographyPublicationDto,
   PhotographyRecipientCreateDto,
   PhotographyRecipientUpdateDto,
+  PhotographySelfieSearchDto,
   PhotographySiteDto,
   PhotographySiteSaveDto,
   PhotographyStudioPresetApplyDto,
@@ -59,7 +64,9 @@ import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited, RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { accessCloses } from 'src/services/photography-reminder.service.js';
+import { GALLERY_SELFIE_MAX_BYTES, PhotographySelfieService } from 'src/services/photography-selfie.service.js';
 import { PhotographySiteService } from 'src/services/photography-site.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { asStreamableFile, sendFile } from 'src/utils/file.js';
@@ -72,6 +79,8 @@ export class PhotographyWorkflowController {
     private service: PhotographyWorkflowService,
     private siteService: PhotographySiteService,
     private logger: LoggingRepository,
+    private selfieService: PhotographySelfieService,
+    private rateLimit: RateLimitRepository,
   ) {}
   @Get('presets')
   @ApiOperation({ operationId: 'photographyStudioPresets' })
@@ -409,6 +418,29 @@ export class PhotographyWorkflowController {
     res.header('Cache-Control', 'private, no-store');
     return this.service.gallery(id, session);
   }
+  @Post('galleries/:id/selfie-search')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'private, no-store')
+  @ApiOperation({ operationId: 'photographySelfieSearch' })
+  @Authenticated({ public: true })
+  @RateLimited({ bucket: 'photography-selfie-search', limit: 100, windowSeconds: 3600 })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } },
+  })
+  @ApiHeader({ name: 'X-Photography-Session', required: true, schema: { type: 'string', pattern: '^[a-f0-9]{64}$' } })
+  @ApiResponse({ status: 200, type: PhotographySelfieSearchDto })
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { files: 1, fields: 0, parts: 2, fileSize: GALLERY_SELFIE_MAX_BYTES } }),
+  )
+  selfieSearch(
+    @Param('id', uuid) id: string,
+    @Headers('x-photography-session') session: string | undefined,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    return this.selfieService.search(this.service, this.rateLimit, id, session, file?.buffer);
+  }
+
   @Put('galleries/:id/choices')
   @ApiOperation({ operationId: 'photographyChoices' })
   @Authenticated({ public: true })

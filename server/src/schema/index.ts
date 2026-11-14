@@ -158,6 +158,7 @@ import { DevelopStyleProfileTable } from 'src/schema/tables/develop-style-profil
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
+import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import {
   ICloudEditAliasTable,
@@ -226,6 +227,11 @@ import {
   PhotoSourceTable,
 } from 'src/schema/tables/photo-source.table.js';
 import { DevelopExportTable, DevelopPresetTable } from 'src/schema/tables/photo-tools.table.js';
+import {
+  PhotographyCampaignDeliveryTable,
+  PhotographyCampaignTable,
+  PhotographyContactTable,
+} from 'src/schema/tables/photography-campaign.table.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
@@ -349,6 +355,9 @@ export class ImmichDatabase {
     ConnectEventTable,
     ConnectAssetReadyTable,
     ConnectEventCursorTable,
+    PhotographyContactTable,
+    PhotographyCampaignTable,
+    PhotographyCampaignDeliveryTable,
     PhotoLocationEstimateTable,
     PhotoLocationScanTable,
     PhotoLocationScanItemTable,
@@ -408,6 +417,7 @@ export class ImmichDatabase {
     DateFixBatchTable,
     DateFixItemTable,
     AssetLedgerTable,
+    FoundFileTable,
     BookmarkTagTable,
     AssetSourceTable,
     AccountEventTable,
@@ -653,6 +663,9 @@ export interface Migrations {
 }
 
 export interface DB extends QueueDatabase {
+  photography_campaign: PhotographyCampaignTable;
+  photography_contact: PhotographyContactTable;
+  photography_campaign_delivery: PhotographyCampaignDeliveryTable;
   desktop_clip_index: DesktopClipIndexTable;
   desktop_clip_producer: DesktopClipProducerTable;
   desktop_device: DesktopDeviceTable;
@@ -756,6 +769,7 @@ export interface DB extends QueueDatabase {
   date_fix_batch: DateFixBatchTable;
   date_fix_item: DateFixItemTable;
   asset_ledger: AssetLedgerTable;
+  found_file: FoundFileTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;

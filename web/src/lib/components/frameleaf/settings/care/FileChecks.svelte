@@ -26,6 +26,7 @@
    * `untrackedFiles.cronExpression`, `libraryCare.healthScanCronExpression`) no longer start
    * anything, so they are not shown. `?report=<type>` opens one check's
    * path-by-path list (Details for support).
+
    *
    * "When a check finds a problem" holds the `libraryCare.autoRepair` switch and opens Damaged and missing
    * files (FL-1338), where the same switch sits beside the one that asks phones for missing photos.
@@ -47,6 +48,7 @@
     unreachableFolder,
     type Share,
   } from '$lib/components/frameleaf/settings/care/file-checks';
+  import { foundPicture } from '$lib/components/frameleaf/settings/care/found-files';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
@@ -78,6 +80,9 @@
   import { locale } from '$lib/stores/preferences.store';
   import {
     checkIntegrityOne,
+    FoundFileOutcome,
+    getFoundFiles,
+    getFoundFilesSummary,
     IntegrityCheckOneResult,
     getIntegrityCheckRuns,
     getIntegrityFindingAssets,
@@ -94,6 +99,8 @@
     startCorruptAssetScan,
     startMissingAssetScan,
     stopIntegrityChecks,
+    type FoundFileResponseDto,
+    type FoundFilesSummaryResponseDto,
     type IntegrityCheckRunsResponseDto,
     type IntegrityOverviewResponseDto,
     type IntegrityReportResponseDto,
@@ -105,12 +112,15 @@
     mdiAutoFix,
     mdiChevronRight,
     mdiClockOutline,
+    mdiContentCopy,
     mdiDownload,
     mdiFileAlertOutline,
     mdiFileHidden,
     mdiFileQuestionOutline,
     mdiFolderAlertOutline,
     mdiHarddiskRemove,
+    mdiImageSearchOutline,
+    mdiImageSyncOutline,
     mdiMagnify,
     mdiPlayOutline,
     mdiShieldAlertOutline,
@@ -156,6 +166,8 @@
 
   /** How many findings of each list are shown here; the rest are in Details for support. */
   const SHOWN = 3;
+  /** How many found photos the Files not in a library section shows. */
+  const FOUND_STRIP = 6;
 
   // ---- the settings ----
   const settingsDraft = requireSystemConfigDraft();
@@ -212,6 +224,9 @@
   let stopping = $state(false);
   let found = $state<Partial<Record<IntegrityReport, IntegrityReportResponseDto>>>({});
   let recoveryAvailable = $state(false);
+  /** FL-1533: what became of the files that were in nobody's library, and a few of the photos. */
+  let foundFiles = $state<FoundFilesSummaryResponseDto>();
+  let foundStrip = $state<FoundFileResponseDto[]>([]);
   let loaded = $state(false);
   let running = $state(false);
 
@@ -225,14 +240,18 @@
   };
 
   const load = async () => {
-    const [counts, times, lists, findings] = await Promise.all([
+    const [counts, times, lists, findings, sorted, photos] = await Promise.all([
       getIntegrityReportSummary().catch(() => undefined),
       getIntegrityCheckRuns().catch(() => undefined),
       Promise.all(
         CHECKS.map((check) => getIntegrityReport({ $type: check.type, limit: SHOWN }).catch(() => undefined)),
       ),
       quietly(getIntegrityOverview),
+      quietly(getFoundFilesSummary),
+      quietly(() => getFoundFiles({ outcome: FoundFileOutcome.Added, size: FOUND_STRIP })),
     ]);
+    foundFiles = sorted;
+    foundStrip = photos?.items.filter((file) => foundPicture(file)) ?? [];
     summary = counts;
     runs = times;
     overview = findings;
@@ -286,6 +305,11 @@
       .filter((value) => Number.isFinite(value));
     return times.length > 0 ? new Date(Math.max(...times)) : undefined;
   });
+  // FL-1533: the files not in a library that were photos, and what became of them
+  const foundPhotos = $derived((foundFiles?.back ?? 0) + (foundFiles?.added ?? 0));
+  const foundSpare = $derived(foundFiles?.spare ?? 0);
+  const foundNeeds = $derived(foundFiles?.needs ?? 0);
+  const foundTotal = $derived(foundPhotos + foundSpare + foundNeeds);
   const neverChecked = $derived(!lastChecked && missing + damaged + stray === 0);
 
   const when = (value: Date | string, sentence = false) => {
@@ -660,16 +684,56 @@
       </Section>
     {/if}
 
-    {#if stray > 0}
+    {#if foundTotal > 0}
+      <!-- FL-1533: the pictures and what was done with them, in place of a list of paths. -->
       <Section
-        title={$t('frameleaf_care_fc_stray_title', { values: { count: stray } })}
+        title={$t('frameleaf_care_fc_stray_title', { values: { count: foundTotal } })}
         description={$t('frameleaf_care_fc_stray_description')}
       >
-        {@render findings(IntegrityReport.UntrackedFile, mdiFileHidden, $t('frameleaf_care_fc_not_in_library'))}
+        <ItemList>
+          {#if foundPhotos > 0}
+            <Item
+              icon={mdiImageSyncOutline}
+              name={$t('frameleaf_care_fc_found_photos', { values: { count: foundPhotos } })}
+              detail={$t('frameleaf_care_fc_found_photos_detail', {
+                values: { back: foundFiles?.back ?? 0, added: foundFiles?.added ?? 0 },
+              })}
+              tone="good"
+              status={$t('frameleaf_found_now_back')}
+              note={$t('frameleaf_care_fc_found_photos_note')}
+            />
+          {/if}
+          {#if foundSpare > 0}
+            <Item
+              icon={mdiContentCopy}
+              quiet
+              name={$t('frameleaf_care_fc_found_spare', { values: { count: foundSpare } })}
+              detail={$t('frameleaf_care_fc_found_spare_detail')}
+              tone="off"
+              status={$t('frameleaf_care_fc_found_spare_status')}
+            />
+          {/if}
+          {#if foundNeeds > 0}
+            <Item
+              icon={mdiImageSearchOutline}
+              name={$t('frameleaf_care_fc_found_needs', { values: { count: foundNeeds } })}
+              detail={$t('frameleaf_care_fc_found_needs_detail')}
+              tone="warn"
+              status={$t('frameleaf_found_now_needs')}
+            />
+          {/if}
+        </ItemList>
+        {#if foundStrip.length > 0}
+          <div class="found-strip" aria-hidden="true">
+            {#each foundStrip as file (file.id)}
+              <img src={foundPicture(file)} alt="" loading="lazy" />
+            {/each}
+            {#if foundPhotos > foundStrip.length}<span>+{foundPhotos - foundStrip.length}</span>{/if}
+          </div>
+        {/if}
         <div class="actions">
-          <Button onclick={() => clearList(IntegrityReport.UntrackedFile)}>{$t('frameleaf_care_fc_clear')}</Button>
-          <Button variant="danger" onclick={() => actOnAll(IntegrityReport.UntrackedFile)}>
-            {$t('frameleaf_care_fc_delete', { values: { count: stray } })}
+          <Button variant="primary" onclick={() => goto(commandCenterUrl('care', 'found-files'))}>
+            {$t('frameleaf_care_fc_found_see')}
           </Button>
         </div>
       </Section>
@@ -759,6 +823,32 @@
         >
           {#snippet measure()}
             <Switch label={$t('frameleaf_care_fc_when_problem_look_name')} checked always />
+          {/snippet}
+        </Item>
+        <!-- FL-1533: the same switch as on Photos found on the drive. -->
+        <Item
+          icon={mdiImageSyncOutline}
+          name={$t('frameleaf_found_auto_put_back_name')}
+          detail={(care?.putBackFoundFiles ?? true)
+            ? $t('frameleaf_found_auto_put_back_on')
+            : $t('frameleaf_found_auto_put_back_off')}
+        >
+          {#snippet measure()}
+            <Switch
+              label={$t('frameleaf_found_auto_put_back_name')}
+              checked={care?.putBackFoundFiles ?? true}
+              {held}
+              onChange={(value) => {
+                if (settingsDraft.draft.libraryCare) {
+                  settingsDraft.draft.libraryCare.putBackFoundFiles = value;
+                }
+              }}
+            />
+          {/snippet}
+          {#snippet action()}
+            <Button onclick={() => goto(commandCenterUrl('care', 'found-files'))}>
+              {$t('frameleaf_care_fc_found_see_found')}
+            </Button>
           {/snippet}
         </Item>
       </ItemList>
@@ -891,6 +981,26 @@
   }
   .raw {
     margin-top: var(--fl-space-3);
+  }
+  /* care.css `.care-found-strip`: a few of the photos that were found. */
+  .found-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--fl-space-2);
+    align-items: center;
+    margin-top: var(--fl-space-4);
+  }
+  .found-strip img {
+    width: 56px;
+    height: 56px;
+    object-fit: cover;
+    background: var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .found-strip span {
+    padding: 0 var(--fl-space-2);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   .actions {
     display: flex;

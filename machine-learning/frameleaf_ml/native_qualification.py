@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import gc
 import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
+import traceback
 from pathlib import Path, PurePosixPath
 from threading import Timer
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import TYPE_CHECKING, Any, Literal
 
 import onnx
@@ -21,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 from frameleaf_ml.native_hardware import snapshot
-from frameleaf_ml.native_ort import configure
+from frameleaf_ml.native_ort import NativeOrtPolicy, configure
 from frameleaf_ml.qualification import compare_output, execution_evidence
 from frameleaf_ml.schemas import InferenceEntries, ModelTask, ModelType, ORJSONResponse
 
@@ -254,7 +257,9 @@ async def qualify(
     entries, models = verify_models(spec, cache_dir)
     session: OrtSession | None = None
     previous_temp = tempfile.tempdir
-    with tempfile.TemporaryDirectory(prefix="frameleaf-qualification-") as temporary:
+    completed = False
+    # Removed by remove_profiles, which decides whether a removal failure may be raised.
+    with tempfile.TemporaryDirectory(prefix="frameleaf-qualification-", ignore_cleanup_errors=True) as temporary:
         tempfile.tempdir = temporary
         try:
             policy = configure(spec.provider, Path(temporary) / "profiles", observer=observer)
@@ -313,6 +318,7 @@ async def qualify(
                 state, reason = "incompatible", "native_device_execution_evidence_required"
             if device_evidence is not None:
                 state, reason = "ready-mixed", None
+            completed = True
             return {
                 "protocolVersion": 1,
                 "modelKey": spec.model_key,
@@ -331,13 +337,42 @@ async def qualify(
             }
         finally:
             tempfile.tempdir = previous_temp
-            policy_value = locals().get("policy")
-            if policy_value is not None:
-                policy_value.sessions.clear()
             session = None
             loaded_main = sys.modules.get("frameleaf_ml.main")
             if loaded_main is not None:
                 loaded_main.model_cache.cache._cache.clear()
+            remove_profiles(locals().get("policy"), Path(temporary), raise_errors=completed)
+
+
+def remove_profiles(policy: NativeOrtPolicy | None, folder: Path, *, raise_errors: bool) -> None:
+    """Close every profile ONNX Runtime still has open, then delete the folder holding them.
+
+    Windows refuses to delete an open file (WinError 32) where Linux and macOS unlink it. A session
+    keeps its profile open until profiling ends or the session is freed, and after a failure the
+    propagating error can still hold sessions, so every tracked profile is closed here first. A
+    handle that closes a moment later is waited for briefly. One that stays open fails a
+    qualification that had otherwise passed, and never replaces the error of one that had failed.
+    """
+    if policy is not None:
+        for opened in policy.sessions:
+            opened.session.end_profiling()
+        policy.sessions.clear()
+    gc.collect()
+    attempts = 5
+    for attempt in range(attempts):
+        try:
+            shutil.rmtree(folder)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            if getattr(error, "winerror", None) == 32 and attempt < attempts - 1:
+                sleep(0.2 * (attempt + 1))
+                continue
+            if raise_errors:
+                raise
+            print(f"native qualification cleanup failed: {type(error).__name__}: {error}", file=sys.stderr)
+            return
 
 
 def main(observer: DeviceObserver | None = None) -> None:
@@ -363,18 +398,29 @@ def main(observer: DeviceObserver | None = None) -> None:
                 qualify(spec, args.cache_dir, args.spec.parent, hashlib.sha256(raw_spec).hexdigest(), observer=observer)
             )
         except Exception as error:
+            # The report carries only a code; whoever started this process reads the cause here.
+            print(f"native qualification failed: {type(error).__name__}: {str(error)[:2000]}", file=sys.stderr)
+            traceback.print_exc(limit=12, file=sys.stderr)
             reason = (
                 str(error)
                 if isinstance(error, ValueError) and re.fullmatch(r"native_[a-z_]{1,100}", str(error))
                 else "native_qualification_failed"
             )
-            report = {"protocolVersion": 1, "modelKey": spec.model_key, "state": "incompatible", "reason": reason}
+            report = {
+                "protocolVersion": 1,
+                "modelKey": spec.model_key,
+                "state": "incompatible",
+                "reason": reason,
+                # For whoever started this process; a refused report is never sent anywhere.
+                "detail": f"{type(error).__name__}: {error}"[:500],
+            }
         args.output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with tempfile.NamedTemporaryFile(dir=args.output.parent, mode="w", encoding="utf-8", delete=False) as stream:
             candidate = Path(stream.name)
             json.dump(report, stream, sort_keys=True, allow_nan=False)
         candidate.replace(args.output)
         if report["state"] == "incompatible":
+            print(f"native qualification incompatible: {report.get('reason')}", file=sys.stderr)
             raise SystemExit(1)
     finally:
         watchdog.cancel()

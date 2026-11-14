@@ -152,6 +152,7 @@ describe('Library care inside a run', () => {
       { restoreLostOriginal: vi.fn().mockResolvedValue({ outcome: 'not-in-backup' }) } as never,
       mocks.session as never,
       { requestRepair: vi.fn().mockResolvedValue([]) } as never,
+      { getByPaths: vi.fn().mockResolvedValue([]), remember: vi.fn().mockResolvedValue(undefined) } as never,
     );
     return { sut, asset, repository, integrity };
   };

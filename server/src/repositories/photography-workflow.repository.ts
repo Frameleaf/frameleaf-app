@@ -300,6 +300,18 @@ export class PhotographyWorkflowRepository {
     }
     return query.execute();
   }
+  async missingGalleryFaceDetection(assetIds: string[]) {
+    if (assetIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('asset')
+      .leftJoin('asset_job_status', 'asset.id', 'asset_job_status.assetId')
+      .select('asset.id')
+      .where('asset.id', 'in', assetIds)
+      .where('asset_job_status.facesRecognizedAt', 'is', null)
+      .execute();
+    return rows.map(({ id }) => id);
+  }
+
   async logo(ownerId: string, id: string) {
     return this.db
       .selectFrom('asset')

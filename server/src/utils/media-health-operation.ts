@@ -28,6 +28,12 @@ export type MediaHealthScanSnapshot = {
    * since this moment, the start of the account's last completed scan. Absent scans everything.
    */
   changedSince?: string;
+  /**
+   * FL-1534: the share of the library a scheduled scan reads in full as well: every photo after `after`
+   * up to and including `to`, in id order. `to` null reads to the end, which completes a pass; the next
+   * share starts again from the beginning.
+   */
+  slice?: MediaHealthScanSlice;
   /** Started by the Library care schedule rather than by a person. */
   scheduled?: boolean;
   /**
@@ -36,6 +42,8 @@ export type MediaHealthScanSnapshot = {
    */
   assetIds?: string[];
 };
+
+export type MediaHealthScanSlice = { after: string | null; to: string | null };
 
 /** Search chosen locations for exact copies of the originals behind a fixed set of findings. */
 export type MediaHealthLocateSnapshot = {
@@ -101,6 +109,12 @@ export const parseMediaHealthSnapshot = (value: unknown): MediaHealthOperationSn
       corruptRunId: value.corruptRunId,
       ...(typeof value.changedSince === 'string' &&
         !Number.isNaN(Date.parse(value.changedSince)) && { changedSince: value.changedSince }),
+      ...(isRecord(value.slice) && {
+        slice: {
+          after: typeof value.slice.after === 'string' ? value.slice.after : null,
+          to: typeof value.slice.to === 'string' ? value.slice.to : null,
+        },
+      }),
       ...(value.scheduled === true && { scheduled: true }),
       ...(Array.isArray(value.assetIds) && { assetIds: [...new Set(asStrings(value.assetIds))] }),
     };

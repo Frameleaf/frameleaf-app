@@ -25,8 +25,8 @@ import {
  * server-generated Clean Up fill window and mask.
  */
 describe('develop renderer v4', () => {
-  it('names a new renderer identity', () => {
-    expect(DEVELOP_RENDERER_VERSION).toBe('frameleaf-develop/4');
+  it('names the current renderer identity', () => {
+    expect(DEVELOP_RENDERER_VERSION).toBe('frameleaf-develop/5');
   });
 
   describe('recipe contract', () => {

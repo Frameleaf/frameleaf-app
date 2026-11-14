@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { type QueryExecutorProvider, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import { JobName, QueueName } from 'src/enum.js';
 import {
@@ -256,7 +256,7 @@ const workerAvailable = sql<boolean>`exists (
   select 1 from job_worker where state = 'running' and "heartbeatAt" > now() - interval '60 seconds'
 )`;
 
-export async function readSurroundings(db: Kysely<any>): Promise<Surroundings> {
+export async function readSurroundings(db: QueryExecutorProvider): Promise<Surroundings> {
   const { rows } = await sql<{ name: string; paused: boolean; closed: boolean }>`select name, paused,
       coalesce("closedUntil" > now(), false) closed from job_queue where paused or "closedUntil" > now()`.execute(db);
   const {
@@ -270,7 +270,7 @@ export async function readSurroundings(db: Kysely<any>): Promise<Surroundings> {
 }
 
 /** The queue of each named stage of a run: any one of its jobs says it, read through the run's progress index. */
-async function stageQueues(db: Kysely<any>, runId: string, names: string[]) {
+async function stageQueues(db: QueryExecutorProvider, runId: string, names: string[]) {
   if (names.length === 0) return new Map<string, string>();
   const { rows } = await sql<{ name: string; queue: string }>`select n.name, q.queue
     from unnest(${names}::text[]) n(name)
@@ -286,7 +286,7 @@ async function stageQueues(db: Kysely<any>, runId: string, names: string[]) {
  * back to the run's own jobs.
  * ponytail: a live run that finished nothing among the last 5000 jobs shows no last progress until it does.
  */
-async function lastProgress(db: Kysely<any>, runId: string, exact: boolean) {
+async function lastProgress(db: QueryExecutorProvider, runId: string, exact: boolean) {
   const {
     rows: [latest],
   } = await sql<{ name: string; at: Date }>`select name, at from (
@@ -313,7 +313,7 @@ const RETRY_PROBE = 500;
  * card would otherwise say the run is waiting, or running, with nothing to show for it.
  */
 async function retryingTasks(
-  db: Kysely<any>,
+  db: QueryExecutorProvider,
   runId: string,
   tasks: Array<{ name: string; state: string; n: number }>,
   holds: Holds,
@@ -343,7 +343,7 @@ async function retryingTasks(
  * blocked in the task totals (and in the photos when nothing else waits). `listRunItems` reads each photo exactly.
  */
 export async function aggregateRun(
-  db: Kysely<any>,
+  db: QueryExecutorProvider,
   run: { id: string; holds: unknown },
   around: Surroundings,
   exact = false,
@@ -526,7 +526,7 @@ export const runReasons = (
   return reasons;
 };
 
-async function importActivated(db: Kysely<any>, kind: string) {
+async function importActivated(db: QueryExecutorProvider, kind: string) {
   const journal = IMPORT_JOURNALS[kind];
   if (!journal) return true;
   const { rows } = await sql`select 1 from ${sql.table(journal)} where status = 'activated'`.execute(db);
@@ -541,7 +541,7 @@ async function importActivated(db: Kysely<any>, kind: string) {
 export type ReadOptions = { live?: { supersede: FailureScope['supersede'] }; causes?: boolean };
 
 export async function toRead(
-  db: Kysely<any>,
+  db: QueryExecutorProvider,
   run: Header,
   around: Surroundings,
   options: ReadOptions = {},
@@ -619,7 +619,7 @@ export async function toRead(
  * counts a photo's faces. Live tasks are told apart as the run's own stage totals are (paused, saved for tonight).
  */
 async function runSteps(
-  db: Kysely<any>,
+  db: QueryExecutorProvider,
   run: Header,
   tasks: NonNullable<RunAggregate['tasks']>,
   around: Surroundings,
@@ -646,7 +646,7 @@ async function runSteps(
 }
 
 /** The external libraries (three at most) of the first 200 photos whose work waits for its source, from the deferral index. */
-async function waitedForLibraries(db: Kysely<any>, runId: string) {
+async function waitedForLibraries(db: QueryExecutorProvider, runId: string) {
   const { rows } = await sql<{ name: string }>`select distinct l.name from (
       select j."rootItemKey" root from job j where j."runId" = ${runId}::uuid and j.state = 'pending'
         and j."dependencyReason" = 'source-unavailable' limit 200
@@ -831,7 +831,7 @@ export const runFailureGroupsQuery = (
   group by t."photoRank" order by t."photoRank"`;
 
 export async function summarizeRunFailures(
-  db: Kysely<any>,
+  db: QueryExecutorProvider,
   scope: string | FailureScope,
   countsPhotos = true,
   settled = false,
@@ -861,7 +861,7 @@ export type FailureRoot = {
  * FL-1430: a scope's left-over photos, one row each, read once per request: the card's causes (`groupRoots`), the
  * review's samples and message, the streak's photos and an action's photos all come from the same rows.
  */
-export async function failureRoots(db: Kysely<any>, scope: FailureScope): Promise<FailureRoot[]> {
+export async function failureRoots(db: QueryExecutorProvider, scope: FailureScope): Promise<FailureRoot[]> {
   if (scope.runs.length === 0) return [];
   const { rows } = await sql<FailureRoot>`select t.root, bool_or(t.rooted) rooted, t."assetId",
       array_agg(distinct t."runId") "runIds", min(t."photoRank") rank, bool_and(t."photoStopped") stopped,
@@ -904,7 +904,7 @@ export const groupRoots = (roots: FailureRoot[]): RunFailureGroup[] => {
 };
 
 /** Whether a run works on photos (`RunRead.countsPhotos`): any of its jobs has a root, from the progress index. */
-export async function runCountsPhotos(db: Kysely<any>, runId: string): Promise<boolean | undefined> {
+export async function runCountsPhotos(db: QueryExecutorProvider, runId: string): Promise<boolean | undefined> {
   const {
     rows: [run],
   } = await sql<{ countsPhotos: boolean }>`select exists (select 1 from job j where j."runId" = r.id
@@ -913,7 +913,12 @@ export async function runCountsPhotos(db: Kysely<any>, runId: string): Promise<b
 }
 
 /** The photos (roots) of one cause that still need a look; in a run that counts tasks, the failed jobs' ids. */
-export async function runFailureRoots(db: Kysely<any>, runId: string, cause: RunFailureCause, countsPhotos = true) {
+export async function runFailureRoots(
+  db: QueryExecutorProvider,
+  runId: string,
+  cause: RunFailureCause,
+  countsPhotos = true,
+) {
   const { rows } = await sql<{ root: string }>`select t.root from (${runFailureTasks(runId, countsPhotos)}) t
     where t."photoRank" = ${causeRank(cause)}::int and not t."photoStopped"
     group by t.root`.execute(db);
@@ -921,7 +926,7 @@ export async function runFailureRoots(db: Kysely<any>, runId: string, cause: Run
 }
 
 /** A run's stored cause counts, written again after Try again or Stop trying (a reopened run's summary is stale). */
-export async function rewriteFailureCauses(db: Kysely<any>, runId: string) {
+export async function rewriteFailureCauses(db: QueryExecutorProvider, runId: string) {
   const causes = causeCounts(await summarizeRunFailures(db, runId, (await runCountsPhotos(db, runId)) ?? true));
   // an empty list says nothing is left to look at (all stopped), so the card's left-over count reads 0
   await sql`update job_run set summary = jsonb_set(summary, '{failureCauses}', ${JSON.stringify(causes)}::text::jsonb)
@@ -952,7 +957,7 @@ const headers = (where: ReturnType<typeof sql>, take: number, skip: number, unfi
  * jobs (`aggregateRun`), one run at a time. The store shares a costly read between pollers (`costReusedRead`).
  * Recent work (`foldNightly`) reads through `listRecentWork` (`recent-work.ts`) instead.
  */
-export async function listRuns(db: Kysely<any>, take: number, skip: number): Promise<RunRead[]> {
+export async function listRuns(db: QueryExecutorProvider, take: number, skip: number): Promise<RunRead[]> {
   const { rows } = await headers(sql``, take, skip).execute(db);
   if (rows.length === 0) return [];
   const around = await readSurroundings(db);
@@ -961,7 +966,7 @@ export async function listRuns(db: Kysely<any>, take: number, skip: number): Pro
   return runs;
 }
 
-export async function getRun(db: Kysely<any>, runId: string): Promise<RunRead | undefined> {
+export async function getRun(db: QueryExecutorProvider, runId: string): Promise<RunRead | undefined> {
   const {
     rows: [row],
   } = await headers(sql`where r.id = ${runId}::uuid`, 1, 0).execute(db);
@@ -970,7 +975,7 @@ export async function getRun(db: Kysely<any>, runId: string): Promise<RunRead | 
 
 /** A page of a run's photos (roots, in root order) with the outcome of each of their tasks. */
 export async function listRunItems(
-  db: Kysely<any>,
+  db: QueryExecutorProvider,
   runId: string,
   take: number,
   skip: number,
@@ -1079,7 +1084,7 @@ const reportedJobsForRun = (name: string) => {
 };
 
 /** One queue's current work for Background work: its live jobs and the jobs of runs still open. */
-export async function observeQueueRun(db: Kysely<any>, name: string) {
+export async function observeQueueRun(db: QueryExecutorProvider, name: string) {
   // Passed as values, not a subquery: the planner then reads each open run's own job count. A subquery is
   // planned for an average run, which after a large scan means a pass over the queue's whole history.
   const { rows: open } = await sql<{ id: string }>`select id from job_run where "finishedAt" is null`.execute(db);

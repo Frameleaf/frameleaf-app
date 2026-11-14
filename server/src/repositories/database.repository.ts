@@ -1,4 +1,4 @@
-import { createMigrationProvider, schemaDiff, schemaFromDatabase } from '@frameleaf/sql-tools';
+import { adoptMigrationRenames, createMigrationProvider, schemaDiff, schemaFromDatabase } from '@frameleaf/sql-tools';
 import { Injectable } from '@nestjs/common';
 import AsyncLock from 'async-lock';
 import { Kysely, type RawBuilder, type Transaction, sql } from 'kysely';
@@ -570,13 +570,14 @@ export class DatabaseRepository {
   async runMigrations(): Promise<void> {
     await this.assertFrameleafDatabase();
     for (const name of await adoptLegacyLedger(this.db)) this.logger.log(`Frameleaf migration ${name}: Success`);
+    const migrationFolder = fileURLToPath(new URL('../schema/migrations/', import.meta.url));
+    const loader = { import: (path: string) => import(pathToFileURL(path).href) };
+    await adoptMigrationRenames(this.db, migrationFolder, loader);
     const migrator = new Migrator({
       db: this.db,
       migrationTableName: 'frameleaf_migrations',
       migrationLockTableName: 'frameleaf_migrations_lock',
-      provider: createMigrationProvider(fileURLToPath(new URL('../schema/migrations/', import.meta.url)), {
-        import: (path) => import(pathToFileURL(path).href),
-      }),
+      provider: createMigrationProvider(migrationFolder, loader),
     });
     const { error, results } = await migrator.migrateToLatest();
     if (error) throw error;

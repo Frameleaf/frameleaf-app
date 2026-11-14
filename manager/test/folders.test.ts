@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, realpath, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { overlappingWriter } from '../src/postgres-storage.js';
-import { adoptMappedFolders, assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, externalRoots, externalRuleSources, ensureChosenFolder, ensureManagerFolder, inside, isMounted, listFolders, realTarget } from '../src/folders.js';
+import { adoptMappedFolders, assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, externalRoots, externalRuleSources, ensureChosenFolder, ensureManagerFolder, inside, isMounted, listFolders, realTarget, sameFiles } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
 
@@ -247,4 +247,11 @@ test('inside() is one-way and sees the same Unraid files through another share v
   assert.equal(inside('/mnt/user/db', '/mnt/user/db/frameleaf-x'), false, 'a parent is not inside');
   assert.equal(inside('/mnt/disk1/db/frameleaf-x', '/mnt/disk2/db/frameleaf-x'), false, 'two disks are never the same files');
   assert.equal(inside('/mnt/disks/UD01/db', '/mnt/user/db'), false, 'an unassigned drive is its own');
+});
+
+test('an Unraid exclusive share is the same folder as its pool, and no other link is', () => {
+  assert.ok(sameFiles('/mnt/user/appdata/frameleaf-manager', '/mnt/cache/appdata/frameleaf-manager'));
+  assert.ok(!sameFiles('/mnt/user/appdata/frameleaf-manager', '/mnt/cache/other/frameleaf-manager'));
+  assert.ok(!sameFiles('/mnt/user/appdata/x', '/mnt/user/appdata'), 'a parent is not the same folder');
+  assert.ok(!sameFiles('/mnt/user/appdata/x', '/etc/x'));
 });

@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+  import { developLabel } from '$lib/frameleaf/develop-label';
   /**
    * The full-screen, media-aware quick editor (FL-113).
    *
@@ -651,7 +652,8 @@
           isVideo: false,
           beforeLabel: $t('frameleaf_editor_version_original'),
           afterLabel:
-            revision.label ?? $t('frameleaf_editor_version_number', { values: { revision: revision.revision } }),
+            developLabel(revision, $t) ??
+            $t('frameleaf_editor_version_number', { values: { revision: revision.revision } }),
         };
   };
   const onImported = (revision: AssetDevelopRevisionResponseDto) => {
@@ -1111,7 +1113,9 @@
       .filter((revision) => revision.kind !== AssetDevelopRevisionKind.External)
       .map((revision) => ({
         id: revision.id,
-        label: revision.label ?? $t('frameleaf_editor_version_number', { values: { revision: revision.revision } }),
+        label:
+          developLabel(revision, $t) ??
+          $t('frameleaf_editor_version_number', { values: { revision: revision.revision } }),
         icon: mdiHistory,
         checked: sameRecipe(recipe, normalizeRecipe(revision.recipe)),
         note: revision.isCurrent ? $t('frameleaf_editor_current') : statusLabel(revision),
@@ -1843,7 +1847,7 @@
                 {#each revisions as revision (revision.id)}
                   <div class={['ed-version', revision.isCurrent && 'current']}>
                     <strong>
-                      {revision.label ??
+                      {developLabel(revision, $t) ??
                         $t('frameleaf_editor_version_number', { values: { revision: revision.revision } })}
                     </strong>
                     <span

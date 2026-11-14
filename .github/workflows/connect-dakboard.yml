@@ -1,0 +1,29 @@
+name: Connect DAKboard protocol
+
+on:
+  pull_request:
+    paths:
+      - integrations/dakboard/**
+      - .github/workflows/connect-dakboard.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        node: [22, 26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - run: node --test integrations/dakboard/test/*.test.mjs
+      - run: bash .github/check-repository-hygiene.sh

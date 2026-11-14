@@ -12,6 +12,10 @@ export const photographyErrorCodes = [
   'not_ready',
   'watermark_preview',
   'request_failed',
+  'selfie_no_face',
+  'selfie_multiple_faces',
+  'selfie_invalid_image',
+  'selfie_unavailable',
 ] as const;
 export type PhotographyErrorCode = (typeof photographyErrorCodes)[number];
 
@@ -21,10 +25,13 @@ export class PhotographyError extends Error {
   /** The HTTP status, when the server answered. */
   readonly status?: number;
 
-  constructor(code: PhotographyErrorCode, status?: number) {
+  readonly retryAfter?: number;
+
+  constructor(code: PhotographyErrorCode, status?: number, retryAfter?: number) {
     super(code);
     this.code = code;
     this.status = status;
+    this.retryAfter = retryAfter;
   }
 }
 

@@ -501,9 +501,13 @@ export interface IMediaHealthLocateJob extends IBaseJob {
   pending?: boolean;
   /** FL-1337: which shared search a step carries on: the job that started it claimed its findings as this. */
   searchId?: string;
+  /** FL-1534: how long the owner's shared search waits before it looks again for a scan that is still running. */
+  delay?: number;
   managedSearch?: {
     cursor: Array<{ path: string; after?: string }>;
     matches: Record<string, Record<string, Array<'sha1' | 'sha256'>>>;
+    /** FL-1534: files the walk already passed that the step had no reading budget left for. */
+    pending?: string[];
   };
 }
 
@@ -707,6 +711,7 @@ export type JobItem =
 
   // Notifications
   | { name: JobName.NotificationsCleanup; data?: IBaseJob }
+  | { name: JobName.PhotographyCampaignSend; data?: IBaseJob }
 
   // Sidecar Scanning
   | { name: JobName.SidecarQueueAll; data: IBaseJob }
@@ -936,6 +941,7 @@ export type JobItem =
 
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }
+  | { name: JobName.DevelopImport; data: IEntityJob & IDelayedJob }
   | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob & IEditOperationJob };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
@@ -1803,6 +1809,7 @@ export type IntegrityCheckHistoryEntry = {
 };
 
 export type UserPreferences = {
+  develop?: { importXmpEdits: boolean };
   /** FL-329: origin-rendered system text; device overrides are scoped to signed-in sessions. */
   notifications?: import('src/utils/notification-locale.js').NotificationLocalePreferences;
   albums: {

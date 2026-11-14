@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { developLabel } from '$lib/frameleaf/develop-label';
   /**
    * One shoot's client work: the shoot strip (cover, counts, Client preview), the tabs for its
    * sections, and the section itself. `publishing` is the Galleries section, which shows the strip
@@ -583,7 +584,8 @@
         .map((revision) => ({
           id: revision.id,
           label:
-            revision.label || $t('frameleaf_photography_version_number', { values: { number: revision.revision } }),
+            developLabel(revision, $t) ||
+            $t('frameleaf_photography_version_number', { values: { number: revision.revision } }),
         }));
       pinnedChoices[capture.id] = capture.approvedRevisionId ?? versionChoices[capture.id][0]?.id ?? '';
     } catch (error_) {
@@ -1392,6 +1394,13 @@
         <label
           ><input
             type="checkbox"
+            checked={draft.config.selfieSearch ?? false}
+            onchange={(event) => (draft!.config.selfieSearch = event.currentTarget.checked)}
+          />{$t('frameleaf_clients_selfie_enable')}</label
+        >
+        <label
+          ><input
+            type="checkbox"
             checked={draft.config.reminders?.selection ?? false}
             onchange={(event) =>
               (draft!.config.reminders = {
@@ -1905,7 +1914,7 @@
                   >{$t('frameleaf_photography_version')}<select bind:value={pinnedChoices[capture.id]}
                     ><option value="">{$t('frameleaf_photography_choose_version')}</option
                     >{#each versionChoices[capture.id] as revision (revision.id)}<option value={revision.id}
-                        >{revision.label}</option
+                        >{developLabel(revision, $t)}</option
                       >{/each}</select
                   ></label
                 ><Button

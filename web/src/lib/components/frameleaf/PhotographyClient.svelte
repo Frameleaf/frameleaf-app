@@ -39,6 +39,7 @@
     type PublicBrand,
   } from '$lib/frameleaf/photography/workflow-api';
   import Dialog from './Dialog.svelte';
+  import PhotographySelfieSearch from './PhotographySelfieSearch.svelte';
   import PhotographyStatus, { photographyErrorKey, photographyLabelKey } from './PhotographyStatus.svelte';
   import '$lib/frameleaf/photography/gallery.css';
   let { galleryId }: { galleryId: string } = $props();
@@ -90,6 +91,9 @@
   let confirmSubmit = $state(false);
   let chapter = $state('');
   let favoritesOnly = $state(false);
+  let selfieOpen = $state(false);
+  let selfieMatches = $state<string[] | null>(null);
+  const selfieMatchIds = $derived(selfieMatches === null ? null : new Set(selfieMatches));
   let limit = $state(80);
   let generation = 0;
   let previewRequest = 0;
@@ -100,7 +104,10 @@
   const storageKey = () => `photography-gallery:${galleryId}`;
   const filtered = $derived(
     (gallery?.photos ?? []).filter(
-      (photo) => (!chapter || photo.chapterId === chapter) && (!favoritesOnly || choices.includes(photo.id)),
+      (photo) =>
+        (!chapter || photo.chapterId === chapter) &&
+        (!favoritesOnly || choices.includes(photo.id)) &&
+        (selfieMatchIds === null || selfieMatchIds.has(photo.id)),
     ),
   );
   const visible = $derived(filtered.slice(0, limit));
@@ -212,6 +219,8 @@
     // The gate that follows still wears the studio's name and colours.
     gateBrand = gallery?.brand ? { ...gallery.brand, logoUrl: null } : gateBrand;
     gallery = null;
+    selfieOpen = false;
+    selfieMatches = null;
     session = '';
     choices = [];
     notes = {};
@@ -324,6 +333,12 @@
       openedOutput = opened?.outputs?.find((output) => output.id === openedOutput?.id) ?? null;
     }
     gallery = result;
+    if (!result.selfieSearch) {
+      selfieOpen = false;
+      selfieMatches = null;
+    } else if (selfieMatches !== null) {
+      selfieMatches = selfieMatches.filter((id) => allowed.has(id));
+    }
     choices = retainDraft ? choices.filter((id) => allowed.has(id)) : [...result.choices];
     notes = retainDraft
       ? Object.fromEntries(Object.entries(notes).filter(([id]) => allowed.has(id)))
@@ -346,6 +361,15 @@
       dirty = false;
     }
     compareIds = compareIds.filter((id) => allowed.has(id));
+    void prepareThumbnails();
+  }
+  function showSelfieResults(ids: string[]) {
+    const allowed = new Set(gallery?.photos.map((photo) => photo.id));
+    selfieMatches = ids.filter((id) => allowed.has(id));
+    chapter = '';
+    favoritesOnly = false;
+    limit = 80;
+    closePhoto();
     void prepareThumbnails();
   }
   async function reload() {
@@ -1042,14 +1066,19 @@
         <div class="pc-tabs" role="group" aria-label={$t('frameleaf_photography_client_the_photographs')}>
           {#each [[false, 'frameleaf_photography_client_all_photographs', gallery.photos.length], [true, 'frameleaf_photography_client_your_favourites', choices.length]] as const as [favourites, label, count] (label)}<button
               type="button"
-              aria-pressed={favoritesOnly === favourites}
+              aria-pressed={selfieMatches === null && favoritesOnly === favourites}
               onclick={() => {
                 favoritesOnly = favourites;
+                selfieMatches = null;
                 void prepareThumbnails();
               }}>{$t(label)}<small>{count}</small></button
             >{/each}
         </div>
         <div class="pc-actions">
+          {#if gallery.selfieSearch && !ownerPreview && selfieMatches === null}<button
+              type="button"
+              onclick={() => (selfieOpen = true)}>{$t('frameleaf_clients_selfie_title')}</button
+            >{/if}
           <PhotographyStatus
             state={saveState}
             savingLabel={$t('frameleaf_photography_saving')}
@@ -1065,6 +1094,27 @@
           >
         </div>
       </div>
+      {#if selfieMatches !== null}<div class="pc-selfie-results">
+          <p role="status">{$t('frameleaf_clients_selfie_results', { values: { count: selfieMatches.length } })}</p>
+          <button type="button" onclick={() => (selfieOpen = true)}>{$t('frameleaf_clients_selfie_again')}</button>
+          <button
+            type="button"
+            onclick={() => {
+              selfieMatches = null;
+              favoritesOnly = false;
+              chapter = '';
+              limit = 80;
+              void prepareThumbnails();
+            }}>{$t('frameleaf_clients_selfie_all')}</button
+          >
+        </div>{/if}
+      {#if gallery.selfieSearch && !ownerPreview}<PhotographySelfieSearch
+          bind:open={selfieOpen}
+          {galleryId}
+          {session}
+          onResults={showSelfieResults}
+          onAccessEnded={() => endAccess()}
+        />{/if}
       {#if gallery.pricing.selectionLimit || gallery.pricing.selectionDeadline}<p class="pc-toolbar-note">
           {[
             gallery.pricing.selectionLimit

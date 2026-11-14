@@ -1,0 +1,73 @@
+name: WordPress Connect
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - integrations/wordpress/**
+      - .github/workflows/wordpress-connect.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wordpress-connect-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: PHP security and syntax
+        run: |
+          python3 integrations/wordpress/tests/bootstrap-test.py
+          php integrations/wordpress/tests/security.php
+          find integrations/wordpress/frameleaf-connect -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: JavaScript syntax
+        run: |
+          node --check integrations/wordpress/frameleaf-connect/assets/settings.js
+          node --check integrations/wordpress/frameleaf-connect/assets/media.js
+          node --check integrations/wordpress/tests/provider.mjs
+          node --check integrations/wordpress/tests/qualify.mjs
+      - name: Validate translations and package
+        run: python3 integrations/wordpress/scripts/package.py --output "$RUNNER_TEMP/frameleaf-connect.zip"
+  native:
+    name: Native WordPress ${{ matrix.wordpress }} / PHP ${{ matrix.php }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - wordpress: '6.8'
+            php: '8.1'
+          - wordpress: '7.1.4'
+            php: '8.5'
+    services:
+      database:
+        image: mariadb@sha256:d36f18d65a0459510b8b0f643b226a6d299e3206486e2b64ff20754a6d291707
+        env:
+          MARIADB_ROOT_PASSWORD: frameleaf-ci-disposable
+        ports:
+          - 3306/tcp
+        options: >-
+          --memory=512m --cpus=1
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=24
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, dom, gd, mbstring, mysqli, openssl
+          coverage: none
+          tools: none
+      - name: Disposable native qualification
+        env:
+          FRAMELEAF_TEST_DB_HOST: 127.0.0.1:${{ job.services.database.ports['3306'] }}
+          FRAMELEAF_TEST_DB_PASSWORD: frameleaf-ci-disposable
+          FRAMELEAF_TEST_WORDPRESS: ${{ matrix.wordpress }}
+        run: python3 integrations/wordpress/tests/run.py --wordpress "$FRAMELEAF_TEST_WORDPRESS" --keep

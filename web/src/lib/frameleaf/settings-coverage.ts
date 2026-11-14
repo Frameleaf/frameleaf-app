@@ -341,6 +341,19 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     file: 'src/routes/admin/system-settings/AuthSettings.svelte',
     evidence: 'connectedApps?.allowRegistration',
   },
+  // FL-1533: Library care › Photos found on the drive › What Frameleaf does by itself
+  {
+    pattern: 'libraryCare.putBackFoundFiles',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/care/FoundFiles.svelte',
+    evidence: 'libraryCare.putBackFoundFiles',
+  },
+  {
+    pattern: 'libraryCare.clearGonePreviews',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/care/FoundFiles.svelte',
+    evidence: 'libraryCare.clearGonePreviews',
+  },
   {
     pattern: 'libraryCare.healthScanCronExpression',
     // FL-363: the overnight schedule starts the checks; this stored start no longer does
@@ -1676,6 +1689,12 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     kind: 'control',
     file: 'src/routes/(user)/user-settings/AppSettings.svelte',
     evidence: "'display.hourCycle'",
+  },
+  {
+    pattern: 'develop.importXmpEdits',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/AppSettings.svelte',
+    evidence: 'develop.importXmpEdits',
   },
   {
     pattern: 'download.archiveSize',

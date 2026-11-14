@@ -54,6 +54,13 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     transcode: vitest.fn(),
     getImageMetadata: vitest.fn(),
     getOrientedSize: vitest.fn().mockResolvedValue({ width: 0, height: 0 }),
+    measureImageQuality: vitest.fn().mockResolvedValue({
+      mean: 0,
+      contrast: 0,
+      entropy: 0,
+      sharpness: 0,
+      thumbnailScore: 0,
+    }),
     scoreThumbnailCandidate: vitest.fn().mockResolvedValue(0),
     composeImageGrid: vitest.fn().mockImplementation(() => Promise.resolve()),
     composeFilmstrip: vitest.fn().mockImplementation(() => Promise.resolve()),
