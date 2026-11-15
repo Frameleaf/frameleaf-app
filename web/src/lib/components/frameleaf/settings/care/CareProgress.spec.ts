@@ -161,6 +161,7 @@ describe('Search and recognition progress (FL-366)', () => {
   it('says N of M read and about how long the rest takes (FL-521)', async () => {
     sdkMock.getLibraryProgress.mockResolvedValue({
       measuredSince: '2026-10-22T08:00:00.000Z',
+      bestPhotos: { outdated: 0, tonight: false },
       features: [{ feature: 'search' as never, done: 1000, total: 4000, perHour: 1000, secondsLeft: 10_800 }],
     });
     newStore();
@@ -176,6 +177,7 @@ describe('Search and recognition progress (FL-366)', () => {
   it('says the work is waiting for a computer and names it (FL-521)', async () => {
     sdkMock.getLibraryProgress.mockResolvedValue({
       measuredSince: null,
+      bestPhotos: { outdated: 0, tonight: false },
       features: [{ feature: 'faces' as never, done: 10, total: 50, perHour: null, secondsLeft: null }],
     });
     sdkMock.getMlCapabilities.mockResolvedValue({
