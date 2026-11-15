@@ -11,6 +11,7 @@ import {
   RemoteAccessPublicUrlSchema,
   RemoteHostnameStatusSchema,
 } from 'src/dtos/frameleaf-remote-access.dto.js';
+import { PlaybackSelfTestCaseIdSchema } from 'src/dtos/playback-self-test.dto.js';
 import {
   AudioCodec,
   AudioCodecSchema,
@@ -949,6 +950,12 @@ const AdminConfigFFmpegSchema = z
     transcode: TranscodePolicySchema,
     accel: TranscodeHardwareAccelerationSchema,
     accelDecode: configBool.describe('Accelerated decode'),
+    softwareFallback: z
+      .array(PlaybackSelfTestCaseIdSchema)
+      .optional()
+      .describe(
+        'Kinds of video converted without hardware acceleration even when it is on: the kinds the playback self-test found it gets wrong. Written by the server; a settings save keeps the stored list (a configuration file may set it)',
+      ),
     tonemap: ToneMappingSchema,
     realtime: z
       .object({
@@ -1798,6 +1805,7 @@ export const defaults = Object.freeze<SystemConfig>({
     tonemap: ToneMapping.Hable,
     accel: TranscodeHardwareAcceleration.Disabled,
     accelDecode: true,
+    softwareFallback: [],
     realtime: {
       enabled: false,
       videoCodecs: [VideoCodec.H264, VideoCodec.Hevc],

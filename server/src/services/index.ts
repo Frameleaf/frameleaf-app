@@ -163,6 +163,7 @@ import { PhotographyWorkflowService } from 'src/services/photography-workflow.se
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
+import { PlaybackSelfTestService } from 'src/services/playback-self-test.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
 import { PreservationService } from 'src/services/preservation.service.js';
@@ -340,6 +341,7 @@ export const services = [
   AttentionService,
   UpgradeCheckService,
   LibraryProgressService,
+  PlaybackSelfTestService,
   OvernightService,
   AuthService,
   LockedEncryptionService,
