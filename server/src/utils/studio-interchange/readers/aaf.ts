@@ -389,6 +389,14 @@ const readSegment = (context: Context, segment: aafObjectOrUndefined, start: num
         },
         mediaReference: reference,
       };
+      const fadeIn = aaf.int(segment, PID.fadeInLength) ?? 0;
+      const fadeOut = aaf.int(segment, PID.fadeOutLength) ?? 0;
+      if (fadeIn > 0 || fadeOut > 0) {
+        clip.frameleaf = {
+          ...(fadeIn > 0 && { fadeInSeconds: fadeIn / context.fps }),
+          ...(fadeOut > 0 && { fadeOutSeconds: fadeOut / context.fps }),
+        };
+      }
       built.placed.push({ start, duration: length, item: clip });
     }
     return start + length;
