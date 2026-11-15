@@ -1703,6 +1703,13 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'download.archiveSize',
   },
   {
+    pattern: 'download.defaultFormat',
+    // FL-826: the format downloads use unless one is chosen; the settings control follows the approved FL-886 mock
+    kind: 'api-only',
+    file: '../server/src/services/download.service.ts',
+    evidence: 'preferences.download.defaultFormat',
+  },
+  {
     pattern: 'download.includeEmbeddedVideos',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',
