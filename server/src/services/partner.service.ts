@@ -1,13 +1,27 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Partner } from 'src/database.js';
-import { PartnerCreateDto, PartnerResponseDto, PartnerSearchDto, PartnerUpdateDto } from 'src/dtos/partner.dto.js';
+import {
+  PartnerCreateDto,
+  PartnerResponseDto,
+  PartnerScopeDto,
+  PartnerScopeEstimateResponseDto,
+  PartnerScopeResponseDto,
+  PartnerScopeUpdateDto,
+  PartnerSearchDto,
+  PartnerUpdateDto,
+} from 'src/dtos/partner.dto.js';
 import { mapUser } from 'src/dtos/user.dto.js';
 import { AccountEventAction, AssetVisibility, Permission, PushEventType } from 'src/enum.js';
 import { PartnerDirection, PartnerIds } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { startPartnerBackfill, stopPartnerSharing } from 'src/services/partner-copy.service.js';
+import {
+  type PartnerScopeChoice,
+  canonicalPartnerScope,
+  partnerScopeChoosesAnything,
+} from 'src/utils/partner-scope.js';
 
 @Injectable()
 export class PartnerService extends BaseService {
@@ -15,7 +29,7 @@ export class PartnerService extends BaseService {
   @Inject(LockedEncryptionService)
   private lockedEncryption!: LockedEncryptionService;
 
-  async create(auth: AuthDto, { sharedWithId }: PartnerCreateDto): Promise<PartnerResponseDto> {
+  async create(auth: AuthDto, { sharedWithId, scope: scopeDto }: PartnerCreateDto): Promise<PartnerResponseDto> {
     // a library shared with its own owner would start copying every item back into that same library
     // UUIDs compare without case, as the database compares them
     if (sharedWithId.toLowerCase() === auth.user.id.toLowerCase()) {
@@ -39,8 +53,13 @@ export class PartnerService extends BaseService {
       this.logger.debug('Partner creation failed: user not found');
       throw new BadRequestException('Invalid user');
     }
+    // FL-774: checked before anything is shared, so a refused scope never starts an Everything copy
+    const scope = scopeDto ? await this.resolveScope(auth.user.id, scopeDto) : null;
 
     const partner = await this.partnerRepository.create(partnerId);
+    if (scope) {
+      await this.partnerRepository.setScope(partnerId, scope);
+    }
     // FL-326: the partner receives their own copies of this library
     await startPartnerBackfill(
       { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
@@ -63,7 +82,41 @@ export class PartnerService extends BaseService {
       systemTemplate: { version: 1, key: 'partner-added', args: { senderName: auth.user.name } },
       data: { partnerId: auth.user.id, change: 'partner-added' },
     });
-    return this.mapPartner(partner, PartnerDirection.SharedBy);
+    return { ...this.mapPartner(partner, PartnerDirection.SharedBy), scope: await this.mapScope(auth.user.id, scope) };
+  }
+
+  /** FL-774: what the caller's library sends to this partner, and how many items that is now. */
+  async getScope(auth: AuthDto, sharedWithId: string): Promise<PartnerScopeResponseDto> {
+    const partnerId = await this.requireOwnPartnership(auth, sharedWithId);
+    const scope = (await this.partnerRepository.getScope(partnerId)) ?? null;
+    return {
+      ...(await this.mapScope(auth.user.id, scope)),
+      count: await this.partnerRepository.countInScope(auth.user.id, scope),
+    };
+  }
+
+  /**
+   * FL-774: change what the caller's library sends to this partner. Only the owner changes it: this always names the
+   * caller's own partnership. Widening copies the newly matching items; narrowing stops further copies and leaves the
+   * partner every copy already received.
+   */
+  async updateScope(auth: AuthDto, sharedWithId: string, dto: PartnerScopeUpdateDto): Promise<PartnerScopeResponseDto> {
+    const partnerId = await this.requireOwnPartnership(auth, sharedWithId);
+    const scope = await this.resolveScope(auth.user.id, dto);
+    await this.partnerRepository.setScope(partnerId, scope);
+    // the backfill walks again under the new scope; items already copied are skipped
+    await startPartnerBackfill(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      sharedWithId,
+    );
+    return this.getScope(auth, sharedWithId);
+  }
+
+  /** FL-774: how many of the caller's items a scope would send now, before it is saved (adding a partner too). */
+  async estimateScope(auth: AuthDto, dto: PartnerScopeUpdateDto): Promise<PartnerScopeEstimateResponseDto> {
+    const scope = await this.resolveScope(auth.user.id, dto);
+    return { count: await this.partnerRepository.countInScope(auth.user.id, scope) };
   }
 
   async remove(auth: AuthDto, sharedWithId: string): Promise<void> {
@@ -111,9 +164,12 @@ export class PartnerService extends BaseService {
     return Promise.all(
       mine.map(async (partner) => {
         const backfill = await this.partnerOriginRepository.getBackfill(partner.sharedById, partner.sharedWithId);
+        // FL-774: the owner's choice; a partner sees what they receive, read-only
+        const scope = (await this.partnerRepository.getScope(partner)) ?? null;
         return {
           ...this.mapPartner(partner, direction),
           backfill: backfill ? { state: backfill.state, total: backfill.total, done: backfill.done } : null,
+          scope: await this.mapScope(partner.sharedById, scope),
         };
       }),
     );
@@ -127,6 +183,46 @@ export class PartnerService extends BaseService {
       throw new BadRequestException('Partner not found');
     }
     return this.mapPartner(partner as Partner, PartnerDirection.SharedWith);
+  }
+
+  private async requireOwnPartnership(auth: AuthDto, sharedWithId: string): Promise<PartnerIds> {
+    const partnerId: PartnerIds = { sharedById: auth.user.id, sharedWithId };
+    if (!(await this.partnerRepository.get(partnerId))) {
+      throw new BadRequestException('Partner not found');
+    }
+    return partnerId;
+  }
+
+  /** A scope as saved: Everything is `null`. Only the owner's own albums and people can be chosen. */
+  private async resolveScope(ownerId: string, dto: PartnerScopeUpdateDto): Promise<PartnerScopeChoice | null> {
+    if (dto.mode === 'everything') {
+      return null;
+    }
+    const scope = canonicalPartnerScope({
+      sinceDate: dto.sinceDate ?? null,
+      albumIds: dto.albumIds ?? [],
+      personIds: dto.personIds ?? [],
+      folders: dto.folders ?? [],
+    });
+    if (!partnerScopeChoosesAnything(scope)) {
+      throw new BadRequestException('Choose at least one album, person, folder or date');
+    }
+    if (scope.folders.some((folder) => !folder.startsWith('/'))) {
+      throw new BadRequestException('Choose folders from your library');
+    }
+    const labels = await this.partnerRepository.getScopeLabels(ownerId, scope);
+    if (labels.albums.length !== scope.albumIds.length || labels.people.length !== scope.personIds.length) {
+      throw new BadRequestException('Choose only your own albums and people');
+    }
+    return scope;
+  }
+
+  private async mapScope(ownerId: string, scope: PartnerScopeChoice | null): Promise<PartnerScopeDto> {
+    if (!scope) {
+      return { mode: 'everything', sinceDate: null, albums: [], people: [], folders: [] };
+    }
+    const { albums, people } = await this.partnerRepository.getScopeLabels(ownerId, scope);
+    return { mode: 'chosen', sinceDate: scope.sinceDate, albums, people, folders: scope.folders };
   }
 
   private mapPartner(partner: Partner, direction: PartnerDirection): PartnerResponseDto {

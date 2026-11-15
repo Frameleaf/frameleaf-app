@@ -46,7 +46,8 @@ export const startPartnerBackfill = async (
   sharedById: string,
   sharedWithId: string,
 ) => {
-  const total = await partnerOrigin.countOwnerAssets(sharedById);
+  // FL-774: a scoped partnership counts (and copies) only what its scope sends
+  const total = await partnerOrigin.countOwnerAssets(sharedById, sharedWithId);
   await partnerOrigin.startBackfill(sharedById, sharedWithId, total);
   await job.queue({ name: JobName.PartnerBackfill, data: { sharedById, sharedWithId } });
 };
@@ -166,6 +167,23 @@ export const recordAlbumEdit = async (
   }
 };
 
+/**
+ * FL-774: an edit brought these items into a partnership's scope (added to a chosen album, a face named, a new date):
+ * copy them to those partners. Partnerships that share Everything copied them already; an item already copied is
+ * skipped by the copy itself.
+ */
+export const queueScopedCopies = async ({ partnerOrigin, job }: BackfillRepositories, assetIds: string[]) => {
+  const entries = await partnerOrigin.getScopedRecipients(assetIds);
+  if (entries.length > 0) {
+    await job.queueAll(
+      entries.map(({ assetId, sharedById, sharedWithId }) => ({
+        name: JobName.PartnerCopyAsset as const,
+        data: { sourceAssetId: assetId, targetOwnerId: sharedWithId, partnerSharedById: sharedById },
+      })),
+    );
+  }
+};
+
 /** A new album of `ownerId`'s goes to everyone they share with (spec §4.4, §4.6). */
 export const queueAlbumCopies = async (
   { partner, job }: { partner: PartnerRepository; job: JobRepository },
@@ -226,6 +244,10 @@ export class PartnerCopyService extends BaseService {
     const origin = await this.partnerOriginRepository.getOrigin('asset', source.id);
     const rootOwnerId = origin?.rootOwnerId ?? source.ownerId;
     if (rootOwnerId === targetOwnerId) {
+      return;
+    }
+    // FL-774: every copy (backfill, a new upload, an edit, the next hop of A→B→C) passes this partnership's scope
+    if (!(await this.partnerOriginRepository.isInPartnerScope(source.id, partnerSharedById, targetOwnerId))) {
       return;
     }
 
@@ -510,6 +532,15 @@ export class PartnerCopyService extends BaseService {
     if (!(await this.partnerRepository.get({ sharedById: partnerSharedById, sharedWithId: targetOwnerId }))) {
       return;
     }
+    // FL-774: a scoped partnership receives only the albums chosen, never another album's name or cover
+    if (
+      !(await this.partnerRepository.isAlbumInScope(
+        { sharedById: partnerSharedById, sharedWithId: targetOwnerId },
+        album.id,
+      ))
+    ) {
+      return;
+    }
 
     const assetIds = await this.partnerOriginRepository.getAlbumAssetCopyIds(album.id, targetOwnerId);
     const cover = album.albumThumbnailAssetId
@@ -619,6 +650,17 @@ export class PartnerCopyService extends BaseService {
         })),
       );
     }
+  }
+
+  /** FL-774: an edit can bring items into a partnership's scope. */
+  @OnEvent({ name: 'AssetsChanged' })
+  async onAssetsChanged({ assetIds }: ArgOf<'AssetsChanged'>) {
+    await queueScopedCopies({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, assetIds);
+  }
+
+  @OnEvent({ name: 'AssetChanged' })
+  async onAssetChanged({ assetId }: ArgOf<'AssetChanged'>) {
+    await queueScopedCopies({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, [assetId]);
   }
 
   /** Spec §4.6: a new item of a sharing user's is copied to every partner, once its metadata is read. */
@@ -747,6 +789,7 @@ export class PartnerCopyService extends BaseService {
       sharedById,
       backfill.cursor,
       this.backfillBatchSize,
+      sharedWithId,
     );
     const copies: string[] = [];
     for (const id of ids) {
