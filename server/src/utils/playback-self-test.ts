@@ -6,6 +6,7 @@ import {
   ColorTransfer,
   DvProfile,
   DvSignalCompatibility,
+  SystemMetadataKey,
   TranscodeHardwareAcceleration,
   VideoCodec,
 } from 'src/enum.js';
@@ -53,7 +54,14 @@ export type PlaybackSelfTestCaseResult = {
 
 export type PlaybackSelfTestReason = 'manual' | 'upgrade' | 'settings';
 
-/** `SystemMetadataKey.PlaybackSelfTest`: the latest check. */
+/**
+ * FL-977: the system metadata key of the latest check. It's a plain string, not a `SystemMetadataKey`
+ * member: `src/enum.ts` is a schema-catalog source, so adding to it needs a full catalog recapture for
+ * what isn't a schema change.
+ */
+export const PLAYBACK_SELF_TEST_KEY = 'playback-self-test' as SystemMetadataKey;
+
+/** The latest check, stored under {@link PLAYBACK_SELF_TEST_KEY}. */
 export type PlaybackSelfTestState = {
   /** `running` while it converts; `done` when every kind was checked; `failed` when the check could not finish. */
   status: 'running' | 'done' | 'failed';

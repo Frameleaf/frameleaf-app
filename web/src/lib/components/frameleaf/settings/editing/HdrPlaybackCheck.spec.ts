@@ -8,7 +8,8 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import en from '../../../../../../../i18n/en.json';
-import HdrPlaybackCheck, { hdrCheckState } from './HdrPlaybackCheck.svelte';
+import HdrPlaybackCheck from './HdrPlaybackCheck.svelte';
+import { hdrCheckState } from './hdr-playback-check';
 
 const result = (overrides: Partial<PlaybackSelfTestResponseDto> = {}): PlaybackSelfTestResponseDto => ({
   status: PlaybackSelfTestStatus.Done,

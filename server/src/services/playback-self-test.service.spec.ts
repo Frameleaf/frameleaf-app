@@ -16,6 +16,7 @@ import {
 } from 'src/enum.js';
 import { PlaybackSelfTestService } from 'src/services/playback-self-test.service.js';
 import {
+  PLAYBACK_SELF_TEST_KEY,
   type PlaybackCopyFacts,
   type PlaybackSelfTestState,
   readPlaybackSelfTestManifest,
@@ -132,7 +133,7 @@ describe(PlaybackSelfTestService.name, () => {
     );
     expect(sut.updateConfigExclusively).not.toHaveBeenCalled();
     expect(mocks.storage.unlinkDir).toHaveBeenCalledWith('/tmp/self-test', { recursive: true, force: true });
-    expect(stored[SystemMetadataKey.PlaybackSelfTest]).toEqual(
+    expect(stored[PLAYBACK_SELF_TEST_KEY]).toEqual(
       expect.objectContaining({ status: 'done', serverVersion: serverVersion.toString(), reason: 'manual' }),
     );
   });
@@ -260,9 +261,7 @@ describe(PlaybackSelfTestService.name, () => {
     const state = await sut.run('manual');
 
     expect(state.softwareFallback).toEqual(['sdr-h264']);
-    expect(stored[SystemMetadataKey.PlaybackSelfTest]).toEqual(
-      expect.objectContaining({ softwareFallback: ['sdr-h264'] }),
-    );
+    expect(stored[PLAYBACK_SELF_TEST_KEY]).toEqual(expect.objectContaining({ softwareFallback: ['sdr-h264'] }));
   });
 
   describe('when it runs', () => {
@@ -286,18 +285,18 @@ describe(PlaybackSelfTestService.name, () => {
     });
 
     it('runs after an upgrade', async () => {
-      stored[SystemMetadataKey.PlaybackSelfTest] = { serverVersion: '0.0.1', status: 'done' } as PlaybackSelfTestState;
+      stored[PLAYBACK_SELF_TEST_KEY] = { serverVersion: '0.0.1', status: 'done' } as PlaybackSelfTestState;
 
       await sut.onBootstrap();
       await sut.settled();
 
-      expect(stored[SystemMetadataKey.PlaybackSelfTest]).toEqual(
+      expect(stored[PLAYBACK_SELF_TEST_KEY]).toEqual(
         expect.objectContaining({ reason: 'upgrade', status: 'done', serverVersion: serverVersion.toString() }),
       );
     });
 
     it('does not run again on a start of the same version', async () => {
-      stored[SystemMetadataKey.PlaybackSelfTest] = { serverVersion: serverVersion.toString(), status: 'done' };
+      stored[PLAYBACK_SELF_TEST_KEY] = { serverVersion: serverVersion.toString(), status: 'done' };
 
       await sut.onBootstrap();
       await sut.settled();
@@ -342,11 +341,11 @@ describe(PlaybackSelfTestService.name, () => {
       });
       await sut.settled();
       expect(mocks.media.transcode).toHaveBeenCalled();
-      expect(stored[SystemMetadataKey.PlaybackSelfTest]).toEqual(expect.objectContaining({ reason: 'settings' }));
+      expect(stored[PLAYBACK_SELF_TEST_KEY]).toEqual(expect.objectContaining({ reason: 'settings' }));
     });
 
     it('says a check cut short by a restart failed', async () => {
-      stored[SystemMetadataKey.PlaybackSelfTest] = {
+      stored[PLAYBACK_SELF_TEST_KEY] = {
         status: 'running',
         startedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
       } as PlaybackSelfTestState;

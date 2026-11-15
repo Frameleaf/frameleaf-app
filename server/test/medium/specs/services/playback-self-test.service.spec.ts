@@ -2,7 +2,7 @@ import { Kysely } from 'kysely';
 import { execFileSync } from 'node:child_process';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { SystemMetadataKey, ToneMapping, TranscodeHardwareAcceleration, VideoCodec } from 'src/enum.js';
+import { ToneMapping, TranscodeHardwareAcceleration, VideoCodec } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -12,7 +12,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { PlaybackSelfTestService } from 'src/services/playback-self-test.service.js';
-import { PLAYBACK_SELF_TEST_CASES } from 'src/utils/playback-self-test.js';
+import { PLAYBACK_SELF_TEST_CASES, PLAYBACK_SELF_TEST_KEY } from 'src/utils/playback-self-test.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -51,7 +51,7 @@ describe('FL-977 playback self-test with real ffmpeg', { concurrent: false }, ()
     if (previousConfig) {
       await setup.sut.updateConfig(previousConfig);
     }
-    await setup.ctx.get(SystemMetadataRepository).delete(SystemMetadataKey.PlaybackSelfTest);
+    await setup.ctx.get(SystemMetadataRepository).delete(PLAYBACK_SELF_TEST_KEY);
   });
 
   it('passes every kind of video converted on the processor, within its own time limit', async () => {
@@ -111,7 +111,7 @@ describe('FL-977 playback self-test with real ffmpeg', { concurrent: false }, ()
     expect(state.softwareFallback).toEqual([...PLAYBACK_SELF_TEST_CASES]);
     const { ffmpeg } = await setup.sut.getConfig({ withCache: false });
     expect(ffmpeg.softwareFallback).toEqual([...PLAYBACK_SELF_TEST_CASES]);
-    await expect(setup.ctx.get(SystemMetadataRepository).get(SystemMetadataKey.PlaybackSelfTest)).resolves.toEqual(
+    await expect(setup.ctx.get(SystemMetadataRepository).get(PLAYBACK_SELF_TEST_KEY)).resolves.toEqual(
       expect.objectContaining({ status: 'done', softwareFallback: [...PLAYBACK_SELF_TEST_CASES] }),
     );
   });

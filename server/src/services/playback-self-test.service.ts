@@ -11,7 +11,6 @@ import { OnEvent } from 'src/decorators.js';
 import {
   DvProfile,
   FrameleafWorker,
-  SystemMetadataKey,
   ToneMapping,
   TranscodeHardwareAcceleration,
   TranscodePolicy,
@@ -24,6 +23,7 @@ import {
   HDR_PLAYBACK_CASES,
   PLAYBACK_SELF_TEST_DEADLINE_MS,
   PLAYBACK_SELF_TEST_FOLDER,
+  PLAYBACK_SELF_TEST_KEY,
   type PlaybackCopyFacts,
   type PlaybackSelfTestCase,
   type PlaybackSelfTestCaseResult,
@@ -132,7 +132,7 @@ export class PlaybackSelfTestService extends BaseService {
       softwareFallback: ffmpeg.softwareFallback ?? [],
       error: null,
     };
-    await this.systemMetadataRepository.set(SystemMetadataKey.PlaybackSelfTest, { ...state });
+    await this.systemMetadataRepository.set(PLAYBACK_SELF_TEST_KEY, { ...state });
     onRecord?.();
     this.logger.log(`Playback self-test started (${reason}, ${ffmpeg.accel})`);
 
@@ -155,7 +155,7 @@ export class PlaybackSelfTestService extends BaseService {
 
     state.softwareFallback = fallbackFor(state, ffmpeg);
     state.finishedAt = new Date().toISOString();
-    await this.systemMetadataRepository.set(SystemMetadataKey.PlaybackSelfTest, state);
+    await this.systemMetadataRepository.set(PLAYBACK_SELF_TEST_KEY, state);
     await this.saveFallback(state.softwareFallback);
     const failed = state.cases.filter((result) => !result.passed).map((result) => result.id);
     this.logger.log(
@@ -295,7 +295,7 @@ export class PlaybackSelfTestService extends BaseService {
   }
 
   private async read(): Promise<PlaybackSelfTestState | null> {
-    const state = await this.systemMetadataRepository.get(SystemMetadataKey.PlaybackSelfTest);
+    const state = (await this.systemMetadataRepository.get(PLAYBACK_SELF_TEST_KEY)) as PlaybackSelfTestState | null;
     if (state?.status === 'running' && !this.running && Date.now() - Date.parse(state.startedAt) > STALE_RUNNING_MS) {
       return { ...state, status: 'failed', error: 'The check was cut short' };
     }

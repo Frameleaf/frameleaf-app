@@ -8,7 +8,6 @@ import type { CloudMlJobEstimateRecord, CloudMlJobUpgradeRecord } from 'src/util
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
-import type { PlaybackSelfTestState } from 'src/utils/playback-self-test.js';
 import type { Rational } from 'src/utils/rational-time.js';
 import { VECTOR_EXTENSIONS } from 'src/constants.js';
 import { AssetFile } from 'src/database.js';
@@ -1745,7 +1744,6 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.LibraryProgressSamples]: { samples: { at: string; done: Record<string, number> }[] };
   [SystemMetadataKey.OvernightRedo]: { queues: string[] };
   [SystemMetadataKey.VideoCardState]: VideoCardState;
-  [SystemMetadataKey.PlaybackSelfTest]: PlaybackSelfTestState;
   [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
   [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };
   [SystemMetadataKey.MlUnavailableBehaviour]: { whenUnavailable: 'wait' | 'stop'; notified?: Record<string, string> };
