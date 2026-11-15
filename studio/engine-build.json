@@ -879,7 +879,12 @@
       "path": "patches/0196-sound-channel-mapping.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "0d6404ce7906c73ed85ca091ee101185983126ae2aa311046630e82ac5d454c8"
+    },
+    {
+      "path": "patches/0197-project-fonts.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "98148c67903bd22f3a4434b60974ffb56130e2a92f4e59ef299397f90e50985c"
     }
   ],
-  "sourceSha256": "81b9a0517a735951598a080a5deeda55caae8a33687ff99e7f791f734256c09e"
+  "sourceSha256": "9b6c35d726f09c5d55879a48fe4dbcff40e10b473a3216ce88f0e999288c5781"
 }
