@@ -25,6 +25,7 @@ import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
 import { withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { favoriteFor } from 'src/utils/favorite.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isTimelineVisible, visibilityIs } from 'src/utils/locked.js';
 
@@ -436,10 +437,8 @@ export class MapRepository {
         // an album shows archived items, so only an explicit `false` leaves them out
         .$if(isArchived === false, (qb) => qb.where('asset.visibility', '!=', sql.lit(AssetVisibility.Archive)))
         .$if(isFavorite !== undefined && !!favoriteOwnerId, (qb) =>
-          qb.where((eb) => {
-            const ownFavorite = eb.and([eb('asset.isFavorite', '=', true), eb('asset.ownerId', '=', favoriteOwnerId!)]);
-            return isFavorite ? ownFavorite : eb.not(ownFavorite);
-          }),
+          // FL-786: the viewer's own hearts, their own items' and those they gave items shared with them
+          qb.where(sql<boolean>`(${favoriteFor(favoriteOwnerId!)}) = ${isFavorite!}`),
         )
         .$if(fileCreatedAfter !== undefined, (qb) => qb.where('asset.fileCreatedAt', '>=', fileCreatedAfter!))
         .$if(fileCreatedBefore !== undefined, (qb) => qb.where('asset.fileCreatedAt', '<=', fileCreatedBefore!))

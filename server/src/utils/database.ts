@@ -62,6 +62,7 @@ import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { assetColorPredicate, assetTransparencyPredicate } from 'src/utils/asset-palette-query.js';
 import { assetSourcePredicate } from 'src/utils/asset-source-query.js';
 import { DATABASE_POOL_SIZE, boundExecutionReservations } from 'src/utils/execution-database.js';
+import { favoriteFor } from 'src/utils/favorite.js';
 import { displayPathSql } from 'src/utils/library-path.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import {
@@ -737,7 +738,14 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       )
       .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type!))
-      .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+      // FL-786: the viewer's own hearts, never an owner's on an item shared with the viewer
+      .$if(options.isFavorite !== undefined, (qb) =>
+        qb.where(
+          options.viewingUserId
+            ? sql<boolean>`(${favoriteFor(options.viewingUserId)}) = ${options.isFavorite!}`
+            : sql<boolean>`asset."isFavorite" = ${options.isFavorite!}`,
+        ),
+      )
       .$if(options.isOffline !== undefined, (qb) => qb.where('asset.isOffline', '=', options.isOffline!))
       .$if(options.isEncoded !== undefined, (qb) =>
         qb.where((eb) => {
@@ -1220,7 +1228,14 @@ function branchPredicates(
     ...comparisonPredicates(eb, 'asset.libraryId', branch.libraryId),
     ...comparisonPredicates(eb, 'asset.type', branch.type),
     ...visibilityPredicates(branch.visibility, revealOwnerId),
-    ...(branch.isFavorite ? [eb('asset.isFavorite', '=', branch.isFavorite.eq)] : []),
+    // FL-786: the viewer's own hearts, never an owner's on an item shared with the viewer
+    ...(branch.isFavorite
+      ? [
+          viewerId
+            ? sql<boolean>`(${favoriteFor(viewerId)}) = ${branch.isFavorite.eq}`
+            : eb('asset.isFavorite', '=', branch.isFavorite.eq),
+        ]
+      : []),
     ...(branch.isOffline ? [eb('asset.isOffline', '=', branch.isOffline.eq)] : []),
     ...(branch.isMotion ? [eb('asset.livePhotoVideoId', branch.isMotion.eq ? 'is not' : 'is', null)] : []),
     ...existsPredicates(eb, branch.isEncoded, encodedVideoFiles),

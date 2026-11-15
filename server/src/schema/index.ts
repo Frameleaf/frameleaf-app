@@ -71,6 +71,7 @@ import { AssetEditTable } from 'src/schema/tables/asset-edit.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceAuditTable } from 'src/schema/tables/asset-face-audit.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
+import { AssetFavoriteTable } from 'src/schema/tables/asset-favorite.table.js';
 import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetFontTable } from 'src/schema/tables/asset-font.table.js';
 import {
@@ -478,6 +479,7 @@ export class ImmichDatabase {
     AssetOcrAuditTable,
     AssetRestorationTable,
     AssetTable,
+    AssetFavoriteTable,
     AssetFileTable,
     AssetOriginalTable,
     AssetHealthRunTable,
@@ -755,6 +757,7 @@ export interface DB extends QueueDatabase {
   asset_exif: AssetExifTable;
   asset_face: AssetFaceTable;
   asset_face_audit: AssetFaceAuditTable;
+  asset_favorite: AssetFavoriteTable;
   asset_file: AssetFileTable;
   asset_original: AssetOriginalTable;
   asset_health_run: AssetHealthRunTable;

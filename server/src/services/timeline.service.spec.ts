@@ -406,6 +406,17 @@ describe(TimelineService.name, () => {
       );
     });
 
+    it("hides other owners' Locked-rule items from Favourites, which lists hearts on shared items (FL-786)", async () => {
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+
+      await sut.getTimeBuckets(authStub.admin, { userId: authStub.admin.user.id, isFavorite: true });
+
+      expect(mocks.asset.getTimeBuckets).toHaveBeenCalledWith(
+        expect.objectContaining({ isFavorite: true, othersRulesViewerId: authStub.admin.user.id }),
+        authStub.admin,
+      );
+    });
+
     it('reads an album timeline without a Locked owner for an ordinary session', async () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-id']));
       mocks.asset.getTimeBuckets.mockResolvedValue([]);
