@@ -2088,6 +2088,84 @@ describe(PersonService.name, () => {
     });
   });
 
+  // FL-864, FL-941: a merge keeps the survivor's date of passing and notes and fills in what it lacks
+  describe('merge carries the person profile', () => {
+    type Profile = { deathDate: string | null; notes: string | null };
+    const setupMerge = (survivorProfile?: Profile, removedProfile?: Profile, birthDate: Date | null = null) => {
+      const auth = AuthFactory.create();
+      const survivor = PersonFactory.create({ ownerId: auth.user.id, name: 'Rose', birthDate });
+      const removed = PersonFactory.create({ ownerId: auth.user.id, name: 'Rosie' });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([survivor.personGroupId, removed.personGroupId]));
+      mocks.person.getForMergePerson.mockResolvedValue([survivor, removed]);
+      mocks.person.getByGroupId.mockImplementation(({ personGroupId }) =>
+        Promise.resolve(personGroupId === survivor.personGroupId ? survivor : removed),
+      );
+      mocks.person.getProfile.mockImplementation(({ personGroupId }) =>
+        Promise.resolve(personGroupId === survivor.personGroupId ? survivorProfile : removedProfile),
+      );
+      mocks.person.delete.mockResolvedValue([removed]);
+      const merge = () => sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
+      const id = { ownerId: auth.user.id, personGroupId: survivor.personGroupId };
+      return { merge, id };
+    };
+
+    it('fills a missing date of passing and notes from the merged-away person, before deleting them', async () => {
+      const { merge, id } = setupMerge(undefined, { deathDate: '2020-05-06', notes: 'Loved gardens' });
+
+      await expect(merge()).resolves.toEqual([expect.objectContaining({ success: true })]);
+
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(expect.objectContaining(id), {
+        deathDate: '2020-05-06',
+        notes: 'Loved gardens',
+      });
+      expect(mocks.person.upsertProfile.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.person.delete.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("keeps the survivor's own date of passing and appends the other notes after a blank line", async () => {
+      const { merge, id } = setupMerge(
+        { deathDate: '2021-01-02', notes: 'Grandma' },
+        { deathDate: '2020-05-06', notes: 'Loved gardens' },
+      );
+
+      await merge();
+
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(expect.objectContaining(id), {
+        notes: 'Grandma\n\nLoved gardens',
+      });
+    });
+
+    it('keeps the joined notes within the limit', async () => {
+      const { merge } = setupMerge(
+        { deathDate: null, notes: 'a'.repeat(PERSON_NOTES_MAX_LENGTH - 5) },
+        { deathDate: null, notes: 'b'.repeat(50) },
+      );
+
+      await merge();
+
+      const [[, values]] = mocks.person.upsertProfile.mock.calls;
+      expect(values.notes).toHaveLength(PERSON_NOTES_MAX_LENGTH);
+      expect(values.notes).toBe(`${'a'.repeat(PERSON_NOTES_MAX_LENGTH - 5)}\n\nbbb`);
+    });
+
+    it('changes nothing when the merged-away person has no profile', async () => {
+      const { merge } = setupMerge({ deathDate: '2021-01-02', notes: 'Grandma' }, undefined);
+
+      await merge();
+
+      expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
+    });
+
+    it("does not take a date of passing before the survivor's date of birth", async () => {
+      const { merge } = setupMerge(undefined, { deathDate: '1980-01-01', notes: null }, new Date('1990-02-03'));
+
+      await merge();
+
+      expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
+    });
+  });
+
   describe('merge-suggestion verdict cleanup (FL-57)', () => {
     it("should drop the owner's stale verdicts when a person is deleted", async () => {
       const auth = AuthFactory.create();

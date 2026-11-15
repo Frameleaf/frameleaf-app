@@ -35,6 +35,7 @@ import {
   FaceSearchDto,
   MergePersonDto,
   MergeSuggestionsResponseDto,
+  PERSON_NOTES_MAX_LENGTH,
   PeopleResponseDto,
   PeopleUpdateDto,
   PersonCorrectionDto,
@@ -152,6 +153,38 @@ const DETECTED_FACE_BOX_KEYS = [
   'boundingBoxX2',
   'boundingBoxY2',
 ] as const;
+
+/**
+ * FL-864, FL-941: what a merge changes in the surviving person's profile, or undefined for nothing. The survivor
+ * keeps its own date of passing and notes; a missing date of passing is taken from the merged-away person (unless
+ * it is before the survivor's date of birth), and their notes are added after the survivor's, after a blank line,
+ * kept to the notes limit.
+ */
+export const mergeProfiles = (
+  survivorBirthDate: Date | string | null,
+  survivor: PersonProfile | undefined,
+  removed: PersonProfile | undefined,
+): Partial<PersonProfile> | undefined => {
+  const changes: Partial<PersonProfile> = {};
+  const removedDeathDate = asDateString(removed?.deathDate ?? null)?.slice(0, 10);
+  const born = asDateString(survivorBirthDate)?.slice(0, 10);
+  if (!survivor?.deathDate && removedDeathDate && (!born || removedDeathDate >= born)) {
+    changes.deathDate = removedDeathDate;
+  }
+  const removedNotes = removed?.notes?.trim() ? removed.notes : null;
+  if (removedNotes) {
+    const notes = survivor?.notes?.trim() ? `${survivor.notes}\n\n${removedNotes}` : removedNotes;
+    let capped = notes.slice(0, PERSON_NOTES_MAX_LENGTH);
+    // never end on half of a character outside the Basic Multilingual Plane
+    if (capped.length < notes.length && /[\uD800-\uDBFF]$/.test(capped)) {
+      capped = capped.slice(0, -1);
+    }
+    if (capped !== survivor?.notes) {
+      changes.notes = capped;
+    }
+  }
+  return Object.keys(changes).length > 0 ? changes : undefined;
+};
 
 @Injectable()
 export class PersonService extends BaseService {
@@ -2039,6 +2072,16 @@ export class PersonService extends BaseService {
               personGroupId: mergeId,
             });
             if (!survivor || !removed) throw new ConflictException('Person changed during merge');
+            // FL-864, FL-941: the survivor keeps its own date of passing and notes and takes what it lacks from
+            // the merged-away person, before that person (and their profile) is deleted
+            const [survivorProfile, removedProfile] = await Promise.all([
+              this.personRepository.getProfile(survivor),
+              this.personRepository.getProfile(removed),
+            ]);
+            const profileChanges = mergeProfiles(survivor.birthDate, survivorProfile, removedProfile);
+            if (profileChanges) {
+              await this.personRepository.upsertProfile(survivor, profileChanges);
+            }
             await this.personRepository.reassignFaces(mergeData);
             await this.personRepository.repointPartnerPersonLinks(
               targetPerson.ownerId,
