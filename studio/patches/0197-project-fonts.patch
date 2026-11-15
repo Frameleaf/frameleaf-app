@@ -15,10 +15,10 @@ diff --git a/src/features/projects/stores/project-store.ts b/src/features/projec
  })
 +
 +// Frameleaf (FL-1562): titles draw with the fonts the open project keeps with it.
-+setProjectFonts(useProjectStore.getState().currentProject?.metadata.fonts)
++setProjectFonts(useProjectStore.getState().currentProject?.metadata?.fonts)
 +useProjectStore.subscribe((state, prevState) => {
-+  if (state.currentProject?.metadata.fonts !== prevState.currentProject?.metadata.fonts) {
-+    setProjectFonts(state.currentProject?.metadata.fonts)
++  if (state.currentProject?.metadata?.fonts !== prevState.currentProject?.metadata?.fonts) {
++    setProjectFonts(state.currentProject?.metadata?.fonts)
 +  }
 +})
 diff --git a/src/headless/main.ts b/src/headless/main.ts
