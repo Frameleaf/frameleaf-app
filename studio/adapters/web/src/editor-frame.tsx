@@ -41,6 +41,10 @@ import { bootstrapWorkspace } from '@/infrastructure/storage/workspace-fs/bootst
 import { projectJsonPath } from '@/infrastructure/storage/workspace-fs/paths'
 import { createProject, getProject } from '@/infrastructure/storage'
 import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
+import {
+  clearLutReferences,
+  installProjectLutKeeper,
+} from '@/infrastructure/gpu-effects/lut/lut-references'
 import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
 import { watchLocalImports, type LocalImportWatch } from './project-imports'
 import { createCompletionRetention } from './import-retention'
@@ -473,6 +477,32 @@ function notifySuperseded(state: Session) {
   if (state.disposed) return
   const message = state.context.strings?.editSuperseded
   if (message) post({ type: 'notify', message, tone: 'error' })
+}
+
+/**
+ * FL-1558: a `.cube` file imported in the LUT panel is kept with the project under a new id, and the
+ * effect names it by that id instead of carrying the table in the graph. The server checks the file
+ * (3D or 1D) as it does any LUT import; a refusal, or a host that cannot take it yet, leaves the
+ * panel to embed a 3D LUT as before.
+ */
+function keepImportedLuts(state: Session) {
+  state.unsubscribe.push(
+    installProjectLutKeeper({
+      async keep(file) {
+        const mount = state.mount
+        if (state.disposed || !acceptsWrite(state, mount)) throw new Error('origin_retired')
+        // A save as a copy can change the project while the file uploads; the file stays with the
+        // project it went to, and the panel embeds the LUT instead.
+        const project = studioProjectUuidOf(state.context)
+        const kept = await call('uploadProjectImport', { id: crypto.randomUUID(), fileName: file.name, file })
+        if (state.disposed || state.mount !== mount || studioProjectUuidOf(state.context) !== project)
+          throw new Error('origin_retired')
+        blobUrlManager.registerUrl(kept.id, kept.url)
+        return { id: kept.id }
+      },
+    }),
+    clearLutReferences,
+  )
 }
 
 /**
@@ -913,6 +943,13 @@ function startAtHandoffPlayhead(state: Session, at: { num: number; den: number }
   state.unsubscribe.push(stop)
 }
 
+/** The host moves the playhead to an exact instant (FL-1545), to the nearest frame of the timeline. */
+function seekTo(at: { num: number; den: number }) {
+  if (!(at.den > 0) || at.num < 0) return
+  const cadence = cadenceFromDecimal(useTimelineSettingsStore.getState().fps || 30)
+  if (cadence) usePlaybackStore.getState().setCurrentFrame(nearestTimelineFrame(at, cadence))
+}
+
 /** The playhead, as an exact rational instant, for review comments pinned in the host (FL-93). */
 function watchPlayhead(state: Session) {
   let last = -1
@@ -1087,6 +1124,7 @@ async function mount(context: StudioHostContext): Promise<void> {
   watchDrafts(state)
   watchImports(state)
   watchLocalImportsFor(state)
+  keepImportedLuts(state)
   // FL-637: the voice clean-up card talks to this project's server and puts its result in this bin.
   registerVoiceCleanupHost({
     projectId: () => (session === state && !state.disposed ? state.context.project.id : null),
@@ -1113,6 +1151,9 @@ async function update(context: StudioHostContext): Promise<void> {
   }
   state.context = context
   applyTheme(context)
+  if (context.seekRequest && context.seekRequest.id !== previous.seekRequest?.id) {
+    seekTo(context.seekRequest)
+  }
   if ((state.relinkCommitting || state.relinkGuarded) && !changedOrigin) return
   if (changedOrigin) { state.relinkGuarded = false; state.relinkGuardStop?.(); state.relinkGuardStop = undefined }
   if ((context.generatedMedia?.length ?? 0) > 0) {

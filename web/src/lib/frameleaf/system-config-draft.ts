@@ -42,6 +42,8 @@ export type ConfigConflict = {
  * a conflict or journaled.
  */
 export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
+  // FL-977: the kinds of video the playback self-test put on the processor
+  'ffmpeg.softwareFallback',
   'machineLearning.imageDescription.pendingRequeueAt',
   'machineLearning.imageDescription.lastConfigChangeAt',
   'metrics.enabled',
@@ -97,7 +99,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   queues: ['job'],
   notifications: ['notifications', 'templates'],
   // FL-488: Ask Frameleaf in the help panel is set on the server page.
-  server: ['server', 'help', 'icloud'],
+  // FL-922: the server default expiry for new shared links is saved with the server page.
+  server: ['server', 'help', 'icloud', 'sharedLinks'],
   'smart-albums': ['smartAlbums'],
   'storage-template': ['storageTemplate'],
   theme: ['theme'],

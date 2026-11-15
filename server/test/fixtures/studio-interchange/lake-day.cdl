@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ColorDecisionList xmlns="urn:ASC:CDL:v1.01">
+  <ColorDecision>
+    <ColorCorrection id="Kayak">
+      <SOPNode>
+        <Description>Warm</Description>
+        <Slope>1.2 1.1 1.0</Slope>
+        <Offset>0.02 0.01 0.0</Offset>
+        <Power>0.9 0.9 0.9</Power>
+      </SOPNode>
+      <SatNode><Saturation>1.1</Saturation></SatNode>
+    </ColorCorrection>
+  </ColorDecision>
+</ColorDecisionList>

@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { StudioEditorImportSourceSchema } from 'src/dtos/studio-editor-import.dto.js';
 import { DecodeRefusalSchema } from 'src/enum.js';
 import { stringToBool } from 'src/validation.js';
 
@@ -155,6 +156,9 @@ const StudioProjectSchema = z
     importedFromBundle: z
       .boolean()
       .describe('The project was read in from a portable bundle; always false for a reviewer'),
+    importedFromEditor: StudioEditorImportSourceSchema.nullable()
+      .optional()
+      .describe('The editor the project was imported from (Beta); null otherwise and for a reviewer'),
     createdAt: z.string().meta({ format: 'date-time' }),
     updatedAt: z.string().meta({ format: 'date-time' }),
   })

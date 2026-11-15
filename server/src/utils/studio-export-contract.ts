@@ -201,25 +201,66 @@ export const isTimingUnchangedSingleSource = (graph: unknown): boolean => {
   return speed === 1 && clip.isReversed !== true;
 };
 
-/** Media ids of the audible audio clips: not muted themselves, not on a muted track. */
-const audibleMediaIds = (graph: unknown, range?: StudioExportRange): Set<string> => {
-  const muted = new Set(
-    asArray(timelineOf(graph).tracks)
+const mutedTrackIds = (tracks: unknown): Set<string> =>
+  new Set(
+    asArray(tracks)
       .map((value) => asRecord(value))
       .filter((track) => track.muted === true)
       .map((track) => String(track.id)),
   );
-  return new Set(
-    itemsOf(graph)
-      .filter(
-        (item) =>
-          !range ||
-          ((item.from as number) < range.outPoint &&
-            (item.from as number) + (item.durationInFrames as number) > range.inPoint),
-      )
-      .filter((item) => item.type === 'audio' && item.muted !== true && !muted.has(String(item.trackId)))
-      .map((item) => String(item.mediaId ?? item.assetId ?? '')),
+
+/** FL-1203: a clip names a project import, a catalog track or a generated file by these ids too. */
+const AUDIO_ID_KEYS = ['mediaId', 'assetId', 'importId', 'uploadId', 'musicId', 'generatedId'] as const;
+
+/**
+ * Media ids of the audible audio clips: not muted themselves, not on a muted track. FL-1557: a
+ * composition's sound clip (an `audio` item naming the composition, protocol 14.2.1) has no media of
+ * its own; it plays the audible clips inside the composition, nested compositions included.
+ */
+const audibleMediaIds = (graph: unknown, range?: StudioExportRange): Set<string> => {
+  const compositions = new Map(
+    asArray(timelineOf(graph).compositions)
+      .map((value) => asRecord(value))
+      .map((composition) => [String(composition.id), composition] as const),
   );
+  const audible = new Set<string>();
+  const collect = (items: GraphItem[], tracks: unknown, open: ReadonlySet<string>) => {
+    const muted = mutedTrackIds(tracks);
+    for (const item of items) {
+      if (item.type !== 'audio' || item.muted === true || muted.has(String(item.trackId))) {
+        continue;
+      }
+      const composition = typeof item.compositionId === 'string' ? compositions.get(item.compositionId) : undefined;
+      if (composition) {
+        // A composition that contains itself is refused by resource resolution; never loop on one here.
+        if (!open.has(item.compositionId as string)) {
+          collect(
+            asArray(composition.items).map((value) => asRecord(value)),
+            composition.tracks,
+            new Set([...open, item.compositionId as string]),
+          );
+        }
+        continue;
+      }
+      for (const key of AUDIO_ID_KEYS) {
+        const id = item[key];
+        if (typeof id === 'string') {
+          audible.add(id);
+        }
+      }
+    }
+  };
+  collect(
+    itemsOf(graph).filter(
+      (item) =>
+        !range ||
+        ((item.from as number) < range.outPoint &&
+          (item.from as number) + (item.durationInFrames as number) > range.inPoint),
+    ),
+    timelineOf(graph).tracks,
+    new Set(),
+  );
+  return audible;
 };
 
 /**
@@ -320,7 +361,7 @@ export const resolveStudioExportTiming = (
 };
 
 /** A manifest entry as {@link studioMediaSources} needs it. */
-type MediaEntry = { key: string; kind: string; id: string; source?: string };
+type MediaEntry = { key: string; kind: string; id: string; source?: string; path?: string | null };
 
 const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
@@ -345,6 +386,22 @@ export const studioMediaSources = (entries: readonly MediaEntry[]) => {
     }
   }
   return { ids: [...ids], pictures };
+};
+
+/**
+ * FL-1203 / FL-1204: the audible sound files that are not library assets (a project import such as
+ * Make a movie's song, a catalog track, a generated file). The library has no facts for them, so the
+ * export reads each file's audio stream itself; without them the contract promised no sound.
+ */
+export const studioAudioFiles = (graph: unknown, entries: readonly MediaEntry[]) => {
+  const audible = audibleMediaIds(graph);
+  const files = new Map<string, string>();
+  for (const { kind, id, source, path } of entries) {
+    if (path && audible.has(id) && (kind === 'project-import' || (kind === 'audio' && source !== 'asset'))) {
+      files.set(id, path);
+    }
+  }
+  return [...files].map(([id, path]) => ({ id, path }));
 };
 
 /** The timing a Studio job declares, from its graph, its manifest and what the library knows. */
@@ -383,11 +440,17 @@ const HDR_TRANSFERS: Readonly<Record<number, 'smpte2084' | 'arib-std-b67'>> = {
 };
 
 /**
+ * FL-1203: the engine mixes every export at 48 kHz, resampling each source to it
+ * (`canvas-audio.ts`, "Standard export sample rate"), so that is the rate the result carries.
+ */
+export const STUDIO_EXPORT_SAMPLE_RATE = 48_000;
+
+/**
  * The precision and audio an export promises.
  *
  * - An HEVC Main10, AV1 or ProRes export is 10-bit; HDR10 and Dolby Vision are 10-bit PQ. `preserve`
  *   keeps an HDR transfer when every video source shares it.
- * - The audio carries the widest layout any audible source has, at the highest rate any states,
+ * - The audio carries the widest layout any audible source has, at the engine's 48 kHz mix rate,
  *   unless a stereo downmix was chosen. With no audible source nothing is promised.
  */
 export const buildStudioExportContract = (
@@ -456,8 +519,7 @@ export const buildStudioExportContract = (
         widest = stream;
       }
     }
-    const rates = audio.map((stream) => stream.sampleRate ?? 0).filter((rate) => rate > 0);
-    const sampleRate = rates.length > 0 ? Math.max(...rates) : null;
+    const sampleRate = STUDIO_EXPORT_SAMPLE_RATE;
     expectation =
       policy === 'stereo'
         ? { policy, channels: 2, channelLayout: 'stereo', sampleRate }

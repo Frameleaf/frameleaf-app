@@ -227,6 +227,8 @@ export interface VideoPacketInfo {
   outputFrames: number;
   /** All keyframe PTS in source ticks, including pre-roll discard keyframes. */
   keyframePts: number[];
+  /** FL-1444: every post-discard frame's PTS in presentation order; only when asked for. */
+  framePts?: number[];
   /** Cumulative packet duration through each keyframe, inclusive. */
   keyframeAccDuration: number[];
   /** Each keyframe's own packet duration (needed for VFR). */
@@ -813,6 +815,8 @@ export type JobItem =
   | { name: JobName.LibraryDelete; data: IEntityJob }
   | { name: JobName.LibraryScanQueueAll; data?: IBaseJob }
   | { name: JobName.LibraryScanRun; data?: IBaseJob }
+  // FL-838: `id` is the library
+  | { name: JobName.LibraryFolderAlbumSync; data: IEntityJob }
   | { name: JobName.LibraryDeleteCheck; data: IBaseJob }
 
   // Notification
@@ -1743,7 +1747,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.LibraryProgressSamples]: { samples: { at: string; done: Record<string, number> }[] };
-  [SystemMetadataKey.OvernightRedo]: { queues: string[] };
+  [SystemMetadataKey.OvernightRedo]: { queues: string[]; bestPhotos?: boolean };
   [SystemMetadataKey.VideoCardState]: VideoCardState;
   [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
   [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };
@@ -1852,6 +1856,8 @@ export type UserPreferences = {
   sharedLinks: {
     enabled: boolean;
     sidebarWeb: boolean;
+    /** FL-922: days a new link lasts when its form asks for the default expiry; null falls back to the server's */
+    defaultExpiryDays: number | null;
   };
   tags: {
     enabled: boolean;

@@ -9,6 +9,7 @@ import {
   resolveStudioExportRange,
   resolveStudioExportTiming,
   sameTimeBase,
+  studioAudioFiles,
 } from 'src/utils/studio-export-contract.js';
 import { StudioTimingError } from 'src/utils/studio-timing.js';
 
@@ -70,6 +71,36 @@ it('validates integer main-timeline ranges, preserves the graph and excludes out
   expect(() => resolveStudioExportRange(graph([video('a', { durationInFrames: 1.5 })]), range)).toThrow(
     StudioTimingError,
   );
+});
+
+it('FL-1203 / FL-1204: promises the sound of an imported song, a catalog track and a generated file', () => {
+  const input = graph([
+    video('shot'),
+    { type: 'audio', mediaId: 'song', trackId: 'a1', from: 0, durationInFrames: 30 },
+    { type: 'audio', musicId: 'track', trackId: 'a1', from: 0, durationInFrames: 30 },
+    { type: 'audio', generatedId: 'voice', trackId: 'a1', from: 0, durationInFrames: 30 },
+    { type: 'audio', mediaId: 'muted', trackId: 'a1', from: 0, durationInFrames: 30, muted: true },
+  ]);
+  const entries = [
+    { key: 'v', kind: 'library-asset', id: 'shot', path: '/library/shot.mp4' },
+    { key: 's', kind: 'project-import', id: 'song', path: '/studio/song.mp3' },
+    { key: 't', kind: 'audio', id: 'track', source: 'catalog', path: '/catalog/track.flac' },
+    { key: 'g', kind: 'audio', id: 'voice', source: 'generated', path: '/generated/voice.wav' },
+    { key: 'm', kind: 'project-import', id: 'muted', path: '/studio/muted.mp3' },
+    { key: 'p', kind: 'project-import', id: 'unplaced', path: '/studio/unplaced.mp3' },
+  ];
+  expect(studioAudioFiles(input, entries)).toEqual([
+    { id: 'song', path: '/studio/song.mp3' },
+    { id: 'track', path: '/catalog/track.flac' },
+    { id: 'voice', path: '/generated/voice.wav' },
+  ]);
+  const song = { assetId: 'song', video: null, packets: null };
+  // Make a movie: silent photo and video shots under an imported song (FL-1204).
+  const contract = buildStudioExportContract({ format: 'mp4-h264', color: 'preserve' }, input, [
+    facts('shot', { audio: null }) as never,
+    { ...song, audio: { codecName: 'mp3', channels: 2, channelLayout: 'stereo', sampleRate: 44_100 } },
+  ]);
+  expect(contract.audio).toEqual({ policy: 'preserve', channels: 2, channelLayout: 'stereo', sampleRate: 48_000 });
 });
 
 it('holds range output to exact rational packet duration, count and zero origin', () => {
@@ -227,6 +258,55 @@ describe('buildStudioExportContract (FL-102)', () => {
     expect(
       buildStudioExportContract({ format: 'mp4-h264', color: 'preserve' }, withMute, sources as never).audio,
     ).toEqual({ policy: 'preserve', channels: 6, channelLayout: '5.1', sampleRate: 48_000 });
+  });
+
+  it('hears the clips inside a composition through its sound clip, nested ones included (FL-1557)', () => {
+    const sources = [
+      facts('inner', { audio: { codecName: 'aac', channels: 2, channelLayout: 'stereo', sampleRate: 48_000 } }),
+      facts('deep', { audio: { codecName: 'aac', channels: 6, channelLayout: '5.1', sampleRate: 44_100 } }),
+      facts('quiet', { audio: { codecName: 'eac3', channels: 8, channelLayout: '7.1', sampleRate: 96_000 } }),
+    ];
+    const compositions = [
+      {
+        id: 'nest',
+        tracks: [{ id: 'n1' }, { id: 'n2', muted: true }],
+        items: [
+          { type: 'composition', trackId: 'n1', compositionId: 'deeper' },
+          { type: 'audio', trackId: 'n1', compositionId: 'deeper', src: '' },
+          { type: 'audio', trackId: 'n1', mediaId: 'inner' },
+          { type: 'audio', trackId: 'n2', mediaId: 'quiet' },
+        ],
+      },
+      { id: 'deeper', tracks: [{ id: 'd1' }], items: [{ type: 'audio', trackId: 'd1', mediaId: 'deep' }] },
+      // A loop the resolver refuses is still walked only once.
+      { id: 'loop', tracks: [{ id: 'l1' }], items: [{ type: 'audio', trackId: 'l1', compositionId: 'loop' }] },
+    ];
+    const sound = (compositionId: string, extra: Record<string, unknown> = {}) => ({
+      type: 'audio',
+      trackId: 'a1',
+      compositionId,
+      src: '',
+      from: 0,
+      durationInFrames: 30,
+      ...extra,
+    });
+    const contract = (items: Record<string, unknown>[]) =>
+      buildStudioExportContract(
+        { format: 'mp4-h264', color: 'preserve' },
+        graph(items, { compositions }),
+        sources as never,
+      ).audio;
+    const placed = { type: 'composition', trackId: 'v1', compositionId: 'nest', from: 0, durationInFrames: 30 };
+    expect(contract([placed, sound('nest')])).toEqual({
+      policy: 'preserve',
+      channels: 6,
+      channelLayout: '5.1',
+      sampleRate: 48_000,
+    });
+    // The picture alone is silent; a muted sound clip mutes the whole composition.
+    expect(contract([placed])).toBeNull();
+    expect(contract([placed, sound('nest', { muted: true })])).toBeNull();
+    expect(contract([sound('loop')])).toBeNull();
   });
 
   it('preserves both PQ mastering and a selected frame range through construction and parsing', () => {

@@ -125,7 +125,7 @@ const SearchPlacesSchema = z
 
 const SearchPeopleSchema = z
   .object({
-    name: z.string().describe('Person name to search for'),
+    name: z.string().describe("Person name to search for; the caller's own notes about a person match too (FL-941)"),
     withHidden: stringToBool.optional().describe('Include hidden people'),
   })
   .meta({ id: 'SearchPeopleDto' });
@@ -356,6 +356,11 @@ const searchFilterBranchShape = {
   isOffline: BoolFilterSchema,
   isEncoded: BoolFilterSchema,
   hasAlbums: BoolFilterSchema,
+  // FL-976: how many albums the viewer can see (owns or is a member of) hold the item; deleted albums and
+  // other people's albums the viewer is not in never count, so a shared link (no viewer) counts zero
+  albumCount: NumberFilterSchema.describe(
+    'Number of non-deleted albums the viewer owns or is a member of that contain the item',
+  ),
   hasPeople: BoolFilterSchema,
   hasTags: BoolFilterSchema,
   // FL-349: panoramas are stills whose EXIF/XMP projection (GPano ProjectionType) is equirectangular or

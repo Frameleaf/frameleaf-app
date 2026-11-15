@@ -10,6 +10,7 @@ import type {
   FaceCorrectionAction,
   FaceCorrectionInput,
   PersonId,
+  PersonProfile,
   UpdateFacesData,
 } from 'src/repositories/person.repository.js';
 import type { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
@@ -33,6 +34,7 @@ import {
   FaceSearchDto,
   MergePersonDto,
   MergeSuggestionsResponseDto,
+  PERSON_NOTES_MAX_LENGTH,
   PeopleResponseDto,
   PeopleUpdateDto,
   PersonCorrectionDto,
@@ -103,6 +105,7 @@ import { isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { homeMlDestinationId } from 'src/utils/ml-destination.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import { Point, transformFaceBoundingBox, transformPoints } from 'src/utils/transform.js';
 
 const personKey = ({ ownerId, personGroupId }: PersonId) => `${ownerId}/${personGroupId}`;
@@ -153,6 +156,38 @@ const DETECTED_FACE_BOX_KEYS = [
 
 /** FL-863: the eye scoring stored in `asset_face.eyeScoreVersion` (FL-843's landmark model and fit). */
 export const EYE_SCORE_VERSION = 1;
+
+/**
+ * FL-864, FL-941: what a merge changes in the surviving person's profile, or undefined for nothing. The survivor
+ * keeps its own date of passing and notes; a missing date of passing is taken from the merged-away person (unless
+ * it is before the survivor's date of birth), and their notes are added after the survivor's, after a blank line,
+ * kept to the notes limit.
+ */
+export const mergeProfiles = (
+  survivorBirthDate: Date | string | null,
+  survivor: PersonProfile | undefined,
+  removed: PersonProfile | undefined,
+): Partial<PersonProfile> | undefined => {
+  const changes: Partial<PersonProfile> = {};
+  const removedDeathDate = asDateString(removed?.deathDate ?? null)?.slice(0, 10);
+  const born = asDateString(survivorBirthDate)?.slice(0, 10);
+  if (!survivor?.deathDate && removedDeathDate && (!born || removedDeathDate >= born)) {
+    changes.deathDate = removedDeathDate;
+  }
+  const removedNotes = removed?.notes?.trim() ? removed.notes : null;
+  if (removedNotes) {
+    const notes = survivor?.notes?.trim() ? `${survivor.notes}\n\n${removedNotes}` : removedNotes;
+    let capped = notes.slice(0, PERSON_NOTES_MAX_LENGTH);
+    // never end on half of a character outside the Basic Multilingual Plane
+    if (capped.length < notes.length && /[\uD800-\uDBFF]$/.test(capped)) {
+      capped = capped.slice(0, -1);
+    }
+    if (capped !== survivor?.notes) {
+      changes.notes = capped;
+    }
+  }
+  return Object.keys(changes).length > 0 ? changes : undefined;
+};
 
 @Injectable()
 export class PersonService extends BaseService {
@@ -973,8 +1008,18 @@ export class PersonService extends BaseService {
    * never one since trashed, hidden or moved to Locked, never a soft-deleted or invisible face, and,
    * as for the thumbnail, never one the session's NSFW setting hides.
    */
-  private async mapOwnPerson(auth: AuthDto, person: Person): Promise<PersonResponseDto> {
-    return { ...mapPerson(person), featuredAssetId: await this.featuredAssetId(auth, person) };
+  private async mapOwnPerson(auth: AuthDto, person: Person, profile?: PersonProfile): Promise<PersonResponseDto> {
+    const [featuredAssetId, details] = await Promise.all([
+      this.featuredAssetId(auth, person),
+      profile ?? this.personRepository.getProfile(person),
+    ]);
+    return {
+      ...mapPerson(person),
+      featuredAssetId,
+      deathDate: asDateString(details?.deathDate ?? null),
+      // FL-941: notes are the owner's alone; every person read here is the caller's own, and this keeps it so
+      ...(person.ownerId === auth.user.id && { notes: details?.notes ?? null }),
+    };
   }
 
   private async featuredAssetId(auth: AuthDto, person: Person): Promise<string | null> {
@@ -1051,7 +1096,17 @@ export class PersonService extends BaseService {
 
     const current = await this.findOrFail(auth, personGroupId);
     const { ownerId } = current;
-    const { name, birthDate, isHidden, featureFaceAssetId: assetId, isFavorite, color } = dto;
+    const { name, birthDate, isHidden, featureFaceAssetId: assetId, isFavorite, color, deathDate } = dto;
+    // FL-941: an empty note clears it
+    const notes = dto.notes === undefined ? undefined : dto.notes?.trim() ? dto.notes : null;
+    const currentProfile = await this.personRepository.getProfile(current);
+    if (birthDate !== undefined || deathDate !== undefined) {
+      // FL-864: the date of passing is never before the date of birth, whichever of the two is being set
+      PersonService.requireLifeDatesInOrder(
+        birthDate === undefined ? current.birthDate : birthDate,
+        deathDate === undefined ? (currentProfile?.deathDate ?? null) : deathDate,
+      );
+    }
     // TODO: set by faceId directly
     let faceId: string | undefined;
     if (assetId) {
@@ -1074,6 +1129,7 @@ export class PersonService extends BaseService {
     }
 
     const partnerPeople = BaseService.create(PartnerPeopleService, this);
+    let profile = currentProfile;
     const person = await this.partnerOriginRepository.withPersonOrigin(ownerId, personGroupId, async () => {
       const person = await this.personRepository.update({
         ownerId,
@@ -1087,6 +1143,9 @@ export class PersonService extends BaseService {
         isFavorite,
         color,
       });
+      if (deathDate !== undefined || notes !== undefined) {
+        profile = await this.personRepository.upsertProfile({ ownerId, personGroupId }, { deathDate, notes });
+      }
       await partnerPeople.noteEdit(ownerId, personGroupId, dto);
       return person;
     });
@@ -1117,7 +1176,16 @@ export class PersonService extends BaseService {
       await this.refreshIdentities(ownerId, { personGroupIds: [personGroupId] });
     }
 
-    return this.mapOwnPerson(auth, person);
+    return this.mapOwnPerson(auth, person, profile ?? { deathDate: null, notes: null });
+  }
+
+  /** FL-864: refuses a date of passing before the date of birth. Either may be missing. */
+  private static requireLifeDatesInOrder(birthDate: Date | string | null, deathDate: Date | string | null) {
+    const born = asDateString(birthDate)?.slice(0, 10);
+    const died = asDateString(deathDate)?.slice(0, 10);
+    if (born && died && died < born) {
+      throw new BadRequestException('The date of passing cannot be before the date of birth');
+    }
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
@@ -1135,6 +1203,8 @@ export class PersonService extends BaseService {
           birthDate: person.birthDate,
           featureFaceAssetId: person.featureFaceAssetId,
           isFavorite: person.isFavorite,
+          deathDate: person.deathDate,
+          notes: person.notes,
         });
         results.push({ id: person.id, success: true });
       } catch (error: any) {
@@ -1912,15 +1982,20 @@ export class PersonService extends BaseService {
       }
 
       if (personGroupId) {
-        // A face on a Locked photo is never a person's thumbnail (FL-53): such a person takes another
-        // face of theirs once this one is assigned, or none.
-        const isLocked = isLockedAssetRow(face.asset);
+        // A face on a Locked photo is never a person's thumbnail (FL-53), nor one on an archived photo while the
+        // owner leaves those out of People (FL-1365): such a person takes another face of theirs once this one is
+        // assigned, or none.
+        const unfeatured =
+          !person &&
+          (isLockedAssetRow(face.asset) ||
+            (face.asset.visibility === AssetVisibility.Archive &&
+              !getPreferences(await this.userRepository.getMetadata(ownerId)).people.includeArchived));
         if (person) {
           this.logger.debug(`Face ${id} matched person ${person.personGroupId}`);
         } else {
-          await this.personRepository.create({ ownerId, faceAssetId: isLocked ? null : face.id, personGroupId });
+          await this.personRepository.create({ ownerId, faceAssetId: unfeatured ? null : face.id, personGroupId });
           this.logger.log(`Created person for face ${id} in group ${personGroupId}`);
-          if (!isLocked) {
+          if (!unfeatured) {
             await this.jobRepository.queue({
               name: JobName.PersonGenerateThumbnail,
               data: { ownerId, personGroupId },
@@ -1946,7 +2021,7 @@ export class PersonService extends BaseService {
           await this.refreshIdentities(ownerId, { assetIds: [face.assetId] });
         }
 
-        if (!person && isLocked) {
+        if (!person && unfeatured) {
           await this.createNewFeaturePhoto([{ ownerId, personGroupId }]);
         }
       }
@@ -2064,6 +2139,16 @@ export class PersonService extends BaseService {
               personGroupId: mergeId,
             });
             if (!survivor || !removed) throw new ConflictException('Person changed during merge');
+            // FL-864, FL-941: the survivor keeps its own date of passing and notes and takes what it lacks from
+            // the merged-away person, before that person (and their profile) is deleted
+            const [survivorProfile, removedProfile] = await Promise.all([
+              this.personRepository.getProfile(survivor),
+              this.personRepository.getProfile(removed),
+            ]);
+            const profileChanges = mergeProfiles(survivor.birthDate, survivorProfile, removedProfile);
+            if (profileChanges) {
+              await this.personRepository.upsertProfile(survivor, profileChanges);
+            }
             await this.personRepository.reassignFaces(mergeData);
             await this.personRepository.repointPartnerPersonLinks(
               targetPerson.ownerId,

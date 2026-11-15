@@ -844,7 +844,37 @@
       "path": "patches/0182-cloud-caption-batches.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "1ffd4505f6ae08999fe7a4e2917122cf26c5259032efedbb23a5408f8e6a711d"
+    },
+    {
+      "path": "patches/0183-windowed-limiter-and-split-grade-match.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3b65ed55534fb309729d80829ecdf80a4a2c8bc78225bacf9896efe7b9708433"
+    },
+    {
+      "path": "patches/0188-sound-crossfades.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "364558bf32649932bd705d2b4fd1c9759898f46c3ba821d5562aa9a5d9141236"
+    },
+    {
+      "path": "patches/0187-marker-ranges.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2db6f7a1a357563a44bddb18f051407f9165323a1ff04b983eb84cf7aed9ddd8"
+    },
+    {
+      "path": "patches/0185-editor-import-transitions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "f833d036d5a8cdcb007f3390318b33e47fae16854920aadea876ef5f67ebd0db"
+    },
+    {
+      "path": "patches/0186-grading-effects.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "adf61867d53efd26b402ad2dc996d503ad59447fdae83a2e6a2f0f6524993e76"
+    },
+    {
+      "path": "patches/0184-lut-references.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "7a526e48b8b16e1e00f2b80a3b80bd876c5925a36224041d1dc176e6581bd6d5"
     }
   ],
-  "sourceSha256": "f76d7aef72b9d3dc7489f990afead2e4901fbb67b19f036f03fcb7abbeaeb122"
+  "sourceSha256": "3b81da411c63fb3b648a86d1bc04d8446c0853cff3d5511ec9c0c874d1751feb"
 }

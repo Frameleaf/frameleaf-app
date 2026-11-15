@@ -59,6 +59,7 @@ const scanOf = (overrides: Partial<LibraryScanResponseDto> = {}): LibraryScanRes
 
 const library = (overrides: Partial<LibraryResponseDto> = {}): LibraryResponseDto => ({
   readOnly: false,
+  folderAlbums: false,
   id: 'lib-1',
   name: 'Family photo archive',
   ownerId: 'owner-1',

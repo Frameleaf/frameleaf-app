@@ -449,6 +449,10 @@ describe(AnalyticsService.name, () => {
       expect(month('2026-02')).toMatchObject({ items: 200, physicalBytes: 1500 });
       expect(month('2026-03')).toMatchObject({ items: 300, logicalBytes: 3000, physicalBytes: 2500 });
       expect(month('2026-09')).toMatchObject({ items: 300, logicalBytes: null });
+      // FL-1455: half rebuilt, half read — every month before the first reading says it was rebuilt
+      const firstRead = result.series.findIndex((row) => row.key === '2026-09');
+      expect(result.series.slice(0, firstRead).every((row) => row.rebuilt === true)).toBe(true);
+      expect(result.series.slice(firstRead).every((row) => row.rebuilt === false)).toBe(true);
     });
 
     it('keeps days and buckets reconciled and rebuilds growth before the first reading from added days', async () => {
@@ -472,6 +476,7 @@ describe(AnalyticsService.name, () => {
       const result = await sut.getReport(admin(), { scope: 'all', range: AnalyticsRange.NinetyDays });
       expect(result.history.state).toBe(AnalyticsState.Unknown);
       expect(result.series.every((bucket) => bucket.items === null)).toBe(true);
+      expect(result.series.every((bucket) => bucket.rebuilt === false)).toBe(true);
     });
 
     it('falls back to the last collected volume reading, marked stale, and never derives free space', async () => {

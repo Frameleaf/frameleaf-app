@@ -199,7 +199,7 @@ describe('sound-only exports (FL-105)', () => {
     expect(studioExportAudioProblem('audio-wav', { ...stereo, sampleRate: 192_000 })).toBeNull();
   });
 
-  it('promises the sources sound and no picture transfer', () => {
+  it("promises the sources' sound at the engine's mix rate and no picture transfer", () => {
     const graph = {
       metadata: { fps: 30 },
       timeline: {
@@ -215,7 +215,8 @@ describe('sound-only exports (FL-105)', () => {
       } as never,
     ]);
     expect(contract.video).toEqual({ minBitDepth: 8, transfer: null });
-    expect(contract.audio).toMatchObject({ channels: 2, sampleRate: 44_100 });
+    // FL-1203: the engine resamples every source to 48 kHz, so a 44.1 kHz source is promised 48 kHz.
+    expect(contract.audio).toMatchObject({ channels: 2, sampleRate: 48_000 });
   });
 
   it('holds the result to one stream of the promised codec carrying the promised sound', () => {

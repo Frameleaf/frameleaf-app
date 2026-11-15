@@ -421,6 +421,7 @@ export class AnalyticsService {
       logicalBytes: growth[index][AnalyticsSeriesId.LibraryLogicalBytes],
       physicalBytes: growth[index][AnalyticsSeriesId.LibraryPhysicalBytes],
       observedAt: growth[index].observedAt?.toISOString() ?? null,
+      rebuilt: growth[index].rebuilt === true,
     }));
 
     const capturedByDay = new Map(captures.map((row) => [row.day, row.items]));
