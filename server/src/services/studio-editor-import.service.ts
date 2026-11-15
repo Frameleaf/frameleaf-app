@@ -186,7 +186,7 @@ export class StudioEditorImportService {
         !(INTERCHANGE_SIDECAR_EXTENSIONS as readonly string[]).includes(extension)
       ) {
         throw new BadRequestException(
-          'Frameleaf reads Final Cut Pro XML, Final Cut Pro 7 XML, OpenTimelineIO and EDL projects, with CDL and LUT files',
+          'Frameleaf reads Premiere Pro projects, Final Cut Pro XML, Final Cut Pro 7 XML, OpenTimelineIO and EDL, with CDL and LUT files',
         );
       }
       const hash = createHash('sha256');
