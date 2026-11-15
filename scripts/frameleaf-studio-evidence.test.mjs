@@ -14,6 +14,7 @@ import {
 import {
   applyCommandMatrixCoverage,
   applyFamilyCoverage,
+  frameleafOperatorRows,
   blockedAxisEntry,
   buildPassedEntry,
   commandMatrixCoverage,
@@ -444,6 +445,7 @@ test('family reports reject static grants, stale source, wrong domain, missing/d
     r => { r.observations[0].workingDomain = { ...WORKING_DOMAINS.sdr, encoding: 'linear' }; },
     r => { r.observations[0].observed = 'refused'; }, r => { r.results[0].sdr.error = 'unexpected'; }, r => { r.observations[0].witness = 'missing'; },
     r => { r.observations[0].fixtureId = 'blend.unknown/apply/normal'; },
+    r => { r.observations[0].fixtureId = 'blend.filmDissolve/apply/normal'; },
   ]) {
     const report = await familyReport(); mutate(report);
     await assert.rejects(applyFamilyCoverage(...structuredClone(args), report));
@@ -799,4 +801,16 @@ test('linear tone and spatial blur HDR coverage is bound only to its actual migr
     const forged=structuredClone(report);change(forged);
     await assert.rejects(applyFamilyCoverage(...structuredClone(args),forged),/route binding/);
   }
+});
+
+test('observations of Frameleaf-added operators are skipped; their evidence is studio/spec', async () => {
+  const rows = await frameleafOperatorRows();
+  const operators = JSON.parse(await readFile(path.join(ROOT, 'studio/frameleaf-operators.json'), 'utf8'));
+  for (const id of operators.effects) assert.ok(rows.has(`effect.${id}`));
+  for (const id of operators.transitions) assert.ok(rows.has(`transition.${id}`));
+  const args = [{ engineRevision: 'e', rows: [overlayRow('blend.normal')] }, { rows: [fixture('blend.normal')] }, manifest(), build(), 'blend', 'chromium'];
+  const report = await familyReport();
+  // A blend family report never names a transition, so only the skip rule is exercised in isolation.
+  assert.ok(!report.observations.some((entry) => rows.has(entry.fixtureId.split('/')[0])));
+  await applyFamilyCoverage(...args, report);
 });

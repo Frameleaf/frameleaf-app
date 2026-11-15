@@ -735,7 +735,7 @@ test('13.2.1: the parameter catalogue is the generated one, unedited', () => {
 });
 
 /** Effects Frameleaf adds through engine patches: they have no row in the pinned upstream manifest. */
-const FRAMELEAF_EFFECTS = ['gpu-cdl', 'gpu-hue-curves', 'gpu-lift-gamma-gain']; // FL-1559
+const FRAMELEAF_EFFECTS = JSON.parse(readFileSync(new URL('../frameleaf-operators.json', import.meta.url), 'utf8')).effects;
 
 test('13.2.1: the catalogue lists what the command catalogue names: every effect, blend mode and published transition', () => {
   const sorted = (kind) => parameters[kind].map((entry) => entry.id).sort();
