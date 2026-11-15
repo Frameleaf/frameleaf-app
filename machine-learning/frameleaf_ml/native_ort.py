@@ -19,6 +19,8 @@ PROVIDERS = (
     "CoreMLExecutionProvider",
     "OpenVINOExecutionProvider",
     "MIGraphXExecutionProvider",
+    # FL-1001: any DirectX 12 GPU (AMD, Intel, NVIDIA) on a Windows desktop, from the onnxruntime-directml wheel.
+    "DmlExecutionProvider",
 )
 
 

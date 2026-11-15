@@ -295,11 +295,11 @@ export class AlbumService extends BaseService {
       albums.map((album) => album.id),
       ownerId,
     );
-
     if (albums.length === 0) {
       return [];
     }
     const albumIds = albums.map((album) => album.id);
+    const folderSources = await this.folderSources(auth, albumIds);
     let albumMetadata: Record<string, AlbumAssetCount> = {};
     let pending = new Set<string>();
     if (privacyOptions.onlyHiddenContent) {
@@ -318,7 +318,8 @@ export class AlbumService extends BaseService {
       albums.map((album) => {
         const item = this.withReadableParent(this.toListItem(album, albumMetadata, pending), readable);
         const origin = origins.get(album.id);
-        return origin ? { ...item, origin } : item;
+        const folderAlbum = folderSources.get(album.id);
+        return { ...item, ...(origin && { origin }), ...(folderAlbum && { folderAlbum }) };
       }),
     );
   }
@@ -393,7 +394,7 @@ export class AlbumService extends BaseService {
     }
 
     const ids = albums.map((album) => album.id);
-    const [stored, smartBackedIds, ruleAlbumIds, rules, positions, recovered, bookmarkCounts, origins] =
+    const [stored, smartBackedIds, ruleAlbumIds, rules, positions, recovered, bookmarkCounts, origins, folderSources] =
       await Promise.all([
         this.readStoredMetadata(ids, privacyOptions),
         this.smartAlbumRepository.getSmartBackedAlbumKinds(ids),
@@ -403,6 +404,7 @@ export class AlbumService extends BaseService {
         this.recoveredAlbumIds(),
         this.albumRepository.getBookmarkCounts(auth, ids),
         this.partnerOriginRepository.getOriginLabels('album', ids, auth.user.id),
+        this.folderSources(auth, ids),
       ]);
     const ruleByAlbum = new Map(rules.map((rule) => [rule.albumId, rule.id]));
     const { metadata: albumMetadata, pending } = stored;
@@ -425,6 +427,7 @@ export class AlbumService extends BaseService {
           smartKind: (smartBackedIds.get(album.id) as SmartAlbumBuiltInKind | undefined) ?? null,
           ...(recovered.has(album.id) && { recovered: true }),
           ...(origins.has(album.id) && { origin: origins.get(album.id) }),
+          ...(folderSources.has(album.id) && { folderAlbum: folderSources.get(album.id) }),
         })),
       ),
       positions,
@@ -572,7 +575,21 @@ export class AlbumService extends BaseService {
       ...(await this.smartStateOf(auth, album.id)),
       ...(await this.originOf(auth, album.id)),
       ...((await this.recoveredAlbumIds()).has(album.id) && { recovered: true }),
+      ...(await this.folderSourceOf(auth, album.id)),
     };
+  }
+
+  /** FL-838: the library folder behind each album, told only to the library's owner (never through a shared link). */
+  private async folderSources(auth: AuthDto, albumIds: string[]) {
+    const none = new Map<string, { libraryId: string; folderPath: string }>();
+    return auth.sharedLink
+      ? none
+      : ((await this.albumRepository.getFolderAlbumSources(albumIds, auth.user.id)) ?? none);
+  }
+
+  private async folderSourceOf(auth: AuthDto, albumId: string) {
+    const folderAlbum = (await this.folderSources(auth, [albumId])).get(albumId);
+    return folderAlbum ? { folderAlbum } : {};
   }
 
   /**

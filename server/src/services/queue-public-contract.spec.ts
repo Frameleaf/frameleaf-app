@@ -51,6 +51,7 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.MediaHealthPutBackUpload,
       JobName.WorkflowEventDispatch,
       JobName.WorkflowEventTrigger,
+      JobName.LibraryFolderAlbumSync,
       JobName.MediaImport,
     ]);
     const legacyNames = Object.values(JobName).filter((name) => !internal.has(name));

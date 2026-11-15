@@ -211,6 +211,32 @@ cover path smoothing, the crop coverage maths, the renderer transform at the cli
 the card. The estimator is verified on synthetic footage only (a still picture moved by a known crop
 path, and generated textures); real handheld footage, rolling shutter, browser preview/export pixel
 parity and speed-ramp spans in the live preview remain open.
+Patch 0186 (FL-1559) adds three colour effects that graded projects from other editors carry: ASC CDL
+(`gpu-cdl`: slope, offset and power per channel, then saturation about Rec. 709 luma), Lift Gamma Gain per
+channel (`gpu-lift-gamma-gain`) and Hue Curves (`gpu-hue-curves`: hue against hue, saturation and luma as
+periodic Catmull-Rom curves through JSON points, baked into a 256 x 1 table whose neutral is exact). Each
+has a catalogue entry, a spec page and goldens (`render-goldens.browser.mjs --write --only=<ids>`), and HDR
+projects refuse them until FL-1556. They are the first effects with no row in the pinned upstream feature
+manifest, so `graph-protocol.test.mjs` names them as Frameleaf additions. The editor panels for them wait
+for the FL-1615 mock; imports and the graph use them now.
+
+Patch 0185 (FL-1564) adds four transitions other editors use: Film Dissolve (a cross dissolve mixed in
+linear light), Cross Zoom (both clips zoom with a radial blur, `strength`), Cube Spin (the clips are two
+faces of a box turning a quarter turn in perspective, four directions) and Page Peel (the outgoing clip
+folds back from the bottom-right corner). Each is a WebGPU shader with a Canvas 2D fallback, a catalogue
+entry, a spec page (`spec/transitions/<id>.md`) and goldens, written with the new
+`render-goldens.browser.mjs --write --only=<ids>`, which renders and writes only the named ids' cases and
+keeps every other committed golden. HDR projects refuse them like every other transition (T5) until
+FL-1556. Push already existed (`slide`, labelled Push). A gradient wipe from an image, and transitions on
+text or at a clip edge with no neighbour, are follow-ups; start-at-cut and end-at-cut are `alignment` 0 and 1.
+
+Patch 0187 (FL-1563) lets markers be ranges with notes and clips carry markers. A project marker may
+have `durationInFrames` (a range) and `note`; save, bundle import, rate changes (the range keeps its end
+on the same moment) and composition trims (a range is cut to the kept span) keep them. Any item may carry
+`markers` in source frames (`sourceFrame`), which move with the media. Imports from other editors write
+them; the ruler still draws a marker at its start, and editing ranges and notes waits for the FL-1615
+mock. Schema `marker` and `clipMarker`, protocol 12.8 and 2.4.
+
 Patch 0188 (FL-1555) adds crossfades between sound clips and sound curves. A transition may now join two
 sound clips on one track that are not compound items and not linked to another clip (unlinking leaves each
 clip a group of its own, so only a shared group counts as linked); linked sound still follows its video
@@ -920,3 +946,12 @@ Patch `0170-caption-languages.patch` adds the approved Languages card below the 
 ## Add from your library inside Studio (FL-636)
 
 Patch `0160-library-view-in-media-bin.patch` gives the bin's Media / Scenes toggle a third view, Library, when the host registers one (`src/features/media-library/library-panel-registry.ts`); with nothing registered the bin is unchanged. The view itself is the adapter's (`adapters/web/src/library-finder.tsx`): a smart-search box with suggestions, All / Photos / Videos, named people as avatars, Place, When by month, Clear filters, a result count and the privacy note. The editor has no SDK, so it searches through three host services (`searchLibrary`, `libraryFacets`, `addLibraryAssets` in `host-contract.ts`, checked for shape in `frame-service-schema.ts`); the host runs the library Search's own smart and metadata searches, facets and month histogram (`web/src/lib/frameleaf/studio/library-search.ts`), scoped by the server to the person's library and partners' shared items, asks for Locked items only while the session is unlocked, and projects results with `toStudioAsset` after `isStudioEligibleAsset`. Pressing, dragging or adding a result adopts it: the host adds it to `StudioHostContext.assets`, the seeder puts it in the bin, Freecut's own media drop places a drag, and "Add at playhead" uses the canvas-drop placement. The server's resource resolver (FL-90) grants each placed item when the project is saved. Moments inside videos (phase 2) are not built. The view's words are host-translated through `context.strings` (`library-strings.ts`). The existing Freecut MIT notice covers the adapted sources and tests.
+
+## Bundled render worker (FL-408)
+
+The machine-learning container's Studio worker (`tools/bundled-worker*.mjs`) renders exports with the engine's own headless render core, so a server without a desktop or Cloud worker can export. `tools/bundled-worker-recipe.mjs` decides what it renders and refuses anything else with a stable `bundled_*` code. It renders video, audio, images, shapes, captions, adjustment layers, titles (their fonts come from the claim's font inputs, `tools/bundled-worker-fonts.mjs`), compositions and Lottie animations (FL-1557):
+
+- **Compositions.** A compound clip, or a nest from an imported project, draws its composition, and its sound clip (an `audio` item with the same `compositionId` and no media of its own, protocol 14.2.1) plays the composition's mix. The worker reads the media inside every composition from the claim's grants. A clip that names a composition the project lacks, a composition that contains itself, or nesting deeper than the server allows (16) is refused as `invalid_graph`. Effects inside a composition need a GPU, as they do on the main timeline. The export contract counts the sound inside compositions through their sound clips (`audibleMediaIds` in `server/src/utils/studio-export-contract.ts`), so the worker expects that sound in the file. A frame-range export of a project with compositions is still refused when it is queued (`resolveStudioExportRange`).
+- **Lottie.** A Lottie clip reads its project-import file (JSON or `.lottie`) like any other media input; the engine's strict Lottie path checks the bytes, size, theme and slots and refuses a file that reads outside itself. A Lottie whose images or fonts are stored as separate files (`studioVectorDependencies`) is refused as `bundled_lottie_dependencies`: embedding them is done only by a dedicated render worker.
+
+`tools/bundled-worker.test.mjs` covers the recipe (a title, a composition with its sound clip and a Lottie clip; every refusal above; vertical framing of composition and Lottie clips) and the executor passing the composition's media and the Lottie file from their grants to the renderer. There is no real-render test of the bundled worker, and no render golden covers composition items (`spec/layers.md` L14) or Lottie, so the rendered picture is the engine's, checked by its own tests.

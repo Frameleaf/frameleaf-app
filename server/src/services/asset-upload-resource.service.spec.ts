@@ -204,6 +204,25 @@ describe('resumable asset byte commit boundaries', () => {
   };
   const auth = { user: { id: 'owner' } } as AuthDto;
 
+  it('keeps an upload that is receiving bytes resumable for 7 days after its latest bytes (FL-797)', async () => {
+    const h = setup();
+    const created = new Date(Date.now() + 86_400_000);
+    h.mutate({ expiresAt: created } as Partial<AssetUploadResource>);
+    const headers = (offset: number) => ({
+      'content-type': 'application/partial-upload',
+      'upload-draft-interop-version': '9',
+      'upload-offset': String(offset),
+      'upload-complete': '?0',
+    });
+    await h.service.append(auth, h.row().id, headers(0), Readable.from([]));
+    expect(h.row().expiresAt).toEqual(created);
+    const before = Date.now();
+    await h.service.append(auth, h.row().id, headers(0), Readable.from(['ab']));
+    const expiry = new Date(h.row().expiresAt as unknown as Date).getTime();
+    expect(expiry).toBeGreaterThanOrEqual(before + 7 * 86_400_000);
+    expect(expiry).toBeLessThanOrEqual(Date.now() + 7 * 86_400_000);
+  });
+
   it('keeps completed Connect bytes private until an explicit authorized commit', async () => {
     const harness = setup();
     harness.mutate({

@@ -11,6 +11,7 @@ import {
   RemoteAccessPublicUrlSchema,
   RemoteHostnameStatusSchema,
 } from 'src/dtos/frameleaf-remote-access.dto.js';
+import { PlaybackSelfTestCaseIdSchema } from 'src/dtos/playback-self-test.dto.js';
 import {
   AudioCodec,
   AudioCodecSchema,
@@ -351,6 +352,8 @@ const helpDefaults = { askEnabled: true };
 
 /** iCloud Photos is built in and on by default; an administrator can switch it off. */
 const icloudDefaults = { enabled: true };
+// FL-922: new shared links never expire unless an administrator or the person sharing picks a default
+const sharedLinksDefaults = { defaultExpiryDays: null };
 
 const smartAlbumRulesDefaults = {
   visualCategories: true,
@@ -917,6 +920,21 @@ const AdminConfigHelpSchema = z
   })
   .meta({ id: 'AdminConfigHelpDto' });
 
+const AdminConfigSharedLinksSchema = z
+  .object({
+    defaultExpiryDays: z
+      .int()
+      .min(1)
+      .max(3650)
+      .nullable()
+      .describe(
+        'Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire',
+      )
+      // signed-in people read it (GET /config) so the share form can pre-fill the expiry
+      .meta({ visibility: User }),
+  })
+  .meta({ id: 'AdminConfigSharedLinksDto' });
+
 const AdminConfigICloudSchema = z
   .object({
     enabled: configBool.describe('iCloud Photos: people can connect their Apple accounts and bring in photos'),
@@ -954,6 +972,12 @@ const AdminConfigFFmpegSchema = z
     transcode: TranscodePolicySchema,
     accel: TranscodeHardwareAccelerationSchema,
     accelDecode: configBool.describe('Accelerated decode'),
+    softwareFallback: z
+      .array(PlaybackSelfTestCaseIdSchema)
+      .optional()
+      .describe(
+        'Kinds of video converted without hardware acceleration even when it is on: the kinds the playback self-test found it gets wrong. Written by the server; a settings save keeps the stored list (a configuration file may set it)',
+      ),
     tonemap: ToneMappingSchema,
     realtime: z
       .object({
@@ -1514,6 +1538,7 @@ const AdminConfigSchemaWithVisibility = z
     editing: AdminConfigEditingSchema.default(editingDefaults),
     help: AdminConfigHelpSchema.default(helpDefaults),
     icloud: AdminConfigICloudSchema.default(icloudDefaults),
+    sharedLinks: AdminConfigSharedLinksSchema.default(sharedLinksDefaults),
   })
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
@@ -1804,6 +1829,7 @@ export const defaults = Object.freeze<SystemConfig>({
     tonemap: ToneMapping.Hable,
     accel: TranscodeHardwareAcceleration.Disabled,
     accelDecode: true,
+    softwareFallback: [],
     realtime: {
       enabled: false,
       videoCodecs: [VideoCodec.H264, VideoCodec.Hevc],
@@ -2092,6 +2118,7 @@ export const defaults = Object.freeze<SystemConfig>({
   editing: editingDefaults,
   help: helpDefaults,
   icloud: icloudDefaults,
+  sharedLinks: sharedLinksDefaults,
 });
 
 /**
