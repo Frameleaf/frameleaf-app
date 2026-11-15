@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vitest } from 'vitest';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
-import { AssetType, AssetVisibility, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
+import { AssetType, AssetVisibility, JobName, JobStatus, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { DuplicateService } from 'src/services/duplicate.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -131,6 +131,76 @@ describe(DuplicateService.name, () => {
       ]);
       const result = await sut.getDuplicates(authStub.admin);
       expect(result[0].suggestedKeepAssetIds).toEqual([largeAsset.id]);
+    });
+
+    describe('FL-832 keep rules', () => {
+      const ownerId = authStub.admin.user.id;
+      const withRules = (keepRules: string[]) =>
+        mocks.user.getMetadata.mockResolvedValue([
+          { key: UserMetadataKey.Preferences, value: { duplicates: { keepRules } } },
+        ] as never);
+
+      beforeEach(() => {
+        mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      });
+
+      it('suggests by the owner rules and reads albums only when a rule needs them', async () => {
+        const large = AssetFactory.from({ ownerId }).exif({ fileSizeInByte: 5000 }).build();
+        const favorite = AssetFactory.from({ ownerId, isFavorite: true }).exif({ fileSizeInByte: 1000 }).build();
+        mocks.duplicateRepository.getAll.mockResolvedValue([
+          { duplicateId: 'group', assets: [getForDuplicate(large), getForDuplicate(favorite)] },
+        ]);
+
+        mocks.user.getMetadata.mockResolvedValue([]);
+        await expect(sut.getDuplicates(authStub.admin)).resolves.toMatchObject([{ suggestedKeepAssetIds: [large.id] }]);
+
+        withRules(['favorite']);
+        await expect(sut.getDuplicates(authStub.admin)).resolves.toMatchObject([
+          { suggestedKeepAssetIds: [favorite.id] },
+        ]);
+        expect(mocks.user.getMetadata).toHaveBeenCalledWith(ownerId);
+        expect(mocks.album.getByAssetIds).not.toHaveBeenCalled();
+      });
+
+      it('reads album membership once for every group when inAlbum is a rule', async () => {
+        const a1 = AssetFactory.from({ ownerId }).exif({ fileSizeInByte: 5000 }).build();
+        const a2 = AssetFactory.from({ ownerId }).exif({ fileSizeInByte: 1000 }).build();
+        const b1 = AssetFactory.from({ ownerId }).exif({ fileSizeInByte: 5000 }).build();
+        const b2 = AssetFactory.from({ ownerId }).exif({ fileSizeInByte: 1000 }).build();
+        mocks.duplicateRepository.getAll.mockResolvedValue([
+          { duplicateId: 'a', assets: [getForDuplicate(a1), getForDuplicate(a2)] },
+          { duplicateId: 'b', assets: [getForDuplicate(b1), getForDuplicate(b2)] },
+        ]);
+        mocks.album.getByAssetIds.mockResolvedValue(new Map([[a2.id, ['album-1']]]));
+        withRules(['inAlbum']);
+
+        const groups = await sut.getDuplicates(authStub.admin);
+
+        expect(groups.map(({ suggestedKeepAssetIds }) => suggestedKeepAssetIds)).toEqual([[a2.id], [b1.id]]);
+        expect(mocks.album.getByAssetIds).toHaveBeenCalledTimes(1);
+        expect(mocks.album.getByAssetIds).toHaveBeenCalledWith(ownerId, [a1.id, a2.id, b1.id, b2.id]);
+      });
+
+      it('hasEdits uses the develop history already read for the review', async () => {
+        const large = AssetFactory.from({ ownerId }).exif({ fileSizeInByte: 5000 }).build();
+        const developed = AssetFactory.from({ ownerId }).exif({ fileSizeInByte: 1000 }).build();
+        mocks.duplicateRepository.getAll.mockResolvedValue([
+          { duplicateId: 'group', assets: [getForDuplicate(large), getForDuplicate(developed)] },
+        ]);
+        mocks.assetDevelop.getAssetIdsWithHistory.mockResolvedValue(new Set([developed.id]));
+        withRules(['hasEdits']);
+
+        await expect(sut.getDuplicates(authStub.admin)).resolves.toMatchObject([
+          { suggestedKeepAssetIds: [developed.id] },
+        ]);
+        expect(mocks.assetDevelop.getAssetIdsWithHistory).toHaveBeenCalledTimes(1);
+      });
+
+      it('reads no preferences when there are no groups', async () => {
+        mocks.duplicateRepository.getAll.mockResolvedValue([]);
+        await expect(sut.getDuplicates(authStub.admin)).resolves.toEqual([]);
+        expect(mocks.user.getMetadata).not.toHaveBeenCalled();
+      });
     });
   });
 

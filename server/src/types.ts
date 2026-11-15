@@ -1935,6 +1935,13 @@ export type UserPreferences = {
   };
   /** FL-49: named searches from the search palette; `query` is the client's own search body */
   savedSearches: SavedSearch[];
+  /**
+   * FL-832: the person's ordered rules for which copy in a duplicate group is suggested as the keeper.
+   * Empty is Frameleaf's own order (RAW, HEIC, largest file, most details).
+   */
+  duplicates: {
+    keepRules: import('src/enum.js').DuplicateKeepRule[];
+  };
 };
 
 export type SavedSearch = { name: string; query: Record<string, unknown> };
