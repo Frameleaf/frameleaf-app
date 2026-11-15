@@ -106,7 +106,27 @@ def _migraphx_input_signature(input_feed: dict[str, NDArray[Any]]) -> MigraphxIn
     return tuple((name, str(value.dtype), tuple(value.shape)) for name, value in sorted(input_feed.items()))
 
 
-def _get_openvino_device_type(device_ids: list[str], configured_device_id: str) -> str:
+# FL-984: the models compiled for an Intel NPU, and why the others did not run there (shown in the hardware report).
+npu_placements: dict[str, str] = {}
+
+
+def _get_openvino_device_type(device_ids: list[str], configured_device_id: str, preferred: str = "AUTO") -> str:
+    """The OpenVINO device for a session.
+
+    `preferred` (`MACHINE_LEARNING_OPENVINO_DEVICE`) is AUTO, NPU, GPU or CPU. AUTO and NPU use an Intel NPU when
+    OpenVINO reports one; without one, or with GPU, the GPU choice below applies as before.
+    """
+    choice = preferred.strip().upper() or "AUTO"
+    npu = next((device_id for device_id in device_ids if device_id.upper().startswith("NPU")), None)
+    if choice in ("AUTO", "NPU") and npu is not None:
+        log.debug(f"OpenVINO: Using NPU device {npu}")
+        return npu
+    if choice == "NPU":
+        log.info(f"OpenVINO: No NPU found among {device_ids}; using a GPU or the processor")
+    if choice == "CPU":
+        log.debug("OpenVINO: Using CPU device")
+        return "CPU"
+
     gpu_devices = [device_id for device_id in device_ids if device_id.upper().startswith("GPU")]
     requested_id = configured_device_id.strip() or "AUTO"
 
@@ -144,8 +164,42 @@ def _get_openvino_device_type(device_ids: list[str], configured_device_id: str) 
     return device_type
 
 
+def _npu_reshape(model_path: Path, spatial: int | None) -> str | None:
+    """The fixed input shapes an NPU needs, as OpenVINO's `reshape_input` option, or None if they can't be fixed.
+
+    A symbolic batch becomes 1 (`OrtSession.run` splits larger batches); a symbolic height and width of an
+    image input become `spatial`, the size the model always receives. Any other symbolic dimension can't be fixed.
+    """
+    try:
+        graph = onnx.load(model_path.as_posix(), load_external_data=False).graph
+    except Exception:
+        return None
+    weights = {initializer.name for initializer in graph.initializer}
+    parts: list[str] = []
+    for node in graph.input:
+        if node.name in weights:
+            continue
+        dims = node.type.tensor_type.shape.dim
+        shape: list[int] = []
+        for index, dim in enumerate(dims):
+            if dim.HasField("dim_value") and dim.dim_value > 0:
+                shape.append(dim.dim_value)
+            elif index == 0:
+                shape.append(1)
+            elif spatial and len(dims) == 4 and index >= 2:
+                shape.append(spatial)
+            else:
+                return None
+        parts.append(f"{node.name}[{','.join(map(str, shape))}]")
+    return ",".join(parts) or None
+
+
 class OrtSession:
     session: ort.InferenceSession
+    # FL-984 defaults, also for sessions a caller builds without __init__.
+    static_hw: int | None = None
+    _npu_static_batch = False
+    _exclude_npu = False
 
     def __init__(
         self,
@@ -155,8 +209,11 @@ class OrtSession:
         sess_options: ort.SessionOptions | None = None,
         device_id: str | None = None,
         threads: int = 2,
+        static_hw: int | None = None,
     ):
         self.model_path = Path(model_path)
+        # FL-984: the height and width the model always receives (an NPU needs fixed shapes).
+        self.static_hw = static_hw
         # The SHA-256 of the approved model this session provably runs: of the bytes it was created
         # from in memory, or of the model those bytes were derived from (see `source_model_path`).
         self.model_sha256: str | None = None
@@ -196,11 +253,26 @@ class OrtSession:
 
         self.sess_options = profiled(sess_options if sess_options is not None else self._sess_options_default)
         with self._run_lock:
-            self.session = self._open(
-                self.sess_options,
-                self.provider_options,
-                None if sess_options is not None else lambda: profiled(self._sess_options_default),
-            )
+            try:
+                self.session = self._open(
+                    self.sess_options,
+                    self.provider_options,
+                    None if sess_options is not None else lambda: profiled(self._sess_options_default),
+                )
+            except Exception as error:
+                if not self._npu_static_batch:
+                    raise
+                # An NPU compiles fewer operators than a GPU; the model runs where it can instead of failing.
+                reason = f"failed to compile for the NPU: {error}"
+                log.warning(f"OpenVINO: {self.model_path} {reason}; using a GPU or the processor")
+                npu_placements[self.model_path.as_posix()] = reason
+                self._npu_static_batch, self._exclude_npu = False, True
+                self.provider_options = self._provider_options_default
+                self.session = self._open(
+                    self.sess_options,
+                    self.provider_options,
+                    None if sess_options is not None else lambda: profiled(self._sess_options_default),
+                )
         if native is not None:
             self.session.disable_fallback()
             if native.provider not in self.session.get_providers():
@@ -320,6 +392,15 @@ class OrtSession:
         input_feed: dict[str, NDArray[np.float32]] | dict[str, NDArray[np.int32]] | dict[str, NDArray[np.uint8]],
         run_options: Any = None,
     ) -> list[NDArray[np.float32]]:
+        if self._npu_static_batch:
+            batch = max((len(value) for value in input_feed.values() if np.ndim(value)), default=1)
+            if batch > 1:
+                # Compiled for one item at a time: run each and join the results in order.
+                items: list[Any] = [
+                    {name: value[i : i + 1] for name, value in input_feed.items()} for i in range(batch)
+                ]
+                parts = [self.run(output_names, item, run_options) for item in items]
+                return [np.concatenate([part[j] for part in parts], axis=0) for j in range(len(parts[0]))]
         native = current_policy()
         observer = native.observer if native is not None else None
         if self._coreml_lock is not None:
@@ -473,12 +554,28 @@ class OrtSession:
                     }
                 case "OpenVINOExecutionProvider":
                     device_ids: list[str] = ort.capi._pybind_state.get_available_openvino_device_ids()
-                    device_type = _get_openvino_device_type(device_ids, self.device_id or settings.device_id)
+                    if self._exclude_npu:
+                        device_ids = [device_id for device_id in device_ids if not device_id.upper().startswith("NPU")]
+                    configured = self.device_id or settings.device_id
+                    device_type = _get_openvino_device_type(device_ids, configured, settings.openvino_device)
+                    reshape = None
+                    if device_type.upper().startswith("NPU"):
+                        reshape = _npu_reshape(self.model_path, self.static_hw)
+                        if reshape is None:
+                            others = [device_id for device_id in device_ids if not device_id.upper().startswith("NPU")]
+                            device_type = _get_openvino_device_type(others, configured)
+                            reason = "has input shapes an NPU can't fix"
+                            log.info(f"OpenVINO: {self.model_path} {reason}; using {device_type}")
+                            npu_placements[self.model_path.as_posix()] = reason
                     options = {
                         "device_type": device_type,
                         "precision": settings.openvino_precision.value,
                         "cache_dir": (runtime_cache_dir(self.model_path) / "openvino").as_posix(),
                     }
+                    if reshape is not None:
+                        options["reshape_input"] = reshape
+                        self._npu_static_batch = True
+                        npu_placements[self.model_path.as_posix()] = device_type
                 case "DmlExecutionProvider":
                     # The DirectX adapter index, as Windows lists the GPUs.
                     options = {"device_id": settings.device_id}

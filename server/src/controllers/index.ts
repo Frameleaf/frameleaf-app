@@ -117,6 +117,7 @@ import {
   AssetLocationInsightController,
   PhotoLocationsController,
 } from 'src/controllers/photo-locations.controller.js';
+import { PhotoSourceCatalogController } from 'src/controllers/photo-source-catalog.controller.js';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
 import { PhotographyBookingController } from 'src/controllers/photography-booking.controller.js';
@@ -128,6 +129,7 @@ import { PhotographyWorkflowController } from 'src/controllers/photography-workf
 import { PhotographyWorkspaceController } from 'src/controllers/photography-workspace.controller.js';
 import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
 import { PhysicalFileTrashController } from 'src/controllers/physical-file-trash.controller.js';
+import { PlaybackSelfTestController } from 'src/controllers/playback-self-test.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { PreservationController } from 'src/controllers/preservation.controller.js';
 import { PrivateLogsController } from 'src/controllers/private-logs.controller.js';
@@ -216,6 +218,7 @@ export const controllers = [
   DesktopDeviceController,
   DesktopOfflineAlbumController,
   PhotoSourceController,
+  PhotoSourceCatalogController,
   SourceResourceController,
   DesktopWorkerController,
   FrameleafLibraryMoveAdminController,
@@ -265,6 +268,7 @@ export const controllers = [
   AttentionController,
   UpgradeCheckController,
   LibraryProgressController,
+  PlaybackSelfTestController,
   OvernightController,
   AuthController,
   AuthAdminController,

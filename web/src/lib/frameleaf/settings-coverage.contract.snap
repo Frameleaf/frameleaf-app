@@ -141,6 +141,16 @@
     "minimum": 0,
     "maximum": 6
   },
+  "ffmpeg.softwareFallback": {
+    "type": "array",
+    "itemEnum": [
+      "sdr-h264",
+      "hlg-hevc",
+      "dolby-vision-8.4",
+      "hdr10-pq",
+      "hev1-hevc"
+    ]
+  },
   "ffmpeg.targetAudioCodec": {
     "type": "string",
     "enum": [

@@ -37,6 +37,7 @@ export const adminConfigDefaults = {
     tonemap: 'hable',
     accel: 'disabled',
     accelDecode: true,
+    softwareFallback: [],
     realtime: {
       enabled: false,
       videoCodecs: ['h264', 'hevc'],

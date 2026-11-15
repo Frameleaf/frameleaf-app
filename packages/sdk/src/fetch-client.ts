@@ -1657,6 +1657,8 @@ export type AdminConfigFFmpegDto = {
     realtime: AdminConfigFFmpegRealtimeDto;
     /** References */
     refs: number;
+    /** Kinds of video converted without hardware acceleration even when it is on: the kinds the playback self-test found it gets wrong. Written by the server; a settings save keeps the stored list (a configuration file may set it) */
+    softwareFallback?: PlaybackSelfTestCase[];
     targetAudioCodec: AudioCodec;
     /** Target resolution */
     targetResolution: string;
@@ -3844,6 +3846,36 @@ export type PhysicalDeduplicationPreviewRequestDto = {
     masterUserId?: string;
     /** Limit the review to copies owned by this account */
     scopeUserId?: string;
+};
+export type PlaybackSelfTestCaseDto = {
+    /** The sample-entry tag of the copy, for example hvc1 */
+    codecTag: string | null;
+    /** The transfer characteristics the copy is tagged with */
+    colorTransfer: string | null;
+    /** Whether the copy was made with hardware acceleration */
+    hardware: boolean;
+    id: PlaybackSelfTestCase;
+    /** How bright the copy is: mean Rec. 709 luma, 0 to 255 */
+    meanLuma: number | null;
+    /** Whether the copy came out right */
+    passed: boolean;
+    /** What was wrong: convert-failed, codec, codec-tag, colour-tags, too-dark, too-bright or brightness-differs */
+    problems: string[];
+    /** How bright the same clip is when converted without hardware acceleration */
+    referenceMeanLuma: number | null;
+};
+export type PlaybackSelfTestResponseDto = {
+    /** The hardware acceleration it checked */
+    accel: (TranscodeHWAccel) | null;
+    /** Each kind of video, in the order it was checked */
+    cases: PlaybackSelfTestCaseDto[];
+    /** When it finished */
+    finishedAt: string | null;
+    /** The kinds now converted without hardware acceleration because the check found them wrong */
+    softwareFallback: PlaybackSelfTestCase[];
+    /** When the latest check started */
+    startedAt: string | null;
+    status: PlaybackSelfTestStatus;
 };
 export type RenderWorkerDto = {
     /** Operations the worker currently holds */
@@ -13912,7 +13944,17 @@ export type PetObservationCreateDto = {
     /** Width of the image the region was drawn on */
     imageWidth?: number;
 };
+export type PhotoSourceCatalog = {
+    /** The catalog app, as the desktop names it, for example "lightroom-classic" */
+    app: string;
+    /** The desktop's stable identifier for the catalog */
+    catalogId: string;
+    /** The catalog's name, shown to the person */
+    name: string;
+};
 export type PhotoSourceCreateDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     deviceId: string;
     id: string;
     kind: PhotoSourceKind;
@@ -13921,6 +13963,8 @@ export type PhotoSourceCreateDto = {
     scopeFingerprint: string;
 };
 export type PhotoSourceResponseDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     createdAt: string;
     deviceId: string;
     id: string;
@@ -13931,6 +13975,8 @@ export type PhotoSourceResponseDto = {
     scopeFingerprint: string;
 };
 export type ApplePhotosSourceCreateDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     deviceId: string;
     id: string;
     kind: ApplePhotosSourceKind;
@@ -13939,6 +13985,8 @@ export type ApplePhotosSourceCreateDto = {
     scopeFingerprint: string;
 };
 export type ApplePhotosSourceResponseDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     createdAt: string;
     deviceId: string;
     id: string;
@@ -13947,6 +13995,55 @@ export type ApplePhotosSourceResponseDto = {
     name: string;
     revokedAt: string | null;
     scopeFingerprint: string;
+};
+export type PhotoSourceCatalogMetadataDto = {
+    /** Up to 500 catalog entries */
+    items: {
+        /** Caption */
+        caption?: string;
+        /** Collections (albums) the item is in */
+        collections?: {
+            /** The collection name */
+            name: string;
+            /** The collection sets the collection sits in, outermost first */
+            path: string[];
+        }[];
+        /** Colour label name, for example "Red" */
+        colorLabel?: string;
+        flag?: PhotoSourceCatalogFlag | null;
+        /** The source item (as planned for a copy run) the catalog entry describes */
+        itemId: string;
+        /** Keywords; a hierarchy is separated by "|", for example "Places|France|Paris" */
+        keywords?: string[];
+        /** Star rating, 0 (unrated) to 5 */
+        rating?: number;
+        /** Title */
+        title?: string;
+    }[];
+};
+export type PhotoSourceCatalogItemResult = {
+    /** Fields written for this item */
+    applied: PhotoSourceCatalogField[];
+    itemId: string;
+    /** Fields left alone because the person's own change wins */
+    keptEdits: PhotoSourceCatalogField[];
+    status: PhotoSourceCatalogItemStatus;
+};
+export type PhotoSourceCatalogSummary = {
+    /** Items where at least one field was written */
+    applied: number;
+    /** Items left as they are because the person changed a field in Frameleaf since the last read-in */
+    keptEdits: number;
+    /** Items unknown to this source, or whose photo is gone or not available to change */
+    notFound: number;
+    /** Items whose copy is not verified yet; send them again after verification */
+    notReady: number;
+    /** Items already as the catalog says */
+    unchanged: number;
+};
+export type PhotoSourceCatalogMetadataResponseDto = {
+    items: PhotoSourceCatalogItemResult[];
+    summary: PhotoSourceCatalogSummary;
 };
 export type PhotoSourceRunDto = {
     id: string;
@@ -27288,6 +27385,29 @@ export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPrevi
     })));
 }
 /**
+ * Get the latest playback self-test
+ */
+export function getPlaybackSelfTest(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PlaybackSelfTestResponseDto;
+    }>("/admin/playback-self-test", {
+        ...opts
+    }));
+}
+/**
+ * Run the playback self-test
+ */
+export function startPlaybackSelfTest(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PlaybackSelfTestResponseDto;
+    }>("/admin/playback-self-test", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * List render workers
  */
 export function listRenderWorkers(opts?: Oazapfts.RequestOpts) {
@@ -36216,6 +36336,22 @@ export function revokePhotoSource({ id }: {
     }));
 }
 /**
+ * Apply ratings, flags, labels, keywords, captions and collections read from a photo catalog
+ */
+export function applyPhotoSourceCatalogMetadata({ id, photoSourceCatalogMetadataDto }: {
+    id: string;
+    photoSourceCatalogMetadataDto: PhotoSourceCatalogMetadataDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceCatalogMetadataResponseDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/catalog-metadata`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceCatalogMetadataDto
+    })));
+}
+/**
  * Start or recover a bounded photo-copy run
  */
 export function createPhotoSourceRun({ id, photoSourceRunDto }: {
@@ -44379,6 +44515,13 @@ export enum HlsVideoResolution {
     $1440 = 1440,
     $2160 = 2160
 }
+export enum PlaybackSelfTestCase {
+    SdrH264 = "sdr-h264",
+    HlgHevc = "hlg-hevc",
+    DolbyVision84 = "dolby-vision-8.4",
+    Hdr10Pq = "hdr10-pq",
+    Hev1Hevc = "hev1-hevc"
+}
 export enum ToneMapping {
     Hable = "hable",
     Mobius = "mobius",
@@ -44902,6 +45045,12 @@ export enum PhysicalDeduplicationSkipReason {
 export enum PhysicalDeduplicationPlanMode {
     DryRun = "dry-run",
     Apply = "apply"
+}
+export enum PlaybackSelfTestStatus {
+    None = "none",
+    Running = "running",
+    Done = "done",
+    Failed = "failed"
 }
 export enum GpuWorkingBudgetBindingMethod {
     SameExportDevice = "same-export-device"
@@ -47033,6 +47182,23 @@ export enum PhotoSourceCopyMode {
 }
 export enum ApplePhotosSourceKind {
     ApplePhotos = "apple-photos"
+}
+export enum PhotoSourceCatalogFlag {
+    Pick = "pick",
+    Reject = "reject"
+}
+export enum PhotoSourceCatalogField {
+    Rating = "rating",
+    Description = "description",
+    Tags = "tags",
+    Albums = "albums"
+}
+export enum PhotoSourceCatalogItemStatus {
+    Applied = "applied",
+    Unchanged = "unchanged",
+    KeptEdits = "keptEdits",
+    NotReady = "notReady",
+    NotFound = "notFound"
 }
 export enum PhotoSourceRunState {
     Open = "open",

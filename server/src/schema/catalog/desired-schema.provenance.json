@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "ac6b011b72197be3f17cd870036236ca21dcd8db",
+  "sourceCommit": "f8747d413e1ff9160f952ae85c8c1fec415a21de",
   "sourceHashes": {
     "src/enum.ts": "36c5d82f916715540f7630a00bd526b89053b31148ef7355070ab1eb35d0ce8f",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -8,13 +8,13 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "a3ff91050364234e609a0a6fd0a7f5336d09d2b47cd677696f17f4dd3f0c0e79",
+    "src/schema/index.ts": "5b9021037f8ad56d36f4fb9147ac475c7ca1a4a23dddc281e3f3630ceaf20eeb",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
     "src/schema/tables/admin-audit-event.table.ts": "a7ffe5c6a193a88bd8f474a3436fcd24748f5d25b81b0ae35a5d60196809d8b8",
     "src/schema/tables/album-asset-audit.table.ts": "5c21066db41424a1bf17e21428eb2645e49203c29206eb8882041b4bcdc44fe5",
-    "src/schema/tables/album-asset.table.ts": "4517bddcd7a6e6db828c06d7811347ae6777e2e7c769d5bb4e9bc028d30bb847",
+    "src/schema/tables/album-asset.table.ts": "3fd69cba1d7be4c906a7b7a51fc4f4e61e0f59a53de9889cd652482b9f3916e2",
     "src/schema/tables/album-audit.table.ts": "46c028db038cfe5c1d4ad1d3deb5763097512a38635036f2d89aed56da21fd25",
     "src/schema/tables/album-bookmark.table.ts": "d8014bc5359ff9857209f9242bcdcabc62837388f49250e852f974e070d00b11",
     "src/schema/tables/album-change-run.table.ts": "92e76d6e1fe9e29487254a261ebf87a4a1b37c35ec73c356d8f665a54a6207d7",
@@ -24,10 +24,9 @@
     "src/schema/tables/album-closure.table.ts": "63d2d80854745a6343f6472c872b8bf42fd14974d17a1dff4b4c826257744291",
     "src/schema/tables/album-suggestion.table.ts": "749dc19c6e253f8da4517f8c360ded44c01069865c7e236ab25632069e683d6f",
     "src/schema/tables/album-summary.table.ts": "1f9bb4714ec52253477de246f0e4b8c3485e0b0dfd76409284d136921a714acd",
-    "src/schema/tables/album-text-card.table.ts": "6912096c97a49b0c5a128cb95fb608184fe052e6fd6ffd1281b06adc41ea1d39",
     "src/schema/tables/album-user-audit.table.ts": "976d8cd2665af72b47fc07442e7b222633ea1d40e56045796a061f5cee16782e",
     "src/schema/tables/album-user.table.ts": "ab8f99553f854f0f63ee0c0de597281f7226bb28e772d1e928333369fc8e3513",
-    "src/schema/tables/album.table.ts": "f4f7fe30ce94833c1417ec7fe95020bb7fb9f243803a89e3d9564e8b1820179c",
+    "src/schema/tables/album.table.ts": "ec1627ec2e3faebb42462e1f9a7258acf9101c0baaa0a4efc50562a58ea75920",
     "src/schema/tables/api-key.table.ts": "e828609d4c58ca96edaf7eba013c4be8d7699d16ea83125660927bc6d0f2a4ca",
     "src/schema/tables/asset-annotation.table.ts": "320093d2204398a21ee6e8cd1b31200b27e847023566bfea92b40d372a6dde5f",
     "src/schema/tables/asset-audit.table.ts": "f2c3a79bf9d93b8d8bebd9f8867ff3c3182f29174f16360ad0f1e7da1da8effd",
@@ -126,7 +125,7 @@
     "src/schema/tables/pet-observation-audit.table.ts": "ecb7a4e85d894c9cf13325bbe0a45ab25d255f8bb720a0962947851b488976be",
     "src/schema/tables/pet.table.ts": "c4b7bd7c6125350aab803ce580d1936102d3c8a1574b1a5505a89d222f757626",
     "src/schema/tables/photo-locations.table.ts": "658855e6235ac4b2a382143e6a991aedd26d6ac03bb87e3ecd216c77d36965ad",
-    "src/schema/tables/photo-source.table.ts": "e74d09e60453adacad59b8d90866e3d581e407003dda817fe196633f5088061f",
+    "src/schema/tables/photo-source.table.ts": "22b295849af43397ab3bf644dfa01eb47f3b072e9047a23968a3815cf59f2d99",
     "src/schema/tables/photo-tools.table.ts": "cb52713d8c29c44e520a43d2c2bdc6b465dbbd7fa19b8c2a6e7a7c2e59aaeb5e",
     "src/schema/tables/photography-booking.table.ts": "69e3421befe654618da9c050c90bb5b471cb27f0bc53f2c7d8f95b6fd29f8574",
     "src/schema/tables/photography-campaign.table.ts": "0e9c2856a6bb6c0bbb7db491b53efe8f25602ddc15aedb841eb77833058db8d4",
@@ -193,6 +192,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "dbe19834db948fabae6302659847ba53de26ef1b89cc334e9bac6e930fc67a9b",
-  "rawMetadataSha256": "9e48af39a1c6824759439159e679c9da8694d0beadfcad25933b13a0bd8f3d64"
+  "dumpSha256": "652403f44e53fd7d007029b683cd9d9af161ba76e738295354f51a3f62b55285",
+  "rawMetadataSha256": "d3c6c2626d97dbfbda7dab1de00e7d44bb0924643509ce9ded24fd372422803e"
 }

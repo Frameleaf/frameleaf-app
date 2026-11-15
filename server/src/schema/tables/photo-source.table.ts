@@ -12,6 +12,9 @@ import type { Int8Writable } from 'src/schema/int8-writable.js';
 import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
+/** FL-1030: the photo catalog a source reads (Lightroom Classic, Capture One, Apple Photos), as the desktop names it. */
+export type PhotoSourceCatalog = { app: string; catalogId: string; name: string };
+
 @Table('photo_source')
 @Index({ columns: ['ownerId'] })
 @Index({ columns: ['deviceId'] })
@@ -27,6 +30,7 @@ export class PhotoSourceTable {
   @Column() scopeFingerprint!: string;
   @Column({ type: 'timestamp with time zone', nullable: true }) revokedAt!: Timestamp | null;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
+  @Column({ type: 'jsonb', nullable: true }) catalog!: PhotoSourceCatalog | null;
 }
 @Table('photo_source_run')
 @Index({ columns: ['sourceId'] })
