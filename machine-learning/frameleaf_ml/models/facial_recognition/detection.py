@@ -11,6 +11,7 @@ from ._ops import DET_SIZE, decode_scrfd, nms
 class FaceDetector(InferenceModel):
     depends = []
     identity = (ModelType.DETECTION, ModelTask.FACIAL_RECOGNITION)
+    static_input_hw = DET_SIZE
 
     def _predict(self, inputs: NDArray[np.uint8] | bytes, minScore: float) -> FaceDetectionOutput:
         canvas, scale = letterbox(decode_pil(inputs), DET_SIZE)

@@ -252,6 +252,76 @@ describe(MemoryService.name, () => {
         expect(mocks.memory.update).not.toHaveBeenCalled();
       });
     });
+
+    describe('in memoriam (FL-864)', () => {
+      const birthday = (userId: string, personId: string, data: Record<string, unknown> = {}) =>
+        getForMemory(
+          MemoryFactory.from({
+            ownerId: userId,
+            type: MemoryType.Birthday,
+            data: {
+              kind: 'birthday',
+              year: 2026,
+              date: '2026-09-25',
+              subject: 'person',
+              subjectId: personId,
+              name: 'Ada',
+              age: 36,
+              ...data,
+            } as never,
+          })
+            .asset(AssetFactory.create())
+            .build(),
+        );
+      const person = (id: string, dates: { birthDate?: string | null; deathDate?: string | null }) => ({
+        id,
+        name: 'Ada',
+        isHidden: false,
+        birthDate: '1990-09-25',
+        deathDate: null,
+        ...dates,
+      });
+
+      it('shows a birthday made before the date of passing was set with no age, as remembering them', async () => {
+        const [userId, personId] = newUuids();
+        mocks.memory.search.mockResolvedValue([birthday(userId, personId)]);
+        mocks.memory.getStoryPeople.mockResolvedValue([person(personId, { deathDate: '2026-01-02' })]);
+
+        const [result] = await sut.search(factory.auth({ user: { id: userId } }), {});
+
+        expect(result.data).toMatchObject({ kind: 'birthday', inMemoriam: true, age: null });
+      });
+
+      it('shows an ordinary birthday again once the date of passing is removed', async () => {
+        const [userId, personId] = newUuids();
+        mocks.memory.search.mockResolvedValue([birthday(userId, personId, { inMemoriam: true, age: null })]);
+        mocks.memory.getStoryPeople.mockResolvedValue([person(personId, { deathDate: null })]);
+
+        const [result] = await sut.search(factory.auth({ user: { id: userId } }), {});
+
+        expect(result.data).toMatchObject({ kind: 'birthday', age: 36 });
+        expect(result.data).not.toHaveProperty('inMemoriam');
+      });
+
+      it('leaves out the anniversary of a passing that was removed or moved', async () => {
+        const [userId, removedId, movedId, keptId] = newUuids();
+        const anniversary = { inMemoriam: true, deathAnniversary: true, age: null, date: '2026-03-04' };
+        mocks.memory.search.mockResolvedValue([
+          birthday(userId, removedId, anniversary),
+          birthday(userId, movedId, anniversary),
+          birthday(userId, keptId, anniversary),
+        ]);
+        mocks.memory.getStoryPeople.mockResolvedValue([
+          person(removedId, { deathDate: null }),
+          person(movedId, { deathDate: '2019-05-06' }),
+          person(keptId, { deathDate: '2019-03-04' }),
+        ]);
+
+        const found = await sut.search(factory.auth({ user: { id: userId } }), {});
+
+        expect(found.map(({ data }) => (data as { subjectId: string }).subjectId)).toEqual([keptId]);
+      });
+    });
   });
 
   describe('onMemoriesCreate pet stories (FL-58)', () => {
@@ -1808,6 +1878,7 @@ describe(MemoryService.name, () => {
     const userId = '00000000-0000-4000-8000-000000000001';
     const personId = '00000000-0000-4000-8000-000000000002';
     const petId = '00000000-0000-4000-8000-000000000003';
+    const otherPersonId = '00000000-0000-4000-8000-000000000004';
 
     const assetsOn = (count: number, start: number) =>
       Array.from({ length: count }, (_, index) => ({
@@ -1880,6 +1951,95 @@ describe(MemoryService.name, () => {
         expect.objectContaining({ type: MemoryType.Birthday }),
         expect.anything(),
       );
+    });
+
+    const birthdayMemories = () =>
+      mocks.memory.create.mock.calls
+        .map(([memory]) => memory)
+        .filter((memory) => memory.type === MemoryType.Birthday)
+        .map((memory) => memory.data as Record<string, unknown>);
+
+    it('makes a "Remembering" memory with no age on the birthday of a person who has passed (FL-864)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-09-25T12:00:00.000Z'));
+      mocks.memory.getBirthdaySubjects.mockImplementation((_owner, monthDays) =>
+        Promise.resolve(
+          monthDays.includes('09-25')
+            ? [{ subject: 'person', id: personId, name: 'Ada', birthDate: '1990-09-25', deathDate: '2024-02-03' }]
+            : [],
+        ),
+      );
+      mocks.memory.getSubjectAssets.mockResolvedValue(assetsOn(5, Date.UTC(2020, 0, 1)));
+
+      await sut.onMemoriesCreate();
+
+      expect(birthdayMemories()).toEqual([
+        expect.objectContaining({ kind: 'birthday', date: '2026-09-25', name: 'Ada', age: null, inMemoriam: true }),
+      ]);
+      expect(birthdayMemories()[0]).not.toHaveProperty('deathAnniversary');
+    });
+
+    it('keeps an ordinary birthday with an age while the date of passing is still ahead of that day (FL-864)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-09-25T12:00:00.000Z'));
+      mocks.memory.getBirthdaySubjects.mockImplementation((_owner, monthDays) =>
+        Promise.resolve(
+          monthDays.includes('09-25')
+            ? [{ subject: 'person', id: personId, name: 'Ada', birthDate: '1990-09-25', deathDate: '2026-09-26' }]
+            : [],
+        ),
+      );
+      mocks.memory.getSubjectAssets.mockResolvedValue(assetsOn(5, Date.UTC(2020, 0, 1)));
+
+      await sut.onMemoriesCreate();
+
+      expect(birthdayMemories()).toEqual([expect.objectContaining({ date: '2026-09-25', age: 36 })]);
+      expect(birthdayMemories()[0]).not.toHaveProperty('inMemoriam');
+    });
+
+    it('makes a "Remembering" memory on the anniversary of the passing, from the next year on (FL-864)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-03-04T12:00:00.000Z'));
+      mocks.memory.getBirthdaySubjects.mockImplementation((_owner, monthDays) =>
+        Promise.resolve(
+          monthDays.includes('03-04')
+            ? [
+                { subject: 'person', id: personId, name: 'Ada', birthDate: '1990-09-25', deathDate: '2019-03-04' },
+                { subject: 'person', id: otherPersonId, name: 'Bo', birthDate: null, deathDate: '2026-03-04' },
+              ]
+            : [],
+        ),
+      );
+      mocks.memory.getSubjectAssets.mockResolvedValue(assetsOn(5, Date.UTC(2015, 0, 1)));
+
+      await sut.onMemoriesCreate();
+
+      expect(birthdayMemories()).toEqual([
+        expect.objectContaining({
+          date: '2026-03-04',
+          subjectId: personId,
+          age: null,
+          inMemoriam: true,
+          deathAnniversary: true,
+        }),
+      ]);
+      expect(mocks.memory.hasSubjectMemory).toHaveBeenCalledWith(userId, MemoryType.Birthday, personId, 2026, true);
+    });
+
+    it('makes no anniversary memory when one was already made that year (FL-864)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-03-04T12:00:00.000Z'));
+      mocks.memory.getBirthdaySubjects.mockResolvedValue([
+        { subject: 'person', id: personId, name: 'Ada', birthDate: null, deathDate: '2019-03-04' },
+      ]);
+      mocks.memory.hasSubjectMemory.mockImplementation((_owner, _type, _id, _year, deathAnniversary) =>
+        Promise.resolve(deathAnniversary === true),
+      );
+      mocks.memory.getSubjectAssets.mockResolvedValue(assetsOn(5, Date.UTC(2015, 0, 1)));
+
+      await sut.onMemoriesCreate();
+
+      expect(birthdayMemories()).toEqual([]);
     });
 
     it("makes last year's recap for a much-photographed pet", async () => {

@@ -9,6 +9,7 @@ export * from './fetch-client.js';
 export { mergePersonLegacy as mergePerson } from './fetch-client.js';
 export * from './fetch-errors.js';
 export * from './job-runs.js';
+export * from './resumable-upload.js';
 
 export const streamServerLogs = (
   { level, q, since, worker }: Parameters<typeof generatedStreamServerLogs>[0],

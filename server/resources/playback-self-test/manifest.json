@@ -1,0 +1,98 @@
+{
+  "description": "FL-977 video playback self-test: reference clips made by generate.mjs from ffmpeg test patterns. sourceMeanLuma is the brightness of the clip as stored; a playback copy that keeps its colours (SDR, or HDR with tone mapping off) should measure within lumaTolerance of it. A tone-mapped HDR copy should fall between toneMappedLuma.min and toneMappedLuma.max (not dark, not blown out); a copy made on the graphics card is also compared with the same clip converted on the processor.",
+  "lumaTolerance": 12,
+  "referenceTolerance": 20,
+  "cases": [
+    {
+      "id": "sdr-h264",
+      "file": "sdr-h264.mp4",
+      "description": "SDR H.264, the most common video",
+      "bytes": 2749,
+      "source": {
+        "codecName": "h264",
+        "codecTag": "avc1",
+        "pixelFormat": "yuv420p",
+        "colorPrimaries": "bt709",
+        "colorTransfer": "bt709",
+        "colorMatrix": "bt709"
+      },
+      "sourceMeanLuma": 103.5,
+      "toneMappedLuma": null
+    },
+    {
+      "id": "hlg-hevc",
+      "file": "hlg-hevc.mov",
+      "description": "HLG HEVC in a QuickTime file, as an iPhone records HDR video",
+      "bytes": 4741,
+      "source": {
+        "codecName": "hevc",
+        "codecTag": "hvc1",
+        "pixelFormat": "yuv420p10le",
+        "colorPrimaries": "bt2020",
+        "colorTransfer": "arib-std-b67",
+        "colorMatrix": "bt2020nc"
+      },
+      "sourceMeanLuma": 103.4,
+      "toneMappedLuma": {
+        "min": 45,
+        "max": 200
+      }
+    },
+    {
+      "id": "dolby-vision-8.4",
+      "file": "dolby-vision-8.4.mp4",
+      "description": "HLG HEVC with a Dolby Vision 8.4 configuration record (approximation: no RPU, which stock ffmpeg cannot write)",
+      "bytes": 4822,
+      "source": {
+        "codecName": "hevc",
+        "codecTag": "hvc1",
+        "pixelFormat": "yuv420p10le",
+        "colorPrimaries": "bt2020",
+        "colorTransfer": "arib-std-b67",
+        "colorMatrix": "bt2020nc",
+        "dvProfile": 8,
+        "dvBlSignalCompatibilityId": 4
+      },
+      "sourceMeanLuma": 103.4,
+      "toneMappedLuma": {
+        "min": 45,
+        "max": 200
+      }
+    },
+    {
+      "id": "hdr10-pq",
+      "file": "hdr10-pq.mp4",
+      "description": "HDR10: PQ HEVC with mastering display metadata",
+      "bytes": 7358,
+      "source": {
+        "codecName": "hevc",
+        "codecTag": "hvc1",
+        "pixelFormat": "yuv420p10le",
+        "colorPrimaries": "bt2020",
+        "colorTransfer": "smpte2084",
+        "colorMatrix": "bt2020nc"
+      },
+      "sourceMeanLuma": 103.4,
+      "toneMappedLuma": {
+        "min": 45,
+        "max": 200
+      }
+    },
+    {
+      "id": "hev1-hevc",
+      "file": "hev1-hevc.mp4",
+      "description": "SDR HEVC tagged hev1, which Safari and Apple devices refuse to play",
+      "bytes": 4699,
+      "source": {
+        "codecName": "hevc",
+        "codecTag": "hev1",
+        "pixelFormat": "yuv420p",
+        "colorPrimaries": "bt709",
+        "colorTransfer": "bt709",
+        "colorMatrix": "bt709"
+      },
+      "sourceMeanLuma": 103.4,
+      "toneMappedLuma": null
+    }
+  ]
+}

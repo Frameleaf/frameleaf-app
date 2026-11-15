@@ -46,6 +46,7 @@ import { requireAccess, requireUploadAccess } from 'src/utils/access.js';
 import {
   ASSET_UPLOAD_LIMITS,
   UploadSourceIdentity,
+  activeUploadExpiry,
   assembleAssetUploadParts,
   parseAssetUploadHeaders,
   writeAssetUploadPart,
@@ -614,6 +615,7 @@ export class AssetUploadResourceService {
           .set({
             offset: newOffset,
             expectedSize: expectedSize ?? (finalizing ? newOffset : null),
+            ...(part.size > 0 ? { expiresAt: activeUploadExpiry() } : {}),
             state:
               row.metadata.publication === 'live-photo'
                 ? finalizing
@@ -771,6 +773,7 @@ export class AssetUploadResourceService {
               .updateTable('asset_upload_resource')
               .set({
                 offset: contiguous,
+                expiresAt: activeUploadExpiry(),
                 state: finalizing ? (live ? 'pair-finalizing' : 'finalizing') : live ? 'pair-receiving' : 'receiving',
               })
               .where('id', '=', id)
