@@ -5,7 +5,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
  * FL-786: a person's own favourite on an item someone else owns, seen through a shared album or space. The heart is
- * theirs alone; an owner's favourite stays `asset.isFavorite`. Mirrors migration 1794740000000-AssetFavorite.
+ * theirs alone; an owner's favourite stays `asset.isFavorite`. Mirrors migration 1794745000000-AssetFavorite.
  */
 @Table('asset_favorite')
 export class AssetFavoriteTable {

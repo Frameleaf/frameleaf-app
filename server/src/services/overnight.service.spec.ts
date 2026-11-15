@@ -209,6 +209,19 @@ describe(OvernightService.name, () => {
     });
   });
 
+  it('scores Best Photos again once when "Recalculate tonight" asked for it (FL-1597)', async () => {
+    const { sut, mocks } = setup();
+    mocks.metadata.get.mockImplementation((key: SystemMetadataKey) =>
+      Promise.resolve(
+        key === SystemMetadataKey.OvernightRedo ? ({ queues: [], bestPhotos: true } as never) : undefined,
+      ),
+    );
+    await sut.handleStart();
+
+    expect(mocks.metadata.set).toHaveBeenCalledWith(SystemMetadataKey.OvernightRedo, { queues: [] });
+    expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.BestPhotosScoreQueueAll, data: { force: true } });
+  });
+
   it('compares look-alike photos again once when "Save and start tonight" asked for it (FL-520)', async () => {
     const { sut, mocks } = setup();
     mocks.metadata.get.mockImplementation((key: SystemMetadataKey) =>

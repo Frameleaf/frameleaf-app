@@ -4,13 +4,13 @@ import type { Insertable, Selectable, Updateable } from 'kysely';
 import type { Person } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
 import type {
   FaceBoxPixels,
   FaceCorrection,
   FaceCorrectionAction,
   FaceCorrectionInput,
   PersonId,
+  PersonProfile,
   UpdateFacesData,
 } from 'src/repositories/person.repository.js';
 import type { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
@@ -34,6 +34,7 @@ import {
   FaceSearchDto,
   MergePersonDto,
   MergeSuggestionsResponseDto,
+  PERSON_NOTES_MAX_LENGTH,
   PeopleResponseDto,
   PeopleUpdateDto,
   PersonCorrectionDto,
@@ -74,6 +75,7 @@ import { deferJobAdoption, publishJobResult } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
+import { type BoundingBox, EyeScoresUnavailableError } from 'src/repositories/machine-learning.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
@@ -151,6 +153,41 @@ const DETECTED_FACE_BOX_KEYS = [
   'boundingBoxX2',
   'boundingBoxY2',
 ] as const;
+
+/** FL-863: the eye scoring stored in `asset_face.eyeScoreVersion` (FL-843's landmark model and fit). */
+export const EYE_SCORE_VERSION = 1;
+
+/**
+ * FL-864, FL-941: what a merge changes in the surviving person's profile, or undefined for nothing. The survivor
+ * keeps its own date of passing and notes; a missing date of passing is taken from the merged-away person (unless
+ * it is before the survivor's date of birth), and their notes are added after the survivor's, after a blank line,
+ * kept to the notes limit.
+ */
+export const mergeProfiles = (
+  survivorBirthDate: Date | string | null,
+  survivor: PersonProfile | undefined,
+  removed: PersonProfile | undefined,
+): Partial<PersonProfile> | undefined => {
+  const changes: Partial<PersonProfile> = {};
+  const removedDeathDate = asDateString(removed?.deathDate ?? null)?.slice(0, 10);
+  const born = asDateString(survivorBirthDate)?.slice(0, 10);
+  if (!survivor?.deathDate && removedDeathDate && (!born || removedDeathDate >= born)) {
+    changes.deathDate = removedDeathDate;
+  }
+  const removedNotes = removed?.notes?.trim() ? removed.notes : null;
+  if (removedNotes) {
+    const notes = survivor?.notes?.trim() ? `${survivor.notes}\n\n${removedNotes}` : removedNotes;
+    let capped = notes.slice(0, PERSON_NOTES_MAX_LENGTH);
+    // never end on half of a character outside the Basic Multilingual Plane
+    if (capped.length < notes.length && /[\uD800-\uDBFF]$/.test(capped)) {
+      capped = capped.slice(0, -1);
+    }
+    if (capped !== survivor?.notes) {
+      changes.notes = capped;
+    }
+  }
+  return Object.keys(changes).length > 0 ? changes : undefined;
+};
 
 @Injectable()
 export class PersonService extends BaseService {
@@ -971,8 +1008,18 @@ export class PersonService extends BaseService {
    * never one since trashed, hidden or moved to Locked, never a soft-deleted or invisible face, and,
    * as for the thumbnail, never one the session's NSFW setting hides.
    */
-  private async mapOwnPerson(auth: AuthDto, person: Person): Promise<PersonResponseDto> {
-    return { ...mapPerson(person), featuredAssetId: await this.featuredAssetId(auth, person) };
+  private async mapOwnPerson(auth: AuthDto, person: Person, profile?: PersonProfile): Promise<PersonResponseDto> {
+    const [featuredAssetId, details] = await Promise.all([
+      this.featuredAssetId(auth, person),
+      profile ?? this.personRepository.getProfile(person),
+    ]);
+    return {
+      ...mapPerson(person),
+      featuredAssetId,
+      deathDate: asDateString(details?.deathDate ?? null),
+      // FL-941: notes are the owner's alone; every person read here is the caller's own, and this keeps it so
+      ...(person.ownerId === auth.user.id && { notes: details?.notes ?? null }),
+    };
   }
 
   private async featuredAssetId(auth: AuthDto, person: Person): Promise<string | null> {
@@ -1049,7 +1096,17 @@ export class PersonService extends BaseService {
 
     const current = await this.findOrFail(auth, personGroupId);
     const { ownerId } = current;
-    const { name, birthDate, isHidden, featureFaceAssetId: assetId, isFavorite, color } = dto;
+    const { name, birthDate, isHidden, featureFaceAssetId: assetId, isFavorite, color, deathDate } = dto;
+    // FL-941: an empty note clears it
+    const notes = dto.notes === undefined ? undefined : dto.notes?.trim() ? dto.notes : null;
+    const currentProfile = await this.personRepository.getProfile(current);
+    if (birthDate !== undefined || deathDate !== undefined) {
+      // FL-864: the date of passing is never before the date of birth, whichever of the two is being set
+      PersonService.requireLifeDatesInOrder(
+        birthDate === undefined ? current.birthDate : birthDate,
+        deathDate === undefined ? (currentProfile?.deathDate ?? null) : deathDate,
+      );
+    }
     // TODO: set by faceId directly
     let faceId: string | undefined;
     if (assetId) {
@@ -1072,6 +1129,7 @@ export class PersonService extends BaseService {
     }
 
     const partnerPeople = BaseService.create(PartnerPeopleService, this);
+    let profile = currentProfile;
     const person = await this.partnerOriginRepository.withPersonOrigin(ownerId, personGroupId, async () => {
       const person = await this.personRepository.update({
         ownerId,
@@ -1085,6 +1143,9 @@ export class PersonService extends BaseService {
         isFavorite,
         color,
       });
+      if (deathDate !== undefined || notes !== undefined) {
+        profile = await this.personRepository.upsertProfile({ ownerId, personGroupId }, { deathDate, notes });
+      }
       await partnerPeople.noteEdit(ownerId, personGroupId, dto);
       return person;
     });
@@ -1115,7 +1176,16 @@ export class PersonService extends BaseService {
       await this.refreshIdentities(ownerId, { personGroupIds: [personGroupId] });
     }
 
-    return this.mapOwnPerson(auth, person);
+    return this.mapOwnPerson(auth, person, profile ?? { deathDate: null, notes: null });
+  }
+
+  /** FL-864: refuses a date of passing before the date of birth. Either may be missing. */
+  private static requireLifeDatesInOrder(birthDate: Date | string | null, deathDate: Date | string | null) {
+    const born = asDateString(birthDate)?.slice(0, 10);
+    const died = asDateString(deathDate)?.slice(0, 10);
+    if (born && died && died < born) {
+      throw new BadRequestException('The date of passing cannot be before the date of birth');
+    }
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
@@ -1133,6 +1203,8 @@ export class PersonService extends BaseService {
           birthDate: person.birthDate,
           featureFaceAssetId: person.featureFaceAssetId,
           isFavorite: person.isFavorite,
+          deathDate: person.deathDate,
+          notes: person.notes,
         });
         results.push({ id: person.id, success: true });
       } catch (error: any) {
@@ -1338,6 +1410,70 @@ export class PersonService extends BaseService {
       await this.jobRepository.queue({ name: JobName.PersonCleanup });
     }
 
+    return JobStatus.Success;
+  }
+
+  /** FL-863: photos whose faces have no eye scores yet, a Clients shoot's photos first. */
+  @OnJob({ name: JobName.FaceEyeScoreQueueAll, queue: QueueName.FaceDetection })
+  async handleQueueFaceEyeScores({ force }: JobOf<JobName.FaceEyeScoreQueueAll>): Promise<JobStatus> {
+    const { machineLearning } = await this.getConfig({ withCache: false });
+    if (!isFacialRecognitionEnabled(machineLearning) || !machineLearning.eyeScores.enabled) {
+      return JobStatus.Skipped;
+    }
+    for (const inShoot of [true, false]) {
+      await this.jobRepository.queueSelection(
+        JobName.FaceEyeScore,
+        this.assetJobRepository.selectionForFaceEyeScores({ force, inShoot, version: EYE_SCORE_VERSION }),
+      );
+    }
+    return JobStatus.Success;
+  }
+
+  /**
+   * FL-863: eyes open and eye sharpness for one photo's faces, from their stored boxes on the preview faces were
+   * found in, by this server's own machine learning (the landmark step is a few milliseconds a face). A worker
+   * that can't score eyes yet leaves the faces unscored; the nightly run picks them up later.
+   */
+  @OnJob({ name: JobName.FaceEyeScore, queue: QueueName.FaceDetection })
+  async handleFaceEyeScore({ id }: JobOf<JobName.FaceEyeScore>): Promise<JobStatus> {
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    if (!isFacialRecognitionEnabled(machineLearning) || !machineLearning.eyeScores.enabled) {
+      return JobStatus.Skipped;
+    }
+    const asset = await this.assetJobRepository.getForDetectFacesJob(id);
+    const preview = asset?.files[0];
+    const faces = asset?.faces.filter((face) => !face.deletedAt && face.eyeScoreVersion !== EYE_SCORE_VERSION) ?? [];
+    if (!preview || faces.length === 0) {
+      return JobStatus.Skipped;
+    }
+    const { width, height } = await this.mediaRepository.getImageMetadata(preview.path);
+    const boxes = faces.map((face): [number, number, number, number] => {
+      const x = width / (face.imageWidth || width);
+      const y = height / (face.imageHeight || height);
+      return [face.boundingBoxX1 * x, face.boundingBoxY1 * y, face.boundingBoxX2 * x, face.boundingBoxY2 * y];
+    });
+    const valid = boxes.map(([x1, y1, x2, y2]) => x1 < x2 && y1 < y2);
+    if (!valid.includes(true)) {
+      return JobStatus.Skipped;
+    }
+    let scores;
+    try {
+      scores = await this.machineLearningRepository.faceEyeScoresLocal(
+        preview.path,
+        boxes.filter((_, index) => valid[index]),
+      );
+    } catch (error) {
+      if (error instanceof EyeScoresUnavailableError) {
+        this.logger.debug(`Eye scores skipped for asset ${id}: ${error.message}`);
+        return JobStatus.Skipped;
+      }
+      throw error;
+    }
+    const scored = faces.filter((_, index) => valid[index]);
+    await this.personRepository.updateEyeScores(
+      scored.map((face, index) => ({ id: face.id, ...scores[index] })),
+      EYE_SCORE_VERSION,
+    );
     return JobStatus.Success;
   }
 
@@ -2003,6 +2139,16 @@ export class PersonService extends BaseService {
               personGroupId: mergeId,
             });
             if (!survivor || !removed) throw new ConflictException('Person changed during merge');
+            // FL-864, FL-941: the survivor keeps its own date of passing and notes and takes what it lacks from
+            // the merged-away person, before that person (and their profile) is deleted
+            const [survivorProfile, removedProfile] = await Promise.all([
+              this.personRepository.getProfile(survivor),
+              this.personRepository.getProfile(removed),
+            ]);
+            const profileChanges = mergeProfiles(survivor.birthDate, survivorProfile, removedProfile);
+            if (profileChanges) {
+              await this.personRepository.upsertProfile(survivor, profileChanges);
+            }
             await this.personRepository.reassignFaces(mergeData);
             await this.personRepository.repointPartnerPersonLinks(
               targetPerson.ownerId,

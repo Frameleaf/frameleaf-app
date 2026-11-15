@@ -1,0 +1,864 @@
+{
+  "name": "07_transitions.prproj",
+  "rootItem": {
+    "name": "07_transitions.prproj",
+    "type": 3,
+    "nodeId": "000f4240",
+    "children": [
+      {
+        "name": "red_64x36.bmp",
+        "type": 1,
+        "nodeId": "000f4241",
+        "children": [
+          
+        ],
+        "treePath": "\\07_transitions.prproj\\red_64x36.bmp",
+        "inPoint": {
+          "ticks": "59329670400",
+          "seconds": 0.23356666666667
+        },
+        "outPoint": {
+          "ticks": "440734694400",
+          "seconds": 1.73506666666667
+        },
+        "mediaPath": "C:\\Users\\del-m\\git\\py-premiere\\samples\\models\\assets\\red_64x36.bmp",
+        "interpretation": {
+          "frameRate": 29.97002997003,
+          "pixelAspectRatio": 1,
+          "alphaUsage": 0,
+          "ignoreAlpha": false,
+          "invertAlpha": false,
+          "fieldType": -1,
+          "removePulldown": false
+        },
+        "markers": [
+          
+        ]
+      },
+      {
+        "name": "renamed tone",
+        "type": 1,
+        "nodeId": "000f4242",
+        "children": [
+          
+        ],
+        "treePath": "\\07_transitions.prproj\\renamed tone",
+        "inPoint": {
+          "ticks": "0",
+          "seconds": 0
+        },
+        "outPoint": {
+          "ticks": "254016000000",
+          "seconds": 1
+        },
+        "mediaPath": "C:\\Users\\del-m\\git\\py-premiere\\samples\\models\\assets\\tone_440_1s.wav",
+        "interpretation": {
+          "frameRate": 2.75404699046078e-8,
+          "pixelAspectRatio": 1,
+          "alphaUsage": 0,
+          "ignoreAlpha": false,
+          "invertAlpha": false,
+          "fieldType": -1,
+          "removePulldown": false
+        },
+        "markers": [
+          
+        ]
+      },
+      {
+        "name": "Seq A",
+        "type": 1,
+        "nodeId": "000f4243",
+        "children": [
+          
+        ],
+        "treePath": "\\07_transitions.prproj\\Seq A",
+        "inPoint": {
+          "ticks": "0",
+          "seconds": 0
+        },
+        "outPoint": {
+          "ticks": "1508668761600",
+          "seconds": 5.93926666666667
+        },
+        "mediaPath": "",
+        "interpretation": {
+          "frameRate": 2.75404699046078e-8,
+          "pixelAspectRatio": 1,
+          "alphaUsage": 0,
+          "ignoreAlpha": false,
+          "invertAlpha": false,
+          "fieldType": -1,
+          "removePulldown": false
+        },
+        "markers": [
+          
+        ]
+      },
+      {
+        "name": "Seq B",
+        "type": 1,
+        "nodeId": "000f4244",
+        "children": [
+          
+        ],
+        "treePath": "\\07_transitions.prproj\\Seq B",
+        "inPoint": {
+          "ticks": "0",
+          "seconds": 0
+        },
+        "outPoint": {
+          "ticks": "1508668761600",
+          "seconds": 5.93926666666667
+        },
+        "mediaPath": "",
+        "interpretation": {
+          "frameRate": 2.75404699046078e-8,
+          "pixelAspectRatio": 1,
+          "alphaUsage": 0,
+          "ignoreAlpha": false,
+          "invertAlpha": false,
+          "fieldType": -1,
+          "removePulldown": false
+        },
+        "markers": [
+          
+        ]
+      }
+    ],
+    "treePath": "\\07_transitions.prproj",
+    "inPoint": {
+      "ticks": "-101606400000000000",
+      "seconds": -400000
+    },
+    "outPoint": {
+      "ticks": "-101606400000000000",
+      "seconds": -400000
+    },
+    "markers": [
+      
+    ]
+  },
+  "sequences": [
+    {
+      "name": "Seq A",
+      "sequenceID": "9c19c828-f5f5-4cf2-a82a-ebe25a1a15e2",
+      "timebase": "8475667200",
+      "frameSizeHorizontal": 64,
+      "frameSizeVertical": 36,
+      "markers": [
+        {
+          "name": "comment",
+          "comments": "with end",
+          "type": "Comment",
+          "guid": "f4912738-6045-49f0-97c9-e5355a245e59",
+          "start": {
+            "ticks": "127008000000",
+            "seconds": 0.5
+          },
+          "end": {
+            "ticks": "381024000000",
+            "seconds": 1.5
+          }
+        },
+        {
+          "name": "chapter",
+          "comments": "",
+          "type": "Chapter",
+          "guid": "fba2394b-10e6-4f4a-a633-e50fca71d017",
+          "start": {
+            "ticks": "254016000000",
+            "seconds": 1
+          },
+          "end": {
+            "ticks": "254016000000",
+            "seconds": 1
+          }
+        },
+        {
+          "name": "web",
+          "comments": "",
+          "type": "WebLink",
+          "guid": "49f64321-7a77-43bc-8d0b-03adb9518b67",
+          "start": {
+            "ticks": "381024000000",
+            "seconds": 1.5
+          },
+          "end": {
+            "ticks": "381024000000",
+            "seconds": 1.5
+          },
+          "webLinkURL": "https://example.com",
+          "webLinkFrameTarget": "frame"
+        },
+        {
+          "name": "segment",
+          "comments": "",
+          "type": "Segmentation",
+          "guid": "2c8e47bd-06d5-435c-9de4-755b4b89e209",
+          "start": {
+            "ticks": "508032000000",
+            "seconds": 2
+          },
+          "end": {
+            "ticks": "508032000000",
+            "seconds": 2
+          }
+        }
+      ],
+      "videoTracks": [
+        {
+          "id": 1,
+          "mediaType": "Video",
+          "clips": [
+            {
+              "name": "red_64x36.bmp",
+              "type": 1,
+              "nodeId": "000f4245",
+              "clipMediaType": "Video",
+              "start": {
+                "ticks": "0",
+                "seconds": 0
+              },
+              "end": {
+                "ticks": "1262874412800",
+                "seconds": 4.97163333333333
+              },
+              "inPoint": {
+                "ticks": "914456685542400",
+                "seconds": 3599.9964
+              },
+              "outPoint": {
+                "ticks": "915719559955200",
+                "seconds": 3604.96803333333
+              },
+              "duration": {
+                "ticks": "1262874412800",
+                "seconds": 4.97163333333333
+              },
+              "components": [
+                {
+                  "displayName": "Opacity",
+                  "matchName": "AE.ADBE Opacity",
+                  "params": [
+                    {
+                      "displayName": "Opacity",
+                      "isTimeVarying": false,
+                      "value": 100
+                    },
+                    {
+                      "displayName": "Blend Mode",
+                      "isTimeVarying": false,
+                      "value": 18
+                    },
+                    {
+                      "displayName": "Blend Mode",
+                      "isTimeVarying": false,
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "displayName": "Motion",
+                  "matchName": "AE.ADBE Motion",
+                  "params": [
+                    {
+                      "displayName": "Position",
+                      "isTimeVarying": false,
+                      "value": [
+                        0.5,
+                        0.5
+                      ]
+                    },
+                    {
+                      "displayName": "Scale",
+                      "isTimeVarying": false,
+                      "value": 100
+                    },
+                    {
+                      "displayName": "Scale Width",
+                      "isTimeVarying": false,
+                      "value": 100
+                    },
+                    {
+                      "displayName": "Uniform Scale",
+                      "isTimeVarying": false,
+                      "value": true
+                    },
+                    {
+                      "displayName": "Rotation",
+                      "isTimeVarying": false,
+                      "value": 0
+                    },
+                    {
+                      "displayName": "Anchor Point",
+                      "isTimeVarying": false,
+                      "value": [
+                        0.5,
+                        0.5
+                      ]
+                    },
+                    {
+                      "displayName": "Anti-flicker Filter",
+                      "isTimeVarying": false,
+                      "value": 0
+                    },
+                    {
+                      "displayName": "Crop Left",
+                      "isTimeVarying": false,
+                      "value": 0
+                    },
+                    {
+                      "displayName": "Crop Top",
+                      "isTimeVarying": false,
+                      "value": 0
+                    },
+                    {
+                      "displayName": "Crop Right",
+                      "isTimeVarying": false,
+                      "value": 0
+                    },
+                    {
+                      "displayName": "Crop Bottom",
+                      "isTimeVarying": false,
+                      "value": 0
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "name": "Video 1"
+        },
+        {
+          "id": 2,
+          "mediaType": "Video",
+          "clips": [
+            
+          ],
+          "name": "Video 2"
+        },
+        {
+          "id": 3,
+          "mediaType": "Video",
+          "clips": [
+            
+          ],
+          "name": "Video 3"
+        }
+      ],
+      "audioTracks": [
+        {
+          "id": 2,
+          "mediaType": "Audio",
+          "clips": [
+            {
+              "name": "tone_440_1s.wav",
+              "type": 1,
+              "nodeId": "000f4246",
+              "clipMediaType": "Audio",
+              "start": {
+                "ticks": "1262874412800",
+                "seconds": 4.97163333333333
+              },
+              "end": {
+                "ticks": "1508668761600",
+                "seconds": 5.93926666666667
+              },
+              "inPoint": {
+                "ticks": "0",
+                "seconds": 0
+              },
+              "outPoint": {
+                "ticks": "245794348800",
+                "seconds": 0.96763333333333
+              },
+              "duration": {
+                "ticks": "245794348800",
+                "seconds": 0.96763333333333
+              },
+              "components": [
+                {
+                  "displayName": "Volume",
+                  "matchName": "Internal Volume Mono",
+                  "params": [
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": false
+                    },
+                    {
+                      "displayName": "Level",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "name": "Audio 1"
+        },
+        {
+          "id": 3,
+          "mediaType": "Audio",
+          "clips": [
+            
+          ],
+          "name": "Audio 2"
+        },
+        {
+          "id": 4,
+          "mediaType": "Audio",
+          "clips": [
+            
+          ],
+          "name": "Audio 3"
+        }
+      ],
+      "end": "1508668761600",
+      "zeroPoint": "245794348800",
+      "workInPoint": {
+        "ticks": "127008000000",
+        "seconds": 0.5
+      },
+      "workOutPoint": {
+        "ticks": "635040000000",
+        "seconds": 2.5
+      },
+      "videoDisplayFormat": 102,
+      "audioDisplayFormat": 200,
+      "settings": {
+        "videoFrameWidth": 64,
+        "videoFrameHeight": 36,
+        "videoFrameRate": {
+          "ticks": "8475667200",
+          "seconds": 0.03336666666667
+        },
+        "audioChannelCount": 2,
+        "audioSampleRate": {
+          "ticks": "5292000",
+          "seconds": 0.00002083333333
+        }
+      }
+    },
+    {
+      "name": "Seq B",
+      "sequenceID": "aa2443f9-40e9-4463-ae38-fb44acc677c3",
+      "timebase": "8475667200",
+      "frameSizeHorizontal": 64,
+      "frameSizeVertical": 36,
+      "markers": [
+        
+      ],
+      "videoTracks": [
+        {
+          "id": 1,
+          "mediaType": "Video",
+          "clips": [
+            {
+              "name": "Seq A",
+              "type": 1,
+              "nodeId": "000f4247",
+              "clipMediaType": "Video",
+              "start": {
+                "ticks": "0",
+                "seconds": 0
+              },
+              "end": {
+                "ticks": "1508668761600",
+                "seconds": 5.93926666666667
+              },
+              "inPoint": {
+                "ticks": "0",
+                "seconds": 0
+              },
+              "outPoint": {
+                "ticks": "1508668761600",
+                "seconds": 5.93926666666667
+              },
+              "duration": {
+                "ticks": "1508668761600",
+                "seconds": 5.93926666666667
+              },
+              "components": [
+                {
+                  "displayName": "Opacity",
+                  "matchName": "AE.ADBE Opacity",
+                  "params": [
+                    {
+                      "displayName": "Opacity",
+                      "isTimeVarying": false,
+                      "value": 100
+                    },
+                    {
+                      "displayName": "Blend Mode",
+                      "isTimeVarying": false,
+                      "value": 18
+                    },
+                    {
+                      "displayName": "Blend Mode",
+                      "isTimeVarying": false,
+                      "value": 0
+                    }
+                  ]
+                },
+                {
+                  "displayName": "Motion",
+                  "matchName": "AE.ADBE Motion",
+                  "params": [
+                    {
+                      "displayName": "Position",
+                      "isTimeVarying": false,
+                      "value": [
+                        0.5,
+                        0.5
+                      ]
+                    },
+                    {
+                      "displayName": "Scale",
+                      "isTimeVarying": false,
+                      "value": 100
+                    },
+                    {
+                      "displayName": "Scale Width",
+                      "isTimeVarying": false,
+                      "value": 100
+                    },
+                    {
+                      "displayName": "Uniform Scale",
+                      "isTimeVarying": false,
+                      "value": true
+                    },
+                    {
+                      "displayName": "Rotation",
+                      "isTimeVarying": false,
+                      "value": 0
+                    },
+                    {
+                      "displayName": "Anchor Point",
+                      "isTimeVarying": false,
+                      "value": [
+                        0.5,
+                        0.5
+                      ]
+                    },
+                    {
+                      "displayName": "Anti-flicker Filter",
+                      "isTimeVarying": false,
+                      "value": 0
+                    },
+                    {
+                      "displayName": "Crop Left",
+                      "isTimeVarying": false,
+                      "value": 0
+                    },
+                    {
+                      "displayName": "Crop Top",
+                      "isTimeVarying": false,
+                      "value": 0
+                    },
+                    {
+                      "displayName": "Crop Right",
+                      "isTimeVarying": false,
+                      "value": 0
+                    },
+                    {
+                      "displayName": "Crop Bottom",
+                      "isTimeVarying": false,
+                      "value": 0
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "name": "Video 1"
+        },
+        {
+          "id": 2,
+          "mediaType": "Video",
+          "clips": [
+            
+          ],
+          "name": "Video 2"
+        },
+        {
+          "id": 3,
+          "mediaType": "Video",
+          "clips": [
+            
+          ],
+          "name": "Video 3"
+        }
+      ],
+      "audioTracks": [
+        {
+          "id": 2,
+          "mediaType": "Audio",
+          "clips": [
+            {
+              "name": "Seq A",
+              "type": 1,
+              "nodeId": "000f4248",
+              "clipMediaType": "Audio",
+              "start": {
+                "ticks": "0",
+                "seconds": 0
+              },
+              "end": {
+                "ticks": "1508668761600",
+                "seconds": 5.93926666666667
+              },
+              "inPoint": {
+                "ticks": "0",
+                "seconds": 0
+              },
+              "outPoint": {
+                "ticks": "1508668761600",
+                "seconds": 5.93926666666667
+              },
+              "duration": {
+                "ticks": "1508668761600",
+                "seconds": 5.93926666666667
+              },
+              "components": [
+                {
+                  "displayName": "Volume",
+                  "matchName": "Internal Volume Stereo",
+                  "params": [
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": false
+                    },
+                    {
+                      "displayName": "Level",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    }
+                  ]
+                },
+                {
+                  "displayName": "Channel Volume",
+                  "matchName": "Internal Channel Volume Stereo",
+                  "params": [
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": false
+                    },
+                    {
+                      "displayName": "Left",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "Right",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    },
+                    {
+                      "displayName": "",
+                      "isTimeVarying": false,
+                      "value": 0.17782793939114
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "name": "Audio 1"
+        },
+        {
+          "id": 3,
+          "mediaType": "Audio",
+          "clips": [
+            
+          ],
+          "name": "Audio 2"
+        },
+        {
+          "id": 4,
+          "mediaType": "Audio",
+          "clips": [
+            
+          ],
+          "name": "Audio 3"
+        }
+      ],
+      "end": "1508668761600",
+      "zeroPoint": "0",
+      "workInPoint": {
+        "ticks": "-101606400000000000",
+        "seconds": -400000
+      },
+      "workOutPoint": {
+        "ticks": "-101606400000000000",
+        "seconds": -400000
+      },
+      "videoDisplayFormat": 102,
+      "audioDisplayFormat": 200,
+      "settings": {
+        "videoFrameWidth": 64,
+        "videoFrameHeight": 36,
+        "videoFrameRate": {
+          "ticks": "8475667200",
+          "seconds": 0.03336666666667
+        },
+        "audioChannelCount": 2,
+        "audioSampleRate": {
+          "ticks": "5292000",
+          "seconds": 0.00002083333333
+        }
+      }
+    }
+  ],
+  "documentID": "05259761-16a9-4732-a415-43ba946a201d",
+  "activeSequence": "aa2443f9-40e9-4463-ae38-fb44acc677c3"
+}

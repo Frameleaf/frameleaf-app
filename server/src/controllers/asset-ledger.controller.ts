@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  AssetLedgerAdminQueryDto,
   AssetLedgerAdminSummaryResponseDto,
   AssetLedgerListResponseDto,
   AssetLedgerQueryDto,
@@ -56,10 +57,10 @@ export class AssetLedgerAdminController {
   @Endpoint({
     summary: 'Get the server’s nothing-lost totals',
     description:
-      'How many of the originals the server accepted, for every account, are kept, in the Trash, removed, sharing an identical file, or missing, and which accounts have originals the server cannot account for. No file is named.',
+      'How many of the originals the server accepted, for every account (or for one, with userId), are kept, in the Trash, removed, sharing an identical file, or missing, per account and per month added, and which accounts have originals the server cannot account for. No file is named.',
     history: history(),
   })
-  getLedgerAdminSummary(): Promise<AssetLedgerAdminSummaryResponseDto> {
-    return this.service.getAdminSummary();
+  getLedgerAdminSummary(@Query() dto: AssetLedgerAdminQueryDto): Promise<AssetLedgerAdminSummaryResponseDto> {
+    return this.service.getAdminSummary(dto);
   }
 }

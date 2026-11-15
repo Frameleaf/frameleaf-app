@@ -154,6 +154,12 @@ const AnalyticsBucketSchema = z
       .describe(
         'When the growth values were read, or for a bucket before the first nightly reading, the end of the bucket they were rebuilt for from the items added by then; null for a gap',
       ),
+    rebuilt: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when the growth values were rebuilt from the items in the library today, because the bucket ends before the first nightly reading; false for a nightly reading or a gap. Left out by older servers',
+      ),
   })
   .meta({ id: 'AnalyticsBucketDto' });
 

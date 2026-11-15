@@ -43,7 +43,7 @@ A Studio project's head revision carries an **envelope** (OpenAPI `StudioProject
 | `engineRevision` | The pinned engine revision above, as a string.                                               |
 | `graph`          | The graph this page specifies. The server stores it byte for byte and never reads inside it. |
 
-A save (`StudioProjectSaveDto`) sends the envelope, the head it was built on (`expectedRevision`), a `requestKey`, and the `commands` that produced it (section 8). The server checks the envelope's four fields, the graph's size, and each command envelope against the catalogue. It does **not** re-run the engine, so a native client is trusted to produce the graph this page describes. The conformance fixtures are how a client proves that it does.
+A save (`StudioProjectSaveDto`) sends the envelope, the head it was built on (`expectedRevision`), a `requestKey`, and the `commands` that produced it (section 8). The server checks the envelope's four fields, the graph's size (at most 24 MiB of UTF-8 JSON, `STUDIO_MAX_GRAPH_BYTES`; a larger graph is refused as `graph-too-large`), and each command envelope against the catalogue. It does **not** re-run the engine, so a native client is trusted to produce the graph this page describes. The conformance fixtures are how a client proves that it does.
 
 ## 2. The graph document
 
@@ -118,6 +118,8 @@ Source fields of a media clip are integer frames counted at `sourceFps`, the sou
 Common optional fields: `originId` (lineage shared by the parts of a split clip), `linkedGroupId` (shared by linked audio and video), `transform`, `crop`, `cornerPin`, `effects`, `blendMode`, `volume`, fades, audio EQ fields, `speed`, `motionModifiers`, `motionLayers` and `transformParent`. Parts 2 to 4 specify the commands that write them. The schema lists their types and ranges. Part 2 also reads and writes `embeddedAudioMuted` (set on a video that was unlinked from its sound, 12.6.1) and reads `textRole` and `captionSource` on text items (attached captions, 12.2.1). Part 3 writes `effects` (13.2.2), `motionModifiers` (13.6.2), `textMotion` on titles (13.7.1) and `frameleafKenBurns` on stills (13.7.2), and says how `blendMode` is edited (13.8.4). Part 4 writes `compositionId` and the composition window (14.2.1), `compositionControlOverrides` (14.4.2), and the style fields of a title (14.3.2, 14.3.4). Section 17 writes the mask fields of a shape (17.1), creates shapes (17.4) and writes their fill, stroke, geometry and pen path (17.5).
 
 `stabilisation` (FL-638) is optional on a `video` item: `{ level, motion }`. `level` is `gentle`, `smooth` or `locked`, which crop the picture in by 4, 7 and 12 percent. `motion` is the clip's camera path, measured once on the server (`POST /studio/projects/{id}/stabilisations`) and written here unchanged: `version` 1, the `method`, `rate` samples a second from source second `start`, `count` samples, the analysed picture's `width` and `height`, and `x`, `y` and `a`, each `count` float32 little-endian values in base64: the cumulative shift of the picture as fractions of its width and height, and its turn in radians. `found` (0 to 1) is the share of frame pairs whose movement was found; the others were taken as still. A renderer smooths the path for the level (Gaussian, sigma 0.33 s for `gentle` and 1 s for `smooth`; `locked` holds the mean), draws the clip at each source time moved by the smoothed path minus the measured one, turned about its centre and scaled up by the crop, clipped to where the picture shows, and reduces the shift and turn just enough that no edge shows. The source never changes. **Native rule:** a client that cannot draw the correction must say so before exporting a graph that carries it, and must preserve the object.
+
+**Clip markers (FL-1563).** Any item may carry `markers`: `{ id, sourceFrame, color, durationInFrames?, label?, note? }` entries in the clip's source frames at `sourceFps` (section 3.4), so they move with the media through moves, trims, slips and splits (both parts of a split keep the list). They are written by imports, not by a command. **Native rule:** preserve them.
 
 `generatedId` replaces `mediaId` on an item that shows Frameleaf-generated media (for example a reversed conform). Such an item never carries `mediaId`, `src`, `audioSrc`, `thumbnailUrl`, `waveformData` or any `reverseConform*` field in a stored graph.
 
@@ -705,13 +707,13 @@ Section 13.2.3 specifies transitions, and 13.4.1 the command that creates them. 
 1. If `L` or `R` no longer exists, the transition is removed. Commands that delete clips remove their transitions first.
 2. If the clips are on different tracks, it is removed.
 3. If `|E − R.from| ≤ 1` the clips **meet**. Otherwise, if `R.from < E` they **overlap**. Otherwise (`R.from > E + 1`) the transition is removed.
-4. If either clip is not a video, image or composition item, it is removed.
+4. Unless both clips are video, image or composition items, or both are sound items that are not compound items (FL-1555), it is removed.
 5. **Meet:** let `M` be the longest length the clips' handles allow (below). If `M ≤ 0` the transition is removed. If `durationInFrames > M` it becomes `M`.
 6. **Overlap:** let `O = E − R.from`. If `O < durationInFrames`, the length becomes `max(2, O)` when that is shorter than both clips, and the transition is removed when it is not. Otherwise, if `durationInFrames` is not shorter than both clips, it becomes `max(2, min(L, R lengths) − 1)`.
 
 Transitions that pass unchanged keep their order in `timeline.transitions`. Transitions whose length was changed are moved after them, in their own order. When the list becomes empty the key is removed.
 
-`M` is the largest `d` from 1 to `min(L, R lengths) − 1` for which `d − floor(d × alignment)` frames fit in `L`'s tail handle and `floor(d × alignment)` frames fit in `R`'s head handle. The tail handle of a video or composition clip is `toTimeline(sourceDuration − sourceEnd)`, and its head handle is `toTimeline(sourceStart)`. An absent `sourceEnd` counts as `sourceDuration` and an absent `sourceDuration` as 0, so such a clip has no tail handle. A still has unlimited handles.
+`M` is the largest `d` from 1 to `min(L, R lengths) − 1` for which `d − floor(d × alignment)` frames fit in `L`'s tail handle and `floor(d × alignment)` frames fit in `R`'s head handle. The tail handle of a video, sound or composition clip is `toTimeline(sourceDuration − sourceEnd)`, and its head handle is `toTimeline(sourceStart)`. An absent `sourceEnd` counts as `sourceDuration` and an absent `sourceDuration` as 0, so such a clip has no tail handle. A still has unlimited handles.
 
 Some commands refuse an edit that would starve a transition instead of repairing it afterwards. For them a transition is **valid** between two clips when rules 2 to 4 keep it, its length is at most `min(L, R lengths) − 1`, and, when the clips meet, its two parts fit the handles as in the definition of `M`. Such a command is refused (`failed`) unless every transition it names is valid both before the edit and with the edited clips in place.
 
@@ -1465,6 +1467,8 @@ A **gap** on a track is a run of free frames that ends where a clip starts: the 
 
 Markers are `timeline.markers`, in the order they were added. The list is not sorted by frame, two markers may share a frame, and the key is absent when the list is empty. Marker commands change nothing else: Linked, Locks, Sync lock, Overlap and Transitions are all **none** for the three of them.
 
+A marker may also carry `durationInFrames` (an integer of at least 1: a **range** marker covering that many frames from `frame`) and `note` (free text), as imports from other editors write them (FL-1563). The commands below do not write either field and keep them as found. Changing the project rate keeps a range's end on the same moment; trimming a composition to its in and out points cuts a range to the kept span and drops markers outside it. **Native rule:** preserve both fields; a client that cannot show ranges shows the marker at `frame`.
+
 #### 12.8.1 `marker.add`
 
 Payload: `at`, optional `colour`, optional `name`.
@@ -1536,8 +1540,8 @@ Every command has fixtures named `<command>/<case>` in `studio/graph-conformance
 
 | Key                 | Contents                                                                                                                                                                                                              |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `effects`           | The 54 effects: `id`, `category`, `temporal` (the effect moves by itself over the clip), and `parameters`, each with `name`, `type`, `default`, `min`, `max`, `step`, `options` and `animatable`.                     |
-| `transitions`       | The 44 transitions: `id`, `category`, `directions` (when it has one), `timings`, `editorDuration` and `parameters`.                                                                                                   |
+| `effects`           | The 57 effects: `id`, `category`, `temporal` (the effect moves by itself over the clip), and `parameters`, each with `name`, `type`, `default`, `min`, `max`, `step`, `options` and `animatable`.                     |
+| `transitions`       | The 48 transitions: `id`, `category`, `directions` (when it has one), `timings`, `editorDuration` and `parameters`.                                                                                                   |
 | `transitionAliases` | The five names `clip.setTransition` accepts besides the ids (13.4.1).                                                                                                                                                 |
 | `blendModes`        | The 25 blend modes: `id`, `index` and `group`.                                                                                                                                                                        |
 | `easing`            | The seven easing types, and the default bezier and spring parameters (13.2.6).                                                                                                                                        |
@@ -1569,6 +1573,7 @@ A clip's `effects` is its effect stack, drawn in array order. Each entry is:
 - Audio clips have no stack. Every other clip type may have one.
 - A clip that never had an effect has no `effects` field. A clip whose effects were all removed keeps an empty list.
 - Fields of an entry that this page does not name (the web editor writes `audioPulse` on some) must be preserved.
+- A `gpu-lut` names a `.cube` file kept with the project instead of embedding a table when its params carry `lutSource: "import"` and `lutId`, the id of a project import of kind `lut` (FL-1558). It then carries `lutSize: "0"` and `lutData: ""`, and `lutName` is a display name only. Clips graded with the same file name the same id. The file may be a 3D or a 1D table; `studio/spec/effects/gpu-lut.md` ("LUTs kept with the project") says how it is read and drawn. A client that imports a `.cube` file uploads it as a project import (`POST /studio/projects/{id}/imports`) and writes the reference; it replaces all five LUT fields together, so an embedded table and a reference never mix.
 
 #### 13.2.3 Transitions
 
@@ -1588,9 +1593,12 @@ A clip's `effects` is its effect stack, drawn in array order. Each entry is:
 | `direction`                               | Optional. One of the presentation's `directions`.                                          |
 | `bezierPoints`                            | Optional. `{ x1, y1, x2, y2 }` for `timing: "cubic-bezier"`.                               |
 | `properties`                              | Optional. Values of the presentation's `parameters`, by name.                              |
+| `audioCurve`                              | Optional. `constant-power` (the default), `constant-gain` or `exponential` (FL-1555).      |
 | `presetId`, `createdAt`, `lastModifiedAt` | Optional. Written by editor features outside this protocol. Preserve them.                 |
 
-A clip has at most one transition out of it and at most one into it. The clips must be video, still or composition items on one track.
+A clip has at most one transition out of it and at most one into it. The clips must be video, still or composition items on one track, or two sound items on one track that are neither compound items nor linked to a video clip (FL-1555; fixture `clip.setTransition/adds-between-sound-clips`). A transition between sound items draws nothing.
+
+**Sound under a transition.** Both clips play their sound through the transition: the outgoing clip into its tail handle and the incoming clip from its head handle. Over the `d` frames, at progress `t` from 0 to 1, the outgoing sound is multiplied by `g(1 − t)` and the incoming by `g(t)`, where `g` is chosen by `audioCurve`: `sin(πt/2)` for `constant-power`, `t` for `constant-gain` and `t²` for `exponential`. A video or composition clip's linked sound follows its clip's transition the same way. Sound fades on a clip (`audioFadeIn`, `audioFadeOut` and their curves) apply on top. `studio/spec/sound.md` has the full rules and worked values.
 
 **The two parts.** With `p = floor(d × alignment)`, a transition takes the last `p` frames of the outgoing clip and the first `d − p` frames of the incoming clip. Those frames are the clip's **transition regions**. While the outgoing clip plays its region, the incoming clip shows `p` frames from before its start: its **head handle**. While the incoming clip plays its region, the outgoing clip shows `d − p` frames from after its end: its **tail handle**. Section 12.2.6 defines the handles, the longest length `M` they allow, and when a transition is **valid**.
 
@@ -2110,7 +2118,7 @@ The graph has no grade node, and `clip.setGrade` is refused. A grade is a set of
 1. `gpu-exposure` (exposure, offset, gamma), `gpu-temperature` (temperature, tint), `gpu-contrast` and `gpu-saturation`: the primaries.
 2. `gpu-color-wheels`: lift, gamma and gain, the tonal wheels and its own primaries. A client that uses the wheels' own `exposure`, `contrast`, `saturation`, `temperature` and `tint` leaves the four effects of step 1 out, so that no control is applied twice.
 3. `gpu-curves`: the master and channel curves.
-4. `gpu-lut`: a look, with `intensity` as its strength. A look the deployment does not bundle is refused when the project is resolved (`studio/resource-inventory.json`, kind `lut`).
+4. `gpu-lut`: a look, with `intensity` as its strength. A look the deployment does not bundle is refused when the project is resolved (`studio/resource-inventory.json`, kind `lut`). A look imported from a `.cube` file is kept with the project and named by `lutId` (13.2.2).
 
 The engine applies a stack in array order (13.2.2) and does not require this order; it is the order a client writes so that the same panel gives the same picture on every client. A client reads a grade back by finding these effects in the stack, skipping effects whose ids begin `colour-match:` (13.3.3): those are a colour match, not the grade, and a grade edit leaves them as they are. Effects of other kinds, and a second effect of one of these kinds, are not part of the grade and are left as they are. A grade for several clips at once is the same effects on an `adjustment` item on a track above them (`studio/spec/layers.md`, L8).
 
@@ -2964,8 +2972,8 @@ This protocol says which effects and transitions a graph may name, and with whic
 | Path                              | What it is                                                                                                                                                                                                                                                                       |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `studio/spec/README.md`           | The shared rules: coordinates, sampling, the SDR and linear HDR domains, alpha, the hash and noise functions, colour helpers, the effect clock, parameter sanitising, the transition progress curve and the transition routes.                                                   |
-| `studio/spec/effects/<id>.md`     | One page per effect of the catalogue (54): parameters and their internal meaning, the per-pixel definition, edges, alpha, and SDR and HDR behaviour.                                                                                                                             |
-| `studio/spec/transitions/<id>.md` | One page per transition of the catalogue (44): parameters, progress curve, geometry and blend.                                                                                                                                                                                   |
+| `studio/spec/effects/<id>.md`     | One page per effect of the catalogue (57): parameters and their internal meaning, the per-pixel definition, edges, alpha, and SDR and HDR behaviour.                                                                                                                             |
+| `studio/spec/transitions/<id>.md` | One page per transition of the catalogue (48): parameters, progress curve, geometry and blend.                                                                                                                                                                                   |
 | `studio/spec/hdr.md`              | HDR and colour management (H1 to H17): the `colorManagement` record, when a project is HDR, the working space, PQ, HLG and SDR sources, the SDR tone map, HDR delivery and refusals.                                                                                             |
 | `studio/spec/layers.md`           | Layer compositing: which items draw and in what order, the background, occlusion, transform and transform parents, fit, crop, flips, corner radius and corner pin, opacity and every blend mode, masks, every shape field, and the float route's shape shaders for HDR projects. |
 | `studio/spec/text.md`             | Titles and text: style fields, layout, spans, text motion, and the font files a native client draws with (14.3).                                                                                                                                                                 |

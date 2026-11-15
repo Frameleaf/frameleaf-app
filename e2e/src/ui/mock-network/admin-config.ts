@@ -37,6 +37,7 @@ export const adminConfigDefaults = {
     tonemap: 'hable',
     accel: 'disabled',
     accelDecode: true,
+    softwareFallback: [],
     realtime: {
       enabled: false,
       videoCodecs: ['h264', 'hevc'],
@@ -162,6 +163,11 @@ export const adminConfigDefaults = {
       minScore: 0.7,
       maxDistance: 0.5,
       minFaces: 3,
+    },
+    eyeScores: {
+      enabled: true,
+      closedBelow: 0.35,
+      softBelow: 0.3,
     },
     ocr: {
       enabled: true,
@@ -447,6 +453,8 @@ export const adminConfigDefaults = {
   // FL-488: in-app help.
   help: { askEnabled: true },
   icloud: { enabled: true },
+  // FL-922: default expiry for new shared links
+  sharedLinks: { defaultExpiryDays: null },
   // FL-159: Frameleaf Cloud processing replaced the previous GPU provider settings.
   frameleafCloud: {
     cloudMl: {

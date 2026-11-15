@@ -102,6 +102,11 @@ program
   )
   .addOption(new Option('--no-progress', 'Hide progress bars').env('FRAMELEAF_PROGRESS_BAR').default(true))
   .addOption(
+    new Option('--no-resume', 'Start interrupted files from the beginning instead of continuing them')
+      .env('FRAMELEAF_UPLOAD_RESUME')
+      .default(true),
+  )
+  .addOption(
     new Option('--watch', 'Watch for changes and upload automatically')
       .env('FRAMELEAF_WATCH_CHANGES')
       .default(false)

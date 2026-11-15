@@ -165,6 +165,10 @@ const BUNDLED_EXPORT_FAILURE_GUIDANCE = new Map([
     'The HDR master could not be completed or verified. Check the worker’s HDR encoder support and export settings, then export again from Studio.',
   ],
   [
+    'bundled_lottie_dependencies',
+    'A Lottie animation reads images or fonts stored outside its file. Embed them in the animation, or export with a dedicated render worker.',
+  ],
+  [
     'bundled_inputs_too_large',
     'Choose a worker with a larger input size limit, or reduce the project’s source media, then export again from Studio.',
   ],

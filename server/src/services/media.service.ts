@@ -139,6 +139,7 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp, isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { homeMlDestinationId, selectMlDestination } from 'src/utils/ml-destination.js';
 import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview.js';
+import { withSoftwareFallback } from 'src/utils/playback-self-test.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
 import { RawRenderError, type RawRenderFailure } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
@@ -1757,6 +1758,16 @@ export class MediaService extends BaseService {
 
     let { ffmpeg } = await this.getConfig({ withCache: true });
     const processingPolicy = videoProcessingPolicy(ffmpeg);
+
+    // FL-977: a kind of video the playback self-test found the graphics card gets wrong (dark HDR, say)
+    // is converted on the processor; every other kind keeps the card.
+    const fallback = withSoftwareFallback(ffmpeg, videoStream);
+    if (fallback.fallback) {
+      this.logger.log(
+        `Transcoding video ${asset.id} on the processor: the playback self-test failed ${fallback.fallback}`,
+      );
+      ffmpeg = fallback.ffmpeg;
+    }
 
     // FL-101: classify the source before the output directory exists, so a refusal leaves any
     // existing proxy untouched and the original is never the thing that changes.

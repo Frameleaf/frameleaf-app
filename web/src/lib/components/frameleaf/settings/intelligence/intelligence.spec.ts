@@ -208,6 +208,7 @@ describe('Visual search', () => {
     const saveKeys = vi.spyOn(store, 'saveKeys').mockResolvedValue(true);
     sdkMock.getLibraryProgress.mockResolvedValue({
       measuredSince: '2026-10-22T08:00:00.000Z',
+      bestPhotos: { outdated: 0, tonight: false },
       features: [{ feature: 'search' as never, done: 1000, total: 4000, perHour: 2000, secondsLeft: 5400 }],
     });
     sdkMock.redoLibraryWork.mockResolvedValue({ tonight: [] });
@@ -231,6 +232,31 @@ describe('Visual search', () => {
 
     expect(screen.getByText(/my-model/, { selector: '.ms-readout span' })).toBeInTheDocument();
     expect(screen.getAllByRole('radio').filter((radio) => (radio as HTMLInputElement).checked)).toHaveLength(0);
+  });
+
+  it('says an own model keeps the basic Best Photos check (FL-1597)', async () => {
+    const store = useDraft();
+    store.draft.machineLearning.clip.modelName = 'my-model';
+    render(VisualSearch);
+
+    expect(screen.getByText('Best Photos uses the basic quality check with this model')).toBeInTheDocument();
+  });
+
+  it('offers to recalculate Best Photos once a learned score arrives (FL-1597)', async () => {
+    useDraft();
+    sdkMock.getLibraryProgress.mockResolvedValue({
+      measuredSince: null,
+      bestPhotos: { outdated: 120, tonight: false },
+      features: [],
+    });
+    sdkMock.redoBestPhotos.mockResolvedValue(undefined as never);
+    render(VisualSearch);
+
+    expect(screen.queryByText('Best Photos uses the basic quality check with this model')).not.toBeInTheDocument();
+    await fireEvent.click(await screen.findByRole('button', { name: 'Recalculate tonight' }));
+    expect(sdkMock.redoBestPhotos).toHaveBeenCalledWith({ libraryBestPhotosRedoDto: { when: 'tonight' } });
+    expect(await screen.findByText('Best Photos will be recalculated tonight.')).toBeInTheDocument();
+    expect(screen.queryByText('Best Photos can pick better now')).not.toBeInTheDocument();
   });
 });
 

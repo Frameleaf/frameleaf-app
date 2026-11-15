@@ -100,10 +100,14 @@ limit
 -- PersonRepository.getAllForUser
 select
   "person".*,
+  "person_profile"."deathDate",
+  "person_profile"."notes",
   count(distinct "asset_face"."assetId") as "assetCount",
   max("asset"."fileCreatedAt") as "lastSeenAt"
 from
   "person"
+  left join "person_profile" on "person_profile"."ownerId" = "person"."ownerId"
+  and "person_profile"."personId" = "person"."personGroupId"
   inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
   inner join "asset" on "asset_face"."assetId" = "asset"."id"
   and "asset"."ownerId" = "person"."ownerId"
@@ -156,7 +160,9 @@ where
   and "person"."isHidden" = $5
 group by
   "person"."ownerId",
-  "person"."personGroupId"
+  "person"."personGroupId",
+  "person_profile"."ownerId",
+  "person_profile"."personId"
 having
   (
     "person"."name" != $6
@@ -418,6 +424,16 @@ where
   "person"."personGroupId" = $1
   and "person"."ownerId" = $2
 
+-- PersonRepository.getProfile
+select
+  "person_profile"."deathDate",
+  "person_profile"."notes"
+from
+  "person_profile"
+where
+  "person_profile"."ownerId" = $1
+  and "person_profile"."personId" = $2
+
 -- PersonRepository.getByName
 with
   "similarity_threshold" as (
@@ -425,10 +441,14 @@ with
       set_config('pg_trgm.word_similarity_threshold', '0.5', true) as "thresh"
   )
 select
-  "person".*
+  "person".*,
+  "person_profile"."deathDate",
+  "person_profile"."notes"
 from
   "similarity_threshold",
   "person"
+  left join "person_profile" on "person_profile"."ownerId" = "person"."ownerId"
+  and "person_profile"."personId" = "person"."personGroupId"
 where
   "person"."ownerId" = $1
   and f_unaccent ("person"."name") %> f_unaccent ($2)
@@ -833,6 +853,17 @@ values
   )
 returning
   *
+
+-- PersonRepository.updateEyeScores
+begin
+update "asset_face"
+set
+  "eyesOpen" = $1,
+  "eyeSharpness" = $2,
+  "eyeScoreVersion" = $3
+where
+  "asset_face"."id" = $4
+commit
 
 -- PersonRepository.refreshFaces
 with
