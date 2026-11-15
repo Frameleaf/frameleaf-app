@@ -8132,9 +8132,21 @@
     },
     "/admin/ledger/summary": {
       "get": {
-        "description": "How many of the originals the server accepted, for every account, are kept, in the Trash, removed, sharing an identical file, or missing, and which accounts have originals the server cannot account for. No file is named.",
+        "description": "How many of the originals the server accepted, for every account (or for one, with userId), are kept, in the Trash, removed, sharing an identical file, or missing, per account and per month added, and which accounts have originals the server cannot account for. No file is named.",
         "operationId": "getLedgerAdminSummary",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Only this account’s totals and months",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -89739,12 +89751,37 @@
         ],
         "type": "object"
       },
+      "AssetLedgerAdminQueryDto": {
+        "properties": {
+          "userId": {
+            "description": "Only this account’s totals and months",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AssetLedgerAdminSummaryResponseDto": {
         "properties": {
+          "byOwner": {
+            "description": "Every account’s totals, most originals first; empty when the summary is for one account. No file is named.",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerOwnerTotalsDto"
+            },
+            "type": "array"
+          },
           "missingByOwner": {
             "description": "The accounts with originals the server cannot account for, most first. No file is named.",
             "items": {
               "$ref": "#/components/schemas/AssetLedgerMissingOwnerDto"
+            },
+            "type": "array"
+          },
+          "months": {
+            "description": "Per month the originals were added, where they are now; newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerMonthDto"
             },
             "type": "array"
           },
@@ -89759,7 +89796,9 @@
           }
         },
         "required": [
+          "byOwner",
           "missingByOwner",
+          "months",
           "states",
           "total"
         ],
@@ -89908,6 +89947,50 @@
         ],
         "type": "object"
       },
+      "AssetLedgerMonthDto": {
+        "properties": {
+          "month": {
+            "description": "The month the originals were added, as YYYY-MM (UTC)",
+            "type": "string"
+          },
+          "states": {
+            "$ref": "#/components/schemas/AssetLedgerCountsDto"
+          },
+          "total": {
+            "description": "Originals added that month",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "states",
+          "total"
+        ],
+        "type": "object"
+      },
+      "AssetLedgerOwnerTotalsDto": {
+        "properties": {
+          "ownerId": {
+            "type": "string"
+          },
+          "states": {
+            "$ref": "#/components/schemas/AssetLedgerCountsDto"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ownerId",
+          "states",
+          "total"
+        ],
+        "type": "object"
+      },
       "AssetLedgerQueryDto": {
         "properties": {
           "cursor": {
@@ -89942,6 +90025,13 @@
       },
       "AssetLedgerSummaryResponseDto": {
         "properties": {
+          "months": {
+            "description": "Per month the originals were added, where they are now; newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerMonthDto"
+            },
+            "type": "array"
+          },
           "states": {
             "$ref": "#/components/schemas/AssetLedgerCountsDto"
           },
@@ -89953,6 +90043,7 @@
           }
         },
         "required": [
+          "months",
           "states",
           "total"
         ],
