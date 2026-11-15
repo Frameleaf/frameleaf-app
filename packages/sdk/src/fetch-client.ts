@@ -4337,6 +4337,8 @@ export type DisplayPreferencesResponse = {
 export type DownloadResponse = {
     /** Maximum archive size in bytes */
     archiveSize: number;
+    /** FL-826: the format downloads use unless one is chosen: original, jpeg or web (always sent) */
+    defaultFormat?: string;
     /** Whether to include embedded videos in downloads */
     includeEmbeddedVideos: boolean;
     /** Whether an archive download puts each photo's details file (XMP sidecar) beside it */
@@ -4553,6 +4555,8 @@ export type DisplayPreferencesUpdate = {
 export type DownloadUpdate = {
     /** Maximum archive size in bytes */
     archiveSize?: number;
+    /** FL-826: the format downloads use unless one is chosen: original, jpeg (high-quality JPEG, full size) or web (2048 px JPEG). Archive downloads that name no format follow it */
+    defaultFormat?: DownloadFormat;
     /** Whether to include embedded videos in downloads */
     includeEmbeddedVideos?: boolean;
     /** Whether an archive download puts each photo's details file (XMP sidecar) beside it */
@@ -9956,6 +9960,8 @@ export type DownloadArchiveDto = {
     bookmarkIds?: string[];
     /** Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals */
     edited?: boolean;
+    /** FL-826: photos as the original, a full-size JPEG or a web-size JPEG (converted files end in .jpg); videos stay original. Left out: the account's download.defaultFormat (shared links: original). A link limited to web size always gets web */
+    format?: DownloadFormat;
     /** Include frameleaf-library.json with owned albums, tags, bookmarks and Boards annotations alongside originals; signed-in accounts only */
     includeLibraryMetadata?: boolean;
     /** Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no) */
@@ -9970,6 +9976,8 @@ export type DownloadInfoDto = {
     archiveSize?: number;
     /** Asset IDs to download */
     assetIds?: string[];
+    /** FL-826: the format the sizes are for. Left out: the account's download.defaultFormat (shared links: original). A link limited to web size always gets web */
+    format?: DownloadFormat;
     /** User ID to download assets from */
     userId?: string;
 };
@@ -18885,6 +18893,8 @@ export type SharedLinkResponseDto = {
     url: string | null;
     /** Owner user ID */
     userId: string;
+    /** FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Always sent */
+    webSizeOnly?: boolean;
 };
 export type SharedLinkCreateDto = {
     /** Album ID (for album sharing) */
@@ -18906,6 +18916,8 @@ export type SharedLinkCreateDto = {
     /** Custom URL slug */
     slug?: string | null;
     "type": SharedLinkType;
+    /** FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Left out: off */
+    webSizeOnly?: boolean;
 };
 export type SharedLinkLoginDto = {
     /** Shared link password */
@@ -18926,6 +18938,8 @@ export type SharedLinkEditDto = {
     showMetadata?: boolean;
     /** Custom URL slug */
     slug?: string | null;
+    /** FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Left out: unchanged */
+    webSizeOnly?: boolean;
 };
 export type AssetIdsDto = {
     /** Asset IDs */
@@ -22248,7 +22262,7 @@ export type AssetDevelopRevisionParamDto = {
 export type AssetDownloadOriginalDto = {
     /** Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original */
     edited?: boolean;
-    /** Explicit still-image export or read-only document PDF; omission returns the original or selected edit */
+    /** Explicit still-image export or read-only document PDF; omission returns the original or selected edit. FL-826: original, jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge) download a photo in that format, of the version `edited` names; videos stay original. A shared link limited to web size always gets web for photos */
     format?: Format3;
 };
 export type AssetFileSearchDto = {
@@ -29481,7 +29495,7 @@ export function getAssetOcr({ id }: {
  */
 export function downloadAsset({ edited, format, id, key, slug }: {
     edited?: boolean;
-    format?: "sdr-jpeg" | "hdr-jpeg" | "hdr-heic" | "document-pdf";
+    format?: "sdr-jpeg" | "hdr-jpeg" | "hdr-heic" | "document-pdf" | "original" | "jpeg" | "web";
     id: string;
     key?: string;
     slug?: string;
@@ -44526,6 +44540,11 @@ export enum SuppressionScope {
     Owned = "owned",
     Visible = "visible"
 }
+export enum DownloadFormat {
+    Original = "original",
+    Jpeg = "jpeg",
+    Web = "web"
+}
 export enum LibraryViewScope {
     Personal = "personal",
     Design = "design"
@@ -48438,7 +48457,10 @@ export enum Format3 {
     SdrJpeg = "sdr-jpeg",
     HdrJpeg = "hdr-jpeg",
     HdrHeic = "hdr-heic",
-    DocumentPdf = "document-pdf"
+    DocumentPdf = "document-pdf",
+    Original = "original",
+    Jpeg = "jpeg",
+    Web = "web"
 }
 export enum Intent {
     Preserve = "preserve"

@@ -1,14 +1,14 @@
 {
-  "sourceCommit": "784f841541dd8bfa65f8c4406d7e9819003371ba",
+  "sourceCommit": "5b01e3a6143f9b2194510422d9b512c5092bfc72",
   "sourceHashes": {
-    "src/enum.ts": "58e5f863916ec4a404c61f3d383c86ed25699762627828ad48bc873fc1aae39d",
+    "src/enum.ts": "8be1bb28fc9e998703994c1817c10dec2400747f14a2b7dc14fcbb921c96665d",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/library-import/state-schema.ts": "b4d13d8e68b85c68a14257f56062df1f4efdd7a929918f21af225fa6b4998408",
     "src/queue/schema.ts": "a7562b1877064164778469c46c67f4f16c284d7d2e91d27df0e137ff4f587401",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "34441ba9e9d117148a433ab8f9811fcbbac4285a014ce844e04ce08347d1ccfb",
+    "src/schema/index.ts": "a0a8d3727707fe8073225f2e7e4182dd10f45f8217f5f91a2c6e66e404ad8c2e",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -141,6 +141,7 @@
     "src/schema/tables/session-sign-in.table.ts": "fa0e294c4f6d3c8a2b2d5cc8aacbfb558e3e30da603e5b4c8ecad24c2eb4dc12",
     "src/schema/tables/session.table.ts": "0c24659924204115116b5878f13f7228a2dbc37f6065477b2e89fb82852fda0b",
     "src/schema/tables/shared-link-asset.table.ts": "026a663bcb9c11ce3675359a46d097b654e05019427dcb01ed8c1a0af8b4ca07",
+    "src/schema/tables/shared-link-option.table.ts": "63f97b319ed4fba630fdf3c6710e5b0366db66d20e561027875d7f5f12dbbb44",
     "src/schema/tables/shared-link.table.ts": "5c2538c537316a31f86006dfe5ff253141b22888a99c54f4bf6ff58ac9dc5455",
     "src/schema/tables/shared-space-album.table.ts": "14f881d53d6060ac70027e24bb19015cb246ee8a5302ecf6b4371b465a68ce33",
     "src/schema/tables/shared-space-comment-thread.table.ts": "3052f63f4432818d97397fdd6b16ee22511cea7e692ff740d7a9e2f2490f8659",
@@ -191,6 +192,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "26b9f2beb0ab91fe9a8c8d2e6b39d9aef0b15e45284ffd8b4a2c47fce2a65451",
-  "rawMetadataSha256": "bec80a0b315dbf0c779336eb05d30da038777761416dcf5791e4edc82d53a2fe"
+  "dumpSha256": "aa10381c0e01365c3496b699097e75f32530db2443c8304af751bad8b14e5eda",
+  "rawMetadataSha256": "f47f1da76255f8cb8d974617554a46305b79ba567b0bdac71d31824b18a37477"
 }

@@ -21015,14 +21015,17 @@
             "name": "format",
             "required": false,
             "in": "query",
-            "description": "Explicit still-image export or read-only document PDF; omission returns the original or selected edit",
+            "description": "Explicit still-image export or read-only document PDF; omission returns the original or selected edit. FL-826: original, jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge) download a photo in that format, of the version `edited` names; videos stay original. A shared link limited to web size always gets web for photos",
             "schema": {
               "type": "string",
               "enum": [
                 "sdr-jpeg",
                 "hdr-jpeg",
                 "hdr-heic",
-                "document-pdf"
+                "document-pdf",
+                "original",
+                "jpeg",
+                "web"
               ]
             }
           },
@@ -88016,12 +88019,15 @@
             "type": "boolean"
           },
           "format": {
-            "description": "Explicit still-image export or read-only document PDF; omission returns the original or selected edit",
+            "description": "Explicit still-image export or read-only document PDF; omission returns the original or selected edit. FL-826: original, jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge) download a photo in that format, of the version `edited` names; videos stay original. A shared link limited to web size always gets web for photos",
             "enum": [
               "sdr-jpeg",
               "hdr-jpeg",
               "hdr-heic",
-              "document-pdf"
+              "document-pdf",
+              "original",
+              "jpeg",
+              "web"
             ],
             "type": "string"
           }
@@ -106562,6 +106568,10 @@
             "description": "Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals",
             "type": "boolean"
           },
+          "format": {
+            "$ref": "#/components/schemas/DownloadFormat",
+            "description": "FL-826: photos as the original, a full-size JPEG or a web-size JPEG (converted files end in .jpg); videos stay original. Left out: the account's download.defaultFormat (shared links: original). A link limited to web size always gets web"
+          },
           "includeLibraryMetadata": {
             "description": "Include frameleaf-library.json with owned albums, tags, bookmarks and Boards annotations alongside originals; signed-in accounts only",
             "type": "boolean"
@@ -106604,6 +106614,15 @@
         ],
         "type": "object"
       },
+      "DownloadFormat": {
+        "description": "FL-826: original (the file as uploaded), jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge). Videos are always original",
+        "enum": [
+          "original",
+          "jpeg",
+          "web"
+        ],
+        "type": "string"
+      },
       "DownloadInfoDto": {
         "properties": {
           "albumId": {
@@ -106627,6 +106646,10 @@
             },
             "type": "array"
           },
+          "format": {
+            "$ref": "#/components/schemas/DownloadFormat",
+            "description": "FL-826: the format the sizes are for. Left out: the account's download.defaultFormat (shared links: original). A link limited to web size always gets web"
+          },
           "userId": {
             "description": "User ID to download assets from",
             "format": "uuid",
@@ -106643,6 +106666,16 @@
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
+          },
+          "defaultFormat": {
+            "description": "FL-826: the format downloads use unless one is chosen: original, jpeg or web (always sent)",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           },
           "includeEmbeddedVideos": {
             "description": "Whether to include embedded videos in downloads",
@@ -106695,6 +106728,16 @@
             "maximum": 9007199254740991,
             "minimum": 1,
             "type": "integer"
+          },
+          "defaultFormat": {
+            "$ref": "#/components/schemas/DownloadFormat",
+            "description": "FL-826: the format downloads use unless one is chosen: original, jpeg (high-quality JPEG, full size) or web (2048 px JPEG). Archive downloads that name no format follow it",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           },
           "includeEmbeddedVideos": {
             "description": "Whether to include embedded videos in downloads",
@@ -164048,6 +164091,16 @@
           },
           "type": {
             "$ref": "#/components/schemas/SharedLinkType"
+          },
+          "webSizeOnly": {
+            "description": "FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Left out: off",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "required": [
@@ -164107,6 +164160,16 @@
             "description": "Custom URL slug",
             "nullable": true,
             "type": "string"
+          },
+          "webSizeOnly": {
+            "description": "FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Left out: unchanged",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "type": "object"
@@ -164244,6 +164307,16 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "webSizeOnly": {
+            "description": "FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Always sent",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "required": [
