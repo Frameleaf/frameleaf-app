@@ -115,12 +115,11 @@ export class PhotographySelfieService extends BaseService {
 
   /**
    * FL-1058, FC-277: the Face route reaches Frameleaf Cloud, which answers one selfie on CPU in the owner's region
-   * while the guest waits (owner decision 2026-11-13). Off until the owner allows Cloud for guest selfies
-   * (`FRAMELEAF_GUEST_SELFIE_CLOUD`); the Cloud service runs buffalo_l only, so another face model stays unavailable.
+   * while the guest waits (owner decisions 2026-11-13; FL-1605: on by default). People who keep their photos at home
+   * never reach here. The Cloud service runs buffalo_l only, so another face model stays unavailable.
    */
   private async cloudSelfie(path: string, options: { modelName: string; minScore: number }) {
-    if (!this.configRepository.getEnv().frameleafCloud.guestSelfies || options.modelName !== 'buffalo_l')
-      throw new Error('Frameleaf Cloud does not take guest selfies');
+    if (options.modelName !== 'buffalo_l') throw new Error('Frameleaf Cloud runs buffalo_l only');
     const resolution = await resolveCloudGateway({
       configRepository: this.configRepository,
       databaseRepository: this.databaseRepository,
