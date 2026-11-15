@@ -57030,7 +57030,7 @@
             "name": "name",
             "required": true,
             "in": "query",
-            "description": "Person name to search for",
+            "description": "Person name to search for; the caller's own notes about a person match too (FL-941)",
             "schema": {
               "type": "string"
             }
@@ -94104,6 +94104,14 @@
           "date": {
             "description": "The birthday this year, 'yyyy-MM-dd'",
             "type": "string"
+          },
+          "deathAnniversary": {
+            "description": "True when the memory marks the anniversary of the date of passing rather than the birthday (FL-864); `date` is then that anniversary. Always comes with `inMemoriam`",
+            "type": "boolean"
+          },
+          "inMemoriam": {
+            "description": "True for a \"Remembering {name}\" memory (FL-864): the person has passed, so the memory shows no age. Absent or false for an ordinary birthday",
+            "type": "boolean"
           },
           "kind": {
             "description": "Discriminator for a birthday",
@@ -132308,6 +132316,12 @@
             ],
             "x-immich-state": "Stable"
           },
+          "deathDate": {
+            "description": "Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "featuredAssetId": {
             "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)",
             "format": "uuid",
@@ -132359,6 +132373,11 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner",
+            "nullable": true,
             "type": "string"
           },
           "thumbnailPath": {
@@ -132554,6 +132573,12 @@
             "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
+          "deathDate": {
+            "description": "Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one)",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "featureFaceAssetId": {
             "description": "Asset ID used for feature face thumbnail",
             "format": "uuid",
@@ -132576,6 +132601,12 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them",
+            "maxLength": 2000,
+            "nullable": true,
             "type": "string"
           }
         },
@@ -133166,6 +133197,12 @@
             ],
             "x-immich-state": "Stable"
           },
+          "deathDate": {
+            "description": "Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "featuredAssetId": {
             "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)",
             "format": "uuid",
@@ -133211,6 +133248,11 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner",
+            "nullable": true,
             "type": "string"
           },
           "thumbnailPath": {
@@ -133443,6 +133485,12 @@
             "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
+          "deathDate": {
+            "description": "Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one)",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "featureFaceAssetId": {
             "description": "Asset ID used for feature face thumbnail",
             "format": "uuid",
@@ -133459,6 +133507,12 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them",
+            "maxLength": 2000,
+            "nullable": true,
             "type": "string"
           }
         },
@@ -163252,7 +163306,7 @@
       "SearchPeopleDto": {
         "properties": {
           "name": {
-            "description": "Person name to search for",
+            "description": "Person name to search for; the caller's own notes about a person match too (FL-941)",
             "type": "string"
           },
           "withHidden": {

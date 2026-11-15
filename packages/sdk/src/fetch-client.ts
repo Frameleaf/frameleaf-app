@@ -5560,6 +5560,8 @@ export type PersonResponseDto = {
     birthDate: string | null;
     /** Person color (hex) */
     color?: string;
+    /** Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller */
+    deathDate?: string | null;
     /** The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW) */
     featuredAssetId?: string | null;
     /** Person ID */
@@ -5570,6 +5572,8 @@ export type PersonResponseDto = {
     isHidden: boolean;
     /** Person name */
     name: string;
+    /** The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner */
+    notes?: string | null;
     /** Thumbnail path */
     thumbnailPath: string;
     /** Last update date */
@@ -12712,6 +12716,10 @@ export type BirthdayMemoryDto = {
     age: number | null;
     /** The birthday this year, 'yyyy-MM-dd' */
     date: string;
+    /** True when the memory marks the anniversary of the date of passing rather than the birthday (FL-864); `date` is then that anniversary. Always comes with `inMemoriam` */
+    deathAnniversary?: boolean;
+    /** True for a "Remembering {name}" memory (FL-864): the person has passed, so the memory shows no age. Absent or false for an ordinary birthday */
+    inMemoriam?: boolean;
     /** Discriminator for a birthday */
     kind: Kind7;
     /** Their name when the memory was made */
@@ -13407,6 +13415,8 @@ export type PeopleListItemDto = {
     birthDate: string | null;
     /** Person color (hex) */
     color?: string;
+    /** Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller */
+    deathDate?: string | null;
     /** The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW) */
     featuredAssetId?: string | null;
     /** Person ID */
@@ -13419,6 +13429,8 @@ export type PeopleListItemDto = {
     lastSeenAt: string | null;
     /** Person name */
     name: string;
+    /** The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner */
+    notes?: string | null;
     /** Thumbnail path */
     thumbnailPath: string;
     /** Last update date */
@@ -13452,6 +13464,8 @@ export type PeopleUpdateItem = {
     birthDate?: string | null;
     /** Person color (hex) */
     color?: string | null;
+    /** Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one) */
+    deathDate?: string | null;
     /** Asset ID used for feature face thumbnail */
     featureFaceAssetId?: string;
     /** Person ID */
@@ -13462,6 +13476,8 @@ export type PeopleUpdateItem = {
     isHidden?: boolean;
     /** Person name */
     name?: string;
+    /** Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them */
+    notes?: string | null;
 };
 export type PeopleUpdateDto = {
     /** People to update */
@@ -13594,6 +13610,8 @@ export type PersonUpdateDto = {
     birthDate?: string | null;
     /** Person color (hex) */
     color?: string | null;
+    /** Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one) */
+    deathDate?: string | null;
     /** Asset ID used for feature face thumbnail */
     featureFaceAssetId?: string;
     /** Mark as favorite */
@@ -13602,6 +13620,8 @@ export type PersonUpdateDto = {
     isHidden?: boolean;
     /** Person name */
     name?: string;
+    /** Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them */
+    notes?: string | null;
 };
 export type PersonCorrectionsResponseDto = {
     /** Manual face decisions for this person, most recent first */
@@ -23477,7 +23497,7 @@ export type RenderWorkerAuditSearchDto = {
     workerId?: string;
 };
 export type SearchPeopleDto = {
-    /** Person name to search for */
+    /** Person name to search for; the caller's own notes about a person match too (FL-941) */
     name: string;
     /** Include hidden people */
     withHidden?: boolean;
