@@ -62,6 +62,14 @@ describe('EXIF response projection', () => {
       isRejected: false,
     });
   });
+  it('passes on the start timecode a video records, and leaves it out when there is none (FL-1560)', () => {
+    const withTimecode = (timecode: unknown) =>
+      mapExif({ ...AssetExifFactory.create(), timecode } as unknown as Parameters<typeof mapExif>[0]);
+    expect(ExifResponseSchema.parse(withTimecode('01:00:00;00')).timecode).toBe('01:00:00;00');
+    for (const timecode of [null, undefined, '']) {
+      expect(withTimecode(timecode)).not.toHaveProperty('timecode');
+    }
+  });
   it('projects a legacy stored rating of 0 as unrated', () => {
     expect(ExifResponseSchema.parse(mapExif(AssetExifFactory.create({ rating: 0 })))).toMatchObject({
       rating: null,

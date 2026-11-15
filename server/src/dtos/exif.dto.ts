@@ -70,6 +70,8 @@ class ExifResponseDto extends createZodDto(ExifResponseSchema) {}
 
 export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
   const fileSizeInByte = entity.fileSizeInByte ?? null;
+  // FL-1560: present when the row was read whole (`withExif`), which the asset's own response is
+  const { timecode } = entity as { timecode?: unknown };
   return {
     bitsPerSample: entity.bitsPerSample ?? null,
     colorspace: entity.colorspace ?? null,
@@ -102,7 +104,7 @@ export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
     rating: entity.rating === -1 || entity.rating === 0 ? null : entity.rating,
     isRejected: entity.rating === -1,
     fps: entity.fps ?? null,
-    ...(entity.timecode && { timecode: entity.timecode }),
+    ...(typeof timecode === 'string' && timecode && { timecode }),
     ...(entity.mediaKinds && { mediaKinds: entity.mediaKinds.filter((kind) => isMediaKind(kind)) }),
     ...(isDateEstimated(entity) && { dateEstimated: true }),
   };

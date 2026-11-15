@@ -296,7 +296,8 @@ export type Session = {
 
 /**
  * FL-1196's capture details stay out: only the library's own reports read them. So do FL-912's two EXIF offsets,
- * which only the Date & Time Doctor reads.
+ * which only the Date & Time Doctor reads, and FL-1560's start timecode, which `mapExif` passes on only from a
+ * read of the whole row.
  */
 export type Exif = Omit<
   Selectable<AssetExifTable>,
@@ -308,7 +309,7 @@ export type Exif = Omit<
   | 'timecode'
   | keyof CaptureDetails
 > &
-  Partial<Pick<Selectable<AssetExifTable>, 'title' | 'artist' | 'copyright' | 'timecode'>>;
+  Partial<Pick<Selectable<AssetExifTable>, 'title' | 'artist' | 'copyright'>>;
 
 export type Person = {
   createdAt: Date;
