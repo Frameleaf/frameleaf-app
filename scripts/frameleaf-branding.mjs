@@ -80,13 +80,6 @@ export const ALLOWLIST = [
   },
   {
     reason:
-      "Developer source provenance: the explicit frozen-source remote command",
-    files: /^docs\/docs\/developer\/setup\.md$/,
-    allow:
-      /^git remote add upstream https:\/\/github\.com\/immich-app\/immich\.git$/g,
-  },
-  {
-    reason:
       "FL-333: one-way offline source import; exact approved wording only",
     files: /^docs\/docs\/administration\/import-immich\.md$/,
     allow: "# One-time offline Immich import",

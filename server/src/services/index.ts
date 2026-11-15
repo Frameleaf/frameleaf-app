@@ -1,5 +1,6 @@
 import { AccountEventService } from 'src/services/account-event.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
+import { AlbumActionsService } from 'src/services/album-actions.service.js';
 import { AlbumChangeRunService } from 'src/services/album-change-run.service.js';
 import { AlbumCleanupService } from 'src/services/album-cleanup.service.js';
 import { AlbumDateHealService } from 'src/services/album-date-heal.service.js';
@@ -253,6 +254,7 @@ export const services = [
   ConnectService,
   ConnectEventService,
   ConnectMediaService,
+  AlbumActionsService,
   AlbumItemsService,
   AlbumOrderService,
   AssetSourceService,

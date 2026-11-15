@@ -49,3 +49,19 @@ it('refuses a pre-cancelled explicit packet signal before starting its child', (
   ).toThrow(reason);
   expect(spawn).not.toHaveBeenCalled();
 });
+
+it('FL-1444: lists every kept frame in presentation order when asked, leaving out discarded packets', async () => {
+  const child = Object.assign(new EventEmitter(), {
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(),
+  });
+  vi.mocked(spawn).mockReturnValueOnce(child as never);
+  const result = new MediaRepository({ setContext: vi.fn() } as never).probePackets('fixture.mp4', 0, {
+    framePts: true,
+  });
+  // Decode order with a B-frame, and a discarded pre-roll packet.
+  child.stdout.write('-2,1,KD\n0,1,K_\n3,1,__\n1,1,__\n2,1,__\n');
+  child.emit('close', 0);
+  await expect(result).resolves.toMatchObject({ framePts: [0, 1, 2, 3], keyframePts: [-2, 0] });
+});

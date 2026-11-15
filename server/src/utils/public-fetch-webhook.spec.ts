@@ -26,13 +26,26 @@ describe('isWebhookAddressAllowed', () => {
     },
   );
 
-  it.each(['127.0.0.1', '::1', '169.254.169.254', 'fe80::1', '0.0.0.0', '224.0.0.1', '::ffff:7f00:1', '::'])(
-    'never allows %s, even with the home network allowed',
-    (address) => {
-      expect(isWebhookAddressAllowed(address, false)).toBe(false);
-      expect(isWebhookAddressAllowed(address, true)).toBe(false);
-    },
-  );
+  it.each([
+    '127.0.0.1',
+    '::1',
+    '169.254.169.254',
+    'fe80::1',
+    '0.0.0.0',
+    '224.0.0.1',
+    '::ffff:7f00:1',
+    '::',
+    // FL-780 TM-6: IPv4 inside IPv6 (compatible, 6to4, Teredo) and site-local
+    '::7f00:1',
+    '::a9fe:a9fe',
+    '2002:7f00:1::1',
+    '2002:c0a8:101::1',
+    '2001:0:4136:e378:8000:63bf:3fff:fdd2',
+    'fec0::1',
+  ])('never allows %s, even with the home network allowed', (address) => {
+    expect(isWebhookAddressAllowed(address, false)).toBe(false);
+    expect(isWebhookAddressAllowed(address, true)).toBe(false);
+  });
 });
 
 describe('sendWebhook', () => {

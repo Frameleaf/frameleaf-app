@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.10">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p25" frameDuration="100/2500s" width="1920" height="1080"/>
+    <format id="r2" name="FFVideoFormat3840x2160p25" frameDuration="100/2500s" width="3840" height="2160"/>
+    <asset id="r3" name="Lake morning" start="3600s" duration="60s" hasVideo="1" hasAudio="1" format="r2" audioSources="1" audioChannels="2">
+      <media-rep kind="original-media" src="file:///Volumes/Jamie/Rockies/Lake%20morning.mov"/>
+    </asset>
+    <asset id="r4" name="Kayak" start="0s" duration="30s" hasVideo="1" hasAudio="1" format="r1">
+      <media-rep kind="original-media" src="file:///Volumes/Jamie/Rockies/Kayak.mp4"/>
+    </asset>
+    <asset id="r5" name="Campfire" start="0s" duration="120s" hasAudio="1" audioSources="1">
+      <media-rep kind="original-media" src="file:///Volumes/Jamie/Music/Campfire.wav"/>
+    </asset>
+    <asset id="r6" name="Ridge" start="0s" duration="0s" hasVideo="1" format="r1">
+      <media-rep kind="original-media" src="file:///Volumes/Jamie/Rockies/Ridge.jpg"/>
+    </asset>
+    <effect id="r7" name="Basic Title" uid=".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti"/>
+    <effect id="r8" name="Gaussian Blur" uid="FFGaussianBlur"/>
+    <effect id="r9" name="Film Glow" uid="com.example.fxplug.filmglow"/>
+    <media id="r10" name="Ridge pan">
+      <sequence format="r1" duration="4s" tcStart="0s">
+        <spine>
+          <asset-clip ref="r6" offset="0s" name="Ridge" duration="4s"/>
+        </spine>
+      </sequence>
+    </media>
+  </resources>
+  <library>
+    <event name="Rockies">
+      <project name="Lake day">
+        <sequence format="r1" duration="18s" tcStart="3600s" tcFormat="NDF">
+          <spine>
+            <asset-clip ref="r3" offset="3600s" name="Lake morning" start="3602s" duration="6s" format="r2" tcFormat="NDF">
+              <adjust-transform position="10 -5" scale="1.2 1.2" rotation="-3"/>
+              <filter-video ref="r8" name="Gaussian Blur"/>
+              <marker start="3603s" duration="100/2500s" value="Heron"/>
+              <title ref="r7" lane="1" offset="3603s" name="Lake day" start="0s" duration="3s">
+                <text><text-style ref="ts1">Lake day</text-style></text>
+                <text-style-def id="ts1"><text-style font="Helvetica" fontSize="72" fontColor="1 0.8 0 1" alignment="center"/></text-style-def>
+              </title>
+              <asset-clip ref="r5" lane="-1" offset="3602s" name="Campfire" start="0s" duration="16s" audioRole="music">
+                <adjust-volume amount="-6dB"><param name="amount"><fadeIn type="easeIn" duration="1s"/><fadeOut type="easeOut" duration="2s"/></param></adjust-volume>
+              </asset-clip>
+            </asset-clip>
+            <transition name="Cross Dissolve" offset="3605s" duration="2s"/>
+            <asset-clip ref="r4" offset="3606s" name="Kayak" start="2s" duration="8s" format="r1">
+              <timeMap><timept time="0s" value="0s" interp="linear"/><timept time="30s" value="60s" interp="linear"/></timeMap>
+              <filter-video ref="r9" name="Film Glow"/>
+            </asset-clip>
+            <audition offset="3614s">
+              <ref-clip ref="r10" offset="3614s" name="Ridge pan" duration="4s"/>
+              <asset-clip ref="r4" offset="3614s" name="Kayak alt" duration="4s"/>
+            </audition>
+            <asset-clip ref="r4" offset="3618s" name="Switched off" duration="1s" enabled="0"/>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>
