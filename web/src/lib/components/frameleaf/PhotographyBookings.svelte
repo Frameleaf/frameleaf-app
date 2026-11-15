@@ -9,12 +9,12 @@
     photographyBookings,
     photographyUpdateBookingStatus,
     type PhotographyBookingListDto,
-    type PhotographyBookingStatus,
+    PhotographyBookingStatus,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiAlertCircleOutline, mdiCalendarOutline, mdiCheckCircleOutline, mdiClockOutline } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
-  import { t } from 'svelte-i18n';
+  import { t, type Translations } from 'svelte-i18n';
 
   /**
    * FL-1606: Clients › Bookings, built to the approved mock (frameleaf-prototype#67). Requests from the studio website
@@ -30,7 +30,7 @@
   let bookings = $state<Booking[]>();
   let mailReady = $state(false);
   let failed = $state(false);
-  let filter = $state<Filter>('requested');
+  let filter = $state<Filter>(PhotographyBookingStatus.Requested);
   let fresh = $state<string[]>([]);
   let openId = $state<string | null>(null);
   let declining = $state(false);
@@ -41,19 +41,19 @@
   /** Bookings that arrived while the list was open, announced by whichever read first includes them. */
   const announce = new Set<string>();
 
-  const filters: [Filter, string][] = [
-    ['requested', 'frameleaf_clients_bookings_waiting'],
-    ['confirmed', 'frameleaf_clients_bookings_confirmed'],
-    ['declined', 'frameleaf_clients_bookings_declined'],
+  const filters: [Filter, Translations][] = [
+    [PhotographyBookingStatus.Requested, 'frameleaf_clients_bookings_waiting'],
+    [PhotographyBookingStatus.Confirmed, 'frameleaf_clients_bookings_confirmed'],
+    [PhotographyBookingStatus.Declined, 'frameleaf_clients_bookings_declined'],
     ['all', 'frameleaf_clients_bookings_all'],
   ];
-  const statusKeys: Record<PhotographyBookingStatus, string> = {
+  const statusKeys: Record<PhotographyBookingStatus, Translations> = {
     requested: 'frameleaf_clients_bookings_waiting',
     confirmed: 'frameleaf_clients_bookings_confirmed',
     declined: 'frameleaf_clients_bookings_declined',
     cancelled: 'frameleaf_clients_bookings_cancelled',
   };
-  const depositKeys: Record<Booking['depositStatus'], string> = {
+  const depositKeys: Record<Booking['depositStatus'], Translations> = {
     none: 'frameleaf_clients_bookings_deposit_none',
     unpaid: 'frameleaf_clients_bookings_deposit_unpaid',
     pending: 'frameleaf_clients_bookings_deposit_unpaid',
@@ -136,7 +136,7 @@
     openId = id;
   }
 
-  async function decide(status: 'confirmed' | 'declined') {
+  async function decide(status: PhotographyBookingStatus.Confirmed | PhotographyBookingStatus.Declined) {
     const booking = current;
     if (!booking || busy) {
       return;
@@ -153,7 +153,7 @@
       void load();
       const values = { values: { name: booking.clientName } };
       toastManager.primary(
-        status === 'confirmed'
+        status === PhotographyBookingStatus.Confirmed
           ? $t(
               saved.clientEmailed
                 ? 'frameleaf_clients_bookings_confirmed_emailed'
@@ -242,8 +242,10 @@
             {#if filter === 'all'}
               <span class="pill" data-status={booking.status}>{$t(statusKeys[booking.status])}</span>
             {/if}
-            <Button variant={booking.status === 'requested' ? 'primary' : 'default'} onclick={() => review(booking.id)}
-              >{booking.status === 'requested'
+            <Button
+              variant={booking.status === PhotographyBookingStatus.Requested ? 'primary' : 'default'}
+              onclick={() => review(booking.id)}
+              >{booking.status === PhotographyBookingStatus.Requested
                 ? $t('frameleaf_clients_bookings_review')
                 : $t('frameleaf_clients_bookings_view')}</Button
             >
@@ -253,7 +255,7 @@
     {:else}
       <div class="status" role="status">
         <Icon icon={mdiCheckCircleOutline} size="1.5rem" aria-hidden={true} />
-        {#if filter === 'requested'}
+        {#if filter === PhotographyBookingStatus.Requested}
           <h2>{$t('frameleaf_clients_bookings_clear_title')}</h2>
           <p>{$t('frameleaf_clients_bookings_clear_body')}</p>
         {:else}
@@ -331,7 +333,7 @@
           <dd>{when(current.requestedAt)}</dd>
         </dl>
         {#if current.message}<blockquote class="message">{current.message}</blockquote>{/if}
-        {#if current.status === 'requested'}
+        {#if current.status === PhotographyBookingStatus.Requested}
           {#if mailReady}
             <label class="check"
               ><input type="checkbox" bind:checked={tell} />{$t('frameleaf_clients_bookings_email_client', {
@@ -340,19 +342,19 @@
             >
           {/if}
         {:else}
-          <p class="muted">{$t(`frameleaf_clients_bookings_${current.status}_note`)}</p>
+          <p class="muted">{$t(`frameleaf_clients_bookings_${current.status}_note` as Translations)}</p>
         {/if}
       </div>
     {/if}
     {#snippet actions()}
       {#if declining}
         <Button disabled={busy} onclick={() => (declining = false)}>{$t('frameleaf_clients_bookings_keep')}</Button>
-        <Button variant="danger" disabled={busy} onclick={() => decide('declined')}
+        <Button variant="danger" disabled={busy} onclick={() => decide(PhotographyBookingStatus.Declined)}
           >{$t('frameleaf_clients_bookings_decline_confirm')}</Button
         >
-      {:else if current?.status === 'requested'}
+      {:else if current?.status === PhotographyBookingStatus.Requested}
         <Button disabled={busy} onclick={() => (declining = true)}>{$t('frameleaf_clients_bookings_decline')}</Button>
-        <Button variant="primary" disabled={busy} onclick={() => decide('confirmed')}
+        <Button variant="primary" disabled={busy} onclick={() => decide(PhotographyBookingStatus.Confirmed)}
           >{$t('frameleaf_clients_bookings_confirm')}</Button
         >
       {:else}
