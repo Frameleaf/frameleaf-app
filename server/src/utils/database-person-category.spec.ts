@@ -68,7 +68,8 @@ describe('personCategoryIds search filter (FL-874)', () => {
         or: [{ personCategoryIds: { any: [family] } }, { personCategoryIds: { any: [work] }, city: { eq: 'Paris' } }],
       });
       expect(query.sql.split(inViewerCategories)).toHaveLength(3);
-      expect(query.sql).toContain('"asset"."isFavorite" =');
+      // FL-786: isFavorite is the viewer's own heart, including hearts on items shared with the viewer
+      expect(query.sql).toContain('public.asset_favorite');
       expect(query.sql).toContain('"asset_exif"."city" =');
       expect(query.sql).toMatch(/ or /);
     }));
