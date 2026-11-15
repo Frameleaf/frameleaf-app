@@ -101,6 +101,7 @@ import {
 } from 'src/utils/database.js';
 import { TimelineDatesToCheck, hasDateToCheck, hasGoodDate } from 'src/utils/date-sanity.js';
 import { lockDerivedResults, releaseDerivedResults } from 'src/utils/derivative-locks.js';
+import { favoriteFor } from 'src/utils/favorite.js';
 import { normalizeImportPath } from 'src/utils/library-paths.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { encryptsFilesOf } from 'src/utils/locked-encryption-set.js';
@@ -506,6 +507,14 @@ const timelineVisibility = (options: AssetBuilderOptions) => {
 /** FL-1410: the timeline request's `datesToCheck`, as the shared rule's SQL. */
 const datesToCheckPredicate = (datesToCheck: TimelineDatesToCheck) =>
   datesToCheck === TimelineDatesToCheck.Only ? hasDateToCheck() : hasGoodDate();
+/**
+ * FL-786: the Favourites filter as the viewer sees it: their own hearts only. A shared link's visitor has none, and
+ * without a viewer (system reads) it is the owner's mark.
+ */
+const isFavoriteFilter = (auth: AuthDto | undefined, isFavorite: boolean) =>
+  auth && !auth.sharedLink
+    ? sql<boolean>`(${favoriteFor(auth.user.id)}) = ${isFavorite}`
+    : sql<boolean>`(${auth?.sharedLink ? sql`false` : sql`asset."isFavorite"`}) = ${isFavorite}`;
 const widensToSharedAlbums = (options: TimeBucketOptions) =>
   (!!options.personId || filterNamesPeople(options.filter)) && options.visibility !== AssetVisibility.Locked;
 /**
@@ -2877,6 +2886,40 @@ export class AssetRepository {
       .executeTakeFirstOrThrow();
     return { photos: Number(row.photos), videos: Number(row.videos) };
   }
+  /** FL-786: of `assetIds`, the ones `userId` gave their own heart (items someone else owns). */
+  async getSharedFavoriteIds(userId: string, assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('asset_favorite')
+      .select('assetId')
+      .where('userId', '=', asUuid(userId))
+      .where('assetId', '=', anyUuid(assetIds))
+      .execute();
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
+
+  /** FL-786: set or clear `userId`'s own heart on items someone else owns. */
+  async setSharedFavorites(userId: string, assetIds: string[], isFavorite: boolean): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+    if (isFavorite) {
+      await this.db
+        .insertInto('asset_favorite')
+        .values(assetIds.map((assetId) => ({ userId, assetId })))
+        .onConflict((oc) => oc.columns(['userId', 'assetId']).doNothing())
+        .execute();
+      return;
+    }
+    await this.db
+      .deleteFrom('asset_favorite')
+      .where('userId', '=', asUuid(userId))
+      .where('assetId', '=', anyUuid(assetIds))
+      .execute();
+  }
+
   getStatistics(ownerId: string, options: AssetStatsOptions): Promise<AssetStats> {
     const { visibility, isFavorite, isTrashed } = options;
     return (
@@ -3015,10 +3058,16 @@ export class AssetRepository {
               options.userIds!.length === 1 ? asUuid(options.userIds![0]) : anyUuid(options.userIds!),
             );
             // the people's shared-album media widens the owner scope (`widensToSharedAlbums`)
-            return auth && widensToSharedAlbums(options) ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
+            if (auth && widensToSharedAlbums(options)) {
+              return eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]);
+            }
+            // FL-786: Favourites also lists the viewer's own hearts on items shared with them, while still shared
+            return auth && !auth.sharedLink && options.isFavorite === true
+              ? eb.or([isOwner, eb.and([favoriteFor(auth.user.id), inSharedAlbum(eb, auth.user.id)])])
+              : isOwner;
           }),
         )
-        .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+        .$if(options.isFavorite !== undefined, (qb) => qb.where(isFavoriteFilter(auth, options.isFavorite!)))
         .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
         .$if(options.isDuplicate !== undefined, (qb) =>
           qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
@@ -3435,9 +3484,7 @@ export class AssetRepository {
             'asset.id',
             effectiveVisibility('asset').as('visibility'),
             // the viewer's own mark; a shared link's visitor never sees its owner's favorites
-            (auth.sharedLink ? sql`false` : sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`).as(
-              'isFavorite',
-            ),
+            (auth.sharedLink ? sql<boolean>`false` : favoriteFor(auth.user.id)).as('isFavorite'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
@@ -3551,10 +3598,16 @@ export class AssetRepository {
                 options.userIds!.length === 1 ? asUuid(options.userIds![0]) : anyUuid(options.userIds!),
               );
               // as getTimeBuckets: the people's shared-album media widens the owner scope, never a Locked request
-              return widensToSharedAlbums(options) ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
+              if (widensToSharedAlbums(options)) {
+                return eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]);
+              }
+              // FL-786: as getTimeBuckets, Favourites also lists the viewer's hearts on items shared with them
+              return !auth.sharedLink && options.isFavorite === true
+                ? eb.or([isOwner, eb.and([favoriteFor(auth.user.id), inSharedAlbum(eb, auth.user.id)])])
+                : isOwner;
             }),
           )
-          .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+          .$if(options.isFavorite !== undefined, (qb) => qb.where(isFavoriteFilter(auth, options.isFavorite!)))
           .$if(!!options.withStacked, (qb) =>
             qb
               .where((eb) =>

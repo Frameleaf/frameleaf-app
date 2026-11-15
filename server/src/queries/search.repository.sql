@@ -56,7 +56,7 @@ where
   and "asset"."fileCreatedAt" >= $3
   and "asset_exif"."lensModel" = $4
   and "asset"."ownerId" = any ($5::uuid[])
-  and "asset"."isFavorite" = $6
+  and asset."isFavorite" = $6
   and "asset"."deletedAt" is null
 order by
   "asset"."fileCreatedAt" desc,
@@ -85,7 +85,7 @@ where
   and "asset"."fileCreatedAt" >= $3
   and "asset_exif"."lensModel" = $4
   and "asset"."ownerId" = any ($5::uuid[])
-  and "asset"."isFavorite" = $6
+  and asset."isFavorite" = $6
   and "asset"."deletedAt" is null
 
 -- SearchRepository.searchRandom
@@ -144,7 +144,7 @@ where
   and "asset"."fileCreatedAt" >= $3
   and "asset_exif"."lensModel" = $4
   and "asset"."ownerId" = any ($5::uuid[])
-  and "asset"."isFavorite" = $6
+  and asset."isFavorite" = $6
   and "asset"."deletedAt" is null
 order by
   random()
@@ -208,7 +208,7 @@ where
   and "asset"."fileCreatedAt" >= $3
   and "asset_exif"."lensModel" = $4
   and "asset"."ownerId" = any ($5::uuid[])
-  and "asset"."isFavorite" = $6
+  and asset."isFavorite" = $6
   and "asset"."deletedAt" is null
   and "asset_exif"."fileSizeInByte" > $7
 order by
@@ -264,7 +264,7 @@ where
   and "asset"."fileCreatedAt" >= $8
   and "asset_exif"."lensModel" = $9
   and "asset"."ownerId" = any ($10::uuid[])
-  and "asset"."isFavorite" = $11
+  and asset."isFavorite" = $11
   and "asset"."deletedAt" is null
 order by
   "searchDistance",
@@ -4626,7 +4626,23 @@ where
     or "asset"."deletedAt" is null
   )
   and (
-    "asset"."isFavorite" = $7
+    (
+      (
+        (
+          "asset"."ownerId" = $7::uuid
+          AND "asset"."isFavorite"
+        )
+        OR EXISTS (
+          SELECT
+            1
+          FROM
+            public.asset_favorite af
+          WHERE
+            af."assetId" = "asset"."id"
+            AND af."userId" = $8::uuid
+        )
+      )
+    ) = $9
     or exists (
       select
       from
@@ -4634,17 +4650,17 @@ where
       where
         "asset_face"."assetId" = "asset"."id"
         and "asset_face"."deletedAt" is null
-        and "asset_face"."isVisible" = $8
-        and "asset_face"."personGroupId" = any ($9::uuid[])
+        and "asset_face"."isVisible" = $10
+        and "asset_face"."personGroupId" = any ($11::uuid[])
     )
   )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $10
+  $12
 offset
-  $11
+  $13
 
 -- SearchRepository.searchMetadataV3 (or-with-top-level)
 select
@@ -4881,18 +4897,34 @@ where
     and "asset"."fileCreatedAt" >= $5
     and (
       (
-        "asset"."isFavorite" = $6
+        (
+          (
+            (
+              "asset"."ownerId" = $6::uuid
+              AND "asset"."isFavorite"
+            )
+            OR EXISTS (
+              SELECT
+                1
+              FROM
+                public.asset_favorite af
+              WHERE
+                af."assetId" = "asset"."id"
+                AND af."userId" = $7::uuid
+            )
+          )
+        ) = $8
         and (
-          "asset"."ownerId" = any ($7::uuid[])
+          "asset"."ownerId" = any ($9::uuid[])
           and (
-            "asset"."ownerId" = $8::uuid
+            "asset"."ownerId" = $10::uuid
             or (
               "asset"."deletedAt" is null
               and "asset"."visibility" in ('timeline', 'hidden')
             )
           )
         )
-        and "asset"."libraryScope" in ($9, $10)
+        and "asset"."libraryScope" in ($11, $12)
       )
       or exists (
         select
@@ -4900,7 +4932,7 @@ where
           "album_asset"
         where
           "album_asset"."assetId" = "asset"."id"
-          and "album_asset"."albumId" = any ($11::uuid[])
+          and "album_asset"."albumId" = any ($13::uuid[])
       )
     )
   )
@@ -4908,9 +4940,9 @@ order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $12
+  $14
 offset
-  $13
+  $15
 
 -- SearchRepository.searchMetadataV3 (cursor-offset)
 select
@@ -4982,14 +5014,30 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
-  and "asset"."isFavorite" = $7
+  and (
+    (
+      (
+        "asset"."ownerId" = $7::uuid
+        AND "asset"."isFavorite"
+      )
+      OR EXISTS (
+        SELECT
+          1
+        FROM
+          public.asset_favorite af
+        WHERE
+          af."assetId" = "asset"."id"
+          AND af."userId" = $8::uuid
+      )
+    )
+  ) = $9
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $8
+  $10
 offset
-  $9
+  $11
 
 -- SearchRepository.searchRandomV3 (baseline)
 select
@@ -5137,11 +5185,27 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
-  and "asset"."isFavorite" = $7
+  and (
+    (
+      (
+        "asset"."ownerId" = $7::uuid
+        AND "asset"."isFavorite"
+      )
+      OR EXISTS (
+        SELECT
+          1
+        FROM
+          public.asset_favorite af
+        WHERE
+          af."assetId" = "asset"."id"
+          AND af."userId" = $8::uuid
+      )
+    )
+  ) = $9
 order by
   random()
 limit
-  $8
+  $10
 
 -- SearchRepository.searchSmartV3 (baseline)
 begin
@@ -5557,7 +5621,23 @@ where
     or "asset"."deletedAt" is null
   )
   and (
-    "asset"."isFavorite" = $7
+    (
+      (
+        (
+          "asset"."ownerId" = $7::uuid
+          AND "asset"."isFavorite"
+        )
+        OR EXISTS (
+          SELECT
+            1
+          FROM
+            public.asset_favorite af
+          WHERE
+            af."assetId" = "asset"."id"
+            AND af."userId" = $8::uuid
+        )
+      )
+    ) = $9
     or not exists (
       select
       from
@@ -5618,8 +5698,21 @@ with
     select
       $7::text as field,
       (
-        m."isFavorite"
-        and m."ownerId" = $8::uuid
+        (
+          (
+            "m"."ownerId" = $8::uuid
+            AND "m"."isFavorite"
+          )
+          OR EXISTS (
+            SELECT
+              1
+            FROM
+              public.asset_favorite af
+            WHERE
+              af."assetId" = "m"."id"
+              AND af."userId" = $9::uuid
+          )
+        )
       )::text as value,
       null::text as label,
       count(*) as count,
@@ -5636,7 +5729,7 @@ with
       2
     union all
     select
-      $9::text as field,
+      $10::text as field,
       case
         when e.rating between 1 and 5 then e.rating::text
         else 'unrated'
@@ -5657,7 +5750,7 @@ with
       2
     union all
     select
-      $10::text as field,
+      $11::text as field,
       nullif(trim("e"."city"), '') as value,
       null::text as label,
       count(*) as count,
@@ -5678,7 +5771,7 @@ with
       2
     union all
     select
-      $11::text as field,
+      $12::text as field,
       nullif(trim("e"."country"), '') as value,
       null::text as label,
       count(*) as count,
@@ -5699,7 +5792,7 @@ with
       2
     union all
     select
-      $12::text as field,
+      $13::text as field,
       nullif(trim("e"."make"), '') as value,
       null::text as label,
       count(*) as count,
@@ -5720,7 +5813,7 @@ with
       2
     union all
     select
-      $13::text as field,
+      $14::text as field,
       nullif(trim("e"."model"), '') as value,
       null::text as label,
       count(*) as count,
@@ -5741,7 +5834,7 @@ with
       2
     union all
     select
-      $14::text as field,
+      $15::text as field,
       nullif(trim("e"."lensModel"), '') as value,
       null::text as label,
       count(*) as count,
@@ -5762,7 +5855,7 @@ with
       2
     union all
     select
-      $15::text as field,
+      $16::text as field,
       k.kind::text as value,
       null::text as label,
       count(*) as count,
@@ -5783,7 +5876,7 @@ with
       2
     union all
     select
-      $16::text as field,
+      $17::text as field,
       m."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
       count(*) as count,
@@ -5807,15 +5900,15 @@ with
           and f."isVisible" is true
       ) m
       inner join person p on p."personGroupId" = m."personGroupId"
-      and p."ownerId" = $17::uuid
+      and p."ownerId" = $18::uuid
       and not p."isHidden"
     where
-      not (m."personGroupId" = any ($18::uuid[]))
+      not (m."personGroupId" = any ($19::uuid[]))
     group by
       m."personGroupId"
     union all
     select
-      $19::text as field,
+      $20::text as field,
       t.id::text as value,
       max(t.value) as label,
       count(*) as count,
@@ -5838,7 +5931,7 @@ with
           inner join tag_closure tc on tc.id_descendant = ta."tagId"
       ) m
       inner join tag t on t.id = m."tagId"
-      and t."userId" = $20::uuid
+      and t."userId" = $21::uuid
     where
       not exists (
         select
@@ -5847,13 +5940,13 @@ with
           tag_closure
         where
           tag_closure.id_descendant = "t"."id"
-          and tag_closure.id_ancestor = any ($21::uuid[])
+          and tag_closure.id_ancestor = any ($22::uuid[])
       )
     group by
       t.id
     union all
     select
-      $22::text as field,
+      $23::text as field,
       pet.id::text as value,
       max(nullif(pet.name, '')) as label,
       count(distinct m.id) as count,
@@ -5867,12 +5960,12 @@ with
     from
       matched m
       inner join pet_observation po on po."assetId" = m.id
-      and po.state = $23
+      and po.state = $24
       inner join pet on pet.id = po."petId"
-      and pet."ownerId" = $24::uuid
+      and pet."ownerId" = $25::uuid
       and not pet."isHidden"
     where
-      not (pet.id = any ($25::uuid[]))
+      not (pet.id = any ($26::uuid[]))
     group by
       pet.id
     union all
@@ -5914,7 +6007,7 @@ select
 from
   ranked
 where
-  rank <= $26
+  rank <= $27
 order by
   field,
   rank
@@ -5959,12 +6052,28 @@ with
           "asset"."ownerId" = $6::uuid
           or "asset"."deletedAt" is null
         )
-        and "asset"."isFavorite" = $7
+        and (
+          (
+            (
+              "asset"."ownerId" = $7::uuid
+              AND "asset"."isFavorite"
+            )
+            OR EXISTS (
+              SELECT
+                1
+              FROM
+                public.asset_favorite af
+              WHERE
+                af."assetId" = "asset"."id"
+                AND af."userId" = $8::uuid
+            )
+          )
+        ) = $9
     )
   ),
   facet_rows as (
     select
-      $8::text as field,
+      $10::text as field,
       m.type::text as value,
       null::text as label,
       count(*) as count,
@@ -5981,10 +6090,23 @@ with
       2
     union all
     select
-      $9::text as field,
+      $11::text as field,
       (
-        m."isFavorite"
-        and m."ownerId" = $10::uuid
+        (
+          (
+            "m"."ownerId" = $12::uuid
+            AND "m"."isFavorite"
+          )
+          OR EXISTS (
+            SELECT
+              1
+            FROM
+              public.asset_favorite af
+            WHERE
+              af."assetId" = "m"."id"
+              AND af."userId" = $13::uuid
+          )
+        )
       )::text as value,
       null::text as label,
       count(*) as count,
@@ -6001,7 +6123,7 @@ with
       2
     union all
     select
-      $11::text as field,
+      $14::text as field,
       case
         when e.rating between 1 and 5 then e.rating::text
         else 'unrated'
@@ -6022,7 +6144,7 @@ with
       2
     union all
     select
-      $12::text as field,
+      $15::text as field,
       nullif(trim("e"."city"), '') as value,
       null::text as label,
       count(*) as count,
@@ -6043,7 +6165,7 @@ with
       2
     union all
     select
-      $13::text as field,
+      $16::text as field,
       nullif(trim("e"."country"), '') as value,
       null::text as label,
       count(*) as count,
@@ -6064,7 +6186,7 @@ with
       2
     union all
     select
-      $14::text as field,
+      $17::text as field,
       nullif(trim("e"."make"), '') as value,
       null::text as label,
       count(*) as count,
@@ -6085,7 +6207,7 @@ with
       2
     union all
     select
-      $15::text as field,
+      $18::text as field,
       nullif(trim("e"."model"), '') as value,
       null::text as label,
       count(*) as count,
@@ -6106,7 +6228,7 @@ with
       2
     union all
     select
-      $16::text as field,
+      $19::text as field,
       nullif(trim("e"."lensModel"), '') as value,
       null::text as label,
       count(*) as count,
@@ -6127,7 +6249,7 @@ with
       2
     union all
     select
-      $17::text as field,
+      $20::text as field,
       k.kind::text as value,
       null::text as label,
       count(*) as count,
@@ -6148,7 +6270,7 @@ with
       2
     union all
     select
-      $18::text as field,
+      $21::text as field,
       m."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
       count(*) as count,
@@ -6172,15 +6294,15 @@ with
           and f."isVisible" is true
       ) m
       inner join person p on p."personGroupId" = m."personGroupId"
-      and p."ownerId" = $19::uuid
+      and p."ownerId" = $22::uuid
       and not p."isHidden"
     where
-      not (m."personGroupId" = any ($20::uuid[]))
+      not (m."personGroupId" = any ($23::uuid[]))
     group by
       m."personGroupId"
     union all
     select
-      $21::text as field,
+      $24::text as field,
       t.id::text as value,
       max(t.value) as label,
       count(*) as count,
@@ -6203,7 +6325,7 @@ with
           inner join tag_closure tc on tc.id_descendant = ta."tagId"
       ) m
       inner join tag t on t.id = m."tagId"
-      and t."userId" = $22::uuid
+      and t."userId" = $25::uuid
     where
       not exists (
         select
@@ -6212,13 +6334,13 @@ with
           tag_closure
         where
           tag_closure.id_descendant = "t"."id"
-          and tag_closure.id_ancestor = any ($23::uuid[])
+          and tag_closure.id_ancestor = any ($26::uuid[])
       )
     group by
       t.id
     union all
     select
-      $24::text as field,
+      $27::text as field,
       pet.id::text as value,
       max(nullif(pet.name, '')) as label,
       count(distinct m.id) as count,
@@ -6232,12 +6354,12 @@ with
     from
       matched m
       inner join pet_observation po on po."assetId" = m.id
-      and po.state = $25
+      and po.state = $28
       inner join pet on pet.id = po."petId"
-      and pet."ownerId" = $26::uuid
+      and pet."ownerId" = $29::uuid
       and not pet."isHidden"
     where
-      not (pet.id = any ($27::uuid[]))
+      not (pet.id = any ($30::uuid[]))
     group by
       pet.id
     union all
@@ -6279,7 +6401,7 @@ select
 from
   ranked
 where
-  rank <= $28
+  rank <= $31
 order by
   field,
   rank
