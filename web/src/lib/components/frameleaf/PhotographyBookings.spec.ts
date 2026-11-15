@@ -122,4 +122,17 @@ describe('PhotographyBookings (FL-1606)', () => {
     expect(await screen.findByText('Deposit paid')).toBeInTheDocument();
     expect(toastManager.primary).not.toHaveBeenCalled();
   });
+
+  it('ignores a list read that a newer one overtook', async () => {
+    let finishFirst: (value: unknown) => void = () => {};
+    sdkMock.photographyBookings
+      .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)) as never)
+      .mockResolvedValueOnce({ mailReady: true, bookings: [booking('b5', { clientName: 'Taylor Chen' })] });
+    render(PhotographyBookings);
+    handlers.get('on_photography_booking')?.('b5');
+    expect(await screen.findByText('Taylor Chen')).toBeInTheDocument();
+    finishFirst({ mailReady: true, bookings: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('Taylor Chen')).toBeInTheDocument();
+  });
 });

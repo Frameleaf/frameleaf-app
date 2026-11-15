@@ -36,6 +36,8 @@
   let declining = $state(false);
   let tell = $state(true);
   let busy = $state(false);
+  /** Only the newest list read applies, and a confirm or decline outdates reads already on their way. */
+  let generation = 0;
 
   const filters: [Filter, string][] = [
     ['requested', 'frameleaf_clients_bookings_waiting'],
@@ -77,13 +79,19 @@
     new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 
   async function load() {
+    const request = ++generation;
     try {
       const answer = await photographyBookings();
+      if (request !== generation) {
+        return;
+      }
       bookings = answer.bookings;
       mailReady = answer.mailReady;
       failed = false;
     } catch {
-      failed = !bookings;
+      if (request === generation) {
+        failed = !bookings;
+      }
     }
   }
 
@@ -131,6 +139,7 @@
         id: booking.id,
         photographyBookingStatusDto: { status, notifyClient },
       });
+      generation++;
       bookings = bookings?.map((b) => (b.id === saved.id ? { ...b, status: saved.status } : b));
       const values = { values: { name: booking.clientName } };
       toastManager.primary(

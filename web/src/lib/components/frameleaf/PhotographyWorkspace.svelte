@@ -179,7 +179,7 @@
     /** A shoot to open first: the RAW develop editor's way back (FL-420). */
     initialShoot?: string;
     /** `galleries`: the editor's Proof opens the shoot's galleries; `website`: an inquiry email's link (FL-702). */
-    initialSection?: 'galleries' | 'website' | 'payments';
+    initialSection?: 'galleries' | 'website' | 'payments' | 'booking-types';
     /** Take Clients out of the top bar (back under Tools); omitted, the rail offers no such action. */
     onRemoveFromTopBar?: () => void;
     /** Removing is being saved. */
@@ -188,7 +188,7 @@
 
   // svelte-ignore state_referenced_locally
   let section = $state<Section>(
-    initialSection === 'website' || initialSection === 'payments'
+    initialSection && initialSection !== 'galleries'
       ? initialSection
       : initialShoot && initialSection === 'galleries'
         ? 'galleries'

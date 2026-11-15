@@ -10,7 +10,8 @@ export const load = (async ({ url }) => {
     shoot: url.searchParams.get('shoot') ?? undefined,
     // FL-702: `website` opens the studio website (the link in an inquiry email).
     // FL-1037: `payments` is where Stripe sends the studio back after connecting its account.
-    section: (['galleries', 'website', 'payments'] as const).find(
+    // FL-1606: `booking-types` opens Bookings (the link in a booking notification and email).
+    section: (['galleries', 'website', 'payments', 'booking-types'] as const).find(
       (section) => section === url.searchParams.get('section'),
     ),
     meta: { title: $t('frameleaf_photography') },
