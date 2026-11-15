@@ -100,16 +100,24 @@ const ARRIVAL = sql`'epoch'::timestamptz + interval '1 day'`;
 const arrivalRun = (runId: RawBuilder<unknown>) =>
   sql<boolean>`exists (select 1 from job_run r where r.id = ${runId} and r.origin is not null
     and r.origin not in ('library', 'import'))`;
-const availability = (runId: RawBuilder<unknown>, name: RawBuilder<unknown>, delayMs: number = 0, front = false) =>
+const availability = (
+  runId: RawBuilder<unknown>,
+  name: RawBuilder<unknown>,
+  delayMs: number = 0,
+  front = false,
+  place: string | null = null,
+) =>
   delayMs > 0
     ? sql`case when ${stageHeld(runId, name)} then ${HELD} else now() + ${delayMs} * interval '1 millisecond' end`
-    : sql`case when ${stageHeld(runId, name)} then ${HELD} when ${front} or ${arrivalRun(runId)} then ${ARRIVAL} else now() end`;
+    : sql`case when ${stageHeld(runId, name)} then ${HELD} when ${front} or ${arrivalRun(runId)} then ${ARRIVAL}
+        else least(coalesce(${place}::timestamptz, now()), now()) end`;
 const intentAvailability = (intent: QueueIntent) =>
   availability(
     sql`${intent.runId ?? null}::uuid`,
     sql`${intent.name}::text`,
     intent.options?.delay ?? 0,
     intent.front === true,
+    intent.place ?? null,
   );
 /**
  * FL-1479: a wait (a retry, a busy server) replaces `availableAt`, which is also the job's place in line. A job from
@@ -618,15 +626,26 @@ export class SqlQueueStore {
     );
     // FL-1479: the next steps of work from the front of the line (started by hand, or an arrival) run ahead of the
     // backlog too. Not as started by hand: only the job a person started skips a pause or a full task.
+    // A backlog job's next step in its own queue takes the job's place instead of queueing behind everything that
+    // came in meanwhile. A folder scan's sidecar step queues every extraction before the first one ends, so the
+    // step after extraction (the one that leads to thumbnails) otherwise waited for the whole library's metadata.
     const {
       rows: [parent],
     } =
       inherited.length > 0
-        ? await sql<{ front: boolean }>`select "availableAt" <= ${ARRIVAL} front from job
-            where id = ${claim.id}::uuid`.execute(tx)
+        ? await sql<{ front: boolean; queue: string; place: string }>`select "availableAt" <= ${ARRIVAL} front,
+            queue, "availableAt"::text place from job where id = ${claim.id}::uuid`.execute(tx)
         : { rows: [] };
     await this.enqueue(
-      parent?.front ? inherited.map((intent) => ({ ...intent, front: true })) : inherited,
+      parent
+        ? inherited.map((intent) =>
+            parent.front
+              ? { ...intent, front: true }
+              : intent.queue === parent.queue
+                ? { ...intent, place: parent.place }
+                : intent,
+          )
+        : inherited,
       tx,
       claim.runId,
     );

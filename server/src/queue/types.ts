@@ -43,6 +43,8 @@ export type QueueIntent = {
   parentId?: string;
   /** FL-1479: runs ahead of the backlog, as an arrival does (the next step of work that was itself at the front). */
   front?: boolean;
+  /** The backlog place (an `availableAt`) of the job this one is the next step of, in that job's own queue. */
+  place?: string;
 };
 export type JobDependencyReason =
   | 'workload-disabled'
