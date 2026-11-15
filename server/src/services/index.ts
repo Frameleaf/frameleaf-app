@@ -148,6 +148,7 @@ import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
 import { PhotoLocationsService } from 'src/services/photo-locations.service.js';
+import { PhotoSourceCatalogService } from 'src/services/photo-source-catalog.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyBookingService } from 'src/services/photography-booking.service.js';
@@ -265,6 +266,7 @@ export const services = [
   DesktopDeviceService,
   DesktopOfflineAlbumService,
   PhotoSourceService,
+  PhotoSourceCatalogService,
   SourceResourceAuthService,
   DesktopMlService,
   DesktopNasProducerService,

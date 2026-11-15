@@ -116,6 +116,7 @@ import {
   AssetLocationInsightController,
   PhotoLocationsController,
 } from 'src/controllers/photo-locations.controller.js';
+import { PhotoSourceCatalogController } from 'src/controllers/photo-source-catalog.controller.js';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
 import { PhotographyBookingController } from 'src/controllers/photography-booking.controller.js';
@@ -213,6 +214,7 @@ export const controllers = [
   DesktopDeviceController,
   DesktopOfflineAlbumController,
   PhotoSourceController,
+  PhotoSourceCatalogController,
   SourceResourceController,
   DesktopWorkerController,
   FrameleafLibraryMoveAdminController,
