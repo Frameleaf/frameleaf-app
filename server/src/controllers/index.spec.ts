@@ -162,6 +162,8 @@ const SHARED_LINK_ROUTES = new Set([
   'GET timeline/dates-to-check',
   // FL-33: curated cards for the same album-scoped request as the buckets; places follow showExif
   'GET timeline/highlights',
+  // FL-869: an album's custom order; the service refuses file name and rating sorts to links that hide EXIF
+  'GET timeline/ordered',
   'POST assets',
   'POST download/archive',
   'POST download/info',
