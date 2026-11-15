@@ -170,6 +170,7 @@ import {
 import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-change.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
+import { LibraryFolderAlbumTable } from 'src/schema/tables/library-folder-album.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import {
@@ -504,6 +505,7 @@ export class ImmichDatabase {
     IntegrityReportTable,
     BackupRestoreReportTable,
     LibraryTable,
+    LibraryFolderAlbumTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
     RenderWorkerTable,
@@ -817,6 +819,7 @@ export interface DB extends QueueDatabase {
   cloud_backup_object_verification: CloudBackupObjectVerificationTable;
 
   library: LibraryTable;
+  library_folder_album: LibraryFolderAlbumTable;
 
   media_operation: MediaOperationTable;
   media_operation_checkpoint: MediaOperationCheckpointTable;

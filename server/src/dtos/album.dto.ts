@@ -238,6 +238,14 @@ const ContributorCountResponseSchema = z
   })
   .meta({ id: 'ContributorCountResponseDto' });
 
+/** FL-838: the library folder an album is kept in sync with. */
+const AlbumFolderSourceSchema = z
+  .object({
+    libraryId: z.uuidv4().describe('External library ID'),
+    folderPath: z.string().describe('The folder on the server the album shows'),
+  })
+  .meta({ id: 'AlbumFolderSourceDto' });
+
 export const AlbumResponseSchema = z
   .object({
     libraryScope: LibraryScopeSchema.optional(),
@@ -357,6 +365,10 @@ export const AlbumResponseSchema = z
     // FL-326
     origin: PartnerOriginSchema.optional().describe(
       'Present on your own album when partner sharing copied it from another library',
+    ),
+    // FL-838
+    folderAlbum: AlbumFolderSourceSchema.optional().describe(
+      "Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}.",
     ),
   })
   .meta({ id: 'AlbumResponseDto' });

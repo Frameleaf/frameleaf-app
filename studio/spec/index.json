@@ -892,6 +892,54 @@
         "statistical": 0,
         "refused": 1
       }
+    },
+    {
+      "id": "gpu-cdl",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-cdl.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 12,
+        "pixel": 11,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-lift-gamma-gain",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-lift-gamma-gain.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 11,
+        "pixel": 10,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
+    },
+    {
+      "id": "gpu-hue-curves",
+      "category": "color",
+      "temporal": false,
+      "spec": "effects/gpu-hue-curves.md",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 4,
+        "pixel": 3,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 1
+      }
     }
   ],
   "transitions": [

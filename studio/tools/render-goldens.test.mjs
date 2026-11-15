@@ -25,7 +25,7 @@ const transitions = await readJson('spec/goldens/transitions.json');
 const index = await readJson('spec/index.json');
 
 test('goldens cover every catalogue case with the documented inputs', () => {
-  assert.equal(catalogue.effects.length, 54);
+  assert.equal(catalogue.effects.length, 57);
   assert.equal(catalogue.transitions.length, 48);
   const e = validateGoldens('effects', effects, catalogue);
   const t = validateGoldens('transitions', transitions, catalogue);
@@ -126,7 +126,7 @@ test('spec pages contain no engine source text', async () => {
       pages++;
     }
   }
-  assert.equal(pages, 102);
+  assert.equal(pages, 105);
 });
 
 test('comparison rule: identity, NaN, wrong size and gross error fail; the golden passes', () => {

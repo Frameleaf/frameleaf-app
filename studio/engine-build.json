@@ -864,7 +864,12 @@
       "path": "patches/0185-editor-import-transitions.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "f833d036d5a8cdcb007f3390318b33e47fae16854920aadea876ef5f67ebd0db"
+    },
+    {
+      "path": "patches/0186-grading-effects.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "adf61867d53efd26b402ad2dc996d503ad59447fdae83a2e6a2f0f6524993e76"
     }
   ],
-  "sourceSha256": "bbcef0a3103b1ac8983a3ea53f8aee7d7995115891d8e40766135b64bd99b84c"
+  "sourceSha256": "3a3669ec17409883b5705c8044503ef6825972c8a75a90ef700a4829568695ca"
 }

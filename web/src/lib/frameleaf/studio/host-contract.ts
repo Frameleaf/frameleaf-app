@@ -385,6 +385,11 @@ export interface StudioHostContext {
    */
   handoffPlayhead?: { num: number; den: number } | null;
   /**
+   * Move the playhead to an exact instant (FL-1545: a note of an imported project). Applied once per
+   * `id`; the same request in a later update does nothing.
+   */
+  seekRequest?: { id: number; num: number; den: number } | null;
+  /**
    * The host holds edits the person has not decided about: a conflict (the head moved, for example
    * after a take over) or a lost lease. The engine keeps showing those edits and does not reload
    * from `project.graph` until the person chooses Reload, Take over or Save as copy.
