@@ -42,7 +42,7 @@ describe('personal favourites on shared items (FL-786)', () => {
       fileCreatedAt: TAKEN,
       localDateTime: TAKEN,
     });
-    await ctx.newExif({ assetId: photo.id });
+    await ctx.newExif({ assetId: photo.id, make: 'Canon' });
     const { album } = await ctx.newAlbum({ ownerId: owner.id }, [photo.id]);
     await ctx.newAlbumUser({ albumId: album.id, userId: member.id });
     const ownerAuth = factory.auth({ user: owner });
