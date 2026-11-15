@@ -161584,6 +161584,10 @@
       "SearchFilter": {
         "additionalProperties": false,
         "properties": {
+          "albumCount": {
+            "$ref": "#/components/schemas/NumberFilter",
+            "description": "Number of non-deleted albums the viewer owns or is a member of that contain the item"
+          },
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
@@ -161755,6 +161759,10 @@
       "SearchFilterBranch": {
         "additionalProperties": false,
         "properties": {
+          "albumCount": {
+            "$ref": "#/components/schemas/NumberFilter",
+            "description": "Number of non-deleted albums the viewer owns or is a member of that contain the item"
+          },
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },

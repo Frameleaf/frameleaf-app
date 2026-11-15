@@ -29,6 +29,7 @@ import {
   IdsFilter,
   LandmarkIdsFilter,
   MediaKindsFilter,
+  NumberFilter,
   SearchFilter,
   SearchFilterBranch,
   SearchOrder,
@@ -813,6 +814,28 @@ function albumIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
       ),
   });
 }
+/**
+ * FL-976: how many of the viewer's albums (owned or joined: the owner is an `album_user` row too) hold
+ * the asset, deleted albums excluded. Correlated on `album_asset."assetId"` (album_asset_assetId_idx);
+ * without a viewer (a shared link) no album counts.
+ */
+function albumCountPredicates(eb: AssetExpressionBuilder, filter: NumberFilter | undefined, viewerId?: string | null) {
+  if (filter === undefined) {
+    return [];
+  }
+  const count = viewerId
+    ? sql<number>`${eb
+        .selectFrom('album_asset')
+        .innerJoin('album', 'album.id', 'album_asset.albumId')
+        .innerJoin('album_user', (join) =>
+          join.onRef('album_user.albumId', '=', 'album.id').on('album_user.userId', '=', viewerId),
+        )
+        .whereRef('album_asset.assetId', '=', 'asset.id')
+        .where('album.deletedAt', 'is', null)
+        .select((eb) => eb.fn.countAll().as('count'))}::double precision`
+    : sql<number>`0::double precision`;
+  return comparisonPredicates(eb, count, filter);
+}
 function albumSubtreeIdsPredicates(
   eb: AssetExpressionBuilder,
   filter: IdsFilter | undefined,
@@ -1220,6 +1243,7 @@ function branchPredicates(
     ...comparisonPredicates(eb, 'asset.updatedAt', branch.updatedAt),
     ...comparisonPredicates(eb, 'asset.deletedAt', branch.trashedAt),
     ...albumIdsPredicates(eb, branch.albumIds),
+    ...albumCountPredicates(eb, branch.albumCount, privateViewerId),
     ...albumSubtreeIdsPredicates(eb, branch.albumSubtreeIds, privateViewerId),
     ...(branch.source ? [assetSourcePredicate(branch.source.contains, privateViewerId)] : []),
     ...(branch.color ? [assetColorPredicate(branch.color, paletteViewerId)] : []),

@@ -8369,6 +8369,16 @@ export type ClassificationContributionDto = {
     /** The tag this rule added, when it added one */
     tag: (ClassificationTagDto) | null;
 };
+export type NumberFilter = {
+    eq?: number;
+    gt?: number;
+    gte?: number;
+    "in"?: number[];
+    lt?: number;
+    lte?: number;
+    ne?: number;
+    notIn?: number[];
+};
 export type IdsFilter = {
     all?: string[];
     "any"?: string[];
@@ -8420,16 +8430,6 @@ export type DateFilter = {
     lte?: string;
     ne?: string;
 };
-export type NumberFilter = {
-    eq?: number;
-    gt?: number;
-    gte?: number;
-    "in"?: number[];
-    lt?: number;
-    lte?: number;
-    ne?: number;
-    notIn?: number[];
-};
 export type BoolFilter = {
     eq: boolean;
 };
@@ -8480,6 +8480,8 @@ export type EnumFilterAssetVisibility = {
     notIn?: AssetVisibility[];
 };
 export type SearchFilterBranch = {
+    /** Number of non-deleted albums the viewer owns or is a member of that contain the item */
+    albumCount?: NumberFilter;
     albumIds?: IdsFilter;
     albumSubtreeIds?: AlbumSubtreeFilter;
     artist?: StringPatternFilter;
@@ -8537,6 +8539,8 @@ export type SearchFilterBranch = {
     width?: NumberFilterNullable;
 };
 export type SearchFilter = {
+    /** Number of non-deleted albums the viewer owns or is a member of that contain the item */
+    albumCount?: NumberFilter;
     albumIds?: IdsFilter;
     albumSubtreeIds?: AlbumSubtreeFilter;
     artist?: StringPatternFilter;

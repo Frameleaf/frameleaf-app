@@ -23,6 +23,7 @@ import {
   transitionFramesFor,
 } from 'src/utils/studio-graph-build.js';
 import {
+  Cdl,
   Clip,
   InterchangeProject,
   Marker,
@@ -61,7 +62,8 @@ export type InterchangeLossCode =
   | 'font-missing'
   | 'effect-dropped'
   | 'generator-dropped'
-  | 'marker-range';
+  | 'marker-range'
+  | 'grade-approximated';
 
 /** One line of the import report and of the notes in the editor. */
 export type InterchangeLoss = {
@@ -215,6 +217,54 @@ const titleItem = (
   } satisfies StudioGraphItem;
 };
 
+const mean = (values: readonly number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+
+/**
+ * A grade as Studio effects (FL-1547): a LUT is exact; an ASC CDL comes over as the colour wheels'
+ * gain, offset, gamma and saturation, the nearest Studio has until it grades with CDL itself (FL-1559).
+ */
+const gradeEffects = (context: Context, clip: Clip, label: string, from: number) => {
+  const grade = clip.frameleaf?.grade;
+  const effects: unknown[] = [];
+  if (grade?.cdl) {
+    const cdl: Cdl = grade.cdl;
+    const power = mean(cdl.power);
+    effects.push({
+      id: context.nextId(),
+      effect: {
+        type: 'gpu-effect',
+        gpuEffectType: 'gpu-color-wheels',
+        params: {
+          gain: round3(clamp(mean(cdl.slope), 0, 16)),
+          offset: round3(clamp(mean(cdl.offset), -2, 2)),
+          gamma: round3(clamp(power > 0 ? 1 / power : 1, 0, 4)),
+          saturation: Math.round(clamp((cdl.saturation - 1) * 100, -100, 100)),
+        },
+      },
+      enabled: true,
+    });
+    lose(context, {
+      code: 'grade-approximated',
+      clip: label,
+      what: 'An ASC CDL grade',
+      became: 'The nearest colour wheels grade',
+      at: from,
+    });
+  }
+  if (grade?.lut) {
+    effects.push({
+      id: context.nextId(),
+      effect: {
+        type: 'gpu-effect',
+        gpuEffectType: 'gpu-lut',
+        params: { intensity: 1, lutName: grade.lut.name, lutSize: String(grade.lut.size), lutData: grade.lut.data },
+      },
+      enabled: true,
+    });
+  }
+  return effects;
+};
+
 /** A clip with media: video, sound or a still. */
 const mediaItem = (
   context: Context,
@@ -248,7 +298,14 @@ const mediaItem = (
       at: base.from,
     });
   }
-  const common = { ...base, label, mediaId, originId: context.nextId() };
+  const effects = track.kind === 'audio' ? [] : gradeEffects(context, clip, label, base.from);
+  const common = {
+    ...base,
+    label,
+    mediaId,
+    originId: context.nextId(),
+    ...(effects.length > 0 && { effects }),
+  };
   const width = media?.width || facts?.width || context.canvas.width;
   const height = media?.height || facts?.height || context.canvas.height;
 
@@ -334,6 +391,25 @@ const mediaItem = (
   };
 };
 
+/** A transition at a clip's edge with nothing beside it (a fade from black): reported, a cut in Studio for now. */
+const dropEdgeTransition = (
+  context: Context,
+  pending: { name: string } | null,
+  beside: StudioGraphItem | null,
+  at: number,
+) => {
+  if (!pending) {
+    return;
+  }
+  lose(context, {
+    code: 'transition-dropped',
+    clip: beside ? String(beside.label) : pending.name,
+    what: `${pending.name} at the edge of a clip with nothing beside it`,
+    became: 'A cut',
+    at,
+  });
+};
+
 /** The tracks of a timeline or a nest, Studio's way up: video top first, then sound. */
 const buildTracks = (context: Context, tracks: readonly Track[], offsetSeconds: number): Built => {
   const video = tracks.filter((track) => track.kind === 'video').toReversed();
@@ -367,6 +443,7 @@ const buildTracks = (context: Context, tracks: readonly Track[], offsetSeconds: 
       }
       const length = child.type === 'stack' && !child.sourceRange ? null : seconds(child.sourceRange!.duration);
       if (child.type === 'gap') {
+        dropEdgeTransition(context, pending, previous, secondsToFrames(position, context.fps));
         position += length ?? 0;
         previous = null;
         pending = null;
@@ -415,6 +492,8 @@ const buildTracks = (context: Context, tracks: readonly Track[], offsetSeconds: 
 
       if (placed && previous && pending && previous.from + previous.durationInFrames === placed.from) {
         transitions.push(...transitionBetween(context, track, previous, placed, pending));
+      } else {
+        dropEdgeTransition(context, pending, placed, from);
       }
       pending = null;
       previous = placed;
@@ -423,6 +502,7 @@ const buildTracks = (context: Context, tracks: readonly Track[], offsetSeconds: 
         lengthFrames = Math.max(lengthFrames, placed.from + placed.durationInFrames);
       }
     }
+    dropEdgeTransition(context, pending, previous, secondsToFrames(position, context.fps));
   }
 
   const allTracks = [...studioTracks, ...soundTracks];
