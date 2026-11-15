@@ -109094,6 +109094,22 @@
         ],
         "type": "string"
       },
+      "DuplicateKeepRule": {
+        "description": "FL-832: a rule for which duplicate copy to keep. raw and heic prefer that format; largest the biggest file; highestResolution the most pixels; oldest and newest the capture date; inAlbum a copy in one of your albums; hasEdits an edited copy; favorite a favourite; mostMetadata the most details",
+        "enum": [
+          "raw",
+          "heic",
+          "largest",
+          "highestResolution",
+          "oldest",
+          "newest",
+          "inAlbum",
+          "hasEdits",
+          "favorite",
+          "mostMetadata"
+        ],
+        "type": "string"
+      },
       "DuplicateQualityReason": {
         "description": "Evidence behind a duplicate keeper suggestion",
         "enum": [
@@ -109351,6 +109367,46 @@
           "assetId",
           "reasons"
         ],
+        "type": "object"
+      },
+      "DuplicatesResponse": {
+        "properties": {
+          "keepRules": {
+            "description": "FL-832: rules for which duplicate copy is suggested as the keeper, most important first (values of DuplicateKeepRule). Empty uses the default order",
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          }
+        },
+        "required": [
+          "keepRules"
+        ],
+        "type": "object"
+      },
+      "DuplicatesUpdate": {
+        "properties": {
+          "keepRules": {
+            "description": "Rules for which duplicate copy is suggested as the keeper, most important first; a tie goes to the next rule. Empty uses the default order (raw, heic, largest, mostMetadata). Repeats are dropped",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateKeepRule"
+            },
+            "maxItems": 10,
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "EagleFolderDto": {
@@ -185627,6 +185683,9 @@
           "download": {
             "$ref": "#/components/schemas/DownloadResponse"
           },
+          "duplicates": {
+            "$ref": "#/components/schemas/DuplicatesResponse"
+          },
           "emailNotifications": {
             "$ref": "#/components/schemas/EmailNotificationsResponse"
           },
@@ -185785,6 +185844,9 @@
           },
           "download": {
             "$ref": "#/components/schemas/DownloadUpdate"
+          },
+          "duplicates": {
+            "$ref": "#/components/schemas/DuplicatesUpdate"
           },
           "emailNotifications": {
             "$ref": "#/components/schemas/EmailNotificationsUpdate"

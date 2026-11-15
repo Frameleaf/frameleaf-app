@@ -31,10 +31,11 @@ import { lockDuplicateOwner } from 'src/repositories/duplicate.repository.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { duplicateDisposalReasons, reviewKindOf } from 'src/utils/duplicate-review.js';
-import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
+import { SuggestDuplicateOptions, suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { isDuplicateDetectionEnabled } from 'src/utils/misc.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import { compareVideoFingerprints, middleFrameHashes } from 'src/utils/video-fingerprint.js';
 
 type ResolveRequest = {
@@ -106,11 +107,12 @@ export class DuplicateService extends BaseService {
     } catch {
       // Recommendations stay visible, but missing evidence never permits unattended disposal.
     }
+    const keepOptions = await this.getKeepOptions(auth, duplicates, history);
     return Promise.all(
       duplicates.map(async ({ duplicateId, assets }) => {
         const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
         const suggestedKeepAssetIds =
-          reviewKindOf(mappedAssets) === 'copies' ? suggestDuplicateKeepAssetIds(mappedAssets) : [];
+          reviewKindOf(mappedAssets) === 'copies' ? suggestDuplicateKeepAssetIds(mappedAssets, keepOptions) : [];
         let motionId: string | undefined;
         if (suggestedKeepAssetIds.length === 1 && assets.some((asset) => asset.livePhotoVideoId)) {
           try {
@@ -137,6 +139,31 @@ export class DuplicateService extends BaseService {
         };
       }),
     );
+  }
+
+  /**
+   * FL-832: the owner's own rules for which copy is suggested as the keeper, with what those rules need
+   * to know about the copies. Album membership is read in one query for every group, and only when a
+   * rule asks for it; edits come from the develop history already read for the review.
+   */
+  private async getKeepOptions(
+    auth: AuthDto,
+    duplicates: Array<{ assets: MapAsset[] }>,
+    history: Set<string> | undefined,
+  ): Promise<SuggestDuplicateOptions> {
+    if (duplicates.length === 0) {
+      return {};
+    }
+    const rules = getPreferences((await this.userRepository.getMetadata(auth.user.id)) ?? []).duplicates.keepRules;
+    const options: SuggestDuplicateOptions = { rules, editedIds: history };
+    if (rules.includes('inAlbum')) {
+      const albums = await this.albumRepository.getByAssetIds(
+        auth.user.id,
+        duplicates.flatMap(({ assets }) => assets.map(({ id }) => id)),
+      );
+      options.inAlbumIds = new Set([...albums].filter(([, albumIds]) => albumIds.length > 0).map(([id]) => id));
+    }
+    return options;
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {

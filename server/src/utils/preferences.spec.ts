@@ -601,6 +601,27 @@ describe('Library View menu choices (FL-1398)', () => {
   });
 });
 
+describe('Duplicate keep rules (FL-832)', () => {
+  it("starts with no rules of the person's own, and stores only what they set", () => {
+    expect(getPreferences([]).duplicates).toEqual({ keepRules: [] });
+    expect(mapPreferences(getPreferences([])).duplicates).toEqual({ keepRules: [] });
+
+    const changed = mergePreferences(getPreferences([]), { duplicates: { keepRules: ['favorite', 'raw'] } }, 'user');
+    expect(getPreferencesPartial(changed)).toEqual({ duplicates: { keepRules: ['favorite', 'raw'] } });
+
+    const reset = mergePreferences(changed, { duplicates: { keepRules: [] } }, 'user');
+    expect(getPreferencesPartial(reset)).toEqual({});
+  });
+
+  it('takes only known rules and drops repeats', () => {
+    const schema = UserPreferencesUpdateDto.schema;
+    expect(schema.parse({ duplicates: { keepRules: ['favorite', 'raw', 'favorite'] } }).duplicates).toEqual({
+      keepRules: ['favorite', 'raw'],
+    });
+    expect(schema.safeParse({ duplicates: { keepRules: ['biggest'] } }).success).toBe(false);
+  });
+});
+
 describe('Download format (FL-826)', () => {
   it('starts as the original, stores only a change, and takes only the three formats', () => {
     expect(getPreferences([]).download.defaultFormat).toBe('original');

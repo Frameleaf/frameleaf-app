@@ -1257,6 +1257,21 @@
   "preferences.download.includeSidecar": {
     "type": "boolean"
   },
+  "preferences.duplicates.keepRules": {
+    "type": "array",
+    "itemEnum": [
+      "raw",
+      "heic",
+      "largest",
+      "highestResolution",
+      "oldest",
+      "newest",
+      "inAlbum",
+      "hasEdits",
+      "favorite",
+      "mostMetadata"
+    ]
+  },
   "preferences.emailNotifications.albumInvite": {
     "type": "boolean"
   },

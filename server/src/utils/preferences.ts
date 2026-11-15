@@ -251,6 +251,10 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       relockMinutes: LOCKED_RELOCK_MINUTES_DEFAULT,
     },
     savedSearches: [],
+    // FL-832: no rules of the person's own; duplicates suggest the keeper in Frameleaf's order
+    duplicates: {
+      keepRules: [],
+    },
   };
 };
 
