@@ -1089,6 +1089,25 @@ const AdminConfigSchemaWithVisibility = z
             .describe('Minimum number of faces required for recognition')
             .meta({ visibility: User }),
         }).meta({ id: 'AdminConfigFacialRecognitionDto' }),
+        // FL-863: eyes open and eye sharpness for each face, for culling. Thresholds decide which faces count as
+        // closed or soft eyes in the culling summary; the scores themselves are stored as measured.
+        eyeScores: z
+          .object({
+            enabled: configBool.describe('Whether eyes open and eye sharpness are measured for each face'),
+            closedBelow: z
+              .number()
+              .min(0)
+              .max(1)
+              .describe('Eyes-open score below which a face counts as having closed eyes')
+              .meta({ format: 'double' }),
+            softBelow: z
+              .number()
+              .min(0)
+              .max(1)
+              .describe('Eye sharpness below which a face counts as having soft eyes')
+              .meta({ format: 'double' }),
+          })
+          .meta({ id: 'AdminConfigEyeScoresDto' }),
         ocr: AdminConfigMachineLearningModelSchema.extend({
           maxResolution: z.int().min(1).describe('Maximum resolution for OCR processing'),
           minDetectionScore: z
@@ -1866,6 +1885,11 @@ export const defaults = Object.freeze<SystemConfig>({
       minScore: 0.7,
       maxDistance: 0.5,
       minFaces: 3,
+    },
+    eyeScores: {
+      enabled: true,
+      closedBelow: 0.35,
+      softBelow: 0.3,
     },
     ocr: {
       enabled: true,

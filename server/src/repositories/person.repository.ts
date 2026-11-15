@@ -1011,13 +1011,35 @@ export class PersonRepository {
    * Returns the people whose main photo is cut from this face.
    */
   async moveDetectedFace(id: string, box: FaceBoxPixels & { isVisible: boolean }): Promise<PersonId[]> {
-    await this.db.updateTable('asset_face').set(box).where('asset_face.id', '=', id).execute();
+    // FL-863: eye scores belong to the old box; the face is scored again
+    await this.db
+      .updateTable('asset_face')
+      .set({ ...box, eyesOpen: null, eyeSharpness: null, eyeScoreVersion: null })
+      .where('asset_face.id', '=', id)
+      .execute();
     return this.db
       .selectFrom('person')
       .select(['person.ownerId', 'person.personGroupId'])
       .where('person.faceAssetId', '=', id)
       .execute();
   }
+  /** FL-863: one asset's faces' eye scores. ponytail: one update a face; a photo has a handful of faces. */
+  @GenerateSql({ params: [[{ id: DummyValue.UUID, eyesOpen: 0.9, eyeSharpness: 0.8 }], 1] })
+  async updateEyeScores(
+    scores: Array<{ id: string; eyesOpen: number | null; eyeSharpness: number | null }>,
+    version: number,
+  ): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      for (const { id, eyesOpen, eyeSharpness } of scores) {
+        await tx
+          .updateTable('asset_face')
+          .set({ eyesOpen, eyeSharpness, eyeScoreVersion: version })
+          .where('asset_face.id', '=', id)
+          .execute();
+      }
+    });
+  }
+
   @GenerateSql({ params: [[], [], [{ faceId: DummyValue.UUID, embedding: DummyValue.VECTOR }]] })
   async refreshFaces(
     facesToAdd: (Insertable<AssetFaceTable> & {
@@ -2182,8 +2204,8 @@ export class PersonRepository {
   }
   /**
    * FL-326: copies faces onto a partner copy with no ML re-run: the exact boxes, detection source and
-   * visibility, the recognition embedding, and the person each maps to in the recipient's library. A box
-   * the target already has is left alone, so copying twice is harmless.
+   * visibility, the owner's eye scores (FL-863), the recognition embedding, and the person each maps to in
+   * the recipient's library. A box the target already has is left alone, so copying twice is harmless.
    */
   async copyFacesToAsset(
     targetAssetId: string,
@@ -2208,10 +2230,11 @@ export class PersonRepository {
       }>`
         WITH map ("sourceFaceId", "faceId", "personGroupId") AS (VALUES ${values})
         INSERT INTO asset_face (id, "assetId", "personGroupId", "imageWidth", "imageHeight", "boundingBoxX1",
-          "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType", "isVisible")
+          "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType", "isVisible", "eyesOpen", "eyeSharpness",
+          "eyeScoreVersion")
         SELECT map."faceId", ${targetAssetId}::uuid, map."personGroupId", face."imageWidth", face."imageHeight",
           face."boundingBoxX1", face."boundingBoxY1", face."boundingBoxX2", face."boundingBoxY2", face."sourceType",
-          face."isVisible"
+          face."isVisible", face."eyesOpen", face."eyeSharpness", face."eyeScoreVersion"
         FROM map JOIN asset_face face ON face.id = map."sourceFaceId"
         WHERE NOT EXISTS (
           SELECT 1 FROM asset_face existing

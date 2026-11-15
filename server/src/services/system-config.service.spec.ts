@@ -192,6 +192,11 @@ const updatedConfig = Object.freeze<SystemConfig>({
       maxDistance: 0.5,
       minFaces: 3,
     },
+    eyeScores: {
+      enabled: true,
+      closedBelow: 0.35,
+      softBelow: 0.3,
+    },
     ocr: {
       enabled: true,
       modelName: 'PP-OCRv5_mobile',

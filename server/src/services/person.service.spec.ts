@@ -16,7 +16,8 @@ import {
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
-import { PersonService } from 'src/services/person.service.js';
+import { EyeScoresUnavailableError } from 'src/repositories/machine-learning.repository.js';
+import { EYE_SCORE_VERSION, PersonService } from 'src/services/person.service.js';
 import { getFaceSourceRevision } from 'src/utils/face-source.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
@@ -2229,6 +2230,98 @@ describe(PersonService.name, () => {
       expect(mocks.person.deleteEmptyGroups).not.toHaveBeenCalled();
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
       expect(mocks.person.vacuum).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleQueueFaceEyeScores', () => {
+    it("queues a Clients shoot's photos before the rest of the library", async () => {
+      mocks.assetJob.selectionForFaceEyeScores.mockImplementation(({ inShoot }) => ({ inShoot }) as never);
+
+      await expect(sut.handleQueueFaceEyeScores({})).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.job.queueSelection.mock.calls).toEqual([
+        [JobName.FaceEyeScore, { inShoot: true }],
+        [JobName.FaceEyeScore, { inShoot: false }],
+      ]);
+      expect(mocks.assetJob.selectionForFaceEyeScores).toHaveBeenCalledWith({
+        force: undefined,
+        inShoot: true,
+        version: EYE_SCORE_VERSION,
+      });
+    });
+
+    it('skips while eye scores are off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { eyeScores: { enabled: false } } });
+
+      await expect(sut.handleQueueFaceEyeScores({})).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleFaceEyeScore', () => {
+    const withFaces = () =>
+      AssetFactory.from()
+        .file({ type: AssetFileType.Preview })
+        .exif()
+        .face({
+          imageWidth: 400,
+          imageHeight: 500,
+          boundingBoxX1: 100,
+          boundingBoxY1: 100,
+          boundingBoxX2: 200,
+          boundingBoxY2: 250,
+        })
+        .face({
+          imageWidth: 400,
+          imageHeight: 500,
+          boundingBoxX1: 10,
+          boundingBoxY1: 20,
+          boundingBoxX2: 30,
+          boundingBoxY2: 40,
+        })
+        .build();
+
+    it('scores each face from its stored box, scaled to the preview', async () => {
+      const asset = withFaces();
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 800, height: 1000, isTransparent: false });
+      mocks.machineLearning.faceEyeScoresLocal.mockResolvedValue([
+        { eyesOpen: 0.9, eyeSharpness: 0.7 },
+        { eyesOpen: null, eyeSharpness: null },
+      ]);
+
+      await expect(sut.handleFaceEyeScore({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.machineLearning.faceEyeScoresLocal).toHaveBeenCalledWith(asset.files[0].path, [
+        [200, 200, 400, 500],
+        [20, 40, 60, 80],
+      ]);
+      expect(mocks.person.updateEyeScores).toHaveBeenCalledWith(
+        [
+          { id: asset.faces[0].id, eyesOpen: 0.9, eyeSharpness: 0.7 },
+          { id: asset.faces[1].id, eyesOpen: null, eyeSharpness: null },
+        ],
+        EYE_SCORE_VERSION,
+      );
+    });
+
+    it('leaves faces that are already scored', async () => {
+      const asset = withFaces();
+      for (const face of asset.faces) Object.assign(face, { eyeScoreVersion: EYE_SCORE_VERSION });
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+
+      await expect(sut.handleFaceEyeScore({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.machineLearning.faceEyeScoresLocal).not.toHaveBeenCalled();
+    });
+
+    it('keeps the faces unscored when the worker cannot score eyes yet', async () => {
+      const asset = withFaces();
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 400, height: 500, isTransparent: false });
+      mocks.machineLearning.faceEyeScoresLocal.mockRejectedValue(new EyeScoresUnavailableError('404'));
+
+      await expect(sut.handleFaceEyeScore({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.person.updateEyeScores).not.toHaveBeenCalled();
     });
   });
 

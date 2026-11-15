@@ -138,6 +138,9 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.FacialRecognitionQueueAll,
   JobName.PersonGenerateThumbnail,
   JobName.AssetDetectFacesQueueAll,
+  // FL-863: a rerun writes the same scores over the same faces
+  JobName.FaceEyeScore,
+  JobName.FaceEyeScoreQueueAll,
   JobName.AssetDetectDuplicates,
   JobName.AssetGenerateVideoDuplicateFrames,
   JobName.AssetDetectDuplicatesQueueAll,

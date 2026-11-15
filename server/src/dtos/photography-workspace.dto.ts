@@ -89,6 +89,16 @@ export class PhotographyPhotosDto extends createZodDto(
         eligible: z.boolean(),
         exclusion: z.string().nullable(),
         processing: z.enum(['ready', 'pending', 'failed']),
+        // FL-863: optional, so older native clients decode the list unchanged; absent for a photo with no face
+        eyes: z
+          .object({
+            faceCount: z.int().nonnegative().describe('Faces found in the photo'),
+            closedCount: z.int().nonnegative().describe('Faces whose eyes are closed'),
+            softCount: z.int().nonnegative().describe('Faces whose eyes are soft (out of focus)'),
+            unscoredCount: z.int().nonnegative().describe("Faces whose eyes aren't checked yet"),
+          })
+          .optional()
+          .meta({ id: 'PhotographyPhotoEyesDto' }),
       }),
     ),
   }),

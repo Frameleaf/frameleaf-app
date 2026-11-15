@@ -338,6 +338,10 @@ export type AssetFace = {
   isVisible: boolean;
   /** FL-57 correction stamp; optional because not every face query selects it. */
   correctedAt?: Date | null;
+  /** FL-863 eye scores; optional because not every face query selects them. */
+  eyesOpen?: number | null;
+  eyeSharpness?: number | null;
+  eyeScoreVersion?: number | null;
 };
 
 export type Plugin = Selectable<PluginTable>;
