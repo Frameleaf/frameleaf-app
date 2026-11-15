@@ -856,7 +856,7 @@ export class AlbumService extends BaseService {
    * (or an AI agent steered by text in the library) must never be able to hide photos, so it cannot add
    * to a locked album at all (FL-1422). Sessions, API keys and background work are unchanged.
    */
-  private requireAppMayAddTo(auth: AuthDto, album: { isLocked: boolean }): void {
+  requireAppMayAddTo(auth: AuthDto, album: { isLocked: boolean }): void {
     if (auth.oauthApp && album.isLocked) {
       throw new ForbiddenException('Connected apps can’t add to a Locked album');
     }
@@ -867,7 +867,7 @@ export class AlbumService extends BaseService {
    * own follow-up (covers, notifications, other albums) still runs, from what is actually locked, and the
    * hourly sweep locks what this missed.
    */
-  private async lockAddedItems(albumId: string, assetIds: string[]): Promise<void> {
+  async lockAddedItems(albumId: string, assetIds: string[]): Promise<void> {
     try {
       await this.lockAlbumItems({ albumId, assetIds });
     } catch (error) {
@@ -1292,7 +1292,7 @@ export class AlbumService extends BaseService {
    * match is rejected (and what the rule added besides the album is taken back), and a built-in smart
    * album excludes the item.
    */
-  private async recordSmartAlbumRemovals(albumId: string, assetIds: string[], actorId: string, isOwner: boolean) {
+  async recordSmartAlbumRemovals(albumId: string, assetIds: string[], actorId: string, isOwner: boolean) {
     if (assetIds.length === 0) {
       return;
     }
@@ -1408,7 +1408,7 @@ export class AlbumService extends BaseService {
    * concerned, so a downgraded or removed member loses controls and open dialogs without a reload,
    * and everyone else still in the album, so their member lists follow.
    */
-  private sendAccessChange(
+  sendAccessChange(
     album: { id: string; albumUsers: { user: { id: string } }[] },
     userId: string,
     role: AlbumUserRole | null,
@@ -1490,7 +1490,7 @@ export class AlbumService extends BaseService {
    * its owner, nor does an item matching its owner's Locked rules (FL-446), so an addition of such items
    * only must not tell members that anything changed.
    */
-  private async shownToMembers(assetIds: string[]): Promise<string[]> {
+  async shownToMembers(assetIds: string[]): Promise<string[]> {
     const [locked, ruleHidden] = await Promise.all([
       this.assetRepository.getLockedAssetIds(assetIds),
       this.assetRepository.getHiddenContentAssetIds(assetIds, everyOwnersRules),
@@ -1502,7 +1502,7 @@ export class AlbumService extends BaseService {
    * The album refresh and "album updated" notification for an addition. When members can see nothing
    * of it, only the actor's own sessions refresh and nobody is notified.
    */
-  private albumUpdateEvent(
+  albumUpdateEvent(
     album: { id: string; albumUsers: Array<{ user: { id: string } }> },
     auth: AuthDto,
     visibleToMembers: boolean,
@@ -1514,7 +1514,7 @@ export class AlbumService extends BaseService {
     return { id: album.id, userIds, recipientIds: userIds.filter((userId) => userId !== auth.user.id) };
   }
 
-  private async recordSpaceAssets(
+  async recordSpaceAssets(
     album: MapAlbumDto,
     auth: AuthDto,
     type: SharedSpaceEventType.AssetsAdded | SharedSpaceEventType.AssetsRemoved,
@@ -1570,7 +1570,7 @@ export class AlbumService extends BaseService {
    * bring other Locked media into an album (see `Permission.AssetShare`), so only then does the choice
    * still need the database; every other session keeps the first asset, as before.
    */
-  private async firstCoverCandidate(auth: AuthDto, assetIds: string[]): Promise<string | undefined> {
+  async firstCoverCandidate(auth: AuthDto, assetIds: string[]): Promise<string | undefined> {
     if (assetIds.length === 0) {
       return undefined;
     }
@@ -1617,7 +1617,7 @@ export class AlbumService extends BaseService {
     );
   }
 
-  private async findOrFail(id: string, auth: AuthDto, options: AlbumInfoOptions) {
+  async findOrFail(id: string, auth: AuthDto, options: AlbumInfoOptions) {
     // The caller's explicit options win, so a read can leave the viewer's Locked media out on purpose.
     const album = await this.albumRepository.getById(id, { ...this.nsfwOptions(auth), ...options }, auth.user.id);
     if (!album) {
