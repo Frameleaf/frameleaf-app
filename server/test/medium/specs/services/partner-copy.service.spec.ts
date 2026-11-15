@@ -1822,4 +1822,49 @@ describe(PartnerCopyService.name, () => {
       }
     });
   });
+
+  describe('copyToLibrary (FL-837)', () => {
+    it("adds an item seen through a shared album as the caller's own row on the same stored file, once", async () => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id, 4321);
+      const { person } = await ctx.newPerson({ ownerId: alice.id, name: 'Grandma' });
+      await ctx.newAssetFace({ assetId: source.id, personGroupId: person.personGroupId });
+      const original = await ctx.get(PhysicalFileRepository).ensureOriginalPhysicalFile(source.id);
+      const files = async () => (await db.selectFrom('physical_file').select('id').execute()).length;
+      const before = await files();
+
+      const added = await sut.copyToLibrary(source.id, bob.id);
+      expect(added).toMatchObject({ status: 'added' });
+      const copyId = (added as { copyId: string }).copyId;
+      const copy = await db.selectFrom('asset').selectAll().where('id', '=', copyId).executeTakeFirstOrThrow();
+      expect(copy).toMatchObject({ ownerId: bob.id, checksum: source.checksum, physicalOriginalFileId: original!.id });
+      expect(await files()).toBe(before);
+      // not a partner copy: nothing follows the source
+      expect(await origins.getOrigin('asset', copyId)).toBeUndefined();
+      // its faces belong to nobody yet: no name crosses over
+      const faces = await db.selectFrom('asset_face').select('personGroupId').where('assetId', '=', copyId).execute();
+      expect(faces).toEqual([{ personGroupId: null }]);
+
+      await expect(sut.copyToLibrary(source.id, bob.id)).resolves.toEqual({ status: 'exists' });
+
+      // the owner deleting the original leaves the caller's copy
+      await db.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', source.id).execute();
+      await expect(
+        db.selectFrom('asset').select('deletedAt').where('id', '=', copyId).executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ deletedAt: null });
+    });
+
+    it('never adds a Locked item', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id);
+      await ctx.get(AssetRepository).lock([source.id], AssetLockReason.Marked, alice.id);
+
+      await expect(sut.copyToLibrary(source.id, bob.id)).resolves.toEqual({ status: 'refused' });
+      expect(await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).toEqual([]);
+    });
+  });
 });
