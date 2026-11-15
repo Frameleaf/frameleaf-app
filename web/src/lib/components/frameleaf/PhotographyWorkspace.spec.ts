@@ -251,4 +251,49 @@ describe('PhotographyWorkspace', () => {
     expect(loadPhotos).toHaveBeenLastCalledWith('shoot', 'next');
     expect(screen.getAllByRole('button', { name: 'Show two.CR3' })).toHaveLength(1);
   });
+
+  it('marks closed and soft eyes, filters to closed eyes and sorts by eye quality (FL-891)', async () => {
+    const eyes = (closed: number, soft: number, quality: number | null, unscored = 0) => ({
+      faceCount: closed + soft + unscored + 1,
+      closedCount: closed,
+      softCount: soft,
+      unscoredCount: unscored,
+      quality,
+      faces: [
+        ...Array.from({ length: closed }, () => ({ closed: true, soft: false, checked: true })),
+        ...Array.from({ length: soft }, () => ({ closed: false, soft: true, checked: true })),
+        { closed: false, soft: false, checked: true },
+        ...Array.from({ length: unscored }, () => ({ closed: false, soft: false, checked: false })),
+      ],
+    });
+    vi.mocked(loadPhotos).mockResolvedValue({
+      photos: [
+        { ...photo('one'), eyes: eyes(0, 0, 0.9) },
+        { ...photo('two'), eyes: eyes(1, 0, 0.2) },
+        { ...photo('three'), eyes: eyes(0, 1, 0.5, 1) },
+        photo('four'),
+      ],
+      nextCursor: null,
+    });
+    await open();
+    const grid = () =>
+      screen.getAllByRole('button', { name: /^Show / }).map((button) => button.getAttribute('aria-label'));
+
+    // a badge only where a face has closed or soft eyes, with each face's result
+    expect(screen.getByRole('button', { name: 'Closed eyes. Eye check for two.CR3' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Soft focus. Eye check for three.CR3' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Eye check for one.CR3/ })).toBeNull();
+    expect(screen.getByText('Face 1 · Closed eyes')).toBeInTheDocument();
+    expect(screen.getByText('Face 3 · Not checked yet')).toBeInTheDocument();
+
+    await fireEvent.change(screen.getByRole('combobox', { name: 'Sort shoot photos' }), { target: { value: 'worst' } });
+    // photos not checked yet stay after the checked ones
+    expect(grid()).toEqual(['Show two.CR3', 'Show three.CR3', 'Show one.CR3', 'Show four.CR3']);
+    expect(screen.getByText('Checking eyes in 1 photo…')).toHaveAttribute('role', 'status');
+    await fireEvent.change(screen.getByRole('combobox', { name: 'Sort shoot photos' }), { target: { value: 'best' } });
+    expect(grid()).toEqual(['Show one.CR3', 'Show three.CR3', 'Show two.CR3', 'Show four.CR3']);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Closed eyes' }));
+    expect(grid()).toEqual(['Show two.CR3']);
+  });
 });
