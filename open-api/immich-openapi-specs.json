@@ -108724,6 +108724,10 @@
             "nullable": true,
             "type": "string"
           },
+          "timecode": {
+            "description": "The start timecode the video records: HH:MM:SS:FF, or HH:MM:SS;FF when it is drop-frame. Absent when it records none",
+            "type": "string"
+          },
           "title": {
             "description": "Image title",
             "nullable": true,
@@ -169552,6 +169556,11 @@
           "source": {
             "$ref": "#/components/schemas/StudioMediaFactsSource"
           },
+          "timecode": {
+            "description": "The source's start timecode, the Studio media record's timecode (graph protocol 3.5 and 3.6): HH:MM:SS:FF, or HH:MM:SS;FF when it is drop-frame; null for a still or a video that records none",
+            "nullable": true,
+            "type": "string"
+          },
           "type": {
             "$ref": "#/components/schemas/AssetTypeEnum"
           },
@@ -169584,6 +169593,7 @@
           "height",
           "mimeType",
           "source",
+          "timecode",
           "type",
           "videoCodec",
           "width"

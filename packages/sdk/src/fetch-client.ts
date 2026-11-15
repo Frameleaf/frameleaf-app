@@ -5466,6 +5466,8 @@ export type ExifResponseDto = {
     state?: string | null;
     /** Time zone */
     timeZone?: string | null;
+    /** The start timecode the video records: HH:MM:SS:FF, or HH:MM:SS;FF when it is drop-frame. Absent when it records none */
+    timecode?: string;
     /** Image title */
     title?: string | null;
 };
@@ -19291,6 +19293,8 @@ export type StudioMediaFactsDto = {
     /** The original file type */
     mimeType: string;
     source: StudioMediaFactsSource;
+    /** The source's start timecode, the Studio media record's timecode (graph protocol 3.5 and 3.6): HH:MM:SS:FF, or HH:MM:SS;FF when it is drop-frame; null for a still or a video that records none */
+    timecode: string | null;
     "type": AssetTypeEnum;
     videoCodec: string | null;
     /** Display width in pixels, after rotation; null when unknown */
