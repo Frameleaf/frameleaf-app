@@ -181,7 +181,12 @@
     void load();
     unsubscribe = websocketEvents.on('on_photography_booking', (id) => void arrived(id));
   });
-  onDestroy(() => unsubscribe?.());
+  onDestroy(() => {
+    unsubscribe?.();
+    // Reads still on their way apply nothing and announce nothing once the page is gone.
+    generation++;
+    announce.clear();
+  });
 </script>
 
 <div class="bookings">

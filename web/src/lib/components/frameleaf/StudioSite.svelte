@@ -452,16 +452,16 @@
       </nav>
     </header>
     {#each site.sections as section (section.id)}
-      {#if !section.on}
-
-      {:else if section.id === 'cover'}{@render coverSection()}
-      {:else if section.id === 'portfolio'}{@render portfolio()}
-      {:else if section.id === 'about'}{@render about()}
-      {:else if section.id === 'services'}{@render services()}
-      {:else if section.id === 'testimonials'}{@render testimonials()}
-      {:else if section.id === 'faq'}{@render faq()}
-      {:else if section.id === 'inquiry'}{@render inquirySection()}
-      {:else if section.id === 'clients'}{@render clients()}
+      {#if section.on}
+        {#if section.id === 'cover'}{@render coverSection()}
+        {:else if section.id === 'portfolio'}{@render portfolio()}
+        {:else if section.id === 'about'}{@render about()}
+        {:else if section.id === 'services'}{@render services()}
+        {:else if section.id === 'testimonials'}{@render testimonials()}
+        {:else if section.id === 'faq'}{@render faq()}
+        {:else if section.id === 'inquiry'}{@render inquirySection()}
+        {:else if section.id === 'clients'}{@render clients()}
+        {/if}
       {/if}
       {#if section.id === site.bookingAfter && showBooking}{@render bookingSection()}{/if}
     {/each}

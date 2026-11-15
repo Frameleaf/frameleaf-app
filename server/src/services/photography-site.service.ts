@@ -34,6 +34,7 @@ import { FileDownloadResponse } from 'src/utils/file.js';
 import { OpenGraphTags, getExternalDomain } from 'src/utils/misc.js';
 import {
   PhotographySite,
+  PhotographySiteFields,
   SITE_PHOTO_WIDTHS,
   SITE_SLUG,
   STUDIO_APP_PAGES,
@@ -114,7 +115,7 @@ export class PhotographySiteService {
     try {
       saved = await this.repository.mutateStudio(ownerId, expectedRevision, (record) => {
         const removed = Object.entries(record.media ?? {}).filter(([key]) => !media[key]);
-        record.site = site;
+        record.site = keepBookingSettings(site, input, record.site);
         record.media = media;
         return removed.map(([, item]) => item);
       });
@@ -637,6 +638,23 @@ export class PhotographySiteService {
           : undefined,
     };
   }
+}
+
+/**
+ * FL-1606: a save from a client that doesn't know the Booking fields keeps what is stored, instead of the
+ * schema's defaults turning a hidden Booking section back on or moving it.
+ */
+function keepBookingSettings(site: PhotographySite, input: unknown, stored: unknown): PhotographySite {
+  const sent = ((input as { site?: object } | undefined)?.site ?? {}) as Partial<PhotographySite>;
+  const kept = (stored ?? {}) as Partial<PhotographySite>;
+  return {
+    ...site,
+    booking: 'booking' in sent || typeof kept.booking !== 'boolean' ? site.booking : kept.booking,
+    bookingAfter:
+      'bookingAfter' in sent || !PhotographySiteFields.shape.bookingAfter.safeParse(kept.bookingAfter).success
+        ? site.bookingAfter
+        : kept.bookingAfter!,
+  };
 }
 
 async function atomicFile(file: string, bytes: Buffer) {

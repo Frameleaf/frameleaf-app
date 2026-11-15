@@ -66,6 +66,28 @@ describe(PhotographySiteService.name, () => {
       expect(repository.mutateStudio).toHaveBeenCalledOnce();
       expect(saved.url).toBe('/studio/projects');
     });
+
+    it('keeps the stored Booking settings when a save leaves them out (FL-1606)', async () => {
+      const { sut, repository, stored } = setup('north-studio');
+      await sut.saveSite({} as never, {
+        expectedRevision: REVISION,
+        site: { ...stored, booking: false, bookingAfter: 'about' },
+      });
+      // An older client knows nothing of Booking: the schema's defaults must not undo the studio's choice.
+      const { booking: _booking, bookingAfter: _after, ...older } = stored;
+      await sut.saveSite({} as never, { expectedRevision: REVISION, site: { ...older, about: 'Portraits' } as never });
+      const after = (await repository.studioRecord(OWNER)).record as { site: typeof stored };
+      expect(after.site).toMatchObject({ about: 'Portraits', booking: false, bookingAfter: 'about' });
+      // A client that sends them changes them.
+      await sut.saveSite({} as never, {
+        expectedRevision: REVISION,
+        site: { ...stored, booking: true, bookingAfter: 'services' },
+      });
+      expect(((await repository.studioRecord(OWNER)).record as { site: typeof stored }).site).toMatchObject({
+        booking: true,
+        bookingAfter: 'services',
+      });
+    });
   });
 
   describe('own domain (FL-705)', () => {
