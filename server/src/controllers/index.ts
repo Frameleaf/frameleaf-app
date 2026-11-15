@@ -1,5 +1,6 @@
 import { AccountEventAdminController, AccountEventController } from 'src/controllers/account-event.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
+import { AlbumActionsController } from 'src/controllers/album-actions.controller.js';
 import { AlbumCleanupController } from 'src/controllers/album-cleanup.controller.js';
 import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
 import { AlbumMergeController } from 'src/controllers/album-merge.controller.js';
@@ -149,6 +150,7 @@ import { StudioBundleController } from 'src/controllers/studio-bundle.controller
 import { StudioCaptionTranslationController } from 'src/controllers/studio-caption-translation.controller.js';
 import { StudioCatalogController } from 'src/controllers/studio-catalog.controller.js';
 import { StudioCutoutController } from 'src/controllers/studio-cutout.controller.js';
+import { StudioEditorImportController } from 'src/controllers/studio-editor-import.controller.js';
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
 import { StudioMovieController } from 'src/controllers/studio-movie.controller.js';
@@ -204,6 +206,7 @@ export const controllers = [
   ConnectMediaController,
   OAuthAppAdminController,
   OAuthAppWellKnownController,
+  AlbumActionsController,
   AlbumItemsController,
   AssetSourceController,
   BookmarkController,
@@ -330,6 +333,7 @@ export const controllers = [
   StudioMediaController,
   StudioCaptionTranslationController,
   StudioMovieController,
+  StudioEditorImportController,
   StudioVoiceCleanupController,
   StudioBundleController,
   StudioExportController,

@@ -330,6 +330,8 @@ const helpDefaults = { askEnabled: true };
 
 /** iCloud Photos is built in and on by default; an administrator can switch it off. */
 const icloudDefaults = { enabled: true };
+// FL-922: new shared links never expire unless an administrator or the person sharing picks a default
+const sharedLinksDefaults = { defaultExpiryDays: null };
 
 const smartAlbumRulesDefaults = {
   visualCategories: true,
@@ -895,6 +897,21 @@ const AdminConfigHelpSchema = z
     ),
   })
   .meta({ id: 'AdminConfigHelpDto' });
+
+const AdminConfigSharedLinksSchema = z
+  .object({
+    defaultExpiryDays: z
+      .int()
+      .min(1)
+      .max(3650)
+      .nullable()
+      .describe(
+        'Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire',
+      )
+      // signed-in people read it (GET /config) so the share form can pre-fill the expiry
+      .meta({ visibility: User }),
+  })
+  .meta({ id: 'AdminConfigSharedLinksDto' });
 
 const AdminConfigICloudSchema = z
   .object({
@@ -1497,6 +1514,7 @@ const AdminConfigSchemaWithVisibility = z
     editing: AdminConfigEditingSchema.default(editingDefaults),
     help: AdminConfigHelpSchema.default(helpDefaults),
     icloud: AdminConfigICloudSchema.default(icloudDefaults),
+    sharedLinks: AdminConfigSharedLinksSchema.default(sharedLinksDefaults),
   })
   .describe('Configuration properties that are visible to the admin')
   .meta({ id: 'AdminConfigDto' });
@@ -2071,6 +2089,7 @@ export const defaults = Object.freeze<SystemConfig>({
   editing: editingDefaults,
   help: helpDefaults,
   icloud: icloudDefaults,
+  sharedLinks: sharedLinksDefaults,
 });
 
 /**

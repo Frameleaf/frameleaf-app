@@ -99,7 +99,8 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   queues: ['job'],
   notifications: ['notifications', 'templates'],
   // FL-488: Ask Frameleaf in the help panel is set on the server page.
-  server: ['server', 'help', 'icloud'],
+  // FL-922: the server default expiry for new shared links is saved with the server page.
+  server: ['server', 'help', 'icloud', 'sharedLinks'],
   'smart-albums': ['smartAlbums'],
   'storage-template': ['storageTemplate'],
   theme: ['theme'],

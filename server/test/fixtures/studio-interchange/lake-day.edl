@@ -1,0 +1,20 @@
+TITLE: Lake day
+FCM: NON-DROP FRAME
+
+001  LAKE     V     C        00:00:02:00 00:00:08:00 01:00:00:00 01:00:06:00
+* FROM CLIP NAME: Lake morning.mov
+* SOURCE FILE: /Volumes/Jamie/Rockies/Lake morning.mov
+* ASC_SOP (1.1 1.0 0.9)(0.01 0.0 -0.01)(1.0 1.0 1.0)
+* ASC_SAT 0.9
+* LOC: 01:00:03:00 RED     Heron
+
+002  LAKE     V     C        00:00:08:00 00:00:08:00 01:00:06:00 01:00:06:00
+002  KAYAK    V     D    050 00:00:02:00 00:00:10:00 01:00:06:00 01:00:14:00
+M2   KAYAK         050.0    00:00:02:00
+* FROM CLIP NAME: Lake morning.mov
+* TO CLIP NAME: Kayak.mp4
+
+003  BL       V     C        00:00:00:00 00:00:01:00 01:00:14:00 01:00:15:00
+
+004  CAMPFIRE AA    C        00:00:00:00 00:00:16:00 01:00:00:00 01:00:16:00
+* FROM CLIP NAME: Campfire.wav

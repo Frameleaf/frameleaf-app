@@ -448,6 +448,8 @@ export const adminConfigDefaults = {
   // FL-488: in-app help.
   help: { askEnabled: true },
   icloud: { enabled: true },
+  // FL-922: default expiry for new shared links
+  sharedLinks: { defaultExpiryDays: null },
   // FL-159: Frameleaf Cloud processing replaced the previous GPU provider settings.
   frameleafCloud: {
     cloudMl: {

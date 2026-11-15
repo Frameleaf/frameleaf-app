@@ -1379,6 +1379,12 @@
   "preferences.search.includeArchived": {
     "type": "boolean"
   },
+  "preferences.sharedLinks.defaultExpiryDays": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 3650,
+    "nullable": true
+  },
   "preferences.sharedLinks.enabled": {
     "type": "boolean"
   },
@@ -1424,6 +1430,12 @@
   },
   "server.timeZone": {
     "type": "string"
+  },
+  "sharedLinks.defaultExpiryDays": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 3650,
+    "nullable": true
   },
   "signInPolicy.applyToOlderApps": {
     "type": "boolean"
