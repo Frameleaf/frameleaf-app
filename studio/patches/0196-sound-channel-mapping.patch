@@ -130,7 +130,7 @@ diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/
      scanning,
    }
  }
-@@ -327,6 +346,7 @@ function appendDirectSegmentSources(params: {
+@@ -330,6 +349,7 @@ function appendDirectSegmentSources(params: {
        windowSeconds: Math.max(DEFAULT_WINDOW_SECONDS, 1 / Math.max(1, fps)),
        trackId: params.trackId ?? '',
        ...(params.panStages?.length ? { panStages: params.panStages } : {}),
@@ -138,7 +138,7 @@ diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/
      })
    }
  }
-@@ -1183,6 +1203,7 @@ export function estimateAudioMeterLevel(params: {
+@@ -1190,6 +1210,7 @@ export function estimateAudioMeterLevel(params: {
    let resolvedSourceCount = 0
    let unresolvedSourceCount = 0
    let unresolvedPanSourceCount = 0
@@ -146,7 +146,7 @@ diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/
    let totalEnergyL = 0
    let totalEnergyR = 0
  
-@@ -1193,6 +1214,13 @@ export function estimateAudioMeterLevel(params: {
+@@ -1200,6 +1221,13 @@ export function estimateAudioMeterLevel(params: {
        continue
      }
  
@@ -160,7 +160,7 @@ diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/
      const panStages = source.panStages ?? []
      const hasPan = panStages.some((pan) => pan !== 0)
      // Independent absolute stereo peaks have no phase/coherence information for cross-channel pan.
-@@ -1225,7 +1253,13 @@ export function estimateAudioMeterLevel(params: {
+@@ -1232,7 +1260,13 @@ export function estimateAudioMeterLevel(params: {
        sourceTimeSeconds: source.sourceTimeSeconds,
        windowSeconds: source.windowSeconds,
      })
@@ -175,7 +175,7 @@ diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/
        // All channels originate from the same mono envelope, including nested panner stages.
        const [left, right] = applyAudioPanStages([Float32Array.of(stereoLevel.left)], panStages)
        stereoLevel = { left: left![0]!, right: right![0]! }
-@@ -1247,6 +1281,7 @@ export function estimateAudioMeterLevel(params: {
+@@ -1254,6 +1288,7 @@ export function estimateAudioMeterLevel(params: {
      resolvedSourceCount,
      unresolvedSourceCount,
      ...(unresolvedPanSourceCount > 0 ? { unresolvedPanSourceCount } : {}),
@@ -447,7 +447,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
  import type { AudioEqSettings, ResolvedAudioEqSettings } from '@/types/audio'
  import type { Keyframe as VolumeKeyframe } from '@/types/keyframe'
  import type { Transition } from '@/types/transition'
-@@ -112,6 +119,8 @@ interface AudioSegment {
+@@ -114,6 +121,8 @@ interface AudioSegment {
    pitchShiftSemitones: number
    audioEqStages: ResolvedAudioEqSettings[]
    panStages?: number[]
@@ -456,7 +456,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
    contentStartOffsetFrames?: number
    contentEndOffsetFrames?: number
    fadeInDelayFrames?: number
-@@ -461,6 +470,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+@@ -480,6 +489,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
        trackVolumeDb: entry.trackVolume,
        trackGainStages: entry.trackGainStages,
        panStages: entry.panStages,
@@ -464,7 +464,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
        fadeInFrames: (item.audioFadeIn ?? 0) * fps,
        fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
        fadeInCurve: item.audioFadeInCurve ?? 0,
-@@ -523,6 +533,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+@@ -544,6 +554,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
      if (left.muted !== right.muted) return false
      if(JSON.stringify(left.trackGainStages)!==JSON.stringify(right.trackGainStages)) return false
      if (JSON.stringify(left.panStages) !== JSON.stringify(right.panStages)) return false
@@ -472,7 +472,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
      if (!areAudioEqStagesEqual(left.audioEqStages, right.audioEqStages)) return false
      if (Math.abs(left.pitchShiftSemitones - right.pitchShiftSemitones) > 0.0001) return false
      if (left.afterFrames !== 0 || right.beforeFrames !== 0) return false
-@@ -543,6 +554,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+@@ -564,6 +575,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
      trackGainStages: segment.trackGainStages,
      trackRootOrigin: segment.trackRootOrigin,
      panStages: segment.panStages,
@@ -480,7 +480,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
      fadeInFrames: segment.fadeInFrames,
      fadeOutFrames: segment.fadeOutFrames,
      fadeInCurve: segment.fadeInCurve,
-@@ -772,6 +784,7 @@ function appendCompositionAudioSegments(params: {
+@@ -796,6 +808,7 @@ function appendCompositionAudioSegments(params: {
        trackRootOrigin,
        clipOwner:{offset:ownerOffset,scale:ownerScale,from:subItem.from,duration:subItem.durationInFrames,fps:wrapperSourceFps},
        panStages: [...getAudioPanStages(subTrack?.pan), ...wrapperPanStages],
@@ -488,7 +488,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
        fadeInFrames: (subItem.audioFadeIn ?? 0)*wrapperSourceFps,
        fadeOutFrames: (subItem.audioFadeOut ?? 0)*wrapperSourceFps,
        fadeInCurve: subItem.audioFadeInCurve ?? 0,
-@@ -955,6 +968,7 @@ export function extractAudioSegments(
+@@ -979,6 +992,7 @@ export function extractAudioSegments(
            trackVolumeDb: track.volume ?? 0,
            trackGainStages:[{trackId:track.id,points:track.gainEnvelope??[],gainDb:track.volume??0,muted:track.muted===true,offset:0,scale:1}],
            panStages: getAudioPanStages(track.pan),
@@ -496,7 +496,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
            fadeInFrames: (item.audioFadeIn ?? 0) * fps,
            fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
            fadeInCurve: item.audioFadeInCurve ?? 0,
-@@ -2036,6 +2050,7 @@ function hasPacketCopyEffects(segment: AudioSegment): boolean {
+@@ -2080,6 +2094,7 @@ function hasPacketCopyEffects(segment: AudioSegment): boolean {
    return (
      isAudioPitchShiftActive(segment.pitchShiftSemitones) ||
      (segment.panStages?.length ?? 0) > 0 ||
@@ -504,7 +504,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
      (segment.trackGainStages?.length??0)>0 ||
      segment.audioEqStages.some(isAudioEqStageActive)
    )
-@@ -2305,7 +2320,9 @@ async function processAudioWindowChannels(
+@@ -2356,7 +2371,9 @@ async function processAudioWindowChannels(
    fps: number,
    duckingSources: readonly DuckingSource[] = [],
  ): Promise<Float32Array[]> {
@@ -515,7 +515,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
    const decodedSegmentOffset = Math.floor(
      ((intersection.intersectionStart - intersection.segmentStart) / sampleRate) *
        decoded.sampleRate,
-@@ -2412,7 +2429,10 @@ async function mixSegmentIntoAudioWindow(params: {
+@@ -2463,7 +2480,10 @@ async function mixSegmentIntoAudioWindow(params: {
      sourceStartTime,
      sourceStartTime + requestedFrames / sampleRate,
    )
@@ -527,7 +527,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
    const processed = await processAudioWindowChannels(
      decoded,
      segment,
-@@ -2429,6 +2449,12 @@ async function mixSegmentIntoAudioWindow(params: {
+@@ -2480,6 +2500,12 @@ async function mixSegmentIntoAudioWindow(params: {
    )
  }
  
@@ -540,7 +540,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
  function requireMatchingAudioPlaneCount(actual: number, expected: number): number {
    if (!Number.isSafeInteger(actual) || actual < 1)
      throw new Error('Audio decode produced an invalid channel count')
-@@ -2461,7 +2487,7 @@ export async function getAudioOutputChannelCount(
+@@ -2512,7 +2538,7 @@ export async function getAudioOutputChannelCount(
          input.dispose()
        }
      }
@@ -549,7 +549,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
    }
    if (segments.some(segment => segment.panStages?.length)) {
      if (channels > 2) throw new Error('Track pan requires a mono or stereo source')
-@@ -2504,7 +2530,10 @@ export async function* processAudioWindows(
+@@ -2555,7 +2581,10 @@ export async function* processAudioWindows(
        if (signal?.aborted) throw new DOMException('Audio processing cancelled', 'AbortError')
        const sourceStart = segment.sourceStartFrame / segment.sourceFps
        const decoded = await decoderPool.decode(segment, sourceStart, sourceStart + 1 / sampleRate)
@@ -561,7 +561,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
      }
      const sourceChannels = channels
      if (hasPan) {
-@@ -2628,7 +2657,10 @@ export async function processAudio(
+@@ -2679,7 +2708,10 @@ export async function processAudio(
          sourceEndTime,
          segment.audioCodec,
        )
@@ -573,7 +573,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
        if (hasPan && sourceChannels > 2)
          throw new Error('Track pan requires a mono or stereo source')
  
-@@ -2637,7 +2669,10 @@ export async function processAudio(
+@@ -2688,7 +2720,10 @@ export async function processAudio(
  
        // Apply speed across ALL channels at once to maintain phase coherence
        // between L/R (the WSOLA pipeline finds shared overlap windows).
@@ -585,7 +585,7 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
        if (segment.isReversed) {
          processedChannels = reverseAudioChannels(processedChannels)
        }
-@@ -2659,6 +2694,7 @@ export async function processAudio(
+@@ -2710,6 +2745,7 @@ export async function processAudio(
        )
  
        if (
@@ -745,8 +745,8 @@ diff --git a/src/features/timeline/utils/legacy-av-track-repair.ts b/src/feature
 diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
 --- a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
 +++ b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
-@@ -214,7 +214,14 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
-   crossfadeFadeOut,
+@@ -220,7 +220,14 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+   crossfadeFadeOutCurve,
    volumeMultiplier = 1,
  }) => {
 -  const { frame, fps, playing, transportPlaybackRate, isPreviewScrubbing } = useAudioPlaybackState({
@@ -761,7 +761,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
      itemId,
      liveGainItemIds,
      volume,
-@@ -276,6 +283,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+@@ -284,6 +291,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
        waitTimeoutMs: PARTIAL_WAV_WAIT_TIMEOUT_MS,
        targetTimeSeconds: clipStartTime,
        ...(isReverseShuttle ? { preRollSeconds: REVERSE_SHUTTLE_PREROLL_SECONDS } : {}),
@@ -769,7 +769,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
      })
        .then((slice) => {
          if (cancelled) return
-@@ -305,6 +313,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+@@ -313,6 +321,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
        cancelled = true
      }
    }, [
@@ -777,7 +777,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
      fps,
      isPreviewScrubbing,
      isReversed,
-@@ -342,7 +351,8 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+@@ -350,7 +359,8 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
        return
      }
  
@@ -787,7 +787,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
      if (pendingExtensionKeyRef.current === requestKey) {
        return
      }
-@@ -354,6 +364,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+@@ -362,6 +372,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
        waitTimeoutMs: PARTIAL_WAV_WAIT_TIMEOUT_MS,
        targetTimeSeconds: Math.max(0, targetTime),
        ...(isReverseShuttle ? { preRollSeconds: REVERSE_SHUTTLE_PREROLL_SECONDS } : {}),
@@ -795,7 +795,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
      })
        .then((slice) => {
          if (cancelled) return
-@@ -392,6 +403,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+@@ -400,6 +411,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
        }
      }
    }, [
@@ -806,7 +806,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
 diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
 --- a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
 +++ b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
-@@ -135,6 +135,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+@@ -137,6 +137,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
        resolvedVolume: audioVolume,
        resolvedAudioEqStages,
        resolvedAudioPanStages = [],
@@ -814,7 +814,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-
      } = useAudioPlaybackState({
        itemId,
        liveGainItemIds,
-@@ -185,6 +186,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+@@ -189,6 +190,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
      const pausedSeekPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
      const pausedSeekPrefetchKeyRef = useRef<string | null>(null)
      const queuedSourceRef = useRef<QueuedPreviewSource | null>(null)
@@ -822,7 +822,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-
      frameRef.current = frame
  
      const requestPartialSlice = useCallback(
-@@ -202,6 +204,8 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+@@ -206,6 +208,8 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
              waitTimeoutMs: 6000,
              targetTimeSeconds,
              preRollSeconds: PARTIAL_BUFFER_REQUEST_PREROLL_SECONDS,
@@ -831,7 +831,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-
            }),
          }
          activeSliceRequestRef.current = request
-@@ -210,7 +214,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+@@ -214,7 +218,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
            promise: request.promise,
          }
        },
@@ -840,7 +840,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-
      )
  
      const acceptPartialSlice = useCallback(
-@@ -236,6 +240,12 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+@@ -240,6 +244,12 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
        let cancelled = false
        const effectiveSourceFps = sourceFps ?? fps
        activeSliceRequestRef.current = null
@@ -853,7 +853,7 @@ diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-
        const decodeSeedKey = `${mediaId}:${src}:${trimBefore}:${effectiveSourceFps}:${playbackRate}`
        if (decodeSeedRef.current?.key !== decodeSeedKey) {
          decodeSeedRef.current = {
-@@ -329,6 +339,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+@@ -333,6 +343,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
        }
      }, [
        acceptPartialSlice,
@@ -898,7 +898,7 @@ diff --git a/src/runtime/composition-runtime/components/hooks/use-audio-playback
  export function useTrackGainStages(itemId: string, ancestors?: string[]) {
    const items=useTimelineStore(s=>s.items), tracks=useTimelineStore(s=>s.tracks), compositions=useCompositionsStore(s=>s.compositions)
    const fps=useTimelineSettingsStore(s=>s.fps)
-@@ -77,6 +90,7 @@ export function useAudioPlaybackState({
+@@ -79,6 +92,7 @@ export function useAudioPlaybackState({
    volumeMultiplier = 1,
  }: AudioPlaybackProps): AudioPlaybackState {
    const resolvedAudioPanStages = useTrackAudioPanStages(itemId, liveGainItemIds)
@@ -906,7 +906,7 @@ diff --git a/src/runtime/composition-runtime/components/hooks/use-audio-playback
    const sequenceContext = useSequenceContext()
    const frame = sequenceContext?.localFrame ?? 0
    const ownerItem=useContext(KeyframesContext)?.getItem(itemId) as ({_audioOwnerTime?:{offset:number;scale:number;duration:number;fps:number}})|undefined
-@@ -181,5 +195,6 @@ export function useAudioPlaybackState({
+@@ -185,5 +199,6 @@ export function useAudioPlaybackState({
      resolvedPitchShiftSemitones,
      resolvedAudioEqStages,
      resolvedAudioPanStages,
@@ -1016,7 +1016,7 @@ diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.ts
  import {
    hasAudioPitchOverride,
    isAudioPitchShiftActive,
-@@ -539,8 +543,12 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+@@ -547,8 +551,12 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
      frameRef.current = frame
      const isReverseShuttle = transportPlaybackRate < 0
      const audioPanStages = useTrackAudioPanStages(itemId, liveGainItemIds)
@@ -1030,7 +1030,7 @@ diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.ts
  
      useEffect(() => {
        if (!mediaId || !src || isPreviewScrubbing) return
-@@ -572,6 +580,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+@@ -580,6 +588,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
          waitTimeoutMs: PARTIAL_PITCH_WAIT_TIMEOUT_MS,
          targetTimeSeconds: clipStartTime,
          ...(isReverseShuttle ? { preRollSeconds: REVERSE_SHUTTLE_PREROLL_SECONDS } : {}),
@@ -1038,7 +1038,7 @@ diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.ts
        })
          .then((slice) => {
            if (cancelled) return
-@@ -601,6 +610,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+@@ -609,6 +618,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
          cancelled = true
        }
      }, [
@@ -1046,7 +1046,7 @@ diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.ts
        fps,
        isPreviewScrubbing,
        isReversed,
-@@ -642,7 +652,8 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+@@ -650,7 +660,8 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
          return
        }
  
@@ -1056,7 +1056,7 @@ diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.ts
        if (pendingExtensionKeyRef.current === requestKey) {
          return
        }
-@@ -654,6 +665,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+@@ -662,6 +673,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
          waitTimeoutMs: PARTIAL_PITCH_WAIT_TIMEOUT_MS,
          targetTimeSeconds: targetTime,
          ...(isReverseShuttle ? { preRollSeconds: REVERSE_SHUTTLE_PREROLL_SECONDS } : {}),
@@ -1064,7 +1064,7 @@ diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.ts
        })
          .then((slice) => {
            if (cancelled) return
-@@ -692,6 +704,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+@@ -700,6 +712,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
          }
        }
      }, [
@@ -1072,7 +1072,7 @@ diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.ts
        decodedSource,
        fps,
        frame,
-@@ -788,8 +801,11 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
+@@ -798,8 +811,11 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
      hasActivePitchPreview || isAudioPitchShiftActive(resolvedPitchShiftSemitones)
    const decodeMediaId = props.mediaId ?? `legacy-src:${props.src}`
    const audioPanStages = useTrackAudioPanStages(props.itemId, props.liveGainItemIds)
@@ -1375,7 +1375,7 @@ diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/
 +import type { AudioChannelMap, AudioItem, VideoItem } from '@/types/timeline'
 +import { areAudioChannelMapsEqual } from '@/shared/utils/audio-channel-map'
  import type { ResolvedAudioEqSettings } from '@/types/audio'
- import type { Transition } from '@/types/transition'
+ import type { AudioCrossfadeCurve, Transition } from '@/types/transition'
  import {
 @@ -82,6 +83,8 @@ export interface AudioSegment {
    audioFadeOutCurveX: number
@@ -1386,7 +1386,7 @@ diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/
    audioEqStages: ResolvedAudioEqSettings[]
    clipFadeSpans?: AudioClipFadeSpan[]
  }
-@@ -300,6 +303,7 @@ export function buildStandaloneAudioSegments(
+@@ -306,6 +309,7 @@ export function buildStandaloneAudioSegments(
        audioFadeOutCurveX: item.audioFadeOutCurveX ?? 0.52,
        audioPitchSemitones: clampAudioPitchSemitones(item.audioPitchSemitones ?? 0),
        audioPitchCents: clampAudioPitchCents(item.audioPitchCents ?? 0),
@@ -1394,7 +1394,7 @@ diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/
        audioEqStages: appendResolvedAudioEqSources(
          undefined,
          item.trackAudioEq,
-@@ -341,6 +345,7 @@ export function buildStandaloneAudioSegments(
+@@ -347,6 +351,7 @@ export function buildStandaloneAudioSegments(
        active.muted === segment.muted &&
        active.audioPitchSemitones === segment.audioPitchSemitones &&
        active.audioPitchCents === segment.audioPitchCents &&
@@ -1402,7 +1402,7 @@ diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/
        areAudioEqStagesEqual(active.audioEqStages, segment.audioEqStages)
  
      if (canMerge) {
-@@ -383,6 +388,7 @@ export function buildStandaloneAudioSegments(
+@@ -389,6 +394,7 @@ export function buildStandaloneAudioSegments(
        audioFadeOutCurveX: active.audioFadeOutCurveX,
        audioPitchSemitones: active.audioPitchSemitones,
        audioPitchCents: active.audioPitchCents,
@@ -1410,7 +1410,7 @@ diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/
        audioEqStages: active.audioEqStages,
        clipFadeSpans: active.clipFadeSpans,
      })
-@@ -413,6 +419,7 @@ export function buildStandaloneAudioSegments(
+@@ -419,6 +425,7 @@ export function buildStandaloneAudioSegments(
        audioFadeOutCurveX: active.audioFadeOutCurveX,
        audioPitchSemitones: active.audioPitchSemitones,
        audioPitchCents: active.audioPitchCents,
@@ -1418,7 +1418,7 @@ diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/
        audioEqStages: active.audioEqStages,
        clipFadeSpans: active.clipFadeSpans,
      })
-@@ -549,6 +556,7 @@ export function buildTransitionVideoAudioSegments(
+@@ -557,6 +564,7 @@ export function buildTransitionVideoAudioSegments(
        audioFadeOutCurveX: item.audioFadeOutCurveX ?? 0.52,
        audioPitchSemitones: clampAudioPitchSemitones(item.audioPitchSemitones ?? 0),
        audioPitchCents: clampAudioPitchCents(item.audioPitchCents ?? 0),
@@ -1426,7 +1426,7 @@ diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/
        audioEqStages: appendResolvedAudioEqSources(
          undefined,
          item.trackAudioEq,
-@@ -601,6 +609,7 @@ export function buildTransitionVideoAudioSegments(
+@@ -611,6 +619,7 @@ export function buildTransitionVideoAudioSegments(
        active.muted === segment.muted &&
        active.audioPitchSemitones === segment.audioPitchSemitones &&
        active.audioPitchCents === segment.audioPitchCents &&
@@ -1434,7 +1434,7 @@ diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/
        areAudioEqStagesEqual(active.audioEqStages, segment.audioEqStages) &&
        active.afterFrames === 0 &&
        segment.beforeFrames === 0
-@@ -649,6 +658,7 @@ export function buildTransitionVideoAudioSegments(
+@@ -660,6 +669,7 @@ export function buildTransitionVideoAudioSegments(
        audioFadeOutCurveX: active.audioFadeOutCurveX,
        audioPitchSemitones: active.audioPitchSemitones,
        audioPitchCents: active.audioPitchCents,
@@ -1442,7 +1442,7 @@ diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/
        audioEqStages: active.audioEqStages,
        clipFadeSpans: active.clipFadeSpans,
        contentStartOffsetFrames: active.contentStartOffsetFrames,
-@@ -685,6 +695,7 @@ export function buildTransitionVideoAudioSegments(
+@@ -698,6 +708,7 @@ export function buildTransitionVideoAudioSegments(
        audioFadeOutCurveX: active.audioFadeOutCurveX,
        audioPitchSemitones: active.audioPitchSemitones,
        audioPitchCents: active.audioPitchCents,
@@ -1785,7 +1785,7 @@ diff --git a/src/types/timeline.ts b/src/types/timeline.ts
  /** Sidechain ducking settings carried by a duck-source item. */
  export interface AudioDuckingSettings {
    /** Attenuation applied to other audio while this item is audible, in dB (<= 0). */
-@@ -112,6 +121,8 @@ type BaseTimelineItem = {
+@@ -113,6 +122,8 @@ type BaseTimelineItem = {
    audioFadeOutCurveX?: number // Audio fade out curve horizontal bias (0..1, default: ~0.52)
    audioPitchSemitones?: number // Clip pitch offset in semitones (-12..12)
    audioPitchCents?: number // Fine pitch offset in cents (-100..100)

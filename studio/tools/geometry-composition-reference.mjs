@@ -152,7 +152,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1559 ASC CDL, lift gamma gain per channel and hue curves; changes no composition or raster producer.
     sourceSha256 === '3a3669ec17409883b5705c8044503ef6825972c8a75a90ef700a4829568695ca' ||
     // FL-1558 LUTs kept with the project and 1D LUTs; changes no composition or raster producer.
-    sourceSha256 === '3b81da411c63fb3b648a86d1bc04d8446c0853cff3d5511ec9c0c874d1751feb'
+    sourceSha256 === '3b81da411c63fb3b648a86d1bc04d8446c0853cff3d5511ec9c0c874d1751feb' ||
+    // FL-1561 channel mapping on a clip's sound; changes no composition or raster producer.
+    sourceSha256 === '81b9a0517a735951598a080a5deeda55caae8a33687ff99e7f791f734256c09e'
   )
     return {
       ...COMPOSITION_SOURCES,
