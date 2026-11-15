@@ -4972,6 +4972,26 @@ export type PartnerOriginDto = {
     /** That account's name */
     rootOwnerName: string;
 };
+export type AlbumTextCardResponseDto = {
+    /** The photo just before the card in the album, or null when the card comes first */
+    afterAssetId: string | null;
+    /** Album ID */
+    albumId: string;
+    /** Short paragraph, plain text with new lines; show it as text, never as HTML */
+    body: string;
+    /** Creation date */
+    createdAt: string;
+    /** Who wrote the card, or null when that account was removed */
+    createdById: string | null;
+    /** Heading, plain text; show it as text, never as HTML */
+    heading: string;
+    /** Text card ID */
+    id: string;
+    /** Place in the album's custom order; compare with the photos' positions from sort=custom */
+    position: number;
+    /** Last update date */
+    updatedAt: string;
+};
 export type AlbumResponseDto = {
     /** Album name */
     albumName: string;
@@ -5002,6 +5022,8 @@ export type AlbumResponseDto = {
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
+    /** True when the album shows its own order (GET /timeline/ordered?sort=custom&albumId=…) instead of the date order in order */
+    isCustomOrder?: boolean;
     /** The owner chose to lock this album: their items in it are locked as they are added, or by the hourly check. Unlocking stops that; items already locked stay locked. It does not prove that every item is locked yet. */
     isLocked?: boolean;
     /** True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}. */
@@ -5029,6 +5051,8 @@ export type AlbumResponseDto = {
     startDate?: string;
     /** True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by the album lists: GET /albums, GET /albums/tree and GET /albums/hierarchy. */
     statsPending?: boolean;
+    /** Text cards between the photos, in album order. Populated by GET /albums/{id} for a custom-order album. */
+    textCards?: AlbumTextCardResponseDto[];
     /** Last update date */
     updatedAt: string;
 };
@@ -5379,6 +5403,8 @@ export type UpdateAlbumDto = {
     icon?: string | null;
     /** Enable activity feed */
     isActivityEnabled?: boolean;
+    /** Show the album in its own order instead of by date. Turning it on the first time orders the photos by the current date order; turning it off keeps the custom order for next time. Read the custom order with GET /timeline/ordered?sort=custom&albumId=… */
+    isCustomOrder?: boolean;
     /** Lock the album: the owner's items in it (photos, videos and any other files) are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. The owner's items added later through the album's add actions are locked as they are added (if that fails, the hourly check retries); any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album stops locking new items and leaves the locked ones locked. While the item, or any other part of its stack or Live Photo, is in a locked album its owner owns, unlocking that item alone does not last: the hourly check locks it again. To keep an item unlocked, remove it and its stack and Live Photo parts from every locked album of the item's owner, or unlock those albums, first. Locked albums of other people don't lock it. Only the album owner may send this field; other members must leave it out, or the whole update is refused (403). */
     isLocked?: boolean;
     libraryScope?: LibraryScope;
@@ -5387,6 +5413,14 @@ export type UpdateAlbumDto = {
     parentId?: string | null;
     /** Sibling display position. Lower values appear first. Computed by the client as a midpoint. */
     sortOrder?: number;
+};
+export type AlbumAssetOrderDto = {
+    /** Place after this photo in the album; null places at the start of the album */
+    afterAssetId?: string | null;
+    /** Place after this text card instead of after a photo */
+    afterTextCardId?: string;
+    /** Photos to move, in the order they should appear. Ids not in the album are ignored. */
+    assetIds: string[];
 };
 export type BookmarkIdsDto = {
     ids: string[];
@@ -5866,6 +5900,26 @@ export type AlbumSuggestionsResponseDto = {
 export type AlbumSuggestionAutoAddDto = {
     /** Add new very likely photos from this trip automatically */
     enabled: boolean;
+};
+export type AlbumTextCardCreateDto = {
+    /** Place after this photo in the album; null places at the start of the album */
+    afterAssetId?: string | null;
+    /** Place after this text card instead of after a photo */
+    afterTextCardId?: string;
+    /** Short paragraph, plain text; new lines are kept */
+    body?: string;
+    /** Heading, plain text */
+    heading?: string;
+};
+export type AlbumTextCardUpdateDto = {
+    /** Place after this photo in the album; null places at the start of the album */
+    afterAssetId?: string | null;
+    /** Place after this text card instead of after a photo */
+    afterTextCardId?: string;
+    /** Short paragraph, plain text; new lines are kept */
+    body?: string;
+    /** Heading, plain text */
+    heading?: string;
 };
 export type UpdateAlbumUserDto = {
     role: AlbumUserRole;
@@ -21175,6 +21229,8 @@ export type TimeBucketAssetResponseDto = {
     originalFileName?: string[];
     /** Array of owner IDs for each asset */
     ownerId: string[];
+    /** Each asset's place in the album's custom order (lowest first), aligned with id. Returned only for sort=custom; place an album's text cards by comparing their position */
+    position?: number[];
     /** Array of projection types for 360° content (e.g., "EQUIRECTANGULAR", "CUBEFACE", "CYLINDRICAL") */
     projectionType: (string | null)[];
     /** Array of star ratings from EXIF (-1 rejected, 0 unrated, 1-5 stars; null when unknown). Omitted for shared links that hide EXIF */
@@ -27838,6 +27894,19 @@ export function addAssetsToAlbum({ id, bulkIdsDto }: {
     })));
 }
 /**
+ * Move photos in an album's custom order
+ */
+export function setAlbumAssetOrder({ id, albumAssetOrderDto }: {
+    id: string;
+    albumAssetOrderDto: AlbumAssetOrderDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/albums/${encodeURIComponent(id)}/assets/order`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: albumAssetOrderDto
+    })));
+}
+/**
  * Remove bookmark memberships without deleting bookmarks
  */
 export function removeBookmarksFromAlbum({ id, bookmarkIdsDto }: {
@@ -28066,6 +28135,69 @@ export function dismissAlbumSuggestions({ id, bulkIdsDto }: {
         ...opts,
         method: "POST",
         body: bulkIdsDto
+    })));
+}
+/**
+ * List the text cards in an album
+ */
+export function getAlbumTextCards({ id, key, slug }: {
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumTextCardResponseDto[];
+    }>(`/albums/${encodeURIComponent(id)}/text-cards${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Add a text card to an album
+ */
+export function createAlbumTextCard({ id, albumTextCardCreateDto }: {
+    id: string;
+    albumTextCardCreateDto: AlbumTextCardCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AlbumTextCardResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/text-cards`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumTextCardCreateDto
+    })));
+}
+/**
+ * Delete a text card
+ */
+export function deleteAlbumTextCard({ cardId, id }: {
+    cardId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/albums/${encodeURIComponent(id)}/text-cards/${encodeURIComponent(cardId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Edit or move a text card
+ */
+export function updateAlbumTextCard({ cardId, id, albumTextCardUpdateDto }: {
+    cardId: string;
+    id: string;
+    albumTextCardUpdateDto: AlbumTextCardUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumTextCardResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/text-cards/${encodeURIComponent(cardId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: albumTextCardUpdateDto
     })));
 }
 /**
@@ -41882,7 +42014,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
     personId?: string;
     petId?: string;
     slug?: string;
-    sort?: "filename" | "rating" | "quality";
+    sort?: "filename" | "rating" | "quality" | "custom";
     suppressedOnly?: boolean;
     tagId?: string;
     userId?: string;
@@ -48268,7 +48400,8 @@ export enum TimelineHighlightGrouping {
 export enum TimelineOrderedSort {
     Filename = "filename",
     Rating = "rating",
-    Quality = "quality"
+    Quality = "quality",
+    Custom = "custom"
 }
 export enum UtilityActivityTool {
     LargeFiles = "large-files"
@@ -48553,5 +48686,6 @@ export enum UserMetadataKey {
 export enum Sort {
     Filename = "filename",
     Rating = "rating",
-    Quality = "quality"
+    Quality = "quality",
+    Custom = "custom"
 }
