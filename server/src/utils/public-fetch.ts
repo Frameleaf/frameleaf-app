@@ -33,6 +33,12 @@ for (const [network, prefix] of [
 for (const [network, prefix] of [
   ['::', 128],
   ['::1', 128],
+  // FL-780 (TM-6): forms that carry an IPv4 address inside, so a private one could hide in them:
+  // IPv4-compatible (::127.0.0.1), 6to4 (2002:7f00:1::) and Teredo; and deprecated site-local
+  ['::', 96],
+  ['2002::', 16],
+  ['2001::', 32],
+  ['fec0::', 10],
   ['64:ff9b::', 96],
   ['100::', 64],
   ['2001:db8::', 32],

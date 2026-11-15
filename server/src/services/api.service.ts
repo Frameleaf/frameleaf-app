@@ -111,6 +111,14 @@ export class ApiService {
         html = render(index, meta);
       }
 
+      // FL-780 (TM-4): the pages where a person allows an app or the browser extension are never shown
+      // inside another site's frame, so a hidden frame cannot trick a click on Allow. Appended, so any
+      // Helmet policy stays in force alongside it.
+      if (/^\/auth\/allow-(app|extension)\/?$/.test(request.path)) {
+        res.header('X-Frame-Options', 'DENY');
+        res.append('Content-Security-Policy', "frame-ancestors 'none'");
+      }
+
       if (request.path === '/link') {
         // CLD-004: the page strips anything in its address at once; until then no referrer carries it
         res.header('Referrer-Policy', 'no-referrer');

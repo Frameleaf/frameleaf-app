@@ -860,7 +860,7 @@ export class MediaRepository {
   probePackets(
     input: string,
     streamIndex: number,
-    options?: { maxPackets?: number; signal?: AbortSignal; onProgress?: () => void },
+    options?: { maxPackets?: number; signal?: AbortSignal; onProgress?: () => void; framePts?: boolean },
   ): Promise<VideoPacketInfo | null> {
     if (options?.maxPackets !== undefined && (!Number.isSafeInteger(options.maxPackets) || options.maxPackets <= 0)) {
       throw new Error('Invalid media packet probe limit');
@@ -1026,6 +1026,7 @@ export class MediaRepository {
           keyframeOwnDuration,
           startPts: startPts ?? 0,
           variableFrameRate,
+          ...(options?.framePts && { framePts: postDiscard.map(({ pts }) => pts).sort((a, b) => a - b) }),
         });
       });
     });

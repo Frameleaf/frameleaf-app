@@ -215,11 +215,12 @@ test("the allowlist covers only the attribution and its named exceptions", () =>
   );
   const upstreamRemote =
     "git remote add upstream https://github.com/immich-app/immich.git";
-  assert.deepEqual(
+  // FL-1440: Frameleaf never pulls from Immich, so no file may document an upstream remote.
+  assert.equal(
     scanText(upstreamRemote, [NAME, SITES], {
       file: "docs/docs/developer/setup.md",
-    }),
-    [],
+    }).length,
+    1,
   );
   assert.equal(
     scanText(upstreamRemote, [NAME, SITES], {

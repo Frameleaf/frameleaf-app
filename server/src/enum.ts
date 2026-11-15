@@ -1459,6 +1459,11 @@ export enum MediaOperationKind {
    */
   StudioMovie = 'studio_movie',
   /**
+   * Import a project from another video editor (FL-1542): read the file and find its media, then
+   * build one Studio project for each timeline the person picks.
+   */
+  StudioEditorImport = 'studio_editor_import',
+  /**
    * A bounded WebRTC playback session of a stored Studio revision (FL-96): the worker holding the
    * claim streams to the browser that opened it, signalled and authorised through the server. It
    * lives as long as its lease, its keepalive and its bound allow, and never produces a file.
