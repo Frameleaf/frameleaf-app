@@ -190,6 +190,18 @@ This project utilizes facial recognition models from the [InsightFace](https://g
 - buffalo_l
 - buffalo_m
 - buffalo_s
+- buffalo_l-landmarks (`2d106det.onnx` from the buffalo_l pack, for eye scores)
+
+## Eye scores (FL-843)
+
+A face recognition request whose recognition options set `eyeScores: true` adds two fields to each face:
+
+- `eyesOpen` in [0, 1]: a logistic of the narrower eye's aspect ratio (lid opening over eye width) from the 106-point landmarks, so a blink in one eye reads as closed. `null` for a profile face (the nose beyond an eye) or when the eye regions are far darker than the face (sunglasses).
+- `eyeSharpness` in [0, 1]: the variance of the Laplacian of the grey eye crops, resized to 48 px wide so face size doesn't matter, as `1 - exp(-variance / 200)`. A sharp portrait's eyes score about 0.76; the same face blurred by 3 px about 0.08. `null` with sunglasses.
+
+The landmark model downloads from the model source as `frameleaf/buffalo_l-landmarks` (`landmarks/model.onnx`, pinned by SHA-256) the first time eye scores are asked for. If it can't be fetched, faces come back without the two fields. Requests without `eyeScores` are unchanged. The landmark step adds about 4 ms per face on CPU.
+
+The logistic was fitted on 1,371 faces from the open/closed eyes portrait set `MichalMlodawski/closed-open-eyes` (ODC-BY, AI-generated). `test-fixtures/eyes/landmarks.json` holds the eye landmarks of 300 more faces (150 closed, 150 open, no images), on which closed-eye precision and recall are both 0.97 (`test_eye_scores.py`). `POST /face-eye-scores` (form fields `image` and `boxes`, a JSON list of up to 256 `[x1, y1, x2, y2]` boxes) scores faces the server already stored, without detecting them again; it answers `{"faces": [{"eyesOpen", "eyeSharpness"}, ...]}` in box order, or 503 when the landmark model is unavailable. Desktop workers' bound face producer does not compute eye scores, so the server fills those faces in this way.
 
 ## License and Use Restrictions
 
