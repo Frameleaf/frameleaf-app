@@ -1213,6 +1213,16 @@ export class AssetRepository {
       .orderBy(sql`("localDateTime" at time zone 'UTC')::date`, 'desc')
       .execute();
   }
+  /** FL-837: the original bytes of these assets that `excludeOwnerId` does not own (what copying them would add). */
+  async getOriginalBytes(ids: string[], excludeOwnerId: string): Promise<number> {
+    const { rows } = await sql<{ bytes: string | null }>`
+      SELECT sum(coalesce(exif."fileSizeInByte", 0))::bigint AS bytes FROM public.asset
+      LEFT JOIN public.asset_exif exif ON exif."assetId" = asset.id
+      WHERE asset.id = ANY(${ids}::uuid[]) AND asset."ownerId" <> ${excludeOwnerId}::uuid
+    `.execute(this.db);
+    return Number(rows[0]?.bytes ?? 0);
+  }
+
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
   getByIds(ids: string[]) {

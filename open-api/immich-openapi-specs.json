@@ -17290,6 +17290,57 @@
         "x-immich-state": "Stable"
       }
     },
+    "/assets/copy-to-library": {
+      "post": {
+        "description": "Add items you can see through a shared album, space or link to your own library, as your own copies of the same stored files. A link must allow downloads. Locked items are never added (FL-837).",
+        "operationId": "copyAssetsToLibrary",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetCopyToLibraryDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetCopyToLibraryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add shared items to your library",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.upload"
+      }
+    },
     "/assets/info": {
       "post": {
         "description": "Retrieve detailed information about up to 200 assets in one request, each exactly as the single-asset read returns it and with the same access check. Assets the caller may not read, or that do not exist, are left out instead of failing the request.",
@@ -88104,6 +88155,93 @@
         "required": [
           "sourceId",
           "targetId"
+        ],
+        "type": "object"
+      },
+      "AssetCopyToLibraryDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Items to add to your library",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "sharedLinkKey": {
+            "description": "The shared link the items were seen through",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sharedLinkSlug": {
+            "description": "The shared link the items were seen through",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "AssetCopyToLibraryItemDto": {
+        "properties": {
+          "assetId": {
+            "description": "Your own copy of it",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "sourceId": {
+            "description": "The item that was added",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "sourceId"
+        ],
+        "type": "object"
+      },
+      "AssetCopyToLibraryResponseDto": {
+        "properties": {
+          "added": {
+            "description": "Items now in your library",
+            "items": {
+              "$ref": "#/components/schemas/AssetCopyToLibraryItemDto"
+            },
+            "type": "array"
+          },
+          "alreadyInLibrary": {
+            "description": "Items your library already holds",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "notAdded": {
+            "description": "Items that cannot be added, such as Locked ones",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "added",
+          "alreadyInLibrary",
+          "notAdded"
         ],
         "type": "object"
       },

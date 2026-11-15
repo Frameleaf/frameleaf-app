@@ -7,7 +7,7 @@ import { anyUuid } from 'src/utils/database.js';
 
 /** How an original arrived. Text, not an enum: new ways are added without a schema change. */
 export type AssetLedgerAddedVia =
-  'upload' | 'library-scan' | 'import' | 'partner-copy' | 'studio' | 'recovered' | 'unknown';
+  'upload' | 'library-scan' | 'import' | 'partner-copy' | 'shared-copy' | 'studio' | 'recovered' | 'unknown';
 
 /** Why a row is in its state. */
 export type AssetLedgerReason =

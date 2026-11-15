@@ -6680,6 +6680,28 @@ export type AssetCopyDto = {
     /** Target asset ID */
     targetId: string;
 };
+export type AssetCopyToLibraryDto = {
+    /** Items to add to your library */
+    assetIds: string[];
+    /** The shared link the items were seen through */
+    sharedLinkKey?: string;
+    /** The shared link the items were seen through */
+    sharedLinkSlug?: string;
+};
+export type AssetCopyToLibraryItemDto = {
+    /** Your own copy of it */
+    assetId: string;
+    /** The item that was added */
+    sourceId: string;
+};
+export type AssetCopyToLibraryResponseDto = {
+    /** Items now in your library */
+    added: AssetCopyToLibraryItemDto[];
+    /** Items your library already holds */
+    alreadyInLibrary: string[];
+    /** Items that cannot be added, such as Locked ones */
+    notAdded: string[];
+};
 export type AssetInfoBatchDto = {
     /** Asset IDs to read, at most 200 */
     ids: string[];
@@ -29060,6 +29082,21 @@ export function copyAsset({ assetCopyDto }: {
         ...opts,
         method: "PUT",
         body: assetCopyDto
+    })));
+}
+/**
+ * Add shared items to your library
+ */
+export function copyAssetsToLibrary({ assetCopyToLibraryDto }: {
+    assetCopyToLibraryDto: AssetCopyToLibraryDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetCopyToLibraryResponseDto;
+    }>("/assets/copy-to-library", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetCopyToLibraryDto
     })));
 }
 /**
