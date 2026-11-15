@@ -107,7 +107,7 @@
   });
 
   const tr = (key: string, values?: Record<string, string | number>) => $t(key as Translations, { values });
-  const size = (bytes: number) => getByteUnitString(bytes, $locale);
+  const size = (bytes: number) => getByteUnitString(bytes, $locale ?? undefined);
   const isEdl = $derived(!!project && project.name.toLowerCase().endsWith('.edl'));
   const app = $derived(check ? EDITOR_IMPORT_APPS[check.source as EditorImportSource] : undefined);
   const picked = $derived(check ? check.timelines.filter((timeline) => picks.has(timeline.index)) : []);
@@ -323,7 +323,7 @@
   <ul class="counts">
     {#if withProjects}
       <li>
-        <Icon icon={mdiMovieOpenOutline} size={18} />
+        <Icon icon={mdiMovieOpenOutline} size="18" />
         <span>
           <strong>{tr('frameleaf_studio_editor_import_projects', { count: picked.length })}</strong>
           {#if (check?.timelines.length ?? 0) > 1}<small>{tr('frameleaf_studio_editor_import_one_each')}</small>{/if}
@@ -333,7 +333,7 @@
     {#each [['clips', counts.clips], ['transitions', counts.transitions], ['titles', counts.titles], ['sound', counts.sound], ['markers', counts.markers]] as const as [name, value] (name)}
       {#if value > 0}
         <li>
-          <Icon icon={mdiCheck} size={18} />
+          <Icon icon={mdiCheck} size="18" />
           <span>
             <span>{tr(`frameleaf_studio_editor_import_${name}`, { count: value })}</span>
             {#if name === 'clips'}<small>{tr('frameleaf_studio_editor_import_clips_detail')}</small>{/if}
@@ -357,7 +357,7 @@
               aria-current={index === at ? 'step' : undefined}
             >
               <span aria-hidden="true">
-                {#if index < at}<Icon icon={mdiCheck} size={12} />{:else}{index + 1}{/if}
+                {#if index < at}<Icon icon={mdiCheck} size="12" />{:else}{index + 1}{/if}
               </span>
               {tr(label)}
             </li>
@@ -370,7 +370,7 @@
       <p>{tr('frameleaf_studio_editor_import_pick_intro')}</p>
       {#if project}
         <div class="card">
-          <Icon icon={mdiMovieOpenOutline} size={26} />
+          <Icon icon={mdiMovieOpenOutline} size="26" />
           <span>
             <strong>{project.name}</strong>
             <small>
@@ -394,7 +394,7 @@
       {:else}
         <div class="empty">
           <Button initialFocus onclick={() => fileInput?.click()}>
-            <Icon icon={mdiFolderOpenOutline} size={18} />
+            <Icon icon={mdiFolderOpenOutline} size="18" />
             {tr('frameleaf_studio_editor_import_choose_file')}
           </Button>
           <small>
@@ -425,7 +425,7 @@
       <p>{tr('frameleaf_studio_editor_import_check_read', { file: check.fileName })}</p>
       {#each check.notices as notice, index (index)}
         <p class="note warn" role="note">
-          <Icon icon={mdiAlertOutline} size={18} />
+          <Icon icon={mdiAlertOutline} size="18" />
           <span>{tr(editorImportNoticeKey(notice.code), { subject: notice.subject ?? '' })}</span>
         </p>
       {/each}
@@ -478,7 +478,7 @@
       <section>
         <h3>{tr('frameleaf_studio_editor_import_found_title')} <small>· {found.length}</small></h3>
         <p class="note">
-          <Icon icon={mdiCheckCircleOutline} size={18} />
+          <Icon icon={mdiCheckCircleOutline} size="18" />
           <span>{tr('frameleaf_studio_editor_import_found_note')}</span>
         </p>
       </section>
@@ -489,7 +489,7 @@
             {#each likely as item (item.key)}
               <li>
                 <span class="thumb" aria-hidden="true">
-                  <Icon icon={item.kind === 'audio' ? mdiWaveform : mdiMovieOpenOutline} size={20} />
+                  <Icon icon={item.kind === 'audio' ? mdiWaveform : mdiMovieOpenOutline} size="20" />
                 </span>
                 <span class="row-text">
                   <strong>{item.name}</strong>
@@ -515,7 +515,7 @@
               {@const file = sending.get(item.key)}
               <li>
                 <span class="thumb" aria-hidden="true">
-                  <Icon icon={file || item.carried ? mdiUploadOutline : mdiFileQuestionOutline} size={20} />
+                  <Icon icon={file || item.carried ? mdiUploadOutline : mdiFileQuestionOutline} size="20" />
                 </span>
                 <span class="row-text">
                   <strong>{item.name}</strong>
@@ -539,7 +539,7 @@
           </ul>
           {#if folderName}
             <div class="card">
-              <Icon icon={mdiFolderOutline} size={26} />
+              <Icon icon={mdiFolderOutline} size="26" />
               <span>
                 <strong>{folderName}</strong>
                 <small>
@@ -555,7 +555,7 @@
           {:else}
             <div class="empty">
               <Button onclick={() => mediaInput?.click()}>
-                <Icon icon={mdiFolderOpenOutline} size={18} />
+                <Icon icon={mdiFolderOpenOutline} size="18" />
                 {tr('frameleaf_studio_editor_import_choose_media_folder')}
               </Button>
               <small>{tr('frameleaf_studio_editor_import_media_folder_hint')}</small>
@@ -589,7 +589,7 @@
             <li class:now={index === phase}>
               <Icon
                 icon={index < phase ? mdiCheckCircleOutline : index === phase ? mdiProgressClock : mdiCircleOutline}
-                size={18}
+                size="18"
               />
               {tr(`frameleaf_studio_editor_import_phase_${name}`)}
             </li>
@@ -603,7 +603,7 @@
       </p>
     {:else if step === 'report'}
       <p class="note ok" role="status">
-        <Icon icon={mdiCheckCircleOutline} size={18} />
+        <Icon icon={mdiCheckCircleOutline} size="18" />
         <span>
           {tr('frameleaf_studio_editor_import_report_done', {
             count: builds.length,
@@ -622,12 +622,12 @@
           <h3>{tr('frameleaf_studio_editor_import_media_title')}</h3>
           <ul class="counts">
             <li>
-              <Icon icon={mdiCheck} size={18} />
+              <Icon icon={mdiCheck} size="18" />
               <span><span>{tr('frameleaf_studio_editor_import_used', { count: totals.used })}</span></span>
             </li>
             {#if totals.added > 0}
               <li>
-                <Icon icon={mdiUploadOutline} size={18} />
+                <Icon icon={mdiUploadOutline} size="18" />
                 <span>
                   <span>{tr('frameleaf_studio_editor_import_added', { count: totals.added })}</span>
                   <small>{tr('frameleaf_studio_editor_import_added_album', { album: albumName })}</small>
@@ -636,7 +636,7 @@
             {/if}
             {#if totals.placeholders > 0}
               <li>
-                <Icon icon={mdiFileQuestionOutline} size={18} />
+                <Icon icon={mdiFileQuestionOutline} size="18" />
                 <span>
                   <span>{tr('frameleaf_studio_editor_import_placeholders', { count: totals.placeholders })}</span>
                   <small>{tr('frameleaf_studio_editor_import_placeholders_detail')}</small>
@@ -655,7 +655,7 @@
       <p class="muted small">{tr('frameleaf_studio_editor_import_report_footer')}</p>
     {:else if step === 'failed'}
       <p class="note warn" role="alert">
-        <Icon icon={mdiAlertOutline} size={18} />
+        <Icon icon={mdiAlertOutline} size="18" />
         <span>{tr('frameleaf_studio_editor_import_failed')}</span>
       </p>
     {/if}
@@ -722,7 +722,7 @@
           onOpenProject(builds[0].projectId);
         }}
       >
-        <Icon icon={mdiMovieOpenOutline} size={18} />
+        <Icon icon={mdiMovieOpenOutline} size="18" />
         {tr('frameleaf_studio_editor_import_open')}
       </Button>
     {:else}
