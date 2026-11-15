@@ -29,8 +29,11 @@
     type DevelopStyleBatchDto,
     AssetDevelopRevisionStatus,
     AssetMediaSize,
+    deleteStack,
     getAllAlbums,
     getAssetDevelop,
+    getStack,
+    updateStack,
     type AlbumResponseDto,
     type AssetDevelopResponseDto,
   } from '@frameleaf/sdk';
@@ -220,6 +223,9 @@
   // FL-891: the eye checks' filter and sort (the FL-821 culling mock)
   let closedOnly = $state(false);
   let eyeSort = $state<'' | 'worst' | 'best'>('');
+  // FL-953: the burst opened on the contact sheet (its stack) and its other frames (the FL-821 mock)
+  let burstOpen = $state<{ stackId: string; frames: Photo[] } | null>(null);
+  let burstBusy = $state(false);
   let selected = $state<string[]>([]);
   let compareOpen = $state(false);
   let batchOpen = $state(false);
@@ -330,6 +336,11 @@
       .filter((shoot) => `${shoot.name} ${shoot.client} ${shoot.type}`.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : b.date.localeCompare(a.date))),
   );
+  /** FL-953: an opened burst shows its other frames right after the frame on top. */
+  const withBurst = (list: Photo[], open: { stackId: string; frames: Photo[] } | null) =>
+    open
+      ? list.flatMap((photo) => (photo.burst && photo.stackId === open.stackId ? [photo, ...open.frames] : [photo]))
+      : list;
   /** FL-891: by the worst face's eye quality; photos not checked yet keep their order after the checked ones. */
   const sortByEyes = (list: Photo[], order: '' | 'worst' | 'best') => {
     if (!order) {
@@ -350,9 +361,12 @@
     (filter === 'selected' && (photo.rating ?? 0) >= 4) ||
     (filter === 'edited' && photo.rating !== -1 && !!photo.currentRevisionId);
   const visible = $derived(
-    sortByEyes(
-      photos.filter((photo) => matches(photo, tab) && (!closedOnly || (photo.eyes?.closedCount ?? 0) > 0)),
-      eyeSort,
+    withBurst(
+      sortByEyes(
+        photos.filter((photo) => matches(photo, tab) && (!closedOnly || (photo.eyes?.closedCount ?? 0) > 0)),
+        eyeSort,
+      ),
+      closedOnly ? null : burstOpen,
     ),
   );
   const eyesChecked = $derived(photos.some((photo) => photo.eyes));
@@ -627,6 +641,7 @@
     tab = 'all';
     closedOnly = false;
     eyeSort = '';
+    burstOpen = null;
     inspecting = null;
     versions = null;
     versionGeneration++;
@@ -750,6 +765,59 @@
    * Rates photographs at once and saves behind the grid. Requests for one photograph run in order;
    * a failure puts that tile back to what the server last accepted and offers a retry on the tile.
    */
+  /** FL-953: open or close a burst on the contact sheet. */
+  async function toggleBurst(photo: Photo) {
+    if (!photo.stackId || burstOpen?.stackId === photo.stackId) {
+      burstOpen = null;
+      return;
+    }
+    burstBusy = true;
+    try {
+      const stack = await getStack({ id: photo.stackId });
+      burstOpen = {
+        stackId: stack.id,
+        frames: stack.assets
+          .filter((asset) => asset.id !== photo.id)
+          .map((asset) => ({
+            id: asset.id,
+            fileName: asset.originalFileName,
+            rating: asset.exifInfo?.rating ?? null,
+            canRate: photo.canRate,
+            stackCount: 1,
+            currentRevisionId: null,
+            stackId: stack.id,
+          })),
+      };
+    } catch {
+      error = $t('frameleaf_photography_burst_failed');
+    } finally {
+      burstBusy = false;
+    }
+  }
+
+  /** FL-953: a burst frame goes on top, or the burst is unstacked; the shoot's photos are read again after. */
+  async function changeBurst(stackId: string, primaryAssetId: string | null) {
+    if (!active) {
+      return;
+    }
+    burstBusy = true;
+    try {
+      await (primaryAssetId
+        ? updateStack({ id: stackId, stackUpdateDto: { primaryAssetId } })
+        : deleteStack({ id: stackId }));
+      const reopen = primaryAssetId ? photos.find((photo) => photo.stackId === stackId) : undefined;
+      await openShoot(active.id);
+      const lead = photos.find((photo) => photo.stackId === stackId);
+      if (reopen && lead) {
+        await toggleBurst(lead);
+      }
+    } catch {
+      error = $t('frameleaf_photography_burst_failed');
+    } finally {
+      burstBusy = false;
+    }
+  }
+
   function rate(ids: string[], rating: number | null) {
     if (!activeId) {
       return;
@@ -1329,6 +1397,29 @@
                         </p>
                       {/if}
                     </div>
+                    {#if !closedOnly && photo.stackId && (photo.burst || burstOpen?.stackId === photo.stackId)}<div
+                        class="phw-burst"
+                      >
+                        {#if photo.burst}<Button
+                            pressed={burstOpen?.stackId === photo.stackId}
+                            disabled={burstBusy}
+                            onclick={() => toggleBurst(photo)}
+                            >{burstOpen?.stackId === photo.stackId
+                              ? $t('frameleaf_photography_burst_collapse')
+                              : $t('frameleaf_photography_burst_count', {
+                                  values: { count: photo.stackCount },
+                                })}</Button
+                          >{#if burstOpen?.stackId === photo.stackId}<Button
+                              disabled={burstBusy}
+                              onclick={() => changeBurst(photo.stackId!, null)}
+                              >{$t('frameleaf_photography_burst_unstack')}</Button
+                            >{/if}
+                        {:else if photo.canRate}<Button
+                            disabled={burstBusy}
+                            onclick={() => changeBurst(photo.stackId!, photo.id)}
+                            >{$t('frameleaf_photography_burst_pick')}</Button
+                          >{/if}
+                      </div>{/if}
                   </article>{/each}
               </div>
               {#if photoLoading}<div

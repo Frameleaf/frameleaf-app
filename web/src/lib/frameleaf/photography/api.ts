@@ -47,6 +47,9 @@ export type Photo = {
   currentRevisionId: string | null;
   /** FL-863: the photo's faces for culling; absent when it has none. */
   eyes?: PhotoEyes;
+  stackId?: string | null;
+  /** FL-953: leads a burst that stacked itself automatically. */
+  burst?: boolean;
 };
 export type PhotoEyes = {
   faceCount: number;

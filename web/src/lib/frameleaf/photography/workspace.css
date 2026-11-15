@@ -2671,3 +2671,12 @@
   margin: 4px 0 0;
   padding: 0;
 }
+
+/* FL-953: a burst's controls under its frames (the FL-821 culling mock) */
+.phw-burst {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fl-space-2, 8px);
+  padding: var(--fl-space-2, 8px) var(--fl-space-3, 12px) var(--fl-space-3, 12px);
+  border-top: 1px solid var(--fl-border);
+}
