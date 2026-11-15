@@ -326,6 +326,7 @@ describe(StudioProjectImportService.name, () => {
       ['a SubRip file', srt, 'application/x-subrip', 'captions', '.srt'],
       ['a WebVTT file', vtt, 'text/vtt', 'captions', '.vtt'],
       ['a .cube LUT', cube, 'text/x-cube-lut', 'lut', '.cube'],
+      ['a 1D .cube LUT', 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n', 'text/x-cube-lut', 'lut', '.cube'],
     ])('keeps %s under the type read from its bytes, not its name', async (_name, body, contentType, kind, ext) => {
       const bytes = Buffer.from(body);
       const file = await upload(bytes, 'video/mp4', '../../etc/clip.mp4');
@@ -356,7 +357,7 @@ describe(StudioProjectImportService.name, () => {
         'x.vtt',
       ],
       ['a LUT with the wrong number of rows', `LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(5)}`, 'x.cube'],
-      ['a 1D LUT', 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n', 'x.cube'],
+      ['a 1D LUT with the wrong number of rows', 'LUT_1D_SIZE 3\n0 0 0\n1 1 1\n', 'x.cube'],
       ['plain text called a caption file', 'These are my notes.\n', 'x.srt'],
       ['plain text called a LUT', 'These are my notes.\n', 'x.cube'],
     ])('refuses %s and removes the upload', async (_name, body, name) => {

@@ -16,6 +16,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import StudioEditorImportDialog from '$lib/components/frameleaf/StudioEditorImportDialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
@@ -33,6 +34,7 @@
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { studioBundleDownloadPath } from '$lib/frameleaf/studio/bundles';
+  import { EDITOR_IMPORT_APPS } from '$lib/frameleaf/studio/editor-import';
   import {
     isStudioBundleSettled,
     reviewStudioBundle,
@@ -130,7 +132,6 @@
   let exportIncludeMedia = $state(false);
   let exportJob = $state<StudioBundleOperationDto | null>(null);
 
-  let fileInput = $state<HTMLInputElement>();
   let upload = $state<StudioBundleUploadDto | null>(null);
   let importOpen = $state(false);
   let importName = $state('');
@@ -461,15 +462,13 @@
     }
   };
 
-  const chooseBundle = () => fileInput?.click();
+  /** FL-1544: one Import for a Frameleaf bundle or another editor's project; a bundle comes back here. */
+  let editorImportOpen = $state(false);
+  const chooseBundle = () => {
+    editorImportOpen = true;
+  };
 
-  const onBundleChosen = async (event: Event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) {
-      return;
-    }
+  const importBundleFile = async (file: File) => {
     uploading = true;
     try {
       upload = await uploadStudioBundle({ studioBundleUploadCreateDto: { file } });
@@ -551,6 +550,14 @@
       ? getAssetMediaUrl({ id: project.thumbnailAssetId, size: AssetMediaSize.Thumbnail })
       : null;
 
+  /** FL-1544: "From Premiere Pro", or "Imported" for an interchange file that names no app. */
+  const importedFromLabel = (source: NonNullable<StudioProjectDto['importedFromEditor']>) => {
+    const app = EDITOR_IMPORT_APPS[source];
+    return app
+      ? $t('frameleaf_studio_editor_import_from', { values: { app } })
+      : $t('frameleaf_studio_editor_import_from_interchange');
+  };
+
   const metaLine = (project: StudioProjectDto) =>
     [
       $t('frameleaf_studio_library_changed', {
@@ -558,6 +565,7 @@
       }),
       project.access === StudioProjectAccess.Reviewer ? $t('frameleaf_studio_read_only') : null,
       project.importedFromBundle ? $t('frameleaf_studio_library_imported') : null,
+      project.importedFromEditor ? importedFromLabel(project.importedFromEditor) : null,
     ]
       .filter(Boolean)
       .join(' · ');
@@ -581,7 +589,7 @@
     <div class="head-actions">
       <Button onclick={chooseBundle} disabled={uploading}>
         <Icon icon={mdiImport} size={ICON_SIZE.md} />
-        {uploading ? $t('frameleaf_studio_bundle_uploading') : $t('frameleaf_studio_bundle_import')}
+        {uploading ? $t('frameleaf_studio_bundle_uploading') : $t('frameleaf_studio_editor_import_button')}
       </Button>
       <!-- #18: "New project" once, here while there are projects and in the empty state when there are none. -->
       {#if showHeaderNew}
@@ -590,15 +598,6 @@
           {$t('frameleaf_studio_library_new')}
         </Button>
       {/if}
-      <input
-        bind:this={fileInput}
-        class="sr-only"
-        type="file"
-        accept=".zip,application/zip"
-        tabindex="-1"
-        aria-hidden="true"
-        onchange={onBundleChosen}
-      />
     </div>
   </header>
 
@@ -844,6 +843,13 @@
     {/if}
   </div>
 </Dialog>
+
+<StudioEditorImportDialog
+  bind:open={editorImportOpen}
+  onBundle={(file) => void importBundleFile(file)}
+  onOpenProject={(projectId) => void goto(Route.studio({ projectId }))}
+  onImported={() => void load()}
+/>
 
 <Dialog bind:open={importOpen} title={$t('frameleaf_studio_bundle_import_title')} closeLabel={$t('close')}>
   <div class="dialog-body">

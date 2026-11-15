@@ -167,6 +167,12 @@ export async function detectAcceleration(
   return 'cpu';
 }
 
+/** FL-984: an Intel NPU (Core Ultra) the kernel exposes as an accel device, for the OpenVINO image. */
+export async function detectNpu(sys = '/sys'): Promise<boolean> {
+  const nodes = await readdir(join(sys, 'class/accel')).catch(() => []);
+  return nodes.some((n) => n.startsWith('accel'));
+}
+
 /** The attested ML variant digest for this acceleration; undefined keeps the CPU image rather than an unverified tag. */
 function mlVariant(images: NasManifest['images'], accel: Acceleration): string | undefined {
   return accel === 'cpu' ? undefined : images.machineLearningVariants?.[accel];
@@ -611,10 +617,13 @@ export async function renderCompose(
     const accel = acceleration ?? (await detectAcceleration());
     const variant = mlVariant(release.nas.images, accel);
     if (variant) imageDigest.parse(variant);
+    const passthrough = variant ? ACCELERATION_SERVICE[accel as Exclude<Acceleration, 'cpu'>] : undefined;
+    // An NPU is passed through only when the host has one: Docker refuses a missing device.
+    const npu = variant && accel === 'openvino' && (await detectNpu());
     services['frameleaf-machine-learning'] = {
       networks: { default: { aliases: ['immich-machine-learning'] } },
       image: variant ?? machineLearning,
-      ...(variant && ACCELERATION_SERVICE[accel as Exclude<Acceleration, 'cpu'>]),
+      ...(npu ? { ...passthrough, devices: [...(passthrough?.devices as string[]), '/dev/accel:/dev/accel'] } : passthrough),
       labels,
       restart: 'unless-stopped',
       volumes: [

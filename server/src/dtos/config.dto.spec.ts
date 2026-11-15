@@ -198,3 +198,25 @@ describe('Frameleaf Cloud models (FL-146, FL-183, FL-186)', () => {
     expect(cloudModelFor(MlWorkload.Upscale, null, null)).toBeNull();
   });
 });
+
+describe('shared link default expiry (FL-922)', () => {
+  it('defaults to no expiry, also for a stored configuration that does not name it', () => {
+    const { sharedLinks: _sharedLinks, ...stored } = defaults;
+    expect(defaults.sharedLinks).toEqual({ defaultExpiryDays: null });
+    expect(AdminConfigSchema.safeParse(stored).data?.sharedLinks).toEqual({ defaultExpiryDays: null });
+  });
+
+  it('reaches signed-in people, so the share form can pre-fill it, but not the public config', () => {
+    const config = { ...defaults, sharedLinks: { defaultExpiryDays: 30 } };
+    expect((mapUserConfig(config) as Record<string, any>).sharedLinks).toEqual({ defaultExpiryDays: 30 });
+    expect((mapPublicConfig(config) as Record<string, any>).sharedLinks).toBeUndefined();
+  });
+
+  it.each([1, 30, 3650, null])('accepts %j days', (defaultExpiryDays) => {
+    expect(AdminConfigSchema.safeParse({ ...defaults, sharedLinks: { defaultExpiryDays } }).success).toBe(true);
+  });
+
+  it.each([0, -1, 1.5, 3651, '7'])('rejects %j days', (defaultExpiryDays) => {
+    expect(AdminConfigSchema.safeParse({ ...defaults, sharedLinks: { defaultExpiryDays } }).success).toBe(false);
+  });
+});

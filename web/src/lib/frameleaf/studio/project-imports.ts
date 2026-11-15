@@ -52,6 +52,13 @@ const binKinds = new Set<StudioProjectImportDto['kind']>([
 export const isStudioBinImport = (dto: StudioProjectImportDto) => binKinds.has(dto.kind);
 
 /**
+ * What the editor is given: bin media, and LUTs kept with the project (FL-1558), which a colour
+ * effect reads by id and the editor keeps out of the bin. Caption files are not given.
+ */
+export const isStudioEditorImport = (dto: StudioProjectImportDto) =>
+  isStudioBinImport(dto) || dto.kind === StudioProjectImportKind.Lut;
+
+/**
  * FL-1562: a font kept with the project, for the editor to read by id when a title's family is
  * listed in the project's `metadata.fonts`. It is never bin media.
  */
@@ -76,7 +83,7 @@ export const loadStudioProjectImports = async (
   ]);
   return [
     ...imports
-      .filter((dto: StudioProjectImportDto) => isStudioBinImport(dto))
+      .filter((dto: StudioProjectImportDto) => isStudioEditorImport(dto))
       .map((dto: StudioProjectImportDto) => toStudioProjectImport(projectId, dto)),
     ...fonts.map((dto: StudioProjectFontDto) => toStudioProjectFont(projectId, dto)),
   ];

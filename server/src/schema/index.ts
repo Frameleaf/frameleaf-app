@@ -169,6 +169,7 @@ import {
 import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-change.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
+import { LibraryFolderAlbumTable } from 'src/schema/tables/library-folder-album.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import {
@@ -210,6 +211,7 @@ import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
 import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonMergeCandidateTable } from 'src/schema/tables/person-merge-candidate.table.js';
+import { PersonProfileTable } from 'src/schema/tables/person-profile.table.js';
 import { PersonSplitCandidateTable } from 'src/schema/tables/person-split-candidate.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
@@ -501,6 +503,7 @@ export class ImmichDatabase {
     IntegrityReportTable,
     BackupRestoreReportTable,
     LibraryTable,
+    LibraryFolderAlbumTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
     RenderWorkerTable,
@@ -529,6 +532,7 @@ export class ImmichDatabase {
     PhysicalFileTable,
     PersonGroupTable,
     PersonMergeCandidateTable,
+    PersonProfileTable,
     PersonSplitCandidateTable,
     PersonGroupAuditTable,
     PetAuditTable,
@@ -812,6 +816,7 @@ export interface DB extends QueueDatabase {
   cloud_backup_object_verification: CloudBackupObjectVerificationTable;
 
   library: LibraryTable;
+  library_folder_album: LibraryFolderAlbumTable;
 
   media_operation: MediaOperationTable;
   media_operation_checkpoint: MediaOperationCheckpointTable;
@@ -844,6 +849,7 @@ export interface DB extends QueueDatabase {
   person_audit: PersonAuditTable;
   person_group: PersonGroupTable;
   person_merge_candidate: PersonMergeCandidateTable;
+  person_profile: PersonProfileTable;
   person_split_candidate: PersonSplitCandidateTable;
   person_group_audit: PersonGroupAuditTable;
 

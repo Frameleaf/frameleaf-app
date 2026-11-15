@@ -32,6 +32,10 @@ export class LibraryTable {
   @Column({ type: 'boolean', default: false })
   readOnly!: Generated<boolean>;
 
+  /** FL-838: keep an album for each folder of the library, synced after every scan. */
+  @Column({ type: 'boolean', default: false })
+  folderAlbums!: Generated<boolean>;
+
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;
 

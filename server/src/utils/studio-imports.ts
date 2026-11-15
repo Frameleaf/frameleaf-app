@@ -1,7 +1,8 @@
 /**
  * Files uploaded into a Studio project rather than the library (FL-103 recordings, FL-105 media
  * import): microphone takes, music and sound files, stills, short video, SVG and Lottie graphics,
- * SubRip and WebVTT caption files, `.cube` 3D LUTs and (FL-1562) TrueType, OpenType and WOFF2 fonts.
+ * SubRip and WebVTT caption files, `.cube` 3D and 1D LUTs and (FL-1562) TrueType, OpenType and WOFF2
+ * fonts.
  *
  * The server never trusts the name or the declared type a browser sends. {@link sniffStudioImport}
  * reads the first bytes and decides the content type from what the file is, accepting only the
@@ -36,6 +37,9 @@ export const STUDIO_IMPORT_LUT_MAX_BYTES = 16 * 1024 * 1024;
 
 /** The largest 3D LUT grid accepted: 65 points an axis, the largest size grading tools write. */
 export const STUDIO_IMPORT_LUT_MAX_SIZE = 65;
+
+/** The longest 1D LUT accepted: the ceiling the Adobe Cube specification sets (a few MB of text). */
+export const STUDIO_IMPORT_LUT_1D_MAX_SIZE = 65_536;
 
 /** A font file is read whole and parsed in memory (FL-1562). */
 export const STUDIO_IMPORT_FONT_MAX_BYTES = STUDIO_FONT_MAX_BYTES;
@@ -507,17 +511,29 @@ const readCubeTriple = (text: string): number[] | undefined => {
   return values?.every((value) => Number.isFinite(value)) ? values : undefined;
 };
 
+/** What a `.cube` file is: a 3D grid of `size`³ rows or a 1D table of `size` rows, and its input domain. */
+export type StudioCubeLutDescriptor = {
+  dimensions: 1 | 3;
+  size: number;
+  domainMin: number[];
+  domainMax: number[];
+};
+
 /**
- * A `.cube` 3D LUT, whole (Adobe Cube LUT Specification 1.0): comments, then the keywords, then
- * exactly `LUT_3D_SIZE`³ rows of three finite numbers. A 1D LUT, a grid outside 2 to
- * {@link STUDIO_IMPORT_LUT_MAX_SIZE}, an unknown keyword, a keyword after the table has begun or a
- * table of any other length refuses the file.
+ * A `.cube` LUT, whole (Adobe Cube LUT Specification 1.0): comments, then the keywords, then the
+ * table. A 3D LUT has `LUT_3D_SIZE` (2 to {@link STUDIO_IMPORT_LUT_MAX_SIZE}) and exactly that size
+ * cubed rows; a 1D LUT has `LUT_1D_SIZE` (2 to {@link STUDIO_IMPORT_LUT_1D_MAX_SIZE}) and exactly that
+ * many rows, one output per channel. Both sizes in one file (a shaper LUT), an input range of the
+ * other kind, an unknown keyword, a keyword after the table has begun or a table of any other
+ * length refuses the file.
  */
-export function validateStudioCubeLut(text: string): { size: number; domainMin: number[]; domainMax: number[] } {
+export function validateStudioCubeLut(text: string): StudioCubeLutDescriptor {
   let size: number | undefined;
+  let dimensions: 1 | 3 | undefined;
   let rows = 0;
   let title = false;
   let inputRange: number[] | undefined;
+  let inputRangeDimensions: 1 | 3 | undefined;
   const domain: { DOMAIN_MIN?: number[]; DOMAIN_MAX?: number[] } = {};
   const refuse: (line: number, problem: string) => never = (line, problem) => {
     throw new StudioImportRefusal(`Line ${line} of the LUT ${problem}`);
@@ -536,10 +552,10 @@ export function validateStudioCubeLut(text: string): { size: number; domainMin: 
       if (!triple || triple.some((value) => Math.abs(value) > 1e37)) {
         refuse(index + 1, 'is not three numbers');
       }
-      if (size === undefined) {
-        refuse(index + 1, 'comes before LUT_3D_SIZE');
+      if (size === undefined || dimensions === undefined) {
+        refuse(index + 1, 'comes before its LUT_3D_SIZE or LUT_1D_SIZE');
       }
-      if (++rows > size ** 3) {
+      if (++rows > (dimensions === 3 ? size ** 3 : size)) {
         refuse(index + 1, 'is past the end of the table');
       }
       continue;
@@ -561,8 +577,20 @@ export function validateStudioCubeLut(text: string): { size: number; domainMin: 
           refuse(index + 1, 'is not a valid LUT_3D_SIZE');
         }
         size = Number(value);
+        dimensions = 3;
         if (size < 2 || size > STUDIO_IMPORT_LUT_MAX_SIZE) {
           refuse(index + 1, `has a grid size outside 2 to ${STUDIO_IMPORT_LUT_MAX_SIZE}`);
+        }
+        break;
+      }
+      case 'LUT_1D_SIZE': {
+        if (size !== undefined || !/^\d{1,5}$/.test(value)) {
+          refuse(index + 1, 'is not a valid LUT_1D_SIZE');
+        }
+        size = Number(value);
+        dimensions = 1;
+        if (size < 2 || size > STUDIO_IMPORT_LUT_1D_MAX_SIZE) {
+          refuse(index + 1, `has a table size outside 2 to ${STUDIO_IMPORT_LUT_1D_MAX_SIZE}`);
         }
         break;
       }
@@ -575,7 +603,8 @@ export function validateStudioCubeLut(text: string): { size: number; domainMin: 
         domain[keyword] = triple;
         break;
       }
-      case 'LUT_3D_INPUT_RANGE': {
+      case 'LUT_3D_INPUT_RANGE':
+      case 'LUT_1D_INPUT_RANGE': {
         const pair = cubePair.exec(value);
         if (
           inputRange ||
@@ -583,18 +612,19 @@ export function validateStudioCubeLut(text: string): { size: number; domainMin: 
           [Number(pair[1]), Number(pair[2])].some((value) => !Number.isFinite(value)) ||
           !(Number(pair[1]) < Number(pair[2]))
         ) {
-          refuse(index + 1, 'is not a valid LUT_3D_INPUT_RANGE');
+          refuse(index + 1, `is not a valid ${keyword}`);
         }
         inputRange = [Number(pair![1]), Number(pair![2])];
+        inputRangeDimensions = keyword === 'LUT_1D_INPUT_RANGE' ? 1 : 3;
         break;
-      }
-      default: {
-        throw new StudioImportRefusal('Only 3D .cube LUTs can be imported');
       }
     }
   }
-  if (size === undefined) {
-    throw new StudioImportRefusal('The LUT has no LUT_3D_SIZE');
+  if (size === undefined || dimensions === undefined) {
+    throw new StudioImportRefusal('The LUT has no LUT_3D_SIZE or LUT_1D_SIZE');
+  }
+  if (inputRangeDimensions !== undefined && inputRangeDimensions !== dimensions) {
+    throw new StudioImportRefusal(`A ${dimensions}D LUT cannot have a LUT_${inputRangeDimensions}D_INPUT_RANGE`);
   }
   if (
     inputRange &&
@@ -619,10 +649,11 @@ export function validateStudioCubeLut(text: string): { size: number; domainMin: 
     })
   )
     throw new StudioImportRefusal('The LUT domain is not representable');
-  if (rows !== size ** 3) {
-    throw new StudioImportRefusal(`The LUT has ${rows} rows where its size needs ${size ** 3}`);
+  const expected = dimensions === 3 ? size ** 3 : size;
+  if (rows !== expected) {
+    throw new StudioImportRefusal(`The LUT has ${rows} rows where its size needs ${expected}`);
   }
-  return { size, domainMin: min, domainMax: max };
+  return { dimensions, size, domainMin: min, domainMax: max };
 }
 
 /** Check a caption file or a LUT in full. Other kinds have their own checks and pass through. */
