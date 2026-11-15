@@ -165,6 +165,7 @@
         "generatedId": { "type": "string" },
         "originId": { "type": "string" },
         "linkedGroupId": { "type": "string" },
+        "markers": { "type": "array", "minItems": 1, "maxItems": 10000, "items": { "$ref": "#/$defs/clipMarker" } },
         "compositionId": { "type": "string" },
         "src": { "type": "string" },
         "sourceStart": { "type": "integer", "minimum": 0 },
@@ -492,7 +493,23 @@
         "id": { "$ref": "#/$defs/id" },
         "frame": { "$ref": "#/$defs/frame" },
         "color": { "type": "string" },
-        "label": { "type": "string", "minLength": 1 }
+        "label": { "type": "string", "minLength": 1 },
+        "durationInFrames": { "description": "FL-1563: a range marker covers this many frames from frame.", "type": "integer", "minimum": 1 },
+        "note": { "description": "FL-1563: free-text note.", "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "clipMarker": {
+      "description": "FL-1563: a marker on a clip, in the clip's source frames at its source rate.",
+      "type": "object",
+      "required": ["id", "sourceFrame", "color"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "sourceFrame": { "$ref": "#/$defs/frame" },
+        "durationInFrames": { "type": "integer", "minimum": 1 },
+        "color": { "type": "string" },
+        "label": { "type": "string", "minLength": 1 },
+        "note": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },
@@ -512,6 +529,7 @@
         "alignment": { "type": "number", "minimum": 0, "maximum": 1 },
         "bezierPoints": { "$ref": "#/$defs/bezier" },
         "presetId": { "type": "string", "minLength": 1 },
+        "audioCurve": { "description": "Gain law for the sound of both clips under the transition (FL-1555); constant power when absent.", "enum": ["constant-power", "constant-gain", "exponential"] },
         "properties": { "type": "object" },
         "createdAt": { "type": "integer", "minimum": 0 },
         "lastModifiedAt": { "type": "integer", "minimum": 0 }

@@ -576,6 +576,9 @@ class OrtSession:
                         options["reshape_input"] = reshape
                         self._npu_static_batch = True
                         npu_placements[self.model_path.as_posix()] = device_type
+                case "DmlExecutionProvider":
+                    # The DirectX adapter index, as Windows lists the GPUs.
+                    options = {"device_id": settings.device_id}
                 case "CoreMLExecutionProvider":
                     # Native fixtures need float32 accuracy without the expensive prediction specialization.
                     options = {
@@ -624,6 +627,11 @@ class OrtSession:
 
         if sess_options.inter_op_num_threads > 1:
             sess_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+
+        if "DmlExecutionProvider" in self.providers:
+            # DirectML supports neither memory patterns nor parallel execution (onnxruntime's DirectML docs).
+            sess_options.enable_mem_pattern = False
+            sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
         return sess_options
 
