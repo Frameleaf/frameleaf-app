@@ -33,6 +33,14 @@ export const STUDIO_ENGINE = 'freecut';
 export const STUDIO_ENVELOPE_SCHEMA_VERSION = 1;
 
 /**
+ * FL-1558: the two requests that carry a whole document (create with an initial document, and save
+ * a revision) may be as large as the graph limit plus the envelope and the save's other fields. The
+ * server's general JSON body limit (10 MB) is below the graph limit, so these routes have their own.
+ */
+export const STUDIO_DOCUMENT_BODY_MAX_BYTES = STUDIO_MAX_GRAPH_BYTES + 1024 * 1024;
+export const STUDIO_DOCUMENT_ROUTES = /^\/api\/studio\/projects(?:\/[^/?]+\/revisions)?\/?(?:\?.*)?$/i;
+
+/**
  * The project document exactly as it is stored.
  *
  * `graph` is `unknown` on purpose. Typing it would invite code that reads it, and the moment

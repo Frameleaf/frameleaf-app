@@ -107,6 +107,7 @@ export type OperationKind =
   | 'install'
   | 'import'
   | 'update'
+  | 'rollback'
   | 'backup'
   | 'restore'
   | 'start'

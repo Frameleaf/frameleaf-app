@@ -109,6 +109,8 @@ export class SearchService extends BaseService {
     const people = await this.personRepository.getByName(auth.user.id, dto.name, {
       ...getHiddenContentQueryOptions(auth),
       withHidden: dto.withHidden,
+      // FL-941: the People search box finds the caller's own people by their notes too
+      matchNotes: true,
     });
     return people.map((person) => mapPerson(person));
   }

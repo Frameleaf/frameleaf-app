@@ -2937,8 +2937,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0185-editor-import-transitions.patch",
           "e6bca4d7d8"
         ],
+        "note": "FL-1564 adds Film Dissolve, Cross Zoom, Cube Spin and Page Peel on the GPU route, with spec pages and goldens.",
         "status": "shipped"
       },
       "id": "readme.timeline-editing.4",
@@ -3372,7 +3374,7 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Timeline & Editing",
       "frameleaf": {
-        "evidence": ["0066-timeline-toolbar-scrollport.patch", "e6bca4d7d8"],
+        "evidence": ["0066-timeline-toolbar-scrollport.patch", "e6bca4d7d8", "0187-marker-ranges.patch"],
         "note": "Markers and undo/redo are canonical commands; filmstrips, waveforms and snap guides are upstream. Real-media browser journeys are not measured here.",
         "status": "shipped"
       },
@@ -5063,9 +5065,10 @@
           "0090-track-gain-automation.patch",
           "0145-dialogue-loudness-match-and-export-report.patch",
           "0150-master-true-peak-limiter.patch",
-          "0162-voice-cleanup.patch"
+          "0162-voice-cleanup.patch",
+          "0188-sound-crossfades.patch"
         ],
-        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter. FL-637 adds Clean up voice: one clip at a time, the cleaned sound a project audio import the clip plays in preview and export, with the original kept.",
+        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter. FL-637 adds Clean up voice: one clip at a time, the cleaned sound a project audio import the clip plays in preview and export, with the original kept. FL-1555 adds crossfades between two sound clips and a per-transition sound curve (constant power, constant gain, exponential) in preview, meters and export (studio/spec/sound.md).",
         "status": "shipped"
       },
       "id": "readme.audio.1",
@@ -5721,9 +5724,10 @@
           "0055-channel-preserving-gain-mix.patch",
           "0067-persisted-clip-mute.patch",
           "0087-preview-track-gain.patch",
-          "0111-multichannel-shared-retiming.patch"
+          "0111-multichannel-shared-retiming.patch",
+          "0196-sound-channel-mapping.patch"
         ],
-        "note": "Preview half delivered. The export half is not: the existing render-worker executor refuses audio.",
+        "note": "Preview half delivered. The export half is not: the existing render-worker executor refuses audio. FL-1561 (0196) adds per-clip channel mapping (mono from either side, mono mix, dual mono, picks from 5.1) with track pan after it, the same in preview and browser export.",
         "status": "shipped"
       },
       "id": "readme.audio.4",
@@ -9732,6 +9736,7 @@
           "0009-lut-cache-size.patch",
           "0049-portable-lut-import.patch",
           "0085-file-lut-float-admission.patch",
+          "0184-lut-references.patch",
           "b4113f6f99"
         ],
         "status": "shipped"
@@ -12802,9 +12807,10 @@
           "0136-project-colour-policy-disclosure.patch",
           "e6bca4d7d8",
           "0147-colour-match-between-shots.patch",
-          "0151-graded-hdr-colour-match.patch"
+          "0151-graded-hdr-colour-match.patch",
+          "0186-grading-effects.patch"
         ],
-        "note": "FL-97 closeout: managed floating-point colour. FL-599 adds colour matching to a reference shot as an editable exposure and temperature/tint pair; FL-626 matches graded clips and HDR projects from frames rendered in the working space.",
+        "note": "FL-97 closeout: managed floating-point colour. FL-599 adds colour matching to a reference shot as an editable exposure and temperature/tint pair; FL-626 matches graded clips and HDR projects from frames rendered in the working space. FL-1559 adds the ASC CDL, per-channel lift/gamma/gain and hue curves effects (studio/spec/effects).",
         "status": "shipped"
       },
       "id": "extra.color-workspace",

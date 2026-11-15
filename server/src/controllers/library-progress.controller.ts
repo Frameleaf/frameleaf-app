@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/commo
 import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  LibraryBestPhotosRedoDto,
   LibraryProgressResponseDto,
   LibraryRedoDto,
   LibraryRedoResponseDto,
@@ -69,5 +70,18 @@ export class LibraryProgressController {
   })
   redoLibraryWork(@Body() dto: LibraryRedoDto): Promise<LibraryRedoResponseDto> {
     return this.service.redo(dto);
+  }
+
+  @Post('best-photos')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Authenticated({ permission: Permission.JobCreate, admin: true })
+  @Endpoint({
+    summary: 'Score Best Photos again',
+    description:
+      'Score every photo again for Best Photos, now or in the next overnight run: after an update brings a better score for the Visual search model.',
+    history: new HistoryBuilder().added('v3').alpha('v3'),
+  })
+  redoBestPhotos(@Body() dto: LibraryBestPhotosRedoDto): Promise<void> {
+    return this.service.redoBestPhotos(dto);
   }
 }

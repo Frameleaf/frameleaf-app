@@ -577,6 +577,7 @@ describe('/albums', () => {
         hasSharedLink: false,
         assetCount: 0,
         isActivityEnabled: true,
+        isCustomOrder: false,
         isLocked: false,
         order: AssetOrder.Desc,
         kind: AlbumKind.Album,
@@ -1120,6 +1121,97 @@ describe('/albums', () => {
 
       expect(status).toBe(400);
       expect(body).toEqual(errorDto.badRequest('User is owner'));
+    });
+  });
+
+  describe('POST /albums/:id/transfer', () => {
+    it('should not allow a viewer to transfer the album', async () => {
+      const album = await utils.createAlbum(user1.accessToken, {
+        albumName: 'testAlbum',
+        albumUsers: [{ userId: user2.userId, role: AlbumUserRole.Viewer }],
+      });
+
+      const { status, body } = await request(app)
+        .post(`/albums/${album.id}/transfer`)
+        .set('Authorization', `Bearer ${user2.accessToken}`)
+        .send({ userId: user2.userId });
+
+      expect(status).toBe(403);
+      expect(body).toEqual(errorDto.forbidden('Only the album owner can hand it to someone else'));
+    });
+
+    it('should not allow an editor to transfer the album', async () => {
+      const album = await utils.createAlbum(user1.accessToken, {
+        albumName: 'testAlbum',
+        albumUsers: [{ userId: user2.userId, role: AlbumUserRole.Editor }],
+      });
+
+      const { status } = await request(app)
+        .post(`/albums/${album.id}/transfer`)
+        .set('Authorization', `Bearer ${user2.accessToken}`)
+        .send({ userId: user2.userId });
+
+      expect(status).toBe(403);
+    });
+
+    it('should let the owner hand the album to a member, who becomes the owner', async () => {
+      const album = await utils.createAlbum(user1.accessToken, {
+        albumName: 'testAlbum',
+        albumUsers: [{ userId: user2.userId, role: AlbumUserRole.Viewer }],
+      });
+
+      const { status } = await request(app)
+        .post(`/albums/${album.id}/transfer`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ userId: user2.userId });
+      expect(status).toBe(204);
+
+      const { body } = await request(app)
+        .get(`/albums/${album.id}`)
+        .set('Authorization', `Bearer ${user2.accessToken}`);
+      expect(body.albumUsers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: AlbumUserRole.Owner, user: expect.objectContaining({ id: user2.userId }) }),
+          expect.objectContaining({ role: AlbumUserRole.Editor, user: expect.objectContaining({ id: user1.userId }) }),
+        ]),
+      );
+    });
+  });
+
+  describe('POST /albums/:id/assets/move', () => {
+    it('should move an asset to another album without deleting it', async () => {
+      const asset = await utils.createAsset(user1.accessToken);
+      const [source, target] = await Promise.all([
+        utils.createAlbum(user1.accessToken, { albumName: 'source', assetIds: [asset.id] }),
+        utils.createAlbum(user1.accessToken, { albumName: 'target' }),
+      ]);
+
+      const { status, body } = await request(app)
+        .post(`/albums/${source.id}/assets/move`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ targetAlbumId: target.id, assetIds: [asset.id] });
+
+      expect(status).toBe(200);
+      expect(body).toEqual([{ id: asset.id, success: true }]);
+      const [sourceInfo, targetInfo, assetInfo] = await Promise.all([
+        getAlbumInfo({ id: source.id }, { headers: asBearerAuth(user1.accessToken) }),
+        getAlbumInfo({ id: target.id }, { headers: asBearerAuth(user1.accessToken) }),
+        request(app).get(`/assets/${asset.id}`).set('Authorization', `Bearer ${user1.accessToken}`),
+      ]);
+      expect(sourceInfo.assetCount).toBe(0);
+      expect(targetInfo.assetCount).toBe(1);
+      expect(assetInfo.body.isTrashed).toBe(false);
+    });
+
+    it('should refuse moving into the same album', async () => {
+      const album = await utils.createAlbum(user1.accessToken, { albumName: 'same' });
+
+      const { status } = await request(app)
+        .post(`/albums/${album.id}/assets/move`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ targetAlbumId: album.id, assetIds: [user1Asset1.id] });
+
+      expect(status).toBe(400);
     });
   });
 });

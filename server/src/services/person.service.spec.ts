@@ -3,7 +3,7 @@ import type { QueueExecution } from 'src/queue/types.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { mapFaces, mapPerson } from 'src/dtos/person.dto.js';
+import { PERSON_NOTES_MAX_LENGTH, PeopleUpdateDto, PersonUpdateDto, mapFaces, mapPerson } from 'src/dtos/person.dto.js';
 import {
   AssetFileType,
   AssetVisibility,
@@ -17,7 +17,8 @@ import {
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
-import { PersonService } from 'src/services/person.service.js';
+import { EyeScoresUnavailableError } from 'src/repositories/machine-learning.repository.js';
+import { EYE_SCORE_VERSION, PersonService } from 'src/services/person.service.js';
 import { getFaceSourceRevision } from 'src/utils/face-source.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
@@ -83,8 +84,22 @@ describe(PersonService.name, () => {
 
       mocks.person.getAllForUser.mockResolvedValue({
         items: [
-          { ...person, categoryIds: [family], assetCount: 3, lastSeenAt: new Date('2026-01-02T03:04:05.000Z') },
-          { ...hiddenPerson, categoryIds: [], assetCount: 1, lastSeenAt: new Date('2025-06-07T08:09:10.000Z') },
+          {
+            ...person,
+            categoryIds: [family],
+            deathDate: null,
+            notes: null,
+            assetCount: 3,
+            lastSeenAt: new Date('2026-01-02T03:04:05.000Z'),
+          },
+          {
+            ...hiddenPerson,
+            categoryIds: [],
+            deathDate: null,
+            notes: null,
+            assetCount: 1,
+            lastSeenAt: new Date('2025-06-07T08:09:10.000Z'),
+          },
         ],
         hasNextPage: false,
       });
@@ -160,8 +175,22 @@ describe(PersonService.name, () => {
 
       mocks.person.getAllForUser.mockResolvedValue({
         items: [
-          { ...isFavorite, categoryIds: [], assetCount: 2, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
-          { ...person, categoryIds: [], assetCount: 5, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
+          {
+            ...isFavorite,
+            categoryIds: [],
+            deathDate: null,
+            notes: null,
+            assetCount: 2,
+            lastSeenAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+          {
+            ...person,
+            categoryIds: [],
+            deathDate: null,
+            notes: null,
+            assetCount: 5,
+            lastSeenAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
         ],
         hasNextPage: false,
       });
@@ -906,6 +935,7 @@ describe(PersonService.name, () => {
         isFavorite: false,
         updatedAt: expect.any(String),
         featuredAssetId: null,
+        deathDate: null,
       });
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: person.ownerId,
@@ -1047,6 +1077,203 @@ describe(PersonService.name, () => {
       );
       expect(mocks.person.update).not.toHaveBeenCalled();
       expect(mocks.access.person.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([person.personGroupId]));
+    });
+  });
+
+  // FL-864: date of passing; FL-941: private notes. Both live in `person_profile`.
+  describe('date of passing and notes', () => {
+    const setup = (
+      personValues: Parameters<typeof PersonFactory.create>[0] = {},
+      profile?: { deathDate: string | null; notes: string | null },
+    ) => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ ownerId: auth.user.id, ...personValues });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.update.mockImplementation((values) => Promise.resolve({ ...person, ...values } as never));
+      mocks.person.getProfile.mockResolvedValue(profile);
+      mocks.person.upsertProfile.mockImplementation((_id, values) =>
+        Promise.resolve({
+          deathDate: values.deathDate === undefined ? (profile?.deathDate ?? null) : values.deathDate,
+          notes: values.notes === undefined ? (profile?.notes ?? null) : values.notes,
+        }),
+      );
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      return { auth, person };
+    };
+
+    it('returns the date of passing and the notes to the owner', async () => {
+      const { auth, person } = setup({}, { deathDate: '2021-06-07', notes: 'Loved the sea' });
+
+      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({
+        deathDate: '2021-06-07',
+        notes: 'Loved the sea',
+      });
+      expect(mocks.person.getProfile).toHaveBeenCalledWith(person);
+    });
+
+    it('returns null for both when none were kept', async () => {
+      const { auth, person } = setup();
+
+      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ deathDate: null, notes: null });
+    });
+
+    it('sets a date of passing after the date of birth', async () => {
+      const { auth, person } = setup({ birthDate: new Date('1940-02-03') });
+
+      await expect(sut.update(auth, person.personGroupId, { deathDate: '2020-05-06' })).resolves.toMatchObject({
+        deathDate: '2020-05-06',
+      });
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(
+        { ownerId: person.ownerId, personGroupId: person.personGroupId },
+        { deathDate: '2020-05-06', notes: undefined },
+      );
+    });
+
+    it('refuses a date of passing before the stored date of birth', async () => {
+      const { auth, person } = setup({ birthDate: new Date('1990-02-03') });
+
+      await expect(sut.update(auth, person.personGroupId, { deathDate: '1989-12-31' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.person.update).not.toHaveBeenCalled();
+      expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
+    });
+
+    it('refuses a date of passing before the date of birth sent with it', async () => {
+      const { auth, person } = setup();
+
+      await expect(
+        sut.update(auth, person.personGroupId, { birthDate: '2000-01-02', deathDate: '2000-01-01' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
+    });
+
+    it('refuses a date of birth after the stored date of passing', async () => {
+      const { auth, person } = setup({}, { deathDate: '2010-03-04', notes: null });
+
+      await expect(sut.update(auth, person.personGroupId, { birthDate: '2011-01-01' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.person.update).not.toHaveBeenCalled();
+    });
+
+    it('allows the same day for birth and passing, and any birth date once the date of passing is cleared', async () => {
+      const { auth, person } = setup({}, { deathDate: '2010-03-04', notes: null });
+
+      await expect(sut.update(auth, person.personGroupId, { birthDate: '2010-03-04' })).resolves.toBeDefined();
+      await expect(
+        sut.update(auth, person.personGroupId, { birthDate: '2011-01-01', deathDate: null }),
+      ).resolves.toMatchObject({ deathDate: null });
+      expect(mocks.person.upsertProfile).toHaveBeenLastCalledWith(
+        { ownerId: person.ownerId, personGroupId: person.personGroupId },
+        { deathDate: null, notes: undefined },
+      );
+    });
+
+    it('stores notes, and clears them for an empty string or null', async () => {
+      const { auth, person } = setup({}, { deathDate: null, notes: 'old' });
+      const id = { ownerId: person.ownerId, personGroupId: person.personGroupId };
+
+      await expect(sut.update(auth, person.personGroupId, { notes: 'Grandma Rose' })).resolves.toMatchObject({
+        notes: 'Grandma Rose',
+      });
+      expect(mocks.person.upsertProfile).toHaveBeenLastCalledWith(id, { deathDate: undefined, notes: 'Grandma Rose' });
+
+      await expect(sut.update(auth, person.personGroupId, { notes: '' })).resolves.toMatchObject({ notes: null });
+      expect(mocks.person.upsertProfile).toHaveBeenLastCalledWith(id, { deathDate: undefined, notes: null });
+
+      await sut.update(auth, person.personGroupId, { notes: ' '.repeat(3) });
+      expect(mocks.person.upsertProfile).toHaveBeenLastCalledWith(id, { deathDate: undefined, notes: null });
+
+      await sut.update(auth, person.personGroupId, { notes: null });
+      expect(mocks.person.upsertProfile).toHaveBeenLastCalledWith(id, { deathDate: undefined, notes: null });
+    });
+
+    it('leaves the profile alone when neither is sent', async () => {
+      const { auth, person } = setup();
+
+      await sut.update(auth, person.personGroupId, { name: 'Rose' });
+
+      expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
+    });
+
+    it('limits notes to 2000 characters', () => {
+      expect(PersonUpdateDto.schema.safeParse({ notes: 'a'.repeat(PERSON_NOTES_MAX_LENGTH) }).success).toBe(true);
+      expect(PersonUpdateDto.schema.safeParse({ notes: 'a'.repeat(PERSON_NOTES_MAX_LENGTH + 1) }).success).toBe(false);
+      expect(
+        PeopleUpdateDto.schema.safeParse({
+          people: [{ id: newUuid(), notes: 'a'.repeat(PERSON_NOTES_MAX_LENGTH + 1) }],
+        }).success,
+      ).toBe(false);
+    });
+
+    it('refuses a date of passing in the future', () => {
+      expect(PersonUpdateDto.schema.safeParse({ deathDate: '2999-01-01' }).success).toBe(false);
+      expect(PersonUpdateDto.schema.safeParse({ deathDate: null }).success).toBe(true);
+    });
+
+    it('passes the date of passing and notes through the bulk update', async () => {
+      const { auth, person } = setup();
+
+      await expect(
+        sut.updateAll(auth, { people: [{ id: person.personGroupId, deathDate: '2020-01-02', notes: 'n' }] }),
+      ).resolves.toEqual([{ id: person.personGroupId, success: true }]);
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(
+        { ownerId: person.ownerId, personGroupId: person.personGroupId },
+        { deathDate: '2020-01-02', notes: 'n' },
+      );
+    });
+
+    it("gives a partner's copy the date of passing but never the notes (FL-326)", async () => {
+      const { auth, person } = setup();
+      const follower = { ownerId: newUuid(), personGroupId: newUuid(), overriddenFields: [] };
+      mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (ownerId, personGroupId, write) =>
+        write({
+          ...follower,
+          ownerId,
+          personGroupId,
+          sourceOwnerId: person.ownerId,
+          sourcePersonGroupId: person.personGroupId,
+          following: true,
+        } as never),
+      );
+      mocks.partnerOrigin.getPersonFollowers.mockImplementation((ownerId) =>
+        Promise.resolve(ownerId === person.ownerId ? ([follower] as never) : []),
+      );
+      mocks.person.getProfile.mockImplementation(({ ownerId }) =>
+        Promise.resolve(
+          ownerId === person.ownerId ? { deathDate: '2020-01-02', notes: 'private to the owner' } : undefined,
+        ),
+      );
+
+      await sut.update(auth, person.personGroupId, { deathDate: '2020-01-02', notes: 'private to the owner' });
+
+      expect(mocks.partnerOrigin.markPersonOverridden).toHaveBeenCalledWith(
+        person.ownerId,
+        [person.personGroupId],
+        ['deathDate'],
+      );
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ ownerId: follower.ownerId, personGroupId: follower.personGroupId }),
+        { deathDate: '2020-01-02' },
+      );
+      for (const [id, values] of mocks.person.upsertProfile.mock.calls) {
+        if (id.ownerId === follower.ownerId) {
+          expect(values).not.toHaveProperty('notes');
+        }
+      }
+    });
+
+    it("does not touch a partner's copies for a notes-only edit", async () => {
+      const { auth, person } = setup();
+      mocks.partnerOrigin.getPersonFollowers.mockResolvedValue([
+        { ownerId: newUuid(), personGroupId: newUuid(), overriddenFields: [] } as never,
+      ]);
+
+      await sut.update(auth, person.personGroupId, { notes: 'mine' });
+
+      expect(mocks.partnerOrigin.getPersonFollowers).not.toHaveBeenCalled();
+      expect(mocks.person.upsertProfile).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1920,6 +2147,84 @@ describe(PersonService.name, () => {
     });
   });
 
+  // FL-864, FL-941: a merge keeps the survivor's date of passing and notes and fills in what it lacks
+  describe('merge carries the person profile', () => {
+    type Profile = { deathDate: string | null; notes: string | null };
+    const setupMerge = (survivorProfile?: Profile, removedProfile?: Profile, birthDate: Date | null = null) => {
+      const auth = AuthFactory.create();
+      const survivor = PersonFactory.create({ ownerId: auth.user.id, name: 'Rose', birthDate });
+      const removed = PersonFactory.create({ ownerId: auth.user.id, name: 'Rosie' });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([survivor.personGroupId, removed.personGroupId]));
+      mocks.person.getForMergePerson.mockResolvedValue([survivor, removed]);
+      mocks.person.getByGroupId.mockImplementation(({ personGroupId }) =>
+        Promise.resolve(personGroupId === survivor.personGroupId ? survivor : removed),
+      );
+      mocks.person.getProfile.mockImplementation(({ personGroupId }) =>
+        Promise.resolve(personGroupId === survivor.personGroupId ? survivorProfile : removedProfile),
+      );
+      mocks.person.delete.mockResolvedValue([removed]);
+      const merge = () => sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
+      const id = { ownerId: auth.user.id, personGroupId: survivor.personGroupId };
+      return { merge, id };
+    };
+
+    it('fills a missing date of passing and notes from the merged-away person, before deleting them', async () => {
+      const { merge, id } = setupMerge(undefined, { deathDate: '2020-05-06', notes: 'Loved gardens' });
+
+      await expect(merge()).resolves.toEqual([expect.objectContaining({ success: true })]);
+
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(expect.objectContaining(id), {
+        deathDate: '2020-05-06',
+        notes: 'Loved gardens',
+      });
+      expect(mocks.person.upsertProfile.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.person.delete.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("keeps the survivor's own date of passing and appends the other notes after a blank line", async () => {
+      const { merge, id } = setupMerge(
+        { deathDate: '2021-01-02', notes: 'Grandma' },
+        { deathDate: '2020-05-06', notes: 'Loved gardens' },
+      );
+
+      await merge();
+
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(expect.objectContaining(id), {
+        notes: 'Grandma\n\nLoved gardens',
+      });
+    });
+
+    it('keeps the joined notes within the limit', async () => {
+      const { merge } = setupMerge(
+        { deathDate: null, notes: 'a'.repeat(PERSON_NOTES_MAX_LENGTH - 5) },
+        { deathDate: null, notes: 'b'.repeat(50) },
+      );
+
+      await merge();
+
+      const [[, values]] = mocks.person.upsertProfile.mock.calls;
+      expect(values.notes).toHaveLength(PERSON_NOTES_MAX_LENGTH);
+      expect(values.notes).toBe(`${'a'.repeat(PERSON_NOTES_MAX_LENGTH - 5)}\n\nbbb`);
+    });
+
+    it('changes nothing when the merged-away person has no profile', async () => {
+      const { merge } = setupMerge({ deathDate: '2021-01-02', notes: 'Grandma' }, undefined);
+
+      await merge();
+
+      expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
+    });
+
+    it("does not take a date of passing before the survivor's date of birth", async () => {
+      const { merge } = setupMerge(undefined, { deathDate: '1980-01-01', notes: null }, new Date('1990-02-03'));
+
+      await merge();
+
+      expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
+    });
+  });
+
   describe('merge-suggestion verdict cleanup (FL-57)', () => {
     it("should drop the owner's stale verdicts when a person is deleted", async () => {
       const auth = AuthFactory.create();
@@ -2272,6 +2577,98 @@ describe(PersonService.name, () => {
       expect(mocks.person.deleteEmptyGroups).not.toHaveBeenCalled();
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
       expect(mocks.person.vacuum).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleQueueFaceEyeScores', () => {
+    it("queues a Clients shoot's photos before the rest of the library", async () => {
+      mocks.assetJob.selectionForFaceEyeScores.mockImplementation(({ inShoot }) => ({ inShoot }) as never);
+
+      await expect(sut.handleQueueFaceEyeScores({})).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.job.queueSelection.mock.calls).toEqual([
+        [JobName.FaceEyeScore, { inShoot: true }],
+        [JobName.FaceEyeScore, { inShoot: false }],
+      ]);
+      expect(mocks.assetJob.selectionForFaceEyeScores).toHaveBeenCalledWith({
+        force: undefined,
+        inShoot: true,
+        version: EYE_SCORE_VERSION,
+      });
+    });
+
+    it('skips while eye scores are off', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { eyeScores: { enabled: false } } });
+
+      await expect(sut.handleQueueFaceEyeScores({})).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleFaceEyeScore', () => {
+    const withFaces = () =>
+      AssetFactory.from()
+        .file({ type: AssetFileType.Preview })
+        .exif()
+        .face({
+          imageWidth: 400,
+          imageHeight: 500,
+          boundingBoxX1: 100,
+          boundingBoxY1: 100,
+          boundingBoxX2: 200,
+          boundingBoxY2: 250,
+        })
+        .face({
+          imageWidth: 400,
+          imageHeight: 500,
+          boundingBoxX1: 10,
+          boundingBoxY1: 20,
+          boundingBoxX2: 30,
+          boundingBoxY2: 40,
+        })
+        .build();
+
+    it('scores each face from its stored box, scaled to the preview', async () => {
+      const asset = withFaces();
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 800, height: 1000, isTransparent: false });
+      mocks.machineLearning.faceEyeScoresLocal.mockResolvedValue([
+        { eyesOpen: 0.9, eyeSharpness: 0.7 },
+        { eyesOpen: null, eyeSharpness: null },
+      ]);
+
+      await expect(sut.handleFaceEyeScore({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.machineLearning.faceEyeScoresLocal).toHaveBeenCalledWith(asset.files[0].path, [
+        [200, 200, 400, 500],
+        [20, 40, 60, 80],
+      ]);
+      expect(mocks.person.updateEyeScores).toHaveBeenCalledWith(
+        [
+          { id: asset.faces[0].id, eyesOpen: 0.9, eyeSharpness: 0.7 },
+          { id: asset.faces[1].id, eyesOpen: null, eyeSharpness: null },
+        ],
+        EYE_SCORE_VERSION,
+      );
+    });
+
+    it('leaves faces that are already scored', async () => {
+      const asset = withFaces();
+      for (const face of asset.faces) Object.assign(face, { eyeScoreVersion: EYE_SCORE_VERSION });
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+
+      await expect(sut.handleFaceEyeScore({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.machineLearning.faceEyeScoresLocal).not.toHaveBeenCalled();
+    });
+
+    it('keeps the faces unscored when the worker cannot score eyes yet', async () => {
+      const asset = withFaces();
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 400, height: 500, isTransparent: false });
+      mocks.machineLearning.faceEyeScoresLocal.mockRejectedValue(new EyeScoresUnavailableError('404'));
+
+      await expect(sut.handleFaceEyeScore({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.person.updateEyeScores).not.toHaveBeenCalled();
     });
   });
 

@@ -201,28 +201,67 @@ export const isTimingUnchangedSingleSource = (graph: unknown): boolean => {
   return speed === 1 && clip.isReversed !== true;
 };
 
-/** Media ids of the audible audio clips: not muted themselves, not on a muted track. */
-const audibleMediaIds = (graph: unknown, range?: StudioExportRange): Set<string> => {
-  const muted = new Set(
-    asArray(timelineOf(graph).tracks)
+const mutedTrackIds = (tracks: unknown): Set<string> =>
+  new Set(
+    asArray(tracks)
       .map((value) => asRecord(value))
       .filter((track) => track.muted === true)
       .map((track) => String(track.id)),
   );
-  return new Set(
-    itemsOf(graph)
-      .filter(
-        (item) =>
-          !range ||
-          ((item.from as number) < range.outPoint &&
-            (item.from as number) + (item.durationInFrames as number) > range.inPoint),
-      )
-      .filter((item) => item.type === 'audio' && item.muted !== true && !muted.has(String(item.trackId)))
-      // FL-1203: a clip names a project import, a catalog track or a generated file by these ids too.
-      .flatMap((item) => AUDIO_ID_KEYS.map((key) => item[key]).filter((id) => typeof id === 'string')),
-  );
-};
+
+/** FL-1203: a clip names a project import, a catalog track or a generated file by these ids too. */
 const AUDIO_ID_KEYS = ['mediaId', 'assetId', 'importId', 'uploadId', 'musicId', 'generatedId'] as const;
+
+/**
+ * Media ids of the audible audio clips: not muted themselves, not on a muted track. FL-1557: a
+ * composition's sound clip (an `audio` item naming the composition, protocol 14.2.1) has no media of
+ * its own; it plays the audible clips inside the composition, nested compositions included.
+ */
+const audibleMediaIds = (graph: unknown, range?: StudioExportRange): Set<string> => {
+  const compositions = new Map(
+    asArray(timelineOf(graph).compositions)
+      .map((value) => asRecord(value))
+      .map((composition) => [String(composition.id), composition] as const),
+  );
+  const audible = new Set<string>();
+  const collect = (items: GraphItem[], tracks: unknown, open: ReadonlySet<string>) => {
+    const muted = mutedTrackIds(tracks);
+    for (const item of items) {
+      if (item.type !== 'audio' || item.muted === true || muted.has(String(item.trackId))) {
+        continue;
+      }
+      const composition = typeof item.compositionId === 'string' ? compositions.get(item.compositionId) : undefined;
+      if (composition) {
+        // A composition that contains itself is refused by resource resolution; never loop on one here.
+        if (!open.has(item.compositionId as string)) {
+          collect(
+            asArray(composition.items).map((value) => asRecord(value)),
+            composition.tracks,
+            new Set([...open, item.compositionId as string]),
+          );
+        }
+        continue;
+      }
+      for (const key of AUDIO_ID_KEYS) {
+        const id = item[key];
+        if (typeof id === 'string') {
+          audible.add(id);
+        }
+      }
+    }
+  };
+  collect(
+    itemsOf(graph).filter(
+      (item) =>
+        !range ||
+        ((item.from as number) < range.outPoint &&
+          (item.from as number) + (item.durationInFrames as number) > range.inPoint),
+    ),
+    timelineOf(graph).tracks,
+    new Set(),
+  );
+  return audible;
+};
 
 /**
  * A constant-rate source's cadence recovered exactly from what was stored: every packet lasts the

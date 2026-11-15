@@ -125,7 +125,7 @@ const SearchPlacesSchema = z
 
 const SearchPeopleSchema = z
   .object({
-    name: z.string().describe('Person name to search for'),
+    name: z.string().describe("Person name to search for; the caller's own notes about a person match too (FL-941)"),
     withHidden: stringToBool.optional().describe('Include hidden people'),
   })
   .meta({ id: 'SearchPeopleDto' });

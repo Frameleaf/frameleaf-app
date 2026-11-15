@@ -123,6 +123,14 @@ export class Retention {
         if (this.live(restores.get(id), id, operations, now)) continue;
         await this.remove(join(this.directory, name), removed);
       }
+      // FL-973: a rollback review restores the pre-update checkpoint into rollback-<review>; same rule as restores.
+      const rollbacks = this.reviews('rollback');
+      for (const name of stateEntries) {
+        const id = name.replace(/^rollback-/, '');
+        if (!name.startsWith('rollback-') || !UUID.test(id)) continue;
+        if (this.live(rollbacks.get(id), id, operations, now)) continue;
+        await this.remove(join(this.directory, name), removed);
+      }
       const moves = this.reviews('media-move');
       for (const id of mediaMoves) {
         if (!UUID.test(id) || this.live(moves.get(id), id, operations, now)) continue;

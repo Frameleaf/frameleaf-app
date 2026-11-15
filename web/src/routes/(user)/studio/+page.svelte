@@ -23,6 +23,7 @@
     type StudioDeliveryChoice,
     type StudioExportChoice,
   } from '$lib/components/frameleaf/StudioExportDialog.svelte';
+  import StudioEditorImportNotes from '$lib/components/frameleaf/StudioEditorImportNotes.svelte';
   import StudioHost from '$lib/components/frameleaf/StudioHost.svelte';
   import NavigationBar from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -166,6 +167,8 @@
   const opening = takeStudioOpening(untrack(() => data.projectId));
   /** Where the engine's playhead is, for pinning review comments (`Studio.jsx:1759`). */
   let playhead = $state<Rational | null>(null);
+  /** FL-1545: choosing an import note's time moves the engine's playhead there. */
+  let seekRequest = $state<{ id: number; num: number; den: number } | null>(null);
   /** Open review comments on the project, for the Review button's count. */
   let unresolvedComments = $state(0);
   /**
@@ -1915,6 +1918,15 @@
   {/key}
 {/if}
 
+{#snippet importNotes()}
+  <StudioEditorImportNotes
+    projectId={project.id}
+    onGo={(seconds) => {
+      seekRequest = { id: (seekRequest?.id ?? 0) + 1, num: Math.round(seconds * 1000), den: 1000 };
+    }}
+  />
+{/snippet}
+
 <StudioHost
   {project}
   {assets}
@@ -1930,6 +1942,8 @@
   {onBackToEditor}
   {quickEditWaiting}
   handoffPlayhead={data.at}
+  {seekRequest}
+  banner={sessionState?.access === 'owner' && project.id !== STUDIO_DRAFT_PROJECT_ID ? importNotes : undefined}
   draftHeld={studioDraftHeld(sessionState?.status, sessionState?.hasDraft === true)}
   {onOpenActivity}
   onExportBundle={canExportBundle ? onExportBundle : undefined}

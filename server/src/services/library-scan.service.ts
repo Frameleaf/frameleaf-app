@@ -567,6 +567,15 @@ export class LibraryScanService {
       this.logger.log(
         `Scan ${id} of library ${library.id} finished: ${result.added} added, ${result.checked} checked, ${result.offlined} offline, ${result.onlined} back online`,
       );
+      // FL-838: the library's folder albums follow what the scan found; the sync reads the setting again itself.
+      if (library.folderAlbums) {
+        try {
+          await this.jobRepository.queue({ name: JobName.LibraryFolderAlbumSync, data: { id: library.id } });
+        } catch (error) {
+          // the scan is done either way; the next one asks again
+          this.logger.warn(`Folder albums of library ${library.id} not queued: ${bulkErrorMessage(error)}`);
+        }
+      }
       return;
     }
 

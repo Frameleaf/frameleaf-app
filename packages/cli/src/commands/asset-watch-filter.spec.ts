@@ -56,7 +56,8 @@ it('admits the same filenames synchronously without changing watcher timing', as
       expect.objectContaining({
         ignoreInitial: true,
         alwaysStat: true,
-        awaitWriteFinish: true,
+        // FL-849: a file is uploaded once its size has held for 5 s
+        awaitWriteFinish: { stabilityThreshold: 5000, pollInterval: 500 },
         depth: 0,
         persistent: true,
       }),
