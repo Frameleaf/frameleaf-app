@@ -668,6 +668,8 @@ export enum SystemMetadataKey {
    * processor instead), and the last "Test it" of the card, for Video playback copies.
    */
   VideoCardState = 'video-card-state',
+  /** FL-977: the latest video playback self-test: each kind of video converted with the configured card, and how it came out. */
+  PlaybackSelfTest = 'playback-self-test',
   /** FL-520: the most recent file checks, newest first: when each ran, how it ended and what it found. */
   IntegrityCheckHistory = 'integrity-check-history',
   /** FL-520: when an administrator last pressed Stop on the file checks; a check started before it stops. */

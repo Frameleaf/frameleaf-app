@@ -1657,6 +1657,8 @@ export type AdminConfigFFmpegDto = {
     realtime: AdminConfigFFmpegRealtimeDto;
     /** References */
     refs: number;
+    /** Kinds of video converted without hardware acceleration even when it is on: the kinds the playback self-test found it gets wrong. Written by the server; a settings save keeps the stored list (a configuration file may set it) */
+    softwareFallback?: PlaybackSelfTestCase[];
     targetAudioCodec: AudioCodec;
     /** Target resolution */
     targetResolution: string;
@@ -3812,6 +3814,36 @@ export type PhysicalDeduplicationPreviewRequestDto = {
     masterUserId?: string;
     /** Limit the review to copies owned by this account */
     scopeUserId?: string;
+};
+export type PlaybackSelfTestCaseDto = {
+    /** The sample-entry tag of the copy, for example hvc1 */
+    codecTag: string | null;
+    /** The transfer characteristics the copy is tagged with */
+    colorTransfer: string | null;
+    /** Whether the copy was made with hardware acceleration */
+    hardware: boolean;
+    id: PlaybackSelfTestCase;
+    /** How bright the copy is: mean Rec. 709 luma, 0 to 255 */
+    meanLuma: number | null;
+    /** Whether the copy came out right */
+    passed: boolean;
+    /** What was wrong: convert-failed, codec, codec-tag, colour-tags, too-dark, too-bright or brightness-differs */
+    problems: string[];
+    /** How bright the same clip is when converted without hardware acceleration */
+    referenceMeanLuma: number | null;
+};
+export type PlaybackSelfTestResponseDto = {
+    /** The hardware acceleration it checked */
+    accel: (TranscodeHWAccel) | null;
+    /** Each kind of video, in the order it was checked */
+    cases: PlaybackSelfTestCaseDto[];
+    /** When it finished */
+    finishedAt: string | null;
+    /** The kinds now converted without hardware acceleration because the check found them wrong */
+    softwareFallback: PlaybackSelfTestCase[];
+    /** When the latest check started */
+    startedAt: string | null;
+    status: PlaybackSelfTestStatus;
 };
 export type RenderWorkerDto = {
     /** Operations the worker currently holds */
@@ -26983,6 +27015,29 @@ export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPrevi
     })));
 }
 /**
+ * Get the latest playback self-test
+ */
+export function getPlaybackSelfTest(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PlaybackSelfTestResponseDto;
+    }>("/admin/playback-self-test", {
+        ...opts
+    }));
+}
+/**
+ * Run the playback self-test
+ */
+export function startPlaybackSelfTest(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PlaybackSelfTestResponseDto;
+    }>("/admin/playback-self-test", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * List render workers
  */
 export function listRenderWorkers(opts?: Oazapfts.RequestOpts) {
@@ -43897,6 +43952,13 @@ export enum HlsVideoResolution {
     $1440 = 1440,
     $2160 = 2160
 }
+export enum PlaybackSelfTestCase {
+    SdrH264 = "sdr-h264",
+    HlgHevc = "hlg-hevc",
+    DolbyVision84 = "dolby-vision-8.4",
+    Hdr10Pq = "hdr10-pq",
+    Hev1Hevc = "hev1-hevc"
+}
 export enum ToneMapping {
     Hable = "hable",
     Mobius = "mobius",
@@ -44419,6 +44481,12 @@ export enum PhysicalDeduplicationSkipReason {
 export enum PhysicalDeduplicationPlanMode {
     DryRun = "dry-run",
     Apply = "apply"
+}
+export enum PlaybackSelfTestStatus {
+    None = "none",
+    Running = "running",
+    Done = "done",
+    Failed = "failed"
 }
 export enum GpuWorkingBudgetBindingMethod {
     SameExportDevice = "same-export-device"

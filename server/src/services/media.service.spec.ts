@@ -6105,6 +6105,44 @@ describe(MediaService.name, () => {
       expect(metadata[SystemMetadataKey.VideoCardState]).toEqual(expect.objectContaining({ failedAt: null }));
     });
 
+    it('converts a kind of video the playback self-test found wrong on the processor (FL-977)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        ffmpeg: {
+          transcode: TranscodePolicy.All,
+          accel: TranscodeHardwareAcceleration.Nvenc,
+          accelDecode: true,
+          softwareFallback: ['hdr10-pq'],
+        },
+      });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.videoStreamHDR });
+
+      await sut.handleVideoConversion({ id: 'video-id' });
+
+      const command = mocks.media.transcode.mock.calls[0][2];
+      expect(command.outputOptions).toEqual(expect.arrayContaining(['-c:v', 'libx264']));
+      expect(command.outputOptions).not.toContain('h264_nvenc');
+      expect(command.inputOptions.join(' ')).not.toContain('cuda');
+      // a copy made on the processor on purpose is not the card failing
+      expect(mocks.systemMetadata.set).not.toHaveBeenCalledWith(SystemMetadataKey.VideoCardState, expect.anything());
+    });
+
+    it('keeps the graphics card for the kinds of video the playback self-test passed (FL-977)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        ffmpeg: {
+          transcode: TranscodePolicy.All,
+          accel: TranscodeHardwareAcceleration.Nvenc,
+          accelDecode: true,
+          softwareFallback: ['hdr10-pq'],
+        },
+      });
+      mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.multipleVideoStreams });
+
+      await sut.handleVideoConversion({ id: 'video-id' });
+
+      const command = mocks.media.transcode.mock.calls[0][2];
+      expect(command.outputOptions).toEqual(expect.arrayContaining(['-c:v', 'h264_nvenc']));
+    });
+
     it('should transcode when set to all', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.multipleVideoStreams });
       mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { transcode: TranscodePolicy.All } });

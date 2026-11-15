@@ -42,6 +42,8 @@ export type ConfigConflict = {
  * a conflict or journaled.
  */
 export const SERVER_MANAGED_CONFIG_PATHS: ReadonlySet<string> = new Set([
+  // FL-977: the kinds of video the playback self-test put on the processor
+  'ffmpeg.softwareFallback',
   'machineLearning.imageDescription.pendingRequeueAt',
   'machineLearning.imageDescription.lastConfigChangeAt',
   'metrics.enabled',
