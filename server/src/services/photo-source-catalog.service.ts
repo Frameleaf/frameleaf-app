@@ -381,7 +381,7 @@ export class PhotoSourceCatalogService {
           (
             await this.albums.create(auth, {
               albumName,
-              ...(parentId && { parentId }),
+              ...(parentId === null ? {} : { parentId }),
               kind: leaf ? AlbumKind.Album : AlbumKind.Collection,
             })
           ).id;
