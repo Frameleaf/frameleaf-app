@@ -47,6 +47,8 @@ export type AssetFile = {
 
 export type Library = {
   readOnly: boolean;
+  /** FL-838: the library keeps an album for each of its folders. */
+  folderAlbums: boolean;
   id: string;
   ownerId: string;
   createdAt: Date;

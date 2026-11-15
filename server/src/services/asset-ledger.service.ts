@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type {
+  AssetLedgerAdminQueryDto,
   AssetLedgerAdminSummaryResponseDto,
   AssetLedgerListResponseDto,
   AssetLedgerQueryDto,
@@ -22,6 +23,9 @@ const CURSOR_AT = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,6})?[+-]\d{2}(?
 
 const total = (counts: AssetLedgerCounts) =>
   counts.kept + counts.trashed + counts.removed + counts.merged + counts.missing;
+
+const withTotals = <T extends { states: AssetLedgerCounts }>(rows: T[]) =>
+  rows.map((row) => ({ ...row, total: total(row.states) }));
 
 const encodeCursor = (row: { cursorAt: string; assetId: string }) =>
   Buffer.from(`${row.cursorAt}|${row.assetId}`).toString('base64url');
@@ -54,24 +58,37 @@ export class AssetLedgerService {
   }
 
   async getSummary(auth: AuthDto): Promise<AssetLedgerSummaryResponseDto> {
-    const states = await this.ledgerRepository.counts(auth.user.id);
-    return { total: total(states), states };
+    const [states, months] = await Promise.all([
+      this.ledgerRepository.counts(auth.user.id),
+      this.ledgerRepository.countsByMonth(auth.user.id),
+    ]);
+    return { total: total(states), states, months: withTotals(months) };
   }
 
-  /** Every account's totals. It names no file: only how many each account is missing. */
-  async getAdminSummary(): Promise<AssetLedgerAdminSummaryResponseDto> {
-    const [states, missing] = await Promise.all([
-      this.ledgerRepository.counts(),
+  /**
+   * Every account's totals, or one account's with `userId` (FL-940). It names no file: only how many
+   * each account has in each state.
+   */
+  async getAdminSummary(dto: AssetLedgerAdminQueryDto = {}): Promise<AssetLedgerAdminSummaryResponseDto> {
+    const { userId } = dto;
+    const [states, missing, months, owners] = await Promise.all([
+      this.ledgerRepository.counts(userId),
       this.ledgerRepository.missingByOwner(),
+      this.ledgerRepository.countsByMonth(userId),
+      userId ? [] : this.ledgerRepository.countsByOwner(),
     ]);
     return {
       total: total(states),
       states,
-      missingByOwner: missing.map(({ ownerId, count, since }) => ({
-        ownerId,
-        count,
-        since: new Date(since).toISOString(),
-      })),
+      missingByOwner: missing
+        .filter(({ ownerId }) => !userId || ownerId === userId)
+        .map(({ ownerId, count, since }) => ({
+          ownerId,
+          count,
+          since: new Date(since).toISOString(),
+        })),
+      months: withTotals(months),
+      byOwner: withTotals(owners).sort((a, b) => b.total - a.total || a.ownerId.localeCompare(b.ownerId)),
     };
   }
 

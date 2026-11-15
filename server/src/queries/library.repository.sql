@@ -367,3 +367,131 @@ select
     where
       "asset"."libraryId" = $13::uuid
   ) as "all"
+
+-- LibraryRepository.getFolderPhotoCounts
+SELECT
+  coalesce(
+    nullif(
+      substring("asset"."originalPath", '^(.*)/[^/]*$'),
+      ''
+    ),
+    '/'
+  ) AS "folderPath",
+  count(*) AS photos
+FROM
+  asset
+WHERE
+  asset."libraryId" = $1::uuid
+  AND (
+    "asset"."isOffline" = false
+    AND "asset"."deletedAt" IS NULL
+    AND "asset"."visibility" IN ('timeline', 'archive')
+    AND "asset"."type" IN ('IMAGE', 'VIDEO')
+    AND not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+GROUP BY
+  1
+
+-- LibraryRepository.getFolderAlbums
+select
+  "library_folder_album"."id",
+  "library_folder_album"."libraryId",
+  "library_folder_album"."folderPath",
+  "library_folder_album"."albumId",
+  "library_folder_album"."isUserEdited",
+  "album"."albumName",
+  "album"."parentId",
+  "album"."kind",
+  "album"."deletedAt"
+from
+  "library_folder_album"
+  inner join "album" on "album"."id" = "library_folder_album"."albumId"
+where
+  "library_folder_album"."libraryId" = $1::uuid
+order by
+  "library_folder_album"."folderPath"
+
+-- LibraryRepository.deleteFolderAlbums
+delete from "library_folder_album"
+where
+  "libraryId" = $1::uuid
+returning
+  "albumId",
+  "folderPath"
+
+-- LibraryRepository.getFolderFileKeys
+SELECT
+  folder.path AS "folderPath",
+  asset."originalFileName",
+  asset."fileModifiedAt",
+  folder.gone
+FROM
+  asset
+  JOIN (
+    SELECT
+      unnest($1::text[]) AS path,
+      true AS gone
+    UNION ALL
+    SELECT
+      unnest($2::text[]) AS path,
+      false AS gone
+  ) folder ON folder.path = coalesce(
+    nullif(
+      substring("asset"."originalPath", '^(.*)/[^/]*$'),
+      ''
+    ),
+    '/'
+  )
+WHERE
+  asset."libraryId" = $3::uuid
+  AND (
+    folder.gone
+    OR (
+      "asset"."isOffline" = false
+      AND "asset"."deletedAt" IS NULL
+      AND "asset"."visibility" IN ('timeline', 'archive')
+      AND "asset"."type" IN ('IMAGE', 'VIDEO')
+      AND not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+  )
+
+-- LibraryRepository.getFolderAlbumsWithOtherItems
+SELECT DISTINCT
+  member."albumId"
+FROM
+  album_asset member
+  JOIN asset ON asset.id = member."assetId"
+WHERE
+  member."albumId" = ANY ($1::uuid[])
+  AND NOT (
+    asset."libraryId" IS NOT DISTINCT FROM $2::uuid
+    AND EXISTS (
+      SELECT
+        1
+      FROM
+        unnest($3::text[], $4::uuid[]) AS folder (path, "albumId")
+      WHERE
+        folder."albumId" = member."albumId"
+        AND folder.path = coalesce(
+          nullif(
+            substring("asset"."originalPath", '^(.*)/[^/]*$'),
+            ''
+          ),
+          '/'
+        )
+    )
+  )

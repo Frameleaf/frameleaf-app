@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { configureUnraidCompose, detectAcceleration, detectTranscoding, releaseImages, renderCompose } from '../src/compose.js';
+import { configureUnraidCompose, detectAcceleration, detectNpu, detectTranscoding, releaseImages, renderCompose } from '../src/compose.js';
 import { checkHost, detectPlatform } from '../src/server-check.js';
 import type { Installation } from '../src/contracts.js';
 import type { VerifiedRelease } from '../src/releases.js';
@@ -51,6 +51,19 @@ test('Manager picks the ML variant from host GPUs and Docker runtimes', async ()
     assert.equal(await detectAcceleration(intel, nvidia, 'x64'), 'cpu');
   } finally {
     delete process.env.MANAGER_ML_ACCELERATION;
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test('Manager finds an Intel NPU only when the kernel exposes an accel device (FL-984)', async () => {
+  const folder = await mkdtemp(join(tmpdir(), 'manager-npu-'));
+  try {
+    assert.equal(await detectNpu(join(folder, 'none')), false);
+    await mkdir(join(folder, 'empty/class/accel'), { recursive: true });
+    assert.equal(await detectNpu(join(folder, 'empty')), false);
+    await mkdir(join(folder, 'npu/class/accel/accel0'), { recursive: true });
+    assert.equal(await detectNpu(join(folder, 'npu')), true);
+  } finally {
     await rm(folder, { recursive: true, force: true });
   }
 });

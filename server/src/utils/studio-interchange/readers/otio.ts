@@ -338,14 +338,16 @@ export const readOtio = (bytes: Buffer | string): InterchangeProject => {
   const notices: InterchangeNotice[] = [];
   if (context.skipped > 0) {
     notices.push({
-      code: 'format-limits',
+      code: 'items-unknown',
+      subject: String(context.skipped),
       what: `${context.skipped} ${context.skipped === 1 ? 'item' : 'items'} of a kind Frameleaf does not read yet`,
       became: 'Left out; the space each took is kept',
     });
   }
   if (context.disabled > 0) {
     notices.push({
-      code: 'format-limits',
+      code: 'clips-disabled',
+      subject: String(context.disabled),
       what: `${context.disabled} ${context.disabled === 1 ? 'clip' : 'clips'} switched off in the other editor`,
       became: 'Left out; the space each took is kept',
     });
