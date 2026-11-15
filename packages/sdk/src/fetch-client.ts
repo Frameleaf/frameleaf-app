@@ -4417,6 +4417,10 @@ export type DownloadResponse = {
     /** Whether an archive download puts each photo's details file (XMP sidecar) beside it */
     includeSidecar: boolean;
 };
+export type DuplicatesResponse = {
+    /** FL-832: rules for which duplicate copy is suggested as the keeper, most important first (values of DuplicateKeepRule). Empty uses the default order */
+    keepRules: string[];
+};
 export type EmailNotificationsResponse = {
     /** Whether to receive email notifications for album invites */
     albumInvite: boolean;
@@ -4563,6 +4567,7 @@ export type UserPreferencesResponseDto = {
     };
     display?: DisplayPreferencesResponse;
     download: DownloadResponse;
+    duplicates?: DuplicatesResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
     libraryView?: LibraryViewResponse;
@@ -4636,6 +4641,10 @@ export type DownloadUpdate = {
     includeEmbeddedVideos?: boolean;
     /** Whether an archive download puts each photo's details file (XMP sidecar) beside it */
     includeSidecar?: boolean;
+};
+export type DuplicatesUpdate = {
+    /** Rules for which duplicate copy is suggested as the keeper, most important first; a tie goes to the next rule. Empty uses the default order (raw, heic, largest, mostMetadata). Repeats are dropped */
+    keepRules?: DuplicateKeepRule[];
 };
 export type EmailNotificationsUpdate = {
     /** Whether to receive email notifications for album invites */
@@ -4776,6 +4785,7 @@ export type UserPreferencesUpdateDto = {
     };
     display?: DisplayPreferencesUpdate;
     download?: DownloadUpdate;
+    duplicates?: DuplicatesUpdate;
     emailNotifications?: EmailNotificationsUpdate;
     /** The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed */
     expectedRevision?: string;
@@ -45525,6 +45535,18 @@ export enum DownloadFormat {
     Original = "original",
     Jpeg = "jpeg",
     Web = "web"
+}
+export enum DuplicateKeepRule {
+    Raw = "raw",
+    Heic = "heic",
+    Largest = "largest",
+    HighestResolution = "highestResolution",
+    Oldest = "oldest",
+    Newest = "newest",
+    InAlbum = "inAlbum",
+    HasEdits = "hasEdits",
+    Favorite = "favorite",
+    MostMetadata = "mostMetadata"
 }
 export enum LibraryViewScope {
     Personal = "personal",
