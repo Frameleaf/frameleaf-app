@@ -211,6 +211,13 @@ cover path smoothing, the crop coverage maths, the renderer transform at the cli
 the card. The estimator is verified on synthetic footage only (a still picture moved by a known crop
 path, and generated textures); real handheld footage, rolling shutter, browser preview/export pixel
 parity and speed-ramp spans in the live preview remain open.
+Patch 0187 (FL-1563) lets markers be ranges with notes and clips carry markers. A project marker may
+have `durationInFrames` (a range) and `note`; save, bundle import, rate changes (the range keeps its end
+on the same moment) and composition trims (a range is cut to the kept span) keep them. Any item may carry
+`markers` in source frames (`sourceFrame`), which move with the media. Imports from other editors write
+them; the ruler still draws a marker at its start, and editing ranges and notes waits for the FL-1615
+mock. Schema `marker` and `clipMarker`, protocol 12.8 and 2.4.
+
 Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
 the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
 embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the offset is the peak of the
