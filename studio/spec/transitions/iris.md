@@ -6,7 +6,7 @@
 | Directions | none |
 | Duration (frames) | default 30, min 10, max 90 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 A circle centred on the frame grows from nothing until it is larger than the frame, revealing the incoming clip inside it. The circle is round in pixels (aspect-correct) and its edge is feathered. Both clips also get a small scale drift and an opacity dip.
@@ -44,6 +44,9 @@ The outgoing clip is shrunk (sA < 1); its border reads clamp-to-edge (stretched 
 
 ## Alpha
 Alpha is scaled by the opacities as for clockWipe; opaque inputs give alpha < 1 mid-transition (minimum 0.9 outside, 0.85 + 0.15p inside). Output converted to straight alpha per [T2].
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. The opacity ramps multiply light and coverage together, so they change coverage, not brightness.
 
 ## Notes
 - Endpoints (SDR float route): p = 0 gives exactly A (r = 0). p = 1 gives B: r = R exceeds every δ, f = 0, hard test δ ≤ R → m = 1; sB = 1 and oB = 1 within binary32 rounding.

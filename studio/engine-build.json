@@ -879,7 +879,17 @@
       "path": "patches/0196-sound-channel-mapping.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "0d6404ce7906c73ed85ca091ee101185983126ae2aa311046630e82ac5d454c8"
+    },
+    {
+      "path": "patches/0197-project-fonts.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "98148c67903bd22f3a4434b60974ffb56130e2a92f4e59ef299397f90e50985c"
+    },
+    {
+      "path": "patches/0198-hdr-transitions-and-grades.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "b8e59992add8e538ed7422cf8ae55a630ea2bbca34c648bbf19eda1b80452b23"
     }
   ],
-  "sourceSha256": "81b9a0517a735951598a080a5deeda55caae8a33687ff99e7f791f734256c09e"
+  "sourceSha256": "a4d2a7c6100e9c888b3f24c8804fe4646c761805fdbfc7b7ad2a10fc1da1726d"
 }

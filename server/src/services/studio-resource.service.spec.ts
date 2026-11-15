@@ -1649,6 +1649,112 @@ describe(StudioResourceService.name, () => {
       expect(grants.slice(1).map((grant) => grant.path)).toEqual(entry.files!.map((file) => file.path));
     });
 
+    describe('fonts kept with the project (FL-1562)', () => {
+      const REGULAR = '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c6';
+      const BLACK = '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c7';
+      const fontImport = (id: string, contentType = 'font/ttf') => ({
+        id,
+        path: `/data/studio-imports/${id}`,
+        checksum: id.replaceAll('-', '').padEnd(64, '0'),
+        sizeBytes: 900,
+        contentType,
+      });
+      const graphWith = (family: string, fonts: unknown[]) => ({
+        ...sequenceWith({ kind: 'title', fontFamily: family }),
+        metadata: { fonts },
+      });
+
+      it('resolves a family the graph keeps with the project from its imports, every face a file', async () => {
+        // Even a bundled family name is the project's own once the graph lists it.
+        block('font:Inter');
+        const graph = graphWith('Inter', [
+          { importId: BLACK, family: 'Inter', weight: 900, style: 'normal' },
+          { importId: REGULAR, family: 'Inter', weight: 400, style: 'normal' },
+        ]);
+        const { manifest, refused } = await sut.resolveProjectResources(
+          auth,
+          context(graph, { imports: [fontImport(REGULAR), fontImport(BLACK, 'font/woff2')] }),
+        );
+        expect(refused).toEqual([]);
+        const entry = manifest.entries.find((item) => item.kind === StudioResourceKind.Font)!;
+        expect(entry).toMatchObject({
+          id: 'Inter',
+          grant: 'render',
+          sourceAccess: 'project',
+          ownerId: auth.user.id,
+          path: fontImport(REGULAR).path,
+          checksum: fontImport(REGULAR).checksum,
+        });
+        expect(entry.files).toEqual([
+          {
+            file: `${BLACK}.woff2`,
+            weight: 900,
+            style: 'normal',
+            subset: 'full',
+            format: 'woff2',
+            checksum: fontImport(BLACK).checksum,
+            path: fontImport(BLACK).path,
+          },
+          expect.objectContaining({ file: `${REGULAR}.ttf`, weight: 400, format: 'ttf' }),
+        ]);
+        // The listed imports are project imports of the graph too, so they travel with it.
+        expect(
+          manifest.entries.filter((item) => item.kind === StudioResourceKind.ProjectImport).map((item) => item.id),
+        ).toEqual(expect.arrayContaining([REGULAR, BLACK]));
+        const grants = sut.issueReadGrants(manifest, { workerId: 'worker-1' });
+        expect(grants.filter((grant) => grant.key.startsWith(`${entry.key}#`)).map((grant) => grant.path)).toEqual([
+          fontImport(BLACK).path,
+          fontImport(REGULAR).path,
+        ]);
+      });
+
+      it('refuses the family when a face names an import the project does not keep, or one that is not a font', async () => {
+        const missing = await sut.resolveProjectResources(
+          auth,
+          context(graphWith('Brand Sans', [{ importId: REGULAR, family: 'Brand Sans', weight: 400, style: 'normal' }])),
+        );
+        expect(missing.refused).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              kind: StudioResourceKind.Font,
+              id: 'Brand Sans',
+              reason: StudioRefusalReason.UndeclaredImport,
+            }),
+          ]),
+        );
+        const notFont = await sut.resolveProjectResources(
+          auth,
+          context(
+            graphWith('Brand Sans', [{ importId: REGULAR, family: 'Brand Sans', weight: 400, style: 'normal' }]),
+            {
+              imports: [fontImport(REGULAR, 'audio/wav')],
+            },
+          ),
+        );
+        expect(notFont.refused).toEqual([
+          expect.objectContaining({ kind: StudioResourceKind.Font, reason: StudioRefusalReason.UnsupportedMediaType }),
+        ]);
+      });
+
+      it('ignores malformed entries, so a family with none usable is reported as not bundled', async () => {
+        const { refused } = await sut.resolveProjectResources(
+          auth,
+          context(
+            graphWith('Brand Sans', [
+              { importId: REGULAR, family: 'Brand Sans', weight: 950, style: 'normal' },
+              { importId: REGULAR, family: 'Brand Sans', weight: 400, style: 'oblique' },
+              { importId: 'not-a-uuid', family: 'Brand Sans', weight: 400, style: 'normal' },
+              { importId: REGULAR, family: 'https://fonts.example/brand', weight: 400, style: 'normal' },
+            ]),
+            { imports: [fontImport(REGULAR)] },
+          ),
+        );
+        expect(refused.filter((item) => item.kind === StudioResourceKind.Font)).toEqual([
+          expect.objectContaining({ id: 'Brand Sans', reason: StudioRefusalReason.NotBundled }),
+        ]);
+      });
+    });
+
     it('still refuses a bundled family whose rights are blocked, and lets a job catalogue replace one', async () => {
       block('font:Inter');
       const graph = sequenceWith({ kind: 'title', fontFamily: 'Inter' });

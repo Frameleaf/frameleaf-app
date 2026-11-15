@@ -56,7 +56,13 @@ import { isRevealedLockReason } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { restoredVersionState } from 'src/utils/restoration.js';
 import { studioMediaSources } from 'src/utils/studio-export-contract.js';
-import { type StudioRenderFontFile, studioBundledRenderFonts, studioFontFileInputId } from 'src/utils/studio-fonts.js';
+import { studioFontFormatOf } from 'src/utils/studio-font-file.js';
+import {
+  type StudioRenderFontFile,
+  studioBundledRenderFonts,
+  studioFontFileInputId,
+  studioRegularFontFile,
+} from 'src/utils/studio-fonts.js';
 import { STUDIO_IMPORT_VECTOR_MAX_BYTES, studioImportKind } from 'src/utils/studio-imports.js';
 import {
   parseStudioLottieSource,
@@ -69,6 +75,7 @@ import {
   StudioAudioSource,
   StudioDestination,
   StudioEgress,
+  StudioProjectFontFace,
   StudioRefusalReason,
   StudioResourceKind,
   StudioResourceReference,
@@ -80,6 +87,7 @@ import {
   isStudioIdentifier,
   isStudioUuid,
   measureStudioGraph,
+  readStudioProjectFonts,
   studioReferenceKey,
   studioRestoredMediaId,
 } from 'src/utils/studio-resources.js';
@@ -421,6 +429,11 @@ export class StudioResourceService extends BaseService {
     // FL-86: a bundled entry is loaded only when its reviewed rights admit this destination's use.
     const rightsUse = studioRightsUseFor(context.destination);
     const imports = new Map((context.imports ?? []).map((item) => [item.id, item]));
+    // FL-1562: families the graph keeps with the project win over the catalogue for the family.
+    const projectFonts = new Map<string, StudioProjectFontFace[]>();
+    for (const face of readStudioProjectFonts(context.graph)) {
+      projectFonts.set(face.family, [...(projectFonts.get(face.family) ?? []), face]);
+    }
     const generated = new Map((context.generated ?? []).map((item) => [item.id, item]));
 
     const { references, violations, sequences } = extractStudioResourceReferences(context.graph);
@@ -683,7 +696,9 @@ export class StudioResourceService extends BaseService {
             ? kind === 'captions'
             : reference.kind === StudioResourceKind.Lut
               ? kind === 'lut'
-              : true;
+              : reference.kind === StudioResourceKind.Font
+                ? kind === 'font'
+                : true;
       if (!fits) {
         return {
           ok: false,
@@ -864,6 +879,51 @@ export class StudioResourceService extends BaseService {
         }
 
         case StudioResourceKind.Font: {
+          const faces = projectFonts.get(reference.id);
+          if (faces) {
+            // Every face the graph lists for the family must be a font kept with this project.
+            const files: StudioRenderFontFile[] = [];
+            for (const face of faces) {
+              const declared = await declaredImport({
+                kind: StudioResourceKind.Font,
+                id: face.importId,
+                graphPath: '/metadata/fonts',
+              });
+              const format = declared.ok ? studioFontFormatOf(declared.item.contentType) : undefined;
+              if (!declared.ok || !format) {
+                refuse(
+                  reference,
+                  declared.ok ? StudioRefusalReason.UnsupportedMediaType : declared.reason,
+                  `A font file of ${reference.id} kept with the project cannot be used: ${declared.ok ? 'it is not a font' : declared.detail}`,
+                );
+                files.length = 0;
+                break;
+              }
+              files.push({
+                file: `${face.importId}.${format}`,
+                weight: face.weight,
+                style: face.style,
+                subset: 'full',
+                format,
+                checksum: declared.item.checksum!,
+                path: declared.item.path,
+              });
+            }
+            if (files.length === 0) {
+              break;
+            }
+            // The entry's own input is the face a reader of the one-file shape would draw.
+            const regular = studioRegularFontFile(files);
+            authorize(reference, {
+              ownerId: context.ownerId,
+              checksum: regular.checksum,
+              path: regular.path,
+              sourceAccess: 'project',
+              grant: 'render',
+              files,
+            });
+            break;
+          }
           const entry = catalog.fonts[reference.id];
           if (!entry) {
             refuse(reference, StudioRefusalReason.NotBundled, 'Only fonts bundled with the deployment resolve.');

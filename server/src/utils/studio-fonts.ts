@@ -50,11 +50,29 @@ export type StudioRenderFontFile = {
   file: string;
   weight: number;
   style: 'normal' | 'italic';
+  /** `latin` or `latin-ext` for a bundled file; `full` for a font kept with the project (FL-1562). */
   subset: string;
-  format: 'ttf';
+  /** Bundled files are decoded TrueType; a font kept with the project is read as it was uploaded. */
+  format: 'ttf' | 'otf' | 'woff2';
   checksum: string;
   path: string;
 };
+
+/**
+ * The face a reader of the one-file shape draws: the regular (400, upright) face, else the
+ * upright face nearest 400 (the lighter of two equally near), else the face nearest 400; the
+ * `latin` file of a bundled family first.
+ */
+export const studioRegularFontFile = <T extends Pick<StudioRenderFontFile, 'weight' | 'style' | 'subset'>>(
+  files: readonly T[],
+): T =>
+  [...files].sort(
+    (a, b) =>
+      Number(a.style !== 'normal') - Number(b.style !== 'normal') ||
+      Math.abs(a.weight - 400) - Math.abs(b.weight - 400) ||
+      a.weight - b.weight ||
+      Number(a.subset !== 'latin') - Number(b.subset !== 'latin'),
+  )[0];
 
 export type StudioRenderFontEntry = { path: string; checksum: string; files: StudioRenderFontFile[] };
 
@@ -83,6 +101,7 @@ export const studioBundledRenderFonts = (): Readonly<Record<string, StudioRender
         }));
       const regular =
         files.find((file) => file.weight === 400 && file.style === 'normal' && file.subset === 'latin') ?? files[0];
+      // Bundled families keep their established regular file; studioRegularFontFile is for project fonts.
       catalog[family.family] = { path: regular.path, checksum: regular.checksum, files };
     }
     renderCatalog = catalog;

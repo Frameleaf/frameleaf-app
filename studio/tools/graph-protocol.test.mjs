@@ -166,6 +166,36 @@ test('FL-638: stabilisation is a video field with base64 paths', () => {
   assert.notDeepEqual(withItem((item) => ({ ...item, stabilisation: { ...stabilisation, level: 'wobbly' } })), []);
 });
 
+test('FL-1562: metadata.fonts lists the faces of fonts kept with the project', () => {
+  const [, graph] = normalGraphs()[0];
+  const face = { importId: '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c6', family: 'Brand Sans', weight: 400, style: 'normal' };
+  const withFonts = (fonts) => {
+    const copy = structuredClone(graph);
+    copy.metadata = { ...copy.metadata, fonts };
+    return validate(schema, copy);
+  };
+  assert.deepEqual(withFonts([face, { ...face, weight: 100, style: 'italic' }, { ...face, weight: 900 }]), []);
+  assert.deepEqual(withFonts([]), []);
+  for (const bad of [
+    { ...face, importId: 'brand.ttf' },
+    { ...face, family: '' },
+    { ...face, family: ' Brand' },
+    { ...face, family: 'Brand"Sans' },
+    { ...face, family: 'Brand\\Sans' },
+    { ...face, family: 'x'.repeat(129) },
+    { ...face, weight: 50 },
+    { ...face, weight: 950 },
+    { ...face, weight: 450.5 },
+    { ...face, style: 'oblique' },
+    { ...face, url: 'https://fonts.example/brand.woff2' },
+    { importId: face.importId, family: face.family, weight: 400 },
+  ])
+    assert.notDeepEqual(withFonts([bad]), [], JSON.stringify(bad));
+  assert.notDeepEqual(withFonts(Array.from({ length: 33 }, (_, index) => ({ ...face, family: `Family ${index}` }))), []);
+  // The section that defines it is part of the published page.
+  assert.match(page, /#### 14\.3\.6 Fonts kept with the project/);
+});
+
 test('FL-1561: audioChannelMap is a video or audio field of source plane indexes', () => {
   const [, graph] = normalGraphs().find(([, candidate]) => candidate.timeline.items.some((item) => item.type === 'video'));
   const withMap = (audioChannelMap, type) => {

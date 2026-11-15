@@ -11,8 +11,9 @@
       "qualification": "Source-bound Chromium WebGPU float readback and production composition PQ export measured, including distinct endpoints, signed/extended values, unequal coverage, premultiplied ingress, per-texel hidden RGB before fractional filtering, half-subnormal/zero coverage, small positive coverage and failed-float typed refusal. Other browser/device/deployment axes and full FL-97 remain unqualified."
     },
     "blurDissolve": {
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Pinned five-tap blur of premultiplied light and coverage, then the raised-cosine mix. SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "chromatic": {
       "mirrorSymmetric": true,
@@ -21,8 +22,9 @@
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
     "clockWipe": {
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Angular sweep selection with the pinned feather; the pinned zoom and opacity ramps scale light and coverage together. SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "crossZoom": {
       "hdr": "refused",
@@ -33,16 +35,19 @@
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
     "dipToColorDissolve": {
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Mix through the authored colour, which is sRGB-encoded and decoded with the extended sRGB curve (H5) before it meets linear light. SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "dissolve": {
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Raised-cosine mix of the two clips' light and coverage. SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "fade": {
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Cos-squared weights of the two clips' light with the pinned 4% scale drift; out-of-frame taps contribute nothing. SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "filmDissolve": {
       "hdr": "refused",
@@ -54,8 +59,9 @@
     },
     "flip": {
       "mirrorSymmetric": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Squeeze of the outgoing then incoming clip about the centre; outside the squeezed frame is opaque black (zero light). SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "glitch": {
       "sdrParityBudget": 4,
@@ -63,8 +69,9 @@
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
     "iris": {
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Circle selection with the pinned feather; the pinned 4% zoom and opacity ramps scale light and coverage together. SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "lensWarpZoom": {
       "hdr": "refused",
@@ -81,25 +88,29 @@
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
     "nonAdditiveDissolve": {
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Linear mix of light; each channel's highlight guard caps it at BT.709 luminance + 0.18 reference-white units (36.5 cd/m2), weighted 0.18*sin(pi*p). The SDR [0, 1] clamp is lifted. SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "pagePeel": {
       "hdr": "refused",
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
     "pixelate": {
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Block-centre selection with the pinned block ramp, then the pinned crossfade of light and coverage. SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "radialBlur": {
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Pinned zoom and spin tap mean of premultiplied light and coverage, the pinned crossfade, and the pinned vignette as a dimensionless light gain (at least 0.75). SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "slide": {
       "mirrorSymmetric": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Push: both clips move; selection by the moving split. SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     },
     "smoothCut": {
       "hdr": "refused",
@@ -112,8 +123,9 @@
     },
     "wipe": {
       "mirrorSymmetric": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "implemented",
+      "semantics": "Linear display-referred BT.709 (1.0 = 203 cd/m2): the page's arithmetic on premultiplied linear light with no SDR display clamp; p <= 0 and p >= 1 are the clips exactly; output straight RGB over the unrounded coverage, coverage rounded to binary16, RGB limited to +-65504; zero coverage writes zero. Hard selection of one clip per pixel along the sweep. SDR retains the pinned encoded equation and clamps.",
+      "qualification": "Source-bound Chromium WebGPU float readback: HDR goldens on signed, highlight and translucent linear inputs with hidden RGB (studio/spec/goldens/transitions.json), the engine-free page equations of linear-hdr-operators.test.mjs, and the transition matrix's endpoint, homogeneity, page-arithmetic and independent-equation checks. Hardware HDR display measurement, other browser/device/deployment axes, nested compositions (still refused) and full FL-97 remain unqualified."
     }
   },
   "historicalEncodedHdr": {

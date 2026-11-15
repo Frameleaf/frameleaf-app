@@ -8972,9 +8972,10 @@
         "evidence": [
           "0014-effects-float-transport.patch",
           "0039-effect-parameter-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039). FL-1556 (0198) renders it in linear HDR projects: grades act on the extended sRGB encoding of the working value (sharpen on premultiplied linear light); spec README C4, HDR goldens, linear-hdr-operators.test.mjs and the effects matrix.",
         "status": "shipped"
       },
       "id": "effect.gpu-curves",
@@ -9010,9 +9011,10 @@
         "evidence": [
           "0014-effects-float-transport.patch",
           "0039-effect-parameter-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039). FL-1556 (0198) renders it in linear HDR projects: grades act on the extended sRGB encoding of the working value (sharpen on premultiplied linear light); spec README C4, HDR goldens, linear-hdr-operators.test.mjs and the effects matrix.",
         "status": "shipped"
       },
       "id": "effect.gpu-color-wheels",
@@ -9696,8 +9698,10 @@
           "0039-effect-parameter-meaning.patch",
           "0021-chroma-hard-edge.patch",
           "0026-chroma-hard-edge-precision.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
+        "note": "FL-1556 (0198) renders it in linear HDR projects: grades act on the extended sRGB encoding of the working value (sharpen on premultiplied linear light); spec README C4, HDR goldens, linear-hdr-operators.test.mjs and the effects matrix.",
         "status": "shipped"
       },
       "id": "effect.gpu-chroma-key",
@@ -9737,8 +9741,10 @@
           "0049-portable-lut-import.patch",
           "0085-file-lut-float-admission.patch",
           "0184-lut-references.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
+        "note": "FL-1556 (0198) renders it in linear HDR projects: grades act on the extended sRGB encoding of the working value (sharpen on premultiplied linear light); spec README C4, HDR goldens, linear-hdr-operators.test.mjs and the effects matrix.",
         "status": "shipped"
       },
       "id": "effect.gpu-lut",
@@ -9850,9 +9856,10 @@
         "evidence": [
           "0014-effects-float-transport.patch",
           "0039-effect-parameter-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039) only. No effect-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float transport (0014) and parameter meaning (0039). FL-1556 (0198) renders it in linear HDR projects: grades act on the extended sRGB encoding of the working value (sharpen on premultiplied linear light); spec README C4, HDR goldens, linear-hdr-operators.test.mjs and the effects matrix.",
         "status": "shipped"
       },
       "id": "effect.gpu-sharpen",
@@ -10493,9 +10500,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.clockWipe",
@@ -10564,9 +10572,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.blurDissolve",
@@ -10599,9 +10608,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.dipToColorDissolve",
@@ -10634,9 +10644,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.nonAdditiveDissolve",
@@ -10705,8 +10716,10 @@
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
           "0040-dissolve-dithers-opacity.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
+        "note": "FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.dissolve",
@@ -10739,9 +10752,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.fade",
@@ -10809,9 +10823,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.flip",
@@ -10879,9 +10894,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.iris",
@@ -11019,9 +11035,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.pixelate",
@@ -11054,9 +11071,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.radialBlur",
@@ -11089,9 +11107,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.slide",
@@ -11159,9 +11178,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0198-hdr-transitions-and-grades.patch",
           "b4113f6f99"
         ],
-        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048) only. No transition-specific Frameleaf test.",
+        "note": "Upstream shader; Frameleaf adds float alpha (0015) and input meaning (0048). FL-1556 (0198) renders it in linear HDR projects: the page arithmetic on premultiplied linear light without SDR clamps; spec README T5, HDR goldens, linear-hdr-operators.test.mjs and the transition matrix.",
         "status": "shipped"
       },
       "id": "transition.wipe",
@@ -12000,8 +12020,8 @@
       "basis": "source-inventory",
       "category": "Headless edit command",
       "frameleaf": {
-        "evidence": ["c1482c759a", "e6bca4d7d8"],
-        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "evidence": ["c1482c759a", "e6bca4d7d8", "0197-project-fonts.patch"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server. FL-1562: a title can name a font kept with the project (metadata.fonts, graph protocol 14.3.6); the engine reads it from the import in preview, browser export and the bundled worker, nearest listed weight, never from the network. No editor control writes metadata.fonts yet.",
         "status": "shipped"
       },
       "id": "command.addText",

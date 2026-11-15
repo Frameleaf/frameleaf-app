@@ -5,7 +5,7 @@
 | Category | stylize |
 | Temporal | no |
 | Pass | single full-frame pass, output size = input size (W × H) |
-| HDR | refused [C4] |
+| HDR | linear-display-bt709-v1 [C4] |
 
 ## What it does
 Unsharp mask: subtracts a Gaussian-weighted 7 × 7 blur from the pixel and adds the difference back, scaled by `amount`.
@@ -40,7 +40,9 @@ Taps that leave the frame read clamp-to-edge [C2], so the edge row/column is eff
 Output alpha is the centre pixel's alpha. The blur averages straight RGB without weighting by alpha, so hidden RGB under transparent neighbours (alpha = 0) contributes to the blur and can create halos at matte edges. RGB at alpha = 0 is computed by the same formula.
 
 ## SDR and HDR
-SDR: operates on sRGB-encoded values [C3] and clamps to [0, 1]. HDR: refused [C4].
+SDR: operates on sRGB-encoded values [C3] and clamps to [0, 1].
+
+HDR [C4]: the same 7 × 7 kernel on linear light, with alpha-aware taps. Every tap, the centre included, is PB of C4 at the same coordinates (premultiplied light and coverage). The reference colour is Σ ω·PB.rgb / Σ ω·PB.a, the coverage-weighted mean colour of the taps, so RGB under zero alpha never enters it and transparent surroundings do not darken an edge. With C = PB(uv).rgb / PB(uv).a: out.rgb = C + (C − reference) · amount, limited to ±65504 and not clamped below zero (an overshoot next to a highlight is kept as a signed component until output); out.a = PB(uv).a rounded to binary16 as in HDR-OUT; zero coverage writes (0, 0, 0, 0). For an opaque picture this is the SDR equation on linear values, so it commutes with exposure: twice the light gives twice the result.
 
 ## Notes
 - The 49-tap sum order (x outer, y inner) is given for completeness; differences from a different summation order are within binary32 rounding.

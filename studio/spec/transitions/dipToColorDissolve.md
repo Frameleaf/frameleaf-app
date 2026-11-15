@@ -6,7 +6,7 @@
 | Directions | none |
 | Duration (frames) | default 30, min 10, max 90 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 Dissolves the outgoing clip into a solid colour over the first half, then from that colour into the incoming clip over the second half (dip to black by default).
@@ -36,6 +36,9 @@ None.
 
 ## Alpha
 C is opaque, so the result becomes fully opaque at the midpoint even over transparent clips (α = a.α · (1 − k1) + k1 in the first half). Output converted to straight alpha per [T2].
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. The colour is sRGB-encoded, like every authored colour: each component is decoded with SRGB⁻¹ of hdr.md H5 (odd, so a component outside [0, 1] keeps its sign) before the mixes, and its alpha is 1. The default black is 0 either way.
 
 ## Notes
 - At p_c = 0.5 exactly, the second branch is taken with k2 = 0, giving exactly C. Both halves are continuous there.

@@ -6,7 +6,7 @@
 | Directions | from-left, from-right, from-top, from-bottom [T3] |
 | Duration (frames) | default 30, min 5, max 90 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 A hard-edged straight wipe: a line sweeps across the frame from the named side, and everything it has passed shows the incoming clip. Neither clip moves.
@@ -36,6 +36,9 @@ The boundary is a hard step with no anti-aliasing: a pixel switches when the swe
 
 ## Alpha
 Alpha follows the selected clip. Output converted to straight alpha per [T2]; no clamping (none needed).
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. Each pixel is one clip's, as in SDR.
 
 ## Notes
 - Endpoints (SDR float route): p = 0 gives exactly A (all pixel centres have s > 0); p = 1 gives exactly B (all s < 1).

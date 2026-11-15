@@ -46,7 +46,8 @@ export const startPartnerBackfill = async (
   sharedById: string,
   sharedWithId: string,
 ) => {
-  const total = await partnerOrigin.countOwnerAssets(sharedById);
+  // FL-774: a scoped partnership counts (and copies) only what its scope sends
+  const total = await partnerOrigin.countOwnerAssets(sharedById, sharedWithId);
   await partnerOrigin.startBackfill(sharedById, sharedWithId, total);
   await job.queue({ name: JobName.PartnerBackfill, data: { sharedById, sharedWithId } });
 };
@@ -166,6 +167,23 @@ export const recordAlbumEdit = async (
   }
 };
 
+/**
+ * FL-774: an edit brought these items into a partnership's scope (added to a chosen album, a face named, a new date):
+ * copy them to those partners. Partnerships that share Everything copied them already; an item already copied is
+ * skipped by the copy itself.
+ */
+export const queueScopedCopies = async ({ partnerOrigin, job }: BackfillRepositories, assetIds: string[]) => {
+  const entries = await partnerOrigin.getScopedRecipients(assetIds);
+  if (entries.length > 0) {
+    await job.queueAll(
+      entries.map(({ assetId, sharedById, sharedWithId }) => ({
+        name: JobName.PartnerCopyAsset as const,
+        data: { sourceAssetId: assetId, targetOwnerId: sharedWithId, partnerSharedById: sharedById },
+      })),
+    );
+  }
+};
+
 /** A new album of `ownerId`'s goes to everyone they share with (spec §4.4, §4.6). */
 export const queueAlbumCopies = async (
   { partner, job }: { partner: PartnerRepository; job: JobRepository },
@@ -228,6 +246,10 @@ export class PartnerCopyService extends BaseService {
     if (rootOwnerId === targetOwnerId) {
       return;
     }
+    // FL-774: every copy (backfill, a new upload, an edit, the next hop of A→B→C) passes this partnership's scope
+    if (!(await this.partnerOriginRepository.isInPartnerScope(source.id, partnerSharedById, targetOwnerId))) {
+      return;
+    }
 
     const locks = BaseService.create(PartnerLockService, this);
     const lockInput = { sourceAssetId: source.id, sourceOwnerId: source.ownerId };
@@ -275,6 +297,65 @@ export class PartnerCopyService extends BaseService {
 
     await this.completeAssetCopy(source, copyId, targetOwnerId, partnerSharedById);
     return copyId;
+  }
+
+  /**
+   * FL-837 ("Add to my library"): `ownerId`'s own copy of an item they can see, linked to the same stored file, with
+   * its metadata and its faces belonging to nobody yet (recognition places them among the owner's own people). It is
+   * not a partner copy: nothing follows the source afterwards. Locked items and items the source owner's Locked rules
+   * hide are refused: they only ever reach partners. Access is the caller's to check.
+   */
+  async copyToLibrary(
+    sourceAssetId: string,
+    ownerId: string,
+  ): Promise<{ status: 'added'; copyId: string } | { status: 'exists' | 'refused' }> {
+    const source = await this.assetRepository.getById(sourceAssetId);
+    if (
+      !source ||
+      source.libraryScope === LibraryScope.Design ||
+      source.deletedAt ||
+      source.status !== AssetStatus.Active ||
+      source.libraryId ||
+      source.isExternal ||
+      source.isOffline ||
+      source.visibility === AssetVisibility.Hidden
+    ) {
+      return { status: 'refused' };
+    }
+    if (
+      source.ownerId === ownerId ||
+      (await this.partnerOriginRepository.libraryHasChecksum(ownerId, source.checksum))
+    ) {
+      return { status: 'exists' };
+    }
+    const locks = BaseService.create(PartnerLockService, this);
+    if (await locks.getCopyLockReason({ sourceAssetId: source.id, sourceOwnerId: source.ownerId })) {
+      return { status: 'refused' };
+    }
+    const original = await this.resolvePhysicalOriginal(source.id);
+    if (!original) {
+      return { status: 'refused' };
+    }
+    const copyId = await this.partnerOriginRepository.insertAssetCopy({
+      sourceAssetId: source.id,
+      ownerId,
+      rootOwnerId: source.ownerId,
+      partnerSharedById: null,
+      standalone: true,
+      original: { id: original.id, path: original.path },
+    });
+    if (!copyId) {
+      // another request added the same content first
+      return { status: 'exists' };
+    }
+    const faceIds = await this.partnerOriginRepository.copyFacesUnassigned(source.id, copyId);
+    if (faceIds.length > 0) {
+      await this.jobRepository.queueAll(
+        faceIds.map((id) => ({ name: JobName.FacialRecognition as const, data: { id } })),
+      );
+    }
+    await this.ensureCopyThumbnails(source.id, copyId);
+    return { status: 'added', copyId };
   }
 
   /** Replay every post-insert step; recipient overrides and trash still win. */
@@ -451,6 +532,15 @@ export class PartnerCopyService extends BaseService {
     if (!(await this.partnerRepository.get({ sharedById: partnerSharedById, sharedWithId: targetOwnerId }))) {
       return;
     }
+    // FL-774: a scoped partnership receives only the albums chosen, never another album's name or cover
+    if (
+      !(await this.partnerRepository.isAlbumInScope(
+        { sharedById: partnerSharedById, sharedWithId: targetOwnerId },
+        album.id,
+      ))
+    ) {
+      return;
+    }
 
     const assetIds = await this.partnerOriginRepository.getAlbumAssetCopyIds(album.id, targetOwnerId);
     const cover = album.albumThumbnailAssetId
@@ -560,6 +650,17 @@ export class PartnerCopyService extends BaseService {
         })),
       );
     }
+  }
+
+  /** FL-774: an edit can bring items into a partnership's scope. */
+  @OnEvent({ name: 'AssetsChanged' })
+  async onAssetsChanged({ assetIds }: ArgOf<'AssetsChanged'>) {
+    await queueScopedCopies({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, assetIds);
+  }
+
+  @OnEvent({ name: 'AssetChanged' })
+  async onAssetChanged({ assetId }: ArgOf<'AssetChanged'>) {
+    await queueScopedCopies({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, [assetId]);
   }
 
   /** Spec §4.6: a new item of a sharing user's is copied to every partner, once its metadata is read. */
@@ -688,6 +789,7 @@ export class PartnerCopyService extends BaseService {
       sharedById,
       backfill.cursor,
       this.backfillBatchSize,
+      sharedWithId,
     );
     const copies: string[] = [];
     for (const id of ids) {
