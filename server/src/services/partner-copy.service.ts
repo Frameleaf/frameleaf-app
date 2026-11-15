@@ -299,6 +299,65 @@ export class PartnerCopyService extends BaseService {
     return copyId;
   }
 
+  /**
+   * FL-837 ("Add to my library"): `ownerId`'s own copy of an item they can see, linked to the same stored file, with
+   * its metadata and its faces belonging to nobody yet (recognition places them among the owner's own people). It is
+   * not a partner copy: nothing follows the source afterwards. Locked items and items the source owner's Locked rules
+   * hide are refused: they only ever reach partners. Access is the caller's to check.
+   */
+  async copyToLibrary(
+    sourceAssetId: string,
+    ownerId: string,
+  ): Promise<{ status: 'added'; copyId: string } | { status: 'exists' | 'refused' }> {
+    const source = await this.assetRepository.getById(sourceAssetId);
+    if (
+      !source ||
+      source.libraryScope === LibraryScope.Design ||
+      source.deletedAt ||
+      source.status !== AssetStatus.Active ||
+      source.libraryId ||
+      source.isExternal ||
+      source.isOffline ||
+      source.visibility === AssetVisibility.Hidden
+    ) {
+      return { status: 'refused' };
+    }
+    if (
+      source.ownerId === ownerId ||
+      (await this.partnerOriginRepository.libraryHasChecksum(ownerId, source.checksum))
+    ) {
+      return { status: 'exists' };
+    }
+    const locks = BaseService.create(PartnerLockService, this);
+    if (await locks.getCopyLockReason({ sourceAssetId: source.id, sourceOwnerId: source.ownerId })) {
+      return { status: 'refused' };
+    }
+    const original = await this.resolvePhysicalOriginal(source.id);
+    if (!original) {
+      return { status: 'refused' };
+    }
+    const copyId = await this.partnerOriginRepository.insertAssetCopy({
+      sourceAssetId: source.id,
+      ownerId,
+      rootOwnerId: source.ownerId,
+      partnerSharedById: null,
+      standalone: true,
+      original: { id: original.id, path: original.path },
+    });
+    if (!copyId) {
+      // another request added the same content first
+      return { status: 'exists' };
+    }
+    const faceIds = await this.partnerOriginRepository.copyFacesUnassigned(source.id, copyId);
+    if (faceIds.length > 0) {
+      await this.jobRepository.queueAll(
+        faceIds.map((id) => ({ name: JobName.FacialRecognition as const, data: { id } })),
+      );
+    }
+    await this.ensureCopyThumbnails(source.id, copyId);
+    return { status: 'added', copyId };
+  }
+
   /** Replay every post-insert step; recipient overrides and trash still win. */
   private async completeAssetCopy(
     source: { id: string; ownerId: string; livePhotoVideoId: string | null },

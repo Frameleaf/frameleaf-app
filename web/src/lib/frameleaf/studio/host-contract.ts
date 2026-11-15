@@ -262,10 +262,11 @@ export interface StudioProjectImportRef {
   /** The media id the editor gave the file; clips place it by this id. */
   id: string;
   /**
-   * What the server read from the bytes. A `lut` is a `.cube` file a colour effect names by `lutId`
-   * (FL-1558); the editor never offers it in the bin.
+   * What the server read from the bytes. A `font` (FL-1562) is never bin media: the editor reads
+   * it by id for the titles whose family the project's `metadata.fonts` maps to it. A `lut` is a
+   * `.cube` file a colour effect names by `lutId` (FL-1558); the editor never offers it in the bin.
    */
-  kind: 'audio' | 'image' | 'video' | 'vector' | 'lut';
+  kind: 'audio' | 'image' | 'video' | 'vector' | 'font' | 'lut';
   name: string;
   /** Content type the server read from the bytes. */
   mimeType: string;

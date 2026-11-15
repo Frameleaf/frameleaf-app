@@ -12000,8 +12000,8 @@
       "basis": "source-inventory",
       "category": "Headless edit command",
       "frameleaf": {
-        "evidence": ["c1482c759a", "e6bca4d7d8"],
-        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server.",
+        "evidence": ["c1482c759a", "e6bca4d7d8", "0197-project-fonts.patch"],
+        "note": "Reached through the adapter canonical command runtime (canonical-commands.ts), which the adapter build claims for every command.* row; not through the Freecut headless server. FL-1562: a title can name a font kept with the project (metadata.fonts, graph protocol 14.3.6); the engine reads it from the import in preview, browser export and the bundled worker, nearest listed weight, never from the network. No editor control writes metadata.fonts yet.",
         "status": "shipped"
       },
       "id": "command.addText",
