@@ -6210,6 +6210,8 @@ export type AnalyticsBucketDto = {
     photos: number;
     /** Bytes */
     physicalBytes: number | null;
+    /** True when the growth values were rebuilt from the items in the library today, because the bucket ends before the first nightly reading; false for a nightly reading or a gap. Left out by older servers */
+    rebuilt?: boolean;
     through: string;
     /** Videos added in this period and still in the library (a video taken before the server started counts from the day it was taken) */
     videos: number;

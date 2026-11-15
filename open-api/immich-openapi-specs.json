@@ -82799,6 +82799,10 @@
             "nullable": true,
             "type": "integer"
           },
+          "rebuilt": {
+            "description": "True when the growth values were rebuilt from the items in the library today, because the bucket ends before the first nightly reading; false for a nightly reading or a gap. Left out by older servers",
+            "type": "boolean"
+          },
           "through": {
             "format": "date",
             "type": "string"
