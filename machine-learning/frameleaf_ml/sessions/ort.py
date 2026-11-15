@@ -196,6 +196,10 @@ def _npu_reshape(model_path: Path, spatial: int | None) -> str | None:
 
 class OrtSession:
     session: ort.InferenceSession
+    # FL-984 defaults, also for sessions a caller builds without __init__.
+    static_hw: int | None = None
+    _npu_static_batch = False
+    _exclude_npu = False
 
     def __init__(
         self,
@@ -208,11 +212,8 @@ class OrtSession:
         static_hw: int | None = None,
     ):
         self.model_path = Path(model_path)
-        # FL-984: the height and width the model always receives (an NPU needs fixed shapes), and whether this
-        # session was compiled for an NPU with a batch of one.
+        # FL-984: the height and width the model always receives (an NPU needs fixed shapes).
         self.static_hw = static_hw
-        self._npu_static_batch = False
-        self._exclude_npu = False
         # The SHA-256 of the approved model this session provably runs: of the bytes it was created
         # from in memory, or of the model those bytes were derived from (see `source_model_path`).
         self.model_sha256: str | None = None
