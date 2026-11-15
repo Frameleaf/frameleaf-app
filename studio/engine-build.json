@@ -869,7 +869,12 @@
       "path": "patches/0186-grading-effects.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "adf61867d53efd26b402ad2dc996d503ad59447fdae83a2e6a2f0f6524993e76"
+    },
+    {
+      "path": "patches/0184-lut-references.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "7a526e48b8b16e1e00f2b80a3b80bd876c5925a36224041d1dc176e6581bd6d5"
     }
   ],
-  "sourceSha256": "3a3669ec17409883b5705c8044503ef6825972c8a75a90ef700a4829568695ca"
+  "sourceSha256": "3b81da411c63fb3b648a86d1bc04d8446c0853cff3d5511ec9c0c874d1751feb"
 }

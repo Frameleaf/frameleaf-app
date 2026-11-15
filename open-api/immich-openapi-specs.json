@@ -79139,6 +79139,32 @@
         ],
         "type": "object"
       },
+      "AdminConfigEyeScoresDto": {
+        "properties": {
+          "closedBelow": {
+            "default": 0.35,
+            "description": "Eyes-open score below which a face counts as having closed eyes",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "enabled": {
+            "default": true,
+            "description": "Whether eyes open and eye sharpness are measured for each face",
+            "type": "boolean"
+          },
+          "softBelow": {
+            "default": 0.3,
+            "description": "Eye sharpness below which a face counts as having soft eyes",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
       "AdminConfigFFmpegDto": {
         "properties": {
           "accel": {
@@ -80521,6 +80547,14 @@
           "enabled": {
             "description": "Enabled",
             "type": "boolean"
+          },
+          "eyeScores": {
+            "$ref": "#/components/schemas/AdminConfigEyeScoresDto",
+            "default": {
+              "closedBelow": 0.35,
+              "enabled": true,
+              "softBelow": 0.3
+            }
           },
           "facialRecognition": {
             "$ref": "#/components/schemas/AdminConfigFacialRecognitionDto"
@@ -89714,6 +89748,22 @@
                 "state": "Added"
               }
             ]
+          },
+          "eyeSharpness": {
+            "description": "How sharp the face's eyes are (0 soft, 1 sharp); null when the eyes can't be seen or aren't scored yet",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
+          "eyesOpen": {
+            "description": "How open the face's eyes are (0 closed, 1 open); null when the eyes can't be seen or aren't scored yet",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
           },
           "hiddenAt": {
             "description": "When the owner hid this face, or null. Hidden faces are only listed with withHidden",
@@ -144625,6 +144675,77 @@
         ],
         "type": "string"
       },
+      "PhotographyPhotoEyesDto": {
+        "properties": {
+          "closedCount": {
+            "description": "Faces whose eyes are closed",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faceCount": {
+            "description": "Faces found in the photo",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faces": {
+            "description": "Each face, left to right",
+            "items": {
+              "properties": {
+                "checked": {
+                  "description": "The eyes have been checked",
+                  "type": "boolean"
+                },
+                "closed": {
+                  "description": "The eyes are closed",
+                  "type": "boolean"
+                },
+                "soft": {
+                  "description": "The eyes are soft (out of focus)",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "closed",
+                "soft",
+                "checked"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "quality": {
+            "description": "The worst checked face's eye quality (open and sharp), for sorting; null until one is checked",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
+          "softCount": {
+            "description": "Faces whose eyes are soft (out of focus)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unscoredCount": {
+            "description": "Faces whose eyes aren't checked yet",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "closedCount",
+          "faceCount",
+          "faces",
+          "quality",
+          "softCount",
+          "unscoredCount"
+        ],
+        "type": "object"
+      },
       "PhotographyPhotosDto": {
         "properties": {
           "nextCursor": {
@@ -144656,6 +144777,9 @@
                 "exclusion": {
                   "nullable": true,
                   "type": "string"
+                },
+                "eyes": {
+                  "$ref": "#/components/schemas/PhotographyPhotoEyesDto"
                 },
                 "fileName": {
                   "type": "string"

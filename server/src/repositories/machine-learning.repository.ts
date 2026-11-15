@@ -624,6 +624,9 @@ export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
 /** No local worker can fill an area: ML is off, remote-only, or its worker cannot get the inpainting model. */
 export class InpaintUnavailableError extends Error {}
 
+/** FL-863: the local worker can't score eyes now (an older worker without the route, or no landmark model). */
+export class EyeScoresUnavailableError extends Error {}
+
 export class RestorationWorkerError extends Error {
   constructor(
     readonly code: RestorationWorkerErrorCode | 'unreachable' | 'protocol-error',
@@ -808,6 +811,47 @@ export class MachineLearningRepository implements RestorationInference {
       .parse(JSON.parse(Buffer.concat(chunks).toString()));
     await this.authorize({ url });
     return Buffer.from(result['semantic-mask'].png, 'base64');
+  }
+
+  /**
+   * FL-863: eyes open and eye sharpness for faces already found, from their boxes in `imagePath`'s pixels.
+   * Always the instance-local worker (`POST /face-eye-scores`): the landmark step takes a few milliseconds a
+   * face, and Desktop and Cloud face producers don't serve it. A worker without the route (404) or without
+   * the landmark model (503) surfaces as `EyeScoresUnavailableError`.
+   */
+  async faceEyeScoresLocal(
+    imagePath: string,
+    boxes: Array<[number, number, number, number]>,
+    signal?: AbortSignal,
+  ): Promise<Array<{ eyesOpen: number | null; eyeSharpness: number | null }>> {
+    if (!this.config.enabled) throw new EyeScoresUnavailableError('Local machine learning is disabled');
+    const url = this.getLocalUrls()[0];
+    if (!url || url === FRAMELEAF_CLOUD_ENDPOINT.url) throw new EyeScoresUnavailableError('No local worker');
+    await this.authorize({ url });
+    const endpoint = new URL('face-eye-scores', url.endsWith('/') ? url : `${url}/`);
+    if (!['http:', 'https:'].includes(endpoint.protocol) || /(^|\.)frameleaf\.(app|cloud)$/i.test(endpoint.hostname))
+      throw new EyeScoresUnavailableError('Eye scores require an instance-local worker');
+    const form = new FormData();
+    form.append('boxes', JSON.stringify(boxes));
+    form.append('image', await openAsBlob(imagePath));
+    const deadline = AbortSignal.timeout(60_000);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      body: form,
+      redirect: 'error',
+      headers: this.authHeaders({ url, authToken: process.env.FRAMELEAF_ML_AUTH_TOKEN?.trim() }),
+      signal: signal ? AbortSignal.any([deadline, signal]) : deadline,
+    });
+    if (!response.ok) {
+      if ([404, 422, 501, 503].includes(response.status))
+        throw new EyeScoresUnavailableError(`Local eye scores unavailable (${response.status})`);
+      throw new Error(`Local eye scores failed (${response.status})`);
+    }
+    const score = z.number().min(0).max(1).nullable();
+    const { faces } = z
+      .object({ faces: z.array(z.object({ eyesOpen: score, eyeSharpness: score })).length(boxes.length) })
+      .parse(await response.json());
+    return faces;
   }
 
   /**

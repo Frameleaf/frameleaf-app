@@ -261,8 +261,11 @@ export type RetainedProcessingProvenance = ProcessingProvenanceInput & { outputS
 export interface StudioProjectImportRef {
   /** The media id the editor gave the file; clips place it by this id. */
   id: string;
-  /** What the server read from the bytes. */
-  kind: 'audio' | 'image' | 'video' | 'vector';
+  /**
+   * What the server read from the bytes. A `lut` is a `.cube` file a colour effect names by `lutId`
+   * (FL-1558); the editor never offers it in the bin.
+   */
+  kind: 'audio' | 'image' | 'video' | 'vector' | 'lut';
   name: string;
   /** Content type the server read from the bytes. */
   mimeType: string;
