@@ -104,6 +104,22 @@
             "sdrMonitoring": { "enum": ["bt2390", "none"] }
           },
           "additionalProperties": true
+        },
+        "fonts": {
+          "description": "Fonts kept with the project (14.3.6, FL-1562): each face names a font import by importId, the family titles use for it, its weight and its style. A family listed here is drawn only from these files.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": ["importId", "family", "weight", "style"],
+            "additionalProperties": false,
+            "properties": {
+              "importId": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+              "family": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\s\"\\\\\\u0000-\\u001f\\u007f](?:[^\"\\\\\\u0000-\\u001f\\u007f]*[^\\s\"\\\\\\u0000-\\u001f\\u007f])?$" },
+              "weight": { "type": "integer", "minimum": 100, "maximum": 900 },
+              "style": { "enum": ["normal", "italic"] }
+            }
+          }
         }
       },
       "additionalProperties": true

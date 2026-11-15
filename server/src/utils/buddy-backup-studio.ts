@@ -15,11 +15,13 @@ import {
   validateBundleImportProvenance,
 } from 'src/utils/studio-import-provenance.js';
 import {
+  STUDIO_IMPORT_FONT_MAX_BYTES,
   STUDIO_IMPORT_MAX_BYTES,
   STUDIO_IMPORT_MAX_PER_PROJECT,
   STUDIO_IMPORT_TEXT_LIMITS,
   scanStudioVector,
   sniffStudioImport,
+  validateStudioFontImport,
   validateStudioImportText,
 } from 'src/utils/studio-imports.js';
 import { canonicalJson, checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
@@ -423,6 +425,15 @@ export const validateBuddyStudioImport = async (item: BuddyStudioProject['import
     await handle.read(head, 0, head.length, 0);
     const type = sniffStudioImport(head, item.contentType);
     if (type.contentType !== item.contentType) throw new Error('Buddy Studio import type changed');
+    if (type.kind === 'font') {
+      // FL-1562: a kept font is read whole and checked like an upload.
+      if (stat.size > STUDIO_IMPORT_FONT_MAX_BYTES) throw new Error('Buddy Studio font is too large');
+      const buffer = Buffer.alloc(stat.size + 1);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      if (bytesRead !== stat.size) throw new Error('Buddy Studio import changed');
+      validateStudioFontImport(buffer.subarray(0, bytesRead));
+      return;
+    }
     const limit = STUDIO_IMPORT_TEXT_LIMITS[type.kind];
     if (limit) {
       if (stat.size > limit.maxBytes) throw new Error('Buddy Studio text import is too large');
