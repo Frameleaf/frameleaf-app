@@ -28,7 +28,7 @@ describe('FL-977 playback self-test with real ffmpeg', { concurrent: false }, ()
   const useFfmpeg = async (ffmpeg: Partial<SystemConfig['ffmpeg']>) => {
     const config = structuredClone(previousConfig);
     Object.assign(config.ffmpeg, { threads: 1, softwareFallback: [] }, ffmpeg);
-    await setup.sut.updateConfig(config);
+    await setup.ctx.updateConfig(config);
   };
 
   beforeAll(async () => {
@@ -49,7 +49,7 @@ describe('FL-977 playback self-test with real ffmpeg', { concurrent: false }, ()
 
   afterEach(async () => {
     if (previousConfig) {
-      await setup.sut.updateConfig(previousConfig);
+      await setup.ctx.updateConfig(previousConfig);
     }
     await setup.ctx.get(SystemMetadataRepository).delete(PLAYBACK_SELF_TEST_KEY);
   });
