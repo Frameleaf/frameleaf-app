@@ -491,8 +491,12 @@ function keepImportedLuts(state: Session) {
       async keep(file) {
         const mount = state.mount
         if (state.disposed || !acceptsWrite(state, mount)) throw new Error('origin_retired')
+        // A save as a copy can change the project while the file uploads; the file stays with the
+        // project it went to, and the panel embeds the LUT instead.
+        const project = studioProjectUuidOf(state.context)
         const kept = await call('uploadProjectImport', { id: crypto.randomUUID(), fileName: file.name, file })
-        if (state.disposed || state.mount !== mount) throw new Error('origin_retired')
+        if (state.disposed || state.mount !== mount || studioProjectUuidOf(state.context) !== project)
+          throw new Error('origin_retired')
         blobUrlManager.registerUrl(kept.id, kept.url)
         return { id: kept.id }
       },
