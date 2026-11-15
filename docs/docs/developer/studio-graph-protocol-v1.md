@@ -705,13 +705,13 @@ Section 13.2.3 specifies transitions, and 13.4.1 the command that creates them. 
 1. If `L` or `R` no longer exists, the transition is removed. Commands that delete clips remove their transitions first.
 2. If the clips are on different tracks, it is removed.
 3. If `|E − R.from| ≤ 1` the clips **meet**. Otherwise, if `R.from < E` they **overlap**. Otherwise (`R.from > E + 1`) the transition is removed.
-4. If either clip is not a video, image or composition item, it is removed.
+4. Unless both clips are video, image or composition items, or both are sound items that are not compound items (FL-1555), it is removed.
 5. **Meet:** let `M` be the longest length the clips' handles allow (below). If `M ≤ 0` the transition is removed. If `durationInFrames > M` it becomes `M`.
 6. **Overlap:** let `O = E − R.from`. If `O < durationInFrames`, the length becomes `max(2, O)` when that is shorter than both clips, and the transition is removed when it is not. Otherwise, if `durationInFrames` is not shorter than both clips, it becomes `max(2, min(L, R lengths) − 1)`.
 
 Transitions that pass unchanged keep their order in `timeline.transitions`. Transitions whose length was changed are moved after them, in their own order. When the list becomes empty the key is removed.
 
-`M` is the largest `d` from 1 to `min(L, R lengths) − 1` for which `d − floor(d × alignment)` frames fit in `L`'s tail handle and `floor(d × alignment)` frames fit in `R`'s head handle. The tail handle of a video or composition clip is `toTimeline(sourceDuration − sourceEnd)`, and its head handle is `toTimeline(sourceStart)`. An absent `sourceEnd` counts as `sourceDuration` and an absent `sourceDuration` as 0, so such a clip has no tail handle. A still has unlimited handles.
+`M` is the largest `d` from 1 to `min(L, R lengths) − 1` for which `d − floor(d × alignment)` frames fit in `L`'s tail handle and `floor(d × alignment)` frames fit in `R`'s head handle. The tail handle of a video, sound or composition clip is `toTimeline(sourceDuration − sourceEnd)`, and its head handle is `toTimeline(sourceStart)`. An absent `sourceEnd` counts as `sourceDuration` and an absent `sourceDuration` as 0, so such a clip has no tail handle. A still has unlimited handles.
 
 Some commands refuse an edit that would starve a transition instead of repairing it afterwards. For them a transition is **valid** between two clips when rules 2 to 4 keep it, its length is at most `min(L, R lengths) − 1`, and, when the clips meet, its two parts fit the handles as in the definition of `M`. Such a command is refused (`failed`) unless every transition it names is valid both before the edit and with the edited clips in place.
 
@@ -1588,9 +1588,12 @@ A clip's `effects` is its effect stack, drawn in array order. Each entry is:
 | `direction`                               | Optional. One of the presentation's `directions`.                                          |
 | `bezierPoints`                            | Optional. `{ x1, y1, x2, y2 }` for `timing: "cubic-bezier"`.                               |
 | `properties`                              | Optional. Values of the presentation's `parameters`, by name.                              |
+| `audioCurve`                              | Optional. `constant-power` (the default), `constant-gain` or `exponential` (FL-1555).      |
 | `presetId`, `createdAt`, `lastModifiedAt` | Optional. Written by editor features outside this protocol. Preserve them.                 |
 
-A clip has at most one transition out of it and at most one into it. The clips must be video, still or composition items on one track.
+A clip has at most one transition out of it and at most one into it. The clips must be video, still or composition items on one track, or two sound items on one track that are neither compound items nor linked to a video clip (FL-1555; fixture `clip.setTransition/adds-between-sound-clips`). A transition between sound items draws nothing.
+
+**Sound under a transition.** Both clips play their sound through the transition: the outgoing clip into its tail handle and the incoming clip from its head handle. Over the `d` frames, at progress `t` from 0 to 1, the outgoing sound is multiplied by `g(1 − t)` and the incoming by `g(t)`, where `g` is chosen by `audioCurve`: `sin(πt/2)` for `constant-power`, `t` for `constant-gain` and `t²` for `exponential`. A video or composition clip's linked sound follows its clip's transition the same way. Sound fades on a clip (`audioFadeIn`, `audioFadeOut` and their curves) apply on top. `studio/spec/sound.md` has the full rules and worked values.
 
 **The two parts.** With `p = floor(d × alignment)`, a transition takes the last `p` frames of the outgoing clip and the first `d − p` frames of the incoming clip. Those frames are the clip's **transition regions**. While the outgoing clip plays its region, the incoming clip shows `p` frames from before its start: its **head handle**. While the incoming clip plays its region, the outgoing clip shows `d − p` frames from after its end: its **tail handle**. Section 12.2.6 defines the handles, the longest length `M` they allow, and when a transition is **valid**.
 
