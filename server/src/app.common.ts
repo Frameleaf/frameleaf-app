@@ -17,6 +17,7 @@ import { ApiService } from 'src/services/api.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { useSwagger } from 'src/utils/misc.js';
 import { privateLogContext, startPrivateLogs } from 'src/utils/private-log-runtime.js';
+import { STUDIO_DOCUMENT_BODY_MAX_BYTES, STUDIO_DOCUMENT_ROUTES } from 'src/utils/studio-project.js';
 
 /** Sets up middleware (request log, cookies, body parsing, web assets) and starts listening, then logs the ready line. */
 export async function configureExpress(
@@ -79,6 +80,8 @@ export async function configureExpress(
     next();
   };
   app.use(/^\/api\/mcp(?:\/assistant)?\/?$/i, requireMcpJson, json({ limit: '32kb' }));
+  // FL-1558: a Studio document save may be up to the graph limit, above the general body limit.
+  app.use(STUDIO_DOCUMENT_ROUTES, json({ limit: STUDIO_DOCUMENT_BODY_MAX_BYTES }));
   app.use(
     json({
       limit: '10mb',

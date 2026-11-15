@@ -1169,13 +1169,38 @@ describe('bundled worker executor', () => {
     const claim = claimOf();
     claim.inputs.push({
       ...claim.inputs[0],
-      inputId: 'lut:x',
-      kind: 'lut',
+      inputId: 'model:x',
+      kind: 'model',
       resourceId: 'x',
     });
     const server = await fakeServer(claim);
     try {
       assert.equal((await run(claim, server, fakeRenderer())).code, 'unsupported_resource');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('serves a LUT kept with the project to the engine by its id (FL-1558)', async () => {
+    const claim = claimOf();
+    claim.inputs.push({
+      ...claim.inputs[0],
+      inputId: 'lut:x',
+      kind: 'lut',
+      resourceId: 'x',
+    });
+    const server = await fakeServer(claim);
+    let served;
+    const renderer = fakeRenderer({
+      onRender: async (job) => {
+        served = await readFile(job.files.get('x'));
+      },
+    });
+    try {
+      const result = await run(claim, server, renderer);
+      assert.notEqual(result.code, 'unsupported_resource');
+      assert.equal(renderer.renders.length, 1);
+      assert.deepEqual(served, MEDIA, 'the engine reads the LUT by its import id');
     } finally {
       await server.close();
     }

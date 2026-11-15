@@ -26,3 +26,17 @@ These were written by hand against each format's published description, not expo
 editors. Projects made in Premiere Pro, DaVinci Resolve, Final Cut Pro and iMovie themselves, one
 feature at a time and with a rendered movie of each, are added as the owner makes them on machines
 with those editors (FL-1548 follow-up); media in those must be CC0.
+
+## Premiere Pro projects (FL-1550)
+
+`premiere/` holds small projects made in Premiere Pro itself (Windows; project versions 40 and 45),
+from py-premiere under the MIT licence (`premiere/LICENSE`). Each `.prproj` has a `.json` beside it:
+what Premiere's own scripting API reported for that project (sequences, clips, start, end, in and
+out points, markers, components), which the reader spec checks against.
+
+## AAF (FL-1552)
+
+`aaf/` holds AAF files made by Avid Media Composer (8.6 to 18.9) and Premiere Pro 13, from
+otio-aaf-adapter under the Apache License 2.0 (`aaf/LICENSE`). The spec's expectations were taken
+from that adapter's own reading of each file with OpenTimelineIO 0.18 (clip names, files, source
+positions, transitions and speeds).

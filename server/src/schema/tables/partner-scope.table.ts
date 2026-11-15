@@ -5,7 +5,7 @@ import { PartnerTable } from 'src/schema/tables/partner.table.js';
 /**
  * FL-774: what a partnership shares when its owner chose "Only what I choose". No row means Everything. An item
  * of the owner's is copied when it matches any chosen album, person or folder (or when none is chosen), and was
- * taken on or after `sinceDate` when one is set. Mirrors migration 1794735000000-PartnerScope.
+ * taken on or after `sinceDate` when one is set. Mirrors migration 1794810000000-PartnerScope.
  */
 @Table('partner_scope')
 @ForeignKeyConstraint({

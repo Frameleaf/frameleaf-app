@@ -652,8 +652,10 @@ test('aggregate inline LUT allocation is bounded before decoding repeated cubes'
 
 test('serialized inline LUT graph limit remains independent of decoded allocation', async () => {
   const claim = prepared();
+  // FL-1558: the graph limit is 24 MiB, above any decoded table, so a small table with a graph past
+  // the limit shows the serialized limit is checked on its own.
   claim.snapshot.studio.graph.timeline.items[0].effects = [
-    inlineLut({ lutSize: '129', lutData: Buffer.alloc(129 ** 3 * 4).toString('base64'), lutName: 'Large' }),
+    inlineLut({ lutSize: '2', lutData: Buffer.alloc(2 ** 3 * 4).toString('base64'), lutName: 'x'.repeat(24 * 1024 * 1024 + 1) }),
   ];
   await assert.rejects(
     createClaimImageInputs(claim, () => true),
