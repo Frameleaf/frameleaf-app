@@ -300,9 +300,15 @@ export type Session = {
  */
 export type Exif = Omit<
   Selectable<AssetExifTable>,
-  'updatedAt' | 'updateId' | 'lockedProperties' | 'offsetTimeOriginal' | 'offsetTime' | keyof CaptureDetails
+  | 'updatedAt'
+  | 'updateId'
+  | 'lockedProperties'
+  | 'offsetTimeOriginal'
+  | 'offsetTime'
+  | 'timecode'
+  | keyof CaptureDetails
 > &
-  Partial<Pick<Selectable<AssetExifTable>, 'title' | 'artist' | 'copyright'>>;
+  Partial<Pick<Selectable<AssetExifTable>, 'title' | 'artist' | 'copyright' | 'timecode'>>;
 
 export type Person = {
   createdAt: Date;

@@ -18,6 +18,13 @@ describe('project cadence (FL-93)', () => {
       fps: 30_000 / 1001,
       frameRate: { num: 30_000, den: 1001 },
     })
+    // FL-1560: a 47.952 project, and its start timecode kept as it is
+    const timecode = { start: { num: 3600, den: 1 }, dropFrame: false }
+    expect(withStoredCadence(graph({ fps: 47.952, timecode })).metadata).toEqual({
+      fps: 48_000 / 1001,
+      frameRate: { num: 48_000, den: 1001 },
+      timecode,
+    })
   })
 
   it('leaves a rate with no exact reading as it is rather than guessing one', () => {
@@ -37,6 +44,9 @@ describe('project cadence (FL-93)', () => {
     expect(snapFrameRate(29.969)).toBe(30_000 / 1001)
     expect(snapFrameRate(23.98)).toBe(24_000 / 1001)
     expect(snapFrameRate(25.01)).toBe(25)
+    // FL-1560: 47.952, the pull-down of 48 fps capture, is a broadcast rate too
+    expect(snapFrameRate(47.95)).toBe(48_000 / 1001)
+    expect(snapFrameRate(47.99)).toBe(48)
   })
 
   it('uses the existing fallback for nonfinite and nonpositive packet rates', () => {
@@ -46,7 +56,7 @@ describe('project cadence (FL-93)', () => {
   })
 
   it('preserves every exact supported packet rate', () => {
-    for (const fps of [24_000 / 1001, 24, 25, 30_000 / 1001, 30, 48, 50, 60_000 / 1001, 60, 120]) {
+    for (const fps of [24_000 / 1001, 24, 25, 30_000 / 1001, 30, 48_000 / 1001, 48, 50, 60_000 / 1001, 60, 120]) {
       expect(snapFrameRate(fps)).toBe(fps)
     }
   })

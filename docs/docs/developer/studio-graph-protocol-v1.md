@@ -71,6 +71,7 @@ A graph is one JSON object: Freecut's project document. `studio/graph-schema-v1.
 | `frameRate`       | `{ num, den }` | The exact frame rate (section 3). Always present in normal form.                                                        |
 | `backgroundColor` | `#rrggbb`      | Optional.                                                                                                               |
 | `colorManagement` | object         | Optional record of four fields (`studio/spec/hdr.md`, H1). Absent is not SDR: placed HDR media make a project HDR (H3). |
+| `timecode`        | object         | Optional start timecode `{ start, dropFrame }` (3.6). Commands never write it; the engine keeps it as found.            |
 
 ### 2.3 `timeline`
 
@@ -208,8 +209,51 @@ Commands that place library media read a **media record** for each asset. This i
 | `fps`             | The video's frame rate (0 for a still). It becomes `sourceFps`.                                     |
 | `audioCodec`      | Present when the video has sound. Its presence alone decides whether a linked audio item is placed. |
 | `colorTransfer`   | Optional: `sdr`, `pq`, `hlg` or `hdr`. The last three make a project HDR (`studio/spec/hdr.md` H3). |
+| `timecode`        | Optional: the start timecode the source records (3.6). It never reaches the graph.                  |
 
-A native client builds the record from the asset's metadata, as the web host does when it probes the asset. `GET /studio/assets/{id}/media-facts` (FL-348) reads the original for it: `fps` (the exact `frameRate` pair as a float), `width`, `height`, `durationSeconds`, and `audioCodec`, present exactly when `hasAudio` is true. It also returns `colorTransfer`, from the picture stream the server's metadata extraction stored. A native client marks its record from the stream itself, and uses this value as the fallback when it cannot read the stream. The mapping is: any Dolby Vision profile is `hdr`, whatever transfer its base layer states (a profile 8.4 stream with transfer 18 is `hdr`, as the web host marks it); otherwise ITU-T H.273 transfer characteristics 16 is `pq` and 18 is `hlg`; anything else, an unspecified transfer included, is `sdr`. A still, an asset with no video stream, and a video the server knows nothing about are `sdr`. Beside it the endpoint gives the raw H.273 codes (`colorTransferCode`, `colorPrimariesCode`, `colorMatrixCode`), `bitDepth` and `dolbyVisionProfile`, each null when the server does not know it; they are not part of the record. A record may carry `colorTransfer`, which decides whether the project is HDR and never reaches the graph (`clip.add/media-colour-transfer-is-not-stored`, media set `media.hdr`). The fixtures give the records they used (`media.standard`). Two clients that disagree on a record produce different graphs. That is a media qualification issue, not a protocol one.
+A native client builds the record from the asset's metadata, as the web host does when it probes the asset. `GET /studio/assets/{id}/media-facts` (FL-348) reads the original for it: `fps` (the exact `frameRate` pair as a float), `width`, `height`, `durationSeconds`, and `audioCodec`, present exactly when `hasAudio` is true. It also returns `colorTransfer`, from the picture stream the server's metadata extraction stored. A native client marks its record from the stream itself, and uses this value as the fallback when it cannot read the stream. The mapping is: any Dolby Vision profile is `hdr`, whatever transfer its base layer states (a profile 8.4 stream with transfer 18 is `hdr`, as the web host marks it); otherwise ITU-T H.273 transfer characteristics 16 is `pq` and 18 is `hlg`; anything else, an unspecified transfer included, is `sdr`. A still, an asset with no video stream, and a video the server knows nothing about are `sdr`. Beside it the endpoint gives the raw H.273 codes (`colorTransferCode`, `colorPrimariesCode`, `colorMatrixCode`), `bitDepth` and `dolbyVisionProfile`, each null when the server does not know it; they are not part of the record. A record may carry `colorTransfer`, which decides whether the project is HDR and never reaches the graph (`clip.add/media-colour-transfer-is-not-stored`, media set `media.hdr`). The fixtures give the records they used (`media.standard`). Two clients that disagree on a record produce different graphs. That is a media qualification issue, not a protocol one. The endpoint also returns `timecode`, the source's start timecode (3.6), or null when the source records none; a client copies it into the record when it is not null.
+
+### 3.6 Timecode
+
+A **timecode** labels a frame `HH:MM:SS:FF`: hours `00` to `23`, minutes and seconds `00` to `59`, and frames from `00` to the nominal rate less one. The **nominal rate** `n` is `rate.num / rate.den` rounded to the nearest integer: 24 for 24000/1001, 30 for 30000/1001, 48 for 48000/1001. Frames take a third digit only when `n` is above 100. Labels count frames from `00:00:00:00` and wrap to it after 24 hours.
+
+**Drop-frame.** At 30000/1001 and 60000/1001 only, labels may count drop-frame, written with `;` before the frames (`01:00:00;00`). Drop-frame skips the first `d` labels of every minute (`d` is 2 at 30000/1001 and 4 at 60000/1001) except minutes 00, 10, 20, 30, 40 and 50, so the label keeps pace with the clock: `00:00:59;29` is followed by `00:01:00;02`. The skipped labels do not exist. At any other rate a `;` and `dropFrame` are ignored and every frame has its label (non-drop). With `T = 600·n − 9·d` frames in ten minutes and `M = 60·n − d` in a minute that drops, frame `f` counted from `00:00:00;00` has the label of the non-drop count `f′`:
+
+```text
+f  = f mod (144 · T)                       wrap at 24 hours
+q  = floor(f / T),  r = f mod T
+f′ = f + 9·d·q + (r < d ? 0 : d · floor((r − d) / M))
+```
+
+and a drop-frame label names frame `(60·m + SS)·n + FF − d·(m − floor(m / 10))`, with `m = 60·HH + MM`.
+
+**Project start timecode.** `metadata.timecode`, when present, is `{ start, dropFrame }`. `start` is a non-negative rational number of seconds, reduced: the instant whose label frame 0 of the timeline shows. Timeline frame `f` shows the label of frame `framesOf(start, frameRate) + f`, rounded as in 3.3, counted drop-frame when `dropFrame` is true and the rate allows it. Absent means `00:00:00:00`, non-drop. Because `start` is in seconds, a retime (14.5) keeps the instant and only its label moves to the nearest frame of the new rate: a start of `3600/1` reads `01:00:00:00` at 25 and at 30, and `01:00:00;00` at 30000/1001 drop-frame (frame 107892). A client turning a label into `start` divides the frame the label names by the rate: `01:00:00;00` at 30000/1001 is `{ "num": 8999991, "den": 2500 }`. Commands never write `metadata.timecode`, and the engine keeps it unchanged through load, save, retime and bundle import.
+
+**Source timecode.** A media record may carry `timecode`, the start timecode its source records (the server reads a QuickTime or MP4 `tmcd` track, or an MXF or Matroska container tag). It never reaches the graph. A media clip's first frame has the source timecode of frame `F + sourceStart`, where `F` is the frame the record's label names at the source's rate (`sourceFps` read as in 3.2, step 2), counted drop-frame when the record's label is. A label that does not exist at that rate (a skipped drop-frame label, or frames at or above `n`) gives the clip no source timecode.
+
+**Native rule.** Preserve `metadata.timecode` unchanged, including fields this page does not list, and write it only from a person's own choice of start timecode or drop-frame display. Show labels exactly as this section counts them; two clients must never show different labels for one frame.
+
+Worked labels (`studio/tools/graph-protocol.test.mjs` checks each against the rules above):
+
+| Rate       | Drop-frame | Frame   | Label          |
+| ---------- | ---------- | ------- | -------------- |
+| 30000/1001 | yes        | 1799    | `00:00:59;29`  |
+| 30000/1001 | yes        | 1800    | `00:01:00;02`  |
+| 30000/1001 | yes        | 17981   | `00:09:59;29`  |
+| 30000/1001 | yes        | 17982   | `00:10:00;00`  |
+| 30000/1001 | yes        | 19782   | `00:11:00;02`  |
+| 30000/1001 | yes        | 107892  | `01:00:00;00`  |
+| 30000/1001 | yes        | 2589407 | `23:59:59;29`  |
+| 30000/1001 | yes        | 2589408 | `00:00:00;00`  |
+| 30000/1001 | no         | 1800    | `00:01:00:00`  |
+| 60000/1001 | yes        | 3599    | `00:00:59;59`  |
+| 60000/1001 | yes        | 3600    | `00:01:00;04`  |
+| 60000/1001 | yes        | 215784  | `01:00:00;00`  |
+| 24000/1001 | no         | 86400   | `01:00:00:00`  |
+| 48000/1001 | no         | 172800  | `01:00:00:00`  |
+| 25/1       | no         | 90000   | `01:00:00:00`  |
+| 30/1       | yes        | 1800    | `00:01:00:00`  |
+| 120/1      | no         | 119     | `00:00:00:119` |
 
 ## 4. Ids
 
@@ -2558,7 +2602,7 @@ Sets the canvas and the rate of the main timeline or of one composition. Payload
 **Refusals, in order**
 
 1. `sequenceId` is missing: `invalid`.
-2. `fps` is present and is not a project rate: `invalid`. A project rate is a rational with a positive numerator that equals one of the catalogue's `project.rates` (24, 25, 30, 50, 60, 120, 240) or `project.ntscRates` (24000/1001, 30000/1001, 60000/1001, 120000/1001). The engine reads a pair that is not reduced; the server refuses one (3.1).
+2. `fps` is present and is not a project rate: `invalid`. A project rate is a rational with a positive numerator that equals one of the catalogue's `project.rates` (24, 25, 30, 48, 50, 60, 120, 240) or `project.ntscRates` (24000/1001, 30000/1001, 48000/1001, 60000/1001, 120000/1001); 48 and 48000/1001 are project rates since FL-1560. The engine reads a pair that is not reduced; the server refuses one (3.1).
 3. `width` is present and is not a whole number from 320 to 7680, or `height` is present and is not a whole number from 240 to 4320: `invalid`. Odd sizes are accepted.
 4. None of `fps`, `width` and `height` is present: `invalid`.
 5. `timing` is present and is neither `keep-time` nor `keep-frames`: `invalid`.

@@ -669,6 +669,8 @@ export class AssetRepository {
                   imageEncoding: eb.ref('excluded.imageEncoding'),
                   rating: ref('rating'),
                   fps: ref('fps'),
+                  // FL-1560: what the file records, never locked
+                  timecode: eb.ref('excluded.timecode'),
                   tags: ref('tags'),
                   // FL-1284: what the file shows, never locked
                   mediaKinds: eb.ref('excluded.mediaKinds'),

@@ -133468,15 +133468,43 @@
           "revision": 1,
           "idempotencyKey": "fl309:sequence.setSettings/every-rate:9",
           "issuedAt": 1758800000000
+        },
+        {
+          "id": "sequence.setSettings",
+          "payload": {
+            "sequenceId": "main",
+            "fps": {
+              "num": 48,
+              "den": 1
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl309:sequence.setSettings/every-rate:10",
+          "issuedAt": 1758800000000
+        },
+        {
+          "id": "sequence.setSettings",
+          "payload": {
+            "sequenceId": "main",
+            "fps": {
+              "num": 48000,
+              "den": 1001
+            }
+          },
+          "revision": 1,
+          "idempotencyKey": "fl309:sequence.setSettings/every-rate:11",
+          "issuedAt": 1758800000000
         }
       ],
       "expect": {
         "status": "applied",
-        "digest": "55fd7ac47eed19bc6d081e7dde2a68d58a4219f3044134308a94dda9459971b2",
-        "envelopeDigest": "9a58f6ca16bd95d2ad59b460275182591ccad7c68f3dd55bfd7c6b189041e6fd",
+        "digest": "42f2a84a0c7c6a5855f4b5eba374b8ffc0cb5469ee204c0d02195d736287d8c5",
+        "envelopeDigest": "24d148aee781aaa6b87ff83b189a57b9063654b96166fa5dd07acac5da9908f8",
         "fixedPoint": true,
         "clockIndependent": true,
         "draws": [
+          [],
+          [],
           [],
           [],
           [],
@@ -133499,9 +133527,9 @@
           "metadata": {
             "width": 1920,
             "height": 1080,
-            "fps": 119.88011988011988,
+            "fps": 47.952047952047955,
             "frameRate": {
-              "num": 120000,
+              "num": 48000,
               "den": 1001
             }
           },
@@ -139459,7 +139487,7 @@
       "covers": [
         "sequence.setSettings"
       ],
-      "summary": "48 is not a project rate.",
+      "summary": "23 is not a project rate.",
       "base": "empty-30",
       "envelopes": [
         {
@@ -139467,7 +139495,7 @@
           "payload": {
             "sequenceId": "main",
             "fps": {
-              "num": 48,
+              "num": 23,
               "den": 1
             }
           },
@@ -139480,7 +139508,7 @@
         "status": "rejected",
         "index": 0,
         "reason": "invalid",
-        "detail": "fps must be a project frame rate (24, 25, 30, 50, 60, 120 or 240) or its x/1001 rate"
+        "detail": "fps must be a project frame rate (24, 25, 30, 48, 50, 60, 120 or 240) or its x/1001 rate"
       }
     },
     {
@@ -139489,7 +139517,7 @@
       "covers": [
         "sequence.setSettings"
       ],
-      "summary": "48000/1001 is not a project rate.",
+      "summary": "240000/1001 is not a project rate.",
       "base": "empty-30",
       "envelopes": [
         {
@@ -139497,7 +139525,7 @@
           "payload": {
             "sequenceId": "main",
             "fps": {
-              "num": 48000,
+              "num": 240000,
               "den": 1001
             }
           },
@@ -139510,7 +139538,7 @@
         "status": "rejected",
         "index": 0,
         "reason": "invalid",
-        "detail": "fps must be a project frame rate (24, 25, 30, 50, 60, 120 or 240) or its x/1001 rate"
+        "detail": "fps must be a project frame rate (24, 25, 30, 48, 50, 60, 120 or 240) or its x/1001 rate"
       }
     },
     {
@@ -139537,7 +139565,7 @@
         "status": "rejected",
         "index": 0,
         "reason": "invalid",
-        "detail": "fps must be a project frame rate (24, 25, 30, 50, 60, 120 or 240) or its x/1001 rate"
+        "detail": "fps must be a project frame rate (24, 25, 30, 48, 50, 60, 120 or 240) or its x/1001 rate"
       }
     },
     {
@@ -139567,7 +139595,7 @@
         "status": "rejected",
         "index": 0,
         "reason": "invalid",
-        "detail": "fps must be a project frame rate (24, 25, 30, 50, 60, 120 or 240) or its x/1001 rate"
+        "detail": "fps must be a project frame rate (24, 25, 30, 48, 50, 60, 120 or 240) or its x/1001 rate"
       }
     },
     {
@@ -139597,7 +139625,7 @@
         "status": "rejected",
         "index": 0,
         "reason": "invalid",
-        "detail": "fps must be a project frame rate (24, 25, 30, 50, 60, 120 or 240) or its x/1001 rate"
+        "detail": "fps must be a project frame rate (24, 25, 30, 48, 50, 60, 120 or 240) or its x/1001 rate"
       }
     },
     {

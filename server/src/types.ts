@@ -266,6 +266,11 @@ export interface VideoInfo {
   audioStreams: AudioStreamInfo[];
   /** FL-968: data tracks, e.g. GoPro's GPMF telemetry. Optional and additive, like the fields above. */
   dataStreams?: DataStreamInfo[];
+  /**
+   * FL-1560: the start timecode the file records, `HH:MM:SS:FF`, or `HH:MM:SS;FF` when it is
+   * drop-frame (`src/utils/timecode.ts`). Null when it records none; optional and additive.
+   */
+  timecode?: string | null;
 }
 
 export interface TranscodeCommand {

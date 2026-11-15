@@ -115,6 +115,12 @@ const StudioMediaFactsSchema = z
       .meta({ format: 'double' })
       .describe("frameRate as a float, the Studio media record's fps (graph protocol 3.5); 0 for a still"),
     frameCount: z.int().nullable().describe('Frames in the video stream when the container says; null otherwise'),
+    timecode: z
+      .string()
+      .nullable()
+      .describe(
+        "The source's start timecode, the Studio media record's timecode (graph protocol 3.5 and 3.6): HH:MM:SS:FF, or HH:MM:SS;FF when it is drop-frame; null for a still or a video that records none",
+      ),
     hasAudio: z
       .boolean()
       .nullable()

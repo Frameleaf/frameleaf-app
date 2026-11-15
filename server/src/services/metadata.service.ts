@@ -405,6 +405,7 @@ export class MetadataService extends BaseService {
       format,
       videoStreams,
       dataStreams,
+      timecode,
     } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
 
@@ -556,6 +557,8 @@ export class MetadataService extends BaseService {
       make: cameraEvidence.recorded?.make ?? null,
       model: cameraEvidence.recorded?.model ?? null,
       fps: video?.frameRate ?? validate(Number(exifTags.VideoFrameRate!)),
+      // FL-1560: the start timecode the video records, for Studio and media matching
+      timecode: video ? timecode : null,
       iso: validate(exifTags.ISO) as number,
       exposureTime: exifTags.ExposureTime ?? null,
       lensModel: getLensModel(exifTags),
@@ -1304,6 +1307,7 @@ export class MetadataService extends BaseService {
       format: videoResult?.format ?? null,
       videoStreams: videoResult?.videoStreams ?? [],
       dataStreams: videoResult?.dataStreams ?? [],
+      timecode: videoResult?.timecode ?? null,
     };
   }
 
@@ -1844,7 +1848,13 @@ export class MetadataService extends BaseService {
   }
 
   private async getVideoTags(originalPath: string) {
-    const { videoStreams, audioStreams, format, dataStreams = [] } = await this.mediaRepository.probe(originalPath);
+    const {
+      videoStreams,
+      audioStreams,
+      format,
+      dataStreams = [],
+      timecode = null,
+    } = await this.mediaRepository.probe(originalPath);
     const video = videoStreams[0];
     const audio = audioStreams[0];
     let packets = null;
@@ -1894,7 +1904,7 @@ export class MetadataService extends BaseService {
       tags.Duration = format.duration;
     }
 
-    return { tags, audio, video, packets, format, videoStreams, dataStreams };
+    return { tags, audio, video, packets, format, videoStreams, dataStreams, timecode };
   }
 
   private getHeifOrientation(exifTags: ImmichTags): ExifOrientation | null {

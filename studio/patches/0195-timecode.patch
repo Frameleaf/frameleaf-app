@@ -1,0 +1,244 @@
+diff --git a/src/features/media-library/workers/media-processor.worker.ts b/src/features/media-library/workers/media-processor.worker.ts
+index 233a7bc..86c42a9 100644
+--- a/src/features/media-library/workers/media-processor.worker.ts
++++ b/src/features/media-library/workers/media-processor.worker.ts
+@@ -219,6 +219,7 @@ function snapCommonFrameRate(fps: number): number {
+     25,
+     30000 / 1001,
+     30,
++    48000 / 1001, // Frameleaf (FL-1560): 47.952, the pull-down of 48 fps capture
+     48,
+     50,
+     60000 / 1001,
+diff --git a/src/features/project-bundle/schemas/project-schema-timecode.test.ts b/src/features/project-bundle/schemas/project-schema-timecode.test.ts
+new file mode 100644
+index 0000000..09fb714
+--- /dev/null
++++ b/src/features/project-bundle/schemas/project-schema-timecode.test.ts
+@@ -0,0 +1,59 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import { generateFixture } from '../services/test-fixtures'
++import { validateSnapshotData } from '../services/json-import-service'
++import { validateProject } from './project-schema'
++
++/** Frameleaf (FL-1560): the start timecode and exact rates survive bundle and snapshot validation. */
++describe('project metadata timecode (FL-1560)', () => {
++  const project = (metadata: Record<string, unknown>) => {
++    const { project } = generateFixture('single-image')
++    return { ...structuredClone(project), metadata: { ...project.metadata, ...metadata } }
++  }
++  const timecode = { start: { num: 8_999_991, den: 2500 }, dropFrame: true }
++
++  it('keeps the start timecode, the exact rate, managed colour and fields it does not know', () => {
++    const input = project({
++      fps: 30_000 / 1001,
++      frameRate: { num: 30_000, den: 1001 },
++      timecode: { ...timecode, future: 'kept' },
++      colorManagement: { workingRange: 'hdr' },
++      somethingNew: 1,
++    })
++    const result = validateProject(input)
++    expect(result.success).toBe(true)
++    expect(result.data?.metadata).toEqual(input.metadata)
++  })
++
++  it('accepts every whole and broadcast x/1001 rate, 47.952 included', () => {
++    for (const fps of [24, 25, 48, 23.976, 29.97, 47.952, 48_000 / 1001, 59.94, 119.88]) {
++      expect(validateProject(project({ fps })).success, String(fps)).toBe(true)
++    }
++    for (const fps of [27.3, 0, 241, 29.969]) {
++      expect(validateProject(project({ fps })).success, String(fps)).toBe(false)
++    }
++  })
++
++  it('refuses a malformed start timecode', () => {
++    for (const bad of [
++      { start: { num: -1, den: 1 }, dropFrame: false },
++      { start: { num: 1, den: 0 }, dropFrame: false },
++      { start: { num: 0.5, den: 1 }, dropFrame: false },
++      { start: { num: 0, den: 1 }, dropFrame: 'yes' },
++      { start: { num: 0, den: 1 } },
++      '01:00:00:00',
++    ]) {
++      expect(validateProject(project({ timecode: bad })).success, JSON.stringify(bad)).toBe(false)
++    }
++  })
++
++  it('accepts a 47.952 snapshot with a start timecode for import', async () => {
++    const { snapshot } = generateFixture('single-image')
++    const input = structuredClone(snapshot)
++    input.project.metadata = { ...input.project.metadata, fps: 48_000 / 1001, timecode }
++    const result = await validateSnapshotData(input)
++    expect(result.errors).toEqual([])
++    expect(result.valid).toBe(true)
++  })
++})
+diff --git a/src/features/project-bundle/schemas/project-schema.ts b/src/features/project-bundle/schemas/project-schema.ts
+index a8b4408..18f6c9d 100644
+--- a/src/features/project-bundle/schemas/project-schema.ts
++++ b/src/features/project-bundle/schemas/project-schema.ts
+@@ -7,8 +7,36 @@
+ 
+ import { z } from 'zod'
+ import { TEXT_STYLE_PRESET_IDS } from '@/shared/typography/text-style-preset-ids'
++import { cadenceFromFps } from '@/shared/utils/audio-clock-cadence'
+ import { SNAPSHOT_VERSION } from '../types/snapshot'
+ 
++// Frameleaf (FL-1560): a project or sequence rate is a whole number or one of the broadcast x/1001
++// rates, 47.952 (48000/1001) included, as the graph protocol reads `fps` (3.2).
++const hasExactCadence = (fps: number): boolean => {
++  try {
++    cadenceFromFps(fps)
++    return true
++  } catch {
++    return false
++  }
++}
++const frameRateSchema = z
++  .number()
++  .min(1)
++  .max(240)
++  .refine(hasExactCadence, { message: 'The frame rate has no exact reading' })
++const exactRationalSchema = z.object({
++  num: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
++  den: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
++})
++// Frameleaf (FL-1560): the start timecode, graph protocol 3.6. Fields beyond these are kept.
++const projectTimecodeSchema = z
++  .object({
++    start: exactRationalSchema,
++    dropFrame: z.boolean(),
++  })
++  .passthrough()
++
+ // ============================================================================
+ // Keyframe Schemas
+ // ============================================================================
+@@ -681,7 +709,7 @@ const compositionSchema = z
+     tracks: z.array(trackSchema),
+     transitions: z.array(transitionSchema).optional(),
+     keyframes: z.array(itemKeyframesSchema).optional(),
+-    fps: z.number().int().min(1).max(240),
++    fps: frameRateSchema,
+     width: z.number().int().min(1).max(7680),
+     height: z.number().int().min(1).max(4320),
+     durationInFrames: z.number().int().min(1),
+@@ -714,15 +742,23 @@ const timelineSchema = z
+ // Project Resolution Schema
+ // ============================================================================
+ 
+-const projectResolutionSchema = z.object({
+-  width: z.number().int().min(320).max(7680),
+-  height: z.number().int().min(240).max(4320),
+-  fps: z.number().int().min(1).max(240),
+-  backgroundColor: z
+-    .string()
+-    .regex(/^#[0-9A-Fa-f]{6}$/)
+-    .optional(),
+-})
++// Frameleaf (FL-1560): the metadata object is open (graph protocol 2.2): the exact rate, managed
++// colour, the start timecode and fields this schema does not know survive validation.
++const projectResolutionSchema = z
++  .object({
++    width: z.number().int().min(320).max(7680),
++    height: z.number().int().min(240).max(4320),
++    fps: frameRateSchema,
++    frameRate: exactRationalSchema
++      .extend({ num: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER) })
++      .optional(),
++    backgroundColor: z
++      .string()
++      .regex(/^#[0-9A-Fa-f]{6}$/)
++      .optional(),
++    timecode: projectTimecodeSchema.optional(),
++  })
++  .passthrough()
+ 
+ // ============================================================================
+ // Project Schema
+diff --git a/src/features/projects/utils/project-fps.test.ts b/src/features/projects/utils/project-fps.test.ts
+index 79679c8..7fd7627 100644
+--- a/src/features/projects/utils/project-fps.test.ts
++++ b/src/features/projects/utils/project-fps.test.ts
+@@ -1,7 +1,12 @@
+ // @vitest-environment node
+ 
+ import { describe, expect, it } from 'vite-plus/test'
+-import { formatFpsValue, getProjectFpsOptions, resolveAutoMatchProjectFps } from './project-fps'
++import {
++  formatFpsValue,
++  getProjectFpsOptions,
++  isAllowedProjectFps,
++  resolveAutoMatchProjectFps,
++} from './project-fps'
+ 
+ describe('project-fps helpers', () => {
+   it('keeps legacy fps visible when editing an older project', () => {
+@@ -11,6 +16,12 @@ describe('project-fps helpers', () => {
+     expect(options.at(-1)?.label).toContain('Legacy')
+   })
+ 
++  it('allows 48 fps, offered only to a project that already has it (FL-1560)', () => {
++    expect(isAllowedProjectFps(48)).toBe(true)
++    expect(getProjectFpsOptions().map((option) => option.value)).toEqual([24, 25, 30, 50, 60])
++    expect(getProjectFpsOptions(48).map((option) => option.value)).toEqual([24, 25, 30, 48, 50, 60])
++  })
++
+   it('maps common source rates to the closest supported project fps', () => {
+     expect(resolveAutoMatchProjectFps(29.97)).toEqual({ fps: 30, exact: false })
+     expect(resolveAutoMatchProjectFps(59.94)).toEqual({ fps: 60, exact: false })
+diff --git a/src/features/projects/utils/project-fps.ts b/src/features/projects/utils/project-fps.ts
+index 602a15d..a22cecf 100644
+--- a/src/features/projects/utils/project-fps.ts
++++ b/src/features/projects/utils/project-fps.ts
+@@ -16,9 +16,16 @@ const LEGACY_PROJECT_FPS_OPTIONS: readonly ProjectFpsOption[] = [
+   { label: '240 fps (Legacy)', value: 240 },
+ ] as const
+ 
++// Frameleaf (FL-1560): 48 fps and its 47.952 (48000/1001) pull-down are project rates, offered
++// only to a project that already has one: new projects keep the default list.
++const HIGH_FRAME_RATE_PROJECT_FPS_OPTIONS: readonly ProjectFpsOption[] = [
++  { label: '48 fps (High frame rate)', value: 48 },
++] as const
++
+ const ALLOWED_PROJECT_FPS_VALUES = [
+   ...DEFAULT_PROJECT_FPS_OPTIONS.map((option) => option.value),
+   ...LEGACY_PROJECT_FPS_OPTIONS.map((option) => option.value),
++  ...HIGH_FRAME_RATE_PROJECT_FPS_OPTIONS.map((option) => option.value),
+ ] as const
+ 
+ const AUTO_MATCH_PROJECT_FPS_VALUES = [
+@@ -40,8 +47,12 @@ export function getProjectFpsOptions(currentFps?: number): ProjectFpsOption[] {
+     return options
+   }
+ 
+-  const legacyOption = LEGACY_PROJECT_FPS_OPTIONS.find((option) => option.value === currentFps)
+-  return legacyOption ? [...options, legacyOption] : options
++  const legacyOption = [...LEGACY_PROJECT_FPS_OPTIONS, ...HIGH_FRAME_RATE_PROJECT_FPS_OPTIONS].find(
++    (option) => option.value === currentFps,
++  )
++  return legacyOption
++    ? [...options, legacyOption].sort((left, right) => left.value - right.value)
++    : options
+ }
+ 
+ export function formatFpsValue(fps: number): string {
+diff --git a/src/types/project.ts b/src/types/project.ts
+index cfa3635..99456b3 100644
+--- a/src/types/project.ts
++++ b/src/types/project.ts
+@@ -315,4 +315,12 @@ export interface ProjectResolution {
+   backgroundColor?: string // Hex color, defaults to #000000
+   /** Frameleaf managed colour (FL-97). Absent = SDR, Freecut's reference behaviour. */
+   colorManagement?: ProjectColorManagement
++  /** Frameleaf (FL-1560): the start timecode (graph protocol 3.6); absent is 00:00:00:00. */
++  timecode?: ProjectTimecode
++}
++
++/** Frameleaf (FL-1560): the instant frame 0 is labelled with (exact seconds), and drop-frame. */
++export interface ProjectTimecode {
++  start: { num: number; den: number }
++  dropFrame: boolean
+ }

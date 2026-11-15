@@ -44,6 +44,7 @@ const COMMON_FRAME_RATES: readonly [number, ...number[]] = [
   25,
   30_000 / 1001,
   30,
+  48_000 / 1001, // FL-1560: 47.952
   48,
   50,
   60_000 / 1001,

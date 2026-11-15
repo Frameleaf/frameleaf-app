@@ -118,6 +118,13 @@ export class AssetExifTable {
   @Column({ type: 'double precision', nullable: true })
   fps!: number | null;
 
+  /**
+   * FL-1560: the start timecode a video records, `HH:MM:SS:FF`, or `HH:MM:SS;FF` when it is drop-frame
+   * (`src/utils/timecode.ts`). Null for a still and for a video that records none.
+   */
+  @Column({ type: 'text', nullable: true })
+  timecode!: string | null;
+
   @Column({ type: 'character varying', nullable: true })
   exposureTime!: string | null;
 

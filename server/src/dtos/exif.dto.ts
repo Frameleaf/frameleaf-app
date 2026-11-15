@@ -46,6 +46,12 @@ export const ExifResponseSchema = z
     rating: z.int().min(1).max(5).nullish().default(null).describe('Rating'),
     isRejected: z.boolean().nullish().default(null).describe('Whether the stored rating is rejected'),
     fps: z.number().meta({ format: 'double' }).nullish().default(null).describe('Video frame rate (frames per second)'),
+    timecode: z
+      .string()
+      .optional()
+      .describe(
+        'The start timecode the video records: HH:MM:SS:FF, or HH:MM:SS;FF when it is drop-frame. Absent when it records none',
+      ),
     mediaKinds: z
       .array(z.string())
       .optional()
@@ -96,6 +102,7 @@ export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
     rating: entity.rating === -1 || entity.rating === 0 ? null : entity.rating,
     isRejected: entity.rating === -1,
     fps: entity.fps ?? null,
+    ...(entity.timecode && { timecode: entity.timecode }),
     ...(entity.mediaKinds && { mediaKinds: entity.mediaKinds.filter((kind) => isMediaKind(kind)) }),
     ...(isDateEstimated(entity) && { dateEstimated: true }),
   };

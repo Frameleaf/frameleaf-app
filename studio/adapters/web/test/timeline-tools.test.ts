@@ -1074,8 +1074,8 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
       { fps: rate(0) },
       { fps: rate(480) },
       { fps: 30 },
-      { fps: rate(48) },
-      { fps: rate(48_000, 1001) },
+      { fps: rate(23) },
+      { fps: rate(240_000, 1001) },
       { width: 100 },
       { height: 100 },
       { fps: rate(60), timing: 'stretch' },
@@ -1084,6 +1084,10 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
       await refused(graph, [setSettings(payload)], 'invalid')
     }
     await refused(graph, [envelope('sequence.setSettings', { sequenceId: 'missing', fps: rate(60) })], 'invalid')
+    // FL-1560: 48 fps and its 47.952 pull-down are project rates
+    for (const fps of [rate(48), rate(48_000, 1001)]) {
+      expect((await applied(graph, [setSettings({ fps, timing: 'keep-time' })])).metadata.frameRate).toEqual(fps)
+    }
     // Freecut's own templates have odd sizes (Twitter/X is 1200x675); the renderer rounds for encoding.
     expect((await applied(graph, [setSettings({ width: 1200, height: 675 })])).metadata).toMatchObject({
       width: 1200,

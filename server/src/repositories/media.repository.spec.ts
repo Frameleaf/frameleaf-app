@@ -785,6 +785,40 @@ describe(MediaRepository.name, () => {
     }
   });
 
+  /* FL-1560: the start timecode, from a QuickTime `tmcd` track (drop-frame) and Matroska's TIMECODE tag. */
+  it.skipIf(!hasFfmpeg)('reads the start timecode a file records', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'studio-timecode-'));
+    const encode = (file: string, rate: string, timecode?: string) =>
+      execFileSync(
+        'ffmpeg',
+        [
+          '-v',
+          'error',
+          '-f',
+          'lavfi',
+          '-i',
+          `color=black:size=32x16:rate=${rate}`,
+          '-frames:v',
+          '2',
+          '-c:v',
+          'mpeg4',
+          ...(timecode ? ['-timecode', timecode] : []),
+          join(folder, file),
+        ],
+        { timeout: 30_000, stdio: 'ignore' },
+      );
+    try {
+      encode('drop.mov', '30000/1001', '01:00:00;00');
+      encode('plain.mkv', '25', '10:00:00:00');
+      encode('bare.mp4', '25');
+      expect((await sut.probe(join(folder, 'drop.mov'))).timecode).toBe('01:00:00;00');
+      expect((await sut.probe(join(folder, 'plain.mkv'))).timecode).toBe('10:00:00:00');
+      expect((await sut.probe(join(folder, 'bare.mp4'))).timecode).toBeNull();
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
   /*
    * FL-1489: a Matroska track whose default duration is a negative number stored unsigned. ffprobe
    * divides it by the 1,000,000 ns timestamp scale and reports 18446744072576 ticks for every

@@ -1428,7 +1428,7 @@ const sequenceRate = (payload: Record<string, unknown>): Rational | undefined =>
   const matches = exact && exact.num * (value as Rational).den === (value as Rational).num * exact.den
   const offered = exact && isAllowedProjectFps(exact.den === 1 ? exact.num : exact.num / 1000)
   if (!matches || !offered) {
-    invalid('fps must be a project frame rate (24, 25, 30, 50, 60, 120 or 240) or its x/1001 rate')
+    invalid('fps must be a project frame rate (24, 25, 30, 48, 50, 60, 120 or 240) or its x/1001 rate')
   }
   return exact!
 }

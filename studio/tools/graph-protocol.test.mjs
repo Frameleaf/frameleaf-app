@@ -39,6 +39,8 @@ import {
   settle,
   sha256Hex,
   splitSource,
+  timecodeFrame,
+  timecodeLabel,
   transitionKept,
   trimEnd,
   trimStart,
@@ -109,6 +111,64 @@ test('time rounding vectors', () => {
   for (const vector of fixtures.vectors.frames) {
     assert.equal(framesOf(vector.time, vector.rate), vector.frames, JSON.stringify(vector));
   }
+});
+
+/** FL-1560: the worked labels of section 3.6, read from the page itself. */
+const timecodeRows = () => {
+  const section = page.slice(page.indexOf('### 3.6 Timecode'), page.indexOf('## 4. Ids'));
+  return [...section.matchAll(/^\| (\d+)\/(\d+) +\| (yes|no) +\| (\d+) +\| `([^`]+)` +\|$/gm)].map((row) => ({
+    rate: { num: Number(row[1]), den: Number(row[2]) },
+    dropFrame: row[3] === 'yes',
+    frame: Number(row[4]),
+    label: row[5],
+  }));
+};
+
+test('3.6: every worked timecode label follows the counting rules', () => {
+  const rows = timecodeRows();
+  assert.ok(rows.length >= 15, `only ${rows.length} worked labels`);
+  for (const { rate, dropFrame, frame, label } of rows) {
+    assert.equal(timecodeLabel(frame, rate, dropFrame), label, `${frame} at ${rate.num}/${rate.den}`);
+    // the last row is a day of 29.97 drop-frame, which wraps to the first label
+    assert.equal(timecodeFrame(label, rate), frame === 2589408 ? 0 : frame, label);
+  }
+});
+
+test('3.6: drop-frame names every frame of a day once and skips the labels it drops', () => {
+  for (const [rate, day] of [
+    [{ num: 30000, den: 1001 }, 2589408],
+    [{ num: 60000, den: 1001 }, 5178816],
+  ]) {
+    const labels = new Set();
+    for (let frame = 0; frame < day; frame += 1) {
+      const label = timecodeLabel(frame, rate, true);
+      if (timecodeFrame(label, rate) !== frame || labels.has(label)) assert.fail(`${frame}: ${label}`);
+      labels.add(label);
+    }
+    assert.equal(timecodeLabel(day, rate, true), '00:00:00;00');
+  }
+  assert.equal(timecodeFrame('00:01:00;01', { num: 30000, den: 1001 }), null);
+  assert.equal(timecodeFrame('00:01:00;03', { num: 60000, den: 1001 }), null);
+  assert.equal(timecodeFrame('00:10:00;00', { num: 30000, den: 1001 }), 17982);
+  assert.equal(timecodeFrame('00:00:00:25', { num: 25, den: 1 }), null);
+  // a start of 01:00:00;00 at 29.97 drop-frame is 8999991/2500 seconds, and back
+  assert.equal(framesOf({ num: 8999991, den: 2500 }, { num: 30000, den: 1001 }), 107892);
+  assert.equal(timecodeLabel(framesOf({ num: 3600, den: 1 }, { num: 30000, den: 1001 }), { num: 30000, den: 1001 }, true), '01:00:00;00');
+});
+
+test('3.6: the schema admits a start timecode and a source timecode, and only well-formed ones', () => {
+  const [, graph] = normalGraphs()[0];
+  const withTimecode = (timecode) => validate(schema, { ...graph, metadata: { ...graph.metadata, timecode } });
+  assert.deepEqual(withTimecode({ start: { num: 8999991, den: 2500 }, dropFrame: true }), []);
+  assert.deepEqual(withTimecode({ start: { num: 0, den: 1 }, dropFrame: false, note: 'kept' }), []);
+  for (const bad of [{ start: { num: -1, den: 1 }, dropFrame: false }, { start: { num: 0, den: 1 } }, { start: { num: 1, den: 0 }, dropFrame: true }, '01:00:00:00'])
+    assert.notDeepEqual(withTimecode(bad), [], JSON.stringify(bad));
+  const record = { ...schema, $ref: '#/$defs/mediaRecord' };
+  const media = Object.values(fixtures.media)[0][0];
+  for (const timecode of ['01:00:00;00', '23:59:59:29', '00:00:00:119'])
+    assert.deepEqual(validate(record, { ...media, timecode }), [], timecode);
+  for (const timecode of ['24:00:00:00', '1:00:00:00', '01:00:00.00', '01:00:00'])
+    assert.notDeepEqual(validate(record, { ...media, timecode }), [], timecode);
 });
 
 test('14.5.1: retime rounding vectors', () => {

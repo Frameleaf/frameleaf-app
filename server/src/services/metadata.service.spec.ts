@@ -527,6 +527,25 @@ describe(MetadataService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
+    it('stores the start timecode a video records (FL-1560)', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.media.probe.mockResolvedValue({ ...videoInfoStub.videoStreamHDR10, timecode: '01:00:00;00' });
+      mocks.media.probePackets.mockResolvedValue(emptyPackets);
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ assetId: asset.id, timecode: '01:00:00;00' }),
+        }),
+      );
+
+      mocks.media.probe.mockResolvedValue(videoInfoStub.videoStreamHDR10);
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif).toHaveBeenLastCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ timecode: null }) }),
+      );
+    });
+
     it('prepares metadata without mutation and rejects a source replaced before adoption', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -2058,6 +2077,7 @@ describe(MetadataService.name, () => {
             fileSizeInByte: 123_456,
             focalLength: tags.FocalLength,
             fps: null,
+            timecode: null,
             iso: tags.ISO,
             latitude: null,
             lensModel: tags.LensModel,

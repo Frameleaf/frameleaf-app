@@ -45,6 +45,49 @@ export function framesOf(time, rate) {
   return Number.isSafeInteger(frames) ? frames : null;
 }
 
+/* Timecode (protocol section 3.6) */
+
+/** The nominal rate: labelled frames per second. */
+const nominalRate = (rate) => Math.round(rate.num / rate.den);
+
+/** Labels each dropping minute skips: 2 at 30000/1001, 4 at 60000/1001, none at any other rate. */
+export function droppedLabels(rate) {
+  if (rate.num * 1001 === rate.den * 30000) return 2;
+  if (rate.num * 1001 === rate.den * 60000) return 4;
+  return 0;
+}
+
+/** The label of frame `frame` counted from 00:00:00:00 at `rate`, drop-frame when asked and allowed. */
+export function timecodeLabel(frame, rate, dropFrame) {
+  const n = nominalRate(rate);
+  const d = dropFrame ? droppedLabels(rate) : 0;
+  let f = frame;
+  if (d > 0) {
+    const T = 600 * n - 9 * d;
+    const M = 60 * n - d;
+    f %= 144 * T;
+    const q = Math.floor(f / T);
+    const r = f % T;
+    f += 9 * d * q + (r < d ? 0 : d * Math.floor((r - d) / M));
+  }
+  f %= 86400 * n;
+  const two = (value) => String(value).padStart(2, '0');
+  const seconds = Math.floor(f / n);
+  return `${two(Math.floor(seconds / 3600))}:${two(Math.floor(seconds / 60) % 60)}:${two(seconds % 60)}${d > 0 ? ';' : ':'}${two(f % n)}`;
+}
+
+/** The frame a label names at `rate`, or null when the label does not exist there. */
+export function timecodeFrame(label, rate) {
+  const match = /^([01][0-9]|2[0-3]):([0-5][0-9]):([0-5][0-9])([:;])([0-9]{2,3})$/.exec(label);
+  if (!match) return null;
+  const [HH, MM, SS, FF] = [match[1], match[2], match[3], match[5]].map(Number);
+  const n = nominalRate(rate);
+  const d = match[4] === ';' ? droppedLabels(rate) : 0;
+  const m = 60 * HH + MM;
+  if (FF >= n || (d > 0 && SS === 0 && FF < d && m % 10 !== 0)) return null;
+  return (60 * m + SS) * n + FF - d * (m - Math.floor(m / 10));
+}
+
 /* Identities (protocol section "Ids") */
 
 const u32 = (value) => value >>> 0;

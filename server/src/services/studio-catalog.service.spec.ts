@@ -79,6 +79,7 @@ describe(StudioCatalogService.name, () => {
       frameRate: { num: 30_000, den: 1001 },
       fps: 30_000 / 1001,
       frameCount: 300,
+      timecode: null,
       hasAudio: true,
       audioCodec: 'aac',
       videoCodec: 'h264',
@@ -119,6 +120,25 @@ describe(StudioCatalogService.name, () => {
       hasAudio: false,
       audioCodec: null,
     });
+  });
+
+  it('gives the start timecode the original records, or the stored one when it cannot be read (FL-1560)', async () => {
+    const probed = await media.probe();
+    media.probe.mockResolvedValue({ ...probed, timecode: '01:00:00;00' });
+    await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({
+      timecode: '01:00:00;00',
+      source: 'probe',
+    });
+
+    media.probe.mockRejectedValue(new Error('offline'));
+    assets.getById.mockResolvedValue(video({ exifInfo: { fps: 25, timecode: '10:00:00:00' } }));
+    await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({
+      timecode: '10:00:00:00',
+      source: 'stored',
+    });
+
+    assets.getById.mockResolvedValue(video({ type: AssetType.Image, originalFileName: 'a.jpg', exifInfo: null }));
+    await expect(sut.getMediaFacts(authStub.admin, ASSET)).resolves.toMatchObject({ timecode: null });
   });
 
   it('falls back to stored metadata when the original cannot be read', async () => {

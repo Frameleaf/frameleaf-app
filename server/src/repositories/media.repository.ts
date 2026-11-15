@@ -64,6 +64,7 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
 import { RawRenderError, type RawRenderOptions, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { stillConverters } from 'src/utils/still-converters.js';
+import { normalizeTimecode } from 'src/utils/timecode.js';
 
 /**
  * FL-1489: the largest value a PostgreSQL `integer` column holds. ffprobe reports 64-bit numbers
@@ -71,6 +72,30 @@ import { stillConverters } from 'src/utils/still-converters.js';
  * a measurement, and sending it on fails the whole metadata statement for that video.
  */
 const POSTGRES_INT_MAX = 2_147_483_647;
+
+/**
+ * FL-1560: the start timecode a file records. QuickTime and MP4 put it on a `tmcd` data track and
+ * ffprobe repeats it on the picture stream; MXF puts it on the container, Matroska as `TIMECODE`.
+ * The container's own wins, then the picture stream's, then a timecode track's.
+ */
+const readStartTimecode = ({ format, streams }: FfprobeData): string | null => {
+  const tagsOf = (stream: FfprobeStream) => stream.tags as Record<string, unknown> | undefined;
+  const candidates = [
+    format.tags?.timecode,
+    format.tags?.TIMECODE,
+    ...streams.filter((stream) => stream.codec_type === 'video').map((stream) => tagsOf(stream)?.timecode),
+    ...streams
+      .filter((stream) => stream.codec_type === 'data' && stream.codec_tag_string === 'tmcd')
+      .map((stream) => tagsOf(stream)?.timecode),
+  ];
+  for (const candidate of candidates) {
+    const timecode = normalizeTimecode(candidate);
+    if (timecode) {
+      return timecode;
+    }
+  }
+  return null;
+};
 
 const probe = (input: string, options: string[], signal = executionSignal()): Promise<FfprobeData> => {
   signal?.throwIfAborted();
@@ -794,6 +819,7 @@ export class MediaRepository {
           codecTag: typeof stream.codec_tag_string === 'string' ? stream.codec_tag_string : null,
           handlerName: typeof stream.tags?.handler_name === 'string' ? stream.tags.handler_name : null,
         })),
+      timecode: readStartTimecode(results),
     };
   }
 
