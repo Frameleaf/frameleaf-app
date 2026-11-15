@@ -11,6 +11,7 @@ import type {
   FaceCorrectionAction,
   FaceCorrectionInput,
   PersonId,
+  PersonProfile,
   UpdateFacesData,
 } from 'src/repositories/person.repository.js';
 import type { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
@@ -971,8 +972,18 @@ export class PersonService extends BaseService {
    * never one since trashed, hidden or moved to Locked, never a soft-deleted or invisible face, and,
    * as for the thumbnail, never one the session's NSFW setting hides.
    */
-  private async mapOwnPerson(auth: AuthDto, person: Person): Promise<PersonResponseDto> {
-    return { ...mapPerson(person), featuredAssetId: await this.featuredAssetId(auth, person) };
+  private async mapOwnPerson(auth: AuthDto, person: Person, profile?: PersonProfile): Promise<PersonResponseDto> {
+    const [featuredAssetId, details] = await Promise.all([
+      this.featuredAssetId(auth, person),
+      profile ?? this.personRepository.getProfile(person),
+    ]);
+    return {
+      ...mapPerson(person),
+      featuredAssetId,
+      deathDate: asDateString(details?.deathDate ?? null),
+      // FL-941: notes are the owner's alone; every person read here is the caller's own, and this keeps it so
+      ...(person.ownerId === auth.user.id && { notes: details?.notes ?? null }),
+    };
   }
 
   private async featuredAssetId(auth: AuthDto, person: Person): Promise<string | null> {
@@ -1049,7 +1060,17 @@ export class PersonService extends BaseService {
 
     const current = await this.findOrFail(auth, personGroupId);
     const { ownerId } = current;
-    const { name, birthDate, isHidden, featureFaceAssetId: assetId, isFavorite, color } = dto;
+    const { name, birthDate, isHidden, featureFaceAssetId: assetId, isFavorite, color, deathDate } = dto;
+    // FL-941: an empty note clears it
+    const notes = dto.notes === undefined ? undefined : dto.notes?.trim() ? dto.notes : null;
+    const currentProfile = await this.personRepository.getProfile(current);
+    if (birthDate !== undefined || deathDate !== undefined) {
+      // FL-864: the date of passing is never before the date of birth, whichever of the two is being set
+      PersonService.requireLifeDatesInOrder(
+        birthDate === undefined ? current.birthDate : birthDate,
+        deathDate === undefined ? (currentProfile?.deathDate ?? null) : deathDate,
+      );
+    }
     // TODO: set by faceId directly
     let faceId: string | undefined;
     if (assetId) {
@@ -1072,6 +1093,7 @@ export class PersonService extends BaseService {
     }
 
     const partnerPeople = BaseService.create(PartnerPeopleService, this);
+    let profile = currentProfile;
     const person = await this.partnerOriginRepository.withPersonOrigin(ownerId, personGroupId, async () => {
       const person = await this.personRepository.update({
         ownerId,
@@ -1085,6 +1107,9 @@ export class PersonService extends BaseService {
         isFavorite,
         color,
       });
+      if (deathDate !== undefined || notes !== undefined) {
+        profile = await this.personRepository.upsertProfile({ ownerId, personGroupId }, { deathDate, notes });
+      }
       await partnerPeople.noteEdit(ownerId, personGroupId, dto);
       return person;
     });
@@ -1115,7 +1140,16 @@ export class PersonService extends BaseService {
       await this.refreshIdentities(ownerId, { personGroupIds: [personGroupId] });
     }
 
-    return this.mapOwnPerson(auth, person);
+    return this.mapOwnPerson(auth, person, profile ?? { deathDate: null, notes: null });
+  }
+
+  /** FL-864: refuses a date of passing before the date of birth. Either may be missing. */
+  private static requireLifeDatesInOrder(birthDate: Date | string | null, deathDate: Date | string | null) {
+    const born = asDateString(birthDate)?.slice(0, 10);
+    const died = asDateString(deathDate)?.slice(0, 10);
+    if (born && died && died < born) {
+      throw new BadRequestException('The date of passing cannot be before the date of birth');
+    }
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
@@ -1133,6 +1167,8 @@ export class PersonService extends BaseService {
           birthDate: person.birthDate,
           featureFaceAssetId: person.featureFaceAssetId,
           isFavorite: person.isFavorite,
+          deathDate: person.deathDate,
+          notes: person.notes,
         });
         results.push({ id: person.id, success: true });
       } catch (error: any) {

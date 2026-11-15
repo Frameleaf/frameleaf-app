@@ -66,11 +66,24 @@ describe(SearchService.name, () => {
 
       await sut.searchPerson(auth, { name, withHidden: false });
 
-      expect(mocks.person.getByName).toHaveBeenCalledWith(auth.user.id, name, { withHidden: false });
+      expect(mocks.person.getByName).toHaveBeenCalledWith(auth.user.id, name, { withHidden: false, matchNotes: true });
 
       await sut.searchPerson(auth, { name, withHidden: true });
 
-      expect(mocks.person.getByName).toHaveBeenCalledWith(auth.user.id, name, { withHidden: true });
+      expect(mocks.person.getByName).toHaveBeenCalledWith(auth.user.id, name, { withHidden: true, matchNotes: true });
+    });
+
+    // FL-941: the owner's notes are searched (the repository keeps the query to the caller's own people) and returned
+    it('returns the notes and date of passing of the people it finds', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ ownerId: auth.user.id });
+      mocks.person.getByName.mockResolvedValue([
+        { ...person, deathDate: new Date('2020-03-04'), notes: 'Grandma, loved gardens' },
+      ]);
+
+      await expect(sut.searchPerson(auth, { name: 'gardens' })).resolves.toEqual([
+        expect.objectContaining({ id: person.personGroupId, deathDate: '2020-03-04', notes: 'Grandma, loved gardens' }),
+      ]);
     });
   });
 
