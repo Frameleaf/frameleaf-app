@@ -244,12 +244,14 @@ export const applySidecars = (project: InterchangeProject, sidecars: readonly In
         if (used === 0) {
           notices.push({
             code: 'sidecar-unused',
+            subject: sidecar.name,
             what: sidecar.name,
             became: 'Not used: it names no clip in this project',
           });
         } else if (resampled) {
           notices.push({
-            code: 'format-limits',
+            code: 'lut-resampled',
+            subject: sidecar.name,
             what: `${sidecar.name}, a large LUT`,
             became: `Kept at ${MAX_STORED_SIZE} points a side, which looks the same on almost every picture`,
           });
@@ -268,6 +270,7 @@ export const applySidecars = (project: InterchangeProject, sidecars: readonly In
         if (used === 0) {
           notices.push({
             code: 'sidecar-unused',
+            subject: sidecar.name,
             what: sidecar.name,
             became: 'Not used: it names no clip in this project',
           });
@@ -275,13 +278,15 @@ export const applySidecars = (project: InterchangeProject, sidecars: readonly In
       } else {
         notices.push({
           code: 'sidecar-unused',
+          subject: sidecar.name,
           what: sidecar.name,
           became: 'Not used: Frameleaf reads CDL and LUT files beside a project',
         });
       }
     } catch (error) {
       notices.push({
-        code: 'sidecar-unused',
+        code: 'sidecar-unreadable',
+        subject: sidecar.name,
         what: sidecar.name,
         became: error instanceof InterchangeReadError ? `Not used: ${error.message}` : 'Not used: it could not be read',
       });

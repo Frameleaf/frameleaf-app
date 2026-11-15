@@ -558,7 +558,8 @@ export const readFcpxml = (bytes: Buffer | string): InterchangeProject => {
   const notices: InterchangeNotice[] = versionNotice('Final Cut Pro XML', root.attributes.version, TESTED_VERSIONS);
   if (disabled.count > 0) {
     notices.push({
-      code: 'format-limits',
+      code: 'clips-disabled',
+      subject: String(disabled.count),
       what:
         disabled.count === 1
           ? 'A clip switched off in Final Cut Pro'
