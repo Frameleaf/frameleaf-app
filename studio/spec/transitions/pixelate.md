@@ -6,7 +6,7 @@
 | Directions | none |
 | Duration (frames) | default 20, min 8, max 60 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 The outgoing clip breaks up into ever larger square blocks until the midpoint, swaps to the incoming clip (short cross-fade), which then resolves from large blocks back to full resolution.
@@ -42,6 +42,9 @@ The last block in each row/column may be partial; its centre may lie beyond the 
 
 ## Alpha
 Alpha is snapped and mixed like colour. Output converted to straight alpha per [T2].
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. The block centre's bilinear tap is of premultiplied light, so a block takes the light at its centre.
 
 ## Notes
 - Endpoints (SDR float route): p = 0 gives blockPx = 1, q = ((i + 0.5)/W, (j + 0.5)/H) (pixel centre, up to binary32 rounding of floor(u/bu)) and cf = 0, i.e. A. p = 1 likewise gives B.

@@ -65,6 +65,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     isPathNamedByOthers: vitest.fn().mockResolvedValue(false),
     findLivePhotoMatch: vitest.fn(),
     getStatistics: vitest.fn(),
+    getOriginalBytes: vitest.fn(),
     countLockedRuleMatches: vitest.fn(),
     getCalendarHeatmap: vitest.fn(),
     getTimeBucket: vitest.fn(),

@@ -19,6 +19,7 @@ import { DB } from 'src/schema/index.js';
 import { isInOwnerFolder, ownLibraryPath } from 'src/utils/library-path.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
+import { activeScopes, inScope, partnerScopePredicate } from 'src/utils/partner-scope.js';
 /** What kind of copy an origin row describes (FL-326, spec §4.2). */
 export type OriginKind = 'asset' | 'album';
 /**
@@ -82,7 +83,13 @@ export type AssetCopyInput = {
   sourceAssetId: string;
   ownerId: string;
   rootOwnerId: string;
-  partnerSharedById: string;
+  /** Null for a standalone copy. */
+  partnerSharedById: string | null;
+  /**
+   * FL-837: the caller's own copy of an item they can see through a shared album, space or link ("Add to my
+   * library"): no partner origin, never followed, never grouped with partner copies.
+   */
+  standalone?: boolean;
   /** The source's original `physical_file`; the copy links to it, nothing on disk is written. */
   original: {
     id: string;
@@ -727,10 +734,39 @@ export class PartnerOriginRepository {
    * Returns the copy's id, or undefined when the library already holds the content (or once received a
    * copy of this source), or the partnership it is made for has ended.
    */
+  /**
+   * FL-837: the source's faces on a standalone copy, belonging to nobody yet (no names cross over); returns the new
+   * face ids, for recognition to place among the copy owner's own people.
+   */
+  async copyFacesUnassigned(sourceAssetId: string, copyId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      WITH source AS (
+        SELECT f.*, gen_random_uuid() AS "newId" FROM public.asset_face f
+        WHERE f."assetId" = ${sourceAssetId}::uuid AND f."deletedAt" IS NULL AND f."isVisible" IS TRUE
+      ), faces AS (
+        INSERT INTO public.asset_face (id, "assetId", "personGroupId", "imageWidth", "imageHeight",
+          "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType")
+        SELECT "newId", ${copyId}::uuid, NULL, "imageWidth", "imageHeight",
+          "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType" FROM source
+        RETURNING id
+      ), embeddings AS (
+        INSERT INTO public.face_search ("faceId", embedding)
+        SELECT source."newId", search.embedding FROM source
+        JOIN public.face_search search ON search."faceId" = source.id
+        WHERE source."newId" IN (SELECT id FROM faces)
+      )
+      SELECT id FROM faces
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
+
   async insertAssetCopy(input: AssetCopyInput): Promise<string | undefined> {
     return this.db.transaction().execute(async (trx) => {
       await lockIncomingTags(trx, input.ownerId);
-      if (!(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
+      if (input.partnerSharedById && !(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
+        return;
+      }
+      if (!input.standalone && !input.partnerSharedById) {
         return;
       }
       const source = await trx
@@ -799,7 +835,7 @@ export class PartnerOriginRepository {
         .where('ownerId', '=', input.ownerId)
         .where('checksum', '=', source.checksum)
         .executeTakeFirst();
-      if (existing || (await this.hasEverCopied(source.id, input.ownerId, trx))) {
+      if (existing || (!input.standalone && (await this.hasEverCopied(source.id, input.ownerId, trx)))) {
         return;
       }
       const {
@@ -838,7 +874,12 @@ export class PartnerOriginRepository {
         .returning('id')
         .executeTakeFirstOrThrow();
       // FL-921: the copy is an original of the recipient's own ledger, not the partner's a second time
-      await recordLedgerAdded(trx, [copy.id], 'partner-copy');
+      await recordLedgerAdded(
+        trx,
+        [copy.id],
+        input.standalone ? 'shared-copy' : 'partner-copy',
+        input.standalone ? input.ownerId : null,
+      );
       // FL-417: the copy shows a path in its owner's own folder, never the partner's
       const recipient = await trx
         .selectFrom('user')
@@ -954,17 +995,19 @@ export class PartnerOriginRepository {
         WHERE checksum."assetId" = ${source.id}::uuid
         ON CONFLICT DO NOTHING
       `.execute(trx);
-      await this.createAssetOrigin(
-        {
-          id: copy.id,
-          sourceId: source.id,
-          ownerId: input.ownerId,
-          rootOwnerId: input.rootOwnerId,
-          partnerSharedById: input.partnerSharedById,
-        },
-        trx,
-      );
-      await this.copyGroups(trx, source.id, copy.id, input.ownerId);
+      if (input.partnerSharedById) {
+        await this.createAssetOrigin(
+          {
+            id: copy.id,
+            sourceId: source.id,
+            ownerId: input.ownerId,
+            rootOwnerId: input.rootOwnerId,
+            partnerSharedById: input.partnerSharedById,
+          },
+          trx,
+        );
+        await this.copyGroups(trx, source.id, copy.id, input.ownerId);
+      }
       // spec §4.3: every library is charged the full size; copying never fails on quota
       await sql`
         UPDATE "user"
@@ -1028,26 +1071,64 @@ export class PartnerOriginRepository {
     }
   }
 
-  /** One page of `ownerId`'s assets after `cursor`, in id order, for the backfill. */
-  async getOwnerAssetIdsAfter(ownerId: string, cursor: string | null, limit: number): Promise<string[]> {
+  /**
+   * One page of `ownerId`'s assets after `cursor`, in id order, for the backfill: with `sharedWithId`, only the
+   * ones that partnership's scope sends (FL-774).
+   */
+  async getOwnerAssetIdsAfter(
+    ownerId: string,
+    cursor: string | null,
+    limit: number,
+    sharedWithId?: string,
+  ): Promise<string[]> {
     const { rows } = await sql<{
       id: string;
     }>`
-      SELECT id FROM asset
-      WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL AND ${libraryScopePredicate(LibraryScope.Personal)}
-        ${cursor ? sql`AND id > ${cursor}::uuid` : sql``}
-      ORDER BY id
+      SELECT a.id FROM asset a
+      WHERE a."ownerId" = ${ownerId}::uuid AND a."deletedAt" IS NULL AND ${libraryScopePredicate(LibraryScope.Personal, 'a')}
+        ${sharedWithId ? sql`AND ${partnerScopePredicate(ownerId, sharedWithId)}` : sql``}
+        ${cursor ? sql`AND a.id > ${cursor}::uuid` : sql``}
+      ORDER BY a.id
       LIMIT ${limit}
     `.execute(this.db);
     return rows.map(({ id }) => id);
   }
-  async countOwnerAssets(ownerId: string): Promise<number> {
+  /** How many of `ownerId`'s assets the backfill walks; with `sharedWithId`, only that scope's (FL-774). */
+  async countOwnerAssets(ownerId: string, sharedWithId?: string): Promise<number> {
     const { rows } = await sql<{
       count: number;
     }>`
-      SELECT count(*)::int AS count FROM asset WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL AND ${libraryScopePredicate(LibraryScope.Personal)}
+      SELECT count(*)::int AS count FROM asset a
+      WHERE a."ownerId" = ${ownerId}::uuid AND a."deletedAt" IS NULL AND ${libraryScopePredicate(LibraryScope.Personal, 'a')}
+        ${sharedWithId ? sql`AND ${partnerScopePredicate(ownerId, sharedWithId)}` : sql``}
     `.execute(this.db);
     return rows[0]?.count ?? 0;
+  }
+  /** FL-774: whether `sharedById`'s scope for `sharedWithId` sends this asset (always, when they share Everything). */
+  async isInPartnerScope(assetId: string, sharedById: string, sharedWithId: string): Promise<boolean> {
+    const { rows } = await sql<{ inScope: boolean }>`
+      SELECT ${partnerScopePredicate(sharedById, sharedWithId)} AS "inScope" FROM asset a WHERE a.id = ${assetId}::uuid
+    `.execute(this.db);
+    return rows[0]?.inScope ?? false;
+  }
+  /**
+   * FL-774: the partnerships with a scope that sends these assets of their owner's. An edit can bring an item into
+   * a scope (added to a chosen album, a face named, a new date); partnerships that share Everything already copied it.
+   */
+  async getScopedRecipients(
+    assetIds: string[],
+  ): Promise<Array<{ assetId: string; sharedById: string; sharedWithId: string }>> {
+    if (assetIds.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ assetId: string; sharedById: string; sharedWithId: string }>`
+      SELECT a.id AS "assetId", s."sharedById", s."sharedWithId"
+      FROM asset a
+      JOIN ${activeScopes} s ON s."sharedById" = a."ownerId"
+      WHERE a.id = ANY(${assetIds}::uuid[]) AND a."deletedAt" IS NULL
+        AND ${libraryScopePredicate(LibraryScope.Personal, 'a')} AND ${inScope}
+    `.execute(this.db);
+    return rows;
   }
   /** An album as the copy engine needs it, with its owner (spec §4.4). */
   async getAlbumForCopy(albumId: string): Promise<AlbumForCopy | undefined> {

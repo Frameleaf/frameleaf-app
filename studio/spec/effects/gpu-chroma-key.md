@@ -5,7 +5,7 @@
 | Category | keying |
 | Temporal | no |
 | Pass | 1 fragment pass (per-pixel, no neighbourhood) |
-| HDR | refused (engine throws HdrRenderUnavailableError for the whole chain; a native client must refuse) [C4] |
+| HDR | linear-display-bt709-v1 (key on the encoding) [C4] |
 
 ## What it does
 Makes pixels whose chroma is close to pure green (or pure blue) transparent, with an optional soft edge, and optionally removes green/blue spill from the remaining colours.
@@ -51,7 +51,9 @@ Single tap at the pixel's own texel centre; no edge handling needed.
 Output alpha = input alpha × m. RGB is NOT premultiplied or cleared where the result is transparent: keyed pixels keep their (spill-suppressed) RGB with alpha 0.
 
 ## SDR and HDR
-SDR only. Operates on sRGB-encoded values [C3]; the YCbCr coefficients are applied to encoded values. No output clamp is applied; for inputs in 0..1 the spill step keeps RGB within 0..1 (R + s/2 ≤ (R+G)/2). HDR: refused.
+SDR: operates on sRGB-encoded values [C3]; the YCbCr coefficients are applied to encoded values. No output clamp is applied; for inputs in 0..1 the spill step keeps RGB within 0..1 (R + s/2 ≤ (R+G)/2).
+
+HDR [C4], GRADE: the pixel is first encoded, E = SRGB of each linear channel (hdr.md H5, odd). The key distance, both tolerances, the hard-edge threshold and the spill all act on E exactly as in SDR; the spilled E is decoded with SRGB⁻¹ and limited to ±65504; alpha is input alpha × the matte. The key colour is unchanged (pure green or blue encode to themselves). So the matte of an SDR source in an HDR project is the SDR matte, and a grey or white highlight above reference white has zero chroma distance from grey and stays opaque and unchanged.
 
 ## Notes
 - Frameleaf deviation from the upstream Freecut shader (engine patches 0021 and 0026): upstream evaluated smoothstep(τ, τ+softness, d) unconditionally, which is undefined when softness = 0. The engine instead (a) uses a hard step when the soft band has zero width, and (b) widens that hard step by 2⁻¹⁶ so that a pixel exactly equal to the key colour, whose computed distance can come out at ~1e‑8 instead of 0 when a GPU fuses multiply-adds differently for pixel and key, is still keyed. The margin applies only to the hard-key branch; with any softness > 0 the smoothstep branch is used and no margin is added.

@@ -476,7 +476,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       ['mixed exposure and levels',comp([track(shape('mixed-exposure','#ffffff',1,{effects:[...expose(1,.125,2),...fx]}),0)])],
       ['effect',comp([track(shape('effect','#ffffff',1,{effects:fx}),0)])],
       ['blend',comp([track(shape('blend','#ffffff',.5,{blendMode:'screen'}),0)])],
-      ['transition',{...comp([track(image('pq',1),0)]),tracks:[{...track(image('pq',1),0),items:[{...image('pq',1),durationInFrames:30},{...image('hlg',1),from:30,trackId:'pq'}]}],transitions:[{id:'cut',type:'crossfade',presentation:'dissolve',timing:'linear',trackId:'pq',leftClipId:'pq',rightClipId:'hlg',durationInFrames:20,alignment:.5}]}],
+      ['transition',{...comp([track(image('pq',1),0)]),tracks:[{...track(image('pq',1),0),items:[{...image('pq',1),durationInFrames:30},{...image('hlg',1),from:30,trackId:'pq'}]}],transitions:[{id:'cut',type:'crossfade',presentation:'glitch',timing:'linear',trackId:'pq',leftClipId:'pq',rightClipId:'hlg',durationInFrames:20,alignment:.5}]}],
     ];
     const refuseComposition=async(name,composition,frame)=>{
       const c=new OffscreenCanvas(16,16);const renderer=await createCompositionRenderer(composition,c,c.getContext('2d'),{mode:'export',hdrRasters:hdrInputs});
@@ -550,7 +550,7 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       }
       finally { encodedOutput.destroy(); }
       refuse('HDR brightness plus unknown effect',()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[...brightness,{...brightness[0],type:'gpu-not-an-effect'}],gateOutput,2,2));
-      for(const id of [...GPU_EFFECT_REGISTRY.keys()].filter(id=>!['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-vibrance','gpu-grayscale','gpu-sepia','gpu-invert','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur','gpu-pixelate','gpu-twirl','gpu-wave','gpu-bulge'].includes(id)))refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
+      for(const id of [...GPU_EFFECT_REGISTRY.keys()].filter(id=>!['gpu-brightness','gpu-contrast','gpu-exposure','gpu-saturation','gpu-temperature','gpu-vibrance','gpu-grayscale','gpu-sepia','gpu-invert','gpu-box-blur','gpu-gaussian-blur','gpu-motion-blur','gpu-pixelate','gpu-twirl','gpu-wave','gpu-bulge','gpu-curves','gpu-lut','gpu-color-wheels','gpu-chroma-key','gpu-sharpen'].includes(id)))refuse(`effect ${id}`,()=>gpu.effects.applyTextureEffectsToTexture(gateInput,[{id,type:id,name:id,enabled:true,params:getGpuEffectDefaultParams(id)}],gateOutput));
       // Additive has dedicated linear light semantics; every other registry entry
       // must retain its typed refusal. The oracle is independent of production WGSL.
       device.pushErrorScope('validation');
@@ -574,7 +574,9 @@ import R from '/@react-refresh'; R.injectIntoGlobalHook(window); window.$Refresh
       const encodedTransition=device.createTexture({size:[2,2],format:'rgba8unorm',usage:GPUTextureUsage.RENDER_ATTACHMENT});
       try{refuse('additive HDR encoded output',()=>transition.renderTexturesToTexture('additiveDissolve',gateInput,gateRight,encodedTransition,.5,2,2));}
       finally{encodedTransition.destroy();}
-      for(const id of GPU_TRANSITION_REGISTRY.keys())if(id!=='additiveDissolve')refuse(`transition ${id}`,()=>transition.renderTexturesToTexture(id,gateInput,gateInput,gateOutput,.5,2,2));
+      // FL-1556: the mix, selection and geometric transitions render; the stylised ones stay refused.
+      const linearTransitions=['additiveDissolve','dissolve','fade','nonAdditiveDissolve','dipToColorDissolve','blurDissolve','wipe','slide','iris','clockWipe','flip','pixelate','radialBlur'];
+      for(const id of GPU_TRANSITION_REGISTRY.keys())if(!linearTransitions.includes(id))refuse(`transition ${id}`,()=>transition.renderTexturesToTexture(id,gateInput,gateInput,gateOutput,.5,2,2));
       for(const mode of Object.keys(BLEND_MODE_INDEX).filter(id=>id!=='normal'))refuse(`blend ${mode}`,()=>gpu.mediaBlend.blend(gateInput,gateInput,gateOutput,mode));
     }finally{
       gateInput.destroy();gateRight.destroy();gateOutput.destroy();transition.destroy();

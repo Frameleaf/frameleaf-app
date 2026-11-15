@@ -6,7 +6,7 @@
 | Directions | from-left, from-right, from-top, from-bottom [T3] |
 | Duration (frames) | default 30, min 5, max 90 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 Push slide: the incoming clip enters from the named side and pushes the outgoing clip out of the opposite side. Both move together by the same distance p (in frame widths or heights); there is no gap and no overlap.
@@ -37,6 +37,9 @@ The seam is a hard step, no anti-aliasing. Sub-pixel offsets (p · W not an inte
 
 ## Alpha
 Alpha follows the selected clip. Output converted to straight alpha per [T2].
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. Each pixel is one clip's moved light, as in SDR.
 
 ## Notes
 - Endpoints (SDR float route): p = 0 gives exactly A; p = 1 gives exactly B (uvB = uv).
