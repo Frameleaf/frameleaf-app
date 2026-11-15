@@ -59,7 +59,9 @@ describe('albumCount search filter (FL-976)', () => {
         or: [{ albumCount: { eq: 0 } }, { albumCount: { gte: 2 }, city: { eq: 'Paris' } }],
       });
       expect(query.sql.split(viewerAlbumCount)).toHaveLength(3);
-      expect(query.sql).toContain('"asset"."isFavorite" =');
+      // FL-786: isFavorite is the viewer's own heart, including hearts on items shared with the viewer
+      expect(query.sql).toContain('"asset"."isFavorite")');
+      expect(query.sql).toContain('public.asset_favorite');
       expect(query.sql).toContain('"asset_exif"."city" =');
       expect(query.sql).toMatch(/ or /);
     }));
@@ -68,7 +70,10 @@ describe('albumCount search filter (FL-976)', () => {
     withDb((db) => {
       const plain = compile(db, { isFavorite: { eq: true } });
       const counted = compile(db, { isFavorite: { eq: true }, albumCount: { gte: 1 } });
-      expect(counted.sql.startsWith(plain.sql.split(' and "asset"."isFavorite"', 1)[0])).toBe(true);
+      const favorite = /\(*"asset"\."ownerId" = \$\d+::uuid\s+AND "asset"\."isFavorite"/;
+      const universe = plain.sql.slice(0, plain.sql.search(favorite));
+      expect(universe.length).toBeGreaterThan(0);
+      expect(counted.sql.startsWith(universe)).toBe(true);
       expect(counted.sql).toContain('"asset"."ownerId" = any(');
     }));
 

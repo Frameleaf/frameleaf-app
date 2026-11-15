@@ -535,6 +535,8 @@ export const getMocks = () => {
   mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
   mocks.partnerOrigin.getFollowers.mockResolvedValue([]);
   mocks.partnerOrigin.getLiveCopyIds.mockResolvedValue([]);
+  // FL-786: no hearts on items shared with the viewer unless a test says so
+  mocks.asset.getSharedFavoriteIds.mockResolvedValue(new Set());
   mocks.partnerOrigin.getScopedRecipients.mockResolvedValue([]);
   mocks.partnerOrigin.isInPartnerScope.mockResolvedValue(true);
   mocks.partnerOrigin.shareGeneratedFiles.mockResolvedValue([]);
