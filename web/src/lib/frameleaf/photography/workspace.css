@@ -2610,7 +2610,7 @@
 }
 .phw-eye-tools button svg {
   vertical-align: -3px;
-  margin-right: 6px;
+  margin-inline-end: 6px;
 }
 .phw-eye-sort {
   display: flex;
