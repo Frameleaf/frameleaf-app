@@ -23,6 +23,7 @@ import type { StudioAssetRef } from '@frameleaf/host/host-contract'
 import {
   createLibraryMediaSeeder,
   followRetiredImports,
+  isLutImport,
   isSubjectMatteImport,
   retireProject,
   type LibraryMediaSeeder,
@@ -356,6 +357,29 @@ describe('library media across editor remounts', () => {
       expect(blobUrlManager.get(UNUSED)).toBe(matte.url)
       expect(await getMedia(UNUSED)).toBeUndefined()
       expect(await getProjectMediaIds('fl-cutout')).not.toContain(UNUSED)
+      expect(media.known(UNUSED)).toBe(true)
+    } finally {
+      media.dispose()
+    }
+  })
+
+  it('hands a LUT kept with the project to its effect by id, never to the bin (FL-1558)', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-lut', onChange: () => {} })
+    try {
+      const lut = {
+        id: UNUSED,
+        kind: 'lut' as const,
+        name: 'Show LUT.cube',
+        mimeType: 'text/x-cube-lut',
+        sizeBytes: 900,
+        url: `/api/studio/projects/p/imports/${UNUSED}/file`,
+      }
+      expect(isLutImport(lut)).toBe(true)
+      expect(isLutImport({ ...lut, kind: 'image' })).toBe(false)
+      await media.seedImports([lut])
+      expect(blobUrlManager.get(UNUSED)).toBe(lut.url)
+      expect(await getMedia(UNUSED)).toBeUndefined()
+      expect(await getProjectMediaIds('fl-lut')).not.toContain(UNUSED)
       expect(media.known(UNUSED)).toBe(true)
     } finally {
       media.dispose()

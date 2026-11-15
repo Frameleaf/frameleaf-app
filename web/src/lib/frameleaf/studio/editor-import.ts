@@ -8,7 +8,7 @@
  */
 
 /** Project files the import reads, CDL and LUT files that go with them, and Frameleaf bundles. */
-export const EDITOR_IMPORT_PROJECT_EXTENSIONS = ['fcpxml', 'xml', 'otio', 'otioz', 'edl'] as const;
+export const EDITOR_IMPORT_PROJECT_EXTENSIONS = ['prproj', 'fcpxml', 'xml', 'otio', 'otioz', 'edl'] as const;
 export const EDITOR_IMPORT_SIDECAR_EXTENSIONS = ['cdl', 'cc', 'ccc', 'cube'] as const;
 export const EDITOR_IMPORT_ACCEPT = [...EDITOR_IMPORT_PROJECT_EXTENSIONS, ...EDITOR_IMPORT_SIDECAR_EXTENSIONS, 'zip']
   .map((extension) => `.${extension}`)
@@ -20,7 +20,15 @@ const extensionOf = (name: string) => name.split('.').at(-1)?.toLowerCase() ?? '
 const nameOf = (file: File) => (file.webkitRelativePath || file.name).split('/').at(-1) ?? file.name;
 
 /** Inside a folder, the document that is the project: a bundle's own first, then any project file. */
-const PRIORITY = [/^info\.fcpxml$/i, /^content\.otio$/i, /\.fcpxml$/i, /\.otioz?$/i, /\.xml$/i, /\.edl$/i];
+const PRIORITY = [
+  /^info\.fcpxml$/i,
+  /^content\.otio$/i,
+  /\.prproj$/i,
+  /\.fcpxml$/i,
+  /\.otioz?$/i,
+  /\.xml$/i,
+  /\.edl$/i,
+];
 
 export type EditorImportChoice =
   { kind: 'project'; project: File; sidecars: File[] } | { kind: 'bundle'; bundle: File } | { kind: 'none' };
