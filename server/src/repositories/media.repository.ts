@@ -57,7 +57,7 @@ import {
   isRenderedDesign,
 } from 'src/utils/design-preview.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
-import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
+import { LOCATION_DELETE_ARGS, LOCATION_TAG_SELECTORS } from 'src/utils/location-tags.js';
 import { ContainerLogSignals, readContainerLogSignals } from 'src/utils/log-video-container.js';
 import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -618,6 +618,50 @@ export class MediaRepository {
     signal?: AbortSignal,
   ): Promise<void> {
     return sharpProcessPool.run('writeStrippedStill', [input, output, format, colorspace], signal);
+  }
+
+  /** FL-826: `input` as a download JPEG at full size (`maxEdge` null) or fitted inside `maxEdge` pixels. */
+  renderDownloadJpeg(input: string, output: string, maxEdge: number | null, signal?: AbortSignal): Promise<void> {
+    return sharpProcessPool.run('renderDownloadJpeg', [input, output, maxEdge], signal);
+  }
+
+  /**
+   * FL-826: copies the original's EXIF, XMP and IPTC into a rendered download JPEG, leaving out what no
+   * longer describes it (orientation, the embedded thumbnail, the colour profile) and, with
+   * `removeLocation`, every location tag. Returns false when exiftool fails; the render then goes out
+   * without metadata.
+   */
+  async copyDownloadMetadata(source: string, target: string, { removeLocation }: { removeLocation: boolean }) {
+    try {
+      await exiftool.write(
+        target,
+        {},
+        {
+          ignoreMinorErrors: true,
+          writeArgs: [
+            '-TagsFromFile',
+            source,
+            '-EXIF:all',
+            '-XMP:all',
+            '-IPTC:all',
+            '--Orientation',
+            '--IFD1:all',
+            '--ICC_Profile:all',
+            // `--` leaves a tag out of the copy
+            ...(removeLocation ? LOCATION_TAG_SELECTORS.map((selector) => `-${selector}`) : []),
+            '-overwrite_original',
+          ],
+        },
+      );
+    } catch (error: any) {
+      this.logger.warn(`Could not copy metadata into a download: ${error.message}`);
+      return false;
+    }
+    // a location that slipped through the copy is removed as well; a file that may still carry one is refused
+    if (removeLocation && !(await this.removeLocation(target))) {
+      throw new Error('DOWNLOAD_LOCATION_NOT_REMOVED');
+    }
+    return true;
   }
 
   async repairJpeg(input: string, output: string, preview: string, metadataSource: string) {

@@ -67,6 +67,8 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     filmstripFrameGrids: vitest.fn().mockResolvedValue([]),
     writeCloudUpload: vitest.fn().mockImplementation(() => Promise.resolve()),
     writeStrippedStill: vitest.fn().mockImplementation(() => Promise.resolve()),
+    renderDownloadJpeg: vitest.fn().mockImplementation(() => Promise.resolve()),
+    copyDownloadMetadata: vitest.fn().mockResolvedValue(true),
     repairJpeg: vitest.fn(),
     pictureSaved: vitest.fn().mockResolvedValue(100),
     renderDevelopGeometry: vitest

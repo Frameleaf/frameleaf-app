@@ -30,6 +30,13 @@ const SharedLinkCreateSchema = z
     allowUpload: z.boolean().optional().describe('Allow uploads'),
     allowDownload: z.boolean().default(true).optional().describe('Allow downloads'),
     showMetadata: z.boolean().default(true).optional().describe('Show metadata'),
+    webSizeOnly: z
+      .boolean()
+      .optional()
+      .describe(
+        'FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Left out: off',
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .superRefine(({ type, albumId, assetIds }, ctx) => {
     switch (type) {
@@ -65,6 +72,13 @@ const SharedLinkEditSchema = z
     allowUpload: z.boolean().optional().describe('Allow uploads'),
     allowDownload: z.boolean().optional().describe('Allow downloads'),
     showMetadata: z.boolean().optional().describe('Show metadata'),
+    webSizeOnly: z
+      .boolean()
+      .optional()
+      .describe(
+        'FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Left out: unchanged',
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'SharedLinkEditDto' });
 
@@ -124,6 +138,13 @@ const SharedLinkResponseSchema = z
     allowUpload: z.boolean().describe('Allow uploads'),
     allowDownload: z.boolean().describe('Allow downloads'),
     showMetadata: z.boolean().describe('Show metadata'),
+    webSizeOnly: z
+      .boolean()
+      .optional()
+      .describe(
+        'FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Always sent',
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
     slug: z.string().nullable().describe('Custom URL slug'),
     url: z
       .string()
@@ -256,6 +277,7 @@ export function mapSharedLink(
     allowUpload: sharedLink.allowUpload,
     allowDownload: sharedLink.allowDownload,
     showMetadata: sharedLink.showExif,
+    webSizeOnly: sharedLink.webSizeOnly ?? false,
     slug: sharedLink.slug,
     url: sharedLinkUrl(sharedLink, options.externalDomain),
     directUrl: sharedLinkDirectUrl(sharedLink, options.externalDomain),

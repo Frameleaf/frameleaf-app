@@ -694,6 +694,25 @@ export class SharpOperations {
    * original ICC colour profile kept, and no EXIF, XMP, IPTC or GPS at all. A JPEG stays a JPEG at
    * quality 98 without chroma subsampling; anything else is written as a lossless PNG.
    */
+  /**
+   * FL-826: a photo as a download JPEG: upright, in sRGB, flattened onto white (JPEG has no transparency),
+   * at full size or fitted inside `maxEdge` without enlarging. Nothing of the source's metadata is kept;
+   * the caller copies what the download may carry.
+   */
+  async renderDownloadJpeg(input: string, output: string, maxEdge: number | null): Promise<void> {
+    if (resolve(input) === resolve(output) || (maxEdge !== null && (!Number.isSafeInteger(maxEdge) || maxEdge < 1)))
+      throw new Error('INVALID_DOWNLOAD_RENDER');
+    let image = sharp(input, { failOn: 'error', limitInputPixels: this.maxPixels }).rotate();
+    if (maxEdge !== null) {
+      image = image.resize(maxEdge, maxEdge, { fit: 'inside', withoutEnlargement: true });
+    }
+    await image
+      .withIccProfile('srgb')
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: 92, chromaSubsampling: '4:4:4' })
+      .toFile(output);
+  }
+
   async writeStrippedStill(
     input: string | Buffer,
     output: string,

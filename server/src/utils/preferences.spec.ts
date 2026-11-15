@@ -600,3 +600,14 @@ describe('Library View menu choices (FL-1398)', () => {
     expect(schema.safeParse({ libraryView: { groupBy: 'decade' } }).success).toBe(false);
   });
 });
+
+describe('Download format (FL-826)', () => {
+  it('starts as the original, stores only a change, and takes only the three formats', () => {
+    expect(getPreferences([]).download.defaultFormat).toBe('original');
+    const changed = mergePreferences(getPreferences([]), { download: { defaultFormat: 'web' } }, 'user');
+    expect(getPreferencesPartial(changed)).toEqual({ download: { defaultFormat: 'web' } });
+    const schema = UserPreferencesUpdateDto.schema;
+    expect(schema.safeParse({ download: { defaultFormat: 'jpeg' } }).success).toBe(true);
+    expect(schema.safeParse({ download: { defaultFormat: 'tiff' } }).success).toBe(false);
+  });
+});

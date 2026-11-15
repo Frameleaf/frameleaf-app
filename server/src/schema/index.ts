@@ -264,6 +264,7 @@ import {
 import { SessionSignInTable } from 'src/schema/tables/session-sign-in.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
+import { SharedLinkOptionTable } from 'src/schema/tables/shared-link-option.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
 import { SharedSpaceCommentThreadTable } from 'src/schema/tables/shared-space-comment-thread.table.js';
@@ -545,6 +546,7 @@ export class ImmichDatabase {
     SessionSignInTable,
     SharedLinkAssetTable,
     SharedLinkTable,
+    SharedLinkOptionTable,
     SharedSpaceAlbumTable,
     SharedSpaceCommentThreadTable,
     SharedSpaceEventTable,
@@ -886,6 +888,7 @@ export interface DB extends QueueDatabase {
 
   shared_link: SharedLinkTable;
   shared_link_asset: SharedLinkAssetTable;
+  shared_link_option: SharedLinkOptionTable;
   shared_space_album: SharedSpaceAlbumTable;
   shared_space_comment_thread: SharedSpaceCommentThreadTable;
   shared_space_event: SharedSpaceEventTable;

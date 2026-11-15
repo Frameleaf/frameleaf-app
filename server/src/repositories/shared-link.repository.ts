@@ -101,6 +101,18 @@ const withSharedLinkOwner = (eb: ExpressionBuilder<DB, 'shared_link'>) => {
   ).as('owner');
 };
 
+/** FL-826: whether the link serves web-size downloads only; a link without an option row does not. */
+const withWebSizeOnly = (eb: ExpressionBuilder<DB, 'shared_link'>) =>
+  eb.fn
+    .coalesce(
+      eb
+        .selectFrom('shared_link_option')
+        .select('shared_link_option.webSizeOnly')
+        .whereRef('shared_link_option.sharedLinkId', '=', 'shared_link.id'),
+      sql<boolean>`false`,
+    )
+    .as('webSizeOnly');
+
 const withSharedLinkAlbum = (eb: ExpressionBuilder<DB, 'shared_link'>) => {
   return eb
     .selectFrom('album')
@@ -126,6 +138,7 @@ export class SharedLinkRepository {
         ).as('assets'),
       )
       .select(withSharedLinkOwner)
+      .select(withWebSizeOnly)
       .leftJoinLateral(
         (eb) =>
           withSharedLinkAlbum(eb)
@@ -179,6 +192,7 @@ export class SharedLinkRepository {
         .selectFrom('shared_link')
         .selectAll('shared_link')
         .select((eb) => jsonArrayFrom(withSharedAssets(eb, options).limit(COVER_ASSETS)).as('assets'))
+        .select(withWebSizeOnly)
         // What a card shows of the link without loading its contents: how much it shares, and an album's cover items
         // (the cover its owner chose, then the newest).
         .select((eb) =>
@@ -250,6 +264,7 @@ export class SharedLinkRepository {
         'shared_link.allowUpload',
         'shared_link.allowDownload',
         'shared_link.password',
+        withWebSizeOnly(eb),
         jsonObjectFrom(
           eb
             .selectFrom('user')
@@ -261,12 +276,14 @@ export class SharedLinkRepository {
       .where((eb) => eb.or([eb('shared_link.type', '=', SharedLinkType.Individual), eb('album.id', 'is not', null)]));
   }
 
-  async create(entity: Insertable<SharedLinkTable> & { assetIds?: string[] }) {
+  async create(entity: Insertable<SharedLinkTable> & { assetIds?: string[]; webSizeOnly?: boolean }) {
     const { id } = await this.db
       .insertInto('shared_link')
-      .values(omit(entity, 'assetIds'))
+      .values(omit(entity, 'assetIds', 'webSizeOnly'))
       .returningAll()
       .executeTakeFirstOrThrow();
+
+    await this.setOptions(id, entity);
 
     if (entity.assetIds && entity.assetIds.length > 0) {
       await this.db
@@ -278,14 +295,16 @@ export class SharedLinkRepository {
     return this.getSharedLinks(id);
   }
 
-  async update(entity: Updateable<SharedLinkTable> & { id: string; assetIds?: string[] }) {
+  async update(entity: Updateable<SharedLinkTable> & { id: string; assetIds?: string[]; webSizeOnly?: boolean }) {
     const { id } = await this.db
       .updateTable('shared_link')
       // callers spread a link loaded by `get`, whose relations (including the read-only `owner` name) are not columns
-      .set(omit(entity, 'assets', 'album', 'owner', 'assetIds'))
+      .set(omit(entity, 'assets', 'album', 'owner', 'assetIds', 'webSizeOnly'))
       .where('shared_link.id', '=', entity.id)
       .returningAll()
       .executeTakeFirstOrThrow();
+
+    await this.setOptions(id, entity);
 
     if (entity.assetIds && entity.assetIds.length > 0) {
       await this.db
@@ -295,6 +314,18 @@ export class SharedLinkRepository {
     }
 
     return this.getSharedLinks(id);
+  }
+
+  /** FL-826: stores the link's Frameleaf options; an option left out keeps its stored value. */
+  private async setOptions(id: string, { webSizeOnly }: { webSizeOnly?: boolean }) {
+    if (webSizeOnly === undefined) {
+      return;
+    }
+    await this.db
+      .insertInto('shared_link_option')
+      .values({ sharedLinkId: id, webSizeOnly })
+      .onConflict((oc) => oc.column('sharedLinkId').doUpdateSet({ webSizeOnly }))
+      .execute();
   }
 
   /**
@@ -360,6 +391,7 @@ export class SharedLinkRepository {
           >()
           .as('assets'),
       )
+      .select(withWebSizeOnly)
       .groupBy('shared_link.id')
       .executeTakeFirstOrThrow();
   }

@@ -339,10 +339,10 @@ const AssetDownloadOriginalSchema = z
         "Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original",
       ),
     format: z
-      .enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'document-pdf'])
+      .enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'document-pdf', 'original', 'jpeg', 'web'])
       .optional()
       .describe(
-        'Explicit still-image export or read-only document PDF; omission returns the original or selected edit',
+        'Explicit still-image export or read-only document PDF; omission returns the original or selected edit. FL-826: original, jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge) download a photo in that format, of the version `edited` names; videos stay original. A shared link limited to web size always gets web for photos',
       ),
   })
   .meta({ id: 'AssetDownloadOriginalDto' });

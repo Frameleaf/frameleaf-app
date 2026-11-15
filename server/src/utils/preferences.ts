@@ -185,6 +185,8 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       // ACCOUNT-P5, prototype `preferences.jsx` Downloads: a details file beside each photo. There is no
       // original-or-edited choice: a download is the version on screen (owner, 2026-10-16).
       includeSidecar: true,
+      // FL-826: the file as it was uploaded, as before the choice existed
+      defaultFormat: 'original',
     },
     // ACCOUNT-P3, prototype `preferences.jsx` Look: the search screens leave archived photos out unless asked
     // for. Applied by the client (it sends the visibility); search with no visibility is unchanged.

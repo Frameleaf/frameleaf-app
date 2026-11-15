@@ -3745,3 +3745,18 @@ export const PushUnavailableReasonSchema = z
   .enum(PushUnavailableReason)
   .describe('Why push notifications are unavailable on this server')
   .meta({ id: 'PushUnavailableReason' });
+
+/**
+ * FL-826: what a photo download holds: the original file, a high-quality JPEG at full size, or a web-size
+ * JPEG (2048 px on the long edge). Videos are always downloaded as their original.
+ */
+export const DOWNLOAD_FORMATS = ['original', 'jpeg', 'web'] as const;
+
+export type DownloadFormat = (typeof DOWNLOAD_FORMATS)[number];
+
+export const DownloadFormatSchema = z
+  .enum(DOWNLOAD_FORMATS)
+  .describe(
+    'FL-826: original (the file as uploaded), jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge). Videos are always original',
+  )
+  .meta({ id: 'DownloadFormat' });
