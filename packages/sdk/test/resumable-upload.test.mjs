@@ -102,6 +102,8 @@ test("reads the server's limits, and null for a server without resumable uploads
   });
   const old = async () => new Response(null, { status: 404 });
   assert.equal(await getUploadLimits({ baseUrl: BASE, fetch: old }), null);
+  const proxy = async () => new Response(null, { status: 204 });
+  assert.equal(await getUploadLimits({ baseUrl: BASE, fetch: proxy }), null);
 });
 
 test("sends the file in the server's append size and reports committed bytes", async () => {

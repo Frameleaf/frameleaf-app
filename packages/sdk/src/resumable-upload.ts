@@ -189,7 +189,7 @@ const requester = (options: ResumableUploadOptions) => {
     });
 };
 
-/** The server's limits, or null for a server without resumable uploads (404 or 405): use `POST /assets` there. */
+/** The server's limits, or null for a server without resumable uploads (404, 405, or no `Upload-Limit`): use `POST /assets` there. */
 export const getUploadLimits = async (options: ResumableUploadOptions): Promise<ResumableUploadLimits | null> => {
   const response = await requester(options)(join(options.baseUrl, '/assets/uploads'), 'OPTIONS');
   if (response.status === 404 || response.status === 405) {
@@ -199,6 +199,11 @@ export const getUploadLimits = async (options: ResumableUploadOptions): Promise<
     throw await refusal(response, 'limits');
   }
   const limit = response.headers.get('Upload-Limit');
+  if (!limit) {
+    // An OPTIONS answer without the server's limits (a proxy answering CORS preflight, say) isn't
+    // resumable-upload support.
+    return null;
+  }
   return {
     maxSize: number(limit, 'max-size'),
     maxAppendSize: number(limit, 'max-append-size'),
