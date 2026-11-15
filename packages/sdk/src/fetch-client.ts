@@ -5388,6 +5388,12 @@ export type UpdateAlbumDto = {
     /** Sibling display position. Lower values appear first. Computed by the client as a midpoint. */
     sortOrder?: number;
 };
+export type AlbumMoveAssetsDto = {
+    /** Photos and videos to move out of this album */
+    assetIds: string[];
+    /** The album the photos and videos move to. It must be an album, not a collection or shared space. */
+    targetAlbumId: string;
+};
 export type BookmarkIdsDto = {
     ids: string[];
 };
@@ -5866,6 +5872,10 @@ export type AlbumSuggestionsResponseDto = {
 export type AlbumSuggestionAutoAddDto = {
     /** Add new very likely photos from this trip automatically */
     enabled: boolean;
+};
+export type AlbumTransferDto = {
+    /** The new owner: someone already in the album, or a partner you share your library with */
+    userId: string;
 };
 export type UpdateAlbumUserDto = {
     role: AlbumUserRole;
@@ -27838,6 +27848,22 @@ export function addAssetsToAlbum({ id, bulkIdsDto }: {
     })));
 }
 /**
+ * Move assets to another album
+ */
+export function moveAlbumAssets({ id, albumMoveAssetsDto }: {
+    id: string;
+    albumMoveAssetsDto: AlbumMoveAssetsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BulkIdResponseDto[];
+    }>(`/albums/${encodeURIComponent(id)}/assets/move`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumMoveAssetsDto
+    })));
+}
+/**
  * Remove bookmark memberships without deleting bookmarks
  */
 export function removeBookmarksFromAlbum({ id, bookmarkIdsDto }: {
@@ -28066,6 +28092,19 @@ export function dismissAlbumSuggestions({ id, bulkIdsDto }: {
         ...opts,
         method: "POST",
         body: bulkIdsDto
+    })));
+}
+/**
+ * Transfer album ownership
+ */
+export function transferAlbum({ id, albumTransferDto }: {
+    id: string;
+    albumTransferDto: AlbumTransferDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/albums/${encodeURIComponent(id)}/transfer`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumTransferDto
     })));
 }
 /**
