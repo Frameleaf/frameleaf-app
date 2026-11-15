@@ -203,6 +203,35 @@ describe('/libraries', () => {
         .set('Authorization', `Bearer ${nonAdmin.accessToken}`);
       expect(legacy.status).toBe(403);
     });
+
+    it("FL-838: refuses a non-admin turning on folder albums for another account's library", async () => {
+      const { status } = await request(app)
+        .put(`/libraries/${library.id}`)
+        .set('Authorization', `Bearer ${nonAdmin.accessToken}`)
+        .send({ folderAlbums: true });
+      expect(status).toBe(403);
+
+      const { body } = await request(app)
+        .get(`/libraries/${library.id}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+      expect(body).toMatchObject({ folderAlbums: false });
+    });
+
+    it('FL-838: lets an administrator turn folder albums on and off', async () => {
+      const on = await request(app)
+        .put(`/libraries/${library.id}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ folderAlbums: true });
+      expect(on.status).toBe(200);
+      expect(on.body).toMatchObject({ id: library.id, folderAlbums: true });
+
+      const off = await request(app)
+        .put(`/libraries/${library.id}`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ folderAlbums: false, removeFolderAlbums: true });
+      expect(off.status).toBe(200);
+      expect(off.body).toMatchObject({ id: library.id, folderAlbums: false });
+    });
   });
 
   describe('FL-78: import folders are checked before a library exists', () => {

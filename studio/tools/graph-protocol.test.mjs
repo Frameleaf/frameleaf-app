@@ -765,9 +765,12 @@ test('13.2.1: the parameter catalogue is the generated one, unedited', () => {
   }
 });
 
+/** Effects Frameleaf adds through engine patches: they have no row in the pinned upstream manifest. */
+const FRAMELEAF_EFFECTS = JSON.parse(readFileSync(new URL('../frameleaf-operators.json', import.meta.url), 'utf8')).effects;
+
 test('13.2.1: the catalogue lists what the command catalogue names: every effect, blend mode and published transition', () => {
   const sorted = (kind) => parameters[kind].map((entry) => entry.id).sort();
-  assert.deepEqual(sorted('effects'), manifestIds('effect.update', 'effect.'), 'effects');
+  assert.deepEqual(sorted('effects'), [...manifestIds('effect.update', 'effect.'), ...FRAMELEAF_EFFECTS].sort(), 'effects');
   assert.deepEqual(sorted('blendModes'), manifestIds('clip.setBlendMode', 'blend.'), 'blend modes');
   const transitions = new Set(sorted('transitions'));
   for (const id of manifestIds('clip.setTransition', 'transition.')) assert.ok(transitions.has(id), `transition ${id}`);

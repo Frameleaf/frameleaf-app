@@ -10,6 +10,9 @@
 // with the current platform glyph atlas as input, independently checked against Canvas 2D. The canonical backend is the software
 // WebGPU of FREECUT_CHROME_ARGS_REPLACE (CI's); GOLDENS_CROSS_CHECK_ARGS names a second
 // backend whose differences set the tolerances (render-goldens.mjs, deriveTolerance).
+// `--write --only=<id>,<id>` renders and writes only the cases of those ids (a new effect or
+// transition) and keeps every other committed case, the progress curve and the keyframe, HDR,
+// layer and text goldens as they are.
 import assert from 'node:assert/strict';
 import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -31,6 +34,8 @@ const require = createRequire(path.join(studio, 'engine/package.json'));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
 const write = process.argv.includes('--write');
+const only = process.argv.find((arg) => arg.startsWith('--only='))?.slice('--only='.length).split(',').filter(Boolean);
+assert.ok(!only || write, '--only needs --write');
 const catalogue = JSON.parse(await readFile(path.join(studio, 'graph-parameters-v1.json'), 'utf8'));
 const engineBuild = JSON.parse(await readFile(path.join(studio, 'engine-build.json'), 'utf8'));
 
@@ -221,8 +226,8 @@ async function renderAll(args) {
       return { environment, effectResults, transitionResults, curve };
     }, {
       E: EFFECT_SIZE, T: TRANSITION_SIZE,
-      effects: effectCases(catalogue), transitions: transitionCases(catalogue),
-      atlasSpecs: effectCases(catalogue).map((c) => c.id === 'gpu-ascii' && c.domain === 'sdr' ? asciiAtlasSpec(c.params) : null),
+      effects: selected(effectCases(catalogue)), transitions: selected(transitionCases(catalogue)),
+      atlasSpecs: selected(effectCases(catalogue)).map((c) => c.id === 'gpu-ascii' && c.domain === 'sdr' ? asciiAtlasSpec(c.params) : null),
       sdrInput: effectSdrInput(), hdrInput: effectHdrInput(),
       tA: transitionInputs().a, tB: transitionInputs().b,
       curveCases: PROGRESS_CURVE_CASES, gpuIds: GPU_TRANSITIONS,
@@ -231,6 +236,11 @@ async function renderAll(args) {
   } finally {
     await browser.close();
   }
+}
+
+/** The cases this run renders: all of them, or those of the `--only` ids. */
+function selected(cases) {
+  return only ? cases.filter((c) => only.includes(c.id)) : cases;
 }
 
 const SWIFTSHADER = '--enable-unsafe-webgpu --use-angle=swiftshader --use-vulkan=swiftshader --enable-features=Vulkan --disable-accelerated-2d-canvas';
@@ -296,6 +306,36 @@ for (const [label, a, b] of [['effects', canonical.effectResults, again.effectRe
   a.forEach((r, i) => assert.deepEqual(r, b[i], `${label} case ${i} is not deterministic`));
 }
 
+if (only) {
+  // Keep every case that was not rendered exactly as committed; index the rendered results by name.
+  // Case names can repeat (a select option and an extra case), so the key counts occurrences.
+  const keyed = (cases) => {
+    const seen = new Map();
+    return cases.map((c) => {
+      seen.set(c.name, (seen.get(c.name) ?? 0) + 1);
+      return `${c.name}#${seen.get(c.name)}`;
+    });
+  };
+  const committed = {};
+  for (const kind of ['effects', 'transitions']) {
+    const cases = JSON.parse(await readFile(path.join(studio, `spec/goldens/${kind}.json`), 'utf8')).cases;
+    const keys = keyed(cases);
+    committed[kind] = new Map(cases.map((c, i) => [keys[i], c]));
+  }
+  const expand = (cases, kind, results) => {
+    const keys = keyed(cases);
+    const chosen = new Set(selected(cases));
+    let next = 0;
+    return cases.map((c, i) => (chosen.has(c) ? results[next++]
+      : { kept: committed[kind].get(keys[i]) ?? assert.fail(`${c.name} has no committed golden`) }));
+  };
+  for (const run of [canonical, again, cross].filter(Boolean)) {
+    run.effectResults = expand(eCases, 'effects', run.effectResults);
+    run.transitionResults = expand(tCases, 'transitions', run.transitionResults);
+  }
+  console.log(`rendered ${selected(eCases).length} effect and ${selected(tCases).length} transition cases of ${only.join(', ')}`);
+}
+
 const digest = await sourceDigest();
 const header = (kind) => ({
   format: GOLDENS_FORMAT, version: GOLDENS_VERSION, kind,
@@ -322,6 +362,7 @@ const effectDoc = {
   },
   cases: eCases.map((c, i) => {
     const r = canonical.effectResults[i];
+    if (r.kept) return r.kept;
     const base = { name: c.name, id: c.id, domain: c.domain, params: c.params, clock: c.clock };
     if (r.outcome === 'refused') return { ...base, outcome: 'refused' };
     const crossPixels = cross?.effectResults[i]?.pixels;
@@ -340,6 +381,7 @@ const transitionDoc = {
   progressCurve: PROGRESS_CURVE_CASES.map((c, i) => ({ ...c, progress: canonical.curve[i] })),
   cases: tCases.map((c, i) => {
     const r = canonical.transitionResults[i];
+    if (r.kept) return r.kept;
     // Values inside [0, 1] are stored as 8-bit (well inside the 2/255 floor); others keep binary16.
     const inRange = r.pixels.every((v) => v >= 0 && v <= 1);
     const encoding = inRange ? 'rgba8-deflate-base64' : 'f16le-deflate-base64';
@@ -360,6 +402,10 @@ const index = buildIndex(catalogue, effectDoc, transitionDoc, previousIndex);
 await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
 const readmePath = path.join(studio, 'spec/README.md');
 await writeFile(readmePath, replaceIndexMarkdown(await readFile(readmePath, 'utf8'), renderIndexMarkdown(index, transitionDoc.progressCurve.length)));
+if (only) {
+  console.log(`wrote the ${only.join(', ')} cases of studio/spec/goldens/{effects,transitions}.json, index.json and the README index`);
+  process.exit(0);
+}
 // The glyph atlas strips the font-atlas ASCII goldens were rendered with (gpu-ascii, Glyph atlas):
 // the platform input of those cases, published so that a native client can meet them.
 const atlases = new Map();

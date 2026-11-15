@@ -211,6 +211,25 @@ cover path smoothing, the crop coverage maths, the renderer transform at the cli
 the card. The estimator is verified on synthetic footage only (a still picture moved by a known crop
 path, and generated textures); real handheld footage, rolling shutter, browser preview/export pixel
 parity and speed-ramp spans in the live preview remain open.
+Patch 0186 (FL-1559) adds three colour effects that graded projects from other editors carry: ASC CDL
+(`gpu-cdl`: slope, offset and power per channel, then saturation about Rec. 709 luma), Lift Gamma Gain per
+channel (`gpu-lift-gamma-gain`) and Hue Curves (`gpu-hue-curves`: hue against hue, saturation and luma as
+periodic Catmull-Rom curves through JSON points, baked into a 256 x 1 table whose neutral is exact). Each
+has a catalogue entry, a spec page and goldens (`render-goldens.browser.mjs --write --only=<ids>`), and HDR
+projects refuse them until FL-1556. They are the first effects with no row in the pinned upstream feature
+manifest, so `graph-protocol.test.mjs` names them as Frameleaf additions. The editor panels for them wait
+for the FL-1615 mock; imports and the graph use them now.
+
+Patch 0185 (FL-1564) adds four transitions other editors use: Film Dissolve (a cross dissolve mixed in
+linear light), Cross Zoom (both clips zoom with a radial blur, `strength`), Cube Spin (the clips are two
+faces of a box turning a quarter turn in perspective, four directions) and Page Peel (the outgoing clip
+folds back from the bottom-right corner). Each is a WebGPU shader with a Canvas 2D fallback, a catalogue
+entry, a spec page (`spec/transitions/<id>.md`) and goldens, written with the new
+`render-goldens.browser.mjs --write --only=<ids>`, which renders and writes only the named ids' cases and
+keeps every other committed golden. HDR projects refuse them like every other transition (T5) until
+FL-1556. Push already existed (`slide`, labelled Push). A gradient wipe from an image, and transitions on
+text or at a clip edge with no neighbour, are follow-ups; start-at-cut and end-at-cut are `alignment` 0 and 1.
+
 Patch 0187 (FL-1563) lets markers be ranges with notes and clips carry markers. A project marker may
 have `durationInFrames` (a range) and `note`; save, bundle import, rate changes (the range keeps its end
 on the same moment) and composition trims (a range is cut to the kept span) keep them. Any item may carry

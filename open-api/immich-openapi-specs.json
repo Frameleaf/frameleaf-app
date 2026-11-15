@@ -10496,6 +10496,98 @@
         "x-immich-state": "Deprecated"
       }
     },
+    "/admin/playback-self-test": {
+      "get": {
+        "description": "The latest check of the hardware video path: each kind of reference video (SDR, HLG, Dolby Vision 8.4, HDR10 and hev1-tagged HEVC) converted with the configured hardware acceleration, whether it came out right, and the kinds now converted without hardware acceleration because it did not.",
+        "operationId": "getPlaybackSelfTest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackSelfTestResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the latest playback self-test",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Starts the check of the hardware video path (or joins the one already running) and answers at once with it running. It takes under a minute; read the result with the GET.",
+        "operationId": "startPlaybackSelfTest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackSelfTestResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run the playback self-test",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/render-workers": {
       "get": {
         "description": "Every enrolled worker identity with its destination, scopes, ceilings and current load.",
@@ -46620,6 +46712,73 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/photo-sources/{id}/catalog-metadata": {
+      "post": {
+        "description": "Turns what Frameleaf Desktop reads from a Lightroom Classic, Capture One or Apple Photos catalog into ratings, tags, descriptions and albums on the photos this source copied. Additive and repeatable: tags and albums are only added, sending the same batch again changes nothing, and a field changed in Frameleaf since the last read-in is kept. Items whose copy is not verified yet come back as notReady without failing the batch.",
+        "operationId": "applyPhotoSourceCatalogMetadata",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotoSourceCatalogMetadataDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoSourceCatalogMetadataResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply ratings, flags, labels, keywords, captions and collections read from a photo catalog",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/photo-sources/{id}/runs": {
       "post": {
         "operationId": "createPhotoSourceRun",
@@ -78787,6 +78946,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "softwareFallback": {
+            "description": "Kinds of video converted without hardware acceleration even when it is on: the kinds the playback self-test found it gets wrong. Written by the server; a settings save keeps the stored list (a configuration file may set it)",
+            "items": {
+              "$ref": "#/components/schemas/PlaybackSelfTestCase"
+            },
+            "type": "array"
+          },
           "targetAudioCodec": {
             "$ref": "#/components/schemas/AudioCodec"
           },
@@ -81897,6 +82063,25 @@
         ],
         "type": "object"
       },
+      "AlbumFolderSourceDto": {
+        "properties": {
+          "folderPath": {
+            "description": "The folder on the server the album shows",
+            "type": "string"
+          },
+          "libraryId": {
+            "description": "External library ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "folderPath",
+          "libraryId"
+        ],
+        "type": "object"
+      },
       "AlbumHierarchyNode": {
         "properties": {
           "album": {
@@ -82460,6 +82645,10 @@
             "description": "End date (latest asset)",
             "format": "date-time",
             "type": "string"
+          },
+          "folderAlbum": {
+            "$ref": "#/components/schemas/AlbumFolderSourceDto",
+            "description": "Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}."
           },
           "hasSharedLink": {
             "description": "Has shared link",
@@ -85526,6 +85715,10 @@
       "ApplePhotosSourceCreateDto": {
         "additionalProperties": false,
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "deviceId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -85570,6 +85763,10 @@
       },
       "ApplePhotosSourceResponseDto": {
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "createdAt": {
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
@@ -120416,6 +120613,10 @@
             },
             "type": "array"
           },
+          "folderAlbums": {
+            "description": "The library keeps an album for each of its folders, in sync after every scan",
+            "type": "boolean"
+          },
           "id": {
             "description": "Library ID",
             "format": "uuid",
@@ -120473,6 +120674,7 @@
           "createdAt",
           "deletedAt",
           "exclusionPatterns",
+          "folderAlbums",
           "id",
           "importPaths",
           "name",
@@ -134621,6 +134823,253 @@
         },
         "type": "object"
       },
+      "PhotoSourceCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "app": {
+            "description": "The catalog app, as the desktop names it, for example \"lightroom-classic\"",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "catalogId": {
+            "description": "The desktop's stable identifier for the catalog",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "description": "The catalog's name, shown to the person",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "catalogId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogField": {
+        "enum": [
+          "rating",
+          "description",
+          "tags",
+          "albums"
+        ],
+        "type": "string"
+      },
+      "PhotoSourceCatalogFlag": {
+        "description": "Pick or reject flag; null when the item has neither",
+        "enum": [
+          "pick",
+          "reject",
+          null
+        ],
+        "nullable": true,
+        "type": "string"
+      },
+      "PhotoSourceCatalogItemResult": {
+        "properties": {
+          "applied": {
+            "description": "Fields written for this item",
+            "items": {
+              "$ref": "#/components/schemas/PhotoSourceCatalogField"
+            },
+            "type": "array"
+          },
+          "itemId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "keptEdits": {
+            "description": "Fields left alone because the person's own change wins",
+            "items": {
+              "$ref": "#/components/schemas/PhotoSourceCatalogField"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PhotoSourceCatalogItemStatus"
+          }
+        },
+        "required": [
+          "applied",
+          "itemId",
+          "keptEdits",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogItemStatus": {
+        "enum": [
+          "applied",
+          "unchanged",
+          "keptEdits",
+          "notReady",
+          "notFound"
+        ],
+        "type": "string"
+      },
+      "PhotoSourceCatalogMetadataDto": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "Up to 500 catalog entries",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "caption": {
+                  "description": "Caption",
+                  "maxLength": 10000,
+                  "type": "string"
+                },
+                "collections": {
+                  "description": "Collections (albums) the item is in",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "description": "The collection name",
+                        "maxLength": 255,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "path": {
+                        "description": "The collection sets the collection sits in, outermost first",
+                        "items": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 16,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 200,
+                  "type": "array"
+                },
+                "colorLabel": {
+                  "description": "Colour label name, for example \"Red\"",
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "flag": {
+                  "$ref": "#/components/schemas/PhotoSourceCatalogFlag"
+                },
+                "itemId": {
+                  "description": "The source item (as planned for a copy run) the catalog entry describes",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "keywords": {
+                  "description": "Keywords; a hierarchy is separated by \"|\", for example \"Places|France|Paris\"",
+                  "items": {
+                    "maxLength": 1024,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 500,
+                  "type": "array"
+                },
+                "rating": {
+                  "description": "Star rating, 0 (unrated) to 5",
+                  "maximum": 5,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "title": {
+                  "description": "Title",
+                  "maxLength": 2000,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "itemId"
+              ],
+              "type": "object"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogMetadataResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PhotoSourceCatalogItemResult"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PhotoSourceCatalogSummary"
+          }
+        },
+        "required": [
+          "items",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogSummary": {
+        "properties": {
+          "applied": {
+            "description": "Items where at least one field was written",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "keptEdits": {
+            "description": "Items left as they are because the person changed a field in Frameleaf since the last read-in",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "notFound": {
+            "description": "Items unknown to this source, or whose photo is gone or not available to change",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "notReady": {
+            "description": "Items whose copy is not verified yet; send them again after verification",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unchanged": {
+            "description": "Items already as the catalog says",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "applied",
+          "keptEdits",
+          "notFound",
+          "notReady",
+          "unchanged"
+        ],
+        "type": "object"
+      },
       "PhotoSourceCopyMode": {
         "enum": [
           "copy"
@@ -134630,6 +135079,10 @@
       "PhotoSourceCreateDto": {
         "additionalProperties": false,
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "deviceId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -134835,6 +135288,10 @@
       },
       "PhotoSourceResponseDto": {
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "createdAt": {
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
@@ -153590,6 +154047,133 @@
           "name"
         ],
         "type": "object"
+      },
+      "PlaybackSelfTestCase": {
+        "description": "A kind of video the playback self-test checks",
+        "enum": [
+          "sdr-h264",
+          "hlg-hevc",
+          "dolby-vision-8.4",
+          "hdr10-pq",
+          "hev1-hevc"
+        ],
+        "type": "string"
+      },
+      "PlaybackSelfTestCaseDto": {
+        "properties": {
+          "codecTag": {
+            "description": "The sample-entry tag of the copy, for example hvc1",
+            "nullable": true,
+            "type": "string"
+          },
+          "colorTransfer": {
+            "description": "The transfer characteristics the copy is tagged with",
+            "nullable": true,
+            "type": "string"
+          },
+          "hardware": {
+            "description": "Whether the copy was made with hardware acceleration",
+            "type": "boolean"
+          },
+          "id": {
+            "$ref": "#/components/schemas/PlaybackSelfTestCase"
+          },
+          "meanLuma": {
+            "description": "How bright the copy is: mean Rec. 709 luma, 0 to 255",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "passed": {
+            "description": "Whether the copy came out right",
+            "type": "boolean"
+          },
+          "problems": {
+            "description": "What was wrong: convert-failed, codec, codec-tag, colour-tags, too-dark, too-bright or brightness-differs",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "referenceMeanLuma": {
+            "description": "How bright the same clip is when converted without hardware acceleration",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "codecTag",
+          "colorTransfer",
+          "hardware",
+          "id",
+          "meanLuma",
+          "passed",
+          "problems",
+          "referenceMeanLuma"
+        ],
+        "type": "object"
+      },
+      "PlaybackSelfTestResponseDto": {
+        "properties": {
+          "accel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TranscodeHWAccel"
+              }
+            ],
+            "description": "The hardware acceleration it checked",
+            "nullable": true
+          },
+          "cases": {
+            "description": "Each kind of video, in the order it was checked",
+            "items": {
+              "$ref": "#/components/schemas/PlaybackSelfTestCaseDto"
+            },
+            "type": "array"
+          },
+          "finishedAt": {
+            "description": "When it finished",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "softwareFallback": {
+            "description": "The kinds now converted without hardware acceleration because the check found them wrong",
+            "items": {
+              "$ref": "#/components/schemas/PlaybackSelfTestCase"
+            },
+            "type": "array"
+          },
+          "startedAt": {
+            "description": "When the latest check started",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PlaybackSelfTestStatus"
+          }
+        },
+        "required": [
+          "accel",
+          "cases",
+          "finishedAt",
+          "softwareFallback",
+          "startedAt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PlaybackSelfTestStatus": {
+        "description": "Where the latest check is: none before the first, running, done, or failed when it could not finish",
+        "enum": [
+          "none",
+          "running",
+          "done",
+          "failed"
+        ],
+        "type": "string"
       },
       "PluginMethodResponseDto": {
         "properties": {
@@ -181643,6 +182227,10 @@
             "maxItems": 128,
             "type": "array"
           },
+          "folderAlbums": {
+            "description": "Keep an album for each folder of the library, in sync after every scan. Albums belong to the library's owner.",
+            "type": "boolean"
+          },
           "importPaths": {
             "description": "Import paths (max 128)",
             "items": {
@@ -181657,6 +182245,10 @@
             "maxLength": 160,
             "minLength": 1,
             "type": "string"
+          },
+          "removeFolderAlbums": {
+            "description": "When folderAlbums is turned off: true deletes the folder albums (their photos stay in the library); left out or false keeps them as ordinary albums.",
+            "type": "boolean"
           }
         },
         "type": "object"

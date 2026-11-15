@@ -1,14 +1,14 @@
 {
-  "sourceCommit": "4fce83aec4392bcfc7b46664f6adf01947dbbdf7",
+  "sourceCommit": "0c43859a808c44f8dd8a8bca1dd0ed52b17000db",
   "sourceHashes": {
-    "src/enum.ts": "36c5d82f916715540f7630a00bd526b89053b31148ef7355070ab1eb35d0ce8f",
+    "src/enum.ts": "4ef5cf06d90ed2aea16583f2d68d630583065fd6a8467c8f3afada87ec87f311",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/library-import/state-schema.ts": "b4d13d8e68b85c68a14257f56062df1f4efdd7a929918f21af225fa6b4998408",
     "src/queue/schema.ts": "a7562b1877064164778469c46c67f4f16c284d7d2e91d27df0e137ff4f587401",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "5b9021037f8ad56d36f4fb9147ac475c7ca1a4a23dddc281e3f3630ceaf20eeb",
+    "src/schema/index.ts": "981c587dd4b51cd8c0a02523b302fc5a9c95e5933fa51f8d317b6b372eb1c6f9",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -94,7 +94,8 @@
     "src/schema/tables/identical-file-change.table.ts": "0ba6b84c17693bc7dfcb737cd5ab079f3a752826b47825bcc965fae020ea312c",
     "src/schema/tables/integrity-report.table.ts": "8dbdb2fb24d919983fade4571fe85e6d20d632e315f0a769cc13f32c46bf56a5",
     "src/schema/tables/landmark.table.ts": "6af5cfdc87cb98808070399734733648f5d7c01ddc5b3f56a5978b7caca1046a",
-    "src/schema/tables/library.table.ts": "dbc20caa6eaddef3bbf1a1c5e598fc914886ccae40d7026e5d84df7a3a2304c6",
+    "src/schema/tables/library-folder-album.table.ts": "df2069c51c3fa8d2938015f3e1a02c3690a277f3f10e18c19d6b7286eab5ad42",
+    "src/schema/tables/library.table.ts": "87e6e01afe4910280b71bd4d67de725b37a9e05b0821bf8d230c02290a53ae69",
     "src/schema/tables/locked-encryption.table.ts": "584743cf4a255f61502d0ffb133c3d876b38d717b9d681cd397a0626b1f41591",
     "src/schema/tables/media-import.table.ts": "175da7f441fd994c7b79d66c19e8932f192293c79d25d3f50b9ebd5463e4676b",
     "src/schema/tables/media-operation.table.ts": "9934aeb4c2ab6c303c88bf66ea465d56c49efb9b00c17635a2ad9de0aef7e66c",
@@ -125,7 +126,7 @@
     "src/schema/tables/pet-observation-audit.table.ts": "ecb7a4e85d894c9cf13325bbe0a45ab25d255f8bb720a0962947851b488976be",
     "src/schema/tables/pet.table.ts": "c4b7bd7c6125350aab803ce580d1936102d3c8a1574b1a5505a89d222f757626",
     "src/schema/tables/photo-locations.table.ts": "658855e6235ac4b2a382143e6a991aedd26d6ac03bb87e3ecd216c77d36965ad",
-    "src/schema/tables/photo-source.table.ts": "e74d09e60453adacad59b8d90866e3d581e407003dda817fe196633f5088061f",
+    "src/schema/tables/photo-source.table.ts": "22b295849af43397ab3bf644dfa01eb47f3b072e9047a23968a3815cf59f2d99",
     "src/schema/tables/photo-tools.table.ts": "cb52713d8c29c44e520a43d2c2bdc6b465dbbd7fa19b8c2a6e7a7c2e59aaeb5e",
     "src/schema/tables/photography-booking.table.ts": "69e3421befe654618da9c050c90bb5b471cb27f0bc53f2c7d8f95b6fd29f8574",
     "src/schema/tables/photography-campaign.table.ts": "0e9c2856a6bb6c0bbb7db491b53efe8f25602ddc15aedb841eb77833058db8d4",
@@ -192,6 +193,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "34b0555aae0c0668f9cdb883bec1a99a6d58644b860f497c14777b5aafddcd1a",
-  "rawMetadataSha256": "d3c6c2626d97dbfbda7dab1de00e7d44bb0924643509ce9ded24fd372422803e"
+  "dumpSha256": "08d98d777f8c9f7bc9cae1ec04536240bca9778812a27dd734c71b06f9b30f95",
+  "rawMetadataSha256": "192303445ce0036f2d87ad883351e9bb4f370013a590f9c7e39598eb092d714c"
 }
