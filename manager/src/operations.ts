@@ -1378,6 +1378,9 @@ export class Operations {
   /** Runs an operation in the background, journalling and logging how it ends. */
   private launch(operation: Operation, work: () => Promise<void>): void {
     this.executing.add(operation.id);
+    // FL-973: the checkpoint from before the last update no longer describes a library that is moved, restored or
+    // replaced, so going back stops being offered as soon as such an operation starts (even if it is cancelled).
+    if (operation.kind !== 'rollback' && ROLLBACK_INVALIDATING_KINDS.includes(operation.kind)) this.store.delete('rollback-point');
     const started = Date.now();
     log(`${operation.kind} ${operation.id}: started`);
     void work()
@@ -3013,6 +3016,14 @@ export class Operations {
       if (error instanceof Refusal) throw new Refusal(error.code, 409, 'The recovery point does not match the update it was taken for.');
       throw new Refusal('rollback_checkpoint_unreadable', 409, 'The recovery point from before the update could not be read.');
     }
+    // The checkpoint goes into a new folder beside the current one: refuse now, not after Frameleaf has stopped.
+    const databaseBytes = Math.max(1024 ** 3, (await stat(join(checkpoint, 'database.dump'))).size * 4);
+    try {
+      await this.databaseStorage.validate(recovery.installation.databaseRoot, databaseBytes, current.id);
+    } catch (error) {
+      await rm(checkpoint, { recursive: true, force: true });
+      throw error;
+    }
     const compatibility = await this.docker.compatibility();
     const since = await this.changesSince(point.at);
     this.store.set(`rollback:${id}`, {
@@ -3072,8 +3083,15 @@ export class Operations {
       return true;
     });
     await this.step(operation, 'stop-application', async () => {
-      if (digest(this.installation()) !== digest(review.current)) throw new Refusal('installation_changed');
-      await assertMountSources(review.current.mounts);
+      if (!operation.receipts['stop-intent']) {
+        if (digest(this.installation()) !== digest(review.current)) throw new Refusal('installation_changed');
+        await assertMountSources(review.current.mounts);
+        const dump = join(review.checkpoint, 'database.dump');
+        await this.databaseStorage.validate(previous.databaseRoot, Math.max(1024 ** 3, (await stat(dump)).size * 4), previous.id);
+        // Journaled before anything stops: from here on going back can only be finished, not cancelled.
+        operation.receipts['stop-intent'] = true;
+        this.store.save(operation);
+      }
       await this.docker.compose(this.directory(), review.current.project, 'stop');
       return true;
     });
@@ -3388,8 +3406,7 @@ export class Operations {
     // FL-1323: the thumbnail drive is gone, so there is nothing to go back to; Resume finishes putting them back.
     if (operation.kind === 'thumbnails-home') throw new Refusal('thumbnails_home_resume_required');
     // FL-973: once the stack stopped, the way out is to finish going back (Resume); nothing runs until it does.
-    if (operation.kind === 'rollback' && (operation.completed.includes('stop-application') || operation.step === 'stop-application'))
-      throw new Refusal('rollback_resume_required');
+    if (operation.kind === 'rollback' && operation.receipts['stop-intent']) throw new Refusal('rollback_resume_required');
     if (operation.kind === 'rollback') {
       // Nothing stopped yet: cancelling leaves the library as it is.
       operation.state = 'complete';
@@ -3723,7 +3740,7 @@ export class Operations {
           : operation.kind === 'move-database'
             ? !receipts['start-state']
             : operation.kind === 'rollback'
-              ? !operation.completed.includes('stop-application') && operation.step !== 'stop-application'
+              ? !receipts['stop-intent']
               : operation.kind === 'backup' ||
             operation.kind === 'reconfigure' ||
             (operation.kind === 'update' && !updateStarted({ ...operation, receipts })) ||

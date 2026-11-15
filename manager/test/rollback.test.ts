@@ -89,7 +89,11 @@ async function fixture(options: { snapshotRelease?: string; snapshotUnreadable?:
       );
     },
   };
-  const databaseStorage = { verify: async () => {}, allocate: async () => join(directory, 'db-$rollback') };
+  const databaseStorage = {
+    verify: async () => {},
+    validate: async () => ({}),
+    allocate: async () => join(directory, 'db-$rollback'),
+  };
   const operations = new Operations(store, docker as never, {} as never, backups as never, [directory], databaseStorage as never);
   (operations as any).fencing = { assertMedia: async () => {}, verify: async () => {} };
   const cleanup = async () => {
@@ -247,6 +251,51 @@ test('a finished update records the release it replaced and its checkpoint, so i
     assert.equal(point.previous, 'frameleaf-v1.2.13');
     assert.equal(point.installed, 'frameleaf-v1.2.14');
     assert.equal(point.snapshot, 'snap-before');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('going back is refused before anything stops when the database drive has no room for the restored copy', async () => {
+  const f = await fixture();
+  try {
+    (f.operations as any).databaseStorage.validate = async () => {
+      throw Object.assign(new Error('insufficient_disk_space'), { code: 'insufficient_disk_space' });
+    };
+    await assert.rejects(f.operations.reviewRollback(), /insufficient_disk_space/);
+    assert.ok(!f.events.some((event) => event.startsWith('stop')));
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('a check that refuses before the stop (a drive unplugged) can still be cancelled, releasing Manager', async () => {
+  const f = await fixture();
+  try {
+    const review = await f.operations.reviewRollback();
+    await rm(f.previous.mounts[0].source, { recursive: true });
+    const operation = f.operations.rollback(review.id, 'k');
+    const failed = await settle(f.operations, operation.id);
+    assert.equal(failed.state, 'failed');
+    assert.equal(failed.step, 'stop-application');
+    assert.equal(failed.canCancel, true, 'nothing stopped, so it can be cancelled');
+    await f.operations.recover(operation.id);
+    assert.equal(f.operations.history().find((o) => o.id === operation.id)!.error, 'rollback_cancelled');
+    assert.ok(!f.events.some((event) => event.startsWith('stop')));
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('starting a move, restore or import withdraws the offer for good', async () => {
+  const f = await fixture();
+  try {
+    assert.ok(f.operations.rollbackOffer());
+    const { operation } = f.store.start('move-library', 'm', {});
+    (f.operations as any).launch(operation, async () => {});
+    await settle(f.operations, operation.id);
+    assert.equal(f.store.get('rollback-point'), null);
+    assert.equal(f.operations.rollbackOffer(), null);
   } finally {
     await f.cleanup();
   }
