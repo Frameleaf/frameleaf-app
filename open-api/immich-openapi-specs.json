@@ -46507,6 +46507,73 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/photo-sources/{id}/catalog-metadata": {
+      "post": {
+        "description": "Turns what Frameleaf Desktop reads from a Lightroom Classic, Capture One or Apple Photos catalog into ratings, tags, descriptions and albums on the photos this source copied. Additive and repeatable: tags and albums are only added, sending the same batch again changes nothing, and a field changed in Frameleaf since the last read-in is kept. Items whose copy is not verified yet come back as notReady without failing the batch.",
+        "operationId": "applyPhotoSourceCatalogMetadata",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotoSourceCatalogMetadataDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoSourceCatalogMetadataResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply ratings, flags, labels, keywords, captions and collections read from a photo catalog",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/photo-sources/{id}/runs": {
       "post": {
         "operationId": "createPhotoSourceRun",
@@ -85103,6 +85170,10 @@
       "ApplePhotosSourceCreateDto": {
         "additionalProperties": false,
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "deviceId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -85147,6 +85218,10 @@
       },
       "ApplePhotosSourceResponseDto": {
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "createdAt": {
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
@@ -133943,6 +134018,253 @@
         },
         "type": "object"
       },
+      "PhotoSourceCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "app": {
+            "description": "The catalog app, as the desktop names it, for example \"lightroom-classic\"",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "catalogId": {
+            "description": "The desktop's stable identifier for the catalog",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "description": "The catalog's name, shown to the person",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "catalogId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogField": {
+        "enum": [
+          "rating",
+          "description",
+          "tags",
+          "albums"
+        ],
+        "type": "string"
+      },
+      "PhotoSourceCatalogFlag": {
+        "description": "Pick or reject flag; null when the item has neither",
+        "enum": [
+          "pick",
+          "reject",
+          null
+        ],
+        "nullable": true,
+        "type": "string"
+      },
+      "PhotoSourceCatalogItemResult": {
+        "properties": {
+          "applied": {
+            "description": "Fields written for this item",
+            "items": {
+              "$ref": "#/components/schemas/PhotoSourceCatalogField"
+            },
+            "type": "array"
+          },
+          "itemId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "keptEdits": {
+            "description": "Fields left alone because the person's own change wins",
+            "items": {
+              "$ref": "#/components/schemas/PhotoSourceCatalogField"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PhotoSourceCatalogItemStatus"
+          }
+        },
+        "required": [
+          "applied",
+          "itemId",
+          "keptEdits",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogItemStatus": {
+        "enum": [
+          "applied",
+          "unchanged",
+          "keptEdits",
+          "notReady",
+          "notFound"
+        ],
+        "type": "string"
+      },
+      "PhotoSourceCatalogMetadataDto": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "Up to 500 catalog entries",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "caption": {
+                  "description": "Caption",
+                  "maxLength": 10000,
+                  "type": "string"
+                },
+                "collections": {
+                  "description": "Collections (albums) the item is in",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "description": "The collection name",
+                        "maxLength": 255,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "path": {
+                        "description": "The collection sets the collection sits in, outermost first",
+                        "items": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 16,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 200,
+                  "type": "array"
+                },
+                "colorLabel": {
+                  "description": "Colour label name, for example \"Red\"",
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "flag": {
+                  "$ref": "#/components/schemas/PhotoSourceCatalogFlag"
+                },
+                "itemId": {
+                  "description": "The source item (as planned for a copy run) the catalog entry describes",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "keywords": {
+                  "description": "Keywords; a hierarchy is separated by \"|\", for example \"Places|France|Paris\"",
+                  "items": {
+                    "maxLength": 1024,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 500,
+                  "type": "array"
+                },
+                "rating": {
+                  "description": "Star rating, 0 (unrated) to 5",
+                  "maximum": 5,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "title": {
+                  "description": "Title",
+                  "maxLength": 2000,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "itemId"
+              ],
+              "type": "object"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogMetadataResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PhotoSourceCatalogItemResult"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PhotoSourceCatalogSummary"
+          }
+        },
+        "required": [
+          "items",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogSummary": {
+        "properties": {
+          "applied": {
+            "description": "Items where at least one field was written",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "keptEdits": {
+            "description": "Items left as they are because the person changed a field in Frameleaf since the last read-in",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "notFound": {
+            "description": "Items unknown to this source, or whose photo is gone or not available to change",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "notReady": {
+            "description": "Items whose copy is not verified yet; send them again after verification",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unchanged": {
+            "description": "Items already as the catalog says",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "applied",
+          "keptEdits",
+          "notFound",
+          "notReady",
+          "unchanged"
+        ],
+        "type": "object"
+      },
       "PhotoSourceCopyMode": {
         "enum": [
           "copy"
@@ -133952,6 +134274,10 @@
       "PhotoSourceCreateDto": {
         "additionalProperties": false,
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "deviceId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -134157,6 +134483,10 @@
       },
       "PhotoSourceResponseDto": {
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "createdAt": {
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
