@@ -24,10 +24,23 @@ const AssetLedgerCountsSchema = z
   })
   .meta({ id: 'AssetLedgerCountsDto' });
 
+const AssetLedgerMonthSchema = z
+  .object({
+    month: z.string().describe('The month the originals were added, as YYYY-MM (UTC)'),
+    total: z.int().min(0).describe('Originals added that month'),
+    states: AssetLedgerCountsSchema,
+  })
+  .meta({ id: 'AssetLedgerMonthDto' });
+
+const months = z
+  .array(AssetLedgerMonthSchema)
+  .describe('Per month the originals were added, where they are now; newest first');
+
 const AssetLedgerSummarySchema = z
   .object({
     total: z.int().min(0).describe('Every original the server has accepted for this account'),
     states: AssetLedgerCountsSchema,
+    months,
   })
   .meta({ id: 'AssetLedgerSummaryResponseDto' });
 
@@ -46,8 +59,22 @@ const AssetLedgerAdminSummarySchema = z
     missingByOwner: z
       .array(AssetLedgerMissingOwnerSchema)
       .describe('The accounts with originals the server cannot account for, most first. No file is named.'),
+    months,
+    byOwner: z
+      .array(
+        z
+          .object({ ownerId: z.string(), total: z.int().min(0), states: AssetLedgerCountsSchema })
+          .meta({ id: 'AssetLedgerOwnerTotalsDto' }),
+      )
+      .describe(
+        'Every account’s totals, most originals first; empty when the summary is for one account. No file is named.',
+      ),
   })
   .meta({ id: 'AssetLedgerAdminSummaryResponseDto' });
+
+const AssetLedgerAdminQuerySchema = z
+  .object({ userId: z.uuidv4().optional().describe('Only this account’s totals and months') })
+  .meta({ id: 'AssetLedgerAdminQueryDto' });
 
 const AssetLedgerItemSchema = z
   .object({
@@ -91,3 +118,4 @@ export class AssetLedgerSummaryResponseDto extends createZodDto(AssetLedgerSumma
 export class AssetLedgerAdminSummaryResponseDto extends createZodDto(AssetLedgerAdminSummarySchema) {}
 export class AssetLedgerListResponseDto extends createZodDto(AssetLedgerListSchema) {}
 export class AssetLedgerQueryDto extends createZodDto(AssetLedgerQuerySchema) {}
+export class AssetLedgerAdminQueryDto extends createZodDto(AssetLedgerAdminQuerySchema) {}
