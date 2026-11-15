@@ -8,8 +8,8 @@
     "revision": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
     "patches": 170,
     "sourceDigest": {
-      "files": 63,
-      "sha256": "e0aad14a18faa7150659d5cf52ddeb5bb995b4092278f41007b9f9208fdff0ff"
+      "files": 64,
+      "sha256": "ab7eeffaa055f6a944bff53c0860e7dfcbded00944563a0c203c0d68b1cd2af6"
     }
   },
   "generatedBy": "studio/tools/render-goldens.browser.mjs --write",
