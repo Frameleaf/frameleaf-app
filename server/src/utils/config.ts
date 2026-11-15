@@ -319,6 +319,8 @@ export function publishFileConfig(repos: RepoDeps, candidate: SystemConfig, epoc
 export const SERVER_MANAGED_CONFIG_PATHS = [
   'machineLearning.imageDescription.pendingRequeueAt',
   'machineLearning.imageDescription.lastConfigChangeAt',
+  // FL-977: the kinds of video the playback self-test put on the processor
+  'ffmpeg.softwareFallback',
 ] as const;
 
 export const SYSTEM_CONFIG_CHANGED_MESSAGE =

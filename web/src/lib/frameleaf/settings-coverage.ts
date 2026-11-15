@@ -484,6 +484,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'ffmpeg.refs',
   },
   {
+    // FL-977: written by the playback self-test; Video playback copies › Speed says what it found
+    pattern: 'ffmpeg.softwareFallback',
+    kind: 'server-managed',
+    file: 'src/lib/frameleaf/system-config-draft.ts',
+    evidence: 'ffmpeg.softwareFallback',
+  },
+  {
     pattern: 'ffmpeg.targetAudioCodec',
     kind: 'control',
     file: 'src/routes/admin/system-settings/FFmpegSettings.svelte',
@@ -1439,6 +1446,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'passwordLogin.enabled',
   },
   {
+    pattern: 'sharedLinks.defaultExpiryDays',
+    // FL-922: server default expiry for new links; the settings control follows the approved FL-886 mock
+    kind: 'api-only',
+    file: '../server/src/services/shared-link.service.ts',
+    evidence: '(await this.getConfig({ withCache: true })).sharedLinks.defaultExpiryDays',
+  },
+  {
     pattern: 'signInPolicy.applyToOlderApps',
     kind: 'control',
     file: 'src/routes/admin/system-settings/AuthSettings.svelte',
@@ -2036,6 +2050,13 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
     evidence: 'sharedLinks.sidebarWeb',
+  },
+  {
+    pattern: 'sharedLinks.defaultExpiryDays',
+    // FL-922: personal default expiry for new links; the settings control follows the approved FL-886 mock
+    kind: 'api-only',
+    file: '../server/src/services/shared-link.service.ts',
+    evidence: 'sharedLinks.defaultExpiryDays ??',
   },
   {
     pattern: 'tags.enabled',

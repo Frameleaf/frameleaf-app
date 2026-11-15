@@ -10,7 +10,7 @@
   "regenerate": "GRAPH_PARAMETERS_WRITE=1 node studio/tools/adapter.mjs test",
   "counts": {
     "effects": 54,
-    "transitions": 44,
+    "transitions": 48,
     "blendModes": 25
   },
   "effects": [
@@ -4133,6 +4133,89 @@
           "step": 0.05
         }
       ]
+    },
+    {
+      "id": "filmDissolve",
+      "category": "dissolve",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "crossZoom",
+      "category": "motion",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 24,
+        "min": 8,
+        "max": 72
+      },
+      "parameters": [
+        {
+          "name": "strength",
+          "type": "number",
+          "default": 0.4,
+          "min": 0,
+          "max": 1,
+          "step": 0.05
+        }
+      ]
+    },
+    {
+      "id": "cubeSpin",
+      "category": "flip",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
+    },
+    {
+      "id": "pagePeel",
+      "category": "wipe",
+      "timings": [
+        "linear",
+        "ease-in",
+        "ease-out",
+        "ease-in-out",
+        "cubic-bezier"
+      ],
+      "editorDuration": {
+        "default": 30,
+        "min": 10,
+        "max": 90
+      },
+      "parameters": []
     }
   ],
   "transitionAliases": {
@@ -6426,5 +6509,5 @@
       "section": "13.8.5"
     }
   ],
-  "contentSha256": "45b2a4445c21bc1a9a2b65eaf7c633f8d0e56702b3c8a7555a49d9b40f288b20"
+  "contentSha256": "edd2ce7f3f6a3035faf76fe1e1df5b99de423c81bf3cf2c3bf4a20f1d195661c"
 }

@@ -13,7 +13,13 @@
    * started again. FL-521: changing the model says how long reading every photo again takes (at the
    * recent rate) and offers "Save and start tonight / now". Left for later: the try-out on a few photos
    * first.
+   *
+   * FL-1597: Best Photos learns which photos people find appealing only with a published search model
+   * (each ships a learned head, `server/resources/aesthetic-heads`); an own model gets a note that it
+   * keeps the basic quality check. When an update brings a learned score for the chosen model, the
+   * photos scored before it are offered "Recalculate tonight / now".
    */
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Amount from '$lib/components/frameleaf/settings/kit/Amount.svelte';
   import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
@@ -42,12 +48,13 @@
     LibraryProgressFeature,
     LibraryRedoQueue,
     LibraryRedoWhen,
+    redoBestPhotos,
     type LibraryProgressResponseDto,
   } from '@frameleaf/sdk';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { queueManager } from '$lib/managers/queue-manager.svelte';
-  import { mdiImageSearchOutline } from '@mdi/js';
+  import { mdiImageSearchOutline, mdiStarOutline, mdiStarShootingOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -90,6 +97,44 @@
     return $t(time.key, { values: time.values });
   };
   const failedSave = () => $t('frameleaf_intel_redo_failed');
+
+  // FL-1597: "Not now" is kept in this browser for the chosen model.
+  const laterKey = $derived(`fl-best-photos-later:${saved.clip.modelName}`);
+  let later = $state(false);
+  $effect(() => {
+    try {
+      later = localStorage.getItem(laterKey) === '1';
+    } catch {
+      later = false;
+    }
+  });
+  const recalculate = $derived(
+    on && !modelChanged && !later && !progress?.bestPhotos.tonight && (progress?.bestPhotos.outdated ?? 0) > 0,
+  );
+  const notNow = () => {
+    later = true;
+    try {
+      localStorage.setItem(laterKey, '1');
+    } catch {
+      // asked again next time
+    }
+  };
+  let recalculating = $state(false);
+  const recalculateBestPhotos = async (when: LibraryRedoWhen) => {
+    recalculating = true;
+    try {
+      await redoBestPhotos({ libraryBestPhotosRedoDto: { when } });
+      progress &&= { ...progress, bestPhotos: { outdated: 0, tonight: when === LibraryRedoWhen.Tonight } };
+      said =
+        when === LibraryRedoWhen.Now
+          ? $t('frameleaf_intel_best_photos_said_now')
+          : $t('frameleaf_intel_best_photos_said_tonight');
+    } catch (error) {
+      handleError(error, failedSave());
+    } finally {
+      recalculating = false;
+    }
+  };
 
   const searchProgress = $derived(progress?.features.find((item) => item.feature === LibraryProgressFeature.Search));
   const rereadTime = $derived(rereadSeconds(searchProgress));
@@ -140,6 +185,25 @@
     label={$t('frameleaf_intel_search_status')}
   />
 
+  {#if recalculate}
+    <Notice icon={mdiStarShootingOutline} title={$t('frameleaf_intel_best_photos_better')}>
+      {$t('frameleaf_intel_best_photos_better_body')}
+      {#snippet action()}
+        <Button
+          variant="primary"
+          disabled={disabled || recalculating}
+          onclick={() => recalculateBestPhotos(LibraryRedoWhen.Tonight)}
+        >
+          {$t('frameleaf_intel_best_photos_tonight')}
+        </Button>
+        <Button disabled={disabled || recalculating} onclick={() => recalculateBestPhotos(LibraryRedoWhen.Now)}>
+          {$t('frameleaf_intel_best_photos_now')}
+        </Button>
+        <Button disabled={recalculating} onclick={notNow}>{$t('frameleaf_intel_best_photos_later')}</Button>
+      {/snippet}
+    </Notice>
+  {/if}
+
   {#if !ml.enabled}
     <MasterOff />
   {/if}
@@ -180,6 +244,11 @@
       {:else}
         <Notice tone="warn" title={$t('frameleaf_intel_search_model_warning')}>
           {$t('frameleaf_intel_search_model_warning_body')}
+        </Notice>
+      {/if}
+      {#if on && custom}
+        <Notice icon={mdiStarOutline} title={$t('frameleaf_intel_best_photos_basic')}>
+          {$t('frameleaf_intel_best_photos_basic_body')}
         </Notice>
       {/if}
     {/if}

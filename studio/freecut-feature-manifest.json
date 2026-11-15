@@ -2937,8 +2937,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0185-editor-import-transitions.patch",
           "e6bca4d7d8"
         ],
+        "note": "FL-1564 adds Film Dissolve, Cross Zoom, Cube Spin and Page Peel on the GPU route, with spec pages and goldens.",
         "status": "shipped"
       },
       "id": "readme.timeline-editing.4",
@@ -3372,7 +3374,7 @@
       "basis": "readme-claim-with-source-family-inventory",
       "category": "Timeline & Editing",
       "frameleaf": {
-        "evidence": ["0066-timeline-toolbar-scrollport.patch", "e6bca4d7d8"],
+        "evidence": ["0066-timeline-toolbar-scrollport.patch", "e6bca4d7d8", "0187-marker-ranges.patch"],
         "note": "Markers and undo/redo are canonical commands; filmstrips, waveforms and snap guides are upstream. Real-media browser journeys are not measured here.",
         "status": "shipped"
       },

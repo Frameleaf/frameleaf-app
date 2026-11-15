@@ -44,6 +44,7 @@ Part of the default configuration looks like this (the file can hold any setting
   "ffmpeg": {
     "accel": "disabled",
     "accelDecode": true,
+    "softwareFallback": [],
     "acceptedAudioCodecs": ["aac", "mp3", "opus"],
     "acceptedContainers": ["mov", "ogg", "webm"],
     "acceptedVideoCodecs": ["h264"],
