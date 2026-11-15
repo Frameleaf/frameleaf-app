@@ -1522,7 +1522,7 @@ new file mode 100644
 diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
 --- a/src/infrastructure/gpu-effects/registry.ts
 +++ b/src/infrastructure/gpu-effects/registry.ts
-@@ -30,9 +30,12 @@ function isEffectDefinition(obj: unknown): obj is GpuEffectDefinition {
+@@ -31,9 +31,12 @@ function isEffectDefinition(obj: unknown): obj is GpuEffectDefinition {
    )
  }
  
@@ -1536,8 +1536,8 @@ diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu
        GPU_EFFECT_REGISTRY.set(effect.id, effect)
        GPU_EFFECT_CATEGORIES[effect.category]?.push(effect)
      }
-@@ -47,7 +50,9 @@ registerEffects(stylizeEffects)
- registerEffects(keyingEffects)
+@@ -49,7 +52,9 @@ registerEffects(keyingEffects)
+ registerEffects(gradeEffects)
  
  export function getGpuEffect(id: string): GpuEffectDefinition | undefined {
 -  return id === 'gpu-file-lut-v1' ? lutEffects.fileLut3d : GPU_EFFECT_REGISTRY.get(id)
