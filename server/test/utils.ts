@@ -533,6 +533,8 @@ export const getMocks = () => {
   mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
   mocks.partnerOrigin.getFollowers.mockResolvedValue([]);
   mocks.partnerOrigin.getLiveCopyIds.mockResolvedValue([]);
+  // FL-786: no hearts on items shared with the viewer unless a test says so
+  mocks.asset.getSharedFavoriteIds.mockResolvedValue(new Set());
   mocks.partnerOrigin.shareGeneratedFiles.mockResolvedValue([]);
   mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => write(undefined));
