@@ -278,10 +278,15 @@ export class AlbumService extends BaseService {
           libraryScope: LibraryScope.Personal,
           ...rest,
           ...options,
+          // FL-780 (TM-5): a connected app is never told a Locked album exists (as MCP and Connect)
+          ...(auth.oauthApp ? { excludeLocked: true } : {}),
           ...(hidden.size > 0 ? { excludeIds: [...hidden] } : {}),
         });
     if (hidden.size > 0) {
       albums = albums.filter((album) => !hidden.has(album.id));
+    }
+    if (auth.oauthApp) {
+      albums = albums.filter((album) => !album.isLocked);
     }
 
     // FL-326: the viewer's own albums copied from a partner name the library they came from
@@ -531,6 +536,10 @@ export class AlbumService extends BaseService {
     await this.albumRepository.updateThumbnails([id]);
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
     const album = await this.findOrFail(id, auth, { withAssets: false });
+    // FL-780 (TM-5): to a connected app a Locked album is the same as one that does not exist
+    if (auth.oauthApp && album.isLocked) {
+      throw new BadRequestException('Album not found');
+    }
     const [albumMetadataForIds] = await this.albumRepository.getMetadataForIds([album.id], privacyOptions);
 
     const hasSharedUsers = album.albumUsers && album.albumUsers.length > 1;
