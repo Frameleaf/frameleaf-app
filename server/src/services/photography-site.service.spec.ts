@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { ZodValidationPipe } from 'nestjs-zod';
 import { describe, expect, it, vi } from 'vitest';
 import { PhotographySiteSaveDto } from 'src/dtos/photography-workflow.dto.js';
 import { PhotographySiteService, STUDIO_DOMAIN_HELD } from 'src/services/photography-site.service.js';
@@ -75,12 +76,12 @@ describe(PhotographySiteService.name, () => {
         site: { ...stored, booking: false, bookingAfter: 'about' },
       });
       // An older client knows nothing of Booking: no default may undo the studio's choice, including the request
-      // validation that runs before the service (the global ZodValidationPipe parses with the same schema).
+      // validation that runs before the service (the app's global ZodValidationPipe, run here as it is in requests).
       const { booking: _booking, bookingAfter: _after, ...older } = stored;
-      const request = PhotographySiteSaveDto.schema.parse({
-        expectedRevision: REVISION,
-        site: { ...older, about: 'Portraits' },
-      });
+      const request = new ZodValidationPipe().transform(
+        { expectedRevision: REVISION, site: { ...older, about: 'Portraits' } },
+        { type: 'body', metatype: PhotographySiteSaveDto },
+      );
       const answer = await sut.saveSite({} as never, request as never);
       const after = (await repository.studioRecord(OWNER)).record as { site: typeof stored };
       expect(after.site).toMatchObject({ about: 'Portraits', booking: false, bookingAfter: 'about' });
