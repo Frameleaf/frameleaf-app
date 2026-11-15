@@ -12,11 +12,27 @@ import { ReframeRefusal, reframeGraph, reframeOf } from './bundled-worker-refram
 
 export const BUNDLED_RECIPE = 'frameleaf-bundled-worker-v2';
 
-/** Item types the engine renders that this worker has the inputs for. */
-export const SUPPORTED_ITEM_TYPES = new Set(['video', 'audio', 'image', 'text', 'shape', 'subtitle', 'adjustment']);
+/**
+ * Item types the engine renders that this worker has the inputs for. FL-1557: titles, compositions
+ * (compound clips and imported nests) and Lottie animations render here as they do in the editor.
+ */
+export const SUPPORTED_ITEM_TYPES = new Set([
+  'video',
+  'audio',
+  'image',
+  'text',
+  'shape',
+  'subtitle',
+  'adjustment',
+  'composition',
+  'lottie',
+]);
 
 /** Item types that need media bytes from a claim input (`item.mediaId`). */
-export const MEDIA_ITEM_TYPES = new Set(['video', 'audio', 'image']);
+export const MEDIA_ITEM_TYPES = new Set(['video', 'audio', 'image', 'lottie']);
+
+/** How deep compositions may nest: the server resolver's `STUDIO_MAX_SEQUENCE_DEPTH`. */
+export const MAX_COMPOSITION_DEPTH = 16;
 
 /** The pinned engine's headless bitrate presets (headless/lib/render-core.mjs). */
 export const VIDEO_BITRATES = Object.freeze({ low: 2_500_000, medium: 5_000_000, high: 10_000_000, ultra: 20_000_000 });
@@ -70,8 +86,53 @@ export const outputDimensions = (canvas, resolution, shortSide) => {
 /** Every timeline (the main one and nested compositions) with its items. */
 const timelinesOf = (graph) => [graph.timeline, ...(Array.isArray(graph.timeline?.compositions) ? graph.timeline.compositions : [])];
 
+/** A composition's sound clip carries the composition's mix, not media of its own (protocol 14.2.1). */
+const isCompositionSound = (item) => item?.type === 'audio' && item.compositionId !== undefined;
+const placesComposition = (item) => item?.type === 'composition' || isCompositionSound(item);
+
+/**
+ * FL-1557: every composition a clip names exists, and none contains itself or nests deeper than the
+ * server allows. A composition clip draws its composition; its sound clip plays the composition's mix.
+ */
+const checkCompositions = (graph) => {
+  const compositions = new Map();
+  for (const composition of Array.isArray(graph.timeline.compositions) ? graph.timeline.compositions : []) {
+    if (typeof composition?.id !== 'string' || !Array.isArray(composition.items) || compositions.has(composition.id)) {
+      refuse('invalid_graph', 'A compound clip in the project is not a valid sequence.');
+    }
+    compositions.set(composition.id, composition);
+  }
+  const target = (item) => {
+    if (typeof item.compositionId !== 'string' || !compositions.has(item.compositionId)) {
+      refuse('invalid_graph', 'A compound clip shows a sequence the project does not contain.');
+    }
+    return item.compositionId;
+  };
+  const heights = new Map();
+  const height = (id, path) => {
+    if (path.includes(id)) refuse('invalid_graph', 'A compound clip contains itself.');
+    if (heights.has(id)) return heights.get(id);
+    if (path.length >= MAX_COMPOSITION_DEPTH) refuse('invalid_graph', 'Compound clips are nested too deeply.');
+    let levels = 1;
+    for (const item of compositions.get(id).items) {
+      if (placesComposition(item)) levels = Math.max(levels, 1 + height(target(item), [...path, id]));
+    }
+    heights.set(id, levels);
+    return levels;
+  };
+  for (const item of graph.timeline.items) {
+    if (placesComposition(item) && height(target(item), []) > MAX_COMPOSITION_DEPTH) {
+      refuse('invalid_graph', 'Compound clips are nested too deeply.');
+    }
+  }
+};
+
 /** The media ids the graph's items read, and refusals for items this worker cannot render. */
 export const graphMedia = (graph, { softwareRenderer }) => {
+  checkCompositions(graph);
+  // FL-1557: a Lottie whose images or fonts are stored outside its file needs them embedded first,
+  // which only a dedicated render worker does; the engine refuses a Lottie that reads outside itself.
+  const vectorBindings = graph.studioVectorDependencies?.bindings;
   const mediaIds = new Set();
   for (const timeline of timelinesOf(graph)) {
     for (const item of timeline?.items ?? []) {
@@ -84,7 +145,17 @@ export const graphMedia = (graph, { softwareRenderer }) => {
       if (item.generatedId || item.src || item.audioSrc) {
         refuse('unsupported_source', 'A clip reads media from outside the library; the bundled Studio worker renders library media only.');
       }
-      if (MEDIA_ITEM_TYPES.has(item.type)) {
+      if (
+        item.type === 'lottie' &&
+        Array.isArray(vectorBindings) &&
+        vectorBindings.some((binding) => binding?.parent?.id === item.mediaId)
+      ) {
+        refuse(
+          'lottie_dependencies',
+          'A Lottie animation reads images or fonts stored outside its file. Embed them in the animation, or export with a dedicated render worker.',
+        );
+      }
+      if (MEDIA_ITEM_TYPES.has(item.type) && !isCompositionSound(item)) {
         if (typeof item.mediaId !== 'string' || item.mediaId.length === 0) {
           refuse('missing_media', `A ${item.type} clip names no library media.`);
         }

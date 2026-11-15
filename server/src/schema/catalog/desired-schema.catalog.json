@@ -7867,195 +7867,6 @@
       "synchronize": true
     },
     {
-      "name": "album_asset",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "albumId",
-          "tableName": "album_asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "album_asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "album_asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "album_asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "album_asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "album_asset_albumId_idx",
-          "definition": "CREATE INDEX \"album_asset_albumId_idx\" ON public.album_asset USING btree (\"albumId\")",
-          "tableName": "album_asset",
-          "columnNames": [
-            "albumId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "album_asset_updateId_idx",
-          "definition": "CREATE INDEX \"album_asset_updateId_idx\" ON public.album_asset USING btree (\"updateId\")",
-          "tableName": "album_asset",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "album_asset_assetId_idx",
-          "definition": "CREATE INDEX \"album_asset_assetId_idx\" ON public.album_asset USING btree (\"assetId\")",
-          "tableName": "album_asset",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "album_asset_delete_audit",
-          "definition": "CREATE TRIGGER album_asset_delete_audit AFTER DELETE ON public.album_asset REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() <= 1)) EXECUTE FUNCTION album_asset_delete_audit()",
-          "tableName": "album_asset",
-          "functionName": "album_asset_delete_audit",
-          "referencingOldTableAs": "old",
-          "when": "(pg_trigger_depth() <= 1)",
-          "synchronize": true,
-          "actions": [
-            "delete"
-          ],
-          "timing": "after",
-          "scope": "statement"
-        },
-        {
-          "name": "album_asset_updatedAt",
-          "definition": "CREATE TRIGGER \"album_asset_updatedAt\" BEFORE UPDATE ON public.album_asset FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "album_asset",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        },
-        {
-          "name": "media_import_collection_removed",
-          "definition": "CREATE TRIGGER media_import_collection_removed AFTER DELETE ON public.album_asset FOR EACH ROW EXECUTE FUNCTION media_import_collection_removed()",
-          "tableName": "album_asset",
-          "functionName": "media_import_collection_removed",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "delete"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "connect_event_album_added",
-          "definition": "CREATE TRIGGER connect_event_album_added AFTER INSERT ON public.album_asset FOR EACH ROW EXECUTE FUNCTION connect_event_album_added()",
-          "tableName": "album_asset",
-          "functionName": "connect_event_album_added",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "insert"
-          ],
-          "timing": "after",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "album_asset_pkey",
-          "definition": "PRIMARY KEY (\"albumId\", \"assetId\")",
-          "tableName": "album_asset",
-          "columnNames": [
-            "albumId",
-            "assetId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_asset_albumId_fkey",
-          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "album_asset",
-          "columnNames": [
-            "albumId"
-          ],
-          "referenceTableName": "album",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_asset_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "album_asset",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "album_user",
       "columns": [
         {
@@ -9409,294 +9220,6 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "asset_face",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "personGroupId",
-          "tableName": "asset_face",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "imageWidth",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "imageHeight",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "boundingBoxX1",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "boundingBoxY1",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "boundingBoxX2",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "boundingBoxY2",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
-          "synchronize": true
-        },
-        {
-          "type": "enum",
-          "primary": false,
-          "name": "sourceType",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "default": "'machine-learning'::sourcetype",
-          "synchronize": true,
-          "enumName": "sourcetype"
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "correctedAt",
-          "tableName": "asset_face",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "asset_face",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isVisible",
-          "tableName": "asset_face",
-          "nullable": false,
-          "isArray": false,
-          "default": "true",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_face_personGroupId_assetId_notDeleted_isVisible_idx",
-          "definition": "CREATE INDEX \"asset_face_personGroupId_assetId_notDeleted_isVisible_idx\" ON public.asset_face USING btree (\"personGroupId\", \"assetId\") WHERE ((\"deletedAt\" IS NULL) AND (\"isVisible\" IS TRUE))",
-          "tableName": "asset_face",
-          "columnNames": [
-            "personGroupId",
-            "assetId"
-          ],
-          "using": "btree",
-          "where": "((\"deletedAt\" IS NULL) AND (\"isVisible\" IS TRUE))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_face_personGroupId_assetId_idx",
-          "definition": "CREATE INDEX \"asset_face_personGroupId_assetId_idx\" ON public.asset_face USING btree (\"personGroupId\", \"assetId\")",
-          "tableName": "asset_face",
-          "columnNames": [
-            "personGroupId",
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_face_correctedAt_idx",
-          "definition": "CREATE INDEX \"asset_face_correctedAt_idx\" ON public.asset_face USING btree (\"correctedAt\")",
-          "tableName": "asset_face",
-          "columnNames": [
-            "correctedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_face_assetId_personGroupId_idx",
-          "definition": "CREATE INDEX \"asset_face_assetId_personGroupId_idx\" ON public.asset_face USING btree (\"assetId\", \"personGroupId\")",
-          "tableName": "asset_face",
-          "columnNames": [
-            "assetId",
-            "personGroupId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "asset_face_audit",
-          "definition": "CREATE TRIGGER asset_face_audit AFTER DELETE ON public.asset_face REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION asset_face_audit()",
-          "tableName": "asset_face",
-          "functionName": "asset_face_audit",
-          "referencingOldTableAs": "old",
-          "when": "(pg_trigger_depth() = 0)",
-          "synchronize": true,
-          "actions": [
-            "delete"
-          ],
-          "timing": "after",
-          "scope": "statement"
-        },
-        {
-          "name": "asset_face_updatedAt",
-          "definition": "CREATE TRIGGER \"asset_face_updatedAt\" BEFORE UPDATE ON public.asset_face FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "asset_face",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_face_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "asset_face",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_face_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "asset_face",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_face_personGroupId_fkey",
-          "definition": "FOREIGN KEY (\"personGroupId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "asset_face",
-          "columnNames": [
-            "personGroupId"
-          ],
-          "referenceTableName": "person_group",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
           "synchronize": true
         }
       ],
@@ -13323,183 +12846,6 @@
           "tableName": "user_metadata",
           "columnNames": [
             "userId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "library",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "name",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "importPaths",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "exclusionPatterns",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "library",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "refreshedAt",
-          "tableName": "library",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "readOnly",
-          "tableName": "library",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "library_ownerId_idx",
-          "definition": "CREATE INDEX \"library_ownerId_idx\" ON public.library USING btree (\"ownerId\")",
-          "tableName": "library",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "library_updateId_idx",
-          "definition": "CREATE INDEX \"library_updateId_idx\" ON public.library USING btree (\"updateId\")",
-          "tableName": "library",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "library_updatedAt",
-          "definition": "CREATE TRIGGER \"library_updatedAt\" BEFORE UPDATE ON public.library FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "library",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "library_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "library",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "library_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "library",
-          "columnNames": [
-            "ownerId"
           ],
           "referenceTableName": "user",
           "referenceColumnNames": [
@@ -35820,173 +35166,6 @@
       "synchronize": true
     },
     {
-      "name": "photo_source",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "photo_source",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "photo_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "deviceId",
-          "tableName": "photo_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "photoSessionId",
-          "tableName": "photo_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "kind",
-          "tableName": "photo_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "mode",
-          "tableName": "photo_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "name",
-          "tableName": "photo_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "scopeFingerprint",
-          "tableName": "photo_source",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "revokedAt",
-          "tableName": "photo_source",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "photo_source",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "photo_source_ownerid_idx",
-          "definition": "CREATE INDEX photo_source_ownerid_idx ON public.photo_source USING btree (\"ownerId\")",
-          "tableName": "photo_source",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "photo_source_deviceid_idx",
-          "definition": "CREATE INDEX photo_source_deviceid_idx ON public.photo_source USING btree (\"deviceId\")",
-          "tableName": "photo_source",
-          "columnNames": [
-            "deviceId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "photo_source_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "photo_source",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "photo_source_deviceId_fkey",
-          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "photo_source",
-          "columnNames": [
-            "deviceId"
-          ],
-          "referenceTableName": "desktop_device",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "photo_source_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "photo_source",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "photo_source_run",
       "columns": [
         {
@@ -43783,342 +42962,6 @@
           "columnNames": [
             "name"
           ],
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "album",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "album",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "albumName",
-          "tableName": "album",
-          "nullable": false,
-          "isArray": false,
-          "default": "'Untitled Album'::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "album",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "albumThumbnailAssetId",
-          "tableName": "album",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true,
-          "comment": "Asset ID to be used as thumbnail"
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "parentId",
-          "tableName": "album",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true,
-          "comment": "Parent album ID for nesting (null = top-level)"
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "icon",
-          "tableName": "album",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "double precision",
-          "primary": false,
-          "name": "sortOrder",
-          "tableName": "album",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 53,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "kind",
-          "tableName": "album",
-          "nullable": false,
-          "isArray": false,
-          "default": "'album'::text",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "album",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "description",
-          "tableName": "album",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "album",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isActivityEnabled",
-          "tableName": "album",
-          "nullable": false,
-          "isArray": false,
-          "default": "true",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "order",
-          "tableName": "album",
-          "nullable": false,
-          "isArray": false,
-          "default": "'desc'::character varying",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "album",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "enum",
-          "primary": false,
-          "name": "libraryScope",
-          "tableName": "album",
-          "nullable": false,
-          "isArray": false,
-          "default": "'personal'::library_scope_enum",
-          "synchronize": true,
-          "enumName": "library_scope_enum"
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "color",
-          "tableName": "album",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isLocked",
-          "tableName": "album",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "album_updateId_idx",
-          "definition": "CREATE INDEX \"album_updateId_idx\" ON public.album USING btree (\"updateId\")",
-          "tableName": "album",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "album_albumThumbnailAssetId_idx",
-          "definition": "CREATE INDEX \"album_albumThumbnailAssetId_idx\" ON public.album USING btree (\"albumThumbnailAssetId\")",
-          "tableName": "album",
-          "columnNames": [
-            "albumThumbnailAssetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "album_root_sort_idx",
-          "definition": "CREATE INDEX album_root_sort_idx ON public.album USING btree (\"sortOrder\") WHERE (\"parentId\" IS NULL)",
-          "tableName": "album",
-          "columnNames": [
-            "sortOrder"
-          ],
-          "using": "btree",
-          "where": "(\"parentId\" IS NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "album_parentId_idx",
-          "definition": "CREATE INDEX \"album_parentId_idx\" ON public.album USING btree (\"parentId\") WHERE (\"parentId\" IS NOT NULL)",
-          "tableName": "album",
-          "columnNames": [
-            "parentId"
-          ],
-          "using": "btree",
-          "where": "(\"parentId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "album_parent_sort_idx",
-          "definition": "CREATE INDEX album_parent_sort_idx ON public.album USING btree (\"parentId\", \"sortOrder\") WHERE (\"parentId\" IS NOT NULL)",
-          "tableName": "album",
-          "columnNames": [
-            "parentId",
-            "sortOrder"
-          ],
-          "using": "btree",
-          "where": "(\"parentId\" IS NOT NULL)",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "album_library_scope_refresh_trigger",
-          "definition": "CREATE TRIGGER album_library_scope_refresh_trigger AFTER UPDATE ON public.album FOR EACH ROW EXECUTE FUNCTION album_library_scope_refresh()",
-          "tableName": "album",
-          "functionName": "album_library_scope_refresh",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "album_parent_cycle_check_trigger",
-          "definition": "CREATE TRIGGER album_parent_cycle_check_trigger BEFORE INSERT OR UPDATE ON public.album FOR EACH ROW EXECUTE FUNCTION album_parent_cycle_check()",
-          "tableName": "album",
-          "functionName": "album_parent_cycle_check",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "insert",
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        },
-        {
-          "name": "album_updatedAt",
-          "definition": "CREATE TRIGGER \"album_updatedAt\" BEFORE UPDATE ON public.album FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "album",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "check",
-          "name": "album_color_check",
-          "definition": "CHECK (((color IS NULL) OR (color = ANY (ARRAY['grey'::text, 'green'::text, 'teal'::text, 'blue'::text, 'purple'::text, 'pink'::text, 'amber'::text, 'red'::text]))))",
-          "tableName": "album",
-          "expression": "(((color IS NULL) OR (color = ANY (ARRAY['grey'::text, 'green'::text, 'teal'::text, 'blue'::text, 'purple'::text, 'pink'::text, 'amber'::text, 'red'::text]))))",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "album_kind_check",
-          "definition": "CHECK ((kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text])))",
-          "tableName": "album",
-          "expression": "((kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text])))",
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "album_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "album",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_albumThumbnailAssetId_fkey",
-          "definition": "FOREIGN KEY (\"albumThumbnailAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "album",
-          "columnNames": [
-            "albumThumbnailAssetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_parentId_fkey",
-          "definition": "FOREIGN KEY (\"parentId\") REFERENCES album(id) ON DELETE CASCADE",
-          "tableName": "album",
-          "columnNames": [
-            "parentId"
-          ],
-          "referenceTableName": "album",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
           "synchronize": true
         }
       ],
@@ -56458,6 +55301,1671 @@
             "id"
           ],
           "onUpdate": "NO ACTION",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "person_profile",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "person_profile",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "personId",
+          "tableName": "person_profile",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "date",
+          "primary": false,
+          "name": "deathDate",
+          "tableName": "person_profile",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "notes",
+          "tableName": "person_profile",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "person_profile",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "person_profile_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", \"personId\")",
+          "tableName": "person_profile",
+          "columnNames": [
+            "ownerId",
+            "personId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_profile_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_profile",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_profile_personId_fkey",
+          "definition": "FOREIGN KEY (\"personId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_profile",
+          "columnNames": [
+            "personId"
+          ],
+          "referenceTableName": "person_group",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "photo_source",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "photo_source",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "photo_source",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "deviceId",
+          "tableName": "photo_source",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "photoSessionId",
+          "tableName": "photo_source",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "kind",
+          "tableName": "photo_source",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "mode",
+          "tableName": "photo_source",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "name",
+          "tableName": "photo_source",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "scopeFingerprint",
+          "tableName": "photo_source",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "revokedAt",
+          "tableName": "photo_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "photo_source",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "jsonb",
+          "primary": false,
+          "name": "catalog",
+          "tableName": "photo_source",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "photo_source_ownerid_idx",
+          "definition": "CREATE INDEX photo_source_ownerid_idx ON public.photo_source USING btree (\"ownerId\")",
+          "tableName": "photo_source",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "photo_source_deviceid_idx",
+          "definition": "CREATE INDEX photo_source_deviceid_idx ON public.photo_source USING btree (\"deviceId\")",
+          "tableName": "photo_source",
+          "columnNames": [
+            "deviceId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "photo_source_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "photo_source",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photo_source_deviceId_fkey",
+          "definition": "FOREIGN KEY (\"deviceId\") REFERENCES desktop_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "photo_source",
+          "columnNames": [
+            "deviceId"
+          ],
+          "referenceTableName": "desktop_device",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photo_source_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "photo_source",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "library",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "name",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "importPaths",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "exclusionPatterns",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deletedAt",
+          "tableName": "library",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "refreshedAt",
+          "tableName": "library",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "readOnly",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "folderAlbums",
+          "tableName": "library",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "library_ownerId_idx",
+          "definition": "CREATE INDEX \"library_ownerId_idx\" ON public.library USING btree (\"ownerId\")",
+          "tableName": "library",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "library_updateId_idx",
+          "definition": "CREATE INDEX \"library_updateId_idx\" ON public.library USING btree (\"updateId\")",
+          "tableName": "library",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "library_updatedAt",
+          "definition": "CREATE TRIGGER \"library_updatedAt\" BEFORE UPDATE ON public.library FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "library",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "library_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "library",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "library_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "library",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "library_folder_album",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "library_folder_album",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "libraryId",
+          "tableName": "library_folder_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "folderPath",
+          "tableName": "library_folder_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "library_folder_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isUserEdited",
+          "tableName": "library_folder_album",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "library_folder_album_albumId_idx",
+          "definition": "CREATE INDEX \"library_folder_album_albumId_idx\" ON public.library_folder_album USING btree (\"albumId\")",
+          "tableName": "library_folder_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "library_folder_album_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "library_folder_album",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "library_folder_album_libraryId_folderPath_uq",
+          "definition": "UNIQUE (\"libraryId\", \"folderPath\")",
+          "tableName": "library_folder_album",
+          "columnNames": [
+            "libraryId",
+            "folderPath"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "library_folder_album_libraryId_fkey",
+          "definition": "FOREIGN KEY (\"libraryId\") REFERENCES library(id) ON DELETE CASCADE",
+          "tableName": "library_folder_album",
+          "columnNames": [
+            "libraryId"
+          ],
+          "referenceTableName": "library",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "library_folder_album_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON DELETE CASCADE",
+          "tableName": "library_folder_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset_face",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "personGroupId",
+          "tableName": "asset_face",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "imageWidth",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "imageHeight",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "boundingBoxX1",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "boundingBoxY1",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "boundingBoxX2",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "boundingBoxY2",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "enum",
+          "primary": false,
+          "name": "sourceType",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "default": "'machine-learning'::sourcetype",
+          "synchronize": true,
+          "enumName": "sourcetype"
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "correctedAt",
+          "tableName": "asset_face",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deletedAt",
+          "tableName": "asset_face",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isVisible",
+          "tableName": "asset_face",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "real",
+          "primary": false,
+          "name": "eyesOpen",
+          "tableName": "asset_face",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 24,
+          "synchronize": true
+        },
+        {
+          "type": "real",
+          "primary": false,
+          "name": "eyeSharpness",
+          "tableName": "asset_face",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 24,
+          "synchronize": true
+        },
+        {
+          "type": "smallint",
+          "primary": false,
+          "name": "eyeScoreVersion",
+          "tableName": "asset_face",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 16,
+          "numericScale": 0,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_face_personGroupId_assetId_notDeleted_isVisible_idx",
+          "definition": "CREATE INDEX \"asset_face_personGroupId_assetId_notDeleted_isVisible_idx\" ON public.asset_face USING btree (\"personGroupId\", \"assetId\") WHERE ((\"deletedAt\" IS NULL) AND (\"isVisible\" IS TRUE))",
+          "tableName": "asset_face",
+          "columnNames": [
+            "personGroupId",
+            "assetId"
+          ],
+          "using": "btree",
+          "where": "((\"deletedAt\" IS NULL) AND (\"isVisible\" IS TRUE))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_face_personGroupId_assetId_idx",
+          "definition": "CREATE INDEX \"asset_face_personGroupId_assetId_idx\" ON public.asset_face USING btree (\"personGroupId\", \"assetId\")",
+          "tableName": "asset_face",
+          "columnNames": [
+            "personGroupId",
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_face_correctedAt_idx",
+          "definition": "CREATE INDEX \"asset_face_correctedAt_idx\" ON public.asset_face USING btree (\"correctedAt\")",
+          "tableName": "asset_face",
+          "columnNames": [
+            "correctedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_face_assetId_personGroupId_idx",
+          "definition": "CREATE INDEX \"asset_face_assetId_personGroupId_idx\" ON public.asset_face USING btree (\"assetId\", \"personGroupId\")",
+          "tableName": "asset_face",
+          "columnNames": [
+            "assetId",
+            "personGroupId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "asset_face_audit",
+          "definition": "CREATE TRIGGER asset_face_audit AFTER DELETE ON public.asset_face REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION asset_face_audit()",
+          "tableName": "asset_face",
+          "functionName": "asset_face_audit",
+          "referencingOldTableAs": "old",
+          "when": "(pg_trigger_depth() = 0)",
+          "synchronize": true,
+          "actions": [
+            "delete"
+          ],
+          "timing": "after",
+          "scope": "statement"
+        },
+        {
+          "name": "asset_face_updatedAt",
+          "definition": "CREATE TRIGGER \"asset_face_updatedAt\" BEFORE UPDATE ON public.asset_face FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "asset_face",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_face_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "asset_face",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_face_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_face",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_face_personGroupId_fkey",
+          "definition": "FOREIGN KEY (\"personGroupId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "asset_face",
+          "columnNames": [
+            "personGroupId"
+          ],
+          "referenceTableName": "person_group",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "album",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "albumName",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "'Untitled Album'::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumThumbnailAssetId",
+          "tableName": "album",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true,
+          "comment": "Asset ID to be used as thumbnail"
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "parentId",
+          "tableName": "album",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true,
+          "comment": "Parent album ID for nesting (null = top-level)"
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "icon",
+          "tableName": "album",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "sortOrder",
+          "tableName": "album",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "kind",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "'album'::text",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "description",
+          "tableName": "album",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deletedAt",
+          "tableName": "album",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isActivityEnabled",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "true",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "order",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "'desc'::character varying",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "enum",
+          "primary": false,
+          "name": "libraryScope",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "'personal'::library_scope_enum",
+          "synchronize": true,
+          "enumName": "library_scope_enum"
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "color",
+          "tableName": "album",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isLocked",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isCustomOrder",
+          "tableName": "album",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "album_updateId_idx",
+          "definition": "CREATE INDEX \"album_updateId_idx\" ON public.album USING btree (\"updateId\")",
+          "tableName": "album",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_albumThumbnailAssetId_idx",
+          "definition": "CREATE INDEX \"album_albumThumbnailAssetId_idx\" ON public.album USING btree (\"albumThumbnailAssetId\")",
+          "tableName": "album",
+          "columnNames": [
+            "albumThumbnailAssetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_root_sort_idx",
+          "definition": "CREATE INDEX album_root_sort_idx ON public.album USING btree (\"sortOrder\") WHERE (\"parentId\" IS NULL)",
+          "tableName": "album",
+          "columnNames": [
+            "sortOrder"
+          ],
+          "using": "btree",
+          "where": "(\"parentId\" IS NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_parentId_idx",
+          "definition": "CREATE INDEX \"album_parentId_idx\" ON public.album USING btree (\"parentId\") WHERE (\"parentId\" IS NOT NULL)",
+          "tableName": "album",
+          "columnNames": [
+            "parentId"
+          ],
+          "using": "btree",
+          "where": "(\"parentId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_parent_sort_idx",
+          "definition": "CREATE INDEX album_parent_sort_idx ON public.album USING btree (\"parentId\", \"sortOrder\") WHERE (\"parentId\" IS NOT NULL)",
+          "tableName": "album",
+          "columnNames": [
+            "parentId",
+            "sortOrder"
+          ],
+          "using": "btree",
+          "where": "(\"parentId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "album_library_scope_refresh_trigger",
+          "definition": "CREATE TRIGGER album_library_scope_refresh_trigger AFTER UPDATE ON public.album FOR EACH ROW EXECUTE FUNCTION album_library_scope_refresh()",
+          "tableName": "album",
+          "functionName": "album_library_scope_refresh",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "album_parent_cycle_check_trigger",
+          "definition": "CREATE TRIGGER album_parent_cycle_check_trigger BEFORE INSERT OR UPDATE ON public.album FOR EACH ROW EXECUTE FUNCTION album_parent_cycle_check()",
+          "tableName": "album",
+          "functionName": "album_parent_cycle_check",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert",
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        },
+        {
+          "name": "album_updatedAt",
+          "definition": "CREATE TRIGGER \"album_updatedAt\" BEFORE UPDATE ON public.album FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "album",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "album_color_check",
+          "definition": "CHECK (((color IS NULL) OR (color = ANY (ARRAY['grey'::text, 'green'::text, 'teal'::text, 'blue'::text, 'purple'::text, 'pink'::text, 'amber'::text, 'red'::text]))))",
+          "tableName": "album",
+          "expression": "(((color IS NULL) OR (color = ANY (ARRAY['grey'::text, 'green'::text, 'teal'::text, 'blue'::text, 'purple'::text, 'pink'::text, 'amber'::text, 'red'::text]))))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "album_kind_check",
+          "definition": "CHECK ((kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text])))",
+          "tableName": "album",
+          "expression": "((kind = ANY (ARRAY['album'::text, 'collection'::text, 'space'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "album_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "album",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_albumThumbnailAssetId_fkey",
+          "definition": "FOREIGN KEY (\"albumThumbnailAssetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "album",
+          "columnNames": [
+            "albumThumbnailAssetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_parentId_fkey",
+          "definition": "FOREIGN KEY (\"parentId\") REFERENCES album(id) ON DELETE CASCADE",
+          "tableName": "album",
+          "columnNames": [
+            "parentId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "album_asset",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "album_asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "album_asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "album_asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "album_asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "album_asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "position",
+          "tableName": "album_asset",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "album_asset_albumId_idx",
+          "definition": "CREATE INDEX \"album_asset_albumId_idx\" ON public.album_asset USING btree (\"albumId\")",
+          "tableName": "album_asset",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_asset_position_idx",
+          "definition": "CREATE INDEX album_asset_position_idx ON public.album_asset USING btree (\"albumId\", \"position\")",
+          "tableName": "album_asset",
+          "columnNames": [
+            "albumId",
+            "position"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_asset_updateId_idx",
+          "definition": "CREATE INDEX \"album_asset_updateId_idx\" ON public.album_asset USING btree (\"updateId\")",
+          "tableName": "album_asset",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_asset_assetId_idx",
+          "definition": "CREATE INDEX \"album_asset_assetId_idx\" ON public.album_asset USING btree (\"assetId\")",
+          "tableName": "album_asset",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "album_asset_delete_audit",
+          "definition": "CREATE TRIGGER album_asset_delete_audit AFTER DELETE ON public.album_asset REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() <= 1)) EXECUTE FUNCTION album_asset_delete_audit()",
+          "tableName": "album_asset",
+          "functionName": "album_asset_delete_audit",
+          "referencingOldTableAs": "old",
+          "when": "(pg_trigger_depth() <= 1)",
+          "synchronize": true,
+          "actions": [
+            "delete"
+          ],
+          "timing": "after",
+          "scope": "statement"
+        },
+        {
+          "name": "album_asset_updatedAt",
+          "definition": "CREATE TRIGGER \"album_asset_updatedAt\" BEFORE UPDATE ON public.album_asset FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "album_asset",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        },
+        {
+          "name": "media_import_collection_removed",
+          "definition": "CREATE TRIGGER media_import_collection_removed AFTER DELETE ON public.album_asset FOR EACH ROW EXECUTE FUNCTION media_import_collection_removed()",
+          "tableName": "album_asset",
+          "functionName": "media_import_collection_removed",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "delete"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "connect_event_album_added",
+          "definition": "CREATE TRIGGER connect_event_album_added AFTER INSERT ON public.album_asset FOR EACH ROW EXECUTE FUNCTION connect_event_album_added()",
+          "tableName": "album_asset",
+          "functionName": "connect_event_album_added",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "insert"
+          ],
+          "timing": "after",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "album_asset_pkey",
+          "definition": "PRIMARY KEY (\"albumId\", \"assetId\")",
+          "tableName": "album_asset",
+          "columnNames": [
+            "albumId",
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_asset_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "album_asset",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_asset_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "album_asset",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "album_text_card",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "album_text_card",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "album_text_card",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "double precision",
+          "primary": false,
+          "name": "position",
+          "tableName": "album_text_card",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 53,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "heading",
+          "tableName": "album_text_card",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::text",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "body",
+          "tableName": "album_text_card",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::text",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "createdById",
+          "tableName": "album_text_card",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "album_text_card",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "album_text_card",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "album_text_card",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "album_text_card_position_idx",
+          "definition": "CREATE INDEX album_text_card_position_idx ON public.album_text_card USING btree (\"albumId\", \"position\")",
+          "tableName": "album_text_card",
+          "columnNames": [
+            "albumId",
+            "position"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_text_card_createdById_idx",
+          "definition": "CREATE INDEX \"album_text_card_createdById_idx\" ON public.album_text_card USING btree (\"createdById\")",
+          "tableName": "album_text_card",
+          "columnNames": [
+            "createdById"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_text_card_updateId_idx",
+          "definition": "CREATE INDEX \"album_text_card_updateId_idx\" ON public.album_text_card USING btree (\"updateId\")",
+          "tableName": "album_text_card",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "album_text_card_updatedAt",
+          "definition": "CREATE TRIGGER \"album_text_card_updatedAt\" BEFORE UPDATE ON public.album_text_card FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "album_text_card",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "album_text_card_heading_check",
+          "definition": "CHECK ((char_length(heading) <= 120))",
+          "tableName": "album_text_card",
+          "expression": "((char_length(heading) <= 120))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "album_text_card_body_check",
+          "definition": "CHECK ((char_length(body) <= 2000))",
+          "tableName": "album_text_card",
+          "expression": "((char_length(body) <= 2000))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "album_text_card_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "album_text_card",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_text_card_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "album_text_card",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_text_card_createdById_fkey",
+          "definition": "FOREIGN KEY (\"createdById\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "album_text_card",
+          "columnNames": [
+            "createdById"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
           "onDelete": "SET NULL",
           "synchronize": true
         }

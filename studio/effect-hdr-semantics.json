@@ -41,6 +41,12 @@
       "hdr": "linear-display-bt709-v1",
       "semantics": "SDR retains pinned geometry and hardware straight-RGBA sampling. HDR retains the same coordinates, bilinearly samples premultiplied linear light, and returns signed straight RGB with binary16 coverage; zero stored coverage clears RGB."
     },
+    "gpu-cdl": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
     "gpu-chroma-key": {
       "sdrParity": true,
       "sdrClamped": false,
@@ -149,6 +155,12 @@
       "hdr": "refused",
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
+    "gpu-hue-curves": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
     "gpu-hue-shift": {
       "sdrParity": true,
       "sdrClamped": false,
@@ -174,6 +186,12 @@
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
     "gpu-levels": {
+      "sdrParity": true,
+      "sdrClamped": true,
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "gpu-lift-gamma-gain": {
       "sdrParity": true,
       "sdrClamped": true,
       "hdr": "refused",

@@ -1,0 +1,1796 @@
+diff --git a/src/features/editor/components/audio-meter-utils.test.ts b/src/features/editor/components/audio-meter-utils.test.ts
+--- a/src/features/editor/components/audio-meter-utils.test.ts
++++ b/src/features/editor/components/audio-meter-utils.test.ts
+@@ -7,6 +7,7 @@ import {
+   estimatePerTrackLevels,
+   isAudioMixerTrack,
+   formatMeterDb,
++  getAudioMeterStatus,
+   resolveCompiledAudioMeterSources,
+   resolveAudioMeterSources,
+   setLiveTrackVolumeOverride,
+@@ -931,3 +932,53 @@ describe('audio meter utils', () => {
+     })
+   }
+ })
++
++describe('FL-1561 channel-mapped meter sources', () => {
++  const source = {
++    mediaId: 'media-1',
++    gain: 1,
++    trackVolumeGain: 1,
++    sourceTimeSeconds: 0.5,
++    windowSeconds: 0.05,
++  }
++  const waveform = (channels: 1 | 2) => ({
++    peaks: new Float32Array(100 * channels).fill(0.5),
++    sampleRate: 100,
++    channels,
++  })
++
++  it('maps a mono envelope by the clip map, then pans it with the stereo law', () => {
++    const waveformsByMediaId = new Map([['media-1', waveform(1)]])
++    const neutral = estimateAudioMeterLevel({ sources: [source], waveformsByMediaId })
++    const mapped = estimateAudioMeterLevel({
++      sources: [{ ...source, channelMap: { left: [0], right: [0, 1] } }],
++      waveformsByMediaId,
++    })
++    // Plane 1 is absent from a mono source: right = level / 2.
++    expect(mapped.left).toBeCloseTo(neutral.left, 6)
++    expect(mapped.right).toBeCloseTo(neutral.left / 2, 6)
++    const panned = estimateAudioMeterLevel({
++      sources: [{ ...source, channelMap: { left: [0], right: [0] }, panStages: [1] }],
++      waveformsByMediaId,
++    })
++    expect(panned.left).toBeCloseTo(0, 6)
++    expect(panned.right).toBeCloseTo(neutral.left * 2, 6)
++  })
++
++  it('cannot estimate a mapped clip from a stereo envelope and says why', () => {
++    const estimate = estimateAudioMeterLevel({
++      sources: [{ ...source, channelMap: { left: [2], right: [2] } }],
++      waveformsByMediaId: new Map([['media-1', waveform(2)]]),
++    })
++    expect(estimate).toMatchObject({
++      resolvedSourceCount: 0,
++      unresolvedSourceCount: 1,
++      unresolvedChannelMapSourceCount: 1,
++    })
++    expect(getAudioMeterStatus(estimate, true)).toEqual({
++      label: 'Unavailable',
++      reason: 'Channel mapping needs each source channel.',
++      scanning: false,
++    })
++  })
++})
+diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/editor/components/audio-meter-utils.ts
+--- a/src/features/editor/components/audio-meter-utils.ts
++++ b/src/features/editor/components/audio-meter-utils.ts
+@@ -1,7 +1,14 @@
+-import type { AudioItem, CompositionItem, TimelineItem, TimelineTrack } from '@/types/timeline'
++import type {
++  AudioChannelMap,
++  AudioItem,
++  CompositionItem,
++  TimelineItem,
++  TimelineTrack,
++} from '@/types/timeline'
+ import type { Transition } from '@/types/transition'
+ import { getAudioClipFadeMultiplier, getAudioFadeMultiplier } from '@/shared/utils/audio-fade-curve'
+ import { applyAudioPanStages, getAudioPanStages } from '@/shared/utils/audio-pan'
++import { applyAudioChannelMap, isValidAudioChannelMap } from '@/shared/utils/audio-channel-map'
+ import {
+   getManagedLinkedAudioTransitions,
+   hasLinkedAudioCompanion,
+@@ -87,6 +94,8 @@ export interface AudioMeterSource {
+   trackId?: string
+   /** Leaf track first, then owned composition wrappers from inside out. */
+   panStages?: readonly number[]
++  /** FL-1561: the clip's channel map, applied before pan. */
++  channelMap?: AudioChannelMap
+ }
+ 
+ export interface AudioMeterWaveform {
+@@ -105,13 +114,17 @@ export interface AudioMeterEstimate {
+   unresolvedSourceCount: number
+   /** Cached channel envelopes cannot resolve these panned sources. */
+   unresolvedPanSourceCount?: number
++  /** A stereo envelope cannot say what each source channel of a mapped clip holds. */
++  unresolvedChannelMapSourceCount?: number
+ }
+ 
+ export function getAudioMeterStatus(estimate: AudioMeterEstimate | undefined, active: boolean) {
+   const resolved = estimate?.resolvedSourceCount ?? 0
+   const unresolved = estimate?.unresolvedSourceCount ?? 0
+   const panUnavailable = (estimate?.unresolvedPanSourceCount ?? 0) > 0
+-  const scanning = active && resolved === 0 && unresolved > 0 && !panUnavailable
++  const mapUnavailable = (estimate?.unresolvedChannelMapSourceCount ?? 0) > 0
++  const scanning =
++    active && resolved === 0 && unresolved > 0 && !panUnavailable && !mapUnavailable
+   return {
+     label: !active
+       ? 'Idle'
+@@ -120,11 +133,17 @@ export function getAudioMeterStatus(estimate: AudioMeterEstimate | undefined, ac
+           ? 'Partial envelope estimate'
+           : 'Envelope estimate'
+         : unresolved > 0
+-          ? panUnavailable
++          ? panUnavailable || mapUnavailable
+             ? 'Unavailable'
+             : 'Scanning'
+           : 'No active sources',
+-    reason: active && panUnavailable ? 'Pan needs channel phase data.' : undefined,
++    reason: !active
++      ? undefined
++      : panUnavailable
++        ? 'Pan needs channel phase data.'
++        : mapUnavailable
++          ? 'Channel mapping needs each source channel.'
++          : undefined,
+     scanning,
+   }
+ }
+@@ -330,6 +349,7 @@ function appendDirectSegmentSources(params: {
+       windowSeconds: Math.max(DEFAULT_WINDOW_SECONDS, 1 / Math.max(1, fps)),
+       trackId: params.trackId ?? '',
+       ...(params.panStages?.length ? { panStages: params.panStages } : {}),
++      ...(segment.audioChannelMap ? { channelMap: segment.audioChannelMap } : {}),
+     })
+   }
+ }
+@@ -1190,6 +1210,7 @@ export function estimateAudioMeterLevel(params: {
+   let resolvedSourceCount = 0
+   let unresolvedSourceCount = 0
+   let unresolvedPanSourceCount = 0
++  let unresolvedChannelMapSourceCount = 0
+   let totalEnergyL = 0
+   let totalEnergyR = 0
+ 
+@@ -1200,6 +1221,13 @@ export function estimateAudioMeterLevel(params: {
+       continue
+     }
+ 
++    const channelMap = source.channelMap
++    // Only a mono envelope says what every source channel holds (the others are silent).
++    if (channelMap && (waveform.channels !== 1 || !isValidAudioChannelMap(channelMap))) {
++      unresolvedSourceCount += 1
++      unresolvedChannelMapSourceCount += 1
++      continue
++    }
+     const panStages = source.panStages ?? []
+     const hasPan = panStages.some((pan) => pan !== 0)
+     // Independent absolute stereo peaks have no phase/coherence information for cross-channel pan.
+@@ -1232,7 +1260,13 @@ export function estimateAudioMeterLevel(params: {
+       sourceTimeSeconds: source.sourceTimeSeconds,
+       windowSeconds: source.windowSeconds,
+     })
+-    if (hasPan) {
++    if (channelMap) {
++      // Both sides scale the same mono envelope, so the stereo pan law below stays exact.
++      const [left, right] = applyAudioChannelMap([Float32Array.of(stereoLevel.left)], channelMap)
++      const mapped = [Float32Array.of(left![0]!), Float32Array.of(right![0]!)]
++      const [pannedLeft, pannedRight] = hasPan ? applyAudioPanStages(mapped, panStages) : mapped
++      stereoLevel = { left: pannedLeft![0]!, right: pannedRight![0]! }
++    } else if (hasPan) {
+       // All channels originate from the same mono envelope, including nested panner stages.
+       const [left, right] = applyAudioPanStages([Float32Array.of(stereoLevel.left)], panStages)
+       stereoLevel = { left: left![0]!, right: right![0]! }
+@@ -1254,6 +1288,7 @@ export function estimateAudioMeterLevel(params: {
+     resolvedSourceCount,
+     unresolvedSourceCount,
+     ...(unresolvedPanSourceCount > 0 ? { unresolvedPanSourceCount } : {}),
++    ...(unresolvedChannelMapSourceCount > 0 ? { unresolvedChannelMapSourceCount } : {}),
+   }
+ }
+ 
+diff --git a/src/features/export/utils/canvas-audio-channel-map.test.ts b/src/features/export/utils/canvas-audio-channel-map.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/canvas-audio-channel-map.test.ts
+@@ -0,0 +1,235 @@
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { CompositionInputProps } from '@/types/export'
++import type { AudioChannelMap, AudioItem, TimelineTrack } from '@/types/timeline'
++
++// FL-1561: the real mixers at the decoded-PCM boundary, as in the FL-103 channel test. Only
++// demux/decode is replaced: plane c holds one 0.25 impulse at sample 32 + 17c, so every
++// output sample says which planes fed it and with what gain.
++const { decodedFixtures } = vi.hoisted(() => ({ decodedFixtures: new Map<string, number>() }))
++
++vi.mock('mediabunny', () => {
++  class UrlSource {
++    constructor(public readonly url: string) {}
++  }
++  class Input {
++    constructor(private readonly params: { source: UrlSource }) {}
++    async getPrimaryAudioTrack() {
++      const channels = decodedFixtures.get(this.params.source.url)
++      if (channels === undefined) throw new Error('Unknown impulse source')
++      return { src: this.params.source.url, getNumberOfChannels: async () => channels }
++    }
++    async computeDuration() {
++      return 1
++    }
++    dispose() {}
++  }
++  class AudioSampleSink {
++    constructor(private readonly track: { src: string }) {}
++    async *samples(startTime = 0, endTime = 1) {
++      const channels = decodedFixtures.get(this.track.src)!
++      const sampleRate = 48_000
++      const startSample = Math.round(startTime * sampleRate)
++      const numberOfFrames = Math.round(endTime * sampleRate) - startSample
++      if (numberOfFrames <= 0) throw new Error('Empty decoded range')
++      yield {
++        timestamp: startSample / sampleRate,
++        numberOfFrames,
++        numberOfChannels: channels,
++        sampleRate,
++        copyTo(destination: Float32Array, options: { planeIndex: number; format: string }) {
++          if (options.format !== 'f32-planar') throw new Error('Expected planar PCM decode')
++          destination.fill(0)
++          const pulse = 32 + options.planeIndex * 17 - startSample
++          if (pulse >= 0 && pulse < destination.length) destination[pulse] = 0.25
++        },
++        close() {},
++      }
++    }
++  }
++  return { ALL_FORMATS: [], Input, UrlSource, AudioSampleSink }
++})
++
++import {
++  clearAudioDecodeCache,
++  getAudioOutputChannelCount,
++  getAudioPacketPassthroughPlan,
++  processAudio,
++  processAudioWindows,
++} from './canvas-audio'
++
++const pulseAt = (plane: number) => 32 + plane * 17
++
++function composition(
++  clips: { channels: number; map?: AudioChannelMap; pan?: number }[],
++  name: string,
++): CompositionInputProps {
++  const tracks = clips.map(({ channels, map, pan }, order): TimelineTrack => {
++    const id = `${name}-${order}`
++    const src = `blob:fl1561-${id}`
++    decodedFixtures.set(src, channels)
++    const item = {
++      id,
++      type: 'audio',
++      trackId: id,
++      src,
++      label: id,
++      from: 0,
++      durationInFrames: 1,
++      sourceStart: 0,
++      sourceEnd: 1,
++      sourceDuration: 30,
++      sourceFps: 30,
++      ...(map ? { audioChannelMap: map } : {}),
++    } as AudioItem
++    return {
++      id,
++      name: id,
++      kind: 'audio',
++      order,
++      height: 80,
++      locked: false,
++      visible: true,
++      muted: false,
++      solo: false,
++      volume: 0,
++      items: [item],
++      ...(pan !== undefined ? { pan } : {}),
++    }
++  })
++  return {
++    fps: 30,
++    durationInFrames: 1,
++    width: 1920,
++    height: 1080,
++    tracks,
++    masterBusDb: 0,
++    masterBusMuted: false,
++    transitions: [],
++    keyframes: [],
++  }
++}
++
++async function mix(input: CompositionInputProps, windowed: boolean) {
++  const before = structuredClone(input)
++  const mixed = windowed
++    ? (await processAudioWindows(input).next()).value
++    : await processAudio(input)
++  expect(input).toEqual(before)
++  expect(mixed).toBeTruthy()
++  return mixed as { samples: Float32Array[]; channels: number }
++}
++
++/** The documented rule, written out independently: side = sum(listed planes present) / listed. */
++function expectedSide(side: number[], sourceChannels: number, plane: number): number {
++  return side.includes(plane) && plane < sourceChannels ? 0.25 / side.length : 0
++}
++
++const cases: { name: string; channels: number; map: AudioChannelMap }[] = [
++  { name: 'stereo as is', channels: 2, map: { left: [0], right: [1] } },
++  { name: 'mono from left', channels: 2, map: { left: [0], right: [0] } },
++  { name: 'mono from right', channels: 2, map: { left: [1], right: [1] } },
++  { name: 'mono mix', channels: 2, map: { left: [0, 1], right: [0, 1] } },
++  { name: 'mono source to both sides', channels: 1, map: { left: [0], right: [0] } },
++  { name: 'mono source, missing plane silent', channels: 1, map: { left: [0], right: [0, 1] } },
++  { name: '5.1 front L/R', channels: 6, map: { left: [0], right: [1] } },
++  { name: '5.1 centre to both', channels: 6, map: { left: [2], right: [2] } },
++  { name: '5.1 LFE to both', channels: 6, map: { left: [3], right: [3] } },
++  { name: '5.1 surround L/R', channels: 6, map: { left: [4], right: [5] } },
++  { name: '5.1 front with centre', channels: 6, map: { left: [0, 2, 4], right: [1, 2, 5] } },
++]
++
++describe('FL-1561 channel mapping through both PCM mixers', () => {
++  beforeEach(() => {
++    clearAudioDecodeCache()
++    decodedFixtures.clear()
++  })
++
++  for (const windowed of [false, true]) {
++    const mixer = windowed ? 'windowed' : 'full'
++
++    for (const { name, channels, map } of cases) {
++      it(`${mixer} mix: ${name}`, async () => {
++        const mixed = await mix(composition([{ channels, map }], `${mixer}-${name}`), windowed)
++        expect(mixed.channels).toBe(2)
++        expect(mixed.samples).toHaveLength(2)
++        for (let plane = 0; plane < 6; plane++) {
++          expect(mixed.samples[0]![pulseAt(plane)], `left from plane ${plane}`).toBeCloseTo(
++            expectedSide(map.left, channels, plane),
++            7,
++          )
++          expect(mixed.samples[1]![pulseAt(plane)], `right from plane ${plane}`).toBeCloseTo(
++            expectedSide(map.right, channels, plane),
++            7,
++          )
++        }
++      })
++    }
++
++    it(`${mixer} mix: a mapped 5.1 clip mixes with an unmapped stereo clip`, async () => {
++      const mixed = await mix(
++        composition(
++          [{ channels: 6, map: { left: [2], right: [2] } }, { channels: 2 }],
++          `${mixer}-mixed`,
++        ),
++        windowed,
++      )
++      expect(mixed.channels).toBe(2)
++      // Stereo clip: plane 0 at 32 on the left, plane 1 at 49 on the right. 5.1 centre: 66 on both.
++      expect([...[32, 49, 66].map((sample) => mixed.samples[0]![sample])]).toEqual([0.25, 0, 0.25])
++      expect([...[32, 49, 66].map((sample) => mixed.samples[1]![sample])]).toEqual([0, 0.25, 0.25])
++    })
++
++    it(`${mixer} mix: an unmapped 5.1 clip still refuses to mix with stereo`, async () => {
++      const input = composition(
++        [{ channels: 6 }, { channels: 2, map: { left: [0], right: [1] } }],
++        `${mixer}-refused`,
++      )
++      const result = windowed ? processAudioWindows(input).next() : processAudio(input)
++      await expect(result).rejects.toThrow(
++        'Mixed audio channel counts require an explicit layout mapping',
++      )
++    })
++
++    it(`${mixer} mix: track pan applies after the map, so 5.1 can be panned`, async () => {
++      const mixed = await mix(
++        composition([{ channels: 6, map: { left: [2], right: [2] }, pan: 0.5 }], `${mixer}-pan`),
++        windowed,
++      )
++      // Stereo pan law at 0.5: angle pi/4; left = l cos, right = r + l sin.
++      expect(mixed.samples[0]![pulseAt(2)]).toBeCloseTo(0.25 * Math.SQRT1_2, 7)
++      expect(mixed.samples[1]![pulseAt(2)]).toBeCloseTo(0.25 + 0.25 * Math.SQRT1_2, 7)
++    })
++
++    it(`${mixer} mix: a malformed map refuses the export`, async () => {
++      const input = composition(
++        [{ channels: 2, map: { left: [0, 0], right: [1] } }],
++        `${mixer}-bad`,
++      )
++      const result = windowed ? processAudioWindows(input).next() : processAudio(input)
++      await expect(result).rejects.toThrow('Invalid audio channel map')
++    })
++  }
++
++  it('an unmapped clip is unchanged: 5.1 keeps six planes', async () => {
++    const mixed = await mix(composition([{ channels: 6 }], 'unmapped'), false)
++    expect(mixed.channels).toBe(6)
++    for (let plane = 0; plane < 6; plane++) expect(mixed.samples[plane]![pulseAt(plane)]).toBe(0.25)
++  })
++
++  it('reports two output channels for a mapped 5.1 clip', async () => {
++    expect(await getAudioOutputChannelCount(composition([{ channels: 6 }], 'count-6'))).toBe(6)
++    expect(
++      await getAudioOutputChannelCount(
++        composition([{ channels: 6, map: { left: [0], right: [1] } }], 'count-2'),
++      ),
++    ).toBe(2)
++  })
++
++  it('a mapped clip is never packet-copied', () => {
++    const input = composition([{ channels: 2 }], 'copy')
++    input.durationInFrames = 1
++    expect(getAudioPacketPassthroughPlan(input)).not.toBeNull()
++    ;(input.tracks![0]!.items[0] as AudioItem).audioChannelMap = { left: [0], right: [1] }
++    expect(getAudioPacketPassthroughPlan(input)).toBeNull()
++  })
++})
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -11,6 +11,7 @@ import { createTruePeakLimiter, limitTruePeak } from '@/shared/utils/true-peak-l
+ 
+ import type { CompositionInputProps } from '@/types/export'
+ import type {
++  AudioChannelMap,
+   VideoItem,
+   AudioItem,
+   CompositionItem,
+@@ -18,6 +19,12 @@ import type {
+   TimelineTrack,
+ } from '@/types/timeline'
+ import { applyAudioPanStages, getAudioPanStages } from '@/shared/utils/audio-pan'
++import {
++  applyAudioChannelMap,
++  areAudioChannelMapsEqual,
++  getAudioChannelMap,
++  getAudioChannelMapPlaneCount,
++} from '@/shared/utils/audio-channel-map'
+ import type { AudioEqSettings, ResolvedAudioEqSettings } from '@/types/audio'
+ import type { Keyframe as VolumeKeyframe } from '@/types/keyframe'
+ import type { Transition } from '@/types/transition'
+@@ -114,6 +121,8 @@ interface AudioSegment {
+   pitchShiftSemitones: number
+   audioEqStages: ResolvedAudioEqSettings[]
+   panStages?: number[]
++  /** FL-1561: the leaf clip's channel map, applied to the decoded planes before anything else. */
++  channelMap?: AudioChannelMap
+   contentStartOffsetFrames?: number
+   contentEndOffsetFrames?: number
+   fadeInDelayFrames?: number
+@@ -480,6 +489,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+       trackVolumeDb: entry.trackVolume,
+       trackGainStages: entry.trackGainStages,
+       panStages: entry.panStages,
++      channelMap: getAudioChannelMap(item),
+       fadeInFrames: (item.audioFadeIn ?? 0) * fps,
+       fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
+       fadeInCurve: item.audioFadeInCurve ?? 0,
+@@ -544,6 +554,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+     if (left.muted !== right.muted) return false
+     if(JSON.stringify(left.trackGainStages)!==JSON.stringify(right.trackGainStages)) return false
+     if (JSON.stringify(left.panStages) !== JSON.stringify(right.panStages)) return false
++    if (!areAudioChannelMapsEqual(left.channelMap, right.channelMap)) return false
+     if (!areAudioEqStagesEqual(left.audioEqStages, right.audioEqStages)) return false
+     if (Math.abs(left.pitchShiftSemitones - right.pitchShiftSemitones) > 0.0001) return false
+     if (left.afterFrames !== 0 || right.beforeFrames !== 0) return false
+@@ -564,6 +575,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+     trackGainStages: segment.trackGainStages,
+     trackRootOrigin: segment.trackRootOrigin,
+     panStages: segment.panStages,
++    channelMap: segment.channelMap,
+     fadeInFrames: segment.fadeInFrames,
+     fadeOutFrames: segment.fadeOutFrames,
+     fadeInCurve: segment.fadeInCurve,
+@@ -796,6 +808,7 @@ function appendCompositionAudioSegments(params: {
+       trackRootOrigin,
+       clipOwner:{offset:ownerOffset,scale:ownerScale,from:subItem.from,duration:subItem.durationInFrames,fps:wrapperSourceFps},
+       panStages: [...getAudioPanStages(subTrack?.pan), ...wrapperPanStages],
++      channelMap: getAudioChannelMap(subItem),
+       fadeInFrames: (subItem.audioFadeIn ?? 0)*wrapperSourceFps,
+       fadeOutFrames: (subItem.audioFadeOut ?? 0)*wrapperSourceFps,
+       fadeInCurve: subItem.audioFadeInCurve ?? 0,
+@@ -979,6 +992,7 @@ export function extractAudioSegments(
+           trackVolumeDb: track.volume ?? 0,
+           trackGainStages:[{trackId:track.id,points:track.gainEnvelope??[],gainDb:track.volume??0,muted:track.muted===true,offset:0,scale:1}],
+           panStages: getAudioPanStages(track.pan),
++          channelMap: getAudioChannelMap(item),
+           fadeInFrames: (item.audioFadeIn ?? 0) * fps,
+           fadeOutFrames: (item.audioFadeOut ?? 0) * fps,
+           fadeInCurve: item.audioFadeInCurve ?? 0,
+@@ -2080,6 +2094,7 @@ function hasPacketCopyEffects(segment: AudioSegment): boolean {
+   return (
+     isAudioPitchShiftActive(segment.pitchShiftSemitones) ||
+     (segment.panStages?.length ?? 0) > 0 ||
++    segment.channelMap !== undefined ||
+     (segment.trackGainStages?.length??0)>0 ||
+     segment.audioEqStages.some(isAudioEqStageActive)
+   )
+@@ -2356,7 +2371,9 @@ async function processAudioWindowChannels(
+   fps: number,
+   duckingSources: readonly DuckingSource[] = [],
+ ): Promise<Float32Array[]> {
+-  const processed = decoded.samples
++  const processed = segment.channelMap
++    ? applyAudioChannelMap(decoded.samples, segment.channelMap)
++    : decoded.samples
+   const decodedSegmentOffset = Math.floor(
+     ((intersection.intersectionStart - intersection.segmentStart) / sampleRate) *
+       decoded.sampleRate,
+@@ -2463,7 +2480,10 @@ async function mixSegmentIntoAudioWindow(params: {
+     sourceStartTime,
+     sourceStartTime + requestedFrames / sampleRate,
+   )
+-  requireMatchingAudioPlaneCount(decoded.samples.length, params.sourceChannels)
++  requireMatchingAudioPlaneCount(
++    admittedAudioPlaneCount(segment, decoded.samples.length),
++    params.sourceChannels,
++  )
+   const processed = await processAudioWindowChannels(
+     decoded,
+     segment,
+@@ -2480,6 +2500,12 @@ async function mixSegmentIntoAudioWindow(params: {
+   )
+ }
+ 
++/** A mapped clip contributes two planes whatever its source decoded to (FL-1561). */
++function admittedAudioPlaneCount(segment: AudioSegment, decodedPlanes: number): number {
++  requireMatchingAudioPlaneCount(decodedPlanes, 0)
++  return getAudioChannelMapPlaneCount(segment.channelMap, decodedPlanes)
++}
++
+ function requireMatchingAudioPlaneCount(actual: number, expected: number): number {
+   if (!Number.isSafeInteger(actual) || actual < 1)
+     throw new Error('Audio decode produced an invalid channel count')
+@@ -2512,7 +2538,7 @@ export async function getAudioOutputChannelCount(
+         input.dispose()
+       }
+     }
+-    channels = requireMatchingAudioPlaneCount(count, channels)
++    channels = requireMatchingAudioPlaneCount(admittedAudioPlaneCount(segment, count), channels)
+   }
+   if (segments.some(segment => segment.panStages?.length)) {
+     if (channels > 2) throw new Error('Track pan requires a mono or stereo source')
+@@ -2555,7 +2581,10 @@ export async function* processAudioWindows(
+       if (signal?.aborted) throw new DOMException('Audio processing cancelled', 'AbortError')
+       const sourceStart = segment.sourceStartFrame / segment.sourceFps
+       const decoded = await decoderPool.decode(segment, sourceStart, sourceStart + 1 / sampleRate)
+-      channels = requireMatchingAudioPlaneCount(decoded.samples.length, channels)
++      channels = requireMatchingAudioPlaneCount(
++        admittedAudioPlaneCount(segment, decoded.samples.length),
++        channels,
++      )
+     }
+     const sourceChannels = channels
+     if (hasPan) {
+@@ -2679,7 +2708,10 @@ export async function processAudio(
+         sourceEndTime,
+         segment.audioCodec,
+       )
+-      sourceChannels = requireMatchingAudioPlaneCount(decoded.samples.length, sourceChannels)
++      sourceChannels = requireMatchingAudioPlaneCount(
++        admittedAudioPlaneCount(segment, decoded.samples.length),
++        sourceChannels,
++      )
+       if (hasPan && sourceChannels > 2)
+         throw new Error('Track pan requires a mono or stereo source')
+ 
+@@ -2688,7 +2720,10 @@ export async function processAudio(
+ 
+       // Apply speed across ALL channels at once to maintain phase coherence
+       // between L/R (the WSOLA pipeline finds shared overlap windows).
+-      let processedChannels = decoded.samples
++      // FL-1561: the map reads the decoded planes first, as preview maps them at decode.
++      let processedChannels = segment.channelMap
++        ? applyAudioChannelMap(decoded.samples, segment.channelMap)
++        : decoded.samples
+       if (segment.isReversed) {
+         processedChannels = reverseAudioChannels(processedChannels)
+       }
+@@ -2710,6 +2745,7 @@ export async function processAudio(
+       )
+ 
+       if (
++        !segment.channelMap &&
+         segment.panStages?.length &&
+         decoded.samples.length === 1 &&
+         processedChannels.length === 2
+diff --git a/src/features/export/utils/smart-copy.ts b/src/features/export/utils/smart-copy.ts
+--- a/src/features/export/utils/smart-copy.ts
++++ b/src/features/export/utils/smart-copy.ts
+@@ -81,6 +81,7 @@ function hasEqProcessing(eq: AudioEqSettings | undefined): boolean {
+ 
+ function hasItemAudioProcessing(item: VideoItem | AudioItem): boolean {
+   return (
++    item.audioChannelMap !== undefined ||
+     hasNonZeroField(item, [
+       'volume',
+       'audioFadeIn',
+diff --git a/src/features/project-bundle/schemas/project-schema.ts b/src/features/project-bundle/schemas/project-schema.ts
+--- a/src/features/project-bundle/schemas/project-schema.ts
++++ b/src/features/project-bundle/schemas/project-schema.ts
+@@ -546,6 +546,18 @@ const timelineItemSchema = z
+     audioFadeOutCurveX: z.number().min(0).max(1).optional(),
+     audioPitchSemitones: z.number().int().min(-12).max(12).optional(),
+     audioPitchCents: z.number().int().min(-100).max(100).optional(),
++    audioChannelMap: z
++      .object({
++        left: z.array(z.number().int().min(0).max(31)).max(32),
++        right: z.array(z.number().int().min(0).max(31)).max(32),
++      })
++      .refine(
++        (map) =>
++          map.left.length + map.right.length > 0 &&
++          new Set(map.left).size === map.left.length &&
++          new Set(map.right).size === map.right.length,
++      )
++      .optional(),
+     audioEqOutputGainDb: z.number().min(-20).max(20).optional(),
+     audioEqBand1Enabled: z.boolean().optional(),
+     audioEqBand1Type: z.enum(['low-shelf', 'peaking', 'high-shelf', 'high-pass']).optional(),
+diff --git a/src/features/timeline/stores/audio-channel-map-persistence.test.ts b/src/features/timeline/stores/audio-channel-map-persistence.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/timeline/stores/audio-channel-map-persistence.test.ts
+@@ -0,0 +1,100 @@
++import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
++import type { Project } from '@/types/project'
++import {
++  makeTimelineAudioItem,
++  makeTimelineTrack,
++  resetTimelineCompositionTestState,
++} from '@/features/timeline/test-helpers'
++import { validateProject } from '@/features/project-bundle/schemas/project-schema'
++import { splitItem } from './actions/edit/split-actions'
++import { joinItems } from './actions/edit/join-actions'
++import { useItemsStore } from './items-store'
++import { buildTimelineFromStores, hydrateTimelineStoresFromProject } from './timeline-persistence'
++
++// FL-1561: a clip's channel map is an ordinary item field: saved, reopened, and kept by the
++// halves of a split and by a join.
++const centre = { left: [2], right: [2] }
++const track = makeTimelineTrack({ id: 'a1', name: 'A1', kind: 'audio', order: 0 })
++
++function project(timeline: Project['timeline']): Project {
++  return {
++    id: 'channel-map',
++    name: 'Channel map',
++    description: '',
++    createdAt: 1,
++    updatedAt: 1,
++    duration: 2,
++    metadata: { width: 1920, height: 1080, fps: 30 },
++    timeline,
++  }
++}
++
++describe('FL-1561 channel map persistence', () => {
++  beforeEach(() => resetTimelineCompositionTestState())
++  afterEach(() => resetTimelineCompositionTestState())
++
++  it('survives split, join, save and reopen', async () => {
++    useItemsStore.getState().setTracks([track])
++    useItemsStore.getState().setItems([
++      makeTimelineAudioItem({
++        id: 'surround',
++        src: '',
++        trackId: track.id,
++        from: 0,
++        durationInFrames: 60,
++        sourceStart: 0,
++        sourceEnd: 60,
++        sourceFps: 30,
++        audioChannelMap: centre,
++      }),
++    ])
++
++    const halves = splitItem('surround', 30)
++    expect(halves).not.toBeNull()
++    expect(useItemsStore.getState().items.map((item) => item.audioChannelMap)).toEqual([
++      centre,
++      centre,
++    ])
++
++    const saved = structuredClone(buildTimelineFromStores())
++    expect(saved.items.map((item) => item.audioChannelMap)).toEqual([centre, centre])
++
++    resetTimelineCompositionTestState()
++    await hydrateTimelineStoresFromProject(project(saved))
++    expect(useItemsStore.getState().items.map((item) => item.audioChannelMap)).toEqual([
++      centre,
++      centre,
++    ])
++
++    joinItems(useItemsStore.getState().items.map((item) => item.id))
++    expect(useItemsStore.getState().items).toHaveLength(1)
++    expect(useItemsStore.getState().items[0]!.audioChannelMap).toEqual(centre)
++  })
++
++  it('the project schema admits a valid map and refuses a malformed one', () => {
++    const withMap = (audioChannelMap: unknown) =>
++      validateProject(
++        project({
++          tracks: [track],
++          items: [
++            makeTimelineAudioItem({
++              id: 'clip',
++              src: '',
++              trackId: track.id,
++              audioChannelMap: audioChannelMap as typeof centre,
++            }),
++          ],
++        } as unknown as Project['timeline']),
++      ).success
++    expect(withMap(centre)).toBe(true)
++    expect(withMap({ left: [0, 1], right: [] })).toBe(true)
++    for (const bad of [
++      { left: [], right: [] },
++      { left: [0, 0], right: [1] },
++      { left: [32], right: [1] },
++      { left: [0.5], right: [1] },
++      { left: [0] },
++    ])
++      expect(withMap(bad), JSON.stringify(bad)).toBe(false)
++  })
++})
+diff --git a/src/features/timeline/utils/legacy-av-track-repair.ts b/src/features/timeline/utils/legacy-av-track-repair.ts
+--- a/src/features/timeline/utils/legacy-av-track-repair.ts
++++ b/src/features/timeline/utils/legacy-av-track-repair.ts
+@@ -224,6 +224,7 @@ export function makeGeneratedAudioItem(
+     audioFadeOutCurveX: video.audioFadeOutCurveX,
+     audioPitchSemitones: video.audioPitchSemitones,
+     audioPitchCents: video.audioPitchCents,
++    audioChannelMap: video.audioChannelMap,
+     audioEqEnabled: video.audioEqEnabled,
+     audioEqOutputGainDb: video.audioEqOutputGainDb,
+     audioEqBand1Enabled: video.audioEqBand1Enabled,
+diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
+--- a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
+@@ -220,7 +220,14 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+   crossfadeFadeOutCurve,
+   volumeMultiplier = 1,
+ }) => {
+-  const { frame, fps, playing, transportPlaybackRate, isPreviewScrubbing } = useAudioPlaybackState({
++  const {
++    frame,
++    fps,
++    playing,
++    transportPlaybackRate,
++    isPreviewScrubbing,
++    resolvedAudioChannelMap: audioChannelMap,
++  } = useAudioPlaybackState({
+     itemId,
+     liveGainItemIds,
+     volume,
+@@ -284,6 +291,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+       waitTimeoutMs: PARTIAL_WAV_WAIT_TIMEOUT_MS,
+       targetTimeSeconds: clipStartTime,
+       ...(isReverseShuttle ? { preRollSeconds: REVERSE_SHUTTLE_PREROLL_SECONDS } : {}),
++      ...(audioChannelMap ? { channelMap: audioChannelMap } : {}),
+     })
+       .then((slice) => {
+         if (cancelled) return
+@@ -313,6 +321,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+       cancelled = true
+     }
+   }, [
++    audioChannelMap,
+     fps,
+     isPreviewScrubbing,
+     isReversed,
+@@ -350,7 +359,8 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+       return
+     }
+ 
+-    const requestKey = `${mediaId}:${src}:${playbackRate}:${targetTime.toFixed(3)}`
++    const mapKey = JSON.stringify(audioChannelMap)
++    const requestKey = `${mediaId}:${src}:${playbackRate}:${targetTime.toFixed(3)}:${mapKey}`
+     if (pendingExtensionKeyRef.current === requestKey) {
+       return
+     }
+@@ -362,6 +372,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+       waitTimeoutMs: PARTIAL_WAV_WAIT_TIMEOUT_MS,
+       targetTimeSeconds: Math.max(0, targetTime),
+       ...(isReverseShuttle ? { preRollSeconds: REVERSE_SHUTTLE_PREROLL_SECONDS } : {}),
++      ...(audioChannelMap ? { channelMap: audioChannelMap } : {}),
+     })
+       .then((slice) => {
+         if (cancelled) return
+@@ -400,6 +411,7 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+       }
+     }
+   }, [
++    audioChannelMap,
+     decodedSource,
+     fps,
+     frame,
+diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
+--- a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
+@@ -137,6 +137,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+       resolvedVolume: audioVolume,
+       resolvedAudioEqStages,
+       resolvedAudioPanStages = [],
++      resolvedAudioChannelMap: audioChannelMap,
+     } = useAudioPlaybackState({
+       itemId,
+       liveGainItemIds,
+@@ -189,6 +190,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+     const pausedSeekPrefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+     const pausedSeekPrefetchKeyRef = useRef<string | null>(null)
+     const queuedSourceRef = useRef<QueuedPreviewSource | null>(null)
++    const sliceChannelMapKeyRef = useRef(JSON.stringify(audioChannelMap ?? null))
+     frameRef.current = frame
+ 
+     const requestPartialSlice = useCallback(
+@@ -206,6 +208,8 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+             waitTimeoutMs: 6000,
+             targetTimeSeconds,
+             preRollSeconds: PARTIAL_BUFFER_REQUEST_PREROLL_SECONDS,
++            // FL-1561: a mapped clip decodes its planes through the map.
++            ...(audioChannelMap ? { channelMap: audioChannelMap } : {}),
+           }),
+         }
+         activeSliceRequestRef.current = request
+@@ -214,7 +218,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+           promise: request.promise,
+         }
+       },
+-      [mediaId, src],
++      [mediaId, src, audioChannelMap],
+     )
+ 
+     const acceptPartialSlice = useCallback(
+@@ -240,6 +244,12 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+       let cancelled = false
+       const effectiveSourceFps = sourceFps ?? fps
+       activeSliceRequestRef.current = null
++      // A slice decoded through another channel map must not keep playing.
++      const channelMapKey = JSON.stringify(audioChannelMap ?? null)
++      if (sliceChannelMapKeyRef.current !== channelMapKey) {
++        sliceChannelMapKeyRef.current = channelMapKey
++        setAudioSlice(null)
++      }
+       const decodeSeedKey = `${mediaId}:${src}:${trimBefore}:${effectiveSourceFps}:${playbackRate}`
+       if (decodeSeedRef.current?.key !== decodeSeedKey) {
+         decodeSeedRef.current = {
+@@ -333,6 +343,7 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+       }
+     }, [
+       acceptPartialSlice,
++      audioChannelMap,
+       fps,
+       isPreviewScrubbing,
+       mediaId,
+diff --git a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+--- a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
++++ b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+@@ -19,6 +19,8 @@ import { useMixerLiveGainProduct, clearMixerLiveGain } from '@/shared/state/mixe
+ import type { ResolvedAudioEqSettings } from '@/types/audio'
+ import { useCompositionsStore } from '@/runtime/composition-runtime/deps/stores'
+ import { resolveTrackAudioPanStages } from '@/shared/utils/audio-pan'
++import { resolveItemAudioChannelMap } from '@/shared/utils/audio-channel-map'
++import type { AudioChannelMap } from '@/types/timeline'
+ import type { AudioPlaybackProps } from '../audio-playback-props'
+ 
+ interface AudioPlaybackState {
+@@ -31,6 +33,7 @@ interface AudioPlaybackState {
+   resolvedPitchShiftSemitones: number
+   resolvedAudioEqStages: ResolvedAudioEqSettings[]
+   resolvedAudioPanStages: number[]
++  resolvedAudioChannelMap: AudioChannelMap | undefined
+ }
+ 
+ export function useTrackAudioPanStages(itemId: string, ancestorItemIds?: string[]): number[] {
+@@ -43,6 +46,16 @@ export function useTrackAudioPanStages(itemId: string, ancestorItemIds?: string[
+   )
+ }
+ 
++/** FL-1561: the clip's channel map; a mapped clip needs its decoded planes, as panned ones do. */
++export function useItemAudioChannelMap(itemId: string): AudioChannelMap | undefined {
++  const items = useTimelineStore((state) => state.items)
++  const compositions = useCompositionsStore((state) => state.compositions)
++  return useMemo(
++    () => resolveItemAudioChannelMap(items, compositions, itemId),
++    [items, compositions, itemId],
++  )
++}
++
+ export function useTrackGainStages(itemId: string, ancestors?: string[]) {
+   const items=useTimelineStore(s=>s.items), tracks=useTimelineStore(s=>s.tracks), compositions=useCompositionsStore(s=>s.compositions)
+   const fps=useTimelineSettingsStore(s=>s.fps)
+@@ -79,6 +92,7 @@ export function useAudioPlaybackState({
+   volumeMultiplier = 1,
+ }: AudioPlaybackProps): AudioPlaybackState {
+   const resolvedAudioPanStages = useTrackAudioPanStages(itemId, liveGainItemIds)
++  const resolvedAudioChannelMap = useItemAudioChannelMap(itemId)
+   const sequenceContext = useSequenceContext()
+   const frame = sequenceContext?.localFrame ?? 0
+   const ownerItem=useContext(KeyframesContext)?.getItem(itemId) as ({_audioOwnerTime?:{offset:number;scale:number;duration:number;fps:number}})|undefined
+@@ -185,5 +199,6 @@ export function useAudioPlaybackState({
+     resolvedPitchShiftSemitones,
+     resolvedAudioEqStages,
+     resolvedAudioPanStages,
++    resolvedAudioChannelMap,
+   }
+ }
+diff --git a/src/runtime/composition-runtime/components/item-content.tsx b/src/runtime/composition-runtime/components/item-content.tsx
+--- a/src/runtime/composition-runtime/components/item-content.tsx
++++ b/src/runtime/composition-runtime/components/item-content.tsx
+@@ -42,7 +42,7 @@ import { needsCustomAudioDecoder } from '../utils/audio-codec-detection'
+ import { resolveReverseConformedVideoItem } from '@/shared/utils/reverse-conform-item'
+ import { useNestedMediaResolutionMode } from '../contexts/nested-media-resolution-context'
+ import { useLiveItemContentTransform } from '../contexts/live-item-transform-context'
+-import { useTrackAudioPanStages } from './hooks/use-audio-playback-state'
++import { useItemAudioChannelMap, useTrackAudioPanStages } from './hooks/use-audio-playback-state'
+ import { shouldRenderExternalVideoAudio } from '../utils/audio-playback-routing'
+ 
+ function getLogger() {
+@@ -180,6 +180,7 @@ export const ItemContent = React.memo<ItemProps>(
+   }) => {
+     item = useLiveItemContentTransform(item)
+     const audioPanStages = useTrackAudioPanStages(item.id, audioGainLiveItemIds)
++    const audioChannelMap = useItemAudioChannelMap(item.id)
+ 
+     // Combine inherited track/parent state with the persisted clip control.
+     muted = muted || item.muted === true
+@@ -361,7 +362,10 @@ export const ItemContent = React.memo<ItemProps>(
+         hasAudioSource: !!videoAudioSrc,
+         authoredReversed: isReversed,
+         reverseShuttle: isReverseShuttle,
+-        requiresPitchShift: requiresPitchShiftedVideoAudio || audioPanStages.length > 0,
++        requiresPitchShift:
++          requiresPitchShiftedVideoAudio ||
++          audioPanStages.length > 0 ||
++          audioChannelMap !== undefined,
+         requiresCustomDecoder: shouldUseCustomDecodedVideoAudio,
+       })
+       const videoAudioPlaybackProps = getItemAudioPlaybackProps({
+diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.test.tsx b/src/runtime/composition-runtime/components/pitch-corrected-audio.test.tsx
+--- a/src/runtime/composition-runtime/components/pitch-corrected-audio.test.tsx
++++ b/src/runtime/composition-runtime/components/pitch-corrected-audio.test.tsx
+@@ -11,6 +11,9 @@ const audioDecodeMocks = vi.hoisted(() => ({
+ }))
+ const clockRateMocks = vi.hoisted(() => ({ current: 1 }))
+ const panStagesMocks = vi.hoisted(() => ({ current: [] as number[] }))
++const channelMapMocks = vi.hoisted(() => ({
++  current: undefined as { left: number[]; right: number[] } | undefined,
++}))
+ 
+ vi.mock('@/runtime/composition-runtime/deps/player', async (importOriginal) => ({
+   ...(await importOriginal<typeof import('@/runtime/composition-runtime/deps/player')>()),
+@@ -127,6 +130,7 @@ vi.mock('../utils/audio-decode-cache', () => audioDecodeMocks)
+ vi.mock('./hooks/use-audio-playback-state', () => ({
+   useAudioPlaybackState: vi.fn(() => playbackStateMocks.current),
+   useTrackAudioPanStages: vi.fn(() => panStagesMocks.current),
++  useItemAudioChannelMap: vi.fn(() => channelMapMocks.current),
+ }))
+ vi.mock('../utils/preview-audio-element-pool', () => previewAudioMocks)
+ vi.mock('../utils/preview-audio-graph', () => previewGraphMocks)
+@@ -166,6 +170,7 @@ describe('PitchCorrectedAudio', () => {
+     vi.clearAllMocks()
+     clockRateMocks.current = 1
+     panStagesMocks.current = []
++    channelMapMocks.current = undefined
+     playbackStateMocks.current = {
+       frame: 0,
+       fps: 30,
+@@ -279,6 +284,25 @@ describe('PitchCorrectedAudio', () => {
+     expect(previewAudioMocks.acquirePreviewAudioElement).not.toHaveBeenCalled()
+   })
+ 
++  it('FL-1561: decodes a channel-mapped clip at 1x through its map', async () => {
++    channelMapMocks.current = { left: [2], right: [2] }
++    audioDecodeMocks.getOrDecodeAudioSliceForPlayback.mockResolvedValue({
++      buffer: { ...makeAudioBuffer(), numberOfChannels: 6 },
++      startTime: 0,
++      isComplete: true,
++    })
++    render(
++      <PitchCorrectedAudio src="blob:map" mediaId="map" itemId="map" durationInFrames={120} />,
++    )
++    await waitFor(() => expect(document.querySelector('[data-testid="pitch"]')).not.toBeNull())
++    expect(previewAudioMocks.acquirePreviewAudioElement).not.toHaveBeenCalled()
++    expect(audioDecodeMocks.getOrDecodeAudioSliceForPlayback).toHaveBeenCalledWith(
++      'map',
++      'blob:map',
++      expect.objectContaining({ channelMap: { left: [2], right: [2] } }),
++    )
++  })
++
+   it('uses playback-first decode for stretched clips with media ids', async () => {
+     audioDecodeMocks.getOrDecodeAudioSliceForPlayback.mockResolvedValue({
+       buffer: makeAudioBuffer(2),
+diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx b/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
+--- a/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
++++ b/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
+@@ -25,7 +25,11 @@ import { SoundTouchWorkletAudio } from './soundtouch-worklet-audio'
+ import type { AudioPlaybackProps } from './audio-playback-props'
+ import { getBrowserMediaPlaybackRate } from '@/shared/state/playback/shuttle'
+ import { useClockPlaybackRate } from '@/runtime/composition-runtime/deps/player'
+-import { useAudioPlaybackState, useTrackAudioPanStages } from './hooks/use-audio-playback-state'
++import {
++  useAudioPlaybackState,
++  useItemAudioChannelMap,
++  useTrackAudioPanStages,
++} from './hooks/use-audio-playback-state'
+ import {
+   hasAudioPitchOverride,
+   isAudioPitchShiftActive,
+@@ -547,8 +551,12 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+     frameRef.current = frame
+     const isReverseShuttle = transportPlaybackRate < 0
+     const audioPanStages = useTrackAudioPanStages(itemId, liveGainItemIds)
++    // FL-1561: a mapped clip plays only its mapped decode, never the file's own planes.
++    const audioChannelMap = useItemAudioChannelMap(itemId)
+     const nativeFallback =
+-      audioPanStages.length > 0 ? null : <NativePitchCorrectedAudio {...props} />
++      audioPanStages.length > 0 || audioChannelMap ? null : (
++        <NativePitchCorrectedAudio {...props} />
++      )
+ 
+     useEffect(() => {
+       if (!mediaId || !src || isPreviewScrubbing) return
+@@ -580,6 +588,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+         waitTimeoutMs: PARTIAL_PITCH_WAIT_TIMEOUT_MS,
+         targetTimeSeconds: clipStartTime,
+         ...(isReverseShuttle ? { preRollSeconds: REVERSE_SHUTTLE_PREROLL_SECONDS } : {}),
++        ...(audioChannelMap ? { channelMap: audioChannelMap } : {}),
+       })
+         .then((slice) => {
+           if (cancelled) return
+@@ -609,6 +618,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+         cancelled = true
+       }
+     }, [
++      audioChannelMap,
+       fps,
+       isPreviewScrubbing,
+       isReversed,
+@@ -650,7 +660,8 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+         return
+       }
+ 
+-      const requestKey = `${mediaId}:${src}:${playbackRate}:${targetTime.toFixed(3)}`
++      const mapKey = JSON.stringify(audioChannelMap)
++      const requestKey = `${mediaId}:${src}:${playbackRate}:${targetTime.toFixed(3)}:${mapKey}`
+       if (pendingExtensionKeyRef.current === requestKey) {
+         return
+       }
+@@ -662,6 +673,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+         waitTimeoutMs: PARTIAL_PITCH_WAIT_TIMEOUT_MS,
+         targetTimeSeconds: targetTime,
+         ...(isReverseShuttle ? { preRollSeconds: REVERSE_SHUTTLE_PREROLL_SECONDS } : {}),
++        ...(audioChannelMap ? { channelMap: audioChannelMap } : {}),
+       })
+         .then((slice) => {
+           if (cancelled) return
+@@ -700,6 +712,7 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+         }
+       }
+     }, [
++      audioChannelMap,
+       decodedSource,
+       fps,
+       frame,
+@@ -798,8 +811,11 @@ export const PitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = React.mem
+     hasActivePitchPreview || isAudioPitchShiftActive(resolvedPitchShiftSemitones)
+   const decodeMediaId = props.mediaId ?? `legacy-src:${props.src}`
+   const audioPanStages = useTrackAudioPanStages(props.itemId, props.liveGainItemIds)
++  // FL-1561: a channel map is applied at decode, so a mapped clip never takes the native path.
++  const audioChannelMap = useItemAudioChannelMap(props.itemId)
+   const shouldUseNativePath =
+     audioPanStages.length === 0 &&
++    !audioChannelMap &&
+     props.isReversed !== true &&
+     !isReverseShuttle &&
+     !requiresPitchCorrection &&
+diff --git a/src/runtime/composition-runtime/utils/audio-decode-cache.test.ts b/src/runtime/composition-runtime/utils/audio-decode-cache.test.ts
+--- a/src/runtime/composition-runtime/utils/audio-decode-cache.test.ts
++++ b/src/runtime/composition-runtime/utils/audio-decode-cache.test.ts
+@@ -254,6 +254,44 @@ describe('audio-decode-cache targeted slice reuse', () => {
+     decodedPreviewAudioMocks.getDecodedPreviewAudio.mockImplementation(async () => null)
+   })
+ 
++  it('FL-1561: maps source planes at decode, apart from the stereo cache', async () => {
++    const planes = [0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625]
++    const surround = (channels: number) => ({
++      ...makeSample(22050),
++      numberOfChannels: channels,
++      copyTo(destination: Float32Array, options: { planeIndex: number; format: 'f32-planar' }) {
++        destination.fill(planes[options.planeIndex]!)
++      },
++    })
++    mediabunnyMocks.__setPendingSamples([surround(6)])
++    const sides = async (channelMap?: { left: number[]; right: number[] }) => {
++      const slice = await getOrDecodeAudioSliceForPlayback('surround', 'blob://surround', {
++        minReadySeconds: 0.5,
++        targetTimeSeconds: 0,
++        preRollSeconds: 0,
++        ...(channelMap ? { channelMap } : {}),
++      })
++      return [0, 1].map((channel) => slice.buffer.getChannelData(channel)[100])
++    }
++    const centre = await sides({ left: [2], right: [2] })
++    expect(centre[0]).toBeCloseTo(0.125, 6)
++    expect(centre[1]).toBeCloseTo(0.125, 6)
++    const rear = await sides({ left: [4], right: [5] })
++    expect(rear[0]).toBeCloseTo(0.03125, 6)
++    expect(rear[1]).toBeCloseTo(0.015625, 6)
++    const mix = await sides({ left: [0, 1], right: [0, 1] })
++    expect(mix[0]).toBeCloseTo(0.375, 6)
++    // The unmapped window is still the stereo downmix, not a mapped slice.
++    const downmix = await sides()
++    expect(downmix[0]).toBeGreaterThan(0.5)
++
++    clearPreviewAudioCache()
++    mediabunnyMocks.__setPendingSamples([surround(1)])
++    const mono = await sides({ left: [0], right: [0, 1] })
++    expect(mono[0]).toBeCloseTo(0.5, 6)
++    expect(mono[1]).toBeCloseTo(0.25, 6)
++  })
++
+   it('reuses a completed targeted slice for the same playback request', async () => {
+     mediabunnyMocks.__setPendingSamples([makeSample(2 * 22050)])
+ 
+diff --git a/src/runtime/composition-runtime/utils/audio-decode-cache.ts b/src/runtime/composition-runtime/utils/audio-decode-cache.ts
+--- a/src/runtime/composition-runtime/utils/audio-decode-cache.ts
++++ b/src/runtime/composition-runtime/utils/audio-decode-cache.ts
+@@ -45,6 +45,8 @@ import {
+   type DecodedAudioBinData,
+ } from './audio-decode-dsp'
+ import type { AudioDecodeWorkerResponse } from './audio-decode-worker.types'
++import { applyAudioChannelMap } from '@/shared/utils/audio-channel-map'
++import type { AudioChannelMap } from '@/types/timeline'
+ 
+ const log = createLogger('PreviewAudioCache')
+ export type PreviewAudioSource = string | Blob
+@@ -123,7 +125,10 @@ interface DecodeAudioSampleData {
+   close: () => void
+ }
+ 
+-function extractDecodeSampleStereoChunk(sample: DecodeAudioSampleData): {
++function extractDecodeSampleStereoChunk(
++  sample: DecodeAudioSampleData,
++  channelMap?: AudioChannelMap,
++): {
+   left: Float32Array
+   right: Float32Array
+   frameCount: number
+@@ -140,6 +145,11 @@ function extractDecodeSampleStereoChunk(sample: DecodeAudioSampleData): {
+     sample.copyTo(channelData, { planeIndex: c, format: 'f32-planar' })
+     channels.push(channelData)
+   }
++  if (channelMap) {
++    // FL-1561: a mapped clip's sides come from the source planes, by the rule export uses.
++    const [left, right] = applyAudioChannelMap(channels, channelMap)
++    return { left: left!, right: right!, frameCount }
++  }
+   const { left, right } = downmixToStereo(channels, frameCount)
+   return { left, right, frameCount }
+ }
+@@ -395,6 +405,7 @@ async function decodeAudioWindow(
+   durationSeconds: number,
+   mode: AudioWindowDecodeMode = 'targeted',
+   ac3RetryAttempted: boolean = false,
++  channelMap?: AudioChannelMap,
+ ): Promise<PlaybackAudioSlice> {
+   const shouldRegisterAc3 = ac3RetryAttempted || (await shouldPreRegisterAc3Decoder(mediaId))
+ 
+@@ -432,7 +443,7 @@ async function decodeAudioWindow(
+       const seenBufferKeys = new Set<string>()
+ 
+       const appendSample = (sample: DecodeAudioSampleData) => {
+-        const chunk = extractDecodeSampleStereoChunk(sample)
++        const chunk = extractDecodeSampleStereoChunk(sample, channelMap)
+         if (!chunk) {
+           return
+         }
+@@ -541,7 +552,15 @@ async function decodeAudioWindow(
+   } catch (err) {
+     if (!ac3RetryAttempted && !shouldRegisterAc3) {
+       try {
+-        return await decodeAudioWindow(mediaId, src, startTime, durationSeconds, mode, true)
++        return await decodeAudioWindow(
++          mediaId,
++          src,
++          startTime,
++          durationSeconds,
++          mode,
++          true,
++          channelMap,
++        )
+       } catch {
+         // Keep original error as primary failure.
+       }
+@@ -565,9 +584,18 @@ export async function getOrDecodeAudioSliceForPlayback(
+     waitTimeoutMs?: number
+     targetTimeSeconds?: number
+     preRollSeconds?: number
++    /**
++     * FL-1561: sum the source planes into left and right by the clip's map at decode. Mapped
++     * windows never use the stereo downmix caches, the bins or the worker.
++     */
++    channelMap?: AudioChannelMap
+   },
+ ): Promise<PlaybackAudioSlice> {
+-  const cached = cache.get(mediaId)
++  const channelMap = options?.channelMap
++  const sliceKey = channelMap
++    ? `${mediaId}\u0000channels:${channelMap.left.join(',')}/${channelMap.right.join(',')}`
++    : mediaId
++  const cached = channelMap ? undefined : cache.get(mediaId)
+   if (cached) {
+     touchCacheEntry(mediaId)
+     return {
+@@ -584,7 +612,7 @@ export async function getOrDecodeAudioSliceForPlayback(
+   const targetTimeSeconds = Math.max(0, options?.targetTimeSeconds ?? 0)
+   const preRollSeconds = Math.max(0, options?.preRollSeconds ?? PLAYABLE_PARTIAL_PREROLL_SECONDS)
+ 
+-  const cachedPlaybackSlice = playbackSliceCache.get(mediaId)
++  const cachedPlaybackSlice = playbackSliceCache.get(sliceKey)
+   if (
+     cachedPlaybackSlice &&
+     playbackSliceCoversTarget(cachedPlaybackSlice, targetTimeSeconds, minReadySeconds)
+@@ -592,7 +620,7 @@ export async function getOrDecodeAudioSliceForPlayback(
+     return cachedPlaybackSlice
+   }
+ 
+-  const pendingPlaybackSlice = pendingPlaybackSliceDecodes.get(mediaId)
++  const pendingPlaybackSlice = pendingPlaybackSliceDecodes.get(sliceKey)
+   if (
+     pendingPlaybackSlice &&
+     pendingPlaybackSliceCoversTarget(pendingPlaybackSlice, targetTimeSeconds, minReadySeconds)
+@@ -608,12 +636,9 @@ export async function getOrDecodeAudioSliceForPlayback(
+     // only when they cover the current target plus enough headroom to keep
+     // playback continuous. Returning a slice that merely contains the current
+     // position can strand the preview path at the tail of the rebuilt bins.
+-    const immediatePartial = await loadPartialFromBins(
+-      mediaId,
+-      targetTimeSeconds,
+-      minReadySeconds,
+-      preRollSeconds,
+-    )
++    const immediatePartial = channelMap
++      ? null
++      : await loadPartialFromBins(mediaId, targetTimeSeconds, minReadySeconds, preRollSeconds)
+     if (
+       immediatePartial &&
+       playbackSliceCoversTarget(immediatePartial, targetTimeSeconds, minReadySeconds)
+@@ -622,14 +647,27 @@ export async function getOrDecodeAudioSliceForPlayback(
+       return immediatePartial
+     }
+ 
++    const decodeWindow = (mode?: AudioWindowDecodeMode) =>
++      channelMap
++        ? decodeAudioWindow(
++            mediaId,
++            src,
++            partialStartTime,
++            partialDurationSeconds,
++            mode,
++            false,
++            channelMap,
++          )
++        : decodeAudioWindowPreferWorker(
++            mediaId,
++            src,
++            partialStartTime,
++            partialDurationSeconds,
++            mode,
++          )
+     try {
+-      const slice = await decodeAudioWindowPreferWorker(
+-        mediaId,
+-        src,
+-        partialStartTime,
+-        partialDurationSeconds,
+-      )
+-      rememberPlaybackSlice(mediaId, slice)
++      const slice = await decodeWindow()
++      rememberPlaybackSlice(sliceKey, slice)
+       return slice
+     } catch (windowError) {
+       log.warn('Targeted preview audio window decode failed, retrying sequentially', {
+@@ -638,14 +676,8 @@ export async function getOrDecodeAudioSliceForPlayback(
+         error: windowError,
+       })
+       try {
+-        const slice = await decodeAudioWindowPreferWorker(
+-          mediaId,
+-          src,
+-          partialStartTime,
+-          partialDurationSeconds,
+-          'sequential',
+-        )
+-        rememberPlaybackSlice(mediaId, slice)
++        const slice = await decodeWindow('sequential')
++        rememberPlaybackSlice(sliceKey, slice)
+         return slice
+       } catch (sequentialError) {
+         log.warn('Sequential preview audio window decode failed', {
+@@ -659,7 +691,7 @@ export async function getOrDecodeAudioSliceForPlayback(
+     }
+   })()
+ 
+-  pendingPlaybackSliceDecodes.set(mediaId, {
++  pendingPlaybackSliceDecodes.set(sliceKey, {
+     requestedStartTime: partialStartTime,
+     requestedCoverageEndTime: requiredCoverageEnd,
+     promise: partialPromise,
+@@ -668,9 +700,9 @@ export async function getOrDecodeAudioSliceForPlayback(
+   try {
+     return await partialPromise
+   } finally {
+-    const pendingSlice = pendingPlaybackSliceDecodes.get(mediaId)
++    const pendingSlice = pendingPlaybackSliceDecodes.get(sliceKey)
+     if (pendingSlice?.promise === partialPromise) {
+-      pendingPlaybackSliceDecodes.delete(mediaId)
++      pendingPlaybackSliceDecodes.delete(sliceKey)
+     }
+   }
+ }
+diff --git a/src/runtime/composition-runtime/utils/audio-scene.test.ts b/src/runtime/composition-runtime/utils/audio-scene.test.ts
+--- a/src/runtime/composition-runtime/utils/audio-scene.test.ts
++++ b/src/runtime/composition-runtime/utils/audio-scene.test.ts
+@@ -438,4 +438,34 @@ describe('audio scene', () => {
+       }),
+     ])
+   })
++
++  it('FL-1561: carries a channel map and merges split halves only when theirs match', () => {
++    const half = (id: string, from: number, map?: { left: number[]; right: number[] }) => ({
++      id,
++      type: 'audio' as const,
++      trackId: 'track-1',
++      from,
++      durationInFrames: 30,
++      src: 'surround.ac3',
++      label: id,
++      mediaId: 'media-1',
++      sourceStart: from,
++      sourceFps: 30,
++      muted: false,
++      trackVolumeDb: 0,
++      trackVisible: true,
++      ...(map ? { audioChannelMap: map } : {}),
++    })
++    const centre = { left: [2], right: [2] }
++    expect(
++      buildStandaloneAudioSegments([half('a', 0, centre), half('b', 30, { ...centre })], 30),
++    ).toEqual([
++      expect.objectContaining({ itemId: 'a', durationInFrames: 60, audioChannelMap: centre }),
++    ])
++    const split = buildStandaloneAudioSegments([half('a', 0, centre), half('b', 30)], 30)
++    expect(split.map((segment) => [segment.itemId, segment.audioChannelMap])).toEqual([
++      ['a', centre],
++      ['b', undefined],
++    ])
++  })
+ })
+diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/composition-runtime/utils/audio-scene.ts
+--- a/src/runtime/composition-runtime/utils/audio-scene.ts
++++ b/src/runtime/composition-runtime/utils/audio-scene.ts
+@@ -1,4 +1,5 @@
+-import type { AudioItem, VideoItem } from '@/types/timeline'
++import type { AudioChannelMap, AudioItem, VideoItem } from '@/types/timeline'
++import { areAudioChannelMapsEqual } from '@/shared/utils/audio-channel-map'
+ import type { ResolvedAudioEqSettings } from '@/types/audio'
+ import type { AudioCrossfadeCurve, Transition } from '@/types/transition'
+ import {
+@@ -82,6 +83,8 @@ export interface AudioSegment {
+   audioFadeOutCurveX: number
+   audioPitchSemitones: number
+   audioPitchCents: number
++  /** FL-1561: the clip's channel map; split halves merge only when theirs match. */
++  audioChannelMap?: AudioChannelMap
+   audioEqStages: ResolvedAudioEqSettings[]
+   clipFadeSpans?: AudioClipFadeSpan[]
+ }
+@@ -306,6 +309,7 @@ export function buildStandaloneAudioSegments(
+       audioFadeOutCurveX: item.audioFadeOutCurveX ?? 0.52,
+       audioPitchSemitones: clampAudioPitchSemitones(item.audioPitchSemitones ?? 0),
+       audioPitchCents: clampAudioPitchCents(item.audioPitchCents ?? 0),
++      ...(item.audioChannelMap ? { audioChannelMap: item.audioChannelMap } : {}),
+       audioEqStages: appendResolvedAudioEqSources(
+         undefined,
+         item.trackAudioEq,
+@@ -347,6 +351,7 @@ export function buildStandaloneAudioSegments(
+       active.muted === segment.muted &&
+       active.audioPitchSemitones === segment.audioPitchSemitones &&
+       active.audioPitchCents === segment.audioPitchCents &&
++      areAudioChannelMapsEqual(active.audioChannelMap, segment.audioChannelMap) &&
+       areAudioEqStagesEqual(active.audioEqStages, segment.audioEqStages)
+ 
+     if (canMerge) {
+@@ -389,6 +394,7 @@ export function buildStandaloneAudioSegments(
+       audioFadeOutCurveX: active.audioFadeOutCurveX,
+       audioPitchSemitones: active.audioPitchSemitones,
+       audioPitchCents: active.audioPitchCents,
++      ...(active.audioChannelMap ? { audioChannelMap: active.audioChannelMap } : {}),
+       audioEqStages: active.audioEqStages,
+       clipFadeSpans: active.clipFadeSpans,
+     })
+@@ -419,6 +425,7 @@ export function buildStandaloneAudioSegments(
+       audioFadeOutCurveX: active.audioFadeOutCurveX,
+       audioPitchSemitones: active.audioPitchSemitones,
+       audioPitchCents: active.audioPitchCents,
++      ...(active.audioChannelMap ? { audioChannelMap: active.audioChannelMap } : {}),
+       audioEqStages: active.audioEqStages,
+       clipFadeSpans: active.clipFadeSpans,
+     })
+@@ -557,6 +564,7 @@ export function buildTransitionVideoAudioSegments(
+       audioFadeOutCurveX: item.audioFadeOutCurveX ?? 0.52,
+       audioPitchSemitones: clampAudioPitchSemitones(item.audioPitchSemitones ?? 0),
+       audioPitchCents: clampAudioPitchCents(item.audioPitchCents ?? 0),
++      ...(item.audioChannelMap ? { audioChannelMap: item.audioChannelMap } : {}),
+       audioEqStages: appendResolvedAudioEqSources(
+         undefined,
+         item.trackAudioEq,
+@@ -611,6 +619,7 @@ export function buildTransitionVideoAudioSegments(
+       active.muted === segment.muted &&
+       active.audioPitchSemitones === segment.audioPitchSemitones &&
+       active.audioPitchCents === segment.audioPitchCents &&
++      areAudioChannelMapsEqual(active.audioChannelMap, segment.audioChannelMap) &&
+       areAudioEqStagesEqual(active.audioEqStages, segment.audioEqStages) &&
+       active.afterFrames === 0 &&
+       segment.beforeFrames === 0
+@@ -660,6 +669,7 @@ export function buildTransitionVideoAudioSegments(
+       audioFadeOutCurveX: active.audioFadeOutCurveX,
+       audioPitchSemitones: active.audioPitchSemitones,
+       audioPitchCents: active.audioPitchCents,
++      ...(active.audioChannelMap ? { audioChannelMap: active.audioChannelMap } : {}),
+       audioEqStages: active.audioEqStages,
+       clipFadeSpans: active.clipFadeSpans,
+       contentStartOffsetFrames: active.contentStartOffsetFrames,
+@@ -698,6 +708,7 @@ export function buildTransitionVideoAudioSegments(
+       audioFadeOutCurveX: active.audioFadeOutCurveX,
+       audioPitchSemitones: active.audioPitchSemitones,
+       audioPitchCents: active.audioPitchCents,
++      ...(active.audioChannelMap ? { audioChannelMap: active.audioChannelMap } : {}),
+       audioEqStages: active.audioEqStages,
+       clipFadeSpans: active.clipFadeSpans,
+       contentStartOffsetFrames: active.contentStartOffsetFrames,
+diff --git a/src/shared/utils/audio-channel-map.test.ts b/src/shared/utils/audio-channel-map.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/audio-channel-map.test.ts
+@@ -0,0 +1,198 @@
++import { describe, expect, it } from 'vite-plus/test'
++import {
++  applyAudioChannelMap,
++  areAudioChannelMapsEqual,
++  getAudioChannelMap,
++  getAudioChannelMapPlaneCount,
++  isValidAudioChannelMap,
++  resolveItemAudioChannelMap,
++} from './audio-channel-map'
++import type { TimelineItem } from '@/types/timeline'
++
++// FL-1561: 5.1 planes in decoded order L, R, C, LFE, Ls, Rs, each a distinct binary-exact value.
++const surround = [0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625].map((value) =>
++  Float32Array.of(value, -value),
++)
++const stereo = [Float32Array.of(0.5, -0.5), Float32Array.of(0.25, 0)]
++const mono = [Float32Array.of(0.75, -0.25)]
++
++const sides = (planes: Float32Array[]) => planes.map((plane) => [...plane])
++
++describe('FL-1561 audio channel map maths', () => {
++  it.each([
++    [
++      'stereo',
++      stereo,
++      { left: [0], right: [1] },
++      [
++        [0.5, -0.5],
++        [0.25, 0],
++      ],
++    ],
++    [
++      'mono from left',
++      stereo,
++      { left: [0], right: [0] },
++      [
++        [0.5, -0.5],
++        [0.5, -0.5],
++      ],
++    ],
++    [
++      'mono from right',
++      stereo,
++      { left: [1], right: [1] },
++      [
++        [0.25, 0],
++        [0.25, 0],
++      ],
++    ],
++    [
++      'mono mix (L+R)/2',
++      stereo,
++      { left: [0, 1], right: [0, 1] },
++      [
++        [0.375, -0.25],
++        [0.375, -0.25],
++      ],
++    ],
++    [
++      'dual mono (each side its own plane)',
++      stereo,
++      { left: [0], right: [1] },
++      [
++        [0.5, -0.5],
++        [0.25, 0],
++      ],
++    ],
++    [
++      '5.1 front L/R',
++      surround,
++      { left: [0], right: [1] },
++      [
++        [0.5, -0.5],
++        [0.25, -0.25],
++      ],
++    ],
++    [
++      '5.1 centre to both',
++      surround,
++      { left: [2], right: [2] },
++      [
++        [0.125, -0.125],
++        [0.125, -0.125],
++      ],
++    ],
++    [
++      '5.1 LFE to both',
++      surround,
++      { left: [3], right: [3] },
++      [
++        [0.0625, -0.0625],
++        [0.0625, -0.0625],
++      ],
++    ],
++    [
++      '5.1 surround L/R',
++      surround,
++      { left: [4], right: [5] },
++      [
++        [0.03125, -0.03125],
++        [0.015625, -0.015625],
++      ],
++    ],
++    // (0.5 + 0.125) / 2 and (0.25 + 0.125) / 2
++    [
++      '5.1 front plus centre',
++      surround,
++      { left: [0, 2], right: [1, 2] },
++      [
++        [0.3125, -0.3125],
++        [0.1875, -0.1875],
++      ],
++    ],
++    [
++      'left only, right silent',
++      stereo,
++      { left: [0], right: [] },
++      [
++        [0.5, -0.5],
++        [0, 0],
++      ],
++    ],
++  ])('%s', (_name, source, map, expected) => {
++    const before = sides(source)
++    expect(sides(applyAudioChannelMap(source, map))).toEqual(expected)
++    expect(sides(source)).toEqual(before)
++  })
++
++  it('counts a plane the source lacks as silence but keeps its share of the gain', () => {
++    // Mono source asked for planes 0 and 1: (0.75 + nothing) / 2.
++    expect(sides(applyAudioChannelMap(mono, { left: [0], right: [0, 1] }))).toEqual([
++      [0.75, -0.25],
++      [0.375, -0.125],
++    ])
++    expect(sides(applyAudioChannelMap(stereo, { left: [2], right: [5] }))).toEqual([
++      [0, 0],
++      [0, 0],
++    ])
++  })
++
++  it('divides three planes by three', () => {
++    const [left] = applyAudioChannelMap(surround, { left: [0, 1, 2], right: [0] })
++    expect(left![0]).toBeCloseTo((0.5 + 0.25 + 0.125) / 3, 7)
++  })
++
++  it('validates indexes, duplicates and an all-silent map', () => {
++    expect(isValidAudioChannelMap({ left: [0], right: [31] })).toBe(true)
++    expect(isValidAudioChannelMap({ left: [], right: [1] })).toBe(true)
++    for (const bad of [
++      undefined,
++      null,
++      [],
++      { left: [0] },
++      { left: [], right: [] },
++      { left: [0, 0], right: [1] },
++      { left: [-1], right: [1] },
++      { left: [32], right: [1] },
++      { left: [0.5], right: [1] },
++      { left: ['0'], right: [1] },
++    ])
++      expect(isValidAudioChannelMap(bad), JSON.stringify(bad)).toBe(false)
++    expect(() => applyAudioChannelMap(stereo, { left: [0, 0], right: [1] })).toThrow(
++      'Invalid audio channel map',
++    )
++    expect(() =>
++      getAudioChannelMap({ audioChannelMap: { left: [], right: [] } } as Pick<
++        TimelineItem,
++        'audioChannelMap'
++      >),
++    ).toThrow('Invalid audio channel map')
++    expect(getAudioChannelMap({})).toBeUndefined()
++  })
++
++  it('a mapped clip contributes two planes; an unmapped one its decoded count', () => {
++    expect(getAudioChannelMapPlaneCount({ left: [2], right: [2] }, 6)).toBe(2)
++    expect(getAudioChannelMapPlaneCount(undefined, 6)).toBe(6)
++  })
++
++  it('compares maps by order and content', () => {
++    expect(areAudioChannelMapsEqual(undefined, undefined)).toBe(true)
++    expect(areAudioChannelMapsEqual({ left: [0], right: [1] }, { left: [0], right: [1] })).toBe(
++      true,
++    )
++    expect(areAudioChannelMapsEqual({ left: [0], right: [1] }, undefined)).toBe(false)
++    expect(
++      areAudioChannelMapsEqual({ left: [0, 1], right: [1] }, { left: [1, 0], right: [1] }),
++    ).toBe(false)
++  })
++
++  it('finds a clip map at the root or inside a compound clip', () => {
++    const map = { left: [2], right: [2] }
++    const root = [{ id: 'a', audioChannelMap: map }] as unknown as TimelineItem[]
++    const nested = [{ items: [{ id: 'b', audioChannelMap: map }] as unknown as TimelineItem[] }]
++    expect(resolveItemAudioChannelMap(root, nested, 'a')).toBe(map)
++    expect(resolveItemAudioChannelMap(root, nested, 'b')).toBe(map)
++    expect(resolveItemAudioChannelMap(root, nested, 'c')).toBeUndefined()
++  })
++})
+diff --git a/src/shared/utils/audio-channel-map.ts b/src/shared/utils/audio-channel-map.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/utils/audio-channel-map.ts
+@@ -0,0 +1,97 @@
++import type { AudioChannelMap, TimelineItem } from '@/types/timeline'
++
++/**
++ * Frameleaf (FL-1561): which decoded source planes feed a clip's left and right outputs.
++ * Each side is the plain sum of its listed planes times 1 / (number listed). A plane the
++ * source does not have contributes silence; an empty side is silent. Absent means the
++ * source planes play as they are.
++ */
++const AUDIO_CHANNEL_MAP_MAX_INDEX = 31
++
++function isValidSide(side: unknown): side is number[] {
++  return (
++    Array.isArray(side) &&
++    side.length <= AUDIO_CHANNEL_MAP_MAX_INDEX + 1 &&
++    side.every(
++      (index) => Number.isInteger(index) && index >= 0 && index <= AUDIO_CHANNEL_MAP_MAX_INDEX,
++    ) &&
++    new Set(side).size === side.length
++  )
++}
++
++export function isValidAudioChannelMap(map: unknown): map is AudioChannelMap {
++  if (!map || typeof map !== 'object' || Array.isArray(map)) return false
++  const { left, right } = map as Partial<AudioChannelMap>
++  return isValidSide(left) && isValidSide(right) && left.length + right.length > 0
++}
++
++/** The clip's map, or undefined to play the source planes unchanged. Throws on a malformed map. */
++export function getAudioChannelMap(
++  item: Pick<TimelineItem, 'audioChannelMap'> | undefined,
++): AudioChannelMap | undefined {
++  const map = item?.audioChannelMap
++  if (map === undefined) return undefined
++  if (!isValidAudioChannelMap(map)) throw new Error('Invalid audio channel map')
++  return map
++}
++
++export function areAudioChannelMapsEqual(
++  left: AudioChannelMap | undefined,
++  right: AudioChannelMap | undefined,
++): boolean {
++  if (left === right) return true
++  if (!left || !right) return false
++  return (
++    left.left.length === right.left.length &&
++    left.right.length === right.right.length &&
++    left.left.every((index, i) => right.left[i] === index) &&
++    left.right.every((index, i) => right.right[i] === index)
++  )
++}
++
++/** Planes a clip contributes to the mix: two when mapped, else what the source decoded to. */
++export function getAudioChannelMapPlaneCount(
++  map: AudioChannelMap | undefined,
++  sourcePlanes: number,
++): number {
++  return map ? 2 : sourcePlanes
++}
++
++function mapSide(samples: readonly Float32Array[], side: readonly number[], length: number) {
++  const output = new Float32Array(length)
++  const present = side.filter((index) => index < samples.length)
++  if (present.length === 0) return output
++  const gain = 1 / side.length
++  for (let i = 0; i < length; i++) {
++    let sum = 0
++    for (const index of present) sum += samples[index]![i]!
++    output[i] = gain === 1 ? sum : sum * gain
++  }
++  return output
++}
++
++/** Export: left and right planes from the decoded source planes, by the documented rule. */
++export function applyAudioChannelMap(
++  samples: readonly Float32Array[],
++  map: AudioChannelMap,
++): Float32Array[] {
++  if (!isValidAudioChannelMap(map)) throw new Error('Invalid audio channel map')
++  const length = samples[0]?.length ?? 0
++  return [mapSide(samples, map.left, length), mapSide(samples, map.right, length)]
++}
++
++/** The clip's map, found on a root item or inside a compound clip's composition. */
++export function resolveItemAudioChannelMap(
++  items: readonly TimelineItem[],
++  compositions: readonly { items: TimelineItem[] }[],
++  itemId: string,
++): AudioChannelMap | undefined {
++  // ponytail: scan on store changes, like resolveTrackAudioPanStages.
++  const item =
++    items.find((candidate) => candidate.id === itemId) ??
++    compositions
++      .flatMap((composition) => composition.items)
++      .find((candidate) => candidate.id === itemId)
++  // Unvalidated: the preview graph refuses (silences) a malformed map, as export refuses it.
++  return item?.audioChannelMap
++}
+diff --git a/src/types/project.ts b/src/types/project.ts
+--- a/src/types/project.ts
++++ b/src/types/project.ts
+@@ -197,6 +197,7 @@ export interface ProjectTimeline {
+       audioFadeOutCurveX?: number
+       audioPitchSemitones?: number
+       audioPitchCents?: number
++      audioChannelMap?: import('./timeline').AudioChannelMap
+       audioEqOutputGainDb?: number
+       audioEqBand1Enabled?: boolean
+       audioEqBand1Type?: import('./audio').AudioEqBand1Type
+diff --git a/src/types/timeline.ts b/src/types/timeline.ts
+--- a/src/types/timeline.ts
++++ b/src/types/timeline.ts
+@@ -48,6 +48,15 @@ export interface TimelineTranscriptCaptions {
+   wordLook?: WordCaptionLook
+ }
+ 
++/**
++ * FL-1561: decoded source plane indexes (file order; 5.1 is L, R, C, LFE, Ls, Rs) feeding each
++ * output side, summed with gain 1 / (indexes listed). Missing planes are silent.
++ */
++export interface AudioChannelMap {
++  left: number[]
++  right: number[]
++}
++
+ /** Sidechain ducking settings carried by a duck-source item. */
+ export interface AudioDuckingSettings {
+   /** Attenuation applied to other audio while this item is audible, in dB (<= 0). */
+@@ -113,6 +122,8 @@ type BaseTimelineItem = {
+   audioFadeOutCurveX?: number // Audio fade out curve horizontal bias (0..1, default: ~0.52)
+   audioPitchSemitones?: number // Clip pitch offset in semitones (-12..12)
+   audioPitchCents?: number // Fine pitch offset in cents (-100..100)
++  /** FL-1561: source planes summed into the clip's left and right outputs; absent: as they are. */
++  audioChannelMap?: AudioChannelMap
+   audioEqEnabled?: boolean // Master clip EQ on/off (default: true)
+   audioEqOutputGainDb?: number // Post-EQ output trim in dB
+   audioEqBand1Enabled?: boolean // Outer left EQ band on/off

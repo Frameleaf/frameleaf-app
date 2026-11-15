@@ -155,10 +155,10 @@ diff --git a/src/infrastructure/gpu-effects/effects/lut.ts b/src/infrastructure/
  import { createIdentityLutData, decodeLutData } from '../lut/cube-lut'
  import { readFileLut, readFileLutDomain } from '../lut/file-lut'
 +import { LINEAR_GRADE_WGSL } from './linear-grade'
+ import { FILE_LUT_1D_ROW, readFileLut1d, readFileLut1dDomain } from '../lut/cube-file'
  
  const IDENTITY_LUT_SIZE = 2
- 
-@@ -22,14 +23,19 @@ struct LutParams { intensity: f32, size: f32, _p2: f32, _p3: f32 };
+@@ -23,14 +24,19 @@ struct LutParams { intensity: f32, size: f32, _p2: f32, _p3: f32 };
  @group(0) @binding(1) var inputTex: texture_2d<f32>;
  @group(0) @binding(2) var<uniform> params: LutParams;
  @group(0) @binding(3) var lutTex: texture_3d<f32>;
@@ -224,7 +224,7 @@ diff --git a/src/infrastructure/gpu-effects/effects/stylize.ts b/src/infrastruct
 diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
 --- a/src/infrastructure/gpu-effects/registry.ts
 +++ b/src/infrastructure/gpu-effects/registry.ts
-@@ -60,11 +60,20 @@ export function getGpuEffectDefaultParams(id: string): Record<string, number | b
+@@ -67,11 +67,20 @@ export function getGpuEffectDefaultParams(id: string): Record<string, number | b
    return defaults
  }
  
@@ -363,7 +363,7 @@ diff --git a/src/infrastructure/gpu-transitions/linear-hdr.test.ts b/src/infrast
 new file mode 100644
 --- /dev/null
 +++ b/src/infrastructure/gpu-transitions/linear-hdr.test.ts
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,105 @@
 +// @vitest-environment node
 +
 +import { describe, expect, it } from 'vite-plus/test'
@@ -404,6 +404,11 @@ new file mode 100644
 +  'lensWarpZoom',
 +  'lightLeakBurn',
 +  'filmGateSlip',
++  // FL-1564's transitions stay refused in HDR until they get their own linear pages.
++  'filmDissolve',
++  'crossZoom',
++  'cubeSpin',
++  'pagePeel',
 +]
 +
 +describe('linear HDR operators', () => {

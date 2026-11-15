@@ -77,6 +77,101 @@ const graph = (items) => ({
   },
 });
 
+// FL-1557: a project like an imported one: a title, a nest that became a compound clip with its sound
+// clip (protocol 14.2.1), and a Lottie animation imported into the project.
+const NEST = 'nest-1';
+const NESTED = '22222222-2222-4222-8222-222222222222';
+const LOTTIE = '44444444-4444-4444-8444-444444444444';
+const LOTTIE_BYTES = Buffer.from(JSON.stringify({ v: '5.7.0', fr: 30, ip: 0, op: 60, w: 512, h: 512, layers: [] }));
+const compositeGraph = ({ compositionId = NEST } = {}) => {
+  const project = graph([
+    {
+      id: 'v',
+      trackId: 'v2',
+      type: 'video',
+      mediaId: ASSET,
+      from: 0,
+      durationInFrames: 120,
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+    },
+    {
+      id: 'c',
+      trackId: 'v1',
+      type: 'composition',
+      compositionId,
+      compositionWidth: 1920,
+      compositionHeight: 1080,
+      linkedGroupId: 'g',
+      from: 0,
+      durationInFrames: 60,
+      sourceStart: 0,
+      sourceEnd: 60,
+      sourceDuration: 60,
+      sourceFps: 30,
+    },
+    {
+      id: 'cs',
+      trackId: 'a1',
+      type: 'audio',
+      compositionId,
+      linkedGroupId: 'g',
+      src: '',
+      from: 0,
+      durationInFrames: 60,
+      sourceStart: 0,
+      sourceEnd: 60,
+      sourceDuration: 60,
+      sourceFps: 30,
+    },
+    {
+      id: 'l',
+      trackId: 'v1',
+      type: 'lottie',
+      mediaId: LOTTIE,
+      from: 60,
+      durationInFrames: 60,
+      sourceWidth: 512,
+      sourceHeight: 512,
+      frameRate: 30,
+      totalFrames: 60,
+    },
+    {
+      id: 't',
+      trackId: 'v1',
+      type: 'text',
+      text: 'Title',
+      from: 10,
+      durationInFrames: 60,
+    },
+  ]);
+  project.timeline.tracks = [
+    { id: 'v1', order: 0 },
+    { id: 'v2', order: 1 },
+    { id: 'a1', order: 2 },
+  ];
+  project.timeline.compositions = [
+    {
+      id: NEST,
+      name: 'Nest',
+      editorKind: 'sequence',
+      fps: 30,
+      width: 1920,
+      height: 1080,
+      durationInFrames: 60,
+      tracks: [
+        { id: 'n1', order: 0 },
+        { id: 'n2', order: 1 },
+      ],
+      items: [
+        { id: 'nv', trackId: 'n1', type: 'video', mediaId: NESTED, from: 0, durationInFrames: 60 },
+        { id: 'na', trackId: 'n2', type: 'audio', mediaId: NESTED, from: 0, durationInFrames: 60 },
+      ],
+    },
+  ];
+  return project;
+};
+
 const claimOf = (overrides = {}) => {
   const operationId = randomUUID();
   return {
@@ -175,7 +270,18 @@ describe('bundled worker recipe', () => {
       'subtitles_unsupported',
     ],
     [
-      'a nested composition',
+      'an item type the engine has no renderer for',
+      (claim) =>
+        claim.snapshot.studio.graph.timeline.items.push({
+          id: 'm',
+          type: 'model3d',
+          from: 0,
+          durationInFrames: 10,
+        }),
+      'unsupported_item',
+    ],
+    [
+      'a compound clip with no sequence',
       (claim) =>
         claim.snapshot.studio.graph.timeline.items.push({
           id: 'c',
@@ -183,19 +289,101 @@ describe('bundled worker recipe', () => {
           from: 0,
           durationInFrames: 10,
         }),
-      'unsupported_item',
+      'invalid_graph',
     ],
     [
-      'an animation',
-      (claim) =>
-        claim.snapshot.studio.graph.timeline.items.push({
-          id: 'l',
-          type: 'lottie',
-          mediaId: ASSET,
+      'a compound clip naming a sequence the project lacks',
+      (claim) => (claim.snapshot.studio.graph = compositeGraph({ compositionId: 'gone' })),
+      'invalid_graph',
+    ],
+    [
+      'a composition sound clip naming a sequence the project lacks',
+      (claim) => {
+        claim.snapshot.studio.graph = compositeGraph();
+        claim.snapshot.studio.graph.timeline.items.find((item) => item.id === 'cs').compositionId = 'gone';
+      },
+      'invalid_graph',
+    ],
+    [
+      'a compound clip that contains itself',
+      (claim) => {
+        claim.snapshot.studio.graph = compositeGraph();
+        claim.snapshot.studio.graph.timeline.compositions[0].items.push({
+          id: 'self',
+          trackId: 'n1',
+          type: 'composition',
+          compositionId: NEST,
           from: 0,
           durationInFrames: 10,
-        }),
-      'unsupported_item',
+        });
+      },
+      'invalid_graph',
+    ],
+    [
+      'compound clips nested past the server limit',
+      (claim) => {
+        const graph = compositeGraph();
+        const place = (id, compositionId) => ({
+          id,
+          trackId: 'v1',
+          type: 'composition',
+          compositionId,
+          from: 0,
+          durationInFrames: 10,
+        });
+        // 17 levels: one more than the server's resolver allows.
+        for (let index = 0; index < 17; index++) {
+          graph.timeline.compositions.push({
+            id: `deep-${index}`,
+            tracks: [{ id: 'v1' }],
+            items: index < 16 ? [place(`p-${index}`, `deep-${index + 1}`)] : [],
+          });
+        }
+        graph.timeline.items.push(place('deep', 'deep-0'));
+        claim.snapshot.studio.graph = graph;
+      },
+      'invalid_graph',
+    ],
+    [
+      'a Lottie clip with no media',
+      (claim) => {
+        claim.snapshot.studio.graph = compositeGraph();
+        delete claim.snapshot.studio.graph.timeline.items.find((item) => item.type === 'lottie').mediaId;
+      },
+      'missing_media',
+    ],
+    [
+      'a Lottie clip read from a URL',
+      (claim) => {
+        claim.snapshot.studio.graph = compositeGraph();
+        claim.snapshot.studio.graph.timeline.items.find((item) => item.type === 'lottie').src = 'https://example.com/a.json';
+      },
+      'unsupported_source',
+    ],
+    [
+      'a Lottie whose images live outside its file',
+      (claim) => {
+        claim.snapshot.studio.graph = compositeGraph();
+        claim.snapshot.studio.graph.studioVectorDependencies = {
+          version: 1,
+          bindings: [
+            {
+              parent: { kind: 'project-import', id: LOTTIE, checksum: 'b'.repeat(64) },
+              location: { format: 'lottie-json', entry: null, pointer: '/assets/0/p', role: 'image' },
+              child: { kind: 'project-import', id: '33333333-3333-4333-8333-333333333333', checksum: 'c'.repeat(64) },
+            },
+          ],
+        };
+      },
+      'lottie_dependencies',
+    ],
+    [
+      'library media generated outside the library inside a compound clip',
+      (claim) => {
+        claim.snapshot.studio.graph = compositeGraph();
+        claim.snapshot.studio.graph.timeline.compositions[0].items[0].generatedId = 'g';
+      },
+      'unsupported_source',
     ],
     [
       'generated media',
@@ -221,6 +409,69 @@ describe('bundled worker recipe', () => {
       );
     });
   }
+
+  // FL-1557: titles, compound clips (with their sound clips) and Lottie render on the bundled worker.
+  it('renders a project with a title, a compound clip and a Lottie clip', () => {
+    const claim = claimOf();
+    claim.snapshot.studio.graph = compositeGraph();
+    const recipe = bundledRecipe(claim, { softwareRenderer: true });
+    // The media inside the compound clip and the Lottie file are read; the sound clip reads nothing.
+    assert.deepEqual([...recipe.mediaIds].sort(), [ASSET, LOTTIE, NESTED].sort());
+    assert.deepEqual(recipe.bounds, { inPoint: 0, outPoint: 120 });
+    assert.equal(recipe.endTicks, '120000');
+    // The graph reaches the engine unchanged, nested timeline included.
+    assert.deepEqual(recipe.graph, compositeGraph());
+    assert.equal(recipe.pass, 'engine');
+  });
+
+  it('renders compound clips nested as deep as the server allows, and one shared by several clips', () => {
+    const claim = claimOf();
+    const project = compositeGraph();
+    for (let index = 0; index < 16; index++) {
+      project.timeline.compositions.push({
+        id: `deep-${index}`,
+        tracks: [{ id: 'd1' }],
+        items: index < 15 ? [{ id: `p-${index}`, trackId: 'd1', type: 'composition', compositionId: `deep-${index + 1}`, from: 0, durationInFrames: 10 }] : [],
+      });
+    }
+    project.timeline.items.push({ id: 'deep', trackId: 'v1', type: 'composition', compositionId: 'deep-0', from: 0, durationInFrames: 10 });
+    project.timeline.items.push({ id: 'again', trackId: 'v1', type: 'composition', compositionId: NEST, from: 90, durationInFrames: 30 });
+    claim.snapshot.studio.graph = project;
+    assert.deepEqual([...bundledRecipe(claim, { softwareRenderer: true }).mediaIds].sort(), [ASSET, LOTTIE, NESTED].sort());
+  });
+
+  it('refuses effects inside a compound clip without a GPU, and renders them with one', () => {
+    const claim = claimOf();
+    claim.snapshot.studio.graph = compositeGraph();
+    claim.snapshot.studio.graph.timeline.compositions[0].items[0].effects = [{ id: 'e', type: 'gpu-blur', enabled: true }];
+    assert.throws(
+      () => bundledRecipe(claim, { softwareRenderer: true }),
+      (error) => error instanceof BundledRefusal && error.code === 'effects_need_gpu',
+    );
+    assert.ok(bundledRecipe(claim, { softwareRenderer: false }).mediaIds.has(NESTED));
+  });
+
+  it('frames a vertical export of a compound clip and a Lottie clip by their own picture size', () => {
+    const claim = claimOf();
+    const project = compositeGraph();
+    claim.snapshot.studio.graph = project;
+    Object.assign(claim.settings, {
+      resolution: '1080p',
+      shape: 'vertical',
+      reframe: {
+        version: 1,
+        shape: 'vertical',
+        output: { width: 1080, height: 1920 },
+        shots: { v: [{ t: 0, x: 0.5 }] },
+      },
+    });
+    const recipe = bundledRecipe(claim, { softwareRenderer: true });
+    const item = (id) => recipe.graph.timeline.items.find((entry) => entry.id === id);
+    assert.deepEqual([item('c').transform.width, item('c').transform.height], [1920, 1080]);
+    assert.deepEqual([item('l').transform.width, item('l').transform.height], [1080, 1080]);
+    // The compound clip's own timeline is drawn on its own canvas and is left as it was.
+    assert.deepEqual(recipe.graph.timeline.compositions, project.timeline.compositions);
+  });
 
   // FL-563: vertical and square exports render a graph derived from the project's.
   const shaped = (shape = 'vertical', resolution = '1080p') => {
@@ -795,6 +1046,58 @@ describe('bundled worker executor', () => {
     }
   });
 
+  // FL-1557: the compound clip's media and the Lottie file are granted inputs like any other media.
+  const compositeClaim = () => {
+    const claim = claimOf();
+    claim.snapshot.studio.graph = compositeGraph();
+    const inputBytes = new Map();
+    for (const [kind, id, bytes] of [
+      ['library-asset', NESTED, MEDIA],
+      ['project-import', LOTTIE, LOTTIE_BYTES],
+    ]) {
+      const url = `/api/render-workers/operations/${claim.operationId}/inputs/${id}`;
+      claim.inputs.push({ inputId: `${kind}:${id}`, kind, resourceId: id, checksum: sha256(bytes), url });
+      inputBytes.set(url, bytes);
+    }
+    return { claim, inputBytes };
+  };
+
+  it('renders a title, a compound clip and a Lottie clip from their verified grants', async () => {
+    const { claim, inputBytes } = compositeClaim();
+    const server = await fakeServer(claim, { inputBytes });
+    const read = {};
+    const renderer = fakeRenderer({
+      // Scratch inputs are removed once the claim ends; read them while the engine would.
+      onRender: async (job) => {
+        read.lottie = await readFile(job.files.get(LOTTIE));
+        read.nested = await readFile(job.files.get(NESTED));
+      },
+    });
+    try {
+      assert.equal((await run(claim, server, renderer)).status, 'completed');
+      const [job] = renderer.renders;
+      assert.deepEqual([...job.files.keys()].sort(), [ASSET, LOTTIE, NESTED].sort());
+      assert.deepEqual(read, { lottie: LOTTIE_BYTES, nested: MEDIA });
+      assert.deepEqual(job.project, compositeGraph());
+      assert.deepEqual(job.bounds, { inPoint: 0, outPoint: 120 });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('refuses a Lottie clip whose file was not granted', async () => {
+    const { claim, inputBytes } = compositeClaim();
+    claim.inputs = claim.inputs.filter((input) => input.resourceId !== LOTTIE);
+    const server = await fakeServer(claim, { inputBytes });
+    const renderer = fakeRenderer();
+    try {
+      assert.equal((await run(claim, server, renderer)).code, 'missing_media');
+      assert.equal(renderer.renders.length, 0);
+    } finally {
+      await server.close();
+    }
+  });
+
   it('reports a claim it cannot render with a stable code and reason, without planning it', async () => {
     const claim = claimOf();
     claim.settings.format = 'prores-422-hq';
@@ -866,13 +1169,38 @@ describe('bundled worker executor', () => {
     const claim = claimOf();
     claim.inputs.push({
       ...claim.inputs[0],
-      inputId: 'lut:x',
-      kind: 'lut',
+      inputId: 'model:x',
+      kind: 'model',
       resourceId: 'x',
     });
     const server = await fakeServer(claim);
     try {
       assert.equal((await run(claim, server, fakeRenderer())).code, 'unsupported_resource');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('serves a LUT kept with the project to the engine by its id (FL-1558)', async () => {
+    const claim = claimOf();
+    claim.inputs.push({
+      ...claim.inputs[0],
+      inputId: 'lut:x',
+      kind: 'lut',
+      resourceId: 'x',
+    });
+    const server = await fakeServer(claim);
+    let served;
+    const renderer = fakeRenderer({
+      onRender: async (job) => {
+        served = await readFile(job.files.get('x'));
+      },
+    });
+    try {
+      const result = await run(claim, server, renderer);
+      assert.notEqual(result.code, 'unsupported_resource');
+      assert.equal(renderer.renders.length, 1);
+      assert.deepEqual(served, MEDIA, 'the engine reads the LUT by its import id');
     } finally {
       await server.close();
     }

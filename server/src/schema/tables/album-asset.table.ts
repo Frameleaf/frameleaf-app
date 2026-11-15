@@ -1,7 +1,9 @@
 import {
   AfterDeleteTrigger,
+  Column,
   CreateDateColumn,
   ForeignKeyColumn,
+  Index,
   Table,
   Trigger,
   UpdateDateColumn,
@@ -29,6 +31,8 @@ import { connect_event_album_added } from 'src/schema/tables/connect-event.table
   functionName: media_import_collection_removed.name,
 })
 @UpdatedAtTrigger('album_asset_updatedAt')
+// FL-869: the album's custom order
+@Index({ name: 'album_asset_position_idx', columns: ['albumId', 'position'] })
 @AfterDeleteTrigger({
   scope: 'statement',
   function: album_asset_delete_audit,
@@ -47,6 +51,10 @@ export class AlbumAssetTable {
 
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
+
+  /** FL-869: place in the album's custom order; null until the album first switches to custom order. */
+  @Column({ type: 'double precision', nullable: true, default: null })
+  position!: number | null;
 
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;

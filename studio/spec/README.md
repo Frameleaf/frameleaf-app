@@ -10,8 +10,8 @@ Where the engine's behaviour is accidental (a parameter that does nothing, a dea
 
 | Path | What it is |
 | --- | --- |
-| `effects/<id>.md` | One page per effect of the parameter catalogue (54). |
-| `transitions/<id>.md` | One page per transition of the parameter catalogue (44). |
+| `effects/<id>.md` | One page per effect of the parameter catalogue (57). |
+| `transitions/<id>.md` | One page per transition of the parameter catalogue (48). |
 | `hdr.md` | HDR and colour management: the `metadata.colorManagement` record, when a project is HDR, the working space, PQ, HLG and SDR sources, the SDR tone map, HDR delivery and refusals (rules H1 to H17). |
 | `goldens/hdr.json` | Its goldens: stage vectors and small images from the real engine; `../tools/hdr-goldens.{mjs,browser.mjs,test.mjs}` define, generate and check them. |
 | `index.json` | Machine-readable index: every id, its page, `full` or `partial`, what is not specifiable, its route and its golden counts. |
@@ -25,11 +25,13 @@ Where the engine's behaviour is accidental (a parameter that does nothing, a dea
 | `../tools/render-goldens.test.mjs` | Engine-free checks: coverage, inputs, the progress curve, the comparison rule, the T6 reference, the published atlases and the clean-room lint. |
 | `../tools/clip-reference.mjs` | T6 written out: the Canvas 2D clip and stroke transitions computed from the pages alone. |
 | `../tools/keyframe-goldens.mjs`, `.browser.mjs`, `.test.mjs` | The keyframe cases and a reference written from `keyframes.md`; the engine run; the engine-free check. |
+| `sound.md` | Sound: clip fade curves, named fade shapes, and the gain law of a crossfade between clips (rules S1 to S9, FL-1555). |
 | `layers.md` | Layer compositing: frame assembly, layer order, background, transform and parents, opacity, blend modes, crop, corner radius, masks and shapes. |
 | `goldens/layers.json` | Layer goldens: 200 small project frames rendered by the engine's frame renderer. |
 | `text.md` | Titles and text: style fields, layout, spans, text motion, colours and alpha, and the bundled font files. |
 | `goldens/text.json` | Text goldens: layout and motion values and small frames, made with the bundled fonts it names by hash. |
 | `../tools/layer-goldens.*`, `../tools/text-goldens.*` | Cases and prose references, engine runs and engine-free checks of the layer and text pages; run from the two render-goldens files. |
+| `sound-channels.md` | Sound channel mapping (FL-1561): the `audioChannelMap` clip field, which source planes feed left and right, presets for mono, dual mono and picks from 5.1, worked values, its place before EQ and pan, and plane counts in a mix (rules M1 to M10). |
 
 The five colour effects that had numeric oracles before this spec (brightness, contrast, exposure, saturation, levels) keep `../tools/photometric-goldens.mjs` as an independent equation check; their pages restate those equations.
 
@@ -136,7 +138,7 @@ All of this is computed in binary64 and is exact: `goldens/transitions.json` hol
 
 Every other transition is refused (`HdrRenderUnavailableError`), and a native client must refuse too: the eight stylised or noise-driven GPU transitions (smoothCut, sparkles, glitch, chromatic, liquidDistort, lensWarpZoom, lightLeakBurn and filmGateSlip), whose glows, edge light, per-channel splits and HASH-driven warps have no defined meaning in linear light yet, and the 23 Canvas 2D transitions, which have no float route. A transition inside a nested composition is refused whatever its id, and so is the instance that holds it. The HDR goldens (`domain: "hdr"` in `goldens/transitions.json`) render every case of the 13 on two linear inputs (`hdrA`, `hdrB`) with highlights to 8, negative components, partial and zero coverage and hidden RGB under zero alpha, and pin each of the eight GPU refusals.
 
-**Routes.** 21 transitions have a GPU shader and are drawn by it whenever WebGPU is available, in preview and export: fade, wipe, slide, flip, clockWipe, iris, dissolve, additiveDissolve, blurDissolve, dipToColorDissolve, nonAdditiveDissolve, smoothCut, sparkles, glitch, pixelate, chromatic, radialBlur, liquidDistort, lensWarpZoom, lightLeakBurn and filmGateSlip. Their Canvas 2D fallbacks (used only without WebGPU) are not the contract. The other 23 are drawn with Canvas 2D in every case, and their pages specify the drawing as layers, transforms and exact clip geometry.
+**Routes.** 25 transitions have a GPU shader and are drawn by it whenever WebGPU is available, in preview and export: fade, wipe, slide, flip, clockWipe, iris, dissolve, additiveDissolve, blurDissolve, dipToColorDissolve, nonAdditiveDissolve, smoothCut, sparkles, glitch, pixelate, chromatic, radialBlur, liquidDistort, lensWarpZoom, lightLeakBurn, filmGateSlip, filmDissolve, crossZoom, cubeSpin and pagePeel. Their Canvas 2D fallbacks (used only without WebGPU) are not the contract. The other 23 are drawn with Canvas 2D in every case, and their pages specify the drawing as layers, transforms and exact clip geometry.
 
 **[T6] Canvas 2D edges.** On the canonical backend (CPU Canvas 2D) clip paths are not anti-aliased: a pixel is wholly inside a clip or wholly outside it. The backend decides this by scan conversion in fixed point, and the rule is exact. A native client follows it. `../tools/clip-reference.mjs` is this paragraph written out, and the engine-free test requires it to reproduce every pixel of every straight-edged clip golden (the 18 clip transitions whose outlines are polygons or rectangles; no channel farther than the SDR floor of 2/255, which is the 8-bit rounding of the blend), with the one exception recorded under radialWipe below.
 
@@ -167,8 +169,8 @@ Other canvas backends may anti-alias clip edges; where the two measured backends
 `index.json` is the machine-readable index. Coverage at this revision:
 
 <!-- index:start (generated by render-goldens.browser.mjs --write) -->
-- **Effects:** 54 specified, 52 fully and 2 partly (`gpu-fluted-glass`, `gpu-ascii`). Goldens: 550 cases, of which 432 are pixel, 10 edge and 75 statistical, plus 33 HDR refusals.
-- **Transitions:** 44 specified, 39 fully and 5 partly (`radialWipe`, `eyeIris`, `ovalIris`, `heartShape`, `lensWarpZoom`); 21 on the GPU route and 23 on Canvas 2D; 13 render in linear HDR. Goldens: 444 cases, of which 305 are pixel, 45 edge and 86 statistical, plus 8 HDR refusals and 112 progress-curve values.
+- **Effects:** 57 specified, 55 fully and 2 partly (`gpu-fluted-glass`, `gpu-ascii`). Goldens: 577 cases, of which 456 are pixel, 10 edge and 75 statistical, plus 36 HDR refusals.
+- **Transitions:** 48 specified, 43 fully and 5 partly (`radialWipe`, `eyeIris`, `ovalIris`, `heartShape`, `lensWarpZoom`); 25 on the GPU route and 23 on Canvas 2D; 13 render in linear HDR. Goldens: 478 cases, of which 333 are pixel, 46 edge and 87 statistical, plus 12 HDR refusals and 112 progress-curve values.
 
 | Effect | Category | HDR | Status | Goldens (pixel / edge / statistical) |
 | --- | --- | --- | --- | --- |
@@ -226,6 +228,9 @@ Other canvas backends may anti-alias clip edges; where the two measured backends
 | [`gpu-pixel-sort`](effects/gpu-pixel-sort.md) | stylize | refused | full | 8 / 0 / 0 |
 | [`gpu-pixel-sort-hq`](effects/gpu-pixel-sort-hq.md) | stylize | refused | full | 5 / 0 / 0 |
 | [`gpu-chroma-key`](effects/gpu-chroma-key.md) | keying | linear | full | 10 / 0 / 0 |
+| [`gpu-cdl`](effects/gpu-cdl.md) | color | refused | full | 11 / 0 / 0 |
+| [`gpu-lift-gamma-gain`](effects/gpu-lift-gamma-gain.md) | color | refused | full | 10 / 0 / 0 |
+| [`gpu-hue-curves`](effects/gpu-hue-curves.md) | color | refused | full | 3 / 0 / 0 |
 
 | Transition | Category | Route | HDR | Status | Goldens (pixel / edge / statistical) |
 | --- | --- | --- | --- | --- | --- |
@@ -273,6 +278,10 @@ Other canvas backends may anti-alias clip edges; where the two measured backends
 | [`lensWarpZoom`](transitions/lensWarpZoom.md) | custom | GPU | refused | partial | 11 / 0 / 0 |
 | [`lightLeakBurn`](transitions/lightLeakBurn.md) | custom | GPU | refused | full | 0 / 0 / 19 |
 | [`filmGateSlip`](transitions/filmGateSlip.md) | custom | GPU | refused | full | 0 / 0 / 12 |
+| [`filmDissolve`](transitions/filmDissolve.md) | dissolve | GPU | refused | full | 5 / 0 / 0 |
+| [`crossZoom`](transitions/crossZoom.md) | motion | GPU | refused | full | 6 / 0 / 0 |
+| [`cubeSpin`](transitions/cubeSpin.md) | flip | GPU | refused | full | 12 / 1 / 1 |
+| [`pagePeel`](transitions/pagePeel.md) | wipe | GPU | refused | full | 5 / 0 / 0 |
 <!-- index:end -->
 
 ## Checks

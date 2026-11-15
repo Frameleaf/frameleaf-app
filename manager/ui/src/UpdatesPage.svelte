@@ -5,7 +5,7 @@
   import { releaseNotesText } from './presentation';
   import { when } from './OverviewPage.svelte';
 
-  let { current, available, checkedAt, autoUpdate, autoUpdateFailure, disabled, check, review, setAuto } = $props<{
+  let { current, available, checkedAt, autoUpdate, autoUpdateFailure, disabled, check, review, setAuto, rollback = null, goBack } = $props<{
     current: string;
     available: { tag: string; publishedAt: string; notes?: string }[];
     checkedAt: number | null;
@@ -15,7 +15,11 @@
     check: () => void;
     review: (tag: string) => void;
     setAuto: (enabled: boolean) => void;
+    /** FL-973: the last update, while it can still be undone. */
+    rollback?: { from: string; to: string; updatedAt: number; until: number } | null;
+    goBack?: () => void;
   }>();
+  const day = (time: number) => new Date(time).toLocaleDateString([], { month: 'short', day: 'numeric' });
 
   const version = (tag: string) => tag.replace(/^frameleaf-v?/, '');
   const next = $derived(available[0]);
@@ -33,6 +37,19 @@
     <button class="button quiet" {disabled} onclick={check}><Icon name="refresh" />Check now</button>
   </div>
 </section>
+
+{#if rollback}
+  <section class="card mt16" aria-labelledby="up-back-title">
+    <div class="list-row">
+      <Icon name="restore" />
+      <div>
+        <strong id="up-back-title">Go back to {version(rollback.to)}</strong>
+        <p>{version(rollback.from)} was installed {when(rollback.updatedAt).replace(/^(Today|Last night|Yesterday)/, (w) => w.toLowerCase())}. If something isn’t right since then, Manager can put back {version(rollback.to)} and the database as it was just before the update, until {day(rollback.until)}.</p>
+      </div>
+      <button class="button quiet" {disabled} onclick={goBack}>Go back to {version(rollback.to)}…</button>
+    </div>
+  </section>
+{/if}
 
 {#if next}
   <section class="card mt16" aria-labelledby="up-next-title">

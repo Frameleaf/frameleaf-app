@@ -298,6 +298,23 @@ def _openvino_gpus(device_ids: list[str]) -> list[dict[str, Any]]:
     return gpus
 
 
+def _openvino_npu(device_ids: list[str]) -> dict[str, Any] | None:
+    """FL-984: the Intel NPU OpenVINO reaches, and where each model OpenVINO compiled went (NPU, or why not)."""
+    npu = next((device for device in device_ids if device.upper().startswith("NPU")), None)
+    if npu is None:
+        return None
+    name = npu
+    try:
+        import openvino as ov
+
+        name = str(ov.Core().get_property(npu, "FULL_DEVICE_NAME"))
+    except Exception:
+        pass
+    from frameleaf_ml.sessions.ort import npu_placements
+
+    return {"name": name, "models": dict(sorted(npu_placements.items()))}
+
+
 def container_report(providers: list[str], openvino_device_ids: list[str]) -> dict[str, Any]:
     """The GPU this container uses for AI work, the backend, the driver and the devices passed in."""
     render_nodes = _render_nodes()
@@ -331,7 +348,9 @@ def container_report(providers: list[str], openvino_device_ids: list[str]) -> di
             "kfdAccessible": kfd.exists() and os.access(kfd, os.R_OK | os.W_OK),
             "nvidia": Path("/dev/nvidiactl").exists() or Path("/proc/driver/nvidia").exists(),
             "nvidiaRequested": bool(os.environ.get("NVIDIA_VISIBLE_DEVICES")),
+            "accel": Path("/dev/accel").is_dir(),
         },
+        "npu": _openvino_npu(openvino_device_ids),
         # FL-159: GPU present on the host, visible here and usable by the runtime are three facts.
         "host": host_facts(),
         "computeCapability": _compute_capability() if backend == "CUDA" else None,
