@@ -1,9 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { vitest } from 'vitest';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { DownloadResponseDto } from 'src/dtos/download.dto.js';
-import { AssetVisibility, UserMetadataKey } from 'src/enum.js';
+import { AssetType, AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { DownloadService } from 'src/services/download.service.js';
 import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -39,6 +42,9 @@ const described = ({ id, ownerId, originalFileName, visibility }: ReturnType<typ
     },
   ],
 });
+
+/** Download rows as the repository streams them; these tests only read ids, Live Photo links and sizes. */
+const downloadStream = (items: object[]) => makeStream(items) as never;
 
 const downloadResponse: DownloadResponseDto = {
   totalSize: 105_000,
@@ -414,7 +420,12 @@ describe(DownloadService.name, () => {
         mocks.storage.checkFileExists.mockResolvedValue(false);
         mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([described(asset)] as never);
 
-        await sut.downloadArchive(authStub.admin, { assetIds: [asset.id], edited: false, includeSidecar: true });
+        await sut.downloadArchive(authStub.admin, {
+          assetIds: [asset.id],
+          edited: false,
+          includeSidecar: true,
+          format: 'original',
+        });
 
         expect(mocks.user.getMetadata).not.toHaveBeenCalled();
         expect(mocks.downloadRepository.getSidecars).toHaveBeenCalledWith([asset.id]);
@@ -603,7 +614,7 @@ describe(DownloadService.name, () => {
       async ({ sizes, totalSize, archives }) => {
         mocks.user.getMetadata.mockResolvedValue([]);
         mocks.downloadRepository.downloadUserId.mockReturnValue(
-          makeStream(sizes.map((size, index) => ({ id: `asset-${index}`, livePhotoVideoId: null, size }))),
+          downloadStream(sizes.map((size, index) => ({ id: `asset-${index}`, livePhotoVideoId: null, size }))),
         );
         await expect(
           sut.getDownloadInfo(authStub.admin, { userId: authStub.admin.user.id, archiveSize: 10 }),
@@ -624,7 +635,7 @@ describe(DownloadService.name, () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
       mocks.downloadRepository.downloadAssetIds.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -639,7 +650,7 @@ describe(DownloadService.name, () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-1']));
       mocks.downloadRepository.downloadAlbumId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -658,7 +669,7 @@ describe(DownloadService.name, () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-1']));
       mocks.downloadRepository.downloadAlbumId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -677,7 +688,7 @@ describe(DownloadService.name, () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-1']));
       mocks.downloadRepository.downloadAlbumId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -694,7 +705,7 @@ describe(DownloadService.name, () => {
     it('should return a list of archives (userId)', async () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -711,7 +722,7 @@ describe(DownloadService.name, () => {
       const auth = { ...authStub.admin, hideNsfwAssets: true };
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -726,7 +737,7 @@ describe(DownloadService.name, () => {
       const auth = authStub.adminWithElevatedPermission;
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -742,7 +753,7 @@ describe(DownloadService.name, () => {
     it('should split archives by size', async () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 5000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-3', livePhotoVideoId: null, size: 23_456 },
@@ -770,13 +781,13 @@ describe(DownloadService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadAssetIds.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: 'asset-3', size: 5000 },
           { id: 'asset-2', livePhotoVideoId: 'asset-4', size: 100_000 },
         ]),
       );
       mocks.downloadRepository.downloadMotionAssetIds.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-3', livePhotoVideoId: null, size: 23_456, originalPath: '/path/to/file.mp4' },
           { id: 'asset-4', livePhotoVideoId: null, size: 123_000, originalPath: '/path/to/file.mp4' },
         ]),
@@ -798,10 +809,10 @@ describe(DownloadService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadAssetIds.mockReturnValue(
-        makeStream([{ id: 'asset-1', livePhotoVideoId: 'asset-2', size: 5000 }]),
+        downloadStream([{ id: 'asset-1', livePhotoVideoId: 'asset-2', size: 5000 }]),
       );
       mocks.downloadRepository.downloadMotionAssetIds.mockReturnValue(
-        makeStream([{ id: 'asset-2', livePhotoVideoId: null, size: 23_456, originalPath: '/path/to/file.mp4' }]),
+        downloadStream([{ id: 'asset-2', livePhotoVideoId: null, size: 23_456, originalPath: '/path/to/file.mp4' }]),
       );
 
       await expect(sut.getDownloadInfo(auth, { assetIds })).resolves.toEqual({
@@ -821,10 +832,10 @@ describe(DownloadService.name, () => {
         { key: UserMetadataKey.Preferences, value: { download: { includeEmbeddedVideos: true } } },
       ]);
       mocks.downloadRepository.downloadAssetIds.mockReturnValue(
-        makeStream([{ id: 'asset-1', livePhotoVideoId: 'asset-2', size: 5000 }]),
+        downloadStream([{ id: 'asset-1', livePhotoVideoId: 'asset-2', size: 5000 }]),
       );
       mocks.downloadRepository.downloadMotionAssetIds.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-2', livePhotoVideoId: null, size: 23_456, originalPath: '/data/encoded-video/uuid-MP.mp4' },
         ]),
       );
@@ -841,11 +852,11 @@ describe(DownloadService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadAssetIds.mockReturnValue(
-        makeStream([{ id: 'asset-1', livePhotoVideoId: 'asset-3', size: 5000 }]),
+        downloadStream([{ id: 'asset-1', livePhotoVideoId: 'asset-3', size: 5000 }]),
       );
 
       mocks.downloadRepository.downloadMotionAssetIds.mockReturnValue(
-        makeStream([
+        downloadStream([
           {
             id: 'asset-2',
             livePhotoVideoId: null,
@@ -901,4 +912,222 @@ it('refuses private metadata exports from shared links before reading or streami
   ).rejects.toThrow();
   expect(mocks.asset.getForOriginals).not.toHaveBeenCalled();
   expect(mocks.storage.createZipStream).not.toHaveBeenCalled();
+});
+
+describe('FL-826 download formats', () => {
+  let sut: DownloadService;
+  let mocks: ServiceMocks;
+  let folder: string;
+
+  const archiveOf = () => {
+    const archive = { addFile: vitest.fn(), finalize: vitest.fn(), stream: new Readable() };
+    mocks.storage.createZipStream.mockReturnValue(archive);
+    return archive;
+  };
+  const read = async (input: unknown) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of input as Readable) {
+      chunks.push(chunk as Buffer);
+    }
+    return Buffer.concat(chunks).toString();
+  };
+  const sourceOf = (
+    asset: { id: string; originalFileName: string },
+    overrides: Partial<{ type: AssetType; width: number | null; height: number | null; fullsizePath: string }> = {},
+  ) => ({
+    id: asset.id,
+    type: AssetType.Image,
+    width: 4000,
+    height: 3000,
+    originalFileName: asset.originalFileName,
+    fullsizePath: null as string | null,
+    previewPath: '/thumbs/preview.jpeg',
+    editedPreviewPath: null,
+    ...overrides,
+  });
+  const linkAuth = (sharedLink: Partial<typeof authStub.adminSharedLink.sharedLink> & { webSizeOnly?: boolean }) => ({
+    ...authStub.adminSharedLink,
+    sharedLink: { ...authStub.adminSharedLink.sharedLink, ...sharedLink },
+  });
+
+  beforeEach(async () => {
+    ({ sut, mocks } = newTestService(DownloadService));
+    folder = await mkdtemp(join(tmpdir(), 'download-format-test-'));
+    mocks.partner.getAll.mockResolvedValue([]);
+    mocks.downloadRepository.getSidecars.mockResolvedValue([]);
+    mocks.downloadRepository.getAdditionalOriginals.mockReturnValue(makeStream([]));
+    mocks.storage.realpath.mockImplementation((path) => Promise.resolve(path));
+    mocks.user.getMetadata.mockResolvedValue([]);
+    mocks.media.renderDownloadJpeg.mockImplementation((input: string, output: string, maxEdge: number | null) =>
+      writeFile(output, `jpeg of ${input} at ${maxEdge ?? 'full size'}`),
+    );
+  });
+
+  afterEach(async () => {
+    await rm(folder, { recursive: true, force: true });
+  });
+
+  describe('getDownloadInfo', () => {
+    const items = [
+      { id: 'heic', type: AssetType.Image, originalFileName: 'a.heic', width: 4000, height: 3000, size: 2_000_000 },
+      { id: 'jpeg', type: AssetType.Image, originalFileName: 'b.jpg', width: 4000, height: 3000, size: 5_000_000 },
+      { id: 'small', type: AssetType.Image, originalFileName: 'c.jpg', width: 1600, height: 1200, size: 400_000 },
+      { id: 'video', type: AssetType.Video, originalFileName: 'd.mov', width: 3840, height: 2160, size: 90_000_000 },
+    ].map((item) => ({ ...item, livePhotoVideoId: null, fileSizeInByte: item.size, fullsizeSize: null }));
+    const info = (auth: typeof authStub.admin, format?: 'original' | 'jpeg' | 'web') => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(items.map(({ id }) => id)));
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set(items.map(({ id }) => id)));
+      mocks.downloadRepository.downloadAssetIds.mockReturnValue(makeStream(items));
+      return sut.getDownloadInfo(auth, { assetIds: items.map(({ id }) => id), format });
+    };
+
+    it('counts the original files by default', async () => {
+      await expect(info(authStub.admin)).resolves.toMatchObject({ totalSize: 97_400_000 });
+    });
+
+    it('counts a converted photo by its full-size file or an estimate, and leaves JPEGs and videos as they are', async () => {
+      items[0].fullsizeSize = 3_100_000 as never;
+      try {
+        await expect(info(authStub.admin, 'jpeg')).resolves.toMatchObject({
+          totalSize: 3_100_000 + 5_000_000 + 400_000 + 90_000_000,
+        });
+      } finally {
+        items[0].fullsizeSize = null;
+      }
+      const web = Math.round(2048 * 1536 * 0.6);
+      await expect(info(authStub.admin, 'web')).resolves.toMatchObject({
+        totalSize: web + web + 400_000 + 90_000_000,
+      });
+    });
+
+    it("follows the account's default format, never for a shared link, and always web for a web-size link", async () => {
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { download: { defaultFormat: 'web' } } },
+      ]);
+      const web = Math.round(2048 * 1536 * 0.6);
+      await expect(info(authStub.admin)).resolves.toMatchObject({ totalSize: web * 2 + 90_400_000 });
+      await expect(info(authStub.adminSharedLink)).resolves.toMatchObject({ totalSize: 97_400_000 });
+      await expect(info(linkAuth({ webSizeOnly: true }), 'original')).resolves.toMatchObject({
+        totalSize: web * 2 + 90_400_000,
+      });
+    });
+  });
+
+  describe('downloadArchive', () => {
+    const setup = (auth: typeof authStub.admin, assets: ReturnType<typeof AssetFactory.create>[]) => {
+      const ids = new Set(assets.map(({ id }) => id));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(ids);
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(ids);
+      mocks.asset.getForOriginals.mockResolvedValue(assets);
+      return archiveOf();
+    };
+
+    it('converts photos to full-size JPEGs with unique .jpg names, keeping JPEGs and videos as they are', async () => {
+      const heic = AssetFactory.create({ originalFileName: 'IMG_1.HEIC', originalPath: join(folder, 'IMG_1.HEIC') });
+      const heif = AssetFactory.create({ originalFileName: 'IMG_1.heif', originalPath: join(folder, 'IMG_1.heif') });
+      const jpeg = AssetFactory.create({ originalFileName: 'IMG_2.jpg', originalPath: '/library/IMG_2.jpg' });
+      const video = AssetFactory.create({ originalFileName: 'IMG_3.MOV', originalPath: '/library/IMG_3.MOV' });
+      const archive = setup(authStub.admin, [heic, heif, jpeg, video]);
+      mocks.downloadRepository.getConversionSources.mockResolvedValue([
+        sourceOf(heic),
+        sourceOf(heif),
+        sourceOf(jpeg),
+        sourceOf(video, { type: AssetType.Video }),
+      ]);
+
+      await sut.downloadArchive(authStub.admin, {
+        assetIds: [heic.id, heif.id, jpeg.id, video.id],
+        includeSidecar: false,
+        format: 'jpeg',
+      });
+
+      const calls = archive.addFile.mock.calls;
+      expect(calls.map(([, name]) => name)).toEqual(['IMG_1.jpg', 'IMG_1+1.jpg', 'IMG_2.jpg', 'IMG_3.MOV']);
+      expect(calls[2][0]).toBe('/library/IMG_2.jpg');
+      expect(calls[3][0]).toBe('/library/IMG_3.MOV');
+      // nothing renders until the archive reads the entry
+      expect(mocks.media.renderDownloadJpeg).not.toHaveBeenCalled();
+      await expect(read(calls[0][0])).resolves.toBe(`jpeg of ${heic.originalPath} at full size`);
+      expect(mocks.media.copyDownloadMetadata).toHaveBeenCalledWith(heic.originalPath, expect.any(String), {
+        removeLocation: false,
+      });
+      expect(mocks.downloadRepository.getAdditionalOriginals).not.toHaveBeenCalled();
+    });
+
+    it('renders a RAW original from its full-size copy, else its preview', async () => {
+      const raw = AssetFactory.create({ originalFileName: 'DSC_1.NEF', originalPath: '/library/DSC_1.NEF' });
+      const archive = setup(authStub.admin, [raw]);
+      mocks.downloadRepository.getConversionSources.mockResolvedValue([
+        sourceOf(raw, { fullsizePath: '/thumbs/fullsize.jpeg' }),
+      ]);
+      mocks.media.renderDownloadJpeg
+        .mockRejectedValueOnce(new Error('unreadable'))
+        .mockImplementation((input: string, output: string) => writeFile(output, `from ${input}`));
+
+      await sut.downloadArchive(authStub.admin, { assetIds: [raw.id], includeSidecar: false, format: 'jpeg' });
+
+      const [[input, name]] = archive.addFile.mock.calls;
+      expect(name).toBe('DSC_1.jpg');
+      await expect(read(input)).resolves.toBe('from /thumbs/preview.jpeg');
+      expect(mocks.media.renderDownloadJpeg.mock.calls.map(([source]) => source)).toEqual([
+        '/thumbs/fullsize.jpeg',
+        '/thumbs/preview.jpeg',
+      ]);
+      expect(mocks.media.copyDownloadMetadata).toHaveBeenCalledWith('/library/DSC_1.NEF', expect.any(String), {
+        removeLocation: false,
+      });
+    });
+
+    it('gives a web-size-only link web-size JPEGs whatever it asks for, from the edited pixels', async () => {
+      const photo = AssetFactory.create({ originalFileName: 'IMG_4.jpg', originalPath: '/library/IMG_4.jpg' });
+      const archive = setup(authStub.adminSharedLink, [{ ...photo, editedPath: '/thumbs/edited.jpeg' } as never]);
+      mocks.downloadRepository.getConversionSources.mockResolvedValue([sourceOf(photo)]);
+
+      await sut.downloadArchive(linkAuth({ webSizeOnly: true }), { assetIds: [photo.id], format: 'original' });
+
+      expect(mocks.asset.getForOriginals).toHaveBeenCalledWith([photo.id], true);
+      const [[input, name]] = archive.addFile.mock.calls;
+      expect(name).toBe('IMG_4.jpg');
+      await expect(read(input)).resolves.toBe('jpeg of /thumbs/edited.jpeg at 2048');
+    });
+
+    it('leaves the location out of a converted photo for a link that hides metadata, and still refuses originals', async () => {
+      const photo = AssetFactory.create({ originalFileName: 'IMG_5.HEIC', originalPath: '/library/IMG_5.HEIC' });
+      const video = AssetFactory.create({ originalFileName: 'IMG_6.MOV', originalPath: '/library/IMG_6.MOV' });
+      const auth = linkAuth({ showExif: false, webSizeOnly: true });
+
+      let archive = setup(auth, [photo]);
+      mocks.downloadRepository.getConversionSources.mockResolvedValue([sourceOf(photo)]);
+      await sut.downloadArchive(auth, { assetIds: [photo.id] });
+      await read(archive.addFile.mock.calls[0][0]);
+      expect(mocks.media.copyDownloadMetadata).toHaveBeenCalledWith('/library/IMG_5.HEIC', expect.any(String), {
+        removeLocation: true,
+      });
+
+      archive = setup(auth, [photo, video]);
+      mocks.downloadRepository.getConversionSources.mockResolvedValue([
+        sourceOf(photo),
+        sourceOf(video, { type: AssetType.Video }),
+      ]);
+      await expect(sut.downloadArchive(auth, { assetIds: [photo.id, video.id] })).rejects.toThrow(
+        'Downloads are turned off while metadata is hidden',
+      );
+      expect(archive.addFile).not.toHaveBeenCalled();
+    });
+
+    it('keeps a portable library export to originals whatever the default format', async () => {
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { download: { defaultFormat: 'jpeg' } } },
+      ]);
+      const photo = AssetFactory.create({ originalFileName: 'IMG_7.HEIC', originalPath: '/library/IMG_7.HEIC' });
+      const archive = setup(authStub.admin, [photo]);
+      mocks.downloadRepository.hasAdditionalOriginals.mockResolvedValue(false);
+      mocks.downloadRepository.getLibraryManifest.mockResolvedValue({} as never);
+
+      await sut.downloadArchive(authStub.admin, { assetIds: [photo.id], includeLibraryMetadata: true });
+
+      expect(mocks.downloadRepository.getConversionSources).not.toHaveBeenCalled();
+      expect(archive.addFile.mock.calls[0]).toEqual(['/library/IMG_7.HEIC', 'IMG_7.HEIC']);
+    });
+  });
 });

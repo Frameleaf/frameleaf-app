@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { DownloadFormatSchema } from 'src/enum.js';
 
 const DownloadInfoSchema = z
   .object({
@@ -7,6 +8,9 @@ const DownloadInfoSchema = z
     albumId: z.uuidv4().optional().describe('Album ID to download'),
     userId: z.uuidv4().optional().describe('User ID to download assets from'),
     archiveSize: z.int().min(1).optional().describe('Archive size limit in bytes'),
+    format: DownloadFormatSchema.optional().describe(
+      "FL-826: the format the sizes are for. Left out: the account's download.defaultFormat (shared links: original). A link limited to web size always gets web",
+    ),
   })
   .meta({ id: 'DownloadInfoDto' });
 
@@ -67,12 +71,18 @@ const DownloadArchiveSchema = z
       .optional()
       .describe('Owned bookmarks to include in the portable manifest'),
     archiveName: z.string().optional().describe('The name of the archive to download, without extension'),
+    format: DownloadFormatSchema.optional().describe(
+      "FL-826: photos as the original, a full-size JPEG or a web-size JPEG (converted files end in .jpg); videos stay original. Left out: the account's download.defaultFormat (shared links: original). A link limited to web size always gets web",
+    ),
   })
   .refine(
     (value) => value.includeLibraryMetadata || (!value.includeSources && !value.bookmarkIds?.length),
     'Bookmarks and sources require a portable manifest',
   )
-  .refine((value) => !value.includeLibraryMetadata || !value.edited, 'Portable library exports use originals')
+  .refine(
+    (value) => !value.includeLibraryMetadata || (!value.edited && (value.format ?? 'original') === 'original'),
+    'Portable library exports use originals',
+  )
   .refine(
     (value) =>
       !value.includeLibraryMetadata ||

@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
-import { AssetOrderSchema, UserAvatarColorSchema } from 'src/enum.js';
+import { AssetOrderSchema, DownloadFormatSchema, UserAvatarColorSchema } from 'src/enum.js';
 import { DUPLICATE_KEEP_RULES } from 'src/utils/duplicate-keep-rules.js';
 import { NotificationLocalePreferencesSchema } from 'src/utils/notification-locale.js';
 import {
@@ -154,6 +154,11 @@ const DownloadUpdateSchema = z
       .boolean()
       .optional()
       .describe("Whether an archive download puts each photo's details file (XMP sidecar) beside it")
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
+    defaultFormat: DownloadFormatSchema.optional()
+      .describe(
+        'FL-826: the format downloads use unless one is chosen: original, jpeg (high-quality JPEG, full size) or web (2048 px JPEG). Archive downloads that name no format follow it',
+      )
       .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .optional()
@@ -518,6 +523,12 @@ const DownloadResponseSchema = z
     includeSidecar: z
       .boolean()
       .describe("Whether an archive download puts each photo's details file (XMP sidecar) beside it")
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
+    // a plain string, not an enum: a response enum can never gain a value without breaking the native apps
+    defaultFormat: z
+      .string()
+      .optional()
+      .describe('FL-826: the format downloads use unless one is chosen: original, jpeg or web (always sent)')
       .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'DownloadResponse' });

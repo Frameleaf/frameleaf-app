@@ -215,6 +215,8 @@ export type AuthSharedLink = {
   allowUpload: boolean;
   allowDownload: boolean;
   password: string | null;
+  /** FL-826: downloads through the link are web size only (`shared_link_option`; absent is off). */
+  webSizeOnly?: boolean;
 };
 
 export type SharedLink = {
@@ -238,6 +240,8 @@ export type SharedLink = {
   /** Loaded by `SharedLinkRepository.getAll`, which does not load a link's contents. */
   assetCount?: number | null;
   coverAssets?: { id: string }[];
+  /** FL-826: downloads through the link are web size only (`shared_link_option`; absent is off). */
+  webSizeOnly?: boolean;
 };
 
 export type Album = Selectable<AlbumTable> & {

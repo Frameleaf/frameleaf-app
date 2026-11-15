@@ -622,6 +622,17 @@ describe('Duplicate keep rules (FL-832)', () => {
   });
 });
 
+describe('Download format (FL-826)', () => {
+  it('starts as the original, stores only a change, and takes only the three formats', () => {
+    expect(getPreferences([]).download.defaultFormat).toBe('original');
+    const changed = mergePreferences(getPreferences([]), { download: { defaultFormat: 'web' } }, 'user');
+    expect(getPreferencesPartial(changed)).toEqual({ download: { defaultFormat: 'web' } });
+    const schema = UserPreferencesUpdateDto.schema;
+    expect(schema.safeParse({ download: { defaultFormat: 'jpeg' } }).success).toBe(true);
+    expect(schema.safeParse({ download: { defaultFormat: 'tiff' } }).success).toBe(false);
+  });
+});
+
 describe('shared link default expiry preference (FL-922)', () => {
   it('stores a chosen number of days, and clearing it falls back to the server default again', () => {
     const chosen = mergePreferences(getPreferences([]), { sharedLinks: { defaultExpiryDays: 14 } }, 'user');
