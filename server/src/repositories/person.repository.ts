@@ -880,6 +880,8 @@ export class PersonRepository {
                 eb
                   .selectFrom('asset')
                   .whereRef('asset.id', '=', 'asset_face.assetId')
+                  // FL-1365: only the owner's own photos, as in the People list (getAllForUser)
+                  .whereRef('asset.ownerId', '=', 'person.ownerId')
                   .where(isPeopleVisible(userId, 'asset', options.revealLockedOwnerId))
                   .where('asset.deletedAt', 'is', null)
                   .$call((qb) => withHiddenContentFilter(qb, options)),
