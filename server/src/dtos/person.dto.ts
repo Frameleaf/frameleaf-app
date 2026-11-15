@@ -529,7 +529,11 @@ function mapFacesWithoutPerson(face: AssetFace, edits?: AssetEditActionItem[], a
     correctedAt: asDateTimeString(face.correctedAt ?? null) ?? null,
     hiddenAt: asDateTimeString(face.deletedAt) ?? null,
     // only for a face whose eyes have been checked
-    ...(face.eyeScoreVersion != null && { eyesOpen: face.eyesOpen ?? null, eyeSharpness: face.eyeSharpness ?? null }),
+    ...(face.eyeScoreVersion !== null &&
+      face.eyeScoreVersion !== undefined && {
+        eyesOpen: face.eyesOpen ?? null,
+        eyeSharpness: face.eyeSharpness ?? null,
+      }),
   };
 }
 

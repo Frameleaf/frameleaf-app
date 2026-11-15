@@ -854,6 +854,27 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'machineLearning.enabled = value',
   },
   {
+    pattern: 'machineLearning.eyeScores.closedBelow',
+    // FL-863: the culling summary's thresholds; no settings control yet
+    kind: 'api-only',
+    file: '../server/src/repositories/photography-workspace.repository.ts',
+    evidence: 'closedBelow',
+  },
+  {
+    pattern: 'machineLearning.eyeScores.enabled',
+    // FL-863: on by default; no settings switch yet
+    kind: 'api-only',
+    file: '../server/src/services/person.service.ts',
+    evidence: 'eyeScores.enabled',
+  },
+  {
+    pattern: 'machineLearning.eyeScores.softBelow',
+    // FL-863: the culling summary's thresholds; no settings control yet
+    kind: 'api-only',
+    file: '../server/src/repositories/photography-workspace.repository.ts',
+    evidence: 'softBelow',
+  },
+  {
     pattern: 'machineLearning.facialRecognition.enabled',
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/intelligence/Faces.svelte',
