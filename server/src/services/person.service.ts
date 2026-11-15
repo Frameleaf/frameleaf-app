@@ -245,6 +245,8 @@ export class PersonService extends BaseService {
     return {
       people: items.map((person) => ({
         ...mapPerson(person),
+        // FL-874: every person listed here is the caller's own, so are their categories
+        categoryIds: person.categoryIds,
         assetCount: Number(person.assetCount),
         lastSeenAt: person.lastSeenAt ? new Date(person.lastSeenAt).toISOString() : null,
       })),
@@ -1010,16 +1012,19 @@ export class PersonService extends BaseService {
    * as for the thumbnail, never one the session's NSFW setting hides.
    */
   private async mapOwnPerson(auth: AuthDto, person: Person, profile?: PersonProfile): Promise<PersonResponseDto> {
-    const [featuredAssetId, details] = await Promise.all([
+    const isOwner = person.ownerId === auth.user.id;
+    const [featuredAssetId, details, categoryIds] = await Promise.all([
       this.featuredAssetId(auth, person),
       profile ?? this.personRepository.getProfile(person),
+      // FL-874: categories are the owner's alone; every person read here is the caller's own, and this keeps it so
+      isOwner ? this.personRepository.getPersonCategoryIds(person) : undefined,
     ]);
     return {
       ...mapPerson(person),
       featuredAssetId,
       deathDate: asDateString(details?.deathDate ?? null),
       // FL-941: notes are the owner's alone; every person read here is the caller's own, and this keeps it so
-      ...(person.ownerId === auth.user.id && { notes: details?.notes ?? null }),
+      ...(isOwner && { notes: details?.notes ?? null, categoryIds }),
     };
   }
 
@@ -2160,6 +2165,8 @@ export class PersonService extends BaseService {
               mergeId,
               targetPerson.personGroupId,
             );
+            // FL-874: the person who stays is also in the merged-away person's categories
+            await this.personRepository.copyCategoryMembers(targetPerson.ownerId, mergeId, targetPerson.personGroupId);
             return this.personRepository.delete([mergeId], targetPerson.ownerId);
           }, targetPerson.ownerId);
           await this.emitAssetsChanged(affected);

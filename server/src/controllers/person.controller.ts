@@ -19,6 +19,13 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
+  PersonCategoriesResponseDto,
+  PersonCategoriesSetDto,
+  PersonCategoryCreateDto,
+  PersonCategoryResponseDto,
+  PersonCategoryUpdateDto,
+} from 'src/dtos/person-category.dto.js';
+import {
   AssetFaceUpdateDto,
   MergePersonDto,
   MergeSuggestionsResponseDto,
@@ -44,6 +51,7 @@ import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PersonCategoryService } from 'src/services/person-category.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -54,6 +62,7 @@ export class PersonController {
   constructor(
     private service: PersonService,
     private logger: LoggingRepository,
+    private categoryService: PersonCategoryService,
   ) {
     this.logger.setContext(PersonController.name);
   }
@@ -186,6 +195,63 @@ export class PersonController {
     return this.service.deleteSplitVerdict(auth, dto);
   }
 
+  // FL-874: declared before `getPerson(:id)` and the other `:id` routes, like the merge suggestions above, so
+  // `/people/categories` is never read as a person id.
+  @Get('categories')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: 'Get person categories',
+    description:
+      "Retrieve the caller's categories for their people, such as Family, Friends and Work, in their order. An " +
+      'account starts with Family, Friends and Work, made the first time its categories are read; once deleted, ' +
+      'they are not made again. Categories are per account: a partner never sees them.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getPersonCategories(@Auth() auth: AuthDto): Promise<PersonCategoryResponseDto[]> {
+    return this.categoryService.getAll(auth);
+  }
+
+  @Post('categories')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @Endpoint({
+    summary: 'Create a person category',
+    description: "Add a category for the caller's people. It comes after the caller's other categories.",
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  createPersonCategory(
+    @Auth() auth: AuthDto,
+    @Body() dto: PersonCategoryCreateDto,
+  ): Promise<PersonCategoryResponseDto> {
+    return this.categoryService.create(auth, dto);
+  }
+
+  @Patch('categories/:id')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @Endpoint({
+    summary: 'Update a person category',
+    description: "Rename, recolor or reorder one of the caller's categories.",
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  updatePersonCategory(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: PersonCategoryUpdateDto,
+  ): Promise<PersonCategoryResponseDto> {
+    return this.categoryService.update(auth, id, dto);
+  }
+
+  @Delete('categories/:id')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Delete a person category',
+    description: "Delete one of the caller's categories. The people in it are not changed.",
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  deletePersonCategory(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.categoryService.delete(auth, id);
+  }
+
   @Post('corrections/:id/undo')
   @Authenticated({ permission: Permission.PersonUpdate })
   @HttpCode(HttpStatus.OK)
@@ -251,6 +317,23 @@ export class PersonController {
   })
   deletePerson(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.delete(auth, id);
+  }
+
+  @Put(':id/categories')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @Endpoint({
+    summary: "Set a person's categories",
+    description:
+      "Put one of the caller's own people in exactly these of the caller's categories, replacing the ones they were " +
+      "in. An empty list takes them out of all of them. A category that is not the caller's answers 400.",
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  setPersonCategories(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: PersonCategoriesSetDto,
+  ): Promise<PersonCategoriesResponseDto> {
+    return this.categoryService.setPersonCategories(auth, id, dto);
   }
 
   @Get(':id/corrections')

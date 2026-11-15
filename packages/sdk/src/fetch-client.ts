@@ -5667,6 +5667,8 @@ export type PartnerLockedEncryptionDto = {
 export type PersonResponseDto = {
     /** Person date of birth */
     birthDate: string | null;
+    /** The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else */
+    categoryIds?: string[];
     /** Person color (hex) */
     color?: string;
     /** Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller */
@@ -8697,6 +8699,8 @@ export type SearchFilterBranch = {
     ocr?: StringSimilarityFilter;
     originalFileName?: StringPatternFilter;
     originalPath?: StringPatternFilter;
+    /** The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them */
+    personCategoryIds?: IdsFilter;
     personIds?: IdsFilter;
     petIds?: IdsFilter;
     rating?: NumberFilterNullable;
@@ -8758,6 +8762,8 @@ export type SearchFilter = {
     or?: SearchFilterBranch[];
     originalFileName?: StringPatternFilter;
     originalPath?: StringPatternFilter;
+    /** The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them */
+    personCategoryIds?: IdsFilter;
     personIds?: IdsFilter;
     petIds?: IdsFilter;
     rating?: NumberFilterNullable;
@@ -13621,6 +13627,8 @@ export type PeopleListItemDto = {
     assetCount: number;
     /** Person date of birth */
     birthDate: string | null;
+    /** The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else */
+    categoryIds?: string[];
     /** Person color (hex) */
     color?: string;
     /** Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller */
@@ -13690,6 +13698,34 @@ export type PeopleUpdateItem = {
 export type PeopleUpdateDto = {
     /** People to update */
     people: PeopleUpdateItem[];
+};
+export type PersonCategoryResponseDto = {
+    /** Category color (hex) */
+    color: string | null;
+    /** Creation date */
+    createdAt: string;
+    /** Category ID */
+    id: string;
+    /** Category name */
+    name: string;
+    /** Position among the categories, lowest first */
+    order: number;
+    /** Last update date */
+    updatedAt: string;
+};
+export type PersonCategoryCreateDto = {
+    /** Category color (hex) */
+    color?: string | null;
+    /** Category name */
+    name: string;
+};
+export type PersonCategoryUpdateDto = {
+    /** Category color (hex); null clears it */
+    color?: string | null;
+    /** Category name */
+    name?: string;
+    /** Position among the categories, lowest first */
+    order?: number;
 };
 export type FaceEvidenceDto = {
     /** The complete photo the face is in */
@@ -13830,6 +13866,14 @@ export type PersonUpdateDto = {
     name?: string;
     /** Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them */
     notes?: string | null;
+};
+export type PersonCategoriesSetDto = {
+    /** The caller's categories the person is in from now on; an empty list takes them out of all */
+    categoryIds: string[];
+};
+export type PersonCategoriesResponseDto = {
+    /** The caller's categories the person is in */
+    categoryIds: string[];
 };
 export type PersonCorrectionsResponseDto = {
     /** Manual face decisions for this person, most recent first */
@@ -36055,6 +36099,59 @@ export function updatePeople({ peopleUpdateDto }: {
     })));
 }
 /**
+ * Get person categories
+ */
+export function getPersonCategories(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonCategoryResponseDto[];
+    }>("/people/categories", {
+        ...opts
+    }));
+}
+/**
+ * Create a person category
+ */
+export function createPersonCategory({ personCategoryCreateDto }: {
+    personCategoryCreateDto: PersonCategoryCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PersonCategoryResponseDto;
+    }>("/people/categories", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: personCategoryCreateDto
+    })));
+}
+/**
+ * Delete a person category
+ */
+export function deletePersonCategory({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/people/categories/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Update a person category
+ */
+export function updatePersonCategory({ id, personCategoryUpdateDto }: {
+    id: string;
+    personCategoryUpdateDto: PersonCategoryUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonCategoryResponseDto;
+    }>(`/people/categories/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: personCategoryUpdateDto
+    })));
+}
+/**
  * Undo a face correction
  */
 export function undoCorrection({ id }: {
@@ -36197,6 +36294,22 @@ export function updatePerson({ id, personUpdateDto }: {
         ...opts,
         method: "PUT",
         body: personUpdateDto
+    })));
+}
+/**
+ * Set a person's categories
+ */
+export function setPersonCategories({ id, personCategoriesSetDto }: {
+    id: string;
+    personCategoriesSetDto: PersonCategoriesSetDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonCategoriesResponseDto;
+    }>(`/people/${encodeURIComponent(id)}/categories`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: personCategoriesSetDto
     })));
 }
 /**

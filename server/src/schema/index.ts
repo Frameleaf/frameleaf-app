@@ -211,6 +211,11 @@ import { PartnerAuditTable } from 'src/schema/tables/partner-audit.table.js';
 import { PartnerScopeTable } from 'src/schema/tables/partner-scope.table.js';
 import { PartnerTable } from 'src/schema/tables/partner.table.js';
 import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
+import {
+  PersonCategoryMemberTable,
+  PersonCategorySeedTable,
+  PersonCategoryTable,
+} from 'src/schema/tables/person-category.table.js';
 import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonMergeCandidateTable } from 'src/schema/tables/person-merge-candidate.table.js';
@@ -538,6 +543,9 @@ export class ImmichDatabase {
     PhysicalFileTable,
     PersonGroupTable,
     PersonMergeCandidateTable,
+    PersonCategoryTable,
+    PersonCategoryMemberTable,
+    PersonCategorySeedTable,
     PersonProfileTable,
     PersonSplitCandidateTable,
     PersonGroupAuditTable,
@@ -858,6 +866,9 @@ export interface DB extends QueueDatabase {
   person_audit: PersonAuditTable;
   person_group: PersonGroupTable;
   person_merge_candidate: PersonMergeCandidateTable;
+  person_category: PersonCategoryTable;
+  person_category_member: PersonCategoryMemberTable;
+  person_category_seed: PersonCategorySeedTable;
   person_profile: PersonProfileTable;
   person_split_candidate: PersonSplitCandidateTable;
   person_group_audit: PersonGroupAuditTable;
