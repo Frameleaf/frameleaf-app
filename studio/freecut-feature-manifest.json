@@ -2937,8 +2937,10 @@
         "evidence": [
           "0015-transition-float-alpha.patch",
           "0048-transition-input-meaning.patch",
+          "0185-editor-import-transitions.patch",
           "e6bca4d7d8"
         ],
+        "note": "FL-1564 adds Film Dissolve, Cross Zoom, Cube Spin and Page Peel on the GPU route, with spec pages and goldens.",
         "status": "shipped"
       },
       "id": "readme.timeline-editing.4",

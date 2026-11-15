@@ -270,7 +270,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '618ffdaaf2d499ecd7cf680d60879e3f173e18aa10e7aa8171764d822a7e3755' ||
           // FL-1563 marker ranges; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            'd6b987310298fd087ee08d8a7dae66ab867d566ebc7a20f35737d3b419d3ac4d')),
+            'd6b987310298fd087ee08d8a7dae66ab867d566ebc7a20f35737d3b419d3ac4d' ||
+          // FL-1564 new transitions; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            'bbcef0a3103b1ac8983a3ea53f8aee7d7995115891d8e40766135b64bd99b84c')),
     'SOURCE_BROWSER',
   )
   check(

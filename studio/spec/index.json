@@ -1703,6 +1703,79 @@
         "statistical": 12,
         "refused": 0
       }
+    },
+    {
+      "id": "filmDissolve",
+      "category": "dissolve",
+      "directions": [],
+      "spec": "transitions/filmDissolve.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "crossZoom",
+      "category": "motion",
+      "directions": [],
+      "spec": "transitions/crossZoom.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 6,
+        "pixel": 6,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
+    },
+    {
+      "id": "cubeSpin",
+      "category": "flip",
+      "directions": [
+        "from-left",
+        "from-right",
+        "from-top",
+        "from-bottom"
+      ],
+      "spec": "transitions/cubeSpin.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 14,
+        "pixel": 12,
+        "edge": 1,
+        "statistical": 1,
+        "refused": 0
+      }
+    },
+    {
+      "id": "pagePeel",
+      "category": "wipe",
+      "directions": [],
+      "spec": "transitions/pagePeel.md",
+      "route": "gpu",
+      "hdr": "refused",
+      "status": "full",
+      "notSpecifiable": [],
+      "goldens": {
+        "cases": 5,
+        "pixel": 5,
+        "edge": 0,
+        "statistical": 0,
+        "refused": 0
+      }
     }
   ]
 }
