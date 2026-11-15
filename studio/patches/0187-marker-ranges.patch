@@ -12,10 +12,10 @@ index a8b4408..f37e061 100644
  
  const transitionSchema = z.object({
 diff --git a/src/features/timeline/stores/actions/composition-duration-actions.test.ts b/src/features/timeline/stores/actions/composition-duration-actions.test.ts
-index e3201bd..a133b4d 100644
+index e3201bd..5fe1ee4 100644
 --- a/src/features/timeline/stores/actions/composition-duration-actions.test.ts
 +++ b/src/features/timeline/stores/actions/composition-duration-actions.test.ts
-@@ -249,6 +249,22 @@ describe('trimCompositionToActiveRegion', () => {
+@@ -249,6 +249,24 @@ describe('trimCompositionToActiveRegion', () => {
      ])
    })
  
@@ -25,6 +25,8 @@ index e3201bd..a133b4d 100644
 +      { id: 'across-start', frame: 150, durationInFrames: 100, color: '#00ff00', note: 'intro' },
 +      { id: 'across-end', frame: 350, durationInFrames: 200, color: '#00ff00' },
 +      { id: 'outside', frame: 50, durationInFrames: 40, color: '#00ff00' },
++      { id: 'ends-at-start', frame: 150, durationInFrames: 50, color: '#00ff00' },
++      { id: 'starts-at-end', frame: 400, durationInFrames: 10, color: '#00ff00' },
 +    ])
 +
 +    trimCompositionToActiveRegion()
@@ -39,10 +41,10 @@ index e3201bd..a133b4d 100644
      openCompositionWithLayers()
      trimCompositionToActiveRegion()
 diff --git a/src/features/timeline/stores/actions/composition-duration-actions.ts b/src/features/timeline/stores/actions/composition-duration-actions.ts
-index 9deee40..9672577 100644
+index 9deee40..5382640 100644
 --- a/src/features/timeline/stores/actions/composition-duration-actions.ts
 +++ b/src/features/timeline/stores/actions/composition-duration-actions.ts
-@@ -194,9 +194,16 @@ export function trimCompositionToActiveRegion(): boolean {
+@@ -194,9 +194,18 @@ export function trimCompositionToActiveRegion(): boolean {
  
        const nextDuration = outPoint - inPoint
        const markersState = useMarkersStore.getState()
@@ -53,7 +55,9 @@ index 9deee40..9672577 100644
 +      const nextMarkers = markersState.markers.flatMap((marker) => {
 +        const start = marker.frame - inPoint
 +        const end = start + Math.max(0, marker.durationInFrames ?? 0)
-+        if (end < 0 || start > nextDuration || (!marker.durationInFrames && start < 0)) return []
++        const isRange = (marker.durationInFrames ?? 0) > 0
++        // A range keeps only frames inside the span; a point keeps the span's ends too.
++        if (isRange ? end <= 0 || start >= nextDuration : start < 0 || start > nextDuration) return []
 +        const frame = Math.max(0, start)
 +        const length = Math.min(nextDuration, end) - frame
 +        const { durationInFrames: _drop, ...rest } = marker

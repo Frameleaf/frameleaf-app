@@ -144,7 +144,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-642 streams the export limiter and binds colour match to split parents' keys; composition and raster producers are unchanged.
     sourceSha256 === '4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6' ||
     // FL-1563 marker ranges, notes and clip markers; changes no composition or raster producer.
-    sourceSha256 === '1c9b9c0a0550e8eb04d2677223112c254a00b0d53216711ec7627494fc79656d'
+    sourceSha256 === '17c88a272769e4365aa991951e2983d4a4de338e070fb20de60bbb9c5e9eccba'
   )
     return {
       ...COMPOSITION_SOURCES,
