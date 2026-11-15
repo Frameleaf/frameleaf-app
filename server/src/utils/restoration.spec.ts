@@ -44,6 +44,7 @@ import {
   restorationChunkIdentity,
   restorationEstimate,
   restorationOutputPaths,
+  rifeChunkWindow,
   selectRestorationDestination,
   stageOfKind,
   workloadForMode,
@@ -268,6 +269,25 @@ describe('restoration rules (FL-115)', () => {
         239, 2,
       ]);
       expect(() => planRifeFrameChunks(241, cadence, 1)).toThrow(RangeError);
+    });
+
+    it.each([
+      // CFR 30000/1001 at 1/30000 with a keyframe every 48 frames.
+      ['CFR', Array.from({ length: 1000 }, (_, n) => 1001 * n), 48],
+      // VFR: uneven frame spacing, a dropped frame every 37th, a keyframe every 60 frames.
+      ['VFR', Array.from({ length: 1000 }, (_, n) => 512 * n + 7 * (n % 7) + 512 * Math.floor(n / 37)), 60],
+    ])('FL-1444: a %s chunk keeps the same frames and decodes at most one GOP before them', (_, framePts, gop) => {
+      const keyframePts = framePts.filter((_, n) => n % gop === 0);
+      for (const chunk of planRifeFrameChunks(framePts.length, { num: 30, den: 1 }, 97)) {
+        const endFrame = chunk.endFrame + Number(chunk.context);
+        const { seekPts, startPts, endPts } = rifeChunkWindow(framePts, keyframePts, chunk.startFrame, endFrame);
+        // The old trim kept frame indices [startFrame, endFrame); the timestamp trim keeps the same frames.
+        const kept = framePts.filter((pts) => pts >= startPts && (endPts === null || pts < endPts));
+        expect(kept).toEqual(framePts.slice(chunk.startFrame, endFrame));
+        // Decoding runs from the seek keyframe: the chunk plus its context plus less than one GOP.
+        const decoded = framePts.filter((pts) => pts >= seekPts! && (endPts === null || pts < endPts)).length;
+        expect(decoded).toBeLessThan(endFrame - chunk.startFrame + gop);
+      }
     });
 
     it('keys a chunk by every input that changes its output, never by its number alone', () => {
