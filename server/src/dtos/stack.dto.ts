@@ -27,6 +27,8 @@ const StackResponseSchema = z
   .object({
     id: z.uuidv4().describe('Stack ID'),
     primaryAssetId: z.uuidv4().describe('Primary asset ID'),
+    // FL-953: optional, so older native clients decode stacks unchanged
+    isAutomatic: z.boolean().optional().describe('Made by automatic burst stacking, not by a person'),
     assets: z.array(AssetResponseSchema),
   })
   .describe('Stack response')
@@ -61,6 +63,7 @@ export const mapStack = (stack: Stack, { auth }: { auth?: AuthDto }) => {
   return {
     id: stack.id,
     primaryAssetId: stack.primaryAssetId,
+    ...(stack.isAutomatic !== undefined && { isAutomatic: stack.isAutomatic }),
     assets: [...primary, ...others].map((asset) => mapAsset(asset, { auth })),
   };
 };

@@ -152,6 +152,37 @@ export const planCull = (frames: readonly CullFrame[]): CullPlan => {
   return plan;
 };
 
+/** FL-953: the version of automatic stacking stored on the stacks it makes (`stack.autoVersion`). */
+export const AUTO_STACK_VERSION = 1;
+
+/** FL-953: what the best frame of an automatic burst stack is chosen by. */
+export type BurstPickFrame = {
+  id: string;
+  takenAt: number;
+  technicalScore: number | null;
+  aestheticScore: number | null;
+  /** The least open eyes of any face (0-1); null for a frame with no face or no eye scores yet. */
+  eyesOpen: number | null;
+};
+
+/**
+ * FL-953: the frame an automatic burst stack puts on top: the highest 0.4 x technical + 0.35 x eyes open (the
+ * least open face) + 0.25 x aesthetic, the earliest on a tie. A frame without faces counts its eyes as open, so
+ * a burst of landscapes is picked on sharpness and aesthetics alone.
+ */
+export const pickBurstLead = (frames: readonly BurstPickFrame[]): BurstPickFrame => {
+  const value = (frame: BurstPickFrame) =>
+    0.4 * (frame.technicalScore ?? 0) + 0.35 * (frame.eyesOpen ?? 1) + 0.25 * (frame.aestheticScore ?? 0);
+  let best = frames[0];
+  for (const frame of frames) {
+    const delta = value(frame) - value(best);
+    if (delta > 1e-9 || (Math.abs(delta) <= 1e-9 && frame.takenAt < best.takenAt)) {
+      best = frame;
+    }
+  }
+  return best;
+};
+
 /** When an applied change can no longer be undone. */
 export const assistantUndoExpiry = (appliedAt: Date): Date =>
   new Date(appliedAt.getTime() + ASSISTANT_ACTION_UNDO_DAYS * 24 * 60 * 60 * 1000);

@@ -141,6 +141,9 @@ const REPEATABLE_JOBS = new Set<JobName>([
   // FL-863: a rerun writes the same scores over the same faces
   JobName.FaceEyeScore,
   JobName.FaceEyeScoreQueueAll,
+  // FL-953: a rerun only stacks photos still in no stack, and unstacking twice removes nothing more
+  JobName.AutoStack,
+  JobName.AutoStackQueueAll,
   JobName.AssetDetectDuplicates,
   JobName.AssetGenerateVideoDuplicateFrames,
   JobName.AssetDetectDuplicatesQueueAll,

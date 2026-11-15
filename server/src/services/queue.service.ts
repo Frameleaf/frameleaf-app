@@ -716,6 +716,11 @@ export class QueueService extends BaseService {
       jobs.push({ name: JobName.FacialRecognitionQueueAll, data: { force: false, nightly: true } });
     }
 
+    // FL-953: bursts stack themselves for accounts that keep automatic stacking on
+    if (tidy) {
+      jobs.push({ name: JobName.AutoStackQueueAll, data: {} });
+    }
+
     // FL-863: faces still without eye scores (found while the worker couldn't score eyes, or before scoring existed)
     if (tidy && config.nightlyTasks.clusterNewFaces && config.machineLearning.eyeScores.enabled) {
       jobs.push({ name: JobName.FaceEyeScoreQueueAll, data: {} });

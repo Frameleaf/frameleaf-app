@@ -50,6 +50,14 @@ const RatingsUpdateSchema = z
   .optional()
   .meta({ id: 'RatingsUpdate' });
 
+// FL-953: whether bursts and rapid retakes stack themselves, best frame on top.
+const AutoStackUpdateSchema = z
+  .object({
+    enabled: z.boolean().optional().describe('Whether bursts stack themselves, with the best frame on top'),
+  })
+  .optional()
+  .meta({ id: 'AutoStackUpdate' });
+
 // FL-1484: whether AI work on this person's own photos may use Frameleaf Cloud. Only the person changes it.
 const CloudProcessingUpdateSchema = z
   .object({
@@ -366,6 +374,7 @@ const UserPreferencesUpdateSchema = z
     trash: TrashUpdateSchema,
     backup: BackupUpdateSchema,
     ratings: RatingsUpdateSchema,
+    autoStack: AutoStackUpdateSchema,
     cloudProcessing: CloudProcessingUpdateSchema,
     search: SearchPreferencesUpdateSchema,
     display: DisplayUpdateSchema,
@@ -437,6 +446,12 @@ const RatingsResponseSchema = z
     enabled: z.boolean().describe('Whether ratings are enabled'),
   })
   .meta({ id: 'RatingsResponse' });
+
+const AutoStackResponseSchema = z
+  .object({
+    enabled: z.boolean().describe('Whether bursts stack themselves, with the best frame on top'),
+  })
+  .meta({ id: 'AutoStackResponse' });
 
 const CloudProcessingResponseSchema = z
   .object({
@@ -607,6 +622,8 @@ const UserPreferencesResponseSchema = z
     people: PeopleResponseSchema,
     privacy: PrivacyResponseSchema,
     ratings: RatingsResponseSchema,
+    // always sent; optional in the schema so clients built before FL-953 keep compiling
+    autoStack: AutoStackResponseSchema.optional(),
     // always sent; optional in the schema so clients built before FL-1484 keep compiling
     cloudProcessing: CloudProcessingResponseSchema.optional(),
     search: SearchPreferencesResponseSchema,

@@ -4230,20 +4230,28 @@ export class AssetRepository {
    */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
   getBurstFrames(ownerId: string, autoStackId: string) {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .leftJoin('stack', 'stack.id', 'asset.stackId')
-      .select(['asset.id', 'asset.stackId', 'stack.primaryAssetId as stackPrimaryAssetId'])
-      .select(isLocked('asset').as('isLocked'))
-      .where('asset.ownerId', '=', ownerId)
-      .where('asset_exif.autoStackId', '=', autoStackId)
-      .where('asset.type', '=', AssetType.Image)
-      .where('asset.deletedAt', 'is', null)
-      .orderBy('asset.fileCreatedAt')
-      .orderBy('asset.id')
-      .limit(500)
-      .execute();
+    return (
+      this.db
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .leftJoin('stack', 'stack.id', 'asset.stackId')
+        .select(['asset.id', 'asset.stackId', 'stack.primaryAssetId as stackPrimaryAssetId'])
+        .select(isLocked('asset').as('isLocked'))
+        .where('asset.ownerId', '=', ownerId)
+        .where('asset_exif.autoStackId', '=', autoStackId)
+        .where('asset.type', '=', AssetType.Image)
+        .where('asset.deletedAt', 'is', null)
+        // FL-953: a frame the owner took out of an automatic stack stays out
+        .where((eb) =>
+          eb.not(
+            eb.exists(eb.selectFrom('auto_stack_exclusion').whereRef('auto_stack_exclusion.assetId', '=', 'asset.id')),
+          ),
+        )
+        .orderBy('asset.fileCreatedAt')
+        .orderBy('asset.id')
+        .limit(500)
+        .execute()
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

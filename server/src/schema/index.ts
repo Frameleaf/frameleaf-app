@@ -102,6 +102,7 @@ import { AssetVideoFingerprintTable } from 'src/schema/tables/asset-video-finger
 import { AssetViewTable } from 'src/schema/tables/asset-view.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { AssistantActionTable } from 'src/schema/tables/assistant-action.table.js';
+import { AutoStackExclusionTable } from 'src/schema/tables/auto-stack-exclusion.table.js';
 import { BackupDeviceTable, BackupReconciliationTable } from 'src/schema/tables/backup-device.table.js';
 import { BackupRestoreReportTable } from 'src/schema/tables/backup-restore-report.table.js';
 import { BookmarkTagTable } from 'src/schema/tables/bookmark-tag.table.js';
@@ -561,6 +562,7 @@ export class ImmichDatabase {
     SmartSearchTable,
     SmartSearchDescriptionTable,
     StackTable,
+    AutoStackExclusionTable,
     StackAuditTable,
     StudioPreviewFrameTable,
     StudioProjectTable,
@@ -906,6 +908,7 @@ export interface DB extends QueueDatabase {
   smart_search_description: SmartSearchDescriptionTable;
 
   stack: StackTable;
+  auto_stack_exclusion: AutoStackExclusionTable;
   stack_audit: StackAuditTable;
 
   studio_preview_frame: StudioPreviewFrameTable;

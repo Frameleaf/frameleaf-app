@@ -225,6 +225,13 @@ export class UserService extends BaseService {
       await this.sessionRepository.requestSyncResetForUser(auth.user.id);
     }
     await this.recordPreferenceHistory(auth, previous, updated);
+    // FL-953: turning automatic stacking on stacks the bursts now; off takes the automatic stacks apart
+    if (previous.autoStack.enabled !== updated.autoStack.enabled) {
+      await this.jobRepository.queue({
+        name: JobName.AutoStack,
+        data: { userId: auth.user.id, ...(!updated.autoStack.enabled && { unstack: true }) },
+      });
+    }
     this.websocketRepository.clientSend('on_speech_index_change', auth.user.id);
 
     return mapPreferences(updated, preferencesAudience(auth));

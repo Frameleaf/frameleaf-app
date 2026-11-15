@@ -43,6 +43,7 @@ import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles } from 'src/utils/asset.util.js';
+import { AUTO_STACK_VERSION } from 'src/utils/assistant-action.js';
 import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { PHOTOGRAPHY_INTAKE_CREDITS_KEY, captureDetails } from 'src/utils/capture-details.js';
 import { dateFromFileName, namedDate } from 'src/utils/date-doctor.js';
@@ -750,6 +751,10 @@ export class MetadataService extends BaseService {
    * stacks is left alone: joining a stack that holds a Locked photo would lock this one too (FL-53).
    */
   private async groupBurst(asset: { id: string; ownerId: string }, autoStackId: string) {
+    // FL-953: these are automatic stacks, so they follow the owner's "Stack bursts automatically" choice
+    if ((await this.userRepository.getAutoStackUserIds([asset.ownerId])).length === 0) {
+      return;
+    }
     const frames = await this.assetRepository.getBurstFrames(asset.ownerId, autoStackId);
     const self = frames.find((frame) => frame.id === asset.id);
     if (!self || self.stackId || self.isLocked || frames.some((frame) => frame.stackId && frame.isLocked)) {
@@ -769,9 +774,14 @@ export class MetadataService extends BaseService {
       return;
     }
     let sequenced = false;
-    const stack = await this.stackRepository.create({ ownerId: asset.ownerId }, assetIds, undefined, (value) => {
-      sequenced = value;
-    });
+    const stack = await this.stackRepository.create(
+      { ownerId: asset.ownerId, isAutomatic: true, autoVersion: AUTO_STACK_VERSION },
+      assetIds,
+      undefined,
+      (value) => {
+        sequenced = value;
+      },
+    );
     if (sequenced) {
       await this.stackRepository.enqueueLocalEffects();
     } else {

@@ -2344,6 +2344,8 @@ export enum JobName {
   AssetDetectFaces = 'AssetDetectFaces',
   FaceEyeScoreQueueAll = 'FaceEyeScoreQueueAll',
   FaceEyeScore = 'FaceEyeScore',
+  AutoStackQueueAll = 'AutoStackQueueAll',
+  AutoStack = 'AutoStack',
   AssetDetectDuplicatesQueueAll = 'AssetDetectDuplicatesQueueAll',
   AssetDetectDuplicates = 'AssetDetectDuplicates',
   DuplicateResolutionLifecycle = 'DuplicateResolutionLifecycle',

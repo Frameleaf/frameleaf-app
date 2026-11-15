@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
-import { type ExpressionBuilder, type Insertable, type Kysely, type Transaction, type Updateable } from 'kysely';
+import { type ExpressionBuilder, type Insertable, type Kysely, type Transaction, type Updateable, sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +8,7 @@ import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AssetStatus } from 'src/enum.js';
+import { AssetStatus, LibraryScope } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import {
@@ -27,6 +27,7 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
 
@@ -565,5 +566,88 @@ export class StackRepository {
       await tx.updateTable('asset').set({ stackId: targetId }).where('stackId', '=', sourceId).execute();
       await onStacksJoined(tx, [targetId]);
     });
+  }
+
+  /** FL-953: the owner unstacked automatic stacks; their photos are never stacked automatically again. */
+  async excludeAutomaticMembers(stackIds: string[]): Promise<void> {
+    if (stackIds.length === 0) return;
+    await sql`
+      INSERT INTO auto_stack_exclusion ("assetId")
+      SELECT asset.id FROM asset JOIN stack ON stack.id = asset."stackId"
+      WHERE stack.id = ANY(${stackIds}::uuid[]) AND stack."isAutomatic"
+      ON CONFLICT DO NOTHING
+    `.execute(this.db);
+  }
+
+  /** FL-953: a photo its owner took out of an automatic stack stays out. */
+  async excludeFromAutomatic(stackId: string, assetId: string): Promise<void> {
+    await sql`
+      INSERT INTO auto_stack_exclusion ("assetId")
+      SELECT ${assetId}::uuid WHERE EXISTS (SELECT 1 FROM stack WHERE id = ${stackId}::uuid AND "isAutomatic")
+      ON CONFLICT DO NOTHING
+    `.execute(this.db);
+  }
+
+  /** FL-953: the owner's automatic stacks, for turning automatic stacking off. */
+  async getAutomaticStackIds(ownerId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('stack')
+      .select('id')
+      .where('ownerId', '=', ownerId)
+      .where('isAutomatic', '=', true)
+      .execute();
+    return rows.map(({ id }) => id);
+  }
+
+  /**
+   * FL-953: one page of the owner's photos that automatic stacking may group, in capture order after `after`:
+   * their own still images in no stack, not Locked, not a partner's copy, not taken out of an automatic stack
+   * by the owner, with what the burst pick needs (Best Photos scores, the least open eyes of any face).
+   */
+  async getAutoStackCandidates(ownerId: string, after: { takenAt: Date; id: string } | null, limit: number) {
+    const { rows } = await sql<{
+      id: string;
+      takenAt: Date;
+      burstId: string | null;
+      camera: string;
+      technicalScore: number | null;
+      aestheticScore: number | null;
+      eyesOpen: number | null;
+      scored: boolean;
+    }>`
+      SELECT asset.id, coalesce(exif."dateTimeOriginal", asset."fileCreatedAt") AS "takenAt",
+        exif."autoStackId" AS "burstId",
+        concat_ws('|', exif.make, exif.model, asset."libraryId") AS camera,
+        score."technicalScore", score."aestheticScore", score."assetId" IS NOT NULL AS scored,
+        (SELECT min(face."eyesOpen") FROM asset_face face
+          WHERE face."assetId" = asset.id AND face."deletedAt" IS NULL AND face."isVisible") AS "eyesOpen"
+      FROM asset
+      JOIN asset_exif exif ON exif."assetId" = asset.id
+      LEFT JOIN asset_best_photo_score score ON score."assetId" = asset.id
+      WHERE asset."ownerId" = ${ownerId}::uuid AND asset.type = 'IMAGE' AND asset.status = 'active'
+        AND asset."deletedAt" IS NULL AND asset."stackId" IS NULL
+        AND asset.visibility IN ('timeline', 'archive') AND ${libraryScopePredicate(LibraryScope.Personal)}
+        AND ${isNotLocked('asset')}
+        AND NOT EXISTS (SELECT 1 FROM asset_origin origin WHERE origin."assetId" = asset.id)
+        AND NOT EXISTS (SELECT 1 FROM auto_stack_exclusion excluded WHERE excluded."assetId" = asset.id)
+        ${after ? sql`AND (coalesce(exif."dateTimeOriginal", asset."fileCreatedAt"), asset.id) > (${after.takenAt}::timestamptz, ${after.id}::uuid)` : sql``}
+      ORDER BY coalesce(exif."dateTimeOriginal", asset."fileCreatedAt"), asset.id
+      LIMIT ${limit}
+    `.execute(this.db);
+    return rows;
+  }
+
+  /** FL-953: the search (CLIP) cosine similarity of each pair of photos; null where one has no embedding. */
+  async getSimilarities(pairs: Array<[string, string]>): Promise<Array<number | null>> {
+    if (pairs.length === 0) return [];
+    const { rows } = await sql<{ index: number; similarity: number | null }>`
+      SELECT pair.index::int AS index, 1 - (a.embedding <=> b.embedding) AS similarity
+      FROM unnest(${pairs.map(([a]) => a)}::uuid[], ${pairs.map(([, b]) => b)}::uuid[]) WITH ORDINALITY
+        AS pair(a, b, index)
+      LEFT JOIN smart_search a ON a."assetId" = pair.a
+      LEFT JOIN smart_search b ON b."assetId" = pair.b
+      ORDER BY pair.index
+    `.execute(this.db);
+    return rows.map(({ similarity }) => similarity);
   }
 }

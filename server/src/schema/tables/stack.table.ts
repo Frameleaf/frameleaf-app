@@ -1,5 +1,6 @@
 import {
   AfterDeleteTrigger,
+  Column,
   CreateDateColumn,
   ForeignKeyColumn,
   PrimaryGeneratedColumn,
@@ -39,4 +40,12 @@ export class StackTable {
 
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' })
   ownerId!: string;
+
+  /** FL-953: made by automatic burst stacking, not by a person; the owner's setting can take it apart. */
+  @Column({ type: 'boolean', default: false })
+  isAutomatic!: Generated<boolean>;
+
+  /** FL-953: which automatic stacking made it; null for a stack a person made. */
+  @Column({ type: 'smallint', nullable: true, default: null })
+  autoVersion!: Generated<number | null>;
 }

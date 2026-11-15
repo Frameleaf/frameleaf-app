@@ -144,6 +144,7 @@ describe(QueueService.name, () => {
         { name: JobName.UserSyncUsage },
         // the unfinished-work check queues missing thumbnails itself
         { name: JobName.FacialRecognitionQueueAll, data: { force: false, nightly: true } },
+        { name: JobName.AutoStackQueueAll, data: {} },
         { name: JobName.FaceEyeScoreQueueAll, data: {} },
         { name: JobName.AnalyticsCollect },
         { name: JobName.PushBackupStaleCheck },

@@ -736,6 +736,9 @@ export type JobItem =
   // FL-863: eyes open and eye sharpness for faces already found
   | { name: JobName.FaceEyeScoreQueueAll; data: IBaseJob }
   | { name: JobName.FaceEyeScore; data: IEntityJob }
+  // FL-953: automatic burst stacks, per owner; `unstack` takes the owner's automatic stacks apart
+  | { name: JobName.AutoStackQueueAll; data: IBaseJob }
+  | { name: JobName.AutoStack; data: { userId: string; unstack?: boolean } }
   | { name: JobName.FacialRecognitionQueueAll; data: INightlyJob }
   | { name: JobName.FacialRecognition; data: IDeferrableJob & { force?: boolean } }
   | { name: JobName.ProfileImageRepair; data: Record<string, never> }
@@ -1843,6 +1846,10 @@ export type UserPreferences = {
     includeArchived: boolean;
   };
   ratings: {
+    enabled: boolean;
+  };
+  /** FL-953: bursts and rapid retakes stack themselves, best frame on top */
+  autoStack: {
     enabled: boolean;
   };
   /** FL-1484: false keeps AI work on this person's photos at home, never on Frameleaf Cloud */

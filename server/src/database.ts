@@ -202,6 +202,8 @@ export type Stack = {
   ownerId: string;
   assets: ShallowDehydrateObject<MapAsset>[];
   assetCount?: number;
+  /** FL-953; optional because not every stack query selects it. */
+  isAutomatic?: boolean;
 };
 
 export type AuthSharedLink = {

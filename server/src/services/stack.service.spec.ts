@@ -15,6 +15,8 @@ describe(StackService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(StackService));
+    mocks.stack.excludeAutomaticMembers.mockResolvedValue();
+    mocks.stack.excludeFromAutomatic.mockResolvedValue();
   });
 
   it('should be defined', () => {
@@ -420,6 +422,109 @@ describe(StackService.name, () => {
         stackId: 'stack-id',
         userId: authStub.admin.user.id,
       });
+    });
+  });
+
+  describe('automatic burst stacks (FL-953)', () => {
+    const t0 = new Date('2026-11-01T10:00:00Z').getTime();
+    const frame = (id: string, seconds: number, extra: Record<string, unknown> = {}) => ({
+      id,
+      takenAt: new Date(t0 + seconds * 1000),
+      burstId: null,
+      camera: 'Canon|R5|',
+      technicalScore: 0.5,
+      aestheticScore: 0.5,
+      eyesOpen: null,
+      scored: true,
+      ...extra,
+    });
+
+    beforeEach(() => {
+      mocks.user.getAutoStackUserIds.mockResolvedValue(['owner']);
+      mocks.stack.create.mockResolvedValue({ id: 'stack' } as never);
+    });
+
+    it('stacks a 10-frame burst with the best frame on top', async () => {
+      const burst = Array.from({ length: 10 }, (_, index) =>
+        frame(`f${index}`, index * 0.5, index === 6 ? { technicalScore: 0.9, eyesOpen: 0.95 } : {}),
+      );
+      mocks.stack.getAutoStackCandidates.mockResolvedValue(burst);
+      mocks.stack.getSimilarities.mockResolvedValue(Array.from({ length: 9 }, () => 0.97));
+
+      await sut.handleAutoStack({ userId: 'owner' });
+
+      expect(mocks.stack.create).toHaveBeenCalledTimes(1);
+      const [entity, ids] = mocks.stack.create.mock.calls[0];
+      expect(entity).toEqual({ ownerId: 'owner', isAutomatic: true, autoVersion: 1 });
+      expect(ids[0]).toBe('f6');
+      expect(ids).toHaveLength(10);
+    });
+
+    it('splits a time chain where the photos stop looking alike, and keeps cameras apart', async () => {
+      mocks.stack.getAutoStackCandidates.mockResolvedValue([
+        frame('a1', 0),
+        frame('a2', 1),
+        frame('b1', 1.5, { camera: 'Sony|A7|' }),
+        frame('a3', 2),
+        frame('a4', 3),
+      ]);
+      // a1-a2 alike, a2-a3 not, a3-a4 alike
+      mocks.stack.getSimilarities.mockResolvedValue([0.95, 0.5, 0.96]);
+
+      await sut.handleAutoStack({ userId: 'owner' });
+
+      expect(mocks.stack.getSimilarities).toHaveBeenCalledWith([
+        ['a1', 'a2'],
+        ['a2', 'a3'],
+        ['a3', 'a4'],
+      ]);
+      expect(mocks.stack.create.mock.calls.map(([, ids]) => ids)).toEqual([
+        ['a1', 'a2'],
+        ['a3', 'a4'],
+      ]);
+    });
+
+    it("trusts the camera's burst id without comparing photos, and waits for every frame's score", async () => {
+      mocks.stack.getAutoStackCandidates.mockResolvedValue([
+        frame('c1', 0, { burstId: 'burst' }),
+        frame('c2', 0.1, { burstId: 'burst' }),
+        frame('u1', 100),
+        frame('u2', 100.5, { scored: false }),
+      ]);
+      mocks.stack.getSimilarities.mockResolvedValue([0.99]);
+
+      await sut.handleAutoStack({ userId: 'owner' });
+
+      expect(mocks.stack.create.mock.calls.map(([, ids]) => ids)).toEqual([['c1', 'c2']]);
+      expect(mocks.stack.getSimilarities).toHaveBeenCalledWith([['u1', 'u2']]);
+    });
+
+    it('does nothing while the owner keeps it off', async () => {
+      mocks.user.getAutoStackUserIds.mockResolvedValue([]);
+
+      await expect(sut.handleAutoStack({ userId: 'owner' })).resolves.toBe('skipped');
+      expect(mocks.stack.getAutoStackCandidates).not.toHaveBeenCalled();
+    });
+
+    it('takes only the automatic stacks apart when the setting is turned off', async () => {
+      mocks.stack.getAutomaticStackIds.mockResolvedValue(['auto-1', 'auto-2']);
+      mocks.stack.deleteAll.mockResolvedValue();
+
+      await sut.handleAutoStack({ userId: 'owner', unstack: true });
+
+      expect(mocks.stack.getAutomaticStackIds).toHaveBeenCalledWith('owner');
+      expect(mocks.stack.deleteAll).toHaveBeenCalledWith(['auto-1', 'auto-2'], undefined, expect.any(Function));
+      expect(mocks.stack.excludeAutomaticMembers).not.toHaveBeenCalled();
+    });
+
+    it('remembers an automatic stack the owner unstacks, so the next run leaves it', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.stack.checkOwnerAccess.mockResolvedValue(new Set(['stack-1']));
+      mocks.stack.delete.mockResolvedValue();
+
+      await sut.delete(auth, 'stack-1');
+
+      expect(mocks.stack.excludeAutomaticMembers).toHaveBeenCalledWith(['stack-1']);
     });
   });
 });

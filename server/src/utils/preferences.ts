@@ -164,6 +164,10 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     ratings: {
       enabled: true,
     },
+    // FL-953: bursts stack themselves for a new account (accounts from before start off, set by the migration)
+    autoStack: {
+      enabled: true,
+    },
     // FL-1484: AI work on this person's photos may use Frameleaf Cloud where Computers sends it.
     cloudProcessing: {
       enabled: true,

@@ -28,6 +28,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ImmichTags, MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { MetadataService, firstDateTime } from 'src/services/metadata.service.js';
+import { AUTO_STACK_VERSION } from 'src/utils/assistant-action.js';
 import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonGroupFactory } from 'test/factories/person-group.factory.js';
@@ -2155,14 +2156,16 @@ describe(MetadataService.name, () => {
         const asset = AssetFactory.create();
         mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
         mockReadTags({ BurstUUID: 'burst-1' });
+        mocks.user.getAutoStackUserIds.mockResolvedValue([asset.ownerId]);
         mocks.asset.getBurstFrames.mockResolvedValue([burstFrame('earlier'), burstFrame(asset.id)]);
         mocks.stack.create.mockResolvedValue({ id: 'stack-1' } as never);
 
         await sut.handleMetadataExtraction({ id: asset.id });
 
         expect(mocks.asset.getBurstFrames).toHaveBeenCalledWith(asset.ownerId, 'burst-1');
+        // FL-953: an automatic stack, which the owner's setting and unstacking cover
         expect(mocks.stack.create).toHaveBeenCalledWith(
-          { ownerId: asset.ownerId },
+          { ownerId: asset.ownerId, isAutomatic: true, autoVersion: AUTO_STACK_VERSION },
           ['earlier', asset.id],
           undefined,
           expect.any(Function),
@@ -2173,6 +2176,7 @@ describe(MetadataService.name, () => {
         const asset = AssetFactory.create();
         mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
         mockReadTags({ BurstUUID: 'burst-1' });
+        mocks.user.getAutoStackUserIds.mockResolvedValue([asset.ownerId]);
         mocks.asset.getBurstFrames.mockResolvedValue([
           burstFrame('first', { stackId: 'stack-1', stackPrimaryAssetId: 'first' }),
           burstFrame('second', { stackId: 'stack-1', stackPrimaryAssetId: 'first' }),
@@ -2183,7 +2187,7 @@ describe(MetadataService.name, () => {
         await sut.handleMetadataExtraction({ id: asset.id });
 
         expect(mocks.stack.create).toHaveBeenCalledWith(
-          { ownerId: asset.ownerId },
+          { ownerId: asset.ownerId, isAutomatic: true, autoVersion: AUTO_STACK_VERSION },
           ['first', asset.id],
           undefined,
           expect.any(Function),
@@ -2211,6 +2215,18 @@ describe(MetadataService.name, () => {
 
         await sut.handleMetadataExtraction({ id: asset.id });
 
+        expect(mocks.stack.create).not.toHaveBeenCalled();
+      });
+
+      it('leaves bursts alone while the owner keeps automatic stacking off (FL-953)', async () => {
+        const asset = AssetFactory.create();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags({ BurstUUID: 'burst-1' });
+        mocks.user.getAutoStackUserIds.mockResolvedValue([]);
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(mocks.asset.getBurstFrames).not.toHaveBeenCalled();
         expect(mocks.stack.create).not.toHaveBeenCalled();
       });
 

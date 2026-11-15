@@ -5,6 +5,7 @@ import {
   assistantActionToolArguments,
   assistantUndoExpiry,
   groupBursts,
+  pickBurstLead,
   planCull,
 } from 'src/utils/assistant-action.js';
 
@@ -117,5 +118,29 @@ describe(planCull.name, () => {
     expect(plan.rejectIds).toEqual([]);
     expect(plan.keepIds).toEqual([]);
     expect(plan.unscoredIds).toEqual(['unscored', 'scored']);
+  });
+});
+
+describe('pickBurstLead (FL-953)', () => {
+  const frame = (
+    id: string,
+    takenAt: number,
+    technicalScore: number,
+    eyesOpen: number | null,
+    aestheticScore = 0.5,
+  ) => ({
+    id,
+    takenAt,
+    technicalScore,
+    aestheticScore,
+    eyesOpen,
+  });
+
+  it('weighs sharpness, open eyes and aesthetics, and a closed blink loses to a slightly softer frame', () => {
+    expect(pickBurstLead([frame('sharp-blink', 1, 0.9, 0.1), frame('open', 2, 0.8, 0.9)]).id).toBe('open');
+  });
+
+  it('counts a frame without faces as eyes open, and the earliest wins a tie', () => {
+    expect(pickBurstLead([frame('later', 2, 0.7, null), frame('earlier', 1, 0.7, null)]).id).toBe('earlier');
   });
 });

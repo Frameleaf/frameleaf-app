@@ -113,6 +113,28 @@ export class UserRepository {
   getCloudProcessingOptOuts(userIds?: readonly string[], db: Kysely<DB> = this.db): Promise<Set<string>> {
     return cloudProcessingOptOuts(db, userIds);
   }
+  /** FL-953: active accounts whose bursts stack themselves (on unless the account turned it off). */
+  async getAutoStackUserIds(userIds?: readonly string[]): Promise<string[]> {
+    if (userIds?.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('user')
+      .select('user.id')
+      .where('user.deletedAt', 'is', null)
+      .$if(!!userIds, (qb) => qb.where('user.id', 'in', userIds!))
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            eb
+              .selectFrom('user_metadata')
+              .whereRef('user_metadata.userId', '=', 'user.id')
+              .where('user_metadata.key', '=', UserMetadataKey.Preferences)
+              .where(sql<boolean>`"value" -> 'autoStack' ->> 'enabled' = 'false'`),
+          ),
+        ),
+      )
+      .execute();
+    return rows.map(({ id }) => id);
+  }
   /** FL-232: private, revisioned pin references; hydration always rechecks current access. */
   getPinnedCollections(userId: string) {
     return this.db
