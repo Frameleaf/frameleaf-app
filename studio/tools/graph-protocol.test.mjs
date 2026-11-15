@@ -184,6 +184,19 @@ test('FL-1563: markers may be ranges with notes, and clips may carry source-fram
   assert.notDeepEqual(withChange(onVideo([{ ...clipMarker, frame: 30 }])), []);
 });
 
+test('FL-1555: a transition may name its sound curve', () => {
+  const found = normalGraphs().find(([, candidate]) => candidate.timeline.transitions?.length);
+  assert.ok(found, 'a normal graph with a transition');
+  const [, graph] = found;
+  const withCurve = (audioCurve) => {
+    const copy = structuredClone(graph);
+    copy.timeline.transitions[0] = { ...copy.timeline.transitions[0], audioCurve };
+    return validate(schema, copy);
+  };
+  for (const curve of ['constant-power', 'constant-gain', 'exponential']) assert.deepEqual(withCurve(curve), [], curve);
+  assert.notDeepEqual(withCurve('loud'), []);
+});
+
 test('a case is outside normal form exactly when it is marked so', () => {
   for (const entry of fixtures.cases) {
     if (!applied(entry)) {

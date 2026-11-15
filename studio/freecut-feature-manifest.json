@@ -5063,9 +5063,10 @@
           "0090-track-gain-automation.patch",
           "0145-dialogue-loudness-match-and-export-report.patch",
           "0150-master-true-peak-limiter.patch",
-          "0162-voice-cleanup.patch"
+          "0162-voice-cleanup.patch",
+          "0188-sound-crossfades.patch"
         ],
-        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter. FL-637 adds Clean up voice: one clip at a time, the cleaned sound a project audio import the clip plays in preview and export, with the original kept.",
+        "note": "FL-103 closeout 2026-10-14. FL-598 adds BS.1770 dialogue loudness matching through clip volume and a loudness report on the decoded export. FL-623 saves the target and adds an optional true-peak master limiter. FL-637 adds Clean up voice: one clip at a time, the cleaned sound a project audio import the clip plays in preview and export, with the original kept. FL-1555 adds crossfades between two sound clips and a per-transition sound curve (constant power, constant gain, exponential) in preview, meters and export (studio/spec/sound.md).",
         "status": "shipped"
       },
       "id": "readme.audio.1",

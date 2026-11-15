@@ -265,9 +265,12 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-642 windowed limiter and split-part colour match; raster producer bytes unchanged.
           binding.sourceSha256 ===
             '4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6' ||
+          // FL-1555 sound crossfades; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '618ffdaaf2d499ecd7cf680d60879e3f173e18aa10e7aa8171764d822a7e3755' ||
           // FL-1563 marker ranges; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            '17c88a272769e4365aa991951e2983d4a4de338e070fb20de60bbb9c5e9eccba')),
+            'd6b987310298fd087ee08d8a7dae66ab867d566ebc7a20f35737d3b419d3ac4d')),
     'SOURCE_BROWSER',
   )
   check(

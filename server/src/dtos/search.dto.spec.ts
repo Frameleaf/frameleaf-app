@@ -108,3 +108,19 @@ it('accepts a shared mixed-item text predicate without converting bookmark searc
     text: { contains: 'packaging' },
   });
 });
+
+describe('album count filter (FL-976)', () => {
+  it('accepts a number range on its own, next to other conditions and inside or branches', () => {
+    const filter = {
+      albumCount: { gt: 1 },
+      isFavorite: { eq: true },
+      or: [{ albumCount: { eq: 0 } }, { albumCount: { gte: 2, lte: 5 }, city: { eq: 'Paris' } }],
+    };
+    expect(MetadataSearchDto.schema.parse({ filter }).filter).toEqual(filter);
+    expect(StatisticsSearchDto.schema.parse({ filter })).toEqual({ filter });
+  });
+
+  it.each([{}, { gt: '1' }, { between: 1 }, true, 2])('rejects an invalid album count %j', (albumCount) => {
+    expect(MetadataSearchDto.schema.safeParse({ filter: { albumCount } }).success).toBe(false);
+  });
+});

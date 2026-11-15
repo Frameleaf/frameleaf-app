@@ -14072,6 +14072,76 @@
         "x-immich-state": "Stable"
       }
     },
+    "/albums/{id}/assets/move": {
+      "post": {
+        "description": "Move photos and videos from this album into another album in one step. Only album membership changes: nothing is trashed or deleted. Needs permission to remove assets from this album and to add assets to the target, which must be an album, not a collection or shared space. Each asset is reported on its own; one already in the target simply leaves this album.",
+        "operationId": "moveAlbumAssets",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumMoveAssetsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BulkIdResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Move assets to another album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "albumAsset.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums/{id}/bookmarks": {
       "delete": {
         "operationId": "removeBookmarksFromAlbum",
@@ -15031,6 +15101,66 @@
           }
         ],
         "x-immich-permission": "albumAsset.create"
+      }
+    },
+    "/albums/{id}/transfer": {
+      "post": {
+        "description": "Make someone else the owner of this album. Only the owner can do this, and stays on as an editor. The new owner must already be in the album, or be a partner you share a library with. A shared space can only go to one of its members.",
+        "operationId": "transferAlbum",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumTransferDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Transfer album ownership",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.delete",
+        "x-immich-state": "Alpha"
       }
     },
     "/albums/{id}/user/{userId}": {
@@ -81743,6 +81873,31 @@
         ],
         "type": "object"
       },
+      "AlbumMoveAssetsDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Photos and videos to move out of this album",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "targetAlbumId": {
+            "description": "The album the photos and videos move to. It must be an album, not a collection or shared space.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetIds",
+          "targetAlbumId"
+        ],
+        "type": "object"
+      },
       "AlbumOrderDto": {
         "properties": {
           "albumIds": {
@@ -82438,6 +82593,20 @@
         ],
         "type": "object"
       },
+      "AlbumTransferDto": {
+        "properties": {
+          "userId": {
+            "description": "The new owner: someone already in the album, or a partner you share your library with",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "type": "object"
+      },
       "AlbumTreeResponseDto": {
         "properties": {
           "albums": {
@@ -82798,6 +82967,10 @@
             "minimum": 0,
             "nullable": true,
             "type": "integer"
+          },
+          "rebuilt": {
+            "description": "True when the growth values were rebuilt from the items in the library today, because the bucket ends before the first nightly reading; false for a nightly reading or a gap. Left out by older servers",
+            "type": "boolean"
           },
           "through": {
             "format": "date",
@@ -161584,6 +161757,10 @@
       "SearchFilter": {
         "additionalProperties": false,
         "properties": {
+          "albumCount": {
+            "$ref": "#/components/schemas/NumberFilter",
+            "description": "Number of non-deleted albums the viewer owns or is a member of that contain the item"
+          },
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
@@ -161755,6 +161932,10 @@
       "SearchFilterBranch": {
         "additionalProperties": false,
         "properties": {
+          "albumCount": {
+            "$ref": "#/components/schemas/NumberFilter",
+            "description": "Number of non-deleted albums the viewer owns or is a member of that contain the item"
+          },
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
