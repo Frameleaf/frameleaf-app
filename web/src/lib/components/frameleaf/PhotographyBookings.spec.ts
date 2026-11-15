@@ -1,3 +1,4 @@
+import type { PhotographyBookingListDto } from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -16,23 +17,25 @@ vi.mock('$lib/stores/websocket', () => ({
   },
 }));
 
-const booking = (id: string, patch: object = {}) => ({
-  id,
-  bookingTypeId: null,
-  typeName: 'Family session',
-  clientName: 'Morgan Ellis',
-  clientEmail: 'morgan@example.test',
-  message: 'Two kids and a dog',
-  preferredDates: ['2027-06-01'],
-  addOns: [{ id: 'prints', name: 'Prints', price: 2500, quantity: 2 }],
-  total: 35_000,
-  deposit: 5000,
-  currency: 'CAD',
-  depositStatus: 'paid' as const,
-  status: 'requested' as const,
-  requestedAt: '2027-05-01T10:00:00.000Z',
-  ...patch,
-});
+type Booking = PhotographyBookingListDto['bookings'][number];
+const booking = (id: string, patch: object = {}): Booking =>
+  ({
+    id,
+    bookingTypeId: null,
+    typeName: 'Family session',
+    clientName: 'Morgan Ellis',
+    clientEmail: 'morgan@example.test',
+    message: 'Two kids and a dog',
+    preferredDates: ['2027-06-01'],
+    addOns: [{ id: 'prints', name: 'Prints', price: 2500, quantity: 2 }],
+    total: 35_000,
+    deposit: 5000,
+    currency: 'CAD',
+    depositStatus: 'paid',
+    status: 'requested',
+    requestedAt: '2027-05-01T10:00:00.000Z',
+    ...patch,
+  }) as unknown as Booking;
 
 beforeAll(() => addMessages('dev', en));
 beforeEach(() => {
@@ -134,5 +137,34 @@ describe('PhotographyBookings (FL-1606)', () => {
     finishFirst({ mailReady: true, bookings: [] });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.getByText('Taylor Chen')).toBeInTheDocument();
+  });
+
+  it('still announces a booking whose refresh a confirm overtook', async () => {
+    sdkMock.photographyBookings.mockResolvedValueOnce({ mailReady: true, bookings: [booking('b1')] });
+    sdkMock.photographyUpdateBookingStatus.mockResolvedValue({
+      ...booking('b1', { status: 'confirmed' }),
+      clientEmailed: false,
+    } as never);
+    render(PhotographyBookings);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    // The new booking's refresh is slow; the confirm lands first and starts its own read.
+    let finishEvent: (value: unknown) => void = () => {};
+    sdkMock.photographyBookings
+      .mockImplementationOnce(() => new Promise((resolve) => (finishEvent = resolve)) as never)
+      .mockResolvedValueOnce({
+        mailReady: true,
+        bookings: [booking('b5', { clientName: 'Taylor Chen' }), booking('b1', { status: 'confirmed' })],
+      });
+    handlers.get('on_photography_booking')?.('b5');
+    await fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
+    expect(await screen.findByText('Taylor Chen')).toBeInTheDocument();
+    finishEvent({ mailReady: true, bookings: [booking('b1')] });
+    await waitFor(() =>
+      expect(toastManager.primary).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'New booking request from Taylor Chen' }),
+        { timeout: 6000 },
+      ),
+    );
+    expect(screen.queryByText('Morgan Ellis')).not.toBeInTheDocument();
   });
 });

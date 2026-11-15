@@ -99,12 +99,16 @@ describe('Clients booking: book, pay the deposit, confirm (FL-1606)', () => {
 
     // the client pays the deposit
     const sessionId = requested.checkoutUrl.split('/').pop();
-    await fetch(`${FIXTURE}/__fixture/clients/pay`, { method: 'POST', body: JSON.stringify({ sessionId }) }).then(
-      (response) => expect(response.status).toBe(200),
-    );
-    await expect
-      .poll(async () => (await list())[0].depositStatus, { timeout: PULL_WAIT_MS, interval: 1000 })
-      .toBe('paid');
+    const paid = await fetch(`${FIXTURE}/__fixture/clients/pay`, {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
+    });
+    expect(paid.status).toBe(200);
+    const depositStatus = async () => {
+      const [first] = await list();
+      return first.depositStatus;
+    };
+    await expect.poll(depositStatus, { timeout: PULL_WAIT_MS, interval: 1000 }).toBe('paid');
 
     // the studio confirms
     const { body: confirmed } = await request(app)

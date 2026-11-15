@@ -36,8 +36,10 @@
   let declining = $state(false);
   let tell = $state(true);
   let busy = $state(false);
-  /** Only the newest list read applies, and a confirm or decline outdates reads already on their way. */
+  /** Only the newest list read applies; a confirm or decline starts a new read, which outdates older ones. */
   let generation = 0;
+  /** Bookings that arrived while the list was open, announced by whichever read first includes them. */
+  const announce = new Set<string>();
 
   const filters: [Filter, string][] = [
     ['requested', 'frameleaf_clients_bookings_waiting'],
@@ -88,6 +90,11 @@
       bookings = answer.bookings;
       mailReady = answer.mailReady;
       failed = false;
+      for (const booking of answer.bookings) {
+        if (announce.delete(booking.id)) {
+          announced(booking);
+        }
+      }
     } catch {
       if (request === generation) {
         failed = !bookings;
@@ -97,12 +104,14 @@
 
   /** A new booking, or a change to one already listed (its deposit was paid): only a new one is announced. */
   async function arrived(id: string) {
-    const known = bookings?.some((b) => b.id === id);
-    await load();
-    const booking = bookings?.find((b) => b.id === id);
-    if (!booking || known) {
-      return;
+    if (!bookings?.some((b) => b.id === id)) {
+      announce.add(id);
     }
+    await load();
+  }
+
+  function announced(booking: Booking) {
+    const id = booking.id;
     fresh = [...fresh, id];
     toastManager.primary(
       {
@@ -139,8 +148,9 @@
         id: booking.id,
         photographyBookingStatusDto: { status, notifyClient },
       });
-      generation++;
       bookings = bookings?.map((b) => (b.id === saved.id ? { ...b, status: saved.status } : b));
+      // A read already on its way may predate this decision; a new one replaces it, with anything that arrived since.
+      void load();
       const values = { values: { name: booking.clientName } };
       toastManager.primary(
         status === 'confirmed'
