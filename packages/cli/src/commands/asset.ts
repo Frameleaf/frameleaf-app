@@ -6,12 +6,19 @@ import {
   AssetUploadAction,
   AssetVisibility,
   Permission,
+  ResumableUploadError,
+  ResumableUploadInput,
+  ResumableUploadLimits,
   addAssetsToAlbum,
+  attachAssetUploadSidecar,
   checkBulkUpload,
   createAlbum,
   defaults,
   getAllAlbums,
   getSupportedMediaTypes,
+  getUploadLimits,
+  resumeResumableUpload,
+  startResumableUpload,
 } from '@frameleaf/sdk';
 import byteSize from 'byte-size';
 import { Matcher, watch as watchFs } from 'chokidar';
@@ -20,13 +27,16 @@ import { chunk } from 'lodash-es';
 import micromatch from 'micromatch';
 import { once } from 'node:events';
 import { Stats, createReadStream, readdirSync, statSync } from 'node:fs';
-import { stat, unlink } from 'node:fs/promises';
+import { open, readFile, stat, unlink } from 'node:fs/promises';
 import path, { basename } from 'node:path';
 import { Queue } from 'src/queue.js';
-import { BaseOptions, Batcher, authenticate, crawl, hashFile, requirePermissions, s } from 'src/utils.js';
+import { UploadState, uploadStateKey } from 'src/upload-state.js';
+import { BaseOptions, Batcher, authenticate, crawl, hashFile, requirePermissions, s, sha256 } from 'src/utils.js';
 
 const UPLOAD_WATCH_BATCH_SIZE = 100;
 const UPLOAD_WATCH_DEBOUNCE_TIME_MS = 10_000;
+/** FL-849: a watched file is uploaded once its size has stayed the same this long. */
+const UPLOAD_WATCH_STABLE_MS = 5000;
 
 // TODO figure out why `id` is missing
 type AssetBulkUploadCheckResults = Array<AssetBulkUploadCheckResult & { id: string }>;
@@ -47,7 +57,12 @@ export interface UploadOptionsDto {
   progress?: boolean;
   watch?: boolean;
   jsonOutput?: boolean;
+  /** False (`--no-resume`) starts every file from the beginning instead of continuing a saved upload. */
+  resume?: boolean;
 }
+
+/** The account deleted this item and asked for it not to be uploaded again: skipped, not failed. */
+const DELETED = 'deleted' as const;
 
 class UploadFile extends File {
   constructor(
@@ -67,8 +82,9 @@ class UploadFile extends File {
 }
 
 const uploadBatch = async (files: string[], options: UploadOptionsDto) => {
-  const { newFiles, duplicates } = await checkForDuplicates(files, options);
-  const newAssets = await uploadFiles(newFiles, options);
+  const hashes = new Map<string, string>();
+  const { newFiles, duplicates } = await checkForDuplicates(files, options, hashes);
+  const newAssets = await uploadFiles(newFiles, options, hashes);
   if (options.jsonOutput) {
     console.log(JSON.stringify({ newFiles, duplicates, newAssets }, undefined, 4));
   }
@@ -83,7 +99,8 @@ export const startWatch = async (
   {
     batchSize = UPLOAD_WATCH_BATCH_SIZE,
     debounceTimeMs = UPLOAD_WATCH_DEBOUNCE_TIME_MS,
-  }: { batchSize?: number; debounceTimeMs?: number } = {},
+    stableMs = UPLOAD_WATCH_STABLE_MS,
+  }: { batchSize?: number; debounceTimeMs?: number; stableMs?: number } = {},
 ) => {
   const watcherIgnored: Matcher[] = [];
   const { image, video } = await getSupportedMediaTypes();
@@ -121,7 +138,7 @@ export const startWatch = async (
     ignoreInitial: true,
     ignored: watcherIgnored,
     alwaysStat: true,
-    awaitWriteFinish: true,
+    awaitWriteFinish: { stabilityThreshold: stableMs, pollInterval: Math.min(500, stableMs) },
     depth: options.recursive ? undefined : 0,
     persistent: true,
   })
@@ -188,7 +205,12 @@ const scan = async (pathsToCrawl: string[], options: UploadOptionsDto) => {
   return files;
 };
 
-export const checkForDuplicates = async (files: string[], { concurrency, skipHash, progress }: UploadOptionsDto) => {
+/** `hashes` receives each hashed file's SHA-256, so a resumable upload doesn't read the file twice. */
+export const checkForDuplicates = async (
+  files: string[],
+  { concurrency, skipHash, progress }: UploadOptionsDto,
+  hashes = new Map<string, string>(),
+) => {
   if (skipHash) {
     console.log('Skipping hash check, assuming all files are new');
     return { newFiles: files, duplicates: [] };
@@ -295,6 +317,7 @@ export const checkForDuplicates = async (files: string[], { concurrency, skipHas
         // against either kind of row; the two items share the same `id` and are
         // always sent in the same batch, so the check queue can aggregate them.
         const { sha1, sha256 } = await hashFile(filepath);
+        hashes.set(filepath, sha256);
         const dtos = [
           { id: filepath, checksum: sha256 },
           { id: filepath, checksum: sha1 },
@@ -359,7 +382,11 @@ export const checkForDuplicates = async (files: string[], { concurrency, skipHas
   }
 };
 
-export const uploadFiles = async (files: string[], options: UploadOptionsDto): Promise<Asset[]> => {
+export const uploadFiles = async (
+  files: string[],
+  options: UploadOptionsDto,
+  hashes = new Map<string, string>(),
+): Promise<Asset[]> => {
   const { dryRun, concurrency, progress } = options;
   if (files.length === 0) {
     console.log('All assets were already uploaded, nothing to do.');
@@ -401,17 +428,38 @@ export const uploadFiles = async (files: string[], options: UploadOptionsDto): P
   let duplicateSize = 0;
   let successCount = 0;
   let successSize = 0;
+  let deletedCount = 0;
+  // Bytes the server has confirmed of files still uploading, so the bar moves during a big file.
+  const committed = new Map<string, number>();
+  const showProgress = () => {
+    const value = successSize + duplicateSize + committed.values().reduce((sum, bytes) => sum + bytes, 0);
+    uploadProgress?.update(value, { value_formatted: byteSize(value) });
+  };
+  const transfer = await uploadTransfer(options);
 
   const newAssets: Asset[] = [];
 
-  const queue = new Queue<string, AssetMediaResponseDto>(
+  const queue = new Queue<string, AssetMediaResponseDto | typeof DELETED>(
     async (filepath: string) => {
       const stats = statsMap.get(filepath);
       if (!stats) {
         throw new Error(`Stats not found for ${filepath}`);
       }
 
-      const response = await uploadFile(filepath, stats, options);
+      let response;
+      try {
+        response = await uploadFile(filepath, stats, options, transfer, hashes.get(filepath), (bytes) => {
+          committed.set(filepath, bytes);
+          showProgress();
+        });
+      } finally {
+        committed.delete(filepath);
+      }
+      if (response === DELETED) {
+        deletedCount++;
+        showProgress();
+        return response;
+      }
       newAssets.push({ id: response.id, filepath });
       if (response.status === AssetMediaStatus.Duplicate) {
         duplicateCount++;
@@ -421,7 +469,7 @@ export const uploadFiles = async (files: string[], options: UploadOptionsDto): P
         successSize += stats.size ?? 0;
       }
 
-      uploadProgress?.update(successSize + duplicateSize, { value_formatted: byteSize(successSize + duplicateSize) });
+      showProgress();
 
       return response;
     },
@@ -440,6 +488,9 @@ export const uploadFiles = async (files: string[], options: UploadOptionsDto): P
   if (duplicateCount > 0) {
     console.log(`Skipped ${duplicateCount} duplicate asset${s(duplicateCount)} (${byteSize(duplicateSize)})`);
   }
+  if (deletedCount > 0) {
+    console.log(`Skipped ${deletedCount} file${s(deletedCount)} deleted in Frameleaf`);
+  }
 
   // Report failures
   const failedTasks = queue.tasks.filter((task) => task.status === 'failed');
@@ -453,11 +504,130 @@ export const uploadFiles = async (files: string[], options: UploadOptionsDto): P
   return newAssets;
 };
 
+type Transfer = { limits?: ResumableUploadLimits; state?: UploadState; imageExtensions?: Set<string> };
+const notices = { oneShot: false };
+
+/** FL-849: whether this server takes resumable uploads; asked once per run. An older server gets multipart. */
+const uploadTransfer = async (options: UploadOptionsDto): Promise<Transfer> => {
+  if (options.dryRun) {
+    return {};
+  }
+  const { baseUrl, headers } = defaults;
+  let limits: ResumableUploadLimits | undefined;
+  try {
+    limits = (await getUploadLimits({ baseUrl, headers: headers as Record<string, string> })) ?? undefined;
+  } catch {
+    // Unreachable or refused here: the one-piece upload reports the real error.
+  }
+  if (!limits) {
+    if (!notices.oneShot) {
+      notices.oneShot = true;
+      console.log('This server takes each file in one piece, so an interrupted file starts again from the beginning.');
+    }
+    return {};
+  }
+  const { image } = await getSupportedMediaTypes();
+  return { limits, state: new UploadState(), imageExtensions: new Set(image) };
+};
+
+const isDeletedByOwner = (error: unknown) =>
+  error instanceof ResumableUploadError && error.reason === 'deleted_by_owner';
+
+/** A media type the server accepts on create; the asset's own type still comes from its file name. */
+const mediaType = (filepath: string, isImage: boolean) =>
+  `${isImage ? 'image' : 'video'}/${
+    path
+      .extname(filepath)
+      .slice(1)
+      .toLowerCase()
+      .replaceAll(/[^\da-z.+-]/g, '') || 'octet-stream'
+  }`;
+
 const uploadFile = async (
   input: string,
   stats: Stats,
+  options: UploadOptionsDto,
+  transfer?: Transfer,
+  knownSha256?: string,
+  onCommitted?: (bytes: number) => void,
+): Promise<AssetMediaResponseDto | typeof DELETED> => {
+  if (!transfer?.limits || !transfer.state) {
+    return uploadMultipart(input, stats, options);
+  }
+  const { baseUrl, headers } = defaults;
+  const state = transfer.state;
+  const digest = knownSha256 ?? (await sha256(input, 'hex'));
+  const key = uploadStateKey(baseUrl, input, stats.size, stats.mtimeMs, digest);
+  const modifiedAt = stats.mtime.toISOString();
+  const sidecarPath = findSidecar(input);
+  const handle = await open(input, 'r');
+  const request: ResumableUploadInput = {
+    baseUrl,
+    headers: headers as Record<string, string>,
+    size: stats.size,
+    sha256: digest,
+    contentType: mediaType(input, !!transfer.imageExtensions?.has(path.extname(input).toLowerCase())),
+    metadata: {
+      filename: basename(input),
+      fileCreatedAt: modifiedAt,
+      fileModifiedAt: modifiedAt,
+      isFavorite: false,
+      ...(options.visibility && { visibility: options.visibility }),
+    },
+    readChunk: async (offset, length) => {
+      const buffer = new Uint8Array(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, offset);
+      return buffer.subarray(0, bytesRead);
+    },
+    onResource: async (url) => {
+      state.set(key, url);
+      // The XMP goes with the photo, before any of its bytes.
+      if (sidecarPath) {
+        const sidecarData = new Blob([await readFile(sidecarPath)]);
+        await attachAssetUploadSidecar({ id: url.slice(url.lastIndexOf('/') + 1), body: { sidecarData } });
+      }
+    },
+    onProgress: (bytes) => {
+      state.touch(key);
+      onCommitted?.(bytes);
+    },
+  };
+  try {
+    const saved = options.resume === false ? undefined : state.get(key);
+    let result;
+    if (saved) {
+      try {
+        result = await resumeResumableUpload(saved, request);
+      } catch (error) {
+        // Gone or expired on the server: start again.
+        if (!(error instanceof ResumableUploadError) || error.reason !== 'unavailable') {
+          throw error;
+        }
+        state.delete(key);
+        result = await startResumableUpload(request);
+      }
+    } else {
+      result = await startResumableUpload(request);
+    }
+    state.delete(key);
+    return { id: result.id, status: result.status as AssetMediaStatus };
+  } catch (error) {
+    if (isDeletedByOwner(error)) {
+      state.delete(key);
+      return DELETED;
+    }
+    // Kept in the state file: the next run (or the queue's retry) continues from the server's offset.
+    throw error;
+  } finally {
+    await handle.close();
+  }
+};
+
+const uploadMultipart = async (
+  input: string,
+  stats: Stats,
   { visibility }: UploadOptionsDto,
-): Promise<AssetMediaResponseDto> => {
+): Promise<AssetMediaResponseDto | typeof DELETED> => {
   const { baseUrl, headers } = defaults;
 
   const formData = new FormData();
@@ -493,7 +663,11 @@ const uploadFile = async (
     window: null,
   });
   if (response.status !== 200 && response.status !== 201) {
-    throw new Error(await response.text());
+    const text = await response.text();
+    if (response.status === 409 && text.includes('deleted_by_owner')) {
+      return DELETED;
+    }
+    throw new Error(text);
   }
 
   return response.json() as Promise<AssetMediaResponseDto>;

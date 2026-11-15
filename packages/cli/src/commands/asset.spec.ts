@@ -11,6 +11,10 @@ import {
   checkBulkUpload,
   defaults,
   getSupportedMediaTypes,
+  getUploadLimits,
+  ResumableUploadError,
+  resumeResumableUpload,
+  startResumableUpload,
 } from '@frameleaf/sdk';
 import createFetchMock from 'vitest-fetch-mock';
 
@@ -139,6 +143,110 @@ describe('uploadFiles', () => {
 
     const formData = fetchMocker.mock.calls[0]?.[1]?.body as FormData;
     expect(formData.get('visibility')).toBe('hidden');
+  });
+});
+
+describe('uploadFiles with resumable uploads (FL-849)', () => {
+  const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resume-'));
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resume-state-'));
+  const testFilePath = path.join(testDir, 'big.png');
+  const sha = 'a'.repeat(64);
+  const url = 'https://example.com/assets/uploads/6f1f8c0e-2d1b-4c55-9a77-0f6f0d9f3b21';
+  const stateFile = path.join(stateDir, 'frameleaf', 'uploads.json');
+  const done = { id: 'fc5621b1-86f6-44a1-9905-403e607df9f5', status: 'created', sha256: sha };
+  const run = (extra: Partial<UploadOptionsDto> = {}) =>
+    uploadFiles([testFilePath], { concurrency: 1, ...extra }, new Map([[testFilePath, sha]]));
+  const savedUrls = () =>
+    fs.existsSync(stateFile) ? Object.values(JSON.parse(fs.readFileSync(stateFile, 'utf8'))) : [];
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    process.env.XDG_STATE_HOME = stateDir;
+    fs.rmSync(path.join(stateDir, 'frameleaf'), { recursive: true, force: true });
+    fs.writeFileSync(testFilePath, 'twenty bytes of data');
+    vi.mocked(defaults).baseUrl = 'https://example.com';
+    vi.mocked(defaults).headers = { 'x-api-key': 'key' };
+    vi.mocked(getUploadLimits).mockResolvedValue({ maxSize: 1e12, maxAppendSize: 8, maxAge: 86_400, maxParallel: 4 });
+    vi.mocked(getSupportedMediaTypes).mockResolvedValue({ image: ['.png'], video: ['.mp4'], sidecar: ['.xmp'], font: [] });
+  });
+
+  afterEach(() => {
+    delete process.env.XDG_STATE_HOME;
+  });
+
+  it.skipIf(os.platform() === 'win32')(
+    'a killed upload continues from the saved resource on the next run',
+    async () => {
+      vi.mocked(startResumableUpload).mockImplementation(async (input) => {
+        await input.onResource?.(url);
+        expect(input).toMatchObject({ size: 20, sha256: sha, contentType: 'image/png' });
+        expect(input.metadata).toMatchObject({ filename: 'big.png', isFavorite: false });
+        expect(Buffer.from(await input.readChunk(4, 6)).toString()).toBe(' bytes');
+        throw new Error('socket hang up');
+      });
+      vi.mocked(resumeResumableUpload).mockRejectedValue(new Error('socket hang up'));
+
+      await expect(run()).resolves.toEqual([]);
+      expect(savedUrls()).toEqual([expect.objectContaining({ url })]);
+
+      // The next run: the saved resource is resumed, nothing is created.
+      vi.mocked(startResumableUpload).mockClear();
+      vi.mocked(resumeResumableUpload).mockResolvedValue(done);
+      await expect(run()).resolves.toEqual([{ id: done.id, filepath: testFilePath }]);
+      expect(resumeResumableUpload).toHaveBeenLastCalledWith(url, expect.objectContaining({ size: 20 }));
+      expect(startResumableUpload).not.toHaveBeenCalled();
+      expect(savedUrls()).toEqual([]);
+    },
+  );
+
+  it.skipIf(os.platform() === 'win32')('--no-resume starts again even when an upload was saved', async () => {
+    vi.mocked(startResumableUpload).mockImplementationOnce(async (input) => {
+      await input.onResource?.(url);
+      throw new Error('socket hang up');
+    });
+    vi.mocked(resumeResumableUpload).mockRejectedValue(new Error('socket hang up'));
+    await run();
+    vi.mocked(startResumableUpload).mockResolvedValue(done);
+    vi.mocked(resumeResumableUpload).mockClear();
+
+    await expect(run({ resume: false })).resolves.toEqual([{ id: done.id, filepath: testFilePath }]);
+    expect(resumeResumableUpload).not.toHaveBeenCalled();
+  });
+
+  it('counts a file deleted in Frameleaf as skipped, not failed', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.mocked(startResumableUpload).mockRejectedValue(
+      Object.assign(new ResumableUploadError(409, 'deleted_by_owner', 'append: HTTP 409'), {
+        status: 409,
+        reason: 'deleted_by_owner',
+      }),
+    );
+    try {
+      await expect(run()).resolves.toEqual([]);
+      expect(startResumableUpload).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith('Skipped 1 file deleted in Frameleaf');
+      expect(log).not.toHaveBeenCalledWith(expect.stringMatching(/^Failed to upload/));
+      expect(process.exitCode ?? 0).toBe(0);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('falls back to one-piece uploads on a server without resumable uploads', async () => {
+    // eslint-disable-next-line unicorn/no-null
+    vi.mocked(getUploadLimits).mockResolvedValue(null);
+    const fetchMocker = createFetchMock(vi);
+    fetchMocker.enableMocks();
+    fetchMocker.doMockIf(/\/assets$/, () => ({
+      status: 201,
+      body: JSON.stringify({ id: done.id, status: 'created' }),
+    }));
+    try {
+      await expect(run()).resolves.toEqual([{ id: done.id, filepath: testFilePath }]);
+      expect(startResumableUpload).not.toHaveBeenCalled();
+    } finally {
+      fetchMocker.disableMocks();
+    }
   });
 });
 
@@ -360,7 +468,7 @@ describe('startWatch', { timeout: 15_000 }, () => {
   it('should start watching a directory and upload new files', async () => {
     const testFilePath = path.join(testFolder, 'test.jpg');
 
-    stopWatch = await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10 });
+    stopWatch = await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10, stableMs: 100 });
     await fs.promises.writeFile(testFilePath, 'testjpg');
 
     await vi.waitFor(
@@ -388,7 +496,7 @@ describe('startWatch', { timeout: 15_000 }, () => {
     const testFilePath = path.join(testFolder, 'test.jpg');
     const unsupportedFilePath = path.join(testFolder, 'test.txt');
 
-    stopWatch = await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10 });
+    stopWatch = await startWatch([testFolder], { concurrency: 1 }, { batchSize: 1, debounceTimeMs: 10, stableMs: 100 });
     await fs.promises.writeFile(testFilePath, 'testjpg');
     await fs.promises.writeFile(unsupportedFilePath, 'testtxt');
 
@@ -427,7 +535,7 @@ describe('startWatch', { timeout: 15_000 }, () => {
     stopWatch = await startWatch(
       [testFolder],
       { concurrency: 1, ignore: ignoredPattern },
-      { batchSize: 1, debounceTimeMs: 10 },
+      { batchSize: 1, debounceTimeMs: 10, stableMs: 100 },
     );
     await fs.promises.writeFile(testFilePath, 'testjpg');
     await fs.promises.writeFile(ignoredFilePath, 'ignoredjpg');
