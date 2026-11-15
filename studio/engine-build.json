@@ -851,10 +851,20 @@
       "sha256": "3b65ed55534fb309729d80829ecdf80a4a2c8bc78225bacf9896efe7b9708433"
     },
     {
+      "path": "patches/0188-sound-crossfades.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "364558bf32649932bd705d2b4fd1c9759898f46c3ba821d5562aa9a5d9141236"
+    },
+    {
+      "path": "patches/0187-marker-ranges.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2db6f7a1a357563a44bddb18f051407f9165323a1ff04b983eb84cf7aed9ddd8"
+    },
+    {
       "path": "patches/0185-editor-import-transitions.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "f833d036d5a8cdcb007f3390318b33e47fae16854920aadea876ef5f67ebd0db"
     }
   ],
-  "sourceSha256": "726e431a9dd920fe6fa9588dd0d454075bbfa3f5052cb2f9f21a0c2a19811e62"
+  "sourceSha256": "bbcef0a3103b1ac8983a3ea53f8aee7d7995115891d8e40766135b64bd99b84c"
 }

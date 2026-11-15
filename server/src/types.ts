@@ -1742,7 +1742,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.LibraryProgressSamples]: { samples: { at: string; done: Record<string, number> }[] };
-  [SystemMetadataKey.OvernightRedo]: { queues: string[] };
+  [SystemMetadataKey.OvernightRedo]: { queues: string[]; bestPhotos?: boolean };
   [SystemMetadataKey.VideoCardState]: VideoCardState;
   [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
   [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };
@@ -1851,6 +1851,8 @@ export type UserPreferences = {
   sharedLinks: {
     enabled: boolean;
     sidebarWeb: boolean;
+    /** FL-922: days a new link lasts when its form asks for the default expiry; null falls back to the server's */
+    defaultExpiryDays: number | null;
   };
   tags: {
     enabled: boolean;
