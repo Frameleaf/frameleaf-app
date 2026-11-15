@@ -834,7 +834,7 @@ from
 where
   "asset"."type" = 'IMAGE'
   and "asset"."deletedAt" is null
-  and "asset_best_photo_score"."metadata"->>'aestheticModel' is distinct from $1
+  and "asset_best_photo_score"."metadata" ->> 'aestheticModel' is distinct from $1
 
 -- AssetJobRepository.getForBestPhotoScoring
 select
