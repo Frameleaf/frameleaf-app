@@ -43,6 +43,9 @@ const described = ({ id, ownerId, originalFileName, visibility }: ReturnType<typ
   ],
 });
 
+/** Download rows as the repository streams them; these tests only read ids, Live Photo links and sizes. */
+const downloadStream = (items: object[]) => makeStream(items) as never;
+
 const downloadResponse: DownloadResponseDto = {
   totalSize: 105_000,
   archives: [
@@ -611,7 +614,7 @@ describe(DownloadService.name, () => {
       async ({ sizes, totalSize, archives }) => {
         mocks.user.getMetadata.mockResolvedValue([]);
         mocks.downloadRepository.downloadUserId.mockReturnValue(
-          makeStream(sizes.map((size, index) => ({ id: `asset-${index}`, livePhotoVideoId: null, size }))),
+          downloadStream(sizes.map((size, index) => ({ id: `asset-${index}`, livePhotoVideoId: null, size }))),
         );
         await expect(
           sut.getDownloadInfo(authStub.admin, { userId: authStub.admin.user.id, archiveSize: 10 }),
@@ -632,7 +635,7 @@ describe(DownloadService.name, () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
       mocks.downloadRepository.downloadAssetIds.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -647,7 +650,7 @@ describe(DownloadService.name, () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-1']));
       mocks.downloadRepository.downloadAlbumId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -666,7 +669,7 @@ describe(DownloadService.name, () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-1']));
       mocks.downloadRepository.downloadAlbumId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -685,7 +688,7 @@ describe(DownloadService.name, () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set(['album-1']));
       mocks.downloadRepository.downloadAlbumId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -702,7 +705,7 @@ describe(DownloadService.name, () => {
     it('should return a list of archives (userId)', async () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -719,7 +722,7 @@ describe(DownloadService.name, () => {
       const auth = { ...authStub.admin, hideNsfwAssets: true };
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -734,7 +737,7 @@ describe(DownloadService.name, () => {
       const auth = authStub.adminWithElevatedPermission;
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 5000 },
         ]),
@@ -750,7 +753,7 @@ describe(DownloadService.name, () => {
     it('should split archives by size', async () => {
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadUserId.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: null, size: 5000 },
           { id: 'asset-2', livePhotoVideoId: null, size: 100_000 },
           { id: 'asset-3', livePhotoVideoId: null, size: 23_456 },
@@ -778,13 +781,13 @@ describe(DownloadService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadAssetIds.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-1', livePhotoVideoId: 'asset-3', size: 5000 },
           { id: 'asset-2', livePhotoVideoId: 'asset-4', size: 100_000 },
         ]),
       );
       mocks.downloadRepository.downloadMotionAssetIds.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-3', livePhotoVideoId: null, size: 23_456, originalPath: '/path/to/file.mp4' },
           { id: 'asset-4', livePhotoVideoId: null, size: 123_000, originalPath: '/path/to/file.mp4' },
         ]),
@@ -806,10 +809,10 @@ describe(DownloadService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadAssetIds.mockReturnValue(
-        makeStream([{ id: 'asset-1', livePhotoVideoId: 'asset-2', size: 5000 }]),
+        downloadStream([{ id: 'asset-1', livePhotoVideoId: 'asset-2', size: 5000 }]),
       );
       mocks.downloadRepository.downloadMotionAssetIds.mockReturnValue(
-        makeStream([{ id: 'asset-2', livePhotoVideoId: null, size: 23_456, originalPath: '/path/to/file.mp4' }]),
+        downloadStream([{ id: 'asset-2', livePhotoVideoId: null, size: 23_456, originalPath: '/path/to/file.mp4' }]),
       );
 
       await expect(sut.getDownloadInfo(auth, { assetIds })).resolves.toEqual({
@@ -829,10 +832,10 @@ describe(DownloadService.name, () => {
         { key: UserMetadataKey.Preferences, value: { download: { includeEmbeddedVideos: true } } },
       ]);
       mocks.downloadRepository.downloadAssetIds.mockReturnValue(
-        makeStream([{ id: 'asset-1', livePhotoVideoId: 'asset-2', size: 5000 }]),
+        downloadStream([{ id: 'asset-1', livePhotoVideoId: 'asset-2', size: 5000 }]),
       );
       mocks.downloadRepository.downloadMotionAssetIds.mockReturnValue(
-        makeStream([
+        downloadStream([
           { id: 'asset-2', livePhotoVideoId: null, size: 23_456, originalPath: '/data/encoded-video/uuid-MP.mp4' },
         ]),
       );
@@ -849,11 +852,11 @@ describe(DownloadService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(assetIds));
       mocks.user.getMetadata.mockResolvedValue([]);
       mocks.downloadRepository.downloadAssetIds.mockReturnValue(
-        makeStream([{ id: 'asset-1', livePhotoVideoId: 'asset-3', size: 5000 }]),
+        downloadStream([{ id: 'asset-1', livePhotoVideoId: 'asset-3', size: 5000 }]),
       );
 
       mocks.downloadRepository.downloadMotionAssetIds.mockReturnValue(
-        makeStream([
+        downloadStream([
           {
             id: 'asset-2',
             livePhotoVideoId: null,

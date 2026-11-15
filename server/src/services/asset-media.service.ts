@@ -1013,7 +1013,9 @@ export class AssetMediaService extends BaseService {
       }
     }
 
-    const format = requested ? undefined : dto.format;
+    const format = requested
+      ? undefined
+      : (dto.format as Exclude<AssetDownloadOriginalDto['format'], DownloadFormat> | undefined);
     if (format === 'document-pdf') {
       return this.reviewDocument(auth, id, ownerId, originalPath!, originalFileName, signal);
     }

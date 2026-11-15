@@ -32,6 +32,7 @@ export const sharedLinkStub = {
     assets: [AssetFactory.create()],
     password: 'password',
     slug: null,
+    webSizeOnly: false,
   }),
   valid: Object.freeze({
     id: '123',
@@ -51,6 +52,7 @@ export const sharedLinkStub = {
     album: null,
     owner: null,
     slug: null,
+    webSizeOnly: false,
   }),
   expired: Object.freeze({
     id: '123',
@@ -70,6 +72,7 @@ export const sharedLinkStub = {
     album: null,
     owner: null,
     slug: null,
+    webSizeOnly: false,
   }),
   passwordRequired: Object.freeze({
     id: '123',
@@ -88,5 +91,6 @@ export const sharedLinkStub = {
     albumId: null,
     album: null,
     owner: null,
+    webSizeOnly: false,
   }),
 };
