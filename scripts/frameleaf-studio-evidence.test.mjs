@@ -805,7 +805,9 @@ test('linear tone and spatial blur HDR coverage is bound only to its actual migr
 
 test('observations of Frameleaf-added operators are skipped; their evidence is studio/spec', async () => {
   const rows = await frameleafOperatorRows();
-  assert.ok(rows.has('transition.filmDissolve'));
+  const operators = JSON.parse(await readFile(path.join(ROOT, 'studio/frameleaf-operators.json'), 'utf8'));
+  for (const id of operators.effects) assert.ok(rows.has(`effect.${id}`));
+  for (const id of operators.transitions) assert.ok(rows.has(`transition.${id}`));
   const args = [{ engineRevision: 'e', rows: [overlayRow('blend.normal')] }, { rows: [fixture('blend.normal')] }, manifest(), build(), 'blend', 'chromium'];
   const report = await familyReport();
   // A blend family report never names a transition, so only the skip rule is exercised in isolation.
