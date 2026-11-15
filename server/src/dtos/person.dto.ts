@@ -356,6 +356,27 @@ export const AssetFaceResponseSchema = z
       .nullable()
       .describe('When the owner hid this face, or null. Hidden faces are only listed with withHidden')
       .meta(new HistoryBuilder().added('v3.2.1').getExtensions()),
+    // FL-863: optional, so older native clients decode faces unchanged
+    eyesOpen: z
+      .number()
+      .min(0)
+      .max(1)
+      .nullable()
+      .optional()
+      .describe(
+        "How open the face's eyes are (0 closed, 1 open); null when the eyes can't be seen or aren't scored yet",
+      )
+      .meta({ format: 'double' }),
+    eyeSharpness: z
+      .number()
+      .min(0)
+      .max(1)
+      .nullable()
+      .optional()
+      .describe(
+        "How sharp the face's eyes are (0 soft, 1 sharp); null when the eyes can't be seen or aren't scored yet",
+      )
+      .meta({ format: 'double' }),
     person: PersonResponseSchema.nullable(),
   })
   .describe('Asset face with person')
@@ -553,6 +574,12 @@ function mapFacesWithoutPerson(face: AssetFace, edits?: AssetEditActionItem[], a
     revision: face.updateId,
     correctedAt: asDateTimeString(face.correctedAt ?? null) ?? null,
     hiddenAt: asDateTimeString(face.deletedAt) ?? null,
+    // only for a face whose eyes have been checked
+    ...(face.eyeScoreVersion !== null &&
+      face.eyeScoreVersion !== undefined && {
+        eyesOpen: face.eyesOpen ?? null,
+        eyeSharpness: face.eyeSharpness ?? null,
+      }),
   };
 }
 

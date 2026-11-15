@@ -1989,6 +1989,14 @@ export type AdminConfigDuplicateDetectionDto = {
     /** Deprecated compatibility setting. RAW, then HEIC/HEIF/HIF, are always preferred over other formats regardless of size */
     preferOriginalFormat: boolean;
 };
+export type AdminConfigEyeScoresDto = {
+    /** Eyes-open score below which a face counts as having closed eyes */
+    closedBelow?: number;
+    /** Whether eyes open and eye sharpness are measured for each face */
+    enabled?: boolean;
+    /** Eye sharpness below which a face counts as having soft eyes */
+    softBelow?: number;
+};
 export type AdminConfigFacialRecognitionDto = {
     /** Whether the task is enabled */
     enabled: boolean;
@@ -2090,6 +2098,7 @@ export type AdminConfigMachineLearningDto = {
     duplicateDetection: AdminConfigDuplicateDetectionDto;
     /** Enabled */
     enabled: boolean;
+    eyeScores?: AdminConfigEyeScoresDto;
     facialRecognition: AdminConfigFacialRecognitionDto;
     imageDescription?: AdminConfigImageDescriptionDto;
     nsfwDetection?: AdminConfigNsfwDetectionDto;
@@ -10522,6 +10531,10 @@ export type AssetFaceResponseDto = {
     boundingBoxY2: number;
     /** When a person last corrected this face (moved, resized, reassigned or unassigned it), or null */
     correctedAt: string | null;
+    /** How sharp the face's eyes are (0 soft, 1 sharp); null when the eyes can't be seen or aren't scored yet */
+    eyeSharpness?: number | null;
+    /** How open the face's eyes are (0 closed, 1 open); null when the eyes can't be seen or aren't scored yet */
+    eyesOpen?: number | null;
     /** When the owner hid this face, or null. Hidden faces are only listed with withHidden */
     hiddenAt: string | null;
     /** Face ID */
@@ -15284,6 +15297,27 @@ export type PhotographyBulkDto = {
         title: string;
     }[];
 };
+export type PhotographyPhotoEyesDto = {
+    /** Faces whose eyes are closed */
+    closedCount: number;
+    /** Faces found in the photo */
+    faceCount: number;
+    /** Each face, left to right */
+    faces: {
+        /** The eyes have been checked */
+        checked: boolean;
+        /** The eyes are closed */
+        closed: boolean;
+        /** The eyes are soft (out of focus) */
+        soft: boolean;
+    }[];
+    /** The worst checked face's eye quality (open and sharp), for sorting; null until one is checked */
+    quality: number | null;
+    /** Faces whose eyes are soft (out of focus) */
+    softCount: number;
+    /** Faces whose eyes aren't checked yet */
+    unscoredCount: number;
+};
 export type PhotographyPhotosDto = {
     nextCursor: string | null;
     photos: {
@@ -15293,6 +15327,7 @@ export type PhotographyPhotosDto = {
         currentRevisionId: string | null;
         eligible: boolean;
         exclusion: string | null;
+        eyes?: PhotographyPhotoEyesDto;
         fileName: string;
         height: number | null;
         id: string;

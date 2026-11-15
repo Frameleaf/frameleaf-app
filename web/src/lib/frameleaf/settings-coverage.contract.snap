@@ -770,6 +770,21 @@
   "machineLearning.enabled": {
     "type": "boolean"
   },
+  "machineLearning.eyeScores.closedBelow": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "machineLearning.eyeScores.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.eyeScores.softBelow": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
   "machineLearning.facialRecognition.enabled": {
     "type": "boolean"
   },

@@ -2347,6 +2347,8 @@ export enum JobName {
   AssetDeleteCheck = 'AssetDeleteCheck',
   AssetDetectFacesQueueAll = 'AssetDetectFacesQueueAll',
   AssetDetectFaces = 'AssetDetectFaces',
+  FaceEyeScoreQueueAll = 'FaceEyeScoreQueueAll',
+  FaceEyeScore = 'FaceEyeScore',
   AssetDetectDuplicatesQueueAll = 'AssetDetectDuplicatesQueueAll',
   AssetDetectDuplicates = 'AssetDetectDuplicates',
   DuplicateResolutionLifecycle = 'DuplicateResolutionLifecycle',
@@ -2561,6 +2563,9 @@ export enum JobName {
 export const JobNameSchema = z
   .enum(JobName)
   .exclude([
+    // FL-863: internal eye scoring, never in the public queue contract
+    JobName.FaceEyeScore,
+    JobName.FaceEyeScoreQueueAll,
     JobName.PhotographyWorkflowRender,
     JobName.PhotographyBulkGallery,
     JobName.PhotographyCampaignSend,
