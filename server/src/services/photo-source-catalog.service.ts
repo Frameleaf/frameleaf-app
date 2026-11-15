@@ -342,7 +342,10 @@ export class PhotoSourceCatalogService {
       }
       const key = tagIds.join(',');
       const group = groups.get(key) ?? { tagIds, assetIds: [] };
-      group.assetIds.push(plan.assetId);
+      // two items of different runs can name the same photo
+      if (!group.assetIds.includes(plan.assetId)) {
+        group.assetIds.push(plan.assetId);
+      }
       groups.set(key, group);
     }
     for (const group of groups.values()) {
