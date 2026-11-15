@@ -89,7 +89,6 @@ export const envData: EnvData = {
   studioWorker: { enabled: true, trustDir: '/run/frameleaf/studio-worker' },
   frameleafCloud: {
     url: null,
-    guestSelfies: false,
     pushUrl: null,
     identityDir: null,
     linkToken: null,
