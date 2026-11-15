@@ -32,7 +32,9 @@ const UpdateLibrarySchema = z
     folderAlbums: z
       .boolean()
       .optional()
-      .describe("Keep an album for each folder of the library, in sync after every scan. Albums belong to the library's owner."),
+      .describe(
+        "Keep an album for each folder of the library, in sync after every scan. Albums belong to the library's owner.",
+      ),
     removeFolderAlbums: z
       .boolean()
       .optional()

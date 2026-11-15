@@ -90,7 +90,8 @@ export const buildFolderTree = (
 };
 
 export const fileKey = (originalFileName: string, fileModifiedAt: Date | string) =>
-  `${originalFileName}\u0000${new Date(fileModifiedAt).getTime()}`;
+  // a file name never holds '/'
+  `${originalFileName}/${new Date(fileModifiedAt).getTime()}`;
 
 /**
  * Folders that went away and where they went. A folder whose album has gone missing moved to the new folder holding

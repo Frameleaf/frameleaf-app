@@ -126,9 +126,7 @@ export class FolderAlbumService extends BaseService {
 
     // Albums for new folders, parents first.
     const order = getPreferences(await this.userRepository.getMetadata(ownerId)).albums.defaultAssetOrder;
-    const nodes = [...tree.values()].toSorted(
-      (a, b) => a.depth - b.depth || a.folderPath.localeCompare(b.folderPath),
-    );
+    const nodes = [...tree.values()].toSorted((a, b) => a.depth - b.depth || a.folderPath.localeCompare(b.folderPath));
     for (const node of nodes) {
       const link = byPath.get(node.folderPath);
       if (link) {
@@ -139,7 +137,10 @@ export class FolderAlbumService extends BaseService {
         }
         continue;
       }
-      byPath.set(node.folderPath, await this.createAlbum(libraryId, ownerId, node, nameOf(node.folderPath), order, byPath));
+      byPath.set(
+        node.folderPath,
+        await this.createAlbum(libraryId, ownerId, node, nameOf(node.folderPath), order, byPath),
+      );
       result.created++;
     }
 
@@ -202,7 +203,11 @@ export class FolderAlbumService extends BaseService {
     return result;
   }
 
-  private async findMovedFolders(libraryId: string, tree: Map<string, FolderNode>, byPath: Map<string, FolderAlbumLink>) {
+  private async findMovedFolders(
+    libraryId: string,
+    tree: Map<string, FolderNode>,
+    byPath: Map<string, FolderAlbumLink>,
+  ) {
     const goneFolders = [...byPath.keys()].filter((folderPath) => !tree.has(folderPath));
     const free = new Set([...tree.keys()].filter((folderPath) => !byPath.has(folderPath)));
     if (goneFolders.length === 0 || free.size === 0) {

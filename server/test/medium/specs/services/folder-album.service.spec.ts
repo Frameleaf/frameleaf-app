@@ -69,13 +69,7 @@ const folderAlbum = (db: Kysely<DB>, libraryId: string, folderPath: string) =>
   db
     .selectFrom('library_folder_album')
     .innerJoin('album', 'album.id', 'library_folder_album.albumId')
-    .select([
-      'album.id',
-      'album.albumName',
-      'album.parentId',
-      'album.kind',
-      'library_folder_album.isUserEdited',
-    ])
+    .select(['album.id', 'album.albumName', 'album.parentId', 'album.kind', 'library_folder_album.isUserEdited'])
     .where('library_folder_album.libraryId', '=', libraryId)
     .where('library_folder_album.folderPath', '=', folderPath)
     .executeTakeFirst();
@@ -124,7 +118,9 @@ describe(FolderAlbumService.name, () => {
       .select('id_ancestor')
       .where('id_descendant', '=', day1!.id)
       .execute();
-    expect(ancestors.map(({ id_ancestor }) => id_ancestor).toSorted()).toEqual([top!.id, trip!.id, day1!.id].toSorted());
+    expect(ancestors.map(({ id_ancestor }) => id_ancestor).toSorted()).toEqual(
+      [top!.id, trip!.id, day1!.id].toSorted(),
+    );
 
     // a second run changes nothing
     await expect(sut.sync(library.id)).resolves.toEqual({
@@ -152,9 +148,9 @@ describe(FolderAlbumService.name, () => {
 
     expect(await membersOf(defaultDatabase, album.id)).toEqual([a.id, c.id, upload.id].toSorted());
     expect(await folderAlbum(defaultDatabase, library.id, '/fl838/members')).toMatchObject({ isUserEdited: true });
-    expect(
-      await defaultDatabase.selectFrom('asset').select('id').where('id', '=', b.id).executeTakeFirst(),
-    ).toEqual({ id: b.id });
+    expect(await defaultDatabase.selectFrom('asset').select('id').where('id', '=', b.id).executeTakeFirst()).toEqual({
+      id: b.id,
+    });
   });
 
   it('follows a renamed folder unless the owner renamed its album, and drops albums of emptied folders', async () => {
@@ -188,7 +184,9 @@ describe(FolderAlbumService.name, () => {
     });
     expect(await membersOf(defaultDatabase, namedAlbum.id)).toEqual([movedNamed.id]);
     expect(await folderAlbum(defaultDatabase, library.id, '/fl838/rename/emptied')).toBeUndefined();
-    expect(await defaultDatabase.selectFrom('asset').select('id').where('id', '=', emptied.id).execute()).toHaveLength(1);
+    expect(await defaultDatabase.selectFrom('asset').select('id').where('id', '=', emptied.id).execute()).toHaveLength(
+      1,
+    );
   });
 
   it('turned off, keeps the albums or deletes them, and never a photo', async () => {
@@ -201,13 +199,21 @@ describe(FolderAlbumService.name, () => {
     await expect(sut.removeAll(library.id, { removeAlbums: false })).resolves.toBe(0);
     expect(await defaultDatabase.selectFrom('album').select('id').where('id', '=', trip.id).execute()).toHaveLength(1);
     expect(
-      await defaultDatabase.selectFrom('library_folder_album').select('id').where('libraryId', '=', library.id).execute(),
+      await defaultDatabase
+        .selectFrom('library_folder_album')
+        .select('id')
+        .where('libraryId', '=', library.id)
+        .execute(),
     ).toEqual([]);
 
     await sut.sync(library.id);
     await expect(sut.removeAll(library.id, { removeAlbums: true })).resolves.toBe(2);
     expect(
-      await defaultDatabase.selectFrom('library_folder_album').select('id').where('libraryId', '=', library.id).execute(),
+      await defaultDatabase
+        .selectFrom('library_folder_album')
+        .select('id')
+        .where('libraryId', '=', library.id)
+        .execute(),
     ).toEqual([]);
     expect(await defaultDatabase.selectFrom('asset').select('id').where('id', '=', a.id).execute()).toHaveLength(1);
   });

@@ -70,7 +70,10 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
     return Promise.resolve(link as never);
   });
   mocks.library.updateFolderAlbum.mockImplementation((id, value) => {
-    Object.assign(links.find((link) => link.id === id)!, value);
+    Object.assign(
+      links.find((link) => link.id === id)!,
+      value,
+    );
     return Promise.resolve();
   });
   mocks.library.deleteFolderAlbum.mockImplementation((id) => {
@@ -122,7 +125,11 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
     return Promise.resolve(album as never);
   });
   mocks.album.update.mockImplementation((id, value) => {
-    Object.assign(albums.get(id)!, value.albumName ? { albumName: value.albumName } : {}, value.kind ? { kind: value.kind } : {});
+    Object.assign(
+      albums.get(id)!,
+      value.albumName ? { albumName: value.albumName } : {},
+      value.kind ? { kind: value.kind } : {},
+    );
     return Promise.resolve(albums.get(id) as never);
   });
   mocks.album.delete.mockImplementation((id) => {
@@ -318,7 +325,11 @@ describe(FolderAlbumService.name, () => {
       await expect(sut.sync(world.library.id)).resolves.toMatchObject({ created: 0, moved: 2, removed: 0 });
 
       expect(world.albumFor('/photos/holiday')).toMatchObject({ id: trip.id, albumName: 'holiday' });
-      expect(world.albumFor('/photos/holiday/day1')).toMatchObject({ id: day1.id, albumName: 'day1', parentId: trip.id });
+      expect(world.albumFor('/photos/holiday/day1')).toMatchObject({
+        id: day1.id,
+        albumName: 'day1',
+        parentId: trip.id,
+      });
       expect(world.albumFor('/photos/trip')).toBeUndefined();
       expect(world.photosOf('/photos/holiday')).toEqual(['/photos/holiday/a.jpg', '/photos/holiday/b.jpg']);
       expect(world.photosOf('/photos/holiday/day1')).toEqual(['/photos/holiday/day1/c.jpg']);
@@ -336,7 +347,11 @@ describe(FolderAlbumService.name, () => {
 
       expect(world.albumFor('/photos/2024-rome')).toMatchObject({ id: trip.id, albumName: 'Summer in Rome' });
       expect(world.photosOf('/photos/2024-rome')).toEqual(['/photos/2024-rome/a.jpg']);
-      expect(mocks.album.update).not.toHaveBeenCalledWith(trip.id, expect.objectContaining({ albumName: '2024-rome' }), expect.anything());
+      expect(mocks.album.update).not.toHaveBeenCalledWith(
+        trip.id,
+        expect.objectContaining({ albumName: '2024-rome' }),
+        expect.anything(),
+      );
     });
 
     it('keeps photos the owner put in by hand, and still syncs the folder', async () => {
@@ -418,7 +433,13 @@ describe('folder album planning', () => {
       ],
       4,
     );
-    expect([...tree.keys()].toSorted()).toEqual(['/photos', '/photos/a', '/photos/a/b', '/photos/a/b/c', '/photos/a/b/c/d']);
+    expect([...tree.keys()].toSorted()).toEqual([
+      '/photos',
+      '/photos/a',
+      '/photos/a/b',
+      '/photos/a/b/c',
+      '/photos/a/b/c/d',
+    ]);
     expect(buildFolderTree(['/photos'], [{ folderPath: '/photos/a/b/c/d', photos: 1 }], 4).size).toBe(0);
   });
 

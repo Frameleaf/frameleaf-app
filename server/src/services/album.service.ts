@@ -290,15 +290,11 @@ export class AlbumService extends BaseService {
       albums.map((album) => album.id),
       ownerId,
     );
-    const folderSources = await this.folderSources(
-      auth,
-      albums.map((album) => album.id),
-    );
-
     if (albums.length === 0) {
       return [];
     }
     const albumIds = albums.map((album) => album.id);
+    const folderSources = await this.folderSources(auth, albumIds);
     let albumMetadata: Record<string, AlbumAssetCount> = {};
     let pending = new Set<string>();
     if (privacyOptions.onlyHiddenContent) {
@@ -577,7 +573,9 @@ export class AlbumService extends BaseService {
   /** FL-838: the library folder behind each album, told only to the library's owner (never through a shared link). */
   private async folderSources(auth: AuthDto, albumIds: string[]) {
     const none = new Map<string, { libraryId: string; folderPath: string }>();
-    return auth.sharedLink ? none : ((await this.albumRepository.getFolderAlbumSources(albumIds, auth.user.id)) ?? none);
+    return auth.sharedLink
+      ? none
+      : ((await this.albumRepository.getFolderAlbumSources(albumIds, auth.user.id)) ?? none);
   }
 
   private async folderSourceOf(auth: AuthDto, albumId: string) {
