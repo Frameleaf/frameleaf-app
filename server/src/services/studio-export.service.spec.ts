@@ -1121,6 +1121,44 @@ describe(StudioExportService.name, () => {
         expect(repository.createWithRender).toHaveBeenCalledTimes(queued);
       });
 
+      it('FL-1203: exports the sound of a file imported into the project, which the library knows nothing of', async () => {
+        const SONG = '0195e2a0-0000-4000-8000-000000000031';
+        const song = { id: 'song', type: 'audio', trackId: 'a1', mediaId: SONG, from: 0, durationInFrames: 300 };
+        studio.authorizeRevision.mockResolvedValue(
+          authorized({
+            envelope: { graph: clipGraph({ items: [song] }) },
+            manifest: {
+              complete: true,
+              refusedCount: 0,
+              digest: 'm',
+              entries: [
+                entry({
+                  key: `project-import:${SONG}`,
+                  kind: StudioResourceKind.ProjectImport,
+                  id: SONG,
+                  path: '/data/studio/song.mp3',
+                  sourceAccess: 'project',
+                }),
+              ],
+            },
+          }),
+        );
+        repository.getSourceMediaFacts.mockResolvedValue([]);
+        media.probe.mockResolvedValue({
+          videoStreams: [],
+          audioStreams: [{ index: 0, codecName: 'mp3', channels: 2, channelLayout: 'stereo', sampleRate: 44_100 }],
+        });
+        await sut.create(auth(), PROJECT, { ...dto, format: 'audio-mp3' } as never);
+        expect(media.probe).toHaveBeenCalledWith('/data/studio/song.mp3');
+        const [job] = repository.createWithRender.mock.calls.at(-1)!;
+        expect((job.snapshot as any).contract.audio).toEqual({
+          policy: 'preserve',
+          channels: 2,
+          channelLayout: 'stereo',
+          sampleRate: 48_000,
+        });
+      });
+
       it('explains a sound-only export the project cannot fill before queueing it', async () => {
         studio.authorizeRevision.mockResolvedValue(authorized());
         repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP, { audio: null })]);

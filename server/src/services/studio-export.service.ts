@@ -14,6 +14,7 @@ import { basename, dirname, join, sep } from 'node:path';
 import type { Transaction } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { DB } from 'src/schema/index.js';
+import type { AudioStreamInfo } from 'src/types.js';
 import type { RenderArtifact } from 'src/utils/render-artifact.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
@@ -108,6 +109,7 @@ import {
   findStudioExportRangeMismatch,
   parseStudioExportContract,
   resolveStudioExportTiming,
+  studioAudioFiles,
   studioMediaSources,
 } from 'src/utils/studio-export-contract.js';
 import {
@@ -662,7 +664,10 @@ export class StudioExportService {
       range?: StudioExportRange;
     },
   ): Promise<{ timing: ReturnType<typeof resolveStudioExportTiming>; contract: StudioExportContract }> {
-    const facts: StudioSourceMediaFacts[] = await this.repository.getSourceMediaFacts(studioMediaSources(entries).ids);
+    const facts: StudioSourceMediaFacts[] = [
+      ...(await this.repository.getSourceMediaFacts(studioMediaSources(entries).ids)),
+      ...(await Promise.all(studioAudioFiles(graph, entries).map((file) => this.probeAudioFile(file)))),
+    ];
     try {
       const timing = declareStudioTiming(graph, entries, facts);
       if (settings.range && timing.decision.mode !== 'convert') {
@@ -683,6 +688,29 @@ export class StudioExportService {
       }
       throw error;
     }
+  }
+
+  /** FL-1203: an audible file the library has no facts for, as the export contract reads it. */
+  private async probeAudioFile({ id, path }: { id: string; path: string }): Promise<StudioSourceMediaFacts> {
+    let stream: Partial<AudioStreamInfo> | undefined;
+    try {
+      [stream] = (await this.media.probe(path)).audioStreams;
+    } catch (error) {
+      // The file still plays in the render, so its sound is promised; only its layout is unknown.
+      this.logger.warn(`Could not read the audio of Studio source ${id}: ${errorMessage(error)}`);
+      stream = {};
+    }
+    return {
+      assetId: id,
+      video: null,
+      packets: null,
+      audio: stream && {
+        codecName: stream.codecName ?? 'unknown',
+        channels: stream.channels ?? null,
+        channelLayout: stream.channelLayout ?? null,
+        sampleRate: stream.sampleRate ?? null,
+      },
+    };
   }
 
   /**
