@@ -7120,7 +7120,10 @@ describe(MediaHealthService.name, () => {
         // only the choice (its time and its fix) is recorded; the decline and the fix state stay as they are
         expect(mediaHealthRepository.settleFinding).toHaveBeenCalledWith({
           healthId: 'health-1',
-          evidence: { retriedAt: expect.any(String), retryId: vi.mocked(mocks.job.queue).mock.calls[0][0].data.retry },
+          evidence: {
+            retriedAt: expect.any(String),
+            retryId: (vi.mocked(mocks.job.queue).mock.calls[0][0].data as { retry: string }).retry,
+          },
         });
         expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
       });
