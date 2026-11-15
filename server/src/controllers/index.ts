@@ -3,6 +3,7 @@ import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumCleanupController } from 'src/controllers/album-cleanup.controller.js';
 import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
 import { AlbumMergeController } from 'src/controllers/album-merge.controller.js';
+import { AlbumOrderController } from 'src/controllers/album-order.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
 import { AlbumSuggestionController } from 'src/controllers/album-suggestion.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
@@ -204,6 +205,7 @@ export const controllers = [
   OAuthAppAdminController,
   OAuthAppWellKnownController,
   AlbumItemsController,
+  AlbumOrderController,
   AssetSourceController,
   BookmarkController,
   DevelopBatchController,
