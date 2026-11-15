@@ -225,6 +225,8 @@ export type AssetMapOptions = {
   stripMetadata?: boolean;
   withStack?: boolean;
   auth?: AuthDto;
+  /** FL-786: the viewer's own heart on an item someone else owns (shared album or space). */
+  sharedFavorite?: boolean;
 };
 
 const mapImageRenditions = (entity: MaybeDehydrated<MapAsset>) => {
@@ -331,7 +333,10 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     localDateTime: asDateTimeString(entity.localDateTime),
     updatedAt: asDateTimeString(entity.updatedAt),
     // the viewer's own mark: a shared link acts as its owner, but a visitor never sees the owner's favorites
-    isFavorite: !options.auth?.sharedLink && options.auth?.user.id === entity.ownerId && entity.isFavorite,
+    // FL-786: anyone else's is the heart they gave it through a shared album or space
+    isFavorite:
+      !options.auth?.sharedLink &&
+      (options.auth?.user.id === entity.ownerId ? entity.isFavorite : !!options.sharedFavorite),
     isArchived: visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
     visibility,

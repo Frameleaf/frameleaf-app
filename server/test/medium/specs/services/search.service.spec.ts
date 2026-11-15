@@ -628,6 +628,65 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe('personCategoryIds filter (FL-874)', () => {
+    it("matches items showing someone in the viewer's own categories, with any, all, none and or branches", async () => {
+      const { sut, ctx } = setup();
+      const people = ctx.get(PersonRepository);
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { person: mum } = await ctx.newPerson({ ownerId: user.id, name: 'Mum' });
+      const { person: boss } = await ctx.newPerson({ ownerId: user.id, name: 'Boss' });
+      const { person: stranger } = await ctx.newPerson({ ownerId: user.id, name: '' });
+
+      const { asset: withMum } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: withBoss } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: withBoth } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: withStranger } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
+      const { asset: nobody } = await ctx.newAsset({ ownerId: user.id });
+      for (const [assetId, personGroupId] of [
+        [withMum.id, mum.personGroupId],
+        [withBoss.id, boss.personGroupId],
+        [withBoth.id, mum.personGroupId],
+        [withBoth.id, boss.personGroupId],
+        [withStranger.id, stranger.personGroupId],
+      ]) {
+        await ctx.newAssetFace({ assetId, personGroupId });
+      }
+
+      const family = await people.createCategory({ ownerId: user.id, name: 'Family', color: null });
+      const work = await people.createCategory({ ownerId: user.id, name: 'Work', color: null });
+      await people.setPersonCategories({ ownerId: user.id, personGroupId: mum.personGroupId }, [family.id]);
+      await people.setPersonCategories({ ownerId: user.id, personGroupId: boss.personGroupId }, [work.id]);
+      // another account's category, even one with the same person in it, is never the viewer's
+      const { person: othersMum } = await ctx.newPerson({ ownerId: other.id, personGroupId: mum.personGroupId });
+      const othersFamily = await people.createCategory({ ownerId: other.id, name: 'Family', color: null });
+      await people.setPersonCategories({ ownerId: other.id, personGroupId: othersMum.personGroupId }, [
+        othersFamily.id,
+      ]);
+
+      const auth = factory.auth({ user: { id: user.id } });
+      const ids = async (filter: object) => {
+        const response = await sut.searchMetadata(auth, { filter, size: 100 });
+        return response.assets.items.map(({ id }) => id).toSorted();
+      };
+
+      await expect(ids({ personCategoryIds: { any: [family.id] } })).resolves.toEqual(
+        [withMum.id, withBoth.id].toSorted(),
+      );
+      await expect(ids({ personCategoryIds: { any: [family.id, work.id] } })).resolves.toEqual(
+        [withMum.id, withBoss.id, withBoth.id].toSorted(),
+      );
+      await expect(ids({ personCategoryIds: { all: [family.id, work.id] } })).resolves.toEqual([withBoth.id]);
+      await expect(ids({ personCategoryIds: { none: [family.id] } })).resolves.toEqual(
+        [withBoss.id, withStranger.id, nobody.id].toSorted(),
+      );
+      await expect(
+        ids({ or: [{ personCategoryIds: { any: [work.id] } }, { isFavorite: { eq: true } }] }),
+      ).resolves.toEqual([withBoss.id, withBoth.id, withStranger.id].toSorted());
+      await expect(ids({ personCategoryIds: { any: [othersFamily.id] } })).resolves.toEqual([]);
+    });
+  });
+
   describe('albumCount filter (FL-976)', () => {
     it('counts only the non-deleted albums the viewer owns or is a member of, in every branch', async () => {
       const { sut, ctx } = setup();

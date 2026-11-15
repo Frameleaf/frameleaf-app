@@ -57085,6 +57085,380 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "asset_favorite",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "asset_favorite",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "asset_favorite",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset_favorite",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_favorite_assetId_idx",
+          "definition": "CREATE INDEX \"asset_favorite_assetId_idx\" ON public.asset_favorite USING btree (\"assetId\")",
+          "tableName": "asset_favorite",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_favorite_pkey",
+          "definition": "PRIMARY KEY (\"userId\", \"assetId\")",
+          "tableName": "asset_favorite",
+          "columnNames": [
+            "userId",
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_favorite_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_favorite",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_favorite_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset_favorite",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "person_category",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "person_category",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "person_category",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "name",
+          "tableName": "person_category",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "color",
+          "tableName": "person_category",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "order",
+          "tableName": "person_category",
+          "nullable": false,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "default": "0",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "person_category",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "person_category",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "person_category_ownerId_order_idx",
+          "definition": "CREATE INDEX \"person_category_ownerId_order_idx\" ON public.person_category USING btree (\"ownerId\", \"order\")",
+          "tableName": "person_category",
+          "columnNames": [
+            "ownerId",
+            "order"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "person_category_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "person_category",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "person_category_id_ownerId_uq",
+          "definition": "UNIQUE (id, \"ownerId\")",
+          "tableName": "person_category",
+          "columnNames": [
+            "id",
+            "ownerId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_category_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_category",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "person_category_member",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "person_category_member",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "personId",
+          "tableName": "person_category_member",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "categoryId",
+          "tableName": "person_category_member",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "person_category_member_categoryId_idx",
+          "definition": "CREATE INDEX \"person_category_member_categoryId_idx\" ON public.person_category_member USING btree (\"categoryId\")",
+          "tableName": "person_category_member",
+          "columnNames": [
+            "categoryId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "person_category_member_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", \"personId\", \"categoryId\")",
+          "tableName": "person_category_member",
+          "columnNames": [
+            "ownerId",
+            "personId",
+            "categoryId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_category_member_categoryId_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"categoryId\", \"ownerId\") REFERENCES person_category(id, \"ownerId\") ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_category_member",
+          "columnNames": [
+            "categoryId",
+            "ownerId"
+          ],
+          "referenceTableName": "person_category",
+          "referenceColumnNames": [
+            "id",
+            "ownerId"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_category_member_ownerId_personId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\", \"personId\") REFERENCES person(\"ownerId\", \"personGroupId\") ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_category_member",
+          "columnNames": [
+            "ownerId",
+            "personId"
+          ],
+          "referenceTableName": "person",
+          "referenceColumnNames": [
+            "ownerId",
+            "personGroupId"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "person_category_seed",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "person_category_seed",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "seededAt",
+          "tableName": "person_category_seed",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "person_category_seed_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\")",
+          "tableName": "person_category_seed",
+          "columnNames": [
+            "ownerId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_category_seed_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_category_seed",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [

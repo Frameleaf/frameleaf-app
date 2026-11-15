@@ -71,6 +71,7 @@ import { AssetEditTable } from 'src/schema/tables/asset-edit.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceAuditTable } from 'src/schema/tables/asset-face-audit.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
+import { AssetFavoriteTable } from 'src/schema/tables/asset-favorite.table.js';
 import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetFontTable } from 'src/schema/tables/asset-font.table.js';
 import {
@@ -210,6 +211,11 @@ import { PartnerAuditTable } from 'src/schema/tables/partner-audit.table.js';
 import { PartnerScopeTable } from 'src/schema/tables/partner-scope.table.js';
 import { PartnerTable } from 'src/schema/tables/partner.table.js';
 import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
+import {
+  PersonCategoryMemberTable,
+  PersonCategorySeedTable,
+  PersonCategoryTable,
+} from 'src/schema/tables/person-category.table.js';
 import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonMergeCandidateTable } from 'src/schema/tables/person-merge-candidate.table.js';
@@ -473,6 +479,7 @@ export class ImmichDatabase {
     AssetOcrAuditTable,
     AssetRestorationTable,
     AssetTable,
+    AssetFavoriteTable,
     AssetFileTable,
     AssetOriginalTable,
     AssetHealthRunTable,
@@ -536,6 +543,9 @@ export class ImmichDatabase {
     PhysicalFileTable,
     PersonGroupTable,
     PersonMergeCandidateTable,
+    PersonCategoryTable,
+    PersonCategoryMemberTable,
+    PersonCategorySeedTable,
     PersonProfileTable,
     PersonSplitCandidateTable,
     PersonGroupAuditTable,
@@ -747,6 +757,7 @@ export interface DB extends QueueDatabase {
   asset_exif: AssetExifTable;
   asset_face: AssetFaceTable;
   asset_face_audit: AssetFaceAuditTable;
+  asset_favorite: AssetFavoriteTable;
   asset_file: AssetFileTable;
   asset_original: AssetOriginalTable;
   asset_health_run: AssetHealthRunTable;
@@ -855,6 +866,9 @@ export interface DB extends QueueDatabase {
   person_audit: PersonAuditTable;
   person_group: PersonGroupTable;
   person_merge_candidate: PersonMergeCandidateTable;
+  person_category: PersonCategoryTable;
+  person_category_member: PersonCategoryMemberTable;
+  person_category_seed: PersonCategorySeedTable;
   person_profile: PersonProfileTable;
   person_split_candidate: PersonSplitCandidateTable;
   person_group_audit: PersonGroupAuditTable;

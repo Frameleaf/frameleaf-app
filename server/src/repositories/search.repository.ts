@@ -54,6 +54,7 @@ import {
   withSearchOrder,
 } from 'src/utils/database.js';
 import { hasGoodDate } from 'src/utils/date-sanity.js';
+import { favoriteFor } from 'src/utils/favorite.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked, isTimelineVisible } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
@@ -1214,7 +1215,7 @@ export class SearchRepository {
         SearchFacetField.IsFavorite,
         // favourites are personal: a partner's favourite is not the viewer's
         sql`select ${SearchFacetField.IsFavorite}::text as field,
-            (m."isFavorite" and m."ownerId" = ${viewer})::text as value, null::text as label, count(*) as count,
+            (${favoriteFor(options.viewerId, 'm')})::text as value, null::text as label, count(*) as count,
             ${cover} as cover
           from matched m group by 2`,
       ],

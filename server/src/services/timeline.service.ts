@@ -179,8 +179,10 @@ export class TimelineService extends BaseService {
       // September 22, 2026). The main timeline never does: the Locked view is its own view.
       ...(dto.albumId && getLockedVisibilityOptions(auth)),
       // FL-446: an album, or a person widened to shared albums, never shows another member's item that
-      // matches its owner's Locked rules. FL-425: so do the Filters panel's people, which widen alike.
-      ...((dto.albumId || dto.personId || filterNamesPeople(dto.filter)) && getOthersRulesQueryOptions(auth)),
+      // matches its owner's Locked rules. FL-425: so do the Filters panel's people, which widen alike, and
+      // FL-786: Favourites, which lists the viewer's hearts on items shared with them.
+      ...((dto.albumId || dto.personId || filterNamesPeople(dto.filter) || dto.isFavorite === true) &&
+        getOthersRulesQueryOptions(auth)),
       userIds,
       ...(lockReason && { lockReasons: [lockReason] }),
       // LIB-P3: the caller's own Best Photos, at the Best Photos page's threshold (checked in timeBucketChecks)
