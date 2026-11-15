@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "05130811f1e15d376ec68eeaa786120e68d1acdd",
+  "sourceCommit": "d5cec7aba648b6b838ad77518e203316cb1ce624",
   "sourceHashes": {
     "src/enum.ts": "9ed9e10395e1eaf1088cbfd5ef9faafa66cab09d15ac0949640a9aa3bb693886",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -8,7 +8,7 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "7f211709e5b6f9a08f903c92223534d7533fe8de7f236472456614a381dc5f5f",
+    "src/schema/index.ts": "0c18f7f770a0890391e39e9995fa92554352b99320ab644f44a16a1ad3ce904a",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -41,6 +41,7 @@
     "src/schema/tables/asset-exif.table.ts": "83f019f93fecd264b9ad8c2b9dd8bdd0bcc4fce5f481f7e14f8c6c713f6b95c7",
     "src/schema/tables/asset-face-audit.table.ts": "b24df9a765cce0fd089496042f7c702c8c8b37b1eea134e4800abe03c46d3a1e",
     "src/schema/tables/asset-face.table.ts": "d89a7f7f79d42859f53b808266d666af27a03132ccd7a0560e6c3b79eaedf6f2",
+    "src/schema/tables/asset-favorite.table.ts": "a636d2a7b840db75a30ce0d26d3af4d9c1db8d4b8d9fba96ff7bf396b3ef06d1",
     "src/schema/tables/asset-file.table.ts": "b08da0e7770f06fd6eee681ef3cce70ecfc0354709105b06aaeabfb02e0e4e34",
     "src/schema/tables/asset-font.table.ts": "282da11abac6c38f29d8bf215dabafca0bb645eef62063c013f082da7a744ee7",
     "src/schema/tables/asset-health.table.ts": "7ff758f764539a7dd51d38ebd28bfc9c4bdccb35e9d9444d2c8751fd4b1bae88",
@@ -195,6 +196,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "3ecc51e74e9fcb58f4f9a0f38a4c42432e34af2d28e5fc326587ff4a8dc3c4a6",
-  "rawMetadataSha256": "59c2e7b38a82726e0242c064733f0a6d9dd4a64abadf0729009fabe0a488f900"
+  "dumpSha256": "d1ca99cdf09ad7dba6439587a4d91caa332f7b23e711b29e885ff9967bbaf8d9",
+  "rawMetadataSha256": "c8d6f72aad263c94f4a2653219a25fac7a3347009a3bf6b524dee70510201346"
 }
