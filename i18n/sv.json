@@ -19114,7 +19114,7 @@
   "frameleaf_studio_editor_import_accepts_bundle": "En projektfil (.zip)",
   "frameleaf_studio_editor_import_accepts_finalcut": "Ett projekt exporterat som XML (.fcpxml, eller en .fcpxmld-mapp)",
   "frameleaf_studio_editor_import_accepts_other": "Andra redigeringsprogram",
-  "frameleaf_studio_editor_import_accepts_other_detail": "OpenTimelineIO (.otio, .otioz), Final Cut Pro 7 XML eller EDL, med eventuella CDL- och LUT-filer bredvid",
+  "frameleaf_studio_editor_import_accepts_other_detail": "OpenTimelineIO (.otio, .otioz), AAF, Final Cut Pro 7 XML eller EDL, med eventuella CDL- och LUT-filer bredvid",
   "frameleaf_studio_editor_import_accepts_premiere": "Projektfilen (.prproj) eller en sekvens exporterad som Final Cut Pro XML (.xml)",
   "frameleaf_studio_editor_import_accepts_resolve": "En tidslinje exporterad som Final Cut Pro XML (.fcpxml eller .xml), OpenTimelineIO (.otio) eller en EDL",
   "frameleaf_studio_editor_import_accepts_title": "Vad du kan ta med",

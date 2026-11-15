@@ -19116,7 +19116,7 @@
   "frameleaf_studio_editor_import_accepts_bundle": "Un fichier de projet (.zip)",
   "frameleaf_studio_editor_import_accepts_finalcut": "Un projet exporté en XML (.fcpxml, ou un dossier .fcpxmld)",
   "frameleaf_studio_editor_import_accepts_other": "Autres logiciels de montage",
-  "frameleaf_studio_editor_import_accepts_other_detail": "OpenTimelineIO (.otio, .otioz), Final Cut Pro 7 XML ou EDL, avec d’éventuels fichiers CDL et LUT à côté",
+  "frameleaf_studio_editor_import_accepts_other_detail": "OpenTimelineIO (.otio, .otioz), AAF, Final Cut Pro 7 XML ou EDL, avec d’éventuels fichiers CDL et LUT à côté",
   "frameleaf_studio_editor_import_accepts_premiere": "Le fichier de projet (.prproj), ou une séquence exportée en Final Cut Pro XML (.xml)",
   "frameleaf_studio_editor_import_accepts_resolve": "Une timeline exportée en Final Cut Pro XML (.fcpxml ou .xml), en OpenTimelineIO (.otio) ou en EDL",
   "frameleaf_studio_editor_import_accepts_title": "Ce que vous pouvez importer",
