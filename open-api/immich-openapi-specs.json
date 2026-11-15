@@ -78180,6 +78180,7 @@
       "AdminConfigEyeScoresDto": {
         "properties": {
           "closedBelow": {
+            "default": 0.35,
             "description": "Eyes-open score below which a face counts as having closed eyes",
             "format": "double",
             "maximum": 1,
@@ -78187,10 +78188,12 @@
             "type": "number"
           },
           "enabled": {
+            "default": true,
             "description": "Whether eyes open and eye sharpness are measured for each face",
             "type": "boolean"
           },
           "softBelow": {
+            "default": 0.3,
             "description": "Eye sharpness below which a face counts as having soft eyes",
             "format": "double",
             "maximum": 1,
@@ -78198,11 +78201,6 @@
             "type": "number"
           }
         },
-        "required": [
-          "closedBelow",
-          "enabled",
-          "softBelow"
-        ],
         "type": "object"
       },
       "AdminConfigFFmpegDto": {
@@ -79582,7 +79580,12 @@
             "type": "boolean"
           },
           "eyeScores": {
-            "$ref": "#/components/schemas/AdminConfigEyeScoresDto"
+            "$ref": "#/components/schemas/AdminConfigEyeScoresDto",
+            "default": {
+              "closedBelow": 0.35,
+              "enabled": true,
+              "softBelow": 0.3
+            }
           },
           "facialRecognition": {
             "$ref": "#/components/schemas/AdminConfigFacialRecognitionDto"
@@ -79695,7 +79698,6 @@
           "clip",
           "duplicateDetection",
           "enabled",
-          "eyeScores",
           "facialRecognition",
           "ocr",
           "urls"

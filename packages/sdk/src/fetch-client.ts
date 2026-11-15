@@ -1989,11 +1989,11 @@ export type AdminConfigDuplicateDetectionDto = {
 };
 export type AdminConfigEyeScoresDto = {
     /** Eyes-open score below which a face counts as having closed eyes */
-    closedBelow: number;
+    closedBelow?: number;
     /** Whether eyes open and eye sharpness are measured for each face */
-    enabled: boolean;
+    enabled?: boolean;
     /** Eye sharpness below which a face counts as having soft eyes */
-    softBelow: number;
+    softBelow?: number;
 };
 export type AdminConfigFacialRecognitionDto = {
     /** Whether the task is enabled */
@@ -2096,7 +2096,7 @@ export type AdminConfigMachineLearningDto = {
     duplicateDetection: AdminConfigDuplicateDetectionDto;
     /** Enabled */
     enabled: boolean;
-    eyeScores: AdminConfigEyeScoresDto;
+    eyeScores?: AdminConfigEyeScoresDto;
     facialRecognition: AdminConfigFacialRecognitionDto;
     imageDescription?: AdminConfigImageDescriptionDto;
     nsfwDetection?: AdminConfigNsfwDetectionDto;
