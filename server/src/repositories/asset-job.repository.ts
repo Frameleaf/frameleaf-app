@@ -753,6 +753,21 @@ export class AssetJobRepository {
     );
   }
 
+  /** FL-1597: photos read for Visual search whose Best Photos score was not made with `modelName`'s learned head. */
+  @GenerateSql({ params: ['ViT-B-32__openai'] })
+  async countBestPhotosWithoutLearnedScore(modelName: string): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('asset_best_photo_score')
+      .innerJoin('asset', 'asset.id', 'asset_best_photo_score.assetId')
+      .innerJoin('smart_search', 'smart_search.assetId', 'asset_best_photo_score.assetId')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('asset.type', '=', sql.lit(AssetType.Image))
+      .where('asset.deletedAt', 'is', null)
+      .where(sql<string>`"asset_best_photo_score"."metadata"->>'aestheticModel'`, 'is distinct from', modelName)
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   getForBestPhotoScoring(id: string) {
     return this.db

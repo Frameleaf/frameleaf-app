@@ -57,6 +57,8 @@ class InferenceModel(ABC):
     depends: ClassVar[list[ModelIdentity]]
     identity: ClassVar[ModelIdentity]
     threads: ClassVar[int] = 2  # how many threads one run takes for CPU inference
+    # FL-984: the height and width every input image is resized to, if fixed (an NPU compiles one shape).
+    static_input_hw: ClassVar[int | None] = None
 
     def __init__(
         self,
@@ -203,7 +205,7 @@ class InferenceModel(ABC):
             case ".armnn":
                 session: ModelSession = AnnSession(model_path)
             case ".onnx":
-                session = OrtSession(model_path, threads=self.threads)
+                session = OrtSession(model_path, threads=self.threads, static_hw=self.static_input_hw)
             case ".rknn":
                 session = rknn.RknnSession(model_path)
             case _:

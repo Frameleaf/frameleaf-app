@@ -82,6 +82,7 @@ export const versionNotice = (
     ? [
         {
           code: 'version-untested',
+          subject: version,
           what: `${format} version ${version}`,
           became: 'Read as the nearest version Frameleaf knows; check the report for anything that looks wrong',
         },

@@ -36,6 +36,8 @@ const setup = () => {
     removed: vi.fn().mockResolvedValue(undefined),
     counts: vi.fn().mockResolvedValue(counts()),
     missingByOwner: vi.fn().mockResolvedValue([]),
+    countsByMonth: vi.fn().mockResolvedValue([]),
+    countsByOwner: vi.fn().mockResolvedValue([]),
     list: vi.fn().mockResolvedValue([]),
     backfillPage: vi.fn().mockResolvedValue({ last: null, added: 0 }),
     reconcilePage: vi.fn().mockResolvedValue({ last: null, missing: 0, corrected: 0 }),
@@ -143,11 +145,21 @@ describe(AssetLedgerService.name, () => {
     it('totals the reader’s own ledger', async () => {
       const { sut, ledger } = setup();
       ledger.counts.mockResolvedValueOnce(counts({ kept: 10, trashed: 2, removed: 3, merged: 1, missing: 1 }));
+      ledger.countsByMonth.mockResolvedValueOnce([
+        { month: '2026-11', states: counts({ kept: 6, missing: 1 }) },
+        { month: '2026-10', states: counts({ kept: 4, trashed: 2, removed: 3, merged: 1 }) },
+      ]);
       await expect(sut.getSummary(authStub.user1)).resolves.toEqual({
         total: 17,
         states: { kept: 10, trashed: 2, removed: 3, merged: 1, missing: 1 },
+        // FL-940: per month added, newest first, each with its own total.
+        months: [
+          { month: '2026-11', total: 7, states: counts({ kept: 6, missing: 1 }) },
+          { month: '2026-10', total: 10, states: counts({ kept: 4, trashed: 2, removed: 3, merged: 1 }) },
+        ],
       });
       expect(ledger.counts).toHaveBeenCalledExactlyOnceWith(authStub.user1.user.id);
+      expect(ledger.countsByMonth).toHaveBeenCalledExactlyOnceWith(authStub.user1.user.id);
     });
 
     it('totals every account for an administrator and names the accounts with missing originals', async () => {
@@ -156,12 +168,39 @@ describe(AssetLedgerService.name, () => {
       ledger.missingByOwner.mockResolvedValueOnce([
         { ownerId: 'owner-1', count: 2, since: new Date('2026-11-09T02:00:00Z') },
       ]);
+      ledger.countsByOwner.mockResolvedValueOnce([
+        { ownerId: 'owner-2', states: counts({ kept: 1 }) },
+        { ownerId: 'owner-1', states: counts({ kept: 4, missing: 2 }) },
+      ]);
       await expect(sut.getAdminSummary()).resolves.toEqual({
         total: 7,
         states: counts({ kept: 5, missing: 2 }),
         missingByOwner: [{ ownerId: 'owner-1', count: 2, since: '2026-11-09T02:00:00.000Z' }],
+        months: [],
+        // FL-940: each account's totals, most first; counts only.
+        byOwner: [
+          { ownerId: 'owner-1', total: 6, states: counts({ kept: 4, missing: 2 }) },
+          { ownerId: 'owner-2', total: 1, states: counts({ kept: 1 }) },
+        ],
       });
-      expect(ledger.counts).toHaveBeenCalledExactlyOnceWith();
+      expect(ledger.counts).toHaveBeenCalledExactlyOnceWith(undefined);
+    });
+
+    it('FL-940: gives an administrator one account’s totals and months, and nobody else’s', async () => {
+      const { sut, ledger } = setup();
+      ledger.counts.mockResolvedValueOnce(counts({ kept: 3 }));
+      ledger.missingByOwner.mockResolvedValueOnce([
+        { ownerId: 'owner-1', count: 2, since: new Date('2026-11-09T02:00:00Z') },
+        { ownerId: 'owner-2', count: 1, since: new Date('2026-11-10T02:00:00Z') },
+      ]);
+      ledger.countsByMonth.mockResolvedValueOnce([{ month: '2026-11', states: counts({ kept: 3 }) }]);
+      const summary = await sut.getAdminSummary({ userId: 'owner-2' });
+      expect(ledger.counts).toHaveBeenCalledExactlyOnceWith('owner-2');
+      expect(ledger.countsByMonth).toHaveBeenCalledExactlyOnceWith('owner-2');
+      expect(ledger.countsByOwner).not.toHaveBeenCalled();
+      expect(summary.missingByOwner).toEqual([{ ownerId: 'owner-2', count: 1, since: '2026-11-10T02:00:00.000Z' }]);
+      expect(summary.byOwner).toEqual([]);
+      expect(summary.months).toEqual([{ month: '2026-11', total: 3, states: counts({ kept: 3 }) }]);
     });
 
     it('lists only the reader’s rows and leaves locked photos out of a session that has not unlocked them', async () => {

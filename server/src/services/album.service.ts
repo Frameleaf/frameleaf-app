@@ -278,10 +278,15 @@ export class AlbumService extends BaseService {
           libraryScope: LibraryScope.Personal,
           ...rest,
           ...options,
+          // FL-780 (TM-5): a connected app is never told a Locked album exists (as MCP and Connect)
+          ...(auth.oauthApp ? { excludeLocked: true } : {}),
           ...(hidden.size > 0 ? { excludeIds: [...hidden] } : {}),
         });
     if (hidden.size > 0) {
       albums = albums.filter((album) => !hidden.has(album.id));
+    }
+    if (auth.oauthApp) {
+      albums = albums.filter((album) => !album.isLocked);
     }
 
     // FL-326: the viewer's own albums copied from a partner name the library they came from
@@ -290,11 +295,11 @@ export class AlbumService extends BaseService {
       albums.map((album) => album.id),
       ownerId,
     );
-
     if (albums.length === 0) {
       return [];
     }
     const albumIds = albums.map((album) => album.id);
+    const folderSources = await this.folderSources(auth, albumIds);
     let albumMetadata: Record<string, AlbumAssetCount> = {};
     let pending = new Set<string>();
     if (privacyOptions.onlyHiddenContent) {
@@ -313,7 +318,8 @@ export class AlbumService extends BaseService {
       albums.map((album) => {
         const item = this.withReadableParent(this.toListItem(album, albumMetadata, pending), readable);
         const origin = origins.get(album.id);
-        return origin ? { ...item, origin } : item;
+        const folderAlbum = folderSources.get(album.id);
+        return { ...item, ...(origin && { origin }), ...(folderAlbum && { folderAlbum }) };
       }),
     );
   }
@@ -388,7 +394,7 @@ export class AlbumService extends BaseService {
     }
 
     const ids = albums.map((album) => album.id);
-    const [stored, smartBackedIds, ruleAlbumIds, rules, positions, recovered, bookmarkCounts, origins] =
+    const [stored, smartBackedIds, ruleAlbumIds, rules, positions, recovered, bookmarkCounts, origins, folderSources] =
       await Promise.all([
         this.readStoredMetadata(ids, privacyOptions),
         this.smartAlbumRepository.getSmartBackedAlbumKinds(ids),
@@ -398,6 +404,7 @@ export class AlbumService extends BaseService {
         this.recoveredAlbumIds(),
         this.albumRepository.getBookmarkCounts(auth, ids),
         this.partnerOriginRepository.getOriginLabels('album', ids, auth.user.id),
+        this.folderSources(auth, ids),
       ]);
     const ruleByAlbum = new Map(rules.map((rule) => [rule.albumId, rule.id]));
     const { metadata: albumMetadata, pending } = stored;
@@ -420,6 +427,7 @@ export class AlbumService extends BaseService {
           smartKind: (smartBackedIds.get(album.id) as SmartAlbumBuiltInKind | undefined) ?? null,
           ...(recovered.has(album.id) && { recovered: true }),
           ...(origins.has(album.id) && { origin: origins.get(album.id) }),
+          ...(folderSources.has(album.id) && { folderAlbum: folderSources.get(album.id) }),
         })),
       ),
       positions,
@@ -531,6 +539,10 @@ export class AlbumService extends BaseService {
     await this.albumRepository.updateThumbnails([id]);
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
     const album = await this.findOrFail(id, auth, { withAssets: false });
+    // FL-780 (TM-5): to a connected app a Locked album is the same as one that does not exist
+    if (auth.oauthApp && album.isLocked) {
+      throw new BadRequestException('Album not found');
+    }
     const [albumMetadataForIds] = await this.albumRepository.getMetadataForIds([album.id], privacyOptions);
 
     const hasSharedUsers = album.albumUsers && album.albumUsers.length > 1;
@@ -563,7 +575,21 @@ export class AlbumService extends BaseService {
       ...(await this.smartStateOf(auth, album.id)),
       ...(await this.originOf(auth, album.id)),
       ...((await this.recoveredAlbumIds()).has(album.id) && { recovered: true }),
+      ...(await this.folderSourceOf(auth, album.id)),
     };
+  }
+
+  /** FL-838: the library folder behind each album, told only to the library's owner (never through a shared link). */
+  private async folderSources(auth: AuthDto, albumIds: string[]) {
+    const none = new Map<string, { libraryId: string; folderPath: string }>();
+    return auth.sharedLink
+      ? none
+      : ((await this.albumRepository.getFolderAlbumSources(albumIds, auth.user.id)) ?? none);
+  }
+
+  private async folderSourceOf(auth: AuthDto, albumId: string) {
+    const folderAlbum = (await this.folderSources(auth, [albumId])).get(albumId);
+    return folderAlbum ? { folderAlbum } : {};
   }
 
   /**
@@ -847,7 +873,7 @@ export class AlbumService extends BaseService {
    * (or an AI agent steered by text in the library) must never be able to hide photos, so it cannot add
    * to a locked album at all (FL-1422). Sessions, API keys and background work are unchanged.
    */
-  private requireAppMayAddTo(auth: AuthDto, album: { isLocked: boolean }): void {
+  requireAppMayAddTo(auth: AuthDto, album: { isLocked: boolean }): void {
     if (auth.oauthApp && album.isLocked) {
       throw new ForbiddenException('Connected apps can’t add to a Locked album');
     }
@@ -858,7 +884,7 @@ export class AlbumService extends BaseService {
    * own follow-up (covers, notifications, other albums) still runs, from what is actually locked, and the
    * hourly sweep locks what this missed.
    */
-  private async lockAddedItems(albumId: string, assetIds: string[]): Promise<void> {
+  async lockAddedItems(albumId: string, assetIds: string[]): Promise<void> {
     try {
       await this.lockAlbumItems({ albumId, assetIds });
     } catch (error) {
@@ -1283,7 +1309,7 @@ export class AlbumService extends BaseService {
    * match is rejected (and what the rule added besides the album is taken back), and a built-in smart
    * album excludes the item.
    */
-  private async recordSmartAlbumRemovals(albumId: string, assetIds: string[], actorId: string, isOwner: boolean) {
+  async recordSmartAlbumRemovals(albumId: string, assetIds: string[], actorId: string, isOwner: boolean) {
     if (assetIds.length === 0) {
       return;
     }
@@ -1399,7 +1425,7 @@ export class AlbumService extends BaseService {
    * concerned, so a downgraded or removed member loses controls and open dialogs without a reload,
    * and everyone else still in the album, so their member lists follow.
    */
-  private sendAccessChange(
+  sendAccessChange(
     album: { id: string; albumUsers: { user: { id: string } }[] },
     userId: string,
     role: AlbumUserRole | null,
@@ -1481,7 +1507,7 @@ export class AlbumService extends BaseService {
    * its owner, nor does an item matching its owner's Locked rules (FL-446), so an addition of such items
    * only must not tell members that anything changed.
    */
-  private async shownToMembers(assetIds: string[]): Promise<string[]> {
+  async shownToMembers(assetIds: string[]): Promise<string[]> {
     const [locked, ruleHidden] = await Promise.all([
       this.assetRepository.getLockedAssetIds(assetIds),
       this.assetRepository.getHiddenContentAssetIds(assetIds, everyOwnersRules),
@@ -1493,7 +1519,7 @@ export class AlbumService extends BaseService {
    * The album refresh and "album updated" notification for an addition. When members can see nothing
    * of it, only the actor's own sessions refresh and nobody is notified.
    */
-  private albumUpdateEvent(
+  albumUpdateEvent(
     album: { id: string; albumUsers: Array<{ user: { id: string } }> },
     auth: AuthDto,
     visibleToMembers: boolean,
@@ -1505,7 +1531,7 @@ export class AlbumService extends BaseService {
     return { id: album.id, userIds, recipientIds: userIds.filter((userId) => userId !== auth.user.id) };
   }
 
-  private async recordSpaceAssets(
+  async recordSpaceAssets(
     album: MapAlbumDto,
     auth: AuthDto,
     type: SharedSpaceEventType.AssetsAdded | SharedSpaceEventType.AssetsRemoved,
@@ -1561,7 +1587,7 @@ export class AlbumService extends BaseService {
    * bring other Locked media into an album (see `Permission.AssetShare`), so only then does the choice
    * still need the database; every other session keeps the first asset, as before.
    */
-  private async firstCoverCandidate(auth: AuthDto, assetIds: string[]): Promise<string | undefined> {
+  async firstCoverCandidate(auth: AuthDto, assetIds: string[]): Promise<string | undefined> {
     if (assetIds.length === 0) {
       return undefined;
     }
@@ -1608,7 +1634,7 @@ export class AlbumService extends BaseService {
     );
   }
 
-  private async findOrFail(id: string, auth: AuthDto, options: AlbumInfoOptions) {
+  async findOrFail(id: string, auth: AuthDto, options: AlbumInfoOptions) {
     // The caller's explicit options win, so a read can leave the viewer's Locked media out on purpose.
     const album = await this.albumRepository.getById(id, { ...this.nsfwOptions(auth), ...options }, auth.user.id);
     if (!album) {

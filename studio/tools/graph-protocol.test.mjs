@@ -198,6 +198,37 @@ test('FL-1561: audioChannelMap is a video or audio field of source plane indexes
   assert.notDeepEqual(withMap({ left: [0], right: [1] }, 'image'), []);
 });
 
+test('FL-1563: markers may be ranges with notes, and clips may carry source-frame markers', () => {
+  const [, graph] = normalGraphs().find(([, candidate]) => candidate.timeline.items.some((item) => item.type === 'video'));
+  const withChange = (change) => {
+    const copy = structuredClone(graph);
+    change(copy);
+    return validate(schema, copy);
+  };
+  const marker = { id: 'm1', frame: 5, color: '#ff0000', durationInFrames: 12, note: 'Check focus' };
+  assert.deepEqual(withChange((copy) => { copy.timeline.markers = [marker]; }), []);
+  assert.notDeepEqual(withChange((copy) => { copy.timeline.markers = [{ ...marker, durationInFrames: 0 }]; }), []);
+  const clipMarker = { id: 'c1', sourceFrame: 30, color: '#00ff00', durationInFrames: 6, label: 'Laugh' };
+  const onVideo = (markers) => (copy) => {
+    copy.timeline.items.find((item) => item.type === 'video').markers = markers;
+  };
+  assert.deepEqual(withChange(onVideo([clipMarker])), []);
+  assert.notDeepEqual(withChange(onVideo([{ ...clipMarker, frame: 30 }])), []);
+});
+
+test('FL-1555: a transition may name its sound curve', () => {
+  const found = normalGraphs().find(([, candidate]) => candidate.timeline.transitions?.length);
+  assert.ok(found, 'a normal graph with a transition');
+  const [, graph] = found;
+  const withCurve = (audioCurve) => {
+    const copy = structuredClone(graph);
+    copy.timeline.transitions[0] = { ...copy.timeline.transitions[0], audioCurve };
+    return validate(schema, copy);
+  };
+  for (const curve of ['constant-power', 'constant-gain', 'exponential']) assert.deepEqual(withCurve(curve), [], curve);
+  assert.notDeepEqual(withCurve('loud'), []);
+});
+
 test('a case is outside normal form exactly when it is marked so', () => {
   for (const entry of fixtures.cases) {
     if (!applied(entry)) {
@@ -766,9 +797,12 @@ test('13.2.1: the parameter catalogue is the generated one, unedited', () => {
   }
 });
 
+/** Effects Frameleaf adds through engine patches: they have no row in the pinned upstream manifest. */
+const FRAMELEAF_EFFECTS = JSON.parse(readFileSync(new URL('../frameleaf-operators.json', import.meta.url), 'utf8')).effects;
+
 test('13.2.1: the catalogue lists what the command catalogue names: every effect, blend mode and published transition', () => {
   const sorted = (kind) => parameters[kind].map((entry) => entry.id).sort();
-  assert.deepEqual(sorted('effects'), manifestIds('effect.update', 'effect.'), 'effects');
+  assert.deepEqual(sorted('effects'), [...manifestIds('effect.update', 'effect.'), ...FRAMELEAF_EFFECTS].sort(), 'effects');
   assert.deepEqual(sorted('blendModes'), manifestIds('clip.setBlendMode', 'blend.'), 'blend modes');
   const transitions = new Set(sorted('transitions'));
   for (const id of manifestIds('clip.setTransition', 'transition.')) assert.ok(transitions.has(id), `transition ${id}`);

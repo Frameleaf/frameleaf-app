@@ -230,6 +230,43 @@ export class AlbumUserRepository {
       .where('albumId', '=', albumId)
       .execute();
   }
+  /**
+   * FL-846: hands an album from its owner to another person in one transaction. The old owner stays on as an
+   * editor; the new owner's membership is created or raised to owner. The album row is fenced first, and nothing
+   * changes (false) when the album is gone or `fromUserId` no longer owns it, so two transfers never both win.
+   */
+  async transferOwnership(albumId: string, fromUserId: string, toUserId: string): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const album = await tx
+        .selectFrom('album')
+        .select('id')
+        .where('id', '=', albumId)
+        .where('deletedAt', 'is', null)
+        .forNoKeyUpdate()
+        .executeTakeFirst();
+      if (!album) {
+        return false;
+      }
+      // Demoted first: an album has exactly one owner row (album_user_unique_owner).
+      const demoted = await tx
+        .updateTable('album_user')
+        .set({ role: AlbumUserRole.Editor })
+        .where('albumId', '=', albumId)
+        .where('userId', '=', fromUserId)
+        .where('role', '=', AlbumUserRole.Owner)
+        .returning('userId')
+        .executeTakeFirst();
+      if (!demoted) {
+        return false;
+      }
+      await tx
+        .insertInto('album_user')
+        .values({ albumId, userId: toUserId, role: AlbumUserRole.Owner })
+        .onConflict((oc) => oc.columns(['albumId', 'userId']).doUpdateSet({ role: AlbumUserRole.Owner }))
+        .execute();
+      return true;
+    });
+  }
   @GenerateSql({ params: [{ userId: DummyValue.UUID, albumId: DummyValue.UUID }] })
   async delete({ userId, albumId }: AlbumPermissionId): Promise<void> {
     await this.db.deleteFrom('album_user').where('userId', '=', userId).where('albumId', '=', albumId).execute();

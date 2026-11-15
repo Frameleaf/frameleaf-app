@@ -6,8 +6,10 @@ import { LibraryStatsResponseDto, ManagedUploadsStatsResponseDto } from 'src/dto
 import { AssetType, AssetVisibility, MediaOperationKind, MediaOperationStatus, UserStatus } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
+import { LibraryFolderAlbumTable } from 'src/schema/tables/library-folder-album.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { asUuid, isNotLockedAsset } from 'src/utils/database.js';
+import { folderOf, isFolderPhoto } from 'src/utils/folder-albums.js';
 import { LibraryScanStopReason, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { isNotLocked } from 'src/utils/locked.js';
 
@@ -443,5 +445,118 @@ export class LibraryRepository {
 
   streamAssetIds(libraryId: string) {
     return this.db.selectFrom('asset').select(['id']).where('libraryId', '=', libraryId).stream();
+  }
+
+  /* FL-838: folder albums ------------------------------------------------ */
+
+  /** Each folder holding photos or videos a folder album shows, with how many it holds directly. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getFolderPhotoCounts(libraryId: string): Promise<{ folderPath: string; photos: number }[]> {
+    const { rows } = await sql<{ folderPath: string; photos: string }>`
+      SELECT ${folderOf('asset')} AS "folderPath", count(*) AS photos
+      FROM asset
+      WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isFolderPhoto('asset')}
+      GROUP BY 1`.execute(this.db);
+    return rows.map((row) => ({ folderPath: row.folderPath, photos: Number(row.photos) }));
+  }
+
+  /** The library's folder albums, with the album's name, place and kind as they are now. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getFolderAlbums(libraryId: string) {
+    return this.db
+      .selectFrom('library_folder_album')
+      .innerJoin('album', 'album.id', 'library_folder_album.albumId')
+      .select([
+        'library_folder_album.id',
+        'library_folder_album.libraryId',
+        'library_folder_album.folderPath',
+        'library_folder_album.albumId',
+        'library_folder_album.isUserEdited',
+        'album.albumName',
+        'album.parentId',
+        'album.kind',
+        'album.deletedAt',
+      ])
+      .where('library_folder_album.libraryId', '=', asUuid(libraryId))
+      .orderBy('library_folder_album.folderPath')
+      .execute();
+  }
+
+  createFolderAlbum(value: Insertable<LibraryFolderAlbumTable>) {
+    return this.db.insertInto('library_folder_album').values(value).returningAll().executeTakeFirstOrThrow();
+  }
+
+  async updateFolderAlbum(id: string, value: Updateable<LibraryFolderAlbumTable>): Promise<void> {
+    await this.db.updateTable('library_folder_album').set(value).where('id', '=', id).execute();
+  }
+
+  async deleteFolderAlbum(id: string): Promise<void> {
+    await this.db.deleteFrom('library_folder_album').where('id', '=', id).execute();
+  }
+
+  /** Forget every folder album of the library; the albums themselves are left as they are. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async deleteFolderAlbums(libraryId: string): Promise<{ albumId: string; folderPath: string }[]> {
+    return this.db
+      .deleteFrom('library_folder_album')
+      .where('libraryId', '=', asUuid(libraryId))
+      .returning(['albumId', 'folderPath'])
+      .execute();
+  }
+
+  /**
+   * What tells a moved folder's files apart: name and modification time, which a folder rename keeps while the
+   * files' items are made anew. `goneFolders` are read with every item they ever held (offline ones included);
+   * `newFolders` with the photos a folder album would show.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING], [DummyValue.STRING]] })
+  async getFolderFileKeys(
+    libraryId: string,
+    goneFolders: string[],
+    newFolders: string[],
+  ): Promise<{ folderPath: string; originalFileName: string; fileModifiedAt: Date; gone: boolean }[]> {
+    if (goneFolders.length === 0 || newFolders.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ folderPath: string; originalFileName: string; fileModifiedAt: Date; gone: boolean }>`
+      SELECT folder.path AS "folderPath", asset."originalFileName", asset."fileModifiedAt", folder.gone
+      FROM asset
+      JOIN (
+        SELECT unnest(${goneFolders}::text[]) AS path, true AS gone
+        UNION ALL
+        SELECT unnest(${newFolders}::text[]) AS path, false AS gone
+      ) folder ON folder.path = ${folderOf('asset')}
+      WHERE asset."libraryId" = ${asUuid(libraryId)} AND (folder.gone OR ${isFolderPhoto('asset')})`.execute(this.db);
+    return rows;
+  }
+
+  /**
+   * The folder albums holding something that is not one of their folder's own items: a photo the owner put in
+   * by hand. `folders` may name more than one folder for an album (its folder before and after a rename).
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [{ folderPath: DummyValue.STRING, albumId: DummyValue.UUID }]] })
+  async getFolderAlbumsWithOtherItems(
+    libraryId: string,
+    folders: { folderPath: string; albumId: string }[],
+  ): Promise<Set<string>> {
+    if (folders.length === 0) {
+      return new Set();
+    }
+    const albumIds = [...new Set(folders.map(({ albumId }) => albumId))];
+    const { rows } = await sql<{ albumId: string }>`
+      SELECT DISTINCT member."albumId"
+      FROM album_asset member
+      JOIN asset ON asset.id = member."assetId"
+      WHERE member."albumId" = ANY(${albumIds}::uuid[])
+        AND NOT (
+          asset."libraryId" IS NOT DISTINCT FROM ${asUuid(libraryId)}
+          AND EXISTS (
+            SELECT 1
+            FROM unnest(${folders.map(({ folderPath }) => folderPath)}::text[], ${folders.map(({ albumId }) => albumId)}::uuid[])
+              AS folder(path, "albumId")
+            WHERE folder."albumId" = member."albumId" AND folder.path = ${folderOf('asset')}
+          )
+        )`.execute(this.db);
+    return new Set(rows.map(({ albumId }) => albumId));
   }
 }

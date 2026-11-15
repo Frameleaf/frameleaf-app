@@ -38,6 +38,7 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { hasGoodDate } from 'src/utils/date-sanity.js';
+import { folderOf, isFolderPhoto } from 'src/utils/folder-albums.js';
 import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
@@ -1097,6 +1098,83 @@ export class AlbumRepository {
       },
     );
   }
+
+  /**
+   * FL-838: one library's folder albums take their folders' photos. `add` puts each folder's photos (see
+   * `isFolderPhoto`) in its album; `remove` takes out of an album the items of its folder whose file is gone
+   * (offline). Nothing else an album holds is touched, so photos the owner put in by hand stay. Returns the
+   * memberships made and ended.
+   */
+  @GenerateSql({
+    params: [
+      DummyValue.UUID,
+      [{ folderPath: DummyValue.STRING, albumId: DummyValue.UUID }],
+      [{ folderPath: DummyValue.STRING, albumId: DummyValue.UUID }],
+    ],
+  })
+  async syncFolderMemberships(
+    libraryId: string,
+    add: { folderPath: string; albumId: string }[],
+    remove: { folderPath: string; albumId: string }[],
+  ): Promise<{ added: { albumId: string; assetId: string }[]; removed: { albumId: string; assetId: string }[] }> {
+    const albumIds = [...add, ...remove].map(({ albumId }) => albumId);
+    if (albumIds.length === 0) {
+      return { added: [], removed: [] };
+    }
+    return this.withMembershipWrite(albumIds, async (tx, repository) => {
+      const added =
+        add.length === 0
+          ? []
+          : (
+              await sql<{ albumId: string; assetId: string }>`
+                INSERT INTO album_asset ("albumId", "assetId")
+                SELECT folder."albumId", asset.id
+                FROM asset
+                JOIN unnest(${add.map(({ folderPath }) => folderPath)}::text[], ${add.map(({ albumId }) => albumId)}::uuid[])
+                  AS folder(path, "albumId") ON folder.path = ${folderOf('asset')}
+                WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isFolderPhoto('asset')}
+                ON CONFLICT DO NOTHING
+                RETURNING "albumId", "assetId"`.execute(tx)
+            ).rows;
+      const removed =
+        remove.length === 0
+          ? []
+          : (
+              await sql<{ albumId: string; assetId: string }>`
+                DELETE FROM album_asset member
+                USING asset,
+                  unnest(${remove.map(({ folderPath }) => folderPath)}::text[], ${remove.map(({ albumId }) => albumId)}::uuid[])
+                    AS folder(path, "albumId")
+                WHERE member."assetId" = asset.id AND member."albumId" = folder."albumId"
+                  AND asset."libraryId" = ${asUuid(libraryId)} AND asset."isOffline" = true
+                  AND folder.path = ${folderOf('asset')}
+                RETURNING member."albumId", member."assetId"`.execute(tx)
+            ).rows;
+      await repository.invalidateSourceMemberships(removed);
+      return { added, removed };
+    });
+  }
+
+  /** FL-838: the library folder behind each of these albums, told only to the library's owner. */
+  @GenerateSql({ params: [[DummyValue.UUID], DummyValue.UUID] })
+  async getFolderAlbumSources(
+    albumIds: string[],
+    viewerId: string,
+  ): Promise<Map<string, { libraryId: string; folderPath: string }>> {
+    if (albumIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.db
+      .selectFrom('library_folder_album')
+      .innerJoin('library', 'library.id', 'library_folder_album.libraryId')
+      .select(['library_folder_album.albumId', 'library_folder_album.libraryId', 'library_folder_album.folderPath'])
+      .where('library_folder_album.albumId', '=', anyUuid(albumIds))
+      .where('library.ownerId', '=', asUuid(viewerId))
+      .where('library.deletedAt', 'is', null)
+      .execute();
+    return new Map(rows.map(({ albumId, libraryId, folderPath }) => [albumId, { libraryId, folderPath }]));
+  }
+
   /**
    * Makes sure all thumbnails for albums are updated by:
    * - Removing thumbnails from albums without assets
