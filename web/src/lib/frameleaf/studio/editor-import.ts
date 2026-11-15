@@ -8,7 +8,7 @@
  */
 
 /** Project files the import reads, CDL and LUT files that go with them, and Frameleaf bundles. */
-export const EDITOR_IMPORT_PROJECT_EXTENSIONS = ['prproj', 'fcpxml', 'xml', 'otio', 'otioz', 'edl'] as const;
+export const EDITOR_IMPORT_PROJECT_EXTENSIONS = ['prproj', 'fcpxml', 'xml', 'otio', 'otioz', 'aaf', 'edl'] as const;
 export const EDITOR_IMPORT_SIDECAR_EXTENSIONS = ['cdl', 'cc', 'ccc', 'cube'] as const;
 export const EDITOR_IMPORT_ACCEPT = [...EDITOR_IMPORT_PROJECT_EXTENSIONS, ...EDITOR_IMPORT_SIDECAR_EXTENSIONS, 'zip']
   .map((extension) => `.${extension}`)
@@ -26,6 +26,7 @@ const PRIORITY = [
   /\.prproj$/i,
   /\.fcpxml$/i,
   /\.otioz?$/i,
+  /\.aaf$/i,
   /\.xml$/i,
   /\.edl$/i,
 ];

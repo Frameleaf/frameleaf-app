@@ -20,6 +20,7 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AlbumUserRole, LibraryScope, type LibraryViewScope } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { ALBUM_CHANGE_SOFT_DELETED } from 'src/repositories/album-change-run.repository.js';
+import { AlbumOrderRepository } from 'src/repositories/album-order.repository.js';
 import { AlbumSuggestionRepository } from 'src/repositories/album-suggestion.repository.js';
 import { visible as bookmarkVisible } from 'src/repositories/bookmark.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
@@ -164,6 +165,8 @@ export class AlbumRepository {
   private readonly smartAlbums: SmartAlbumRepository;
   /** FL-1092 / FL-1093: photos that look like they belong to an album's trip. */
   readonly suggestions: AlbumSuggestionRepository;
+  /** FL-869 / FL-881: custom photo order and text cards. */
+  readonly order: AlbumOrderRepository;
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
@@ -171,6 +174,7 @@ export class AlbumRepository {
     this.db = publicationDatabase(this.db);
     this.smartAlbums = new SmartAlbumRepository(this.db);
     this.suggestions = new AlbumSuggestionRepository(this.db);
+    this.order = new AlbumOrderRepository(this.db);
   }
 
   /** Serialize album membership decisions with source sync, while preserving transaction ownership. */

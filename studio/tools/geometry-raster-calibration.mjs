@@ -279,7 +279,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '3a3669ec17409883b5705c8044503ef6825972c8a75a90ef700a4829568695ca' ||
           // FL-1558 LUT references; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            '3b81da411c63fb3b648a86d1bc04d8446c0853cff3d5511ec9c0c874d1751feb')),
+            '3b81da411c63fb3b648a86d1bc04d8446c0853cff3d5511ec9c0c874d1751feb' ||
+          // FL-1561 sound channel mapping; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '81b9a0517a735951598a080a5deeda55caae8a33687ff99e7f791f734256c09e')),
     'SOURCE_BROWSER',
   )
   check(

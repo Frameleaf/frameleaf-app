@@ -47,6 +47,12 @@
     "id": { "type": "string", "minLength": 1 },
     "frame": { "type": "integer", "minimum": 0 },
     "length": { "type": "integer", "minimum": 1 },
+    "audioChannelList": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "type": "integer", "minimum": 0, "maximum": 31 }
+    },
     "rational": {
       "type": "object",
       "required": ["num", "den"],
@@ -208,6 +214,20 @@
         "muted": { "type": "boolean" },
         "audioPitchSemitones": { "type": "integer", "minimum": -12, "maximum": 12 },
         "audioPitchCents": { "type": "integer", "minimum": -100, "maximum": 100 },
+        "audioChannelMap": {
+          "description": "FL-1561: source plane indexes summed into the clip's left and right outputs, each side times 1 / (indexes listed). Absent plays the source planes as they are.",
+          "type": "object",
+          "required": ["left", "right"],
+          "additionalProperties": false,
+          "properties": {
+            "left": { "$ref": "#/$defs/audioChannelList" },
+            "right": { "$ref": "#/$defs/audioChannelList" }
+          },
+          "anyOf": [
+            { "properties": { "left": { "minItems": 1 } } },
+            { "properties": { "right": { "minItems": 1 } } }
+          ]
+        },
         "effects": { "type": "array", "items": { "$ref": "#/$defs/itemEffect" } },
         "motionModifiers": { "type": "array", "items": { "$ref": "#/$defs/motionModifier" } },
         "motionLayers": { "type": "array" },
@@ -299,6 +319,7 @@
         },
         { "if": { "properties": { "type": { "const": "text" } } }, "then": { "required": ["text", "color"] } },
         { "if": { "required": ["stabilisation"] }, "then": { "properties": { "type": { "const": "video" } } } },
+        { "if": { "required": ["audioChannelMap"] }, "then": { "properties": { "type": { "enum": ["video", "audio"] } } } },
         {
           "if": { "properties": { "type": { "const": "composition" } } },
           "then": { "required": ["compositionId", "compositionWidth", "compositionHeight"] }

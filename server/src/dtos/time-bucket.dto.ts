@@ -156,7 +156,7 @@ const TimeBucketSchema = TimeBucketQueryBaseSchema.extend({
     .optional()
     .describe('Return only the page containing this accessible asset; requires pageSize'),
   sort: z
-    .enum(['filename', 'rating', 'quality'])
+    .enum(['filename', 'rating', 'quality', 'custom'])
     .optional()
     .describe(
       'Locate an asset in this flat timeline order; requires locateAssetId and pageSize. Retrieve the result with GET /timeline/ordered using skip = page * pageSize and take = pageSize, with the same sort and filters',
@@ -164,6 +164,7 @@ const TimeBucketSchema = TimeBucketQueryBaseSchema.extend({
 })
   .refine((value) => value.pageSize !== undefined || !value.locateAssetId, 'Asset lookup requires pageSize')
   .refine((value) => !value.sort || !!value.locateAssetId, 'Sorted lookup requires locateAssetId')
+  .refine((value) => value.sort !== 'custom' || !!value.albumId, 'Custom order requires albumId')
   .meta({ id: 'TimeBucketDto' });
 const TimeBucketAssetSchema = TimeBucketQueryBaseSchema.extend({
   take: z.coerce
@@ -223,9 +224,9 @@ const TimeBucketAssetSchema = TimeBucketQueryBaseSchema.extend({
 export const TIMELINE_ORDERED_MAX_TAKE = 1000;
 const TimelineOrderedSchema = TimeBucketQueryBaseSchema.extend({
   sort: z
-    .enum(['filename', 'rating', 'quality'])
+    .enum(['filename', 'rating', 'quality', 'custom'])
     .describe(
-      'filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture; quality: highest Best Photos score first (assets without a score of yours last), then newest capture. Use quality with bestPhotos=true',
+      "filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture; quality: highest Best Photos score first (assets without a score of yours last), then newest capture. Use quality with bestPhotos=true; custom: the album's own order (requires albumId; see the album's isCustomOrder), returned with each asset's position",
     )
     .meta({ id: 'TimelineOrderedSort' }),
   after: z.string().max(8192).optional().describe('Continue after the previous ordered page cursor; overrides skip'),
@@ -238,7 +239,9 @@ const TimelineOrderedSchema = TimeBucketQueryBaseSchema.extend({
     .max(TIMELINE_ORDERED_MAX_TAKE)
     .default(500)
     .describe(`Items to return (at most ${TIMELINE_ORDERED_MAX_TAKE})`),
-}).meta({ id: 'TimelineOrderedDto' });
+})
+  .refine((value) => value.sort !== 'custom' || !!value.albumId, 'Custom order requires albumId')
+  .meta({ id: 'TimelineOrderedDto' });
 
 const stackTupleSchema = z.array(z.string()).length(2).nullable();
 
@@ -252,6 +255,12 @@ const TimeBucketAssetResponseSchema = z
       .optional()
       .describe('First page cursor; a calendar asset ID or an ordered cursor'),
     endCursor: z.string().nullable().optional().describe('Last page cursor; a calendar asset ID or an ordered cursor'),
+    position: z
+      .array(z.number().meta({ format: 'double' }))
+      .optional()
+      .describe(
+        "Each asset's place in the album's custom order (lowest first), aligned with id. Returned only for sort=custom; place an album's text cards by comparing their position",
+      ),
     ownerId: z.array(z.string()).describe('Array of owner IDs for each asset'),
     ratio: z
       .array(z.number().meta({ format: 'double' }))
