@@ -227,6 +227,8 @@ export interface VideoPacketInfo {
   outputFrames: number;
   /** All keyframe PTS in source ticks, including pre-roll discard keyframes. */
   keyframePts: number[];
+  /** FL-1444: every post-discard frame's PTS in presentation order; only when asked for. */
+  framePts?: number[];
   /** Cumulative packet duration through each keyframe, inclusive. */
   keyframeAccDuration: number[];
   /** Each keyframe's own packet duration (needed for VFR). */

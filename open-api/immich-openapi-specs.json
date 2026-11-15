@@ -14072,6 +14072,76 @@
         "x-immich-state": "Stable"
       }
     },
+    "/albums/{id}/assets/move": {
+      "post": {
+        "description": "Move photos and videos from this album into another album in one step. Only album membership changes: nothing is trashed or deleted. Needs permission to remove assets from this album and to add assets to the target, which must be an album, not a collection or shared space. Each asset is reported on its own; one already in the target simply leaves this album.",
+        "operationId": "moveAlbumAssets",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumMoveAssetsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BulkIdResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Move assets to another album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "albumAsset.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums/{id}/bookmarks": {
       "delete": {
         "operationId": "removeBookmarksFromAlbum",
@@ -15031,6 +15101,66 @@
           }
         ],
         "x-immich-permission": "albumAsset.create"
+      }
+    },
+    "/albums/{id}/transfer": {
+      "post": {
+        "description": "Make someone else the owner of this album. Only the owner can do this, and stays on as an editor. The new owner must already be in the album, or be a partner you share a library with. A shared space can only go to one of its members.",
+        "operationId": "transferAlbum",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumTransferDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Transfer album ownership",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.delete",
+        "x-immich-state": "Alpha"
       }
     },
     "/albums/{id}/user/{userId}": {
@@ -62623,6 +62753,295 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/editor-imports": {
+      "post": {
+        "description": "Queues a job that reads the uploaded project and finds each file it uses in your library: exact bytes for media carried in the archive, then the file name with its length and picture size. The result lists the timelines, what will come over differently, and each file as found, a likely match to confirm, or not in your library.",
+        "operationId": "createStudioEditorImport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioEditorImportCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioEditorImportQueuedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check a project from another editor",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/studio/editor-imports/projects/{id}": {
+      "get": {
+        "description": "Owner only. For a project imported from another editor: the editor, the file, and each note about what came over differently, with where on the timeline. A project that was not imported answers `404`.",
+        "operationId": "getStudioEditorImportNotes",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioEditorImportProjectNotesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the import notes of a project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/studio/editor-imports/uploads": {
+      "post": {
+        "description": "Keeps a Final Cut Pro XML (.fcpxml, or a .fcpxmld bundle as a ZIP archive), Final Cut Pro 7 XML (.xml, which Premiere Pro and DaVinci Resolve also export), OpenTimelineIO (.otio, .otioz, or .otiod as a ZIP archive) or EDL (.edl) file for an import, or a CDL (.cdl, .cc, .ccc) or LUT (.cube) file to apply to the clips it names. Uploads are kept for 24 hours.",
+        "operationId": "uploadStudioEditorImportFile",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioBundleUploadCreateDto"
+              }
+            }
+          },
+          "description": "A project file, or a CDL or LUT file to go with it",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioEditorImportUploadDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Upload a project file from another editor",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/studio/editor-imports/{id}": {
+      "get": {
+        "description": "Owner only. The job status, step and progress, and once it has completed the check or the project it built.",
+        "operationId": "getStudioEditorImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioEditorImportDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get an import from another editor",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/studio/editor-imports/{id}/import": {
+      "post": {
+        "description": "From a completed check: queues one job per timeline picked, each saving a new Studio project. Each file uses the library item chosen for it, or what the check found; a file with none keeps its clips as placeholders to relink. Files sent from your folder and media carried in the archive land in an album named after the project.",
+        "operationId": "startStudioEditorImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioEditorImportStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioEditorImportStartedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Import the checked project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
     "/studio/exports/{id}": {
       "get": {
         "description": "One export version, with where its result lives and what it inherited.",
@@ -81777,6 +82196,31 @@
         ],
         "type": "object"
       },
+      "AlbumMoveAssetsDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Photos and videos to move out of this album",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "targetAlbumId": {
+            "description": "The album the photos and videos move to. It must be an album, not a collection or shared space.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetIds",
+          "targetAlbumId"
+        ],
+        "type": "object"
+      },
       "AlbumOrderDto": {
         "properties": {
           "albumIds": {
@@ -82472,6 +82916,20 @@
         ],
         "type": "object"
       },
+      "AlbumTransferDto": {
+        "properties": {
+          "userId": {
+            "description": "The new owner: someone already in the album, or a partner you share your library with",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "type": "object"
+      },
       "AlbumTreeResponseDto": {
         "properties": {
           "albums": {
@@ -82832,6 +83290,10 @@
             "minimum": 0,
             "nullable": true,
             "type": "integer"
+          },
+          "rebuilt": {
+            "description": "True when the growth values were rebuilt from the items in the library today, because the bucket ends before the first nightly reading; false for a nightly reading or a gap. Left out by older servers",
+            "type": "boolean"
           },
           "through": {
             "format": "date",
@@ -126457,6 +126919,7 @@
           "studio_reverse_conform",
           "studio_transcription",
           "studio_movie",
+          "studio_editor_import",
           "studio_preview_stream",
           "restoration",
           "restoration_preview",
@@ -161708,6 +162171,10 @@
       "SearchFilter": {
         "additionalProperties": false,
         "properties": {
+          "albumCount": {
+            "$ref": "#/components/schemas/NumberFilter",
+            "description": "Number of non-deleted albums the viewer owns or is a member of that contain the item"
+          },
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
@@ -161879,6 +162346,10 @@
       "SearchFilterBranch": {
         "additionalProperties": false,
         "properties": {
+          "albumCount": {
+            "$ref": "#/components/schemas/NumberFilter",
+            "description": "Number of non-deleted albums the viewer owns or is a member of that contain the item"
+          },
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
@@ -168558,6 +169029,628 @@
         ],
         "type": "string"
       },
+      "StudioEditorImportBuildDto": {
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "media": {
+            "$ref": "#/components/schemas/StudioEditorImportMediaTotals"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "description": "What came over differently or could not come over",
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNote"
+            },
+            "type": "array"
+          },
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNotice"
+            },
+            "type": "array"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudioEditorImportSource"
+          },
+          "timeline": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileName",
+          "media",
+          "name",
+          "notes",
+          "notices",
+          "projectId",
+          "source",
+          "timeline"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportCheckDto": {
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportMedia"
+            },
+            "type": "array"
+          },
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNotice"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudioEditorImportSource"
+          },
+          "sourceVersion": {
+            "nullable": true,
+            "type": "string"
+          },
+          "timelines": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportTimeline"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "fileName",
+          "media",
+          "notices",
+          "source",
+          "sourceVersion",
+          "timelines"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportCreateDto": {
+        "properties": {
+          "frameRate": {
+            "description": "For an edit decision list, which does not state its frame rate: frames a second, e.g. 23.976",
+            "exclusiveMinimum": true,
+            "format": "double",
+            "maximum": 240,
+            "minimum": 0,
+            "type": "number"
+          },
+          "sidecarUploadIds": {
+            "description": "CDL (.cdl, .cc, .ccc) and LUT (.cube) files to apply to the clips they name",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 6,
+            "type": "array"
+          },
+          "uploadId": {
+            "description": "The project file, uploaded with `POST /studio/editor-imports/uploads`",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uploadId"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportDto": {
+        "properties": {
+          "build": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioEditorImportBuildDto"
+              }
+            ],
+            "description": "Once a `build` job has completed",
+            "nullable": true
+          },
+          "check": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioEditorImportCheckDto"
+              }
+            ],
+            "description": "Once a `check` job has completed",
+            "nullable": true
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/StudioEditorImportStage"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "step": {
+            "$ref": "#/components/schemas/StudioEditorImportStep"
+          }
+        },
+        "required": [
+          "build",
+          "check",
+          "error",
+          "id",
+          "progress",
+          "stage",
+          "status",
+          "step"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportJob": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "timeline": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "timeline"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportMatch": {
+        "description": "`found`: the file is in the library and is used; `very-likely`, `likely`, `possible`: a match to confirm; `missing`: not in the library",
+        "enum": [
+          "found",
+          "very-likely",
+          "likely",
+          "possible",
+          "missing"
+        ],
+        "type": "string"
+      },
+      "StudioEditorImportMedia": {
+        "properties": {
+          "assetId": {
+            "description": "The library item found or suggested",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "assetName": {
+            "description": "That item’s file name",
+            "nullable": true,
+            "type": "string"
+          },
+          "carried": {
+            "description": "The file came inside the uploaded archive and is added to the library if needed",
+            "type": "boolean"
+          },
+          "clips": {
+            "description": "How many clips use it",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "confidence": {
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "key": {
+            "description": "The file as the project names it; send it back in `media` when importing",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StudioEditorImportMediaKind"
+          },
+          "match": {
+            "$ref": "#/components/schemas/StudioEditorImportMatch"
+          },
+          "name": {
+            "description": "The file name alone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "assetName",
+          "carried",
+          "clips",
+          "confidence",
+          "key",
+          "kind",
+          "match",
+          "name"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportMediaKind": {
+        "enum": [
+          "video",
+          "audio",
+          "image",
+          null
+        ],
+        "nullable": true,
+        "type": "string"
+      },
+      "StudioEditorImportMediaTotals": {
+        "properties": {
+          "added": {
+            "description": "Added to the library: sent from a folder or carried in the archive",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "found": {
+            "description": "Found in the library without asking",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "matched": {
+            "description": "Matches the person chose",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "placeholders": {
+            "description": "Still missing; the clip keeps its place until it is relinked",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added",
+          "found",
+          "matched",
+          "placeholders",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportNote": {
+        "properties": {
+          "atSeconds": {
+            "description": "Where on the timeline",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "became": {
+            "description": "What it became in Studio",
+            "type": "string"
+          },
+          "clip": {
+            "description": "The clip, transition or marker it is about",
+            "type": "string"
+          },
+          "code": {
+            "description": "What kind of difference, e.g. `transition-unmatched`",
+            "type": "string"
+          },
+          "what": {
+            "description": "What it was in the other editor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "atSeconds",
+          "became",
+          "clip",
+          "code",
+          "what"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportNotice": {
+        "properties": {
+          "became": {
+            "description": "In English, for reference",
+            "type": "string"
+          },
+          "code": {
+            "description": "`version-untested`, `clips-disabled`, `items-unknown`, `edl-limits`, `edl-frame-rate`, `lut-resampled`, `sidecar-unused` or `sidecar-unreadable`",
+            "type": "string"
+          },
+          "subject": {
+            "description": "What it is about: a version, a count, a file name or a frame rate",
+            "type": "string"
+          },
+          "what": {
+            "description": "In English, for reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "became",
+          "code",
+          "what"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportProjectNotesDto": {
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "notes": {
+            "description": "What came over differently or could not come over, with where on the timeline",
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNote"
+            },
+            "type": "array"
+          },
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNotice"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudioEditorImportSource"
+          }
+        },
+        "required": [
+          "fileName",
+          "notes",
+          "notices",
+          "source"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportQueuedDto": {
+        "properties": {
+          "id": {
+            "description": "The job id; it also shows in Activity (`/media-operations/{id}`)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportSource": {
+        "description": "The editor or interchange format the project came from",
+        "enum": [
+          "premiere",
+          "resolve",
+          "finalcut",
+          "imovie",
+          "otio",
+          "fcp7",
+          "edl",
+          "aaf"
+        ],
+        "type": "string"
+      },
+      "StudioEditorImportStage": {
+        "description": "`check`: reading the file and finding media; `build`: making one Studio project",
+        "enum": [
+          "check",
+          "build"
+        ],
+        "type": "string"
+      },
+      "StudioEditorImportStartDto": {
+        "properties": {
+          "albumName": {
+            "description": "The album that added files go into, in the person’s language; defaults to the project name",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "media": {
+            "description": "The person’s choice for each file; a file left out keeps what the check found",
+            "items": {
+              "properties": {
+                "added": {
+                  "description": "The person sent this file from their folder just now",
+                  "type": "boolean"
+                },
+                "assetId": {
+                  "description": "The library item to use, or null to leave a placeholder",
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "key": {
+                  "maxLength": 4096,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "assetId"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5000,
+            "type": "array"
+          },
+          "timelines": {
+            "description": "The timelines to bring; each becomes a project",
+            "items": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "media",
+          "timelines"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportStartedDto": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportJob"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportStep": {
+        "description": "What the job is doing: reading the file, finding media, building the project, checking it",
+        "enum": [
+          "reading",
+          "media",
+          "building",
+          "checking",
+          "done"
+        ],
+        "type": "string"
+      },
+      "StudioEditorImportTimeline": {
+        "properties": {
+          "clips": {
+            "description": "Video clips and stills",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "durationSeconds": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "index": {
+            "description": "Name it in `timelines` when importing",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "markers": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "description": "What will come over differently, media aside",
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNote"
+            },
+            "type": "array"
+          },
+          "sound": {
+            "description": "Sound clips",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "titles": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "transitions": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clips",
+          "durationSeconds",
+          "index",
+          "markers",
+          "name",
+          "notes",
+          "sound",
+          "titles",
+          "transitions"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportUploadDto": {
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "id": {
+            "description": "The upload; name it when starting the import",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileName",
+          "id",
+          "sizeBytes"
+        ],
+        "type": "object"
+      },
       "StudioExportAudio": {
         "description": "Audio of the result: `preserve` keeps the widest source channel layout at its sample rate; `stereo` is an explicit downmix",
         "enum": [
@@ -170636,6 +171729,15 @@
             "description": "The project was read in from a portable bundle; always false for a reviewer",
             "type": "boolean"
           },
+          "importedFromEditor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioEditorImportSource"
+              }
+            ],
+            "description": "The editor the project was imported from (Beta); null otherwise and for a reviewer",
+            "nullable": true
+          },
           "lastOpenedAt": {
             "description": "When an editor last opened it; null for a reviewer",
             "format": "date-time",
@@ -170843,6 +171945,15 @@
           "importedFromBundle": {
             "description": "The project was read in from a portable bundle; always false for a reviewer",
             "type": "boolean"
+          },
+          "importedFromEditor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioEditorImportSource"
+              }
+            ],
+            "description": "The editor the project was imported from (Beta); null otherwise and for a reviewer",
+            "nullable": true
           },
           "lastOpenedAt": {
             "description": "When an editor last opened it; null for a reviewer",

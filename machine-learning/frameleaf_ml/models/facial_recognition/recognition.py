@@ -11,7 +11,7 @@ from onnx.tools.update_model_dims import update_inputs_outputs_dims
 from PIL import Image
 
 from frameleaf_ml.config import log, settings
-from frameleaf_ml.models.base import InferenceModel
+from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
 from frameleaf_ml.models.transforms import decode_pil, normalize, serialize_np_array
 from frameleaf_ml.schemas import (
     FaceDetectionOutput,
@@ -25,6 +25,7 @@ from frameleaf_ml.sessions import runtime_cache_dir
 from frameleaf_ml.sessions.ort import OrtSession
 
 from ._ops import align_face
+from .landmarks import FaceLandmarker, eye_scores
 
 
 class FaceRecognizer(InferenceModel):
@@ -35,6 +36,7 @@ class FaceRecognizer(InferenceModel):
         super().__init__(model_name, **model_kwargs)
         max_batch_size = settings.max_batch_size and settings.max_batch_size.facial_recognition
         self.batch_size = max_batch_size if max_batch_size else self._batch_size_default
+        self.landmarker: FaceLandmarker | None = None
 
     def _load(self) -> ModelSession:
         session = self._make_session(self.model_path)
@@ -45,8 +47,13 @@ class FaceRecognizer(InferenceModel):
                 session.source_model_path = self.model_path
         return session
 
+    def unload(self) -> None:
+        if self.landmarker is not None:
+            self.landmarker.unload()
+        super().unload()
+
     def _predict(
-        self, inputs: NDArray[np.uint8] | bytes | Image.Image, faces: FaceDetectionOutput
+        self, inputs: NDArray[np.uint8] | bytes | Image.Image, faces: FaceDetectionOutput, eyeScores: bool = False
     ) -> FacialRecognitionOutput:
         if faces["boxes"].shape[0] == 0:
             return []
@@ -58,7 +65,25 @@ class FaceRecognizer(InferenceModel):
             crops = np.stack([align_face(image, kps).transpose(2, 0, 1) for kps in landmarks[i : i + batch_size]])
             batches.append(self._predict_batch(normalize(crops, mean=127.5, std=127.5)))
         embeddings = batches[0] if len(batches) == 1 else np.concatenate(batches, axis=0)
-        return self.postprocess(faces, embeddings)
+        output = self.postprocess(faces, embeddings)
+        if eyeScores:
+            self._add_eye_scores(image, faces, output)
+        return output
+
+    def _add_eye_scores(
+        self, image: NDArray[np.uint8], faces: FaceDetectionOutput, output: FacialRecognitionOutput
+    ) -> None:
+        """FL-843: `eyesOpen` and `eyeSharpness` on each face, only when the request asks (`eyeScores`)."""
+        if self.landmarker is None:
+            self.landmarker = FaceLandmarker(cache_dir=self.cache_dir.parent / "buffalo_l-landmarks")
+        try:
+            points = self.landmarker.predict(image, faces["boxes"])
+        except ModelUnavailableError:
+            # The faces still count; their eye scores stay empty until the landmark model can be fetched.
+            log.warning("Eye scores skipped: the face landmark model isn't available")
+            return
+        for face, box, face_points in zip(output, faces["boxes"], points):
+            face["eyesOpen"], face["eyeSharpness"] = eye_scores(image, box, face_points)
 
     def _predict_batch(self, crops: NDArray[np.float32]) -> NDArray[np.float32]:
         input_name = self.session.get_inputs()[0].name

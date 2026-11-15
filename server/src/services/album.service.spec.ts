@@ -82,6 +82,57 @@ describe(AlbumService.name, () => {
     });
   });
 
+  describe('connected apps and Locked albums (FL-780 TM-5)', () => {
+    const asApp = (owner: ReturnType<typeof UserFactory.create>): AuthDto => ({
+      ...AuthFactory.create(owner),
+      oauthApp: {
+        clientId: 'client',
+        clientName: 'Test app',
+        grantId: 'grant',
+        scopes: ['library:read'],
+        resource: null,
+      },
+    });
+
+    it('leaves Locked albums out of an app’s album list, in the query and in the answer', async () => {
+      const owner = UserFactory.create();
+      const [locked, open] = [
+        AlbumFactory.from({ isLocked: true }).owner(owner).build(),
+        AlbumFactory.from().owner(owner).build(),
+      ];
+      mocks.album.getAll.mockResolvedValue([getForAlbum(locked), getForAlbum(open)] as never);
+      mocks.album.getByAssetId.mockResolvedValue([getForAlbum(locked), getForAlbum(open)] as never);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+
+      const listed = await sut.getAll(asApp(owner), { take: 10 });
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, expect.objectContaining({ excludeLocked: true }));
+      expect(listed.map(({ id }) => id)).toEqual([open.id]);
+
+      const containing = await sut.getAll(asApp(owner), { assetId: newUuid() });
+      expect(containing.map(({ id }) => id)).toEqual([open.id]);
+    });
+
+    it('still lists a person’s own Locked albums to them', async () => {
+      const owner = UserFactory.create();
+      mocks.album.getAll.mockResolvedValue([]);
+
+      await sut.getAll(AuthFactory.create(owner), { take: 10 });
+
+      expect(mocks.album.getAll).toHaveBeenCalledWith(owner.id, expect.not.objectContaining({ excludeLocked: true }));
+    });
+
+    it('answers an app reading a Locked album as if it did not exist', async () => {
+      const owner = UserFactory.create();
+      const locked = AlbumFactory.from({ isLocked: true }).owner(owner).build();
+      mocks.album.getById.mockResolvedValue(getForAlbum(locked));
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([locked.id]));
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+
+      await expect(sut.get(asApp(owner), locked.id)).rejects.toThrow('Album not found');
+      await expect(sut.get(AuthFactory.create(owner), locked.id)).resolves.toMatchObject({ id: locked.id });
+    });
+  });
+
   describe('getAll', () => {
     it('passes a picker search and limit to the album query (FL-647)', async () => {
       const album = AlbumFactory.from().albumUser().build();

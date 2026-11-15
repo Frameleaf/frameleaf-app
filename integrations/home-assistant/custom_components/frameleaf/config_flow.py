@@ -20,6 +20,7 @@ from .const import (
     AUTH_API_KEY,
     AUTH_OAUTH,
     CLIENT_NAME,
+    CONF_ACCOUNT_REF,
     CONF_AUTH_METHOD,
     CONF_CLIENT_ID,
     CONF_EVENTS,
@@ -116,9 +117,17 @@ class FrameleafFlowHandler(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, d
         except FrameleafError:
             return self.async_abort(reason="cannot_connect")
         entry_data = {**data, CONF_URL: self._url, CONF_AUTH_METHOD: AUTH_OAUTH, CONF_CLIENT_ID: self._client_id}
+        # FL-1371: which account allowed it (an opaque value from Frameleaf, the same for every app of that account)
+        if account_ref := data["token"].get(CONF_ACCOUNT_REF):
+            entry_data[CONF_ACCOUNT_REF] = account_ref
         if self.source == SOURCE_REAUTH:
+            entry = self._get_reauth_entry()
+            # another account allowed it: its library would show under this entry's sensors and pictures
+            known = entry.data.get(CONF_ACCOUNT_REF)
+            if known and account_ref != known:
+                return self.async_abort(reason="wrong_account")
             # signing in again registers Home Assistant anew; the entry stays the same
-            return self.async_update_reload_and_abort(self._get_reauth_entry(), data_updates=entry_data)
+            return self.async_update_reload_and_abort(entry, data_updates=entry_data)
         await self.async_set_unique_id(f"{self._url}#app-{self._client_id}")
         self._abort_if_unique_id_configured()
         return self.async_create_entry(title="Frameleaf", data=entry_data)

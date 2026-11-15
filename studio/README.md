@@ -211,6 +211,18 @@ cover path smoothing, the crop coverage maths, the renderer transform at the cli
 the card. The estimator is verified on synthetic footage only (a still picture moved by a known crop
 path, and generated textures); real handheld footage, rolling shutter, browser preview/export pixel
 parity and speed-ramp spans in the live preview remain open.
+Patch 0188 (FL-1555) adds crossfades between sound clips and sound curves. A transition may now join two
+sound clips on one track that are not compound items and not linked to another clip (unlinking leaves each
+clip a group of its own, so only a shared group counts as linked); linked sound still follows its video
+clip's transition. The transition draws nothing: preview, the meters and export play both clips through
+their handles. Each transition may name `audioCurve` (`constant-power`, the default and the old behaviour;
+`constant-gain`; `exponential`), the gain law of the sound under it for sound pairs and for a video clip's
+linked or embedded sound alike (`graph-schema-v1.json`, protocol 13.2.3 and 12.2.6, fixture
+`clip.setTransition/adds-between-sound-clips`). Clip fade bends are unchanged; `spec/sound.md` writes them
+down and gives the bends that reproduce other editors' named fade shapes. Tests cover the gain laws, the
+mixed export at the middle of each crossfade, the pair rule, repair and the preview pairing. Choosing the
+curve in the editor is not built yet (it needs a mock first), so only imports and the graph set it.
+
 Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
 the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
 embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the offset is the peak of the

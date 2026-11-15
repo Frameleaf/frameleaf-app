@@ -103,6 +103,7 @@ import { isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { homeMlDestinationId } from 'src/utils/ml-destination.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import { Point, transformFaceBoundingBox, transformPoints } from 'src/utils/transform.js';
 
 const personKey = ({ ownerId, personGroupId }: PersonId) => `${ownerId}/${personGroupId}`;
@@ -1912,15 +1913,20 @@ export class PersonService extends BaseService {
       }
 
       if (personGroupId) {
-        // A face on a Locked photo is never a person's thumbnail (FL-53): such a person takes another
-        // face of theirs once this one is assigned, or none.
-        const isLocked = isLockedAssetRow(face.asset);
+        // A face on a Locked photo is never a person's thumbnail (FL-53), nor one on an archived photo while the
+        // owner leaves those out of People (FL-1365): such a person takes another face of theirs once this one is
+        // assigned, or none.
+        const unfeatured =
+          !person &&
+          (isLockedAssetRow(face.asset) ||
+            (face.asset.visibility === AssetVisibility.Archive &&
+              !getPreferences(await this.userRepository.getMetadata(ownerId)).people.includeArchived));
         if (person) {
           this.logger.debug(`Face ${id} matched person ${person.personGroupId}`);
         } else {
-          await this.personRepository.create({ ownerId, faceAssetId: isLocked ? null : face.id, personGroupId });
+          await this.personRepository.create({ ownerId, faceAssetId: unfeatured ? null : face.id, personGroupId });
           this.logger.log(`Created person for face ${id} in group ${personGroupId}`);
-          if (!isLocked) {
+          if (!unfeatured) {
             await this.jobRepository.queue({
               name: JobName.PersonGenerateThumbnail,
               data: { ownerId, personGroupId },
@@ -1946,7 +1952,7 @@ export class PersonService extends BaseService {
           await this.refreshIdentities(ownerId, { assetIds: [face.assetId] });
         }
 
-        if (!person && isLocked) {
+        if (!person && unfeatured) {
           await this.createNewFeaturePhoto([{ ownerId, personGroupId }]);
         }
       }

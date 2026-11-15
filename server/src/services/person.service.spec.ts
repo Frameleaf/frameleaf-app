@@ -13,6 +13,7 @@ import {
   MlWorkload,
   SourceType,
   SystemMetadataKey,
+  UserMetadataKey,
 } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
@@ -3244,6 +3245,42 @@ describe(PersonService.name, () => {
         { name: JobName.PersonGenerateThumbnail, data: { ownerId: asset.ownerId, personGroupId } },
       ]);
     });
+
+    it.each([
+      { includeArchived: false, featured: false },
+      { includeArchived: true, featured: true },
+    ])(
+      'should feature an archived face for a person it creates only when the owner includes archived photos ($includeArchived) (FL-1365)',
+      async ({ includeArchived, featured }) => {
+        const asset = AssetFactory.create({ visibility: AssetVisibility.Archive });
+        const [archivedFace, otherOwnerFace] = [
+          AssetFaceFactory.create({ assetId: asset.id }),
+          AssetFaceFactory.from().person().build(),
+        ];
+        const personGroupId = otherOwnerFace.person!.personGroupId;
+
+        mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { minFaces: 1 } } });
+        mocks.search.searchFaces.mockResolvedValue([
+          getForFaceSearch(archivedFace, 0),
+          getForFaceSearch(otherOwnerFace, 0.2),
+        ]);
+        mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(getForFacialRecognitionJob(archivedFace, asset));
+        mocks.user.getMetadata.mockResolvedValue([
+          { key: UserMetadataKey.Preferences, value: { people: { includeArchived } } },
+        ] as never);
+        mocks.person.create.mockResolvedValue(PersonFactory.create({ ownerId: asset.ownerId, personGroupId }));
+        mocks.person.getBestFace.mockResolvedValue(undefined);
+
+        await sut.handleRecognizeFaces({ id: archivedFace.id, deferred: true });
+
+        expect(mocks.person.create).toHaveBeenCalledWith({
+          ownerId: asset.ownerId,
+          faceAssetId: featured ? archivedFace.id : null,
+          personGroupId,
+        });
+        expect(mocks.person.getBestFace).toHaveBeenCalledTimes(featured ? 0 : 1);
+      },
+    );
 
     it('should not queue face with no matches', async () => {
       const asset = AssetFactory.create();
