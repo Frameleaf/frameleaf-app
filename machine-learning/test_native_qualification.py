@@ -253,6 +253,9 @@ def test_native_backend_loads_the_device_libraries_its_runtime_carries(
         ("OpenVINOExecutionProvider", {"gpus": [], "openvinoDevices": ["GPU"]}, True),
         ("CoreMLExecutionProvider", {"gpus": [{"index": "0"}], "openvinoDevices": ["GPU"]}, False),
         ("MIGraphXExecutionProvider", {"gpus": [{"index": "0"}]}, False),
+        ("DmlExecutionProvider", {"gpus": []}, False),
+        ("DmlExecutionProvider", {"gpus": [], "directxAdapters": []}, False),
+        ("DmlExecutionProvider", {"gpus": [], "directxAdapters": ["AMD Radeon RX 7800 XT"]}, True),
     ],
 )
 def test_an_accelerator_report_needs_a_device_the_provider_can_have_used(
@@ -302,7 +305,15 @@ def test_a_failed_qualification_says_why_on_stderr_and_in_its_report(
     }
     (tmp_path / "spec.json").write_text(json.dumps(spec))
     report = tmp_path / "report.json"
-    arguments = ["qualify", "--spec", str(tmp_path / "spec.json"), "--cache-dir", str(tmp_path), "--output", str(report)]
+    arguments = [
+        "qualify",
+        "--spec",
+        str(tmp_path / "spec.json"),
+        "--cache-dir",
+        str(tmp_path),
+        "--output",
+        str(report),
+    ]
     monkeypatch.setattr(sys, "argv", arguments)
     for failure, code, shown in [
         (RuntimeError("CUDA failure 2: out of memory"), "native_qualification_failed", "RuntimeError: CUDA failure 2"),

@@ -1,5 +1,6 @@
 import { AccountEventService } from 'src/services/account-event.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
+import { AlbumActionsService } from 'src/services/album-actions.service.js';
 import { AlbumChangeRunService } from 'src/services/album-change-run.service.js';
 import { AlbumCleanupService } from 'src/services/album-cleanup.service.js';
 import { AlbumDateHealService } from 'src/services/album-date-heal.service.js';
@@ -162,6 +163,7 @@ import { PhotographyWorkflowService } from 'src/services/photography-workflow.se
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
+import { PlaybackSelfTestService } from 'src/services/playback-self-test.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
 import { PreservationService } from 'src/services/preservation.service.js';
@@ -192,6 +194,7 @@ import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioCaptionTranslationService } from 'src/services/studio-caption-translation.service.js';
 import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
 import { StudioCutoutService } from 'src/services/studio-cutout.service.js';
+import { StudioEditorImportService } from 'src/services/studio-editor-import.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import { StudioMediaService } from 'src/services/studio-media.service.js';
@@ -252,6 +255,7 @@ export const services = [
   ConnectService,
   ConnectEventService,
   ConnectMediaService,
+  AlbumActionsService,
   AlbumItemsService,
   AssetSourceService,
   BookmarkService,
@@ -337,6 +341,7 @@ export const services = [
   AttentionService,
   UpgradeCheckService,
   LibraryProgressService,
+  PlaybackSelfTestService,
   OvernightService,
   AuthService,
   LockedEncryptionService,
@@ -439,6 +444,7 @@ export const services = [
   StudioReverseConformCommandService,
   StudioCaptionTranslationService,
   StudioMovieService,
+  StudioEditorImportService,
   StudioStabiliseService,
   StudioTranscriptionService,
   StudioVoiceCleanupService,

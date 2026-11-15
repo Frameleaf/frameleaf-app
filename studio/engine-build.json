@@ -851,10 +851,25 @@
       "sha256": "3b65ed55534fb309729d80829ecdf80a4a2c8bc78225bacf9896efe7b9708433"
     },
     {
+      "path": "patches/0188-sound-crossfades.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "364558bf32649932bd705d2b4fd1c9759898f46c3ba821d5562aa9a5d9141236"
+    },
+    {
+      "path": "patches/0187-marker-ranges.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2db6f7a1a357563a44bddb18f051407f9165323a1ff04b983eb84cf7aed9ddd8"
+    },
+    {
+      "path": "patches/0185-editor-import-transitions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "f833d036d5a8cdcb007f3390318b33e47fae16854920aadea876ef5f67ebd0db"
+    },
+    {
       "path": "patches/0186-grading-effects.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "adf61867d53efd26b402ad2dc996d503ad59447fdae83a2e6a2f0f6524993e76"
     }
   ],
-  "sourceSha256": "d7de3a46127aabbed64c14df169c15d96083d26c7e20e04a1a58669370cb6b2f"
+  "sourceSha256": "3a3669ec17409883b5705c8044503ef6825972c8a75a90ef700a4829568695ca"
 }

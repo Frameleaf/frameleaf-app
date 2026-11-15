@@ -154,7 +154,7 @@ describe('readFcpxml', () => {
     expect(clips(nest.tracks).map((clip) => clip.name)).toEqual(['Ridge']);
     expect(clips(timeline.tracks).map((clip) => clip.name)).not.toContain('Kayak alt');
     expect(project.notices).toEqual([
-      expect.objectContaining({ code: 'format-limits', what: 'A clip switched off in Final Cut Pro' }),
+      expect.objectContaining({ code: 'clips-disabled', subject: '1', what: 'A clip switched off in Final Cut Pro' }),
     ]);
   });
 
@@ -247,7 +247,7 @@ describe('readOtio', () => {
   });
 
   it('keeps the place of an item it does not know, and says so', () => {
-    expect(project.notices).toEqual([expect.objectContaining({ code: 'format-limits' })]);
+    expect(project.notices).toEqual([expect.objectContaining({ code: 'items-unknown', subject: '1' })]);
   });
 
   it('refuses deep nesting, other JSON and malformed files', () => {
@@ -308,7 +308,7 @@ describe('readEdl', () => {
     expect(named(project, 'BL').mediaReference).toMatchObject({ kind: 'generator', generator: 'solid' });
     expect(timeline.markers).toEqual([expect.objectContaining({ name: 'Heron', color: 'RED' })]);
     expect(project.notices?.[0]).toMatchObject({
-      code: 'format-limits',
+      code: 'edl-limits',
       what: 'Colour, effects, titles and picture moves',
     });
   });
@@ -316,7 +316,7 @@ describe('readEdl', () => {
   it('guesses the rate when no one says, and says so', () => {
     const guessed = readEdl(fixture('lake-day.edl'));
     expect(guessed.timelines[0].rate).toEqual({ num: 24, den: 1 });
-    expect(guessed.notices?.[1]).toMatchObject({ what: 'The frame rate, which an edit decision list does not state' });
+    expect(guessed.notices?.[1]).toMatchObject({ code: 'edl-frame-rate', subject: '24' });
     expect(
       readEdl('FCM: DROP FRAME\n001  A  V  C  00:00:00;00 00:00:01;00 00:00:00;00 00:00:01;00\n').timelines[0].rate,
     ).toEqual({

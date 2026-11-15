@@ -1213,4 +1213,76 @@ describe(PersonRepository.name, () => {
       await expect(suggest(ctx, sut, user.id, { maxDistance: 0.5 })).resolves.toHaveLength(1);
     });
   });
+
+  // FL-864: date of passing; FL-941: private notes
+  describe('person profile', () => {
+    const personWithPhoto = async (ctx: ReturnType<typeof setup>['ctx'], ownerId: string, name: string) => {
+      const { person } = await ctx.newPerson({ ownerId, name });
+      const { asset } = await ctx.newAsset({ ownerId });
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      return person;
+    };
+
+    it('keeps the date of passing and notes, updating only what is given', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const person = await personWithPhoto(ctx, user.id, 'Rose');
+
+      await expect(sut.getProfile(person)).resolves.toBeUndefined();
+      await sut.upsertProfile(person, { deathDate: '2020-05-06' });
+      await sut.upsertProfile(person, { notes: 'Grandma, loved gardens' });
+      await expect(sut.getProfile(person)).resolves.toEqual({
+        deathDate: expect.any(Date),
+        notes: 'Grandma, loved gardens',
+      });
+      await sut.upsertProfile(person, { deathDate: null });
+      await expect(sut.getProfile(person)).resolves.toEqual({ deathDate: null, notes: 'Grandma, loved gardens' });
+    });
+
+    it('reads the profile with the People page, one row per person', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const rose = await personWithPhoto(ctx, user.id, 'Rose');
+      const sam = await personWithPhoto(ctx, user.id, 'Sam');
+      await sut.upsertProfile(rose, { notes: 'Grandma' });
+
+      const { items } = await sut.getAllForUser({ take: 10, skip: 0 }, user.id);
+
+      expect(items).toHaveLength(2);
+      expect(items.find((item) => item.personGroupId === rose.personGroupId)).toMatchObject({ notes: 'Grandma' });
+      expect(items.find((item) => item.personGroupId === sam.personGroupId)).toMatchObject({
+        notes: null,
+        deathDate: null,
+      });
+    });
+
+    it("finds people by the owner's notes only when asked, and never by another owner's notes", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const rose = await personWithPhoto(ctx, user.id, 'Rose');
+      const theirs = await personWithPhoto(ctx, other.id, 'Pat');
+      await sut.upsertProfile(rose, { notes: 'Loved the 100% wool jumpers' });
+      await sut.upsertProfile(theirs, { notes: 'Loved the 100% wool jumpers' });
+
+      await expect(sut.getByName(user.id, 'wool', { withHidden: false })).resolves.toEqual([]);
+      await expect(sut.getByName(user.id, 'wool', { withHidden: false, matchNotes: true })).resolves.toEqual([
+        expect.objectContaining({ personGroupId: rose.personGroupId, notes: 'Loved the 100% wool jumpers' }),
+      ]);
+      // LIKE wildcards in the search stand for themselves
+      await expect(sut.getByName(user.id, '100%', { withHidden: false, matchNotes: true })).resolves.toHaveLength(1);
+      await expect(sut.getByName(user.id, '1_0', { withHidden: false, matchNotes: true })).resolves.toEqual([]);
+    });
+
+    it('drops the profile with the person', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const rose = await personWithPhoto(ctx, user.id, 'Rose');
+      await sut.upsertProfile(rose, { notes: 'Grandma', deathDate: '2020-05-06' });
+
+      await sut.delete([rose.personGroupId], user.id);
+
+      await expect(sut.getProfile(rose)).resolves.toBeUndefined();
+    });
+  });
 });

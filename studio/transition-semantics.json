@@ -24,6 +24,14 @@
       "hdr": "refused",
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
+    "crossZoom": {
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "cubeSpin": {
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
     "dipToColorDissolve": {
       "hdr": "refused",
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
@@ -33,6 +41,10 @@
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
     "fade": {
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "filmDissolve": {
       "hdr": "refused",
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
@@ -69,6 +81,10 @@
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },
     "nonAdditiveDissolve": {
+      "hdr": "refused",
+      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+    },
+    "pagePeel": {
       "hdr": "refused",
       "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
     },

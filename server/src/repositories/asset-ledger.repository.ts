@@ -117,6 +117,19 @@ export const recordLedgerAccountRemoved = async (db: Kysely<DB>, ownerId: string
 
 const emptyCounts = (): AssetLedgerCounts => ({ kept: 0, trashed: 0, removed: 0, merged: 0, missing: 0 });
 
+/** Grouped `state, count` rows folded into one set of counts per key. */
+const collect = <T extends { state: AssetLedgerState; count: string }>(rows: T[], key: (row: T) => string) => {
+  const grouped = new Map<string, AssetLedgerCounts>();
+  for (const row of rows) {
+    const counts = grouped.get(key(row)) ?? emptyCounts();
+    if (row.state in counts) {
+      counts[row.state] += Number(row.count);
+    }
+    grouped.set(key(row), counts);
+  }
+  return [...grouped];
+};
+
 /**
  * FL-921: the nothing-lost ledger (`asset_ledger`). Every write is one statement for however many
  * photos it covers, so bulk paths pay one round trip.
@@ -173,6 +186,27 @@ export class AssetLedgerRepository {
       }
     }
     return counts;
+  }
+
+  /** FL-940: per month the originals were added (UTC), how many of them are in each state now; newest month first. */
+  async countsByMonth(ownerId?: string): Promise<Array<{ month: string; states: AssetLedgerCounts }>> {
+    const { rows } = await sql<{ month: string; state: AssetLedgerState; count: string }>`
+      select to_char(date_trunc('month', "addedAt" at time zone 'UTC'), 'YYYY-MM') as month, state, count(*) as count
+      from asset_ledger
+      ${ownerId ? sql`where "ownerId" = ${ownerId}::uuid` : sql``}
+      group by 1, 2
+    `.execute(this.db);
+    return collect(rows, (row) => row.month)
+      .map(([month, states]) => ({ month, states }))
+      .sort((a, b) => b.month.localeCompare(a.month));
+  }
+
+  /** FL-940: every account's totals, for administrators. Counts only. */
+  async countsByOwner(): Promise<Array<{ ownerId: string; states: AssetLedgerCounts }>> {
+    const { rows } = await sql<{ ownerId: string; state: AssetLedgerState; count: string }>`
+      select "ownerId", state, count(*) as count from asset_ledger group by 1, 2
+    `.execute(this.db);
+    return collect(rows, (row) => row.ownerId).map(([ownerId, states]) => ({ ownerId, states }));
   }
 
   /** Originals nobody can account for, per account, most first. Read from the small `missing` index. */

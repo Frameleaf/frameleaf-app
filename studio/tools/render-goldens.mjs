@@ -23,7 +23,8 @@ export const LINEAR_HDR_EFFECTS = [
 export const GPU_TRANSITIONS = [
   'fade', 'wipe', 'slide', 'flip', 'clockWipe', 'iris', 'dissolve', 'additiveDissolve', 'blurDissolve',
   'dipToColorDissolve', 'nonAdditiveDissolve', 'smoothCut', 'sparkles', 'glitch', 'pixelate', 'chromatic',
-  'radialBlur', 'liquidDistort', 'lensWarpZoom', 'lightLeakBurn', 'filmGateSlip',
+  'radialBlur', 'liquidDistort', 'lensWarpZoom', 'lightLeakBurn', 'filmGateSlip', 'filmDissolve', 'crossZoom',
+  'cubeSpin', 'pagePeel',
 ];
 
 const q8 = (v) => Math.round(Math.min(1, Math.max(0, v)) * 255) / 255;

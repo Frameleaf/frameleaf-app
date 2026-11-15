@@ -23,6 +23,7 @@ export type PartnerFaceCopyInput = {
 export type PersonEdit = {
   name?: string;
   birthDate?: string | null;
+  deathDate?: string | null;
   isHidden?: boolean;
   isFavorite?: boolean;
   color?: string | null;
@@ -32,9 +33,10 @@ export type PersonEdit = {
 /**
  * Fields of a person copy that follow the partner's person until the recipient changes them. The cover
  * (featured face), favorite and color are always the recipient's own: their copy has other faces, and
- * favorites never follow (spec §4.2 default for assets, kept for people).
+ * favorites never follow (spec §4.2 default for assets, kept for people). The date of passing follows like
+ * the birth date (FL-864); the owner's notes never leave their own person (FL-941).
  */
-const FOLLOWED_PERSON_FIELDS = ['name', 'birthDate', 'hidden'] as const;
+const FOLLOWED_PERSON_FIELDS = ['name', 'birthDate', 'deathDate', 'hidden'] as const;
 
 const conflict = (reason: 'already-undone' | 'person-gone', message: string) =>
   new ConflictException({ statusCode: 409, error: 'Conflict', message, reason });
@@ -165,6 +167,18 @@ export class PartnerPeopleService extends BaseService {
             const source = await this.personRepository.getByGroupId(current);
             if (!source) return false;
             const overridden = new Set(origin.overriddenFields);
+            // FL-864: the date of passing follows like the birth date; notes are never read here (FL-941)
+            if (!overridden.has('deathDate')) {
+              const [sourceProfile, followerProfile] = await Promise.all([
+                this.personRepository.getProfile(current),
+                this.personRepository.getProfile(follower),
+              ]);
+              const deathDate = asDateString(sourceProfile?.deathDate ?? null);
+              if (deathDate !== asDateString(followerProfile?.deathDate ?? null)) {
+                await this.personRepository.upsertProfile(follower, { deathDate });
+                changed = true;
+              }
+            }
             const values = {
               ...(!overridden.has('name') && { name: source.name }),
               ...(!overridden.has('birthDate') && { birthDate: source.birthDate }),
@@ -175,7 +189,7 @@ export class PartnerPeopleService extends BaseService {
                 ownerId: follower.ownerId,
                 personGroupId: follower.personGroupId,
               });
-              changed =
+              changed ||=
                 !!before &&
                 Object.entries(values).some(([key, value]) =>
                   key === 'birthDate'
@@ -206,6 +220,7 @@ export class PartnerPeopleService extends BaseService {
     const fields = [
       edit.name !== undefined && 'name',
       edit.birthDate !== undefined && 'birthDate',
+      edit.deathDate !== undefined && 'deathDate',
       edit.isHidden !== undefined && 'hidden',
       edit.featureFaceAssetId !== undefined && 'cover',
       edit.isFavorite !== undefined && 'favorite',
@@ -380,6 +395,14 @@ export class PartnerPeopleService extends BaseService {
         result.conflict === 'already-undone'
           ? 'This change was already undone'
           : 'The partner person this merge came from is no longer linked',
+      );
+    }
+    // FL-864: the copy starts with the partner's date of passing, as it does with their birth date; never their notes
+    const sourceProfile = source ? await this.personRepository.getProfile(source) : undefined;
+    if (sourceProfile?.deathDate) {
+      await this.personRepository.upsertProfile(
+        { ownerId: targetOwnerId, personGroupId: result.personGroupId },
+        { deathDate: asDateString(sourceProfile.deathDate) },
       );
     }
     return result.personGroupId;

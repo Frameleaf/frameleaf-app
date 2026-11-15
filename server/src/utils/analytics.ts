@@ -361,7 +361,7 @@ export const windowDays = (window: Pick<AnalyticsWindow, 'from' | 'through'>) =>
 
 export type AnalyticsSampleRow = { series: AnalyticsSeriesId; value: number; observedAt: Date };
 
-export type BoundGrowth = Record<GrowthSeriesId, number | null> & { observedAt: Date | null };
+export type BoundGrowth = Record<GrowthSeriesId, number | null> & { observedAt: Date | null; rebuilt?: true };
 
 /**
  * The latest observation of each growth series inside each bucket, by the day it was observed.
@@ -401,7 +401,7 @@ export const bindGrowth = (buckets: AnalyticsBucketWindow[], samples: AnalyticsS
  * Growth for the buckets that end before the first nightly reading in the window, rebuilt from the
  * items' added days (`getAddedByDay`), so a library imported in one go is not a blank chart until the
  * collector has run for months. Buckets from the first reading on keep the readings, gaps included.
- * A rebuilt bucket's `observedAt` is the end of its last day.
+ * A rebuilt bucket's `observedAt` is the end of its last day, and it carries `rebuilt` (FL-1455).
  */
 export const backfillGrowth = (
   buckets: AnalyticsBucketWindow[],
@@ -429,6 +429,7 @@ export const backfillGrowth = (
       [AnalyticsSeriesId.LibraryLogicalBytes]: total.logicalBytes,
       [AnalyticsSeriesId.LibraryPhysicalBytes]: total.physicalBytes,
       observedAt: new Date(`${through}T23:59:59.999Z`),
+      rebuilt: true,
     };
   });
 };
