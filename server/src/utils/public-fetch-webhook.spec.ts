@@ -110,7 +110,7 @@ describe('sendWebhook', () => {
     fetchMock.mockResolvedValue(new Response('ok'));
     await expect(
       sendWebhook('http://192.168.1.20:8123/api/webhook/x', message, { allowHomeNetwork: true }),
-    ).resolves.toEqual({ ok: true, status: 200, body: 'ok' });
+    ).resolves.toEqual({ ok: true, status: 200, body: 'ok', headers: expect.any(Headers) });
     expect(fetchMock).toHaveBeenCalledWith(
       new URL('http://192.168.1.20:8123/api/webhook/x'),
       expect.objectContaining({ method: 'POST', redirect: 'manual', body: '{}' }),
@@ -123,6 +123,7 @@ describe('sendWebhook', () => {
       ok: false,
       status: 302,
       body: '',
+      headers: expect.any(Headers),
     });
     expect(fetchMock).toHaveBeenCalledOnce();
   });

@@ -153,6 +153,43 @@ describe('push device registry (FL-228)', () => {
     expect(devices.map(({ sessionId }) => sessionId)).toEqual([next.id]);
   });
 
+  it('keeps a UnifiedPush-only Android device without a push token, moves its endpoint and forgets it when gone (FL-926)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { session: old } = await ctx.newSession({ userId: user.id });
+    const { session: next } = await ctx.newSession({ userId: user.id });
+    const endpoint = 'https://ntfy.example.net/upAbCdEfGhIjKl?up=1';
+    const unifiedPush = {
+      platform: PushPlatform.Android,
+      pushToken: null,
+      unifiedPushEndpoint: endpoint,
+      unifiedPushPublicKey: 'p256dh',
+      unifiedPushAuth: 'auth',
+    };
+
+    const first = await sut.upsert(registration(user.id, old.id, unifiedPush));
+    expect(first).toMatchObject({ pushToken: null, unifiedPushEndpoint: endpoint });
+    await expect(sut.hasUnifiedPushDevices()).resolves.toBe(true);
+    await expect(sut.getById(first.id)).resolves.toMatchObject({ id: first.id, activities: [] });
+
+    // the same endpoint under a new session (signed in again) replaces the old registration
+    const moved = await sut.upsert(registration(user.id, next.id, unifiedPush));
+    expect((await sut.getByUser(user.id)).map(({ id }) => id)).toEqual([moved.id]);
+
+    // a late "gone" for a replaced endpoint keeps the device; one for the current endpoint removes it
+    await sut.update(next.id, { unifiedPushEndpoint: `${endpoint}&v=2` });
+    await sut.deleteGoneUnifiedPush([{ id: moved.id, endpoint }]);
+    expect(await sut.getById(moved.id)).toBeDefined();
+    await sut.deleteGoneUnifiedPush([{ id: moved.id, endpoint: `${endpoint}&v=2` }]);
+    expect(await sut.getById(moved.id)).toBeUndefined();
+
+    // registering again without UnifiedPush clears it
+    const { session: third } = await ctx.newSession({ userId: user.id });
+    await sut.upsert(registration(user.id, third.id, unifiedPush));
+    const cleared = await sut.upsert(registration(user.id, third.id));
+    expect(cleared).toMatchObject({ unifiedPushEndpoint: null, unifiedPushPublicKey: null, unifiedPushAuth: null });
+  });
+
   it('removes the registration and its Live Activity tokens when the session is deleted (logout, revoke)', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

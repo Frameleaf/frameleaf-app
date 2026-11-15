@@ -163,6 +163,7 @@ import { TagRepository } from 'src/repositories/tag.repository.js';
 import { TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
 import { TakeoutRepository } from 'src/repositories/takeout.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
+import { UnifiedPushRepository } from 'src/repositories/unified-push.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
@@ -336,6 +337,7 @@ export const repositories = [
   EagleImportRepository,
   EagleLibraryRepository,
   TrashRepository,
+  UnifiedPushRepository,
   UserRepository,
   ViewRepository,
   VersionHistoryRepository,

@@ -395,6 +395,7 @@ export const adminConfigDefaults = {
     publicUsers: true,
   },
   notifications: {
+    unifiedPush: { allowLocalTargets: false, availability: 'all' },
     smtp: {
       enabled: false,
       from: '',

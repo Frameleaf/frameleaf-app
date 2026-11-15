@@ -153,6 +153,15 @@ The gateway wraps the envelope in the platform message. Nothing else from the pl
 - **`t`** appears only in FCM data messages. It is the gateway's push type, `alert` or `background`. FCM data messages have no `aps` to say how they should be shown, so `t` tells the Android app whether to post a visible notification (`alert`) or work silently (`background`).
 - **`t` is not authenticated.** It is outside the envelope, so it only says how to handle the push, never what it is about. The event type is the plaintext's `type`, which is authenticated.
 
+### UnifiedPush (Android)
+
+An Android device can register a UnifiedPush endpoint instead of, or as well as, an FCM token: `unifiedPushEndpoint`, `unifiedPushPublicKey` (the Web Push `p256dh`: the 65-byte uncompressed P-256 point, base64url) and `unifiedPushAuth` (the 16-byte Web Push auth secret, base64url) on `PUT /api/push/devices/current`. The server then sends that device's pushes straight to the endpoint, with or without a Frameleaf Cloud link, and the FCM token may be left out.
+
+- **Body.** The same data as the FCM message above, `{"e":"<envelope>","t":"alert"}` (or `"background"`), encrypted as a Web Push message (RFC 8291) in the `aes128gcm` content coding (RFC 8188): one record, record size 4096, no padding, a fresh salt and sender P-256 key for every message. The distributor sees only that opaque body.
+- **Headers.** `Content-Encoding: aes128gcm`, `TTL` (seconds), `Urgency` (`high` for alerts, `normal` for background pushes) and `Topic` (the collapse id, or its SHA-256 hex shortened to 32 characters). No VAPID header is sent.
+- **Gone.** A 404 or 410 from the endpoint unregisters the device; register again with a new endpoint. A 429 is retried after its `Retry-After`, for a bounded number of attempts.
+- **Test vector.** The encryption is checked byte for byte against RFC 8291 section 5 (`server/src/utils/web-push.spec.ts`).
+
 ### Live Activity content state
 
 Live Activity pushes (iOS only) carry no envelope and no text. `aps.content-state` is exactly this JSON object, and nothing else from the server reaches ActivityKit:

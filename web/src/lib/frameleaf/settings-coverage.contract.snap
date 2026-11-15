@@ -1069,6 +1069,12 @@
   "notifications.smtp.transport.username": {
     "type": "string"
   },
+  "notifications.unifiedPush.allowLocalTargets": {
+    "type": "boolean"
+  },
+  "notifications.unifiedPush.availability": {
+    "type": "string"
+  },
   "oauth.accountManagementUrl": {
     "type": "string"
   },

@@ -5,7 +5,9 @@ import { SessionTable } from 'src/schema/tables/session.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
- * FL-228: a device that receives push notifications. Mirrors migrations 2100000000727-PushDevices and 2100000000728-PushDeviceApnsEnvironment.
+ * FL-228: a device that receives push notifications. Mirrors migrations 2100000000727-PushDevices and 2100000000728-PushDeviceApnsEnvironment,
+ * and 1794720000000-PushDeviceUnifiedPush (FL-926: UnifiedPush delivery, so an Android device without
+ * Google services can have no FCM token).
  *
  * One registration per signed-in device session: logging out, revoking the session or removing the
  * account deletes the row (and its Live Activity tokens) through the foreign keys, so no token outlives
@@ -19,14 +21,23 @@ export class PushDeviceTable {
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' }) userId!: string;
   @ForeignKeyColumn(() => SessionTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE' }) sessionId!: string;
   @Column({ type: 'text' }) platform!: PushPlatform;
-  /** The APNs device token or FCM registration token. */
-  @Column({ type: 'text' }) pushToken!: string;
+  /** The APNs device token or FCM registration token; null for an Android device that only uses UnifiedPush. */
+  @Column({ type: 'text', nullable: true }) pushToken!: string | null;
   /** FL-302, iOS: `sandbox` for a development build's tokens (APNs sandbox); null is production. */
   @Column({ type: 'text', nullable: true }) apnsEnvironment!: 'production' | 'sandbox' | null;
   /** iOS: the ActivityKit push-to-start token. */
   @Column({ type: 'text', nullable: true }) pushToStartToken!: string | null;
   /** The device's X25519 public key (raw 32 bytes, base64url); every payload is encrypted to it. */
   @Column({ type: 'text' }) publicKey!: string;
+  /**
+   * FL-926: the device's UnifiedPush endpoint (its distributor's push address, such as an ntfy topic URL).
+   * When set, pushes go there, encrypted with the two keys below, instead of through the Cloud gateway.
+   */
+  @Column({ type: 'text', nullable: true }) unifiedPushEndpoint!: string | null;
+  /** FL-926: the Web Push P-256 public key (`p256dh`, 65-byte uncompressed point, base64url). */
+  @Column({ type: 'text', nullable: true }) unifiedPushPublicKey!: string | null;
+  /** FL-926: the Web Push authentication secret (`auth`, 16 bytes, base64url). */
+  @Column({ type: 'text', nullable: true }) unifiedPushAuth!: string | null;
   /** The phone backup device this push device is (`backup_device.deviceKey`), for stale-backup wake-ups. */
   @Column({ type: 'uuid', nullable: true }) backupDeviceKey!: string | null;
   /** Event types the user turned off on this device; everything else is delivered. */

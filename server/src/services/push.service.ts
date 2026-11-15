@@ -3,19 +3,35 @@ import { randomUUID } from 'node:crypto';
 import { ZodError } from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { PushDeviceWithActivities, PushTokenRef } from 'src/repositories/push-device.repository.js';
+import type { PushGatewayTarget } from 'src/repositories/frameleaf-cloud-push.repository.js';
+import type {
+  PushDeviceWithActivities,
+  PushTokenRef,
+  UnifiedPushEndpointRef,
+} from 'src/repositories/push-device.repository.js';
+import type { UnifiedPushSubscription } from 'src/repositories/unified-push.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
+import { UNIFIED_PUSH_DEFAULTS } from 'src/dtos/config.dto.js';
 import {
   PushActivityTokenDto,
   PushDeviceListResponseDto,
   PushDeviceRegisterDto,
   PushDeviceResponseDto,
+  PushDeviceTestResponseDto,
   PushDeviceUpdateDto,
   PushPreferencesDto,
   PushStatusResponseDto,
 } from 'src/dtos/push.dto.js';
-import { JobName, JobStatus, PushEventType, PushPlatform, PushUnavailableReason, QueueName } from 'src/enum.js';
+import {
+  JobName,
+  JobStatus,
+  PushEventType,
+  PushPlatform,
+  PushUnavailableReason,
+  QueueName,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -26,9 +42,12 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PushDeviceRepository } from 'src/repositories/push-device.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UnifiedPushRepository } from 'src/repositories/unified-push.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { getConfig } from 'src/utils/config.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { isLicensed } from 'src/utils/frameleaf-license.js';
 import {
   PUSH_GATEWAY_CONCURRENCY,
   PUSH_GATEWAY_MAX_ATTEMPTS,
@@ -41,11 +60,13 @@ import {
   isGatewayToken,
   liveActivityPlanOf,
   pushTtlSec,
+  unifiedPushPlaintextOf,
 } from 'src/utils/frameleaf-push.js';
 import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { notificationLocaleOf } from 'src/utils/notification-locale.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { parsePushPublicKey, pushKeyFingerprint, sealPushEnvelope } from 'src/utils/push-crypto.js';
+import { parseWebPushAuth, parseWebPushPublicKey } from 'src/utils/web-push.js';
 /** How long a phone backup may go without a reported success before the device is woken. */
 export const PUSH_BACKUP_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
 /** At most one stale-backup wake-up per device in this window (the nightly job runs once a day). */
@@ -78,7 +99,25 @@ const disabledEventsOf = (preferences: PushPreferencesDto | undefined, current: 
   return Object.values(PushEventType).filter((event) => disabled.has(event));
 };
 
-const mapDevice = (device: PushDeviceWithActivities, currentSessionId?: string): PushDeviceResponseDto => ({
+/** FL-926: whether this server delivers to UnifiedPush now, and the administrator's address rule. */
+type UnifiedPushAccess = { available: boolean; reason: string | null; allowLocalTargets: boolean };
+
+/** How a device is reached: `unifiedpush` when it registered an endpoint, else `cloud` (the gateway). */
+type PushTransport = 'cloud' | 'unifiedpush';
+
+const endpointHostOf = (endpoint: string) => {
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return '';
+  }
+};
+
+const mapDevice = (
+  device: PushDeviceWithActivities,
+  currentSessionId: string | undefined,
+  unifiedPush: Pick<UnifiedPushAccess, 'available' | 'reason'>,
+): PushDeviceResponseDto => ({
   id: device.id,
   platform: device.platform,
   current: device.sessionId === currentSessionId,
@@ -97,6 +136,14 @@ const mapDevice = (device: PushDeviceWithActivities, currentSessionId?: string):
   createdAt: new Date(device.createdAt).toISOString(),
   updatedAt: new Date(device.updatedAt).toISOString(),
   lastDeliveredAt: device.lastDeliveredAt ? new Date(device.lastDeliveredAt).toISOString() : null,
+  transport: device.unifiedPushEndpoint ? 'unifiedpush' : 'cloud',
+  unifiedPush: device.unifiedPushEndpoint
+    ? {
+        endpointHost: endpointHostOf(device.unifiedPushEndpoint),
+        available: unifiedPush.available,
+        reason: unifiedPush.reason,
+      }
+    : null,
 });
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -106,10 +153,23 @@ type PlannedMessage = {
   deviceId: string;
   kind: PushTargetKind;
   activityRowId?: string;
+  /** FL-926: set when this target goes to the device's UnifiedPush endpoint instead of the gateway. */
+  unifiedPush?: UnifiedPushSubscription;
+};
+
+/** One send's outcome: the gateway's answer, a UnifiedPush endpoint that is gone, or a refusal. */
+type DeliveryResult = PushSendResult | { status: 'gone' } | { status: 'rejected'; reason?: string };
+
+/** FL-926: the test notification (`POST /push/devices/:id/test`); it names nothing and links nowhere. */
+const TEST_NOTICE: PushNotice = {
+  type: PushEventType.SharedActivity,
+  title: 'Test notification',
+  body: 'Push notifications from Frameleaf reach this device',
+  data: { action: 'test' },
 };
 
 /** One target of a notice: which device, which of its tokens. A retry names the targets it is for. */
-const deliveryKeyOf = ({ deviceId, kind, activityRowId }: Omit<PlannedMessage, 'request'>) =>
+const deliveryKeyOf = ({ deviceId, kind, activityRowId }: Omit<PlannedMessage, 'request' | 'unifiedPush'>) =>
   `${deviceId}:${kind}:${activityRowId ?? ''}`;
 
 /** The collapse id of a notice: from its dedupe key, or the one its first attempt had. */
@@ -133,7 +193,9 @@ const retryDelayMs = (attempt: number, retryAfterSec?: number) =>
 /**
  * FL-228: push notifications for the native apps. Devices register a push token and a per-device key;
  * events become notices, and each notice is delivered as an encrypted blob per device through the
- * Frameleaf push gateway. Only a linked server delivers; an unlinked one reports push as unavailable.
+ * Frameleaf push gateway. Only a linked server delivers through the gateway; an unlinked one reports
+ * push as unavailable. FL-926: a device that registered a UnifiedPush endpoint is reached there instead
+ * (Web Push encrypted, `UnifiedPushRepository`), with or without a Cloud link.
  */
 @Injectable()
 export class PushService {
@@ -149,6 +211,7 @@ export class PushService {
     private jobRepository: JobRepository,
     private userRepository: UserRepository,
     private albumRepository: AlbumRepository,
+    private unifiedPush: UnifiedPushRepository,
   ) {
     this.logger.setContext(PushService.name);
   }
@@ -160,19 +223,24 @@ export class PushService {
   async getStatus(auth: AuthDto): Promise<PushStatusResponseDto> {
     const { reason } = await this.availability();
     const registered = auth.session ? !!(await this.devices.getBySession(auth.session.id)) : false;
+    const unifiedPush = await this.unifiedPushAccess();
     return {
       available: reason === null,
       reason,
       encryption: { scheme: 'frameleaf-push-v1', keyAgreement: 'X25519', kdf: 'HKDF-SHA256', cipher: 'AES-256-GCM' },
       events: Object.values(PushEventType),
       registered,
+      unifiedPush: { available: unifiedPush.available, reason: unifiedPush.reason, encoding: 'aes128gcm' },
     };
   }
 
   async listDevices(auth: AuthDto): Promise<PushDeviceListResponseDto> {
     this.requireUser(auth);
     const devices = await this.devices.getByUser(auth.user.id);
-    return { devices: devices.map((device) => mapDevice(device, auth.session?.id)) };
+    const unifiedPush = devices.some((device) => device.unifiedPushEndpoint)
+      ? await this.unifiedPushAccess()
+      : { available: true, reason: null };
+    return { devices: devices.map((device) => mapDevice(device, auth.session?.id, unifiedPush)) };
   }
 
   async register(auth: AuthDto, dto: PushDeviceRegisterDto): Promise<PushDeviceResponseDto> {
@@ -181,6 +249,12 @@ export class PushService {
     if (dto.platform !== PushPlatform.Ios && (pushToStartToken || dto.apnsEnvironment)) {
       throw new BadRequestException('Only iOS devices have an ActivityKit push-to-start token or an APNs environment');
     }
+    const unifiedPush = await this.parseUnifiedPush(dto, dto.platform);
+    if (!dto.pushToken && !unifiedPush) {
+      throw new BadRequestException(
+        'A push token is needed, unless an Android device registers a UnifiedPush endpoint',
+      );
+    }
     this.requireTokens(dto.pushToken, pushToStartToken);
     const publicKey = this.parseKey(dto.publicKey);
     const current = await this.devices.getBySession(sessionId);
@@ -188,15 +262,23 @@ export class PushService {
       userId: auth.user.id,
       sessionId,
       platform: dto.platform,
-      pushToken: dto.pushToken,
+      pushToken: dto.pushToken ?? null,
       pushToStartToken,
       apnsEnvironment: dto.apnsEnvironment === 'sandbox' ? 'sandbox' : null,
       publicKey,
       backupDeviceKey: dto.backupDeviceKey ?? null,
       disabledEvents: disabledEventsOf(dto.preferences, current?.disabledEvents),
+      unifiedPushEndpoint: unifiedPush?.endpoint ?? null,
+      unifiedPushPublicKey: unifiedPush?.p256dh ?? null,
+      unifiedPushAuth: unifiedPush?.auth ?? null,
     });
-    this.logger.log(`Push device ${device.id} (${device.platform}) registered for user ${auth.user.id}`);
-    return mapDevice({ ...device, activities: current?.activities ?? [] }, sessionId);
+    this.logger.log(
+      `Push device ${device.id} (${device.platform}${unifiedPush ? ', UnifiedPush' : ''}) registered for user ${auth.user.id}`,
+    );
+    return mapDevice({ ...device, activities: current?.activities ?? [] }, sessionId, {
+      available: true,
+      reason: null,
+    });
   }
 
   async update(auth: AuthDto, dto: PushDeviceUpdateDto): Promise<PushDeviceResponseDto> {
@@ -209,6 +291,21 @@ export class PushService {
       throw new BadRequestException('Only iOS devices have an ActivityKit push-to-start token or an APNs environment');
     }
     this.requireTokens(dto.pushToken, dto.pushToStartToken);
+    const touchesUnifiedPush = [dto.unifiedPushEndpoint, dto.unifiedPushPublicKey, dto.unifiedPushAuth].some(
+      (value) => value !== undefined,
+    );
+    let unifiedPushChanges = {};
+    if (touchesUnifiedPush) {
+      const unifiedPush = dto.unifiedPushEndpoint === null ? null : await this.parseUnifiedPush(dto, current.platform);
+      if (!unifiedPush && !(dto.pushToken ?? current.pushToken)) {
+        throw new BadRequestException('Without a UnifiedPush endpoint this device needs a push token');
+      }
+      unifiedPushChanges = {
+        unifiedPushEndpoint: unifiedPush?.endpoint ?? null,
+        unifiedPushPublicKey: unifiedPush?.p256dh ?? null,
+        unifiedPushAuth: unifiedPush?.auth ?? null,
+      };
+    }
     const changes = {
       ...(dto.apnsEnvironment !== undefined && {
         apnsEnvironment: dto.apnsEnvironment === 'sandbox' ? ('sandbox' as const) : null,
@@ -220,12 +317,13 @@ export class PushService {
       ...(dto.preferences !== undefined && {
         disabledEvents: disabledEventsOf(dto.preferences, current.disabledEvents),
       }),
+      ...unifiedPushChanges,
     };
     const device = await this.devices.update(sessionId, changes);
     if (!device) {
       throw new NotFoundException('This device is not registered for push notifications');
     }
-    return mapDevice({ ...device, activities: current.activities }, sessionId);
+    return mapDevice({ ...device, activities: current.activities }, sessionId, await this.unifiedPushStateOf(device));
   }
 
   async unregisterCurrent(auth: AuthDto): Promise<void> {
@@ -237,6 +335,83 @@ export class PushService {
     this.requireUser(auth);
     if (!(await this.devices.deleteForUser(auth.user.id, id))) {
       throw new NotFoundException('Push device not found');
+    }
+  }
+
+  /**
+   * FL-926: send a test notification to one device now, the way the device is reached (UnifiedPush or
+   * the Cloud gateway), and say what happened. Its owner or an administrator may; the device's event
+   * preferences do not apply. A device its push service reports gone is unregistered.
+   */
+  async sendTest(auth: AuthDto, id: string): Promise<PushDeviceTestResponseDto> {
+    this.requireUser(auth);
+    const device = await this.devices.getById(id);
+    if (!device || (device.userId !== auth.user.id && !auth.user.isAdmin)) {
+      throw new NotFoundException('Push device not found');
+    }
+    const registered: PushTransport = device.unifiedPushEndpoint ? 'unifiedpush' : 'cloud';
+    const availability = await this.availability();
+    const access = device.unifiedPushEndpoint ? await this.unifiedPushAccess() : undefined;
+    const transport = this.transportOf(device, availability.reason === null, access);
+    if (!transport) {
+      return {
+        transport: registered,
+        status: 'unavailable',
+        message:
+          access && !access.available
+            ? 'UnifiedPush needs a licensed server'
+            : `Push through Frameleaf Cloud is unavailable (${availability.reason ?? 'the device has no push token'})`,
+      };
+    }
+    const locale = notificationLocaleOf(
+      getPreferences((await this.userRepository.getMetadata(device.userId).catch(() => [])) ?? []),
+      device.sessionId,
+    );
+    const [entry] = this.plan(
+      { ...device, disabledEvents: [], activities: [] },
+      TEST_NOTICE,
+      new Set(),
+      new Date().toISOString(),
+      locale,
+      transport,
+    );
+    if (!entry) {
+      return { transport, status: 'refused', message: 'The test notification could not be built for this device' };
+    }
+    let target: PushGatewayTarget | null = null;
+    if (transport === 'cloud') {
+      try {
+        target = await this.gatewayTarget(availability.instanceId!, availability.cloudUrl!);
+      } catch (error) {
+        return { transport, status: 'retry', message: errorMessage(error) };
+      }
+      if (!target) {
+        return { transport, status: 'unavailable', message: 'Frameleaf Cloud publishes no push gateway address' };
+      }
+    }
+    const result = await this.sendPlanned(entry, target, access, 'test');
+    switch (result.status) {
+      case 'sent': {
+        await this.devices.markDelivered([device.id]);
+        return { transport, status: 'sent', message: null };
+      }
+      case 'gone': {
+        await this.devices.deleteGoneUnifiedPush([{ id: device.id, endpoint: entry.unifiedPush!.endpoint }]);
+        return { transport, status: 'gone', message: 'The UnifiedPush server no longer knows this device' };
+      }
+      case 'invalid-token': {
+        await this.devices.deleteByIds([
+          { id: device.id, token: entry.request.token, platform: entry.request.platform },
+        ]);
+        return { transport, status: 'gone', message: 'The push service no longer knows this device' };
+      }
+      case 'retry':
+      case 'throttled': {
+        return { transport, status: 'retry', message: 'The push service is busy; try again later' };
+      }
+      default: {
+        return { transport, status: 'refused', message: result.reason ?? 'The push service refused the notification' };
+      }
     }
   }
 
@@ -260,7 +435,7 @@ export class PushService {
       ...(dto.operationId && { operationId: dto.operationId }),
     });
     const device = await this.devices.getBySession(sessionId);
-    return mapDevice(device ?? current, sessionId);
+    return mapDevice(device ?? current, sessionId, await this.unifiedPushStateOf(device ?? current));
   }
 
   async removeActivityToken(auth: AuthDto, activityId: string): Promise<void> {
@@ -302,7 +477,7 @@ export class PushService {
   /** Items were added to a shared album or space: one coalesced notice per member who did not add them. */
   @OnEvent({ name: 'AlbumUpdate' })
   async onAlbumUpdate({ id, recipientIds }: ArgOf<'AlbumUpdate'>) {
-    if (recipientIds.length === 0 || !(await this.isLinked())) {
+    if (recipientIds.length === 0 || !(await this.canDeliver())) {
       return;
     }
     const album = await this.albumInfo(id);
@@ -326,7 +501,7 @@ export class PushService {
 
   @OnEvent({ name: 'AlbumInvite' })
   async onAlbumInvite({ id, userId, senderName }: ArgOf<'AlbumInvite'>) {
-    if (!(await this.isLinked())) {
+    if (!(await this.canDeliver())) {
       return;
     }
     const album = await this.albumInfo(id);
@@ -362,7 +537,7 @@ export class PushService {
 
   @OnEvent({ name: 'SharedSpaceMention' })
   async onSharedSpaceMention({ id, assetId, activityId, userIds, senderName }: ArgOf<'SharedSpaceMention'>) {
-    if (userIds.length === 0 || !(await this.isLinked())) {
+    if (userIds.length === 0 || !(await this.canDeliver())) {
       return;
     }
     const album = await this.albumInfo(id);
@@ -382,7 +557,7 @@ export class PushService {
 
   @OnEvent({ name: 'SharedSpaceReply' })
   async onSharedSpaceReply({ id, assetId, activityId, userId, senderName }: ArgOf<'SharedSpaceReply'>) {
-    if (!(await this.isLinked())) {
+    if (!(await this.canDeliver())) {
       return;
     }
     const album = await this.albumInfo(id);
@@ -403,7 +578,7 @@ export class PushService {
   /** A member was taken out of an album or shared space: their access ended. Leaving by oneself is silent. */
   @OnEvent({ name: 'AlbumUserRemove' })
   async onAlbumUserRemove({ albumId, userId, removedById }: ArgOf<'AlbumUserRemove'>) {
-    if (removedById === userId || !(await this.isLinked())) {
+    if (removedById === userId || !(await this.canDeliver())) {
       return;
     }
     const album = await this.albumInfo(albumId);
@@ -426,7 +601,9 @@ export class PushService {
   @OnJob({ name: JobName.PushDeliver, queue: QueueName.Notification })
   async handleDeliver({ notice }: JobOf<JobName.PushDeliver>): Promise<JobStatus> {
     const availability = await this.availability();
-    if (availability.reason !== null) {
+    const cloudReady = availability.reason === null;
+    // FL-926: an unlinked server still delivers to devices that registered a UnifiedPush endpoint
+    if (!cloudReady && !(await this.devices.hasUnifiedPushDevices())) {
       this.logger.debug(`Push ${notice.type} not delivered: push is unavailable (${availability.reason})`);
       return JobStatus.Skipped;
     }
@@ -445,9 +622,20 @@ export class PushService {
       // a wake-up is for that device alone; anything else may go to all of the owner's devices
       devices = linked.length > 0 || notice.background ? linked : devices;
     }
-    if (devices.length === 0) {
+    // FL-926: each device by its own way: its UnifiedPush endpoint, else the gateway when linked
+    const access = devices.some((device) => device.unifiedPushEndpoint) ? await this.unifiedPushAccess() : undefined;
+    const routed = devices.flatMap((device) => {
+      const transport = this.transportOf(device, cloudReady, access);
+      return transport ? [{ device, transport }] : [];
+    });
+    if (routed.length === 0) {
+      if (!cloudReady) {
+        this.logger.debug(`Push ${notice.type} not delivered: push is unavailable (${availability.reason})`);
+      }
       return JobStatus.Skipped;
     }
+    devices = routed.map(({ device }) => device);
+    const transports = new Map(routed.map(({ device, transport }) => [device.id, transport]));
 
     // a recipient's hidden people, pets and tags hide an item from that recipient's push alone (FL-293)
     const assetIds = [...new Set(notice.assetIds)];
@@ -471,6 +659,7 @@ export class PushService {
         safeAssetIds.get(device.userId)!,
         sentAt,
         notificationLocaleOf(locales.get(device.userId)!, device.sessionId),
+        transports.get(device.id)!,
       ),
     );
     if (notice.retry) {
@@ -481,45 +670,37 @@ export class PushService {
       return JobStatus.Skipped;
     }
 
-    let target;
-    try {
-      target = await this.gatewayTarget(availability.instanceId!, availability.cloudUrl!);
-    } catch (error) {
-      this.logger.warn(`Push ${notice.type} to ${planned.length} target(s) failed: ${errorMessage(error)}`);
-      return JobStatus.Failed;
-    }
-    if (!target) {
-      this.logger.debug(
-        `Push ${notice.type} not delivered: Frameleaf Cloud publishes no push gateway address and FRAMELEAF_PUSH_URL is unset`,
-      );
-      return JobStatus.Skipped;
+    const results: Array<{ entry: PlannedMessage; result: DeliveryResult }> = [];
+    let target: PushGatewayTarget | null = null;
+    if (planned.some((entry) => !entry.unifiedPush)) {
+      try {
+        target = await this.gatewayTarget(availability.instanceId!, availability.cloudUrl!);
+      } catch (error) {
+        this.logger.warn(`Push ${notice.type} to ${planned.length} target(s) failed: ${errorMessage(error)}`);
+        if (planned.every((entry) => !entry.unifiedPush)) {
+          return JobStatus.Failed;
+        }
+        // the UnifiedPush targets go now; the gateway's are tried again with the next attempt
+        const gatewayTargets = planned.filter((entry) => !entry.unifiedPush);
+        results.push(...gatewayTargets.map((entry) => ({ entry, result: { status: 'retry' as const } })));
+        planned = planned.filter((entry) => entry.unifiedPush);
+      }
+      if (!target && planned.some((entry) => !entry.unifiedPush)) {
+        this.logger.debug(
+          `Push ${notice.type} not delivered: Frameleaf Cloud publishes no push gateway address and FRAMELEAF_PUSH_URL is unset`,
+        );
+        planned = planned.filter((entry) => entry.unifiedPush);
+        if (planned.length === 0) {
+          return JobStatus.Skipped;
+        }
+      }
     }
 
-    // one push per request, a few at a time; a failed request is the gateway's `retry` or a refusal
-    const results: Array<{ entry: PlannedMessage; result: PushSendResult | 'rejected' }> = [];
+    // one push per request, a few at a time; a failed request is a `retry` or a refusal
     const queue = [...planned];
     const worker = async () => {
       for (let entry = queue.shift(); entry; entry = queue.shift()) {
-        if (!isGatewayToken(entry.request.token)) {
-          // registered before tokens were checked: the gateway could never deliver to it
-          results.push({ entry, result: { status: 'invalid-token' } });
-          continue;
-        }
-        try {
-          results.push({ entry, result: await this.gateway.send(target, entry.request) });
-        } catch (error) {
-          // a request this server built wrongly is refused, never retried
-          const status = error instanceof FrameleafCloudError ? error.status : error instanceof ZodError ? 400 : null;
-          // never the request: it holds the device token
-          this.logger.warn(`Push ${notice.type}: the gateway refused a send: ${errorMessage(error)}`);
-          results.push({
-            entry,
-            result:
-              status === null || status >= 500 || status === 429
-                ? { status: 'retry', ...retryAfterOf(error) }
-                : 'rejected',
-          });
-        }
+        results.push({ entry, result: await this.sendPlanned(entry, target, access, notice.type) });
       }
     };
     await Promise.all(Array.from({ length: Math.min(PUSH_GATEWAY_CONCURRENCY, planned.length) }, () => worker()));
@@ -528,29 +709,45 @@ export class PushService {
     const goneDevices = new Map<string, PushTokenRef>();
     const goneStartTokens = new Map<string, PushTokenRef>();
     const goneActivities = new Map<string, PushTokenRef>();
+    const goneUnifiedPush = new Map<string, UnifiedPushEndpointRef>();
     const again: PlannedMessage[] = [];
     let retryAfterSec = 0;
     let rejected = 0;
     for (const { entry, result } of results) {
-      if (result === 'rejected') {
-        rejected++;
-      } else if (result.status === 'sent') {
-        delivered.add(entry.deviceId);
-      } else if (result.status === 'invalid-token') {
-        const invalid = { id: entry.deviceId, token: entry.request.token, platform: entry.request.platform };
-        if (entry.kind === PushTargetKind.Device) {
-          goneDevices.set(entry.deviceId, invalid);
-        } else if (entry.kind === PushTargetKind.ActivityStart) {
-          goneStartTokens.set(entry.deviceId, invalid);
-        } else if (entry.activityRowId) {
-          goneActivities.set(entry.activityRowId, { ...invalid, id: entry.activityRowId });
+      switch (result.status) {
+        case 'rejected': {
+          rejected++;
+          break;
         }
-      } else if (entry.request.type === 'live-activity-update') {
-        // never retried: a later attempt could show an older step, and the next update replaces it anyway
-        rejected++;
-      } else {
-        again.push(entry);
-        retryAfterSec = Math.max(retryAfterSec, result.retryAfterSec ?? 0);
+        case 'gone': {
+          // FL-926: the UnifiedPush endpoint no longer exists; the app registers a new one
+          goneUnifiedPush.set(entry.deviceId, { id: entry.deviceId, endpoint: entry.unifiedPush!.endpoint });
+          break;
+        }
+        case 'sent': {
+          delivered.add(entry.deviceId);
+          break;
+        }
+        case 'invalid-token': {
+          const invalid = { id: entry.deviceId, token: entry.request.token, platform: entry.request.platform };
+          if (entry.kind === PushTargetKind.Device) {
+            goneDevices.set(entry.deviceId, invalid);
+          } else if (entry.kind === PushTargetKind.ActivityStart) {
+            goneStartTokens.set(entry.deviceId, invalid);
+          } else if (entry.activityRowId) {
+            goneActivities.set(entry.activityRowId, { ...invalid, id: entry.activityRowId });
+          }
+          break;
+        }
+        default: {
+          if (entry.request.type === 'live-activity-update') {
+            // never retried: a later attempt could show an older step, and the next update replaces it anyway
+            rejected++;
+          } else {
+            again.push(entry);
+            retryAfterSec = Math.max(retryAfterSec, result.retryAfterSec ?? 0);
+          }
+        }
       }
     }
     await this.devices.deleteByIds(goneDevices.values().toArray());
@@ -561,6 +758,7 @@ export class PushService {
         .toArray(),
     );
     await this.devices.deleteActivitiesByIds(goneActivities.values().toArray());
+    await this.devices.deleteGoneUnifiedPush(goneUnifiedPush.values().toArray());
     await this.devices.markDelivered([...delivered].filter((id) => !goneDevices.has(id)));
 
     const attempt = (notice.retry?.attempt ?? 1) + 1;
@@ -583,9 +781,9 @@ export class PushService {
         },
       });
     }
-    if (rejected > 0 || goneDevices.size > 0 || again.length > 0) {
+    if (rejected > 0 || goneDevices.size > 0 || goneUnifiedPush.size > 0 || again.length > 0) {
       this.logger.warn(
-        `Push ${notice.type}: ${delivered.size} device(s) reached, ${rejected} target(s) refused, ${goneDevices.size} invalid device token(s) reported, ${again.length} to retry${retrying || again.length === 0 ? '' : ' (given up)'}`,
+        `Push ${notice.type}: ${delivered.size} device(s) reached, ${rejected} target(s) refused, ${goneDevices.size} invalid device token(s) reported, ${goneUnifiedPush.size} UnifiedPush endpoint(s) gone, ${again.length} to retry${retrying || again.length === 0 ? '' : ' (given up)'}`,
       );
     }
     return JobStatus.Success;
@@ -594,7 +792,7 @@ export class PushService {
   /** The nightly wake-up of devices whose phone backup has not succeeded for two days. */
   @OnJob({ name: JobName.PushBackupStaleCheck, queue: QueueName.BackgroundTask })
   async handleBackupStaleCheck(): Promise<JobStatus> {
-    if (!(await this.isLinked())) {
+    if (!(await this.canDeliver())) {
       return JobStatus.Skipped;
     }
     const now = Date.now();
@@ -640,6 +838,7 @@ export class PushService {
     safeAssetIds: ReadonlySet<string>,
     sentAt: string,
     locale: string,
+    transport: PushTransport = 'cloud',
   ): PlannedMessage[] {
     const platform =
       device.platform === PushPlatform.Android
@@ -650,7 +849,12 @@ export class PushService {
     const collapseId = collapseIdOfNotice(notice);
     const planned: PlannedMessage[] = [];
     const live = liveActivityPlanOf(notice);
-    if (live && device.platform === PushPlatform.Ios) {
+    // FL-926: UnifiedPush is Android only, so it never carries a Live Activity
+    const unifiedPush: UnifiedPushSubscription | undefined =
+      transport === 'unifiedpush' && device.unifiedPushEndpoint && device.unifiedPushPublicKey && device.unifiedPushAuth
+        ? { endpoint: device.unifiedPushEndpoint, p256dh: device.unifiedPushPublicKey, auth: device.unifiedPushAuth }
+        : undefined;
+    if (live && device.platform === PushPlatform.Ios && !unifiedPush) {
       const base = {
         platform,
         priority: 'high' as const,
@@ -697,23 +901,26 @@ export class PushService {
     );
     if (
       (!live?.liveOnly || device.platform !== PushPlatform.Ios) &&
-      (!device.disabledEvents.includes(notice.type) || silentRenderEnd)
+      (!device.disabledEvents.includes(notice.type) || silentRenderEnd) &&
+      (unifiedPush || device.pushToken)
     ) {
       const id = randomUUID();
       try {
+        // the same payload either way (FL-926): UnifiedPush carries no more than the gateway gets
         const payload = buildPushPayload(notice, { id, sentAt, safeAssetIds, locale });
         planned.push({
           deviceId: device.id,
           kind: PushTargetKind.Device,
           request: {
             platform,
-            token: device.pushToken,
+            token: device.pushToken ?? '',
             type: notice.background || silentRenderEnd ? 'background' : 'alert',
             priority: notice.background || silentRenderEnd ? 'normal' : 'high',
             ttlSec: pushTtlSec(notice, false),
             payload: sealPushEnvelope(device.publicKey, Buffer.from(JSON.stringify(payload), 'utf8')),
             ...(collapseId && { collapseId }),
           },
+          ...(unifiedPush && { unifiedPush }),
         });
       } catch (error) {
         this.logger.warn(`Push device ${device.id} could not receive this notice: ${errorMessage(error)}`);
@@ -723,10 +930,140 @@ export class PushService {
   }
 
   private async queue(notice: PushNotice) {
-    if (!(await this.isLinked())) {
+    if (!(await this.canDeliver())) {
       return;
     }
     await this.jobRepository.queue({ name: JobName.PushDeliver, data: { notice } });
+  }
+
+  /**
+   * One planned push, by its device's way: the device's UnifiedPush endpoint (FL-926) or the gateway.
+   * Never logs the request, the token or the endpoint.
+   */
+  private async sendPlanned(
+    entry: PlannedMessage,
+    target: PushGatewayTarget | null,
+    access: UnifiedPushAccess | undefined,
+    label: string,
+  ): Promise<DeliveryResult> {
+    if (entry.unifiedPush) {
+      const result = await this.unifiedPush.send(
+        entry.unifiedPush,
+        {
+          plaintext: unifiedPushPlaintextOf(entry.request),
+          ttlSec: entry.request.ttlSec,
+          urgency: entry.request.priority,
+          topic: entry.request.collapseId,
+        },
+        { allowLocalTargets: access?.allowLocalTargets ?? UNIFIED_PUSH_DEFAULTS.allowLocalTargets },
+      );
+      if (result.status === 'refused') {
+        this.logger.warn(`Push ${label}: UnifiedPush refused a send to device ${entry.deviceId}: ${result.reason}`);
+        return { status: 'rejected', reason: result.reason };
+      }
+      return result;
+    }
+    if (!target) {
+      return { status: 'rejected', reason: 'Frameleaf Cloud publishes no push gateway address' };
+    }
+    if (!isGatewayToken(entry.request.token)) {
+      // registered before tokens were checked: the gateway could never deliver to it
+      return { status: 'invalid-token' };
+    }
+    try {
+      return await this.gateway.send(target, entry.request);
+    } catch (error) {
+      // a request this server built wrongly is refused, never retried
+      const status = error instanceof FrameleafCloudError ? error.status : error instanceof ZodError ? 400 : null;
+      // never the request: it holds the device token
+      this.logger.warn(`Push ${label}: the gateway refused a send: ${errorMessage(error)}`);
+      return status === null || status >= 500 || status === 429
+        ? { status: 'retry', ...retryAfterOf(error) }
+        : { status: 'rejected', reason: errorMessage(error) };
+    }
+  }
+
+  /** FL-926: how a device is reached now, or null when it cannot be. */
+  private transportOf(
+    device: Pick<PushDeviceWithActivities, 'unifiedPushEndpoint' | 'pushToken'>,
+    cloudReady: boolean,
+    access: Pick<UnifiedPushAccess, 'available'> | undefined,
+  ): PushTransport | null {
+    if (device.unifiedPushEndpoint && access?.available) {
+      return 'unifiedpush';
+    }
+    // a device whose UnifiedPush is unavailable (not licensed) still has the gateway, if it has a token
+    return cloudReady && device.pushToken ? 'cloud' : null;
+  }
+
+  /** Whether anything can be delivered: a linked server, or UnifiedPush devices this server may use. */
+  private async canDeliver() {
+    if (await this.isLinked()) {
+      return true;
+    }
+    return (await this.devices.hasUnifiedPushDevices()) && (await this.unifiedPushAccess()).available;
+  }
+
+  /**
+   * FL-926: whether UnifiedPush may be used (`notifications.unifiedPush.availability`: `all`, or
+   * `licensed` for a server with an active licence, pending the pricing decision FL-908), and whether
+   * push servers on this network may be reached (`allowLocalTargets`).
+   */
+  private async unifiedPushAccess(): Promise<UnifiedPushAccess> {
+    const config = await getConfig(
+      { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
+      { withCache: true },
+    );
+    const settings = { ...UNIFIED_PUSH_DEFAULTS, ...config.notifications.unifiedPush };
+    if (
+      settings.availability === 'licensed' &&
+      !isLicensed(await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense))
+    ) {
+      return { available: false, reason: 'licence-required', allowLocalTargets: settings.allowLocalTargets };
+    }
+    return { available: true, reason: null, allowLocalTargets: settings.allowLocalTargets };
+  }
+
+  private async unifiedPushStateOf(device: Pick<PushDeviceWithActivities, 'unifiedPushEndpoint'>) {
+    return device.unifiedPushEndpoint ? await this.unifiedPushAccess() : { available: true, reason: null };
+  }
+
+  /**
+   * FL-926: the UnifiedPush fields of a registration: none, or all three (endpoint and Web Push keys),
+   * from an Android device, on a server that may use UnifiedPush, at an address it may reach.
+   */
+  private async parseUnifiedPush(
+    fields: {
+      unifiedPushEndpoint?: string | null;
+      unifiedPushPublicKey?: string | null;
+      unifiedPushAuth?: string | null;
+    },
+    platform: PushPlatform,
+  ): Promise<UnifiedPushSubscription | null> {
+    const { unifiedPushEndpoint: endpoint, unifiedPushPublicKey: p256dh, unifiedPushAuth: auth } = fields;
+    if (!endpoint && !p256dh && !auth) {
+      return null;
+    }
+    if (!endpoint || !p256dh || !auth) {
+      throw new BadRequestException('A UnifiedPush endpoint needs its unifiedPushPublicKey and unifiedPushAuth');
+    }
+    if (platform !== PushPlatform.Android) {
+      throw new BadRequestException('Only Android devices use UnifiedPush');
+    }
+    const access = await this.unifiedPushAccess();
+    if (!access.available) {
+      throw new ForbiddenException('UnifiedPush needs a licensed server');
+    }
+    try {
+      this.unifiedPush.checkEndpoint(endpoint, { allowLocalTargets: access.allowLocalTargets });
+      return {
+        endpoint,
+        p256dh: parseWebPushPublicKey(p256dh).toString('base64url'),
+        auth: parseWebPushAuth(auth).toString('base64url'),
+      };
+    } catch (error) {
+      throw new BadRequestException(errorMessage(error));
+    }
   }
 
   /** The recipient's hidden people, pets and tags (the Locked rules), as every ordinary read applies them. */

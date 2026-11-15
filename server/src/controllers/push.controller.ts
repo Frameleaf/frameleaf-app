@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
@@ -8,6 +8,7 @@ import {
   PushDeviceListResponseDto,
   PushDeviceRegisterDto,
   PushDeviceResponseDto,
+  PushDeviceTestResponseDto,
   PushDeviceUpdateDto,
   PushStatusResponseDto,
 } from 'src/dtos/push.dto.js';
@@ -53,7 +54,7 @@ export class PushController {
   @Endpoint({
     summary: 'Register this device for push',
     description:
-      "Registers or replaces the push registration of the calling session: platform, APNs or FCM token, the ActivityKit push-to-start token (iOS), the device's X25519 public key and notification preferences. Registering again rotates the tokens and key. Every payload is encrypted to the key (frameleaf-push-v1, specified in docs/developer/push-envelope-v1: envelope layout, key agreement, plaintext and test vectors); the Frameleaf push gateway receives only the target and the encrypted blob. Needs a signed-in device session (not an API key).",
+      "Registers or replaces the push registration of the calling session: platform, APNs or FCM token, the ActivityKit push-to-start token (iOS), the device's X25519 public key and notification preferences. FL-926: an Android device may also register a UnifiedPush endpoint with its Web Push keys (p256dh and auth, RFC 8291); pushes then go there, encrypted in the aes128gcm coding, with or without a Cloud link, and the FCM token is optional. Registering again rotates the tokens and key. Every payload is encrypted to the key (frameleaf-push-v1, specified in docs/developer/push-envelope-v1: envelope layout, key agreement, plaintext and test vectors); the Frameleaf push gateway receives only the target and the encrypted blob. Needs a signed-in device session (not an API key).",
     history: new HistoryBuilder().added('v3'),
   })
   registerPushDevice(@Auth() auth: AuthDto, @Body() dto: PushDeviceRegisterDto): Promise<PushDeviceResponseDto> {
@@ -93,6 +94,19 @@ export class PushController {
   })
   removePushDevice(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.remove(auth, id);
+  }
+
+  @Post('devices/:id/test')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.SessionUpdate })
+  @Endpoint({
+    summary: 'Send a test push notification',
+    description:
+      'FL-926: sends a test notification to one push device now, the way that device is reached (its UnifiedPush endpoint, or the Frameleaf Cloud gateway), and answers what happened. The device’s owner or an administrator may. A device its push service reports gone is unregistered.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  testPushDevice(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<PushDeviceTestResponseDto> {
+    return this.service.sendTest(auth, id);
   }
 
   @Put('devices/current/activities/:activityId')

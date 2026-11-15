@@ -978,6 +978,32 @@ const AdminConfigSmtpSchema = z
   })
   .meta({ id: 'AdminConfigSmtpDto' });
 
+/** FL-926: who may use UnifiedPush; a plain string (not an enum), as the pricing decision (FL-908) is open. */
+export const UNIFIED_PUSH_AVAILABILITY = ['all', 'licensed'] as const;
+export type UnifiedPushAvailability = (typeof UNIFIED_PUSH_AVAILABILITY)[number];
+export const UNIFIED_PUSH_DEFAULTS = Object.freeze({
+  allowLocalTargets: false,
+  availability: 'all' as UnifiedPushAvailability,
+});
+
+// FL-926: phone push through UnifiedPush (ntfy and other distributors). Defaulted, so a stored
+// configuration, a config file or an older settings client that does not name it keeps the defaults.
+const AdminConfigUnifiedPushSchema = z
+  .object({
+    allowLocalTargets: configBool
+      .default(UNIFIED_PUSH_DEFAULTS.allowLocalTargets)
+      .describe(
+        'Let phones use a UnifiedPush server on this network (a private address). Loopback and link-local addresses stay out of reach.',
+      ),
+    availability: z
+      .string()
+      .regex(/^(all|licensed)$/)
+      .default(UNIFIED_PUSH_DEFAULTS.availability)
+      .describe('Who may use UnifiedPush: `all` (default) or `licensed` (only a server with an active licence)'),
+  })
+  .meta({ id: 'AdminConfigUnifiedPushDto' })
+  .default({ ...UNIFIED_PUSH_DEFAULTS });
+
 const AdminConfigSchemaWithVisibility = z
   .object({
     backup: z
@@ -1392,7 +1418,9 @@ const AdminConfigSchemaWithVisibility = z
         watch: z.object({ enabled: configBool.describe('Enabled') }).meta({ id: 'AdminConfigLibraryWatchDto' }),
       })
       .meta({ id: 'AdminConfigLibraryDto' }),
-    notifications: z.object({ smtp: AdminConfigSmtpSchema }).meta({ id: 'AdminConfigNotificationsDto' }),
+    notifications: z
+      .object({ smtp: AdminConfigSmtpSchema, unifiedPush: AdminConfigUnifiedPushSchema })
+      .meta({ id: 'AdminConfigNotificationsDto' }),
     templates: z
       .object({
         email: z
@@ -2029,6 +2057,7 @@ export const defaults = Object.freeze<SystemConfig>({
     automationsLocalNetwork: false,
   },
   notifications: {
+    unifiedPush: { ...UNIFIED_PUSH_DEFAULTS },
     smtp: {
       enabled: false,
       from: '',
