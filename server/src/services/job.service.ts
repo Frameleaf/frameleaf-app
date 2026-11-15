@@ -626,7 +626,15 @@ export class JobService extends BaseService {
         const { machineLearning } = await this.getConfig({ withCache: true });
         const asset = await this.assetRepository.getById(item.data.id);
         if (asset && asset.libraryScope !== LibraryScope.Design && isFacialRecognitionEnabled(machineLearning)) {
-          await this.jobRepository.queue({ name: JobName.BestPhotosScore, data: item.data });
+          // FL-863: the faces just found get their eye scores
+          if (response === JobStatus.Success && machineLearning.eyeScores.enabled) {
+            await this.jobRepository.queueAll([
+              { name: JobName.BestPhotosScore, data: item.data },
+              { name: JobName.FaceEyeScore, data: { id: item.data.id } },
+            ]);
+          } else {
+            await this.jobRepository.queue({ name: JobName.BestPhotosScore, data: item.data });
+          }
         }
         break;
       }

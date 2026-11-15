@@ -735,6 +735,9 @@ export type JobItem =
       /** `onThisServer` (FL-455): a Frameleaf Cloud result was refused, so this run never goes to the cloud. */
       data: IEntityJob & { preserveImportedFaces?: boolean; onThisServer?: boolean };
     }
+  // FL-863: eyes open and eye sharpness for faces already found
+  | { name: JobName.FaceEyeScoreQueueAll; data: IBaseJob }
+  | { name: JobName.FaceEyeScore; data: IEntityJob }
   | { name: JobName.FacialRecognitionQueueAll; data: INightlyJob }
   | { name: JobName.FacialRecognition; data: IDeferrableJob & { force?: boolean } }
   | { name: JobName.ProfileImageRepair; data: Record<string, never> }

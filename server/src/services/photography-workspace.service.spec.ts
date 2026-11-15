@@ -30,6 +30,7 @@ const setup = () => {
     get: vi.fn().mockResolvedValue({ value: { shoots: [shoot] }, updateId: revision }),
     save: vi.fn().mockResolvedValue({ updateId: nextRevision }),
     currentRevisions: vi.fn().mockResolvedValue(new Map()),
+    eyeSummaries: vi.fn().mockResolvedValue(new Map()),
     coverThumbhashes: vi.fn().mockResolvedValue(new Map()),
   };
   const albums = {
@@ -185,6 +186,19 @@ describe(PhotographyWorkspaceService.name, () => {
       },
     });
     repository.currentRevisions.mockResolvedValue(new Map([[id, current]]));
+    // FL-863: the photo's faces for culling
+    const eyes = {
+      faceCount: 2,
+      closedCount: 1,
+      softCount: 0,
+      unscoredCount: 1,
+      quality: 0.2,
+      faces: [
+        { closed: true, soft: false, checked: true },
+        { closed: false, soft: false, checked: false },
+      ],
+    };
+    repository.eyeSummaries.mockResolvedValue(new Map([[id, eyes]]));
     await expect(
       sut.photos({ ...auth, session: { ...auth.session!, hasElevatedPermission: true } }, shoot.id, {}),
     ).resolves.toEqual({
@@ -206,9 +220,11 @@ describe(PhotographyWorkspaceService.name, () => {
           eligible: false,
           exclusion: 'rejected',
           processing: 'pending',
+          eyes,
         },
       ],
     });
+    expect(repository.eyeSummaries).toHaveBeenCalledWith([id]);
     expect(search.searchMetadata).toHaveBeenCalledWith(
       expect.objectContaining({ session: expect.objectContaining({ hasElevatedPermission: false }) }),
       expect.objectContaining({

@@ -101,4 +101,16 @@ export class AssetFaceTable {
 
   @Column({ type: 'boolean', default: true })
   isVisible!: Generated<boolean>;
+
+  /** FL-863: eyes open (0-1, null when the eyes can't be seen), from the face's stored box. */
+  @Column({ type: 'real', nullable: true, default: null })
+  eyesOpen!: Generated<number | null>;
+
+  /** FL-863: eye sharpness (0-1), null when the eyes can't be seen. */
+  @Column({ type: 'real', nullable: true, default: null })
+  eyeSharpness!: Generated<number | null>;
+
+  /** FL-863: which eye scoring made the two scores; null until the face is scored. */
+  @Column({ type: 'smallint', nullable: true, default: null })
+  eyeScoreVersion!: Generated<number | null>;
 }
