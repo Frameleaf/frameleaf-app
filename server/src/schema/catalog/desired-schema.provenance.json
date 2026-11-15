@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "265ef287ff1b5c665cf85a3d7583e51813ad61d1",
+  "sourceCommit": "05130811f1e15d376ec68eeaa786120e68d1acdd",
   "sourceHashes": {
     "src/enum.ts": "9ed9e10395e1eaf1088cbfd5ef9faafa66cab09d15ac0949640a9aa3bb693886",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -8,7 +8,7 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "f4a032020894a3752ca713c9e63e8da50ed9223fb127cc94392da53f9532477e",
+    "src/schema/index.ts": "7f211709e5b6f9a08f903c92223534d7533fe8de7f236472456614a381dc5f5f",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -115,6 +115,7 @@
     "src/schema/tables/ocr-search.table.ts": "53bbb08a80b9491428dddaf62b65cc70d6a0b0554f2c61bcb22ca5b0ea05ca21",
     "src/schema/tables/operational-metric-sample.table.ts": "ad06896293efb98b58d7b01ac8affc9c24aca6e3f1912b192939db626c9c04ed",
     "src/schema/tables/partner-audit.table.ts": "0ca4f0fffe6b22c417a698e6f369bf79844a7754f42a48cdddbb39bb0ceda00c",
+    "src/schema/tables/partner-scope.table.ts": "3ca9a2a03b4f395b2b3c8a8950861192c7865b0c7170eb030e58593279751b0f",
     "src/schema/tables/partner.table.ts": "9391a641377293ea8c0cbb93c58c784793f3ae644cd4db05f481541ba14ce66d",
     "src/schema/tables/person-audit.table.ts": "f43ad45c0c0d674184dafb39b7786c232d51d7194c12bfcce22beae22d996ee3",
     "src/schema/tables/person-group-audit.table.ts": "19bf276917c6883284d334f0a53c30761073d0b5af57f3b97562e8298faa9e0e",
@@ -194,6 +195,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "bf4ada60ec4f5bcf9e0e4a49101fea2c96f64c8a76b24eab2d682624f4fca408",
-  "rawMetadataSha256": "25164cae5f3446fd85775dd411409b85586d73f09edca1bf5d36deee39305afc"
+  "dumpSha256": "3ecc51e74e9fcb58f4f9a0f38a4c42432e34af2d28e5fc326587ff4a8dc3c4a6",
+  "rawMetadataSha256": "59c2e7b38a82726e0242c064733f0a6d9dd4a64abadf0729009fabe0a488f900"
 }
