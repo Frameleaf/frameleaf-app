@@ -126,6 +126,28 @@ const AdminConfigMachineLearningTaskSchema = z.object({
   enabled: z.boolean().describe('Whether the task is enabled').meta({ visibility: User }),
 });
 
+// FL-863: eyes open and eye sharpness for each face, for culling. The thresholds decide which faces count as closed
+// or soft eyes in the culling summary; the scores themselves are stored as measured.
+const EyeScoresConfigSchema = z
+  .object({
+    enabled: z.boolean().default(true).describe('Whether eyes open and eye sharpness are measured for each face'),
+    closedBelow: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.35)
+      .describe('Eyes-open score below which a face counts as having closed eyes')
+      .meta({ format: 'double' }),
+    softBelow: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.3)
+      .describe('Eye sharpness below which a face counts as having soft eyes')
+      .meta({ format: 'double' }),
+  })
+  .meta({ id: 'AdminConfigEyeScoresDto' });
+
 const AdminConfigMachineLearningModelSchema = AdminConfigMachineLearningTaskSchema.extend({
   modelName: z.string().describe('Name of the model to use'),
 });
@@ -1089,25 +1111,8 @@ const AdminConfigSchemaWithVisibility = z
             .describe('Minimum number of faces required for recognition')
             .meta({ visibility: User }),
         }).meta({ id: 'AdminConfigFacialRecognitionDto' }),
-        // FL-863: eyes open and eye sharpness for each face, for culling. Thresholds decide which faces count as
-        // closed or soft eyes in the culling summary; the scores themselves are stored as measured.
-        eyeScores: z
-          .object({
-            enabled: configBool.describe('Whether eyes open and eye sharpness are measured for each face'),
-            closedBelow: z
-              .number()
-              .min(0)
-              .max(1)
-              .describe('Eyes-open score below which a face counts as having closed eyes')
-              .meta({ format: 'double' }),
-            softBelow: z
-              .number()
-              .min(0)
-              .max(1)
-              .describe('Eye sharpness below which a face counts as having soft eyes')
-              .meta({ format: 'double' }),
-          })
-          .meta({ id: 'AdminConfigEyeScoresDto' }),
+        // FL-863: optional in a request (configs saved before it existed still validate), always in the result
+        eyeScores: EyeScoresConfigSchema.default(() => EyeScoresConfigSchema.parse({})),
         ocr: AdminConfigMachineLearningModelSchema.extend({
           maxResolution: z.int().min(1).describe('Maximum resolution for OCR processing'),
           minDetectionScore: z
