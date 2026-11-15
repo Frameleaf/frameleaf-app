@@ -76,9 +76,13 @@ const pixels = (asset: AssetResponseDto) => {
 };
 
 /** When the photo was taken (EXIF), else when the file was created; unknown when neither parses. */
-const takenAt = (asset: AssetResponseDto) => {
-  const time = Date.parse(asset.exifInfo?.dateTimeOriginal ?? asset.fileCreatedAt ?? '');
-  return Number.isNaN(time) ? undefined : time;
+const takenAt = (asset: AssetResponseDto): number | undefined => {
+  for (const value of [asset.exifInfo?.dateTimeOriginal, asset.fileCreatedAt]) {
+    const time = Date.parse(value ?? '');
+    if (!Number.isNaN(time)) {
+      return time;
+    }
+  }
 };
 
 const KEEP_COMPARATORS: Record<DuplicateKeepRule, KeepComparator> = {

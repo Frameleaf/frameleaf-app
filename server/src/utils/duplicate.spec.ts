@@ -398,6 +398,16 @@ describe('duplicate utils', () => {
       expect(suggestDuplicate([undated, late], { rules: ['newest'] })?.id).toBe('a-late');
     });
 
+    it('falls back to when the file was created when the capture date does not parse', () => {
+      const early = createAsset('b-early', 10, { dateTimeOriginal: '2020-01-01T00:00:00.000Z' });
+      const badExif = {
+        ...createAsset('a-bad-exif', 10, { dateTimeOriginal: 'not a date' }),
+        fileCreatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      expect(suggestDuplicate([early, badExif], { rules: ['newest'] })?.id).toBe('a-bad-exif');
+      expect(suggestDuplicate([badExif, early], { rules: ['oldest'] })?.id).toBe('b-early');
+    });
+
     it('inAlbum prefers a copy in one of the owner albums', () => {
       const assets = [raw('raw', 9000), jpg('jpg', 10)];
       expect(suggestDuplicate(assets, { rules: ['inAlbum'], inAlbumIds: new Set(['jpg']) })?.id).toBe('jpg');
