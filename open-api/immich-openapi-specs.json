@@ -17290,6 +17290,57 @@
         "x-immich-state": "Stable"
       }
     },
+    "/assets/copy-to-library": {
+      "post": {
+        "description": "Add items you can see through a shared album, space or link to your own library, as your own copies of the same stored files. A link must allow downloads. Locked items are never added (FL-837).",
+        "operationId": "copyAssetsToLibrary",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetCopyToLibraryDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetCopyToLibraryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add shared items to your library",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.upload"
+      }
+    },
     "/assets/info": {
       "post": {
         "description": "Retrieve detailed information about up to 200 assets in one request, each exactly as the single-asset read returns it and with the same access check. Assets the caller may not read, or that do not exist, are left out instead of failing the request.",
@@ -44484,6 +44535,57 @@
         "x-immich-permission": "partner.update"
       }
     },
+    "/partners/scope/estimate": {
+      "post": {
+        "description": "How many of your items a partner scope would send now, before it is saved (FL-774).",
+        "operationId": "estimatePartnerScope",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerScopeUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerScopeEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count what a partner would receive",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.read"
+      }
+    },
     "/partners/{id}": {
       "delete": {
         "description": "Stop sharing assets with a partner.",
@@ -44663,6 +44765,118 @@
         ],
         "x-immich-permission": "partner.update",
         "x-immich-state": "Stable"
+      }
+    },
+    "/partners/{id}/scope": {
+      "get": {
+        "description": "What your library sends to this partner: everything, or only the albums, people, folders and dates you chose (FL-774).",
+        "operationId": "getPartnerScope",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerScopeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what a partner receives",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.read"
+      },
+      "put": {
+        "description": "Choose everything, or only chosen albums, people, folders and a start date. Only the owner changes it. Widening copies the newly matching items; narrowing stops further copies and the partner keeps what they already received (FL-774).",
+        "operationId": "updatePartnerScope",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerScopeUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerScopeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change what a partner receives",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.update"
       }
     },
     "/people": {
@@ -66116,6 +66330,128 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/fonts": {
+      "get": {
+        "description": "Every font kept with one of your projects, with the family, weight and style read from the file. Its bytes are read like any kept file, through GET /studio/projects/{id}/imports/{importId}/file.",
+        "operationId": "getStudioProjectFonts",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StudioProjectFontDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the fonts kept with a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Keeps a TrueType (.ttf), OpenType (.otf) or WOFF2 font with the project, for its titles. The file must be one font, at most 32 MB, with a well-formed table directory; collections and WOFF 1 are refused. The answer gives the family, weight and style the file names. A title uses it once the graph lists it in metadata.fonts. The same id and file again answers the stored font.",
+        "operationId": "importStudioProjectFont",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectFontCreateDto"
+              }
+            }
+          },
+          "description": "A font to keep with the project",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectFontDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Keep a font with a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/framing": {
       "get": {
         "description": "Owner only. For a vertical (9:16) or square (1:1) export of the head revision: where the subject is through each video and still on the main timeline, from the faces found in the source and in a few frames sampled through each video clip on this server or a computer on your home network. Shots without a face are centred. Nothing is stored and the project is not changed; send the framing back with `POST /studio/projects/{id}/exports`.",
@@ -66174,7 +66510,7 @@
     },
     "/studio/projects/{id}/imports": {
       "get": {
-        "description": "Every file kept with one of your projects, with its type, size and checksum.",
+        "description": "Every file kept with one of your projects, with its type, size and checksum. Fonts are listed by GET /studio/projects/{id}/fonts.",
         "operationId": "getStudioProjectImports",
         "parameters": [
           {
@@ -66231,7 +66567,7 @@
         "x-immich-state": "Alpha"
       },
       "post": {
-        "description": "Keeps a recording, sound, image, short video, SVG or Lottie graphic, caption file (.srt or .vtt) or .cube LUT with the project rather than the library. The type is read from the bytes; an SVG with scripts is refused, external subresources of a graphic are counted, and a caption file or LUT must be well formed throughout. The same id and file again answers the stored import.",
+        "description": "Keeps a recording, sound, image, short video, SVG or Lottie graphic, caption file (.srt or .vtt) or .cube LUT with the project rather than the library. The type is read from the bytes; an SVG with scripts is refused, external subresources of a graphic are counted, and a caption file or LUT must be well formed throughout. A font is refused here and kept with POST /studio/projects/{id}/fonts. The same id and file again answers the stored import.",
         "operationId": "importStudioProjectFile",
         "parameters": [
           {
@@ -88267,6 +88603,93 @@
         "required": [
           "sourceId",
           "targetId"
+        ],
+        "type": "object"
+      },
+      "AssetCopyToLibraryDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Items to add to your library",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "sharedLinkKey": {
+            "description": "The shared link the items were seen through",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sharedLinkSlug": {
+            "description": "The shared link the items were seen through",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "AssetCopyToLibraryItemDto": {
+        "properties": {
+          "assetId": {
+            "description": "Your own copy of it",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "sourceId": {
+            "description": "The item that was added",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "sourceId"
+        ],
+        "type": "object"
+      },
+      "AssetCopyToLibraryResponseDto": {
+        "properties": {
+          "added": {
+            "description": "Items now in your library",
+            "items": {
+              "$ref": "#/components/schemas/AssetCopyToLibraryItemDto"
+            },
+            "type": "array"
+          },
+          "alreadyInLibrary": {
+            "description": "Items your library already holds",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "notAdded": {
+            "description": "Items that cannot be added, such as Locked ones",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "added",
+          "alreadyInLibrary",
+          "notAdded"
         ],
         "type": "object"
       },
@@ -133090,6 +133513,10 @@
       },
       "PartnerCreateDto": {
         "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/PartnerScopeUpdateDto",
+            "description": "What the partner receives; everything when left out"
+          },
           "sharedWithId": {
             "description": "User ID to share with",
             "format": "uuid",
@@ -133215,6 +133642,10 @@
           "profileImagePath": {
             "description": "Profile image path",
             "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PartnerScopeDto",
+            "description": "What the library shared this way sends"
           }
         },
         "required": [
@@ -133224,6 +133655,189 @@
           "name",
           "profileChangedAt",
           "profileImagePath"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeDto": {
+        "description": "What a partner receives",
+        "properties": {
+          "albums": {
+            "description": "Albums whose items are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "folders": {
+            "description": "Folders whose items are shared",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PartnerScopeMode"
+          },
+          "people": {
+            "description": "People whose photos are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "sinceDate": {
+            "description": "Only items taken on or after this day",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albums",
+          "folders",
+          "mode",
+          "people",
+          "sinceDate"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeEstimateResponseDto": {
+        "properties": {
+          "count": {
+            "description": "How many items this would send now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeLabelDto": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeMode": {
+        "description": "What the partner receives: everything, or only what the owner chose",
+        "enum": [
+          "everything",
+          "chosen"
+        ],
+        "type": "string"
+      },
+      "PartnerScopeResponseDto": {
+        "description": "What a partner receives, and how many items that is",
+        "properties": {
+          "albums": {
+            "description": "Albums whose items are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "count": {
+            "description": "How many items this sends now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "folders": {
+            "description": "Folders whose items are shared",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PartnerScopeMode"
+          },
+          "people": {
+            "description": "People whose photos are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "sinceDate": {
+            "description": "Only items taken on or after this day",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albums",
+          "count",
+          "folders",
+          "mode",
+          "people",
+          "sinceDate"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeUpdateDto": {
+        "description": "What a partner receives",
+        "properties": {
+          "albumIds": {
+            "description": "Albums the owner owns whose items are shared; with mode chosen",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "folders": {
+            "description": "Folders (and the folders inside them) whose items are shared; with mode chosen",
+            "items": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PartnerScopeMode"
+          },
+          "personIds": {
+            "description": "The owner's people whose photos are shared; with mode chosen",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "sinceDate": {
+            "description": "Only items taken on or after this day (YYYY-MM-DD); with mode chosen",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
         ],
         "type": "object"
       },
@@ -173866,6 +174480,111 @@
         ],
         "type": "object"
       },
+      "StudioProjectFontCreateDto": {
+        "properties": {
+          "file": {
+            "description": "The .ttf, .otf or .woff2 font file",
+            "format": "binary",
+            "type": "string"
+          },
+          "id": {
+            "description": "The import id the editor gave this font; retrying the same file with it is idempotent",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "publicationId": {
+            "description": "Already registered publication id",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "id"
+        ],
+        "type": "object"
+      },
+      "StudioProjectFontDto": {
+        "properties": {
+          "checksum": {
+            "description": "SHA-256 of the bytes, hex",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it was uploaded",
+            "format": "date-time",
+            "type": "string"
+          },
+          "family": {
+            "description": "The family name the file gives itself",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "The name the file was uploaded with",
+            "type": "string"
+          },
+          "format": {
+            "$ref": "#/components/schemas/StudioProjectFontFormat"
+          },
+          "id": {
+            "description": "Import id; the graph names it as `importId` in `metadata.fonts`",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "description": "Size in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "style": {
+            "$ref": "#/components/schemas/StudioProjectFontStyle"
+          },
+          "subfamily": {
+            "description": "The style name the file gives itself, such as Bold Italic; may be empty",
+            "type": "string"
+          },
+          "weight": {
+            "description": "The file's weight, 100 to 900",
+            "maximum": 900,
+            "minimum": 100,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checksum",
+          "createdAt",
+          "family",
+          "fileName",
+          "format",
+          "id",
+          "sizeBytes",
+          "style",
+          "subfamily",
+          "weight"
+        ],
+        "type": "object"
+      },
+      "StudioProjectFontFormat": {
+        "description": "TrueType, OpenType (CFF) or WOFF2, read from the bytes",
+        "enum": [
+          "ttf",
+          "otf",
+          "woff2"
+        ],
+        "type": "string"
+      },
+      "StudioProjectFontStyle": {
+        "description": "Upright or italic",
+        "enum": [
+          "normal",
+          "italic"
+        ],
+        "type": "string"
+      },
       "StudioProjectHistoryResponseDto": {
         "properties": {
           "items": {
@@ -174003,6 +174722,13 @@
             },
             "type": "array"
           },
+          "keptFonts": {
+            "description": "Fonts kept with the project (FL-1562)",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectFontDto"
+            },
+            "type": "array"
+          },
           "luts": {
             "description": "Bundled LUTs the head graph names",
             "items": {
@@ -174032,6 +174758,7 @@
         "required": [
           "fonts",
           "keptFiles",
+          "keptFonts",
           "luts",
           "models",
           "projectId",

@@ -48,6 +48,7 @@
     mdiCreditCardOutline,
     mdiLinkVariant,
     mdiClose,
+    mdiEyeOffOutline,
     mdiImport,
     mdiEmailOutline,
     mdiFileDocumentOutline,
@@ -62,6 +63,7 @@
     mdiPlus,
     mdiRestore,
     mdiShieldCheckOutline,
+    mdiSort,
     mdiStar,
     mdiStarOutline,
     mdiTrayArrowDown,
@@ -84,6 +86,7 @@
   import PhotographyNativeSync from '$lib/components/frameleaf/PhotographyNativeSync.svelte';
   import PhotographyShootTabs, { type ShootTab } from '$lib/components/frameleaf/PhotographyShootTabs.svelte';
   import PhotographyThumb from '$lib/components/frameleaf/PhotographyThumb.svelte';
+  import PhotographyEyeBadge from '$lib/components/frameleaf/PhotographyEyeBadge.svelte';
   import PhotographyStatus, {
     photographyErrorKey,
     shootSectionKeys,
@@ -214,6 +217,9 @@
   let photoError = $state('');
   let nextCursor = $state<string | null>(null);
   let tab = $state<PhotoFilter>('all');
+  // FL-891: the eye checks' filter and sort (the FL-821 culling mock)
+  let closedOnly = $state(false);
+  let eyeSort = $state<'' | 'worst' | 'best'>('');
   let selected = $state<string[]>([]);
   let compareOpen = $state(false);
   let batchOpen = $state(false);
@@ -324,11 +330,33 @@
       .filter((shoot) => `${shoot.name} ${shoot.client} ${shoot.type}`.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : b.date.localeCompare(a.date))),
   );
+  /** FL-891: by the worst face's eye quality; photos not checked yet keep their order after the checked ones. */
+  const sortByEyes = (list: Photo[], order: '' | 'worst' | 'best') => {
+    if (!order) {
+      return list;
+    }
+    const sign = order === 'worst' ? 1 : -1;
+    return list
+      .map((photo, index) => ({ photo, index, quality: photo.eyes?.quality ?? null }))
+      .sort((a, b) =>
+        a.quality === null || b.quality === null
+          ? (a.quality === null ? 1 : 0) - (b.quality === null ? 1 : 0) || a.index - b.index
+          : sign * (a.quality - b.quality) || a.index - b.index,
+      )
+      .map(({ photo }) => photo);
+  };
   const matches = (photo: Photo, filter: PhotoFilter) =>
     filter === 'all' ||
     (filter === 'selected' && (photo.rating ?? 0) >= 4) ||
     (filter === 'edited' && photo.rating !== -1 && !!photo.currentRevisionId);
-  const visible = $derived(photos.filter((photo) => matches(photo, tab)));
+  const visible = $derived(
+    sortByEyes(
+      photos.filter((photo) => matches(photo, tab) && (!closedOnly || (photo.eyes?.closedCount ?? 0) > 0)),
+      eyeSort,
+    ),
+  );
+  const eyesChecked = $derived(photos.some((photo) => photo.eyes));
+  const eyesChecking = $derived(photos.filter((photo) => (photo.eyes?.unscoredCount ?? 0) > 0).length);
   /** FL-420: what "Open in RAW editor" opens: the chosen RAW photographs, else every RAW one. */
   const rawPhotos = $derived(photos.filter((photo) => isRawName(photo.fileName)));
   const chosenRaw = $derived(rawPhotos.filter((photo) => selected.includes(photo.id)).map((photo) => photo.id));
@@ -597,6 +625,8 @@
     compareOpen = false;
     batchOpen = false;
     tab = 'all';
+    closedOnly = false;
+    eyeSort = '';
     inspecting = null;
     versions = null;
     versionGeneration++;
@@ -1155,6 +1185,34 @@
                     )}</a
                   >{/if}
               </div>
+              {#if eyesChecked}<div
+                  class="phw-eye-tools"
+                  role="group"
+                  aria-label={$t('frameleaf_photography_eyes_tools')}
+                >
+                  <Button
+                    pressed={closedOnly}
+                    onclick={() => {
+                      closedOnly = !closedOnly;
+                      selected = [];
+                    }}
+                    ><Icon icon={mdiEyeOffOutline} size="1rem" aria-hidden={true} />{$t(
+                      'frameleaf_photography_eyes_closed',
+                    )}</Button
+                  >
+                  <label class="phw-eye-sort"
+                    ><Icon icon={mdiSort} size="1rem" aria-hidden={true} /><select
+                      aria-label={$t('frameleaf_photography_eyes_sort')}
+                      bind:value={eyeSort}
+                      ><option value="">{$t('frameleaf_photography_eyes_sort_capture')}</option><option value="worst"
+                        >{$t('frameleaf_photography_eyes_sort_worst')}</option
+                      ><option value="best">{$t('frameleaf_photography_eyes_sort_best')}</option></select
+                    ></label
+                  >
+                  {#if eyesChecking > 0 && (closedOnly || eyeSort)}<span class="phw-small" role="status"
+                      >{$t('frameleaf_photography_eyes_checking', { values: { count: eyesChecking } })}</span
+                    >{/if}
+                </div>{/if}
               <div class="phw-selection-tools">
                 <label
                   ><input
@@ -1217,7 +1275,7 @@
                           (selected = event.currentTarget.checked
                             ? [...selected, photo.id]
                             : selected.filter((id) => id !== photo.id))}
-                      /><span class="phw-raw"
+                      /><PhotographyEyeBadge eyes={photo.eyes} fileName={photo.fileName} /><span class="phw-raw"
                         >{photo.fileName.split('.').at(-1)?.toUpperCase()}{#if photo.stackCount > 1}
                           · {$t('frameleaf_photography_in_stack', { values: { count: photo.stackCount } })}{/if}</span
                       >{#if photo.currentRevisionId}<span class="phw-edited"
@@ -1284,9 +1342,11 @@
                   <h2>
                     {photos.length === 0
                       ? $t('frameleaf_photography_shoot_ready')
-                      : tab === 'edited'
-                        ? $t('frameleaf_photography_no_edited_photos')
-                        : $t('frameleaf_photography_no_selected_photos')}
+                      : closedOnly
+                        ? $t('frameleaf_photography_eyes_none_closed')
+                        : tab === 'edited'
+                          ? $t('frameleaf_photography_no_edited_photos')
+                          : $t('frameleaf_photography_no_selected_photos')}
                   </h2>
                   <p>
                     {photos.length > 0

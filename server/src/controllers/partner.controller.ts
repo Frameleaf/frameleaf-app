@@ -3,7 +3,15 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { PartnerLockedNoticeResponseDto } from 'src/dtos/partner-locked-notice.dto.js';
-import { PartnerCreateDto, PartnerResponseDto, PartnerSearchDto, PartnerUpdateDto } from 'src/dtos/partner.dto.js';
+import {
+  PartnerCreateDto,
+  PartnerResponseDto,
+  PartnerScopeEstimateResponseDto,
+  PartnerScopeResponseDto,
+  PartnerScopeUpdateDto,
+  PartnerSearchDto,
+  PartnerUpdateDto,
+} from 'src/dtos/partner.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { PartnerLockedNoticeService } from 'src/services/partner-locked-notice.service.js';
@@ -89,6 +97,49 @@ export class PartnerController {
     @Body() dto: PartnerUpdateDto,
   ): Promise<PartnerResponseDto> {
     return this.service.update(auth, id, dto);
+  }
+
+  @Post('scope/estimate')
+  @Authenticated({ permission: Permission.PartnerRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Count what a partner would receive',
+    description: 'How many of your items a partner scope would send now, before it is saved (FL-774).',
+    history: new HistoryBuilder().added('v2'),
+  })
+  estimatePartnerScope(
+    @Auth() auth: AuthDto,
+    @Body() dto: PartnerScopeUpdateDto,
+  ): Promise<PartnerScopeEstimateResponseDto> {
+    return this.service.estimateScope(auth, dto);
+  }
+
+  @Get(':id/scope')
+  @Authenticated({ permission: Permission.PartnerRead })
+  @Endpoint({
+    summary: 'Get what a partner receives',
+    description:
+      'What your library sends to this partner: everything, or only the albums, people, folders and dates you chose (FL-774).',
+    history: new HistoryBuilder().added('v2'),
+  })
+  getPartnerScope(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<PartnerScopeResponseDto> {
+    return this.service.getScope(auth, id);
+  }
+
+  @Put(':id/scope')
+  @Authenticated({ permission: Permission.PartnerUpdate })
+  @Endpoint({
+    summary: 'Change what a partner receives',
+    description:
+      'Choose everything, or only chosen albums, people, folders and a start date. Only the owner changes it. Widening copies the newly matching items; narrowing stops further copies and the partner keeps what they already received (FL-774).',
+    history: new HistoryBuilder().added('v2'),
+  })
+  updatePartnerScope(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: PartnerScopeUpdateDto,
+  ): Promise<PartnerScopeResponseDto> {
+    return this.service.updateScope(auth, id, dto);
   }
 
   @Delete(':id')

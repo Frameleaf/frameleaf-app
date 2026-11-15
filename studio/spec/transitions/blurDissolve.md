@@ -6,7 +6,7 @@
 | Directions | none |
 | Duration (frames) | default 30, min 10, max 90 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 A cosine cross dissolve in which both clips are softened by a small 5-tap blur whose radius peaks at the midpoint.
@@ -38,6 +38,9 @@ Taps beyond the frame are clamped to the frame edge, so edge texels are counted 
 
 ## Alpha
 Blurred in premultiplied space, so transparent regions do not bleed colour. Output converted to straight alpha per [T2].
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. The five taps average premultiplied light and coverage, so a highlight spreads its light, not its encoding.
 
 ## Notes
 - The blur is a plus-shaped 5-tap kernel, not a Gaussian; at large strength it shows four ghost copies (this is the engine's look).

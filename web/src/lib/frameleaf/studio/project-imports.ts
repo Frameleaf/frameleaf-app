@@ -8,6 +8,7 @@
  * bytes, and a refusal (a script in an SVG, a file it cannot place) comes back as an error.
  */
 import {
+  getStudioProjectFonts,
   getStudioProjectImports,
   registerStudioImportPublication,
   getStudioImportPublications,
@@ -15,6 +16,7 @@ import {
   type StudioImportPublicationDto,
   importStudioProjectFile,
   StudioProjectImportKind,
+  type StudioProjectFontDto,
   type StudioProjectImportDto,
 } from '@frameleaf/sdk';
 import { getStudioProjectImportUrl } from '$lib/utils';
@@ -56,13 +58,36 @@ export const isStudioBinImport = (dto: StudioProjectImportDto) => binKinds.has(d
 export const isStudioEditorImport = (dto: StudioProjectImportDto) =>
   isStudioBinImport(dto) || dto.kind === StudioProjectImportKind.Lut;
 
+/**
+ * FL-1562: a font kept with the project, for the editor to read by id when a title's family is
+ * listed in the project's `metadata.fonts`. It is never bin media.
+ */
+export const toStudioProjectFont = (projectId: string, dto: StudioProjectFontDto): StudioProjectImportRef => ({
+  id: dto.id,
+  kind: 'font',
+  name: dto.fileName,
+  mimeType: `font/${dto.format}`,
+  sizeBytes: dto.sizeBytes,
+  checksum: dto.checksum,
+  url: getStudioProjectImportUrl(projectId, dto.id),
+});
+
 export const loadStudioProjectImports = async (
   projectId: string,
   signal?: AbortSignal,
-): Promise<StudioProjectImportRef[]> =>
-  (await getStudioProjectImports({ id: projectId }, signal ? { signal } : undefined))
-    .filter((dto: StudioProjectImportDto) => isStudioEditorImport(dto))
-    .map((dto: StudioProjectImportDto) => toStudioProjectImport(projectId, dto));
+): Promise<StudioProjectImportRef[]> => {
+  const options = signal ? { signal } : undefined;
+  const [imports, fonts] = await Promise.all([
+    getStudioProjectImports({ id: projectId }, options),
+    getStudioProjectFonts({ id: projectId }, options),
+  ]);
+  return [
+    ...imports
+      .filter((dto: StudioProjectImportDto) => isStudioEditorImport(dto))
+      .map((dto: StudioProjectImportDto) => toStudioProjectImport(projectId, dto)),
+    ...fonts.map((dto: StudioProjectFontDto) => toStudioProjectFont(projectId, dto)),
+  ];
+};
 
 export const uploadStudioProjectImport = async (
   projectId: string,

@@ -40,3 +40,10 @@ out points, markers, components), which the reader spec checks against.
 otio-aaf-adapter under the Apache License 2.0 (`aaf/LICENSE`). The spec's expectations were taken
 from that adapter's own reading of each file with OpenTimelineIO 0.18 (clip names, files, source
 positions, transitions and speeds).
+
+## DaVinci Resolve (FL-1551)
+
+`resolve/` holds three projects made with DaVinci Resolve Studio 21.1.1, from drpkit under the MIT
+licence (`resolve/LICENSE`); their timelines carry sound clips only. `two-clips-dissolve.drt` is made
+from one of them with two video clips and a cross dissolve added, written to the element names Resolve
+uses. Projects exported from Resolve with video, titles and grades are part of FL-1627.

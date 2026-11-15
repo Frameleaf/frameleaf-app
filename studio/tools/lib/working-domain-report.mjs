@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { HDR_BLURS } from '../blur-reference.mjs';
+import { HDR_GRADES } from '../grade-reference.mjs';
+import { LINEAR_HDR_TRANSITIONS } from '../render-goldens.mjs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
@@ -13,7 +15,7 @@ export const WORKING_DOMAINS = {
 export const REPORT_BINDINGS = ['studio/tools/lib/working-domain-report.mjs', 'studio/tools/lib/cross-browser-harness.mjs',
   'studio/tools/lib/browser-driver.mjs', 'studio/tools/photometric-goldens.mjs',
   'studio/tools/hdr-master.mjs', 'studio/tools/blur-reference.mjs', 'studio/tools/pixelate-reference.mjs', 'studio/tools/geometry-reference.mjs', 'studio/tools/geometry-composition-reference.mjs', 'studio/tools/geometry-device-calibration.mjs', 'studio/tools/geometry-raster-calibration.mjs', 'studio/tools/geometry-raster-envelopes.json', 'studio/tools/hdr-source-validation.mjs',
-  'studio/effect-hdr-semantics.json', 'studio/transition-semantics.json'];
+  'studio/tools/grade-reference.mjs', 'studio/effect-hdr-semantics.json', 'studio/transition-semantics.json'];
 const root = new URL('../../../', import.meta.url);
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
@@ -46,8 +48,8 @@ export function domainObservations(report) {
     observations.push({ fixtureId: `${family === 'effects' ? 'effect' : family}.${id}/apply/${name}`,
       workingDomain, expected, observed: expected, result: 'passed', witness,
       oracle: workingDomain === WORKING_DOMAINS.sdr ? oracle : expected === 'rendered' ?
-        (family === 'effects' ? 'independent linear tone equations and premultiplied spatial-kernel equations, parameter limits, resolver, alpha and stack assertions' :
-          (family === 'transition' ? 'independent linear additive-dissolve equation on premultiplied light' : 'independent linear straight-alpha source-over equation')) : 'actual registered operator throws shared HdrRenderUnavailableError' });
+        (family === 'effects' ? 'independent linear tone equations, premultiplied spatial-kernel equations and extended-sRGB grade equations, parameter limits, resolver, alpha and stack assertions' :
+          (family === 'transition' ? 'independent linear transition equations on premultiplied light: endpoints, page arithmetic without SDR clamps, homogeneity' : 'independent linear straight-alpha source-over equation')) : 'actual registered operator throws shared HdrRenderUnavailableError' });
   };
   const rows = family === 'effects' ? report.effects : family === 'blend' ? report.results : report.transitions;
   assert(Array.isArray(rows), 'matrix measurement rows required');
@@ -60,6 +62,9 @@ export function domainObservations(report) {
       if (['gpu-brightness', 'gpu-contrast', 'gpu-exposure', 'gpu-saturation', 'gpu-temperature', 'gpu-vibrance', 'gpu-grayscale', 'gpu-sepia', 'gpu-invert', 'gpu-pixelate', 'gpu-twirl', 'gpu-wave', 'gpu-bulge'].includes(id) || HDR_BLURS.includes(id)) {
         for (const [name, route] of [['normal', 'cases.0'], ['extreme', 'cases'], ['animated', 'animation'], ['composed', 'stack'], ['invalid', 'invalid']])
           add(id, name, WORKING_DOMAINS.hdr, `effects.${index}.${row.hdr ? 'hdr' : row.hdrAffine ? 'hdrAffine' : 'hdrSpatial'}.${row.hdrAffine && id === 'gpu-invert' && name === 'invalid' ? 'extra' : route}`);
+      } else if (HDR_GRADES.includes(id)) {
+        for (const [name, route] of [['normal', 'cases.0'], ['extreme', 'cases'], ['animated', 'animation'], ['composed', 'stack'], ['invalid', 'invalid']])
+          add(id, name, WORKING_DOMAINS.hdr, `effects.${index}.hdrGrade.${route}`);
       } else add(id, 'extreme', WORKING_DOMAINS.hdr, `effects.${index}.hdrRefusal`, 'refused');
     } else {
       const prefix = family === 'blend' ? `results.${index}` : `transitions.${index}`;
@@ -70,7 +75,7 @@ export function domainObservations(report) {
           add(id, value.case, WORKING_DOMAINS.sdr, `cases.${at}`);
       });
       add(id, 'extreme', WORKING_DOMAINS.hdr, `${prefix}.${family === 'blend' ? 'float' : 'frames.0.hdr'}`,
-        (family === 'blend' && id === 'normal') || (family === 'transition' && id === 'additiveDissolve') ? 'rendered' : 'refused');
+        (family === 'blend' && id === 'normal') || (family === 'transition' && LINEAR_HDR_TRANSITIONS.includes(id)) ? 'rendered' : 'refused');
     }
   });
   return observations;

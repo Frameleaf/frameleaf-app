@@ -1,10 +1,12 @@
 // All registered transitions and directions: pinned SDR boundaries, parity and production cases.
-// Linear display-referred HDR transitions are typed-refused until individually migrated.
+// Linear display-referred HDR: the migrated transitions (README T5) are measured against independent
+// equations, endpoints, homogeneity and their own arithmetic without SDR clamps; the rest are typed-refused.
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { testedSource, domainObservations } from './lib/working-domain-report.mjs';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
+import { LINEAR_HDR_TRANSITIONS } from './render-goldens.mjs';
 
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
@@ -27,6 +29,9 @@ const sdrRight = Array.from({ length: W * H }, (_, i) => {
 });
 const hdrLeft = sdrLeft.map(([r, g, b, a], i) => (i % 3 === 0 ? [r * 4 + 0.5, -0.25 * g, b + 1, a] : [r, g, b, a]));
 const hdrRight = sdrRight.map(([r, g, b, a], i) => (i % 4 === 1 ? [3, g * 2, -0.1, a] : [r, g, b, a]));
+// Twice the HDR inputs (exact in binary16): a transition of linear light is homogeneous.
+const hdrDoubleLeft = hdrLeft.map(([r, g, b, a]) => [2 * r, 2 * g, 2 * b, a]);
+const hdrDoubleRight = hdrRight.map(([r, g, b, a]) => [2 * r, 2 * g, 2 * b, a]);
 
 const source = await testedSource(new URL(import.meta.url));
 const browser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
@@ -37,11 +42,12 @@ try {
     route.fulfill({ contentType: 'text/html', body: '<title>Transition matrix</title>' }),
   );
   await page.goto(origin + '/transition-matrix');
-  report = await page.evaluate(async ({ W, H, PROGRESS, sdrLeft, sdrRight, hdrLeft, hdrRight }) => {
+  report = await page.evaluate(async ({ W, H, PROGRESS, sdrLeft, sdrRight, hdrLeft, hdrRight, hdrDoubleLeft, hdrDoubleRight }) => {
     const { EffectsPipeline } = await import('/src/infrastructure/gpu-effects/effects-pipeline.ts');
     const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
     const { TransitionPipeline } = await import('/src/infrastructure/gpu-transitions/transition-pipeline.ts');
     const { GPU_TRANSITION_REGISTRY } = await import('/src/infrastructure/gpu-transitions/registry.ts');
+    const { isLinearHdrTransition, getLinearHdrTransitionIds } = await import('/src/infrastructure/gpu-transitions/linear-additive.ts');
     const device = await EffectsPipeline.requestCachedDevice();
     if (!device) throw new Error('WebGPU unavailable; transition matrix cannot run');
     const pipeline = TransitionPipeline.create(device);
@@ -70,7 +76,7 @@ try {
       return cache.get(key);
     };
     const sets = {
-      sdr: [sdrLeft, sdrRight], hdr: [hdrLeft, hdrRight],
+      sdr: [sdrLeft, sdrRight], hdr: [hdrLeft, hdrRight], hdrDouble: [hdrDoubleLeft, hdrDoubleRight],
       sdrMirrorX: [mirror(sdrLeft, 'x'), mirror(sdrRight, 'x')],
       sdrMirrorY: [mirror(sdrLeft, 'y'), mirror(sdrRight, 'y')],
     };
@@ -120,6 +126,11 @@ try {
           entry.frames.push({
             direction: direction ?? null, progress,
             hdr: await render(id, 'hdr', 'rgba16float', 'hdr', progress, direction),
+            ...(isLinearHdrTransition(id) ? {
+              hdrDouble: await render(id, 'hdrDouble', 'rgba16float', 'hdr', progress, direction),
+              // The same arithmetic on the same linear input through the SDR project's float route.
+              hdrSdrRoute: await render(id, 'hdr', 'rgba16float', 'sdr', progress, direction),
+            } : {}),
             sdrAgain: progress === 0.5 ? await render(id, 'sdr', 'rgba16float', 'sdr', progress, direction) : null,
             sdrFloat: await render(id, 'sdr', 'rgba16float', 'sdr', progress, direction),
             sdr: await render(id, 'sdr', 'rgba8unorm', 'sdr', progress, direction),
@@ -141,8 +152,8 @@ try {
     pipeline.destroy();
     for (const texture of cache.values()) texture.destroy();
     return { browser: { name: 'chromium', driver: 'playwright', userAgent: navigator.userAgent }, transitions, hdrLeft16: f16(hdrLeft), hdrRight16: f16(hdrRight),
-      sdrLeft16: f16(sdrLeft), sdrRight16: f16(sdrRight) };
-  }, { W, H, PROGRESS, sdrLeft, sdrRight, hdrLeft, hdrRight });
+      sdrLeft16: f16(sdrLeft), sdrRight16: f16(sdrRight), linearHdrIds: getLinearHdrTransitionIds() };
+  }, { W, H, PROGRESS, sdrLeft, sdrRight, hdrLeft, hdrRight, hdrDoubleLeft, hdrDoubleRight });
 } finally {
   await browser.close();
 }
@@ -429,6 +440,37 @@ const mirrorPixels = (pixels, axis) => pixels.map((_, k) => {
   return pixels[j * 4 + c];
 });
 const near = (a, b, tolerance) => a.every((v, i) => Math.abs(v - b[i]) <= tolerance);
+assert.deepEqual([...report.linearHdrIds].sort(), [...LINEAR_HDR_TRANSITIONS].sort(), 'engine and spec disagree on the linear HDR transitions');
+// Linear HDR (README T5): page arithmetic on premultiplied light, no SDR clamp, binary16 output.
+const halfStep = (v) => Math.max(2 ** -24, 2 ** (Math.floor(Math.log2(Math.max(Math.abs(v), 2 ** -14))) - 10));
+const HOMOGENEOUS = LINEAR_HDR_TRANSITIONS.filter((id) => !['nonAdditiveDissolve', 'dipToColorDissolve'].includes(id));
+// The page arithmetic is the SDR float route's without its clamps; these pages name none (dip at its black default).
+const CLAMP_FREE = LINEAR_HDR_TRANSITIONS.filter((id) => !['nonAdditiveDissolve', 'additiveDissolve'].includes(id));
+const linearEquation = (id, frame) => {
+  const p = frame.progress;
+  const A = report.hdrLeft16;
+  const B = report.hdrRight16;
+  const out = [];
+  for (let k = 0; k < A.length; k += 4) {
+    const a = A.slice(k, k + 4);
+    const b = B.slice(k, k + 4);
+    const x = ((k / 4) % W + 0.5) / W;
+    const y = (Math.floor(k / 4 / W) + 0.5) / H;
+    if (id === 'dissolve') { const t = 0.5 - 0.5 * Math.cos(p * Math.PI); out.push(...a.map((v, c) => v + (b[c] - v) * t)); }
+    else if (id === 'nonAdditiveDissolve') {
+      const n = [0, 1, 2].map((c) => a[c] + (b[c] - a[c]) * p);
+      const luma = 0.2126 * n[0] + 0.7152 * n[1] + 0.0722 * n[2];
+      out.push(...n.map((v) => v + (Math.min(v, luma + 0.18) - v) * Math.sin(p * Math.PI) * 0.18), 1);
+    } else if (id === 'dipToColorDissolve') {
+      const s = (e0, e1, v) => { const t = Math.min(1, Math.max(0, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+      out.push(...(p < 0.5 ? a.map((v, c) => v + ((c === 3 ? 1 : 0) - v) * s(0, 0.5, p)) : b.map((v, c) => (c === 3 ? 1 : 0) + (v - (c === 3 ? 1 : 0)) * s(0.5, 1, p))));
+    } else if (id === 'wipe') {
+      const sweep = { 'from-left': x, 'from-right': 1 - x, 'from-top': y, 'from-bottom': 1 - y }[frame.direction];
+      out.push(...(sweep <= p ? b : a));
+    } else return null;
+  }
+  return out;
+};
 let frameCount = 0;
 for (const transition of report.transitions) {
   const rule = declared.get(transition.id);
@@ -449,6 +491,26 @@ for (const transition of report.transitions) {
         });
         check(got.every((v, i) => Math.abs(v - expected[i]) <= .004 + Math.abs(expected[i]) * .001),
           `${label}: linear additive equation differs`);
+      }
+    } else if (LINEAR_HDR_TRANSITIONS.includes(transition.id)) {
+      const got = frame.hdr.pixels;
+      check(Array.isArray(got) && got.length === W * H * 4 && got.every(Number.isFinite), `${label}: missing finite linear output`);
+      if (got) {
+        if (frame.progress === 0 || frame.progress === 1) {
+          const want = frame.progress === 0 ? report.hdrLeft16 : report.hdrRight16;
+          check(got.every((v, i) => Math.abs(v - want[i]) <= halfStep(want[i])), `${label}: HDR endpoint is not the ${frame.progress ? 'incoming' : 'outgoing'} clip`);
+        } else {
+          const want = linearEquation(transition.id, frame);
+          if (want) check(got.every((v, i) => Math.abs(v - want[i]) <= .004 + Math.abs(want[i]) * .002), `${label}: linear equation differs`);
+          if (CLAMP_FREE.includes(transition.id) && frame.hdrSdrRoute?.pixels)
+            check(got.every((v, i) => Math.abs(v - frame.hdrSdrRoute.pixels[i]) <= halfStep(v) + 1e-6), `${label}: HDR is not the page arithmetic without clamps`);
+          else if (CLAMP_FREE.includes(transition.id)) check(false, `${label}: missing SDR-route arithmetic witness`);
+        }
+        if (HOMOGENEOUS.includes(transition.id)) {
+          const twice = frame.hdrDouble?.pixels;
+          check(twice?.every((v, i) => (i % 4 === 3 ? Object.is(v, got[i]) : Math.abs(v - 2 * got[i]) <= 2 * halfStep(got[i]) + 1e-6)),
+            `${label}: twice the light does not give twice the result`);
+        }
       }
     } else check(frame.hdr.errorType === 'HdrRenderUnavailableError', `${label}: missing typed HDR refusal`);
     for (const route of ['sdrFloat', 'sdr']) check(!frame[route].error, `${label} ${route}: ${frame[route].error}`);

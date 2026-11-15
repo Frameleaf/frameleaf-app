@@ -56973,248 +56973,70 @@
       "synchronize": true
     },
     {
-      "name": "person_category",
+      "name": "partner_scope",
       "columns": [
         {
           "type": "uuid",
           "primary": false,
-          "name": "id",
-          "tableName": "person_category",
+          "name": "sharedById",
+          "tableName": "partner_scope",
           "nullable": false,
           "isArray": false,
-          "default": "uuid_generate_v4()",
           "synchronize": true
         },
         {
           "type": "uuid",
           "primary": false,
-          "name": "ownerId",
-          "tableName": "person_category",
+          "name": "sharedWithId",
+          "tableName": "partner_scope",
           "nullable": false,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "text",
+          "type": "date",
           "primary": false,
-          "name": "name",
-          "tableName": "person_category",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "color",
-          "tableName": "person_category",
+          "name": "sinceDate",
+          "tableName": "partner_scope",
           "nullable": true,
           "isArray": false,
           "synchronize": true
         },
         {
-          "type": "integer",
+          "type": "uuid",
           "primary": false,
-          "name": "order",
-          "tableName": "person_category",
+          "name": "albumIds",
+          "tableName": "partner_scope",
           "nullable": false,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "default": "0",
+          "isArray": true,
+          "default": "'{}'::uuid[]",
           "synchronize": true
         },
         {
-          "type": "timestamp with time zone",
+          "type": "uuid",
           "primary": false,
-          "name": "createdAt",
-          "tableName": "person_category",
+          "name": "personIds",
+          "tableName": "partner_scope",
           "nullable": false,
-          "isArray": false,
-          "default": "now()",
+          "isArray": true,
+          "default": "'{}'::uuid[]",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "folders",
+          "tableName": "partner_scope",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::text[]",
           "synchronize": true
         },
         {
           "type": "timestamp with time zone",
           "primary": false,
           "name": "updatedAt",
-          "tableName": "person_category",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "person_category_ownerId_order_idx",
-          "definition": "CREATE INDEX \"person_category_ownerId_order_idx\" ON public.person_category USING btree (\"ownerId\", \"order\")",
-          "tableName": "person_category",
-          "columnNames": [
-            "ownerId",
-            "order"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "person_category_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "person_category",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "unique",
-          "name": "person_category_id_ownerId_uq",
-          "definition": "UNIQUE (id, \"ownerId\")",
-          "tableName": "person_category",
-          "columnNames": [
-            "id",
-            "ownerId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "person_category_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person_category",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "person_category_member",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "person_category_member",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "personId",
-          "tableName": "person_category_member",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "categoryId",
-          "tableName": "person_category_member",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "person_category_member_categoryId_idx",
-          "definition": "CREATE INDEX \"person_category_member_categoryId_idx\" ON public.person_category_member USING btree (\"categoryId\")",
-          "tableName": "person_category_member",
-          "columnNames": [
-            "categoryId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "person_category_member_pkey",
-          "definition": "PRIMARY KEY (\"ownerId\", \"personId\", \"categoryId\")",
-          "tableName": "person_category_member",
-          "columnNames": [
-            "ownerId",
-            "personId",
-            "categoryId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "person_category_member_categoryId_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"categoryId\", \"ownerId\") REFERENCES person_category(id, \"ownerId\") ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person_category_member",
-          "columnNames": [
-            "categoryId",
-            "ownerId"
-          ],
-          "referenceTableName": "person_category",
-          "referenceColumnNames": [
-            "id",
-            "ownerId"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "person_category_member_ownerId_personId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\", \"personId\") REFERENCES person(\"ownerId\", \"personGroupId\") ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person_category_member",
-          "columnNames": [
-            "ownerId",
-            "personId"
-          ],
-          "referenceTableName": "person",
-          "referenceColumnNames": [
-            "ownerId",
-            "personGroupId"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "person_category_seed",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "person_category_seed",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "seededAt",
-          "tableName": "person_category_seed",
+          "tableName": "partner_scope",
           "nullable": false,
           "isArray": false,
           "default": "now()",
@@ -57225,28 +57047,39 @@
       "triggers": [],
       "constraints": [
         {
+          "type": "check",
+          "name": "partner_scope_chooses_check",
+          "definition": "CHECK (((\"sinceDate\" IS NOT NULL) OR (cardinality(\"albumIds\") > 0) OR (cardinality(\"personIds\") > 0) OR (cardinality(folders) > 0)))",
+          "tableName": "partner_scope",
+          "expression": "(((\"sinceDate\" IS NOT NULL) OR (cardinality(\"albumIds\") > 0) OR (cardinality(\"personIds\") > 0) OR (cardinality(folders) > 0)))",
+          "synchronize": true
+        },
+        {
           "type": "primary-key",
-          "name": "person_category_seed_pkey",
-          "definition": "PRIMARY KEY (\"ownerId\")",
-          "tableName": "person_category_seed",
+          "name": "partner_scope_pkey",
+          "definition": "PRIMARY KEY (\"sharedById\", \"sharedWithId\")",
+          "tableName": "partner_scope",
           "columnNames": [
-            "ownerId"
+            "sharedById",
+            "sharedWithId"
           ],
           "synchronize": true
         },
         {
           "type": "foreign-key",
-          "name": "person_category_seed_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person_category_seed",
+          "name": "partner_scope_sharedById_sharedWithId_fkey",
+          "definition": "FOREIGN KEY (\"sharedById\", \"sharedWithId\") REFERENCES partner(\"sharedById\", \"sharedWithId\") ON DELETE CASCADE",
+          "tableName": "partner_scope",
           "columnNames": [
-            "ownerId"
+            "sharedById",
+            "sharedWithId"
           ],
-          "referenceTableName": "user",
+          "referenceTableName": "partner",
           "referenceColumnNames": [
-            "id"
+            "sharedById",
+            "sharedWithId"
           ],
-          "onUpdate": "CASCADE",
+          "onUpdate": "NO ACTION",
           "onDelete": "CASCADE",
           "synchronize": true
         }
