@@ -228,7 +228,11 @@ export const recoverFileTrashMoves = async (
   return deferred;
 };
 
-/** The independent intent is committed before acquiring a transaction's pool connection. */
+/**
+ * The independent intent is committed before acquiring a transaction's pool connection.
+ * FL-1497: another worker's recovery for the same path can clear a fresh intent in that gap. Nothing has moved
+ * and the callback hasn't run then, so the reservation is simply made again (three tries in all).
+ */
 export const withFileTrashMove = async <T>(
   db: Kysely<DB>,
   path: string,
@@ -236,6 +240,38 @@ export const withFileTrashMove = async <T>(
   move: PhysicalFileTrashMove,
   callback: (trx: Transaction<DB>, id: string) => Promise<T>,
   options: { targetPath?: string; checksum?: Buffer } = {},
+): Promise<T> => {
+  for (let attempt = 1; ; attempt++) {
+    let started = false;
+    try {
+      return await reserveFileTrashMove(
+        db,
+        path,
+        originalFileName,
+        move,
+        (trx, id) => {
+          started = true;
+          return callback(trx, id);
+        },
+        options,
+      );
+    } catch (error) {
+      if (started || attempt >= 3 || !(error instanceof ConflictException) || error.message !== RESERVATION_CHANGED) {
+        throw error;
+      }
+    }
+  }
+};
+
+const RESERVATION_CHANGED = 'File trash reservation changed; retry';
+
+const reserveFileTrashMove = async <T>(
+  db: Kysely<DB>,
+  path: string,
+  originalFileName: string,
+  move: PhysicalFileTrashMove,
+  callback: (trx: Transaction<DB>, id: string) => Promise<T>,
+  options: { targetPath?: string; checksum?: Buffer },
 ): Promise<T> => {
   if (await recoverFileTrashMoves(db, move, path)) {
     throw new ConflictException('An interrupted file trash move needs recovery');
@@ -251,7 +287,7 @@ export const withFileTrashMove = async <T>(
       const { rows } = await sql`SELECT id FROM public.move_history
         WHERE id = ${id}::uuid AND "pathType" = 'file_trash'
           AND "oldPath" = ${path} AND "newPath" = ${target} FOR UPDATE`.execute(trx);
-      if (rows.length === 0) throw new ConflictException('File trash reservation changed; retry');
+      if (rows.length === 0) throw new ConflictException(RESERVATION_CHANGED);
       const result = await callback(trx, id);
       // This includes returns without a move, and happens after every SQL operation in the caller.
       await sql`DELETE FROM public.move_history WHERE id = ${id}::uuid`.execute(trx);
