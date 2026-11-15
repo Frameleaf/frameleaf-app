@@ -1,5 +1,7 @@
 import {
   STUDIO_DIFF_MAX_PATHS,
+  STUDIO_DOCUMENT_BODY_MAX_BYTES,
+  STUDIO_DOCUMENT_ROUTES,
   STUDIO_ENGINE,
   STUDIO_ENVELOPE_SCHEMA_VERSION,
   STUDIO_LEASE_MS,
@@ -66,6 +68,25 @@ describe('checkStudioEnvelope', () => {
   it('refuses a graph above the size limit', () => {
     const result = checkStudioEnvelope(envelope({ padding: 'x'.repeat(STUDIO_MAX_GRAPH_BYTES + 1) }));
     expect(result).toMatchObject({ ok: false, problem: 'graph-too-large' });
+  });
+
+  it('keeps a graph of 24 MiB, room for a 5,000-clip feature once LUTs are kept beside it (FL-1558)', () => {
+    expect(STUDIO_MAX_GRAPH_BYTES).toBe(24 * 1024 * 1024);
+    // A graph of 20 MB: above the old 8 MiB limit and the general 10 MB body limit.
+    expect(checkStudioEnvelope(envelope({ padding: 'x'.repeat(20_000_000) }))).toMatchObject({ ok: true });
+    expect(STUDIO_DOCUMENT_BODY_MAX_BYTES).toBeGreaterThan(STUDIO_MAX_GRAPH_BYTES);
+  });
+
+  it.each([
+    ['/api/studio/projects', true],
+    ['/api/studio/projects/0198a1c2-0000-7000-8000-0000000000aa/revisions', true],
+    ['/api/studio/projects/0198a1c2-0000-7000-8000-0000000000aa/revisions?x=1', true],
+    ['/api/studio/projects/0198a1c2-0000-7000-8000-0000000000aa', false],
+    ['/api/studio/projects/trash/empty', false],
+    ['/api/studio/projects/0198a1c2-0000-7000-8000-0000000000aa/imports', false],
+    ['/api/assets', false],
+  ])('gives %s the document body limit: %s', (path, matches) => {
+    expect(STUDIO_DOCUMENT_ROUTES.test(path)).toBe(matches);
   });
 
   it('refuses a graph that cannot be serialized rather than losing it at reload', () => {

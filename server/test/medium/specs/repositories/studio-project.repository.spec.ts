@@ -16,6 +16,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationCreate, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StudioProjectRepository, StudioRevisionAppend } from 'src/repositories/studio-project.repository.js';
 import {
+  STUDIO_BUNDLE_DOCUMENT_RESERVATION,
   STUDIO_BUNDLE_MAX_EXPORTS,
   STUDIO_BUNDLE_MAX_UPLOADS,
   STUDIO_REVISION_MAX_BYTES,
@@ -194,7 +195,8 @@ describe(StudioProjectRepository.name, () => {
         projectId: project.id,
         revisionId: null,
         snapshot: { projectId: project.id, revision: 1, includeMedia: false, sequenceIds: null, requestKey: null },
-        settings: { storageReservationBytes: 32 * 1024 ** 2 },
+        // A metadata-only export: its document staging plus a small ZIP (the graph limit sets the first).
+        settings: { storageReservationBytes: STUDIO_BUNDLE_DOCUMENT_RESERVATION + 14 * 1024 ** 2 },
         estimate: null,
         totalUnits: null,
         maxAttempts: 2,

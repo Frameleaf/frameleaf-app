@@ -1,7 +1,10 @@
 /**
  * FL-403 (STU-301a): a measured budget for a long project on the real engine stores.
  *
- * Thousands of clips on several tracks, at a desktop and a tablet viewport. Each interaction the
+ * FL-1558: 5,000 clips (four picture tracks and one sound track of 1,000 each), at a desktop and a
+ * tablet viewport. It also measures what such a project weighs as a graph, graded and with a LUT on
+ * every picture clip, against the server's graph limit: kept beside the project, the LUT costs a
+ * reference; inside the graph it would cost its table on every clip. Each interaction the
  * timeline repeats while a person edits is timed through the same code the editor runs:
  *
  * - scroll and zoom: the viewport/zoom store update and every track's `useVisibleItems` re-render
@@ -34,11 +37,15 @@ import {
 import { useTransitionsStore } from '@/features/timeline/stores/transitions-store'
 import { _resetZoomStoreForTest, useZoomStore } from '@/features/timeline/stores/zoom-store'
 import { useEditorStore } from '@/shared/state/editor'
+import { getGpuEffectDefaultParams } from '@/infrastructure/gpu-effects'
+import { createIdentityLutData, encodeLutData } from '@/infrastructure/gpu-effects/lut/cube-lut'
 
 const FPS = 30
 const VIDEO_TRACKS = 4
-const AUDIO_TRACKS = 2
-const ITEMS_PER_TRACK = 800
+const AUDIO_TRACKS = 1
+const ITEMS_PER_TRACK = 1000
+/** FL-1558: the project size the story names. */
+const CLIPS = 5000
 const CLIP_FRAMES = 45
 const GAP_FRAMES = 5
 const STEP = CLIP_FRAMES + GAP_FRAMES
@@ -55,6 +62,9 @@ export const BUDGETS = {
   trim: 40,
   undo: 60,
 } as const
+
+/** The server's graph limit (`STUDIO_MAX_GRAPH_BYTES`, FL-1558). */
+const GRAPH_LIMIT_BYTES = 24 * 1024 * 1024
 
 /** At most this many clips per track may be mounted at once at any zoom the sweep visits. */
 const MAX_MOUNTED_PER_TRACK = 400
@@ -131,8 +141,24 @@ const shape = (items: readonly TimelineItem[]) =>
     })
     .sort()
 
+/** A grade a colourist might leave on every clip: primaries, wheels, curves and a LUT. */
+const gradeEffects = (index: number, lut: Record<string, string | number>) =>
+  ['gpu-exposure', 'gpu-temperature', 'gpu-color-wheels', 'gpu-curves', 'gpu-lut'].map((type, order) => ({
+    id: `grade-${index}-${order}`,
+    enabled: true,
+    effect: {
+      type: 'gpu-effect' as const,
+      gpuEffectType: type,
+      params: type === 'gpu-lut' ? { ...getGpuEffectDefaultParams(type), ...lut } : getGpuEffectDefaultParams(type),
+    },
+  }))
+
+/** The bytes a graph of these items takes as the server measures it (UTF-8 JSON). */
+const graphBytes = (items: readonly TimelineItem[]) =>
+  new TextEncoder().encode(JSON.stringify({ timeline: { tracks: trackIds.map(makeTrack), items } })).length
+
 const report: Record<string, unknown> = {
-  issue: 'FL-403',
+  issue: 'FL-403, FL-1558',
   environment: 'jsdom (vite-plus test), engine stores and hooks, one worker',
   project: {
     tracks: trackIds.length,
@@ -172,7 +198,46 @@ describe('long timeline performance budget (FL-403)', () => {
     report.load = { ms: Math.round(load * 1000) / 1000 }
     expect(load).toBeLessThan(BUDGETS.load)
     initial = shape(useItemsStore.getState().items)
-    expect(initial).toHaveLength(trackIds.length * ITEMS_PER_TRACK)
+    expect(initial).toHaveLength(CLIPS)
+  })
+
+  it('keeps a graded 5,000-clip project within the graph limit only with LUTs kept beside it (FL-1558)', () => {
+    const items = useItemsStore.getState().items
+    const reference = {
+      lutName: 'Show LUT',
+      lutSize: '0',
+      lutData: '',
+      lutId: '0198a1c2-0000-7000-8000-0000000000aa',
+      lutSource: 'import',
+    }
+    // The table the LUT panel embeds: 33³ entries, base64 RGBA8.
+    const inline = { lutName: 'Show LUT', lutSize: '33', lutData: encodeLutData(createIdentityLutData(33)) }
+    const graded = (lut: Record<string, string | number>) =>
+      items.map((item, index) =>
+        item.type === 'video' ? ({ ...item, effects: gradeEffects(index, lut) } as TimelineItem) : item,
+      )
+    const plain = graphBytes(items)
+    const kept = graphBytes(graded(reference))
+    const pictureClips = items.filter((item) => item.type === 'video').length
+    // Measured from one clip and multiplied: the whole inline graph would be ~1 GB of test memory.
+    const embeddedPerClip =
+      graphBytes(graded(inline).slice(0, 1)) - graphBytes(graded(reference).slice(0, 1))
+    const embedded = kept + embeddedPerClip * pictureClips
+    report.graph = {
+      clips: items.length,
+      limitBytes: GRAPH_LIMIT_BYTES,
+      plainBytes: plain,
+      gradedWithKeptLutBytes: kept,
+      gradedBytesPerClip: Math.round(kept / items.length),
+      embeddedLutBytesPerClip: embeddedPerClip,
+      gradedWithEmbeddedLutBytes: embedded,
+    }
+    expect(items).toHaveLength(CLIPS)
+    // Kept beside the project, the graded edit leaves more than half the limit for keyframes,
+    // captions, masks and titles (this synthetic clip carries none of them)…
+    expect(kept).toBeLessThan(GRAPH_LIMIT_BYTES / 2)
+    // …while embedded tables would need a graph no request could carry.
+    expect(embedded).toBeGreaterThan(20 * GRAPH_LIMIT_BYTES)
   })
 
   afterAll(() => {
