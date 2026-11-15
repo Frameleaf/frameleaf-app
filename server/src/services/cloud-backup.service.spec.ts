@@ -5950,7 +5950,9 @@ describe(CloudBackupService.name, () => {
 
       beforeEach(() => {
         // signing fails: the identity key can't be read
-        vi.spyOn(sut as never, 'finishDrill').mockRejectedValue(new Error('identity key unreadable') as never);
+        vi.spyOn(sut as unknown as { finishDrill: () => Promise<void> }, 'finishDrill').mockRejectedValue(
+          new Error('identity key unreadable'),
+        );
         drills.get.mockResolvedValue(report({ finishedAt: null, result: 'running', signature: null }));
       });
 
