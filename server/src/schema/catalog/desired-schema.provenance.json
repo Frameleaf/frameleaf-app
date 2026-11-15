@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "784f841541dd8bfa65f8c4406d7e9819003371ba",
+  "sourceCommit": "5257b9e77858f5080f420748ba0b1f81d44229a7",
   "sourceHashes": {
     "src/enum.ts": "58e5f863916ec4a404c61f3d383c86ed25699762627828ad48bc873fc1aae39d",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -8,7 +8,7 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "34441ba9e9d117148a433ab8f9811fcbbac4285a014ce844e04ce08347d1ccfb",
+    "src/schema/index.ts": "2ae6679d37f85150ca3a92b02fafebd5b33c1efeec8346b1ce97900e516cf0d2",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -115,6 +115,7 @@
     "src/schema/tables/partner-audit.table.ts": "0ca4f0fffe6b22c417a698e6f369bf79844a7754f42a48cdddbb39bb0ceda00c",
     "src/schema/tables/partner.table.ts": "9391a641377293ea8c0cbb93c58c784793f3ae644cd4db05f481541ba14ce66d",
     "src/schema/tables/person-audit.table.ts": "f43ad45c0c0d674184dafb39b7786c232d51d7194c12bfcce22beae22d996ee3",
+    "src/schema/tables/person-category.table.ts": "e909b9e397c3d4b1a843df74b2249abf226ff4fb84fc7a9339adffe826c8f30c",
     "src/schema/tables/person-group-audit.table.ts": "19bf276917c6883284d334f0a53c30761073d0b5af57f3b97562e8298faa9e0e",
     "src/schema/tables/person-group.table.ts": "20d0bc1efac183db55decff5d872755c351a54a3e3f180280a64aef02f1a79c8",
     "src/schema/tables/person-merge-candidate.table.ts": "9437449b380d13540219f8128eaaf987cd603141f90efb42fdd1a426d9005538",
@@ -191,6 +192,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "26b9f2beb0ab91fe9a8c8d2e6b39d9aef0b15e45284ffd8b4a2c47fce2a65451",
-  "rawMetadataSha256": "bec80a0b315dbf0c779336eb05d30da038777761416dcf5791e4edc82d53a2fe"
+  "dumpSha256": "16b788f551ebfee82d5738bd360d3a11c712276b787ebad0f9c828aef8be9ff1",
+  "rawMetadataSha256": "2f2e98d3ca2b3684376cfdff8dcbf850a698001b3cabe6c8f9383b994da0f38a"
 }

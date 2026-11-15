@@ -101,7 +101,18 @@ limit
 select
   "person".*,
   count(distinct "asset_face"."assetId") as "assetCount",
-  max("asset"."fileCreatedAt") as "lastSeenAt"
+  max("asset"."fileCreatedAt") as "lastSeenAt",
+  array(
+    select
+      "person_category_member"."categoryId"::text
+    from
+      "person_category_member"
+    where
+      "person_category_member"."ownerId" = "person"."ownerId"
+      and "person_category_member"."personId" = "person"."personGroupId"
+    order by
+      "person_category_member"."categoryId"
+  ) as "categoryIds"
 from
   "person"
   inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
@@ -1582,3 +1593,95 @@ from
   "asset_face"
 where
   "asset_face"."assetId" = $1
+
+-- PersonRepository.getCategories
+select
+  "person_category".*
+from
+  "person_category"
+where
+  "person_category"."ownerId" = $1
+order by
+  "person_category"."order" asc,
+  "person_category"."createdAt" asc,
+  "person_category"."id" asc
+
+-- PersonRepository.getCategory
+select
+  "person_category".*
+from
+  "person_category"
+where
+  "person_category"."ownerId" = $1
+  and "person_category"."id" = $2
+
+-- PersonRepository.getOwnCategoryIds
+select
+  "person_category"."id"
+from
+  "person_category"
+where
+  "person_category"."ownerId" = $1
+  and "person_category"."id" in ($2)
+
+-- PersonRepository.createCategory
+insert into
+  "person_category" ("ownerId", "name", "color", "order")
+values
+  (
+    $1,
+    $2,
+    $3,
+    (
+      select
+        coalesce(max("order") + 1, 0)
+      from
+        "person_category"
+      where
+        "ownerId" = $4
+    )
+  )
+returning
+  *
+
+-- PersonRepository.updateCategory
+update "person_category"
+set
+  "name" = $1,
+  "updatedAt" = now()
+where
+  "person_category"."ownerId" = $2
+  and "person_category"."id" = $3
+returning
+  *
+
+-- PersonRepository.deleteCategory
+delete from "person_category"
+where
+  "person_category"."ownerId" = $1
+  and "person_category"."id" = $2
+
+-- PersonRepository.getPersonCategoryIds
+select
+  "person_category_member"."categoryId"
+from
+  "person_category_member"
+where
+  "person_category_member"."ownerId" = $1
+  and "person_category_member"."personId" = $2
+order by
+  "person_category_member"."categoryId"
+
+-- PersonRepository.copyCategoryMembers
+insert into
+  "person_category_member" ("ownerId", "personId", "categoryId")
+select
+  "person_category_member"."ownerId",
+  $1::uuid as "personId",
+  "person_category_member"."categoryId"
+from
+  "person_category_member"
+where
+  "person_category_member"."ownerId" = $2
+  and "person_category_member"."personId" = $3
+on conflict do nothing
