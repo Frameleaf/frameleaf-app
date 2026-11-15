@@ -29,6 +29,8 @@ import {
   StudioImportPublicationParamDto,
   StudioImportPublicationQueryDto,
   StudioImportPublicationRegisterDto,
+  StudioProjectFontCreateDto,
+  StudioProjectFontDto,
   StudioProjectImportCreateDto,
   StudioProjectImportDto,
   StudioProjectImportParamDto,
@@ -132,7 +134,7 @@ export class StudioProjectImportController {
   @Endpoint({
     summary: 'Import a file into a Studio project',
     description:
-      'Keeps a recording, sound, image, short video, SVG or Lottie graphic, caption file (.srt or .vtt) or .cube LUT with the project rather than the library. The type is read from the bytes; an SVG with scripts is refused, external subresources of a graphic are counted, and a caption file or LUT must be well formed throughout. The same id and file again answers the stored import.',
+      'Keeps a recording, sound, image, short video, SVG or Lottie graphic, caption file (.srt or .vtt) or .cube LUT with the project rather than the library. The type is read from the bytes; an SVG with scripts is refused, external subresources of a graphic are counted, and a caption file or LUT must be well formed throughout. A font is refused here and kept with POST /studio/projects/{id}/fonts. The same id and file again answers the stored import.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   importStudioProjectFile(
@@ -158,11 +160,55 @@ export class StudioProjectImportController {
   @Authenticated()
   @Endpoint({
     summary: 'List the files imported into a Studio project',
-    description: 'Every file kept with one of your projects, with its type, size and checksum.',
+    description:
+      'Every file kept with one of your projects, with its type, size and checksum. Fonts are listed by GET /studio/projects/{id}/fonts.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   getStudioProjectImports(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<StudioProjectImportDto[]> {
     return this.service.list(auth, id);
+  }
+
+  @Post(':id/fonts')
+  @HttpCode(HttpStatus.CREATED)
+  @Authenticated()
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ description: 'A font to keep with the project', type: StudioProjectFontCreateDto })
+  @UseInterceptors(StudioProjectImportUploadInterceptor)
+  @Endpoint({
+    summary: 'Keep a font with a Studio project',
+    description:
+      'Keeps a TrueType (.ttf), OpenType (.otf) or WOFF2 font with the project, for its titles. The file must be one font, at most 32 MB, with a well-formed table directory; collections and WOFF 1 are refused. The answer gives the family, weight and style the file names. A title uses it once the graph lists it in metadata.fonts. The same id and file again answers the stored font.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  importStudioProjectFont(
+    @Auth() auth: AuthDto,
+    // Checked by the service, not a pipe, for the same reason as the body below.
+    @Param('id') id: string,
+    // Checked by the service, not a pipe: a refused request must still remove the file multer wrote.
+    @Body() body: { id?: unknown; publicationId?: unknown },
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() request: BundleUploadRequest,
+  ): Promise<StudioProjectFontDto> {
+    return this.service.uploadFont(
+      auth,
+      id,
+      typeof body?.id === 'string' ? body.id : undefined,
+      file,
+      request.studioBundleUploadId,
+      { publicationId: body?.publicationId },
+    );
+  }
+
+  @Get(':id/fonts')
+  @Authenticated()
+  @Endpoint({
+    summary: 'List the fonts kept with a Studio project',
+    description:
+      'Every font kept with one of your projects, with the family, weight and style read from the file. Its bytes are read like any kept file, through GET /studio/projects/{id}/imports/{importId}/file.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getStudioProjectFonts(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<StudioProjectFontDto[]> {
+    return this.service.listFonts(auth, id);
   }
 
   @Get(':id/inventory')

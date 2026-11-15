@@ -67,6 +67,7 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getStatistics: vitest.fn(),
     getSharedFavoriteIds: vitest.fn(),
     setSharedFavorites: vitest.fn(),
+    getOriginalBytes: vitest.fn(),
     countLockedRuleMatches: vitest.fn(),
     getCalendarHeatmap: vitest.fn(),
     getTimeBucket: vitest.fn(),

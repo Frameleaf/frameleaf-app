@@ -82,7 +82,13 @@ export type AssetCopyInput = {
   sourceAssetId: string;
   ownerId: string;
   rootOwnerId: string;
-  partnerSharedById: string;
+  /** Null for a standalone copy. */
+  partnerSharedById: string | null;
+  /**
+   * FL-837: the caller's own copy of an item they can see through a shared album, space or link ("Add to my
+   * library"): no partner origin, never followed, never grouped with partner copies.
+   */
+  standalone?: boolean;
   /** The source's original `physical_file`; the copy links to it, nothing on disk is written. */
   original: {
     id: string;
@@ -727,10 +733,39 @@ export class PartnerOriginRepository {
    * Returns the copy's id, or undefined when the library already holds the content (or once received a
    * copy of this source), or the partnership it is made for has ended.
    */
+  /**
+   * FL-837: the source's faces on a standalone copy, belonging to nobody yet (no names cross over); returns the new
+   * face ids, for recognition to place among the copy owner's own people.
+   */
+  async copyFacesUnassigned(sourceAssetId: string, copyId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      WITH source AS (
+        SELECT f.*, gen_random_uuid() AS "newId" FROM public.asset_face f
+        WHERE f."assetId" = ${sourceAssetId}::uuid AND f."deletedAt" IS NULL AND f."isVisible" IS TRUE
+      ), faces AS (
+        INSERT INTO public.asset_face (id, "assetId", "personGroupId", "imageWidth", "imageHeight",
+          "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType")
+        SELECT "newId", ${copyId}::uuid, NULL, "imageWidth", "imageHeight",
+          "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType" FROM source
+        RETURNING id
+      ), embeddings AS (
+        INSERT INTO public.face_search ("faceId", embedding)
+        SELECT source."newId", search.embedding FROM source
+        JOIN public.face_search search ON search."faceId" = source.id
+        WHERE source."newId" IN (SELECT id FROM faces)
+      )
+      SELECT id FROM faces
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
+
   async insertAssetCopy(input: AssetCopyInput): Promise<string | undefined> {
     return this.db.transaction().execute(async (trx) => {
       await lockIncomingTags(trx, input.ownerId);
-      if (!(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
+      if (input.partnerSharedById && !(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
+        return;
+      }
+      if (!input.standalone && !input.partnerSharedById) {
         return;
       }
       const source = await trx
@@ -799,7 +834,7 @@ export class PartnerOriginRepository {
         .where('ownerId', '=', input.ownerId)
         .where('checksum', '=', source.checksum)
         .executeTakeFirst();
-      if (existing || (await this.hasEverCopied(source.id, input.ownerId, trx))) {
+      if (existing || (!input.standalone && (await this.hasEverCopied(source.id, input.ownerId, trx)))) {
         return;
       }
       const {
@@ -838,7 +873,12 @@ export class PartnerOriginRepository {
         .returning('id')
         .executeTakeFirstOrThrow();
       // FL-921: the copy is an original of the recipient's own ledger, not the partner's a second time
-      await recordLedgerAdded(trx, [copy.id], 'partner-copy');
+      await recordLedgerAdded(
+        trx,
+        [copy.id],
+        input.standalone ? 'shared-copy' : 'partner-copy',
+        input.standalone ? input.ownerId : null,
+      );
       // FL-417: the copy shows a path in its owner's own folder, never the partner's
       const recipient = await trx
         .selectFrom('user')
@@ -954,17 +994,19 @@ export class PartnerOriginRepository {
         WHERE checksum."assetId" = ${source.id}::uuid
         ON CONFLICT DO NOTHING
       `.execute(trx);
-      await this.createAssetOrigin(
-        {
-          id: copy.id,
-          sourceId: source.id,
-          ownerId: input.ownerId,
-          rootOwnerId: input.rootOwnerId,
-          partnerSharedById: input.partnerSharedById,
-        },
-        trx,
-      );
-      await this.copyGroups(trx, source.id, copy.id, input.ownerId);
+      if (input.partnerSharedById) {
+        await this.createAssetOrigin(
+          {
+            id: copy.id,
+            sourceId: source.id,
+            ownerId: input.ownerId,
+            rootOwnerId: input.rootOwnerId,
+            partnerSharedById: input.partnerSharedById,
+          },
+          trx,
+        );
+        await this.copyGroups(trx, source.id, copy.id, input.ownerId);
+      }
       // spec §4.3: every library is charged the full size; copying never fails on quota
       await sql`
         UPDATE "user"

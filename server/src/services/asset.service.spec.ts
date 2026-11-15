@@ -1819,6 +1819,47 @@ describe(AssetService.name, () => {
     });
   });
 
+  describe('copyToLibrary (FL-837)', () => {
+    it('refuses a shared link visitor', async () => {
+      await expect(
+        sut.copyToLibrary(authStub.adminSharedLink, { assetIds: [AssetFactory.create().id] }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.asset.getOriginalBytes).not.toHaveBeenCalled();
+    });
+
+    it('refuses a link that does not allow downloads, or that has a password', async () => {
+      const asset = AssetFactory.create();
+      for (const link of [
+        { allowDownload: false, password: null },
+        { allowDownload: true, password: 'secret' },
+      ]) {
+        mocks.sharedLink.getBySlug.mockResolvedValue({ id: 'link-1', expiresAt: null, ...link } as never);
+        await expect(
+          sut.copyToLibrary(authStub.user1, { assetIds: [asset.id], sharedLinkSlug: 'trip' }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+      expect(mocks.access.asset.checkSharedLinkAccess).not.toHaveBeenCalled();
+      expect(mocks.asset.getOriginalBytes).not.toHaveBeenCalled();
+    });
+
+    it('refuses items the caller cannot see, and copies nothing over their space', async () => {
+      const asset = AssetFactory.create();
+      await expect(sut.copyToLibrary(authStub.user1, { assetIds: [asset.id] })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getOriginalBytes.mockResolvedValue(600);
+      const full = {
+        ...authStub.user1,
+        user: { ...authStub.user1.user, quotaSizeInBytes: 1000, quotaUsageInBytes: 500 },
+      };
+      await expect(sut.copyToLibrary(full, { assetIds: [asset.id] })).rejects.toThrow('not enough space');
+      expect(mocks.asset.getOriginalBytes).toHaveBeenCalledWith([asset.id], authStub.user1.user.id);
+      expect(mocks.asset.getById).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateAll', () => {
     it.each([LibraryScope.Design, LibraryScope.Personal, LibraryScope.Both])(
       'moves media to %s without copying it and refreshes personal clients',

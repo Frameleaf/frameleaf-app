@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { StudioProjectImportSchema } from 'src/dtos/studio-project-import.dto.js';
+import { StudioProjectFontSchema, StudioProjectImportSchema } from 'src/dtos/studio-project-import.dto.js';
 import { AssetTypeSchema } from 'src/enum.js';
 import { STUDIO_INVENTORY_KINDS } from 'src/utils/studio-inventory.js';
 
@@ -87,6 +87,7 @@ const StudioProjectInventorySchema = z
     projectId: z.uuid(),
     revision: z.int().min(0).describe('The head revision the graph references were read from; 0 for an empty project'),
     keptFiles: z.array(StudioProjectImportSchema).describe('Files kept with the project (FL-103, FL-105)'),
+    keptFonts: z.array(StudioProjectFontSchema).describe('Fonts kept with the project (FL-1562)'),
     fonts: z.array(StudioProjectResourceUseSchema).describe('Font families the head graph names'),
     luts: z.array(StudioProjectResourceUseSchema).describe('Bundled LUTs the head graph names'),
     models: z.array(StudioProjectResourceUseSchema).describe('Models the head graph names'),

@@ -24,6 +24,8 @@ import {
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
   AssetCopyDto,
+  AssetCopyToLibraryDto,
+  AssetCopyToLibraryResponseDto,
   AssetInfoBatchDto,
   AssetInfoBatchResponseDto,
   AssetJobName,
@@ -69,7 +71,7 @@ import { MediaHealthRepository } from 'src/repositories/media-health.repository.
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
-import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
+import { PartnerCopyService, getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { collectAllMetadata } from 'src/utils/all-metadata.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
@@ -651,6 +653,58 @@ export class AssetService extends BaseService {
       await this.assetRepository.setSharedFavorites(auth.user.id, others, isFavorite);
     }
     return unique.filter((id) => owned.has(id));
+  }
+
+  /**
+   * FL-837: add items the caller can see through a shared album, space or link to their own library, as their own
+   * copies of the same stored files. Only a signed-in person can; a link must allow downloads. Every item is checked
+   * first and the space they need is checked once, so either the copies are made or nothing is.
+   */
+  async copyToLibrary(auth: AuthDto, dto: AssetCopyToLibraryDto): Promise<AssetCopyToLibraryResponseDto> {
+    if (auth.sharedLink) {
+      throw new ForbiddenException('Sign in to add items to your library');
+    }
+    const ids = [...new Set(dto.assetIds.map((id) => id.toLowerCase()))];
+    let allowed: Set<string>;
+    if (dto.sharedLinkKey || dto.sharedLinkSlug) {
+      const link = dto.sharedLinkKey
+        ? await this.sharedLinkRepository.getByKey(
+            Buffer.from(dto.sharedLinkKey, dto.sharedLinkKey.length === 100 ? 'hex' : 'base64url'),
+          )
+        : await this.sharedLinkRepository.getBySlug(dto.sharedLinkSlug!);
+      const live = !!link && (!link.expiresAt || new Date(link.expiresAt) > new Date());
+      if (!live) {
+        throw new BadRequestException('This link is no longer shared');
+      }
+      // a link with a password proves it through its own session, never by its key alone
+      if (!link.allowDownload || link.password) {
+        throw new ForbiddenException('This link does not allow saving its items');
+      }
+      allowed = await this.accessRepository.asset.checkSharedLinkAccess(link.id, new Set(ids));
+    } else {
+      allowed = await this.checkAccess({ auth, permission: Permission.AssetDownload, ids });
+    }
+    if (ids.some((id) => !allowed.has(id))) {
+      throw new BadRequestException('Not found or no access');
+    }
+    const needed = await this.assetRepository.getOriginalBytes(ids, auth.user.id);
+    if (auth.user.quotaSizeInBytes !== null && auth.user.quotaSizeInBytes < auth.user.quotaUsageInBytes + needed) {
+      throw new BadRequestException('There is not enough space in your library for these items');
+    }
+
+    const copies = BaseService.create(PartnerCopyService, this);
+    const response: AssetCopyToLibraryResponseDto = { added: [], alreadyInLibrary: [], notAdded: [] };
+    for (const id of ids) {
+      const result = await copies.copyToLibrary(id, auth.user.id);
+      if (result.status === 'added') {
+        response.added.push({ sourceId: id, assetId: result.copyId });
+      } else if (result.status === 'exists') {
+        response.alreadyInLibrary.push(id);
+      } else {
+        response.notAdded.push(id);
+      }
+    }
+    return response;
   }
 
   async updateAll(auth: AuthDto, dto: AssetBulkUpdateDto, sharedFavoritesSet = false): Promise<void> {

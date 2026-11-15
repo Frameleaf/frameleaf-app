@@ -223,3 +223,74 @@ test('expanded font families accept only their checksum-bound legacy alias witho
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('a family kept with the project registers each face for the weights nearest it (FL-1562)', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'fl-project-font-'));
+  try {
+    const regular = Buffer.from('\x00\x01\x00\x00regular face');
+    const black = Buffer.from('wOF2black face');
+    const hash = (value) => createHash('sha256').update(value).digest('hex');
+    const ids = ['6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c6', '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c7'];
+    const files = [
+      { file: `${ids[0]}.ttf`, format: 'ttf', weight: 400, bytes: regular },
+      { file: `${ids[1]}.woff2`, format: 'woff2', weight: 900, bytes: black },
+    ].map((entry) => ({
+      file: entry.file,
+      inputId: `font:Brand Sans#${entry.file}`,
+      format: entry.format,
+      weight: entry.weight,
+      style: 'normal',
+      subset: 'full',
+      checksum: hash(entry.bytes),
+      bytes: entry.bytes,
+    }));
+    const downloaded = new Map();
+    for (const entry of files) {
+      const location = path.join(root, entry.file);
+      await writeFile(location, entry.bytes);
+      downloaded.set(entry.inputId, location);
+    }
+    downloaded.set('font:Brand Sans', downloaded.get(files[0].inputId));
+    const prepared = {
+      snapshot: {
+        studio: {
+          resources: [
+            {
+              kind: 'font',
+              key: 'font:Brand Sans',
+              id: 'Brand Sans',
+              grant: 'render',
+              checksum: files[0].checksum,
+              files: files.map(({ bytes: _bytes, ...entry }) => entry),
+            },
+          ],
+        },
+      },
+      inputs: [
+        { inputId: 'font:Brand Sans', kind: 'font', resourceId: 'Brand Sans', checksum: files[0].checksum },
+        ...files.map((entry) => ({
+          inputId: entry.inputId,
+          kind: 'font',
+          resourceId: 'Brand Sans',
+          checksum: entry.checksum,
+        })),
+      ],
+    };
+    const fonts = await prepareClaimFonts(prepared, downloaded);
+    assert.deepEqual(
+      fonts.map((font) => [font.family, font.weight, font.subset]),
+      [
+        ['Brand Sans', '1 650', 'full'],
+        ['Brand Sans', '651 1000', 'full'],
+      ],
+    );
+    assert.doesNotThrow(() =>
+      requireGraphFonts({ timeline: { items: [{ type: 'text', fontFamily: 'Brand Sans' }] } }, fonts),
+    );
+    assert.throws(() => requireGraphFonts({ timeline: { items: [{ type: 'text', fontFamily: 'Other' }] } }, fonts), {
+      code: 'font_missing',
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

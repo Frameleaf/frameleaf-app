@@ -208,7 +208,7 @@
     {
       "kind": "font",
       "label": "Font",
-      "description": "A typeface for titles and captions. Only fonts bundled with the deployment resolve; a font named by URL is refused so a render can never fetch from the network.",
+      "description": "A typeface for titles and captions. A family resolves from the fonts bundled with the deployment, or from font files kept with the project that the graph lists in `metadata.fonts` (FL-1562), which win for a family they name; a font named by URL is refused so a render can never fetch from the network.",
       "owner": "deployment",
       "accessCheck": "bundled-catalog",
       "egress": {
@@ -227,7 +227,10 @@
         "invalid-id",
         "not-bundled",
         "rights-blocked",
-        "external-locator"
+        "external-locator",
+        "undeclared-import",
+        "checksum-mismatch",
+        "unsupported-media-type"
       ]
     },
     {
@@ -467,5 +470,5 @@
       ]
     }
   ],
-  "digest": "bf16d099819025bb0fe25ec33f1735daca0cb8165255e683c696397e16705432"
+  "digest": "af2a7172884f1e71303fbab1304e2283e11b5c6739e885f3f0193e494a7d6578"
 }
