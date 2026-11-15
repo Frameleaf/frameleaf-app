@@ -1,5 +1,7 @@
 import {
   importStudioProjectFile,
+  StudioProjectFontFormat,
+  StudioProjectFontStyle,
   StudioProjectImportKind,
   getStudioProjectFonts,
   getStudioProjectImports,
@@ -236,8 +238,8 @@ it('hands the editor the fonts kept with the project, by id and never as bin med
     family: 'Brand Sans',
     subfamily: 'Bold',
     weight: 700,
-    style: 'normal' as const,
-    format: 'woff2' as const,
+    style: StudioProjectFontStyle.Normal,
+    format: StudioProjectFontFormat.Woff2,
     fileName: 'Brand-Bold.woff2',
     sizeBytes: 40_000,
     checksum: 'c'.repeat(64),
