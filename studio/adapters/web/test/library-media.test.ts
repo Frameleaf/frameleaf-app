@@ -23,6 +23,7 @@ import type { StudioAssetRef } from '@frameleaf/host/host-contract'
 import {
   createLibraryMediaSeeder,
   followRetiredImports,
+  isProjectFontImport,
   isSubjectMatteImport,
   retireProject,
   type LibraryMediaSeeder,
@@ -356,6 +357,29 @@ describe('library media across editor remounts', () => {
       expect(blobUrlManager.get(UNUSED)).toBe(matte.url)
       expect(await getMedia(UNUSED)).toBeUndefined()
       expect(await getProjectMediaIds('fl-cutout')).not.toContain(UNUSED)
+      expect(media.known(UNUSED)).toBe(true)
+    } finally {
+      media.dispose()
+    }
+  })
+
+  it('hands a font kept with the project to its titles by id, never to the bin (FL-1562)', async () => {
+    const media = createLibraryMediaSeeder({ workspace, projectId: () => 'fl-font', onChange: () => {} })
+    try {
+      const font = {
+        id: UNUSED,
+        kind: 'font' as const,
+        name: 'Brand-Bold.woff2',
+        mimeType: 'font/woff2',
+        sizeBytes: 40_000,
+        url: `/api/studio/projects/p/imports/${UNUSED}/file`,
+      }
+      expect(isProjectFontImport(font)).toBe(true)
+      expect(isProjectFontImport({ ...font, kind: 'image' })).toBe(false)
+      await media.seedImports([font])
+      expect(blobUrlManager.get(UNUSED)).toBe(font.url)
+      expect(await getMedia(UNUSED)).toBeUndefined()
+      expect(await getProjectMediaIds('fl-font')).not.toContain(UNUSED)
       expect(media.known(UNUSED)).toBe(true)
     } finally {
       media.dispose()

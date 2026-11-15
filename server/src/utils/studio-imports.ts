@@ -1,7 +1,7 @@
 /**
  * Files uploaded into a Studio project rather than the library (FL-103 recordings, FL-105 media
  * import): microphone takes, music and sound files, stills, short video, SVG and Lottie graphics,
- * SubRip and WebVTT caption files and `.cube` 3D LUTs.
+ * SubRip and WebVTT caption files, `.cube` 3D LUTs and (FL-1562) TrueType, OpenType and WOFF2 fonts.
  *
  * The server never trusts the name or the declared type a browser sends. {@link sniffStudioImport}
  * reads the first bytes and decides the content type from what the file is, accepting only the
@@ -9,8 +9,18 @@
  * refused outright, and every external subresource of an SVG or a Lottie document is counted so the
  * FL-90 resolver refuses a graphic that would reach the network when it is rendered. Caption files
  * and LUTs are text with no signature, so the whole file is read and must be exactly the format its
- * first lines look like ({@link validateStudioImportText}).
+ * first lines look like ({@link validateStudioImportText}). A font is read whole as well: its table
+ * directory and naming tables are checked before it is kept ({@link validateStudioFontImport}).
  */
+// eslint-disable-next-line no-restricted-imports -- Shared pure parser must also load in the verified worker without server aliases.
+import {
+  STUDIO_FONT_CONTENT_TYPES,
+  STUDIO_FONT_MAX_BYTES,
+  type StudioFontDescription,
+  StudioFontFileError,
+  describeStudioFont,
+  studioFontSignature,
+} from './studio-font-file.js';
 
 /** Largest single import. A take or a music file is far smaller; short video is the ceiling. */
 export const STUDIO_IMPORT_MAX_BYTES = 2 * 1024 * 1024 * 1024;
@@ -27,10 +37,17 @@ export const STUDIO_IMPORT_LUT_MAX_BYTES = 16 * 1024 * 1024;
 /** The largest 3D LUT grid accepted: 65 points an axis, the largest size grading tools write. */
 export const STUDIO_IMPORT_LUT_MAX_SIZE = 65;
 
+/** A font file is read whole and parsed in memory (FL-1562). */
+export const STUDIO_IMPORT_FONT_MAX_BYTES = STUDIO_FONT_MAX_BYTES;
+
 /** How many imports one project may declare; the resolver's reference ceiling bounds it again. */
 export const STUDIO_IMPORT_MAX_PER_PROJECT = 1000;
 
-export type StudioImportKind = 'audio' | 'image' | 'video' | 'vector' | 'captions' | 'lut';
+/**
+ * `font` is a kind the server keeps but never lists among a project's files: those answers carry
+ * the six kinds native clients decode. Fonts have their own routes (FL-1562).
+ */
+export type StudioImportKind = 'audio' | 'image' | 'video' | 'vector' | 'captions' | 'lut' | 'font';
 
 export const STUDIO_IMPORT_SUBRIP_TYPE = 'application/x-subrip';
 export const STUDIO_IMPORT_WEBVTT_TYPE = 'text/vtt';
@@ -84,7 +101,7 @@ const audioBrands = new Set(['M4A ', 'M4B ', 'M4P ', 'F4A ', 'F4B ']);
 const quickTimeBrands = new Set(['qt  ']);
 
 const unplaceable =
-  'Studio can import sound, images, short video, SVG and Lottie graphics, .srt and .vtt captions and .cube LUTs only';
+  'Studio can import sound, images, short video, SVG and Lottie graphics, .srt and .vtt captions, .cube LUTs and .ttf, .otf and .woff2 fonts only';
 
 /** A keyword line of a `.cube` file (Adobe Cube LUT 1.0, plus the input range Resolve writes). */
 const cubeKeyword =
@@ -188,6 +205,15 @@ export function sniffStudioImport(head: Uint8Array, declared: string | undefined
   }
   if (ascii(head, 0, 6) === 'GIF87a' || ascii(head, 0, 6) === 'GIF89a') {
     return { contentType: 'image/gif', kind: 'image', extension: '.gif' };
+  }
+  let font;
+  try {
+    font = studioFontSignature(head);
+  } catch (error) {
+    throw new StudioImportRefusal((error as Error).message);
+  }
+  if (font) {
+    return { contentType: STUDIO_FONT_CONTENT_TYPES[font], kind: 'font', extension: `.${font}` };
   }
   const text = textHead(head);
   if (isSvgHead(text)) {
@@ -614,5 +640,20 @@ export function validateStudioImportText(type: StudioImportType, text: string): 
       validateStudioCubeLut(text);
       break;
     }
+  }
+}
+
+/**
+ * Check a font import in full (FL-1562) and describe it: one TrueType, OpenType or WOFF2 font with
+ * a sane table directory, at most {@link STUDIO_IMPORT_FONT_MAX_BYTES}.
+ */
+export function validateStudioFontImport(bytes: Uint8Array): StudioFontDescription {
+  try {
+    return describeStudioFont(bytes);
+  } catch (error) {
+    if (error instanceof StudioFontFileError) {
+      throw new StudioImportRefusal(error.message);
+    }
+    throw error;
   }
 }

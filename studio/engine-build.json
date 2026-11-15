@@ -849,7 +849,12 @@
       "path": "patches/0183-windowed-limiter-and-split-grade-match.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "3b65ed55534fb309729d80829ecdf80a4a2c8bc78225bacf9896efe7b9708433"
+    },
+    {
+      "path": "patches/0197-project-fonts.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "7b76bf1f91d5facc8d961057d5a43f2c2399d4f7e706183e76be28672190512e"
     }
   ],
-  "sourceSha256": "4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6"
+  "sourceSha256": "d800a8b99ad73237b2e3063ea7db1ffacc5731cd2414528fdd61c9f5ee9a7471"
 }

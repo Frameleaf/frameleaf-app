@@ -261,8 +261,11 @@ export type RetainedProcessingProvenance = ProcessingProvenanceInput & { outputS
 export interface StudioProjectImportRef {
   /** The media id the editor gave the file; clips place it by this id. */
   id: string;
-  /** What the server read from the bytes. */
-  kind: 'audio' | 'image' | 'video' | 'vector';
+  /**
+   * What the server read from the bytes. A `font` (FL-1562) is never bin media: the editor reads
+   * it by id for the titles whose family the project's `metadata.fonts` maps to it.
+   */
+  kind: 'audio' | 'image' | 'video' | 'vector' | 'font';
   name: string;
   /** Content type the server read from the bytes. */
   mimeType: string;

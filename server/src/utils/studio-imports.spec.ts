@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   STUDIO_IMPORT_CAPTIONS_MAX_BYTES,
+  STUDIO_IMPORT_FONT_MAX_BYTES,
   STUDIO_IMPORT_LUT_MAX_BYTES,
   STUDIO_IMPORT_LUT_MAX_SIZE,
   StudioImportRefusal,
@@ -10,10 +11,12 @@ import {
   sniffStudioImport,
   studioImportKind,
   validateStudioCubeLut,
+  validateStudioFontImport,
   validateStudioImportText,
   validateStudioSubRip,
   validateStudioWebVtt,
 } from 'src/utils/studio-imports.js';
+import { makeStudioFont, makeStudioWoff2 } from 'test/fixtures/studio-font.stub.js';
 
 const bytes = (...parts: Array<string | number[]>) => {
   const out: number[] = [];
@@ -340,5 +343,34 @@ describe('Cube file input-domain admission', () => {
     'LUT_3D_INPUT_RANGE 0 1e-40',
   ])('refuses ambiguous or unrepresentable input domains %s', (headers) => {
     expect(() => validateStudioCubeLut(body(headers))).toThrow(StudioImportRefusal);
+  });
+});
+
+describe('font imports (FL-1562)', () => {
+  it('reads the three font formats from their signature, whatever the declared type', () => {
+    expect(sniffStudioImport(makeStudioFont().subarray(0, 64), 'application/octet-stream')).toEqual({
+      contentType: 'font/ttf',
+      kind: 'font',
+      extension: '.ttf',
+    });
+    expect(sniffStudioImport(makeStudioFont({ flavor: 'otf' }).subarray(0, 64), undefined).contentType).toBe(
+      'font/otf',
+    );
+    expect(sniffStudioImport(makeStudioWoff2().subarray(0, 64), 'font/ttf').contentType).toBe('font/woff2');
+    expect(studioImportKind('font/woff2')).toBe('font');
+  });
+
+  it('refuses collections and WOFF 1 as imports', () => {
+    expect(() => sniffStudioImport(bytes('ttcf'), undefined)).toThrow(StudioImportRefusal);
+    expect(() => sniffStudioImport(bytes('wOFF'), 'font/woff')).toThrow(/WOFF 1/);
+  });
+
+  it('checks a font whole and refuses a malformed one as an import refusal', () => {
+    expect(validateStudioFontImport(makeStudioWoff2({ family: 'Brand', weight: 300 }))).toMatchObject({
+      family: 'Brand',
+      weight: 300,
+    });
+    expect(() => validateStudioFontImport(makeStudioFont({ omit: 'head' }))).toThrow(StudioImportRefusal);
+    expect(STUDIO_IMPORT_FONT_MAX_BYTES).toBe(32 * 1024 * 1024);
   });
 });

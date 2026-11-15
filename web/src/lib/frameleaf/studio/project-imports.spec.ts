@@ -1,6 +1,7 @@
 import {
   importStudioProjectFile,
   StudioProjectImportKind,
+  getStudioProjectFonts,
   getStudioProjectImports,
   registerStudioImportPublication,
   getStudioImportPublications,
@@ -19,6 +20,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   importStudioProjectFile: vi.fn(),
   getStudioProjectImports: vi.fn(),
+  getStudioProjectFonts: vi.fn(async () => []),
   registerStudioImportPublication: vi.fn(),
   getStudioImportPublications: vi.fn(),
   cancelStudioImportPublication: vi.fn(),
@@ -226,4 +228,34 @@ it('reloads every canonical import independently of an unavailable receipt page'
   const loaded = await loadStudioProjectImports(retentionProject, controller.signal);
   expect(loaded).toHaveLength(101);
   expect(new Set(loaded.map((item) => item.id)).size).toBe(101);
+});
+
+it('hands the editor the fonts kept with the project, by id and never as bin media (FL-1562)', async () => {
+  const font = {
+    id: '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e09',
+    family: 'Brand Sans',
+    subfamily: 'Bold',
+    weight: 700,
+    style: 'normal' as const,
+    format: 'woff2' as const,
+    fileName: 'Brand-Bold.woff2',
+    sizeBytes: 40_000,
+    checksum: 'c'.repeat(64),
+    createdAt: '2026-11-15T00:00:00.000Z',
+  };
+  vi.mocked(getStudioProjectImports).mockResolvedValueOnce([]);
+  vi.mocked(getStudioProjectFonts).mockResolvedValueOnce([font]);
+  const controller = new AbortController();
+  expect(await loadStudioProjectImports(retentionProject, controller.signal)).toEqual([
+    {
+      id: font.id,
+      kind: 'font',
+      name: 'Brand-Bold.woff2',
+      mimeType: 'font/woff2',
+      sizeBytes: 40_000,
+      checksum: font.checksum,
+      url: expect.stringContaining(`/studio/projects/${retentionProject}/imports/${font.id}/file`),
+    },
+  ]);
+  expect(getStudioProjectFonts).toHaveBeenLastCalledWith({ id: retentionProject }, { signal: controller.signal });
 });

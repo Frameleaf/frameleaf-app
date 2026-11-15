@@ -11,7 +11,11 @@
  * verdict for running them on this server. Pure: no I/O.
  */
 import type { StudioCommandCapability } from 'src/utils/studio-commands.js';
-import { StudioResourceKind, extractStudioResourceReferences } from 'src/utils/studio-resources.js';
+import {
+  StudioResourceKind,
+  extractStudioResourceReferences,
+  readStudioProjectFonts,
+} from 'src/utils/studio-resources.js';
 import {
   STUDIO_DISTRIBUTION_APPROVAL,
   STUDIO_RIGHTS_APPROVAL,
@@ -149,13 +153,23 @@ const REFERENCE_KINDS: ReadonlyMap<StudioResourceKind, StudioProjectResourceUse[
   [StudioResourceKind.Model, 'model'],
 ]);
 
-/** The fonts, bundled LUTs and models a graph references, each with its rights verdict here. */
+/**
+ * The fonts, bundled LUTs and models a graph references, each with its rights verdict here. A
+ * family the graph keeps with the project (`metadata.fonts`, FL-1562) is a kept font and is listed
+ * with the kept fonts, unless one of its files is not among `keptFonts` (the ids of the fonts the
+ * project keeps): then it is listed here as not allowed, so a missing font file is reported.
+ */
 export const studioProjectResourceUses = (
   graph: unknown,
   table: Readonly<Record<string, StudioResourceRights>> = studioResourceRights,
+  keptFonts?: ReadonlySet<string>,
 ): StudioProjectResourceUse[] => {
   const seen = new Set<string>();
   const uses: StudioProjectResourceUse[] = [];
+  const projectFonts = new Map<string, string[]>();
+  for (const face of readStudioProjectFonts(graph)) {
+    projectFonts.set(face.family, [...(projectFonts.get(face.family) ?? []), face.importId]);
+  }
   for (const reference of extractStudioResourceReferences(graph).references) {
     const kind = REFERENCE_KINDS.get(reference.kind);
     // a LUT kept with the project is a kept file, listed with the others
@@ -167,6 +181,21 @@ export const studioProjectResourceUses = (
       continue;
     }
     seen.add(rightsId);
+    const projectFaces = kind === 'font' ? projectFonts.get(reference.id) : undefined;
+    if (projectFaces) {
+      if (!keptFonts || projectFaces.every((id) => keptFonts.has(id))) {
+        continue;
+      }
+      uses.push({
+        kind,
+        name: reference.id,
+        rightsId,
+        license: null,
+        allowed: false,
+        detail: 'A font file this family names is no longer kept with the project.',
+      });
+      continue;
+    }
     const verdict = checkStudioRights(rightsId, StudioRightsUse.LocalRuntime, table);
     uses.push({
       kind,
