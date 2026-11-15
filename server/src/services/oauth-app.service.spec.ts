@@ -562,6 +562,36 @@ describe(OAuthAppService.name, () => {
     });
   });
 
+  it('issues tokens only for a resource on this server (FL-780 TM-1)', async () => {
+    const client = repo.addClient([CLAUDE_REDIRECT]);
+    const { dto } = request(client);
+    const base = {
+      response_type: 'code',
+      client_id: client.id,
+      redirect_uri: CLAUDE_REDIRECT,
+      scope: 'library:read',
+      code_challenge: dto.codeChallenge,
+      code_challenge_method: 'S256',
+    };
+    for (const resource of [
+      'https://evil.example/api/mcp',
+      'https://evil.example/',
+      'https://photos.example.test.evil.example/api/mcp',
+      'https://photos.example.test:8443/api/mcp',
+    ]) {
+      const url = await sut.authorizeRedirect({ ...base, resource }, ISSUER);
+      expect(new URL(url).searchParams.get('error')).toBe('invalid_target');
+      await expect(
+        sut.authorize(me, { ...dto, scope: 'library:read', resource, allow: true } as never, ISSUER),
+      ).rejects.toThrow(BadRequestException);
+    }
+    expect(repo.codes.size).toBe(0);
+
+    for (const resource of [`${ISSUER}/api/mcp`, `${ISSUER}/api`, 'http://photos.example.test/api']) {
+      expect(await sut.authorizeRedirect({ ...base, resource }, ISSUER)).toMatch(/^\/auth\/allow-app\?/);
+    }
+  });
+
   it('keeps original downloads outside the MCP resource and consent', async () => {
     expect((await sut.getProtectedResourceMetadata(ISSUER, '/api/mcp')).scopes_supported).not.toContain(
       'library:download',
