@@ -71,7 +71,6 @@
   } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import PhotographyCampaigns from '$lib/components/frameleaf/PhotographyCampaigns.svelte';
-  import PhotographyBookings from '$lib/components/frameleaf/PhotographyBookings.svelte';
   import PhotographyPaymentLinks from '$lib/components/frameleaf/PhotographyPaymentLinks.svelte';
   import PhotographyContracts from '$lib/components/frameleaf/PhotographyContracts.svelte';
   import PhotographyInvoices from '$lib/components/frameleaf/PhotographyInvoices.svelte';
@@ -1081,7 +1080,10 @@
       {:else if section === 'payments'}
         <PhotographyPayments studioName={studio?.name ?? ''} />
       {:else if section === 'booking-types'}
-        <PhotographyBookings />
+        <!-- FL-1606: loaded when opened, so it isn't part of what /photography loads up front (bundle budget). -->
+        {#await import('$lib/components/frameleaf/PhotographyBookings.svelte') then { default: PhotographyBookings }}
+          <PhotographyBookings />
+        {/await}
       {:else if section === 'payment-links'}
         <PhotographyPaymentLinks onSetUpPayments={() => (section = 'payments')} />
       {:else if isShootSection(section)}
