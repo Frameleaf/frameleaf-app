@@ -299,16 +299,29 @@ diff --git a/src/features/export/utils/canvas-render-orchestrator.ts b/src/featu
  import { BT2020_TO_BT709, multiply, pqDecode, resolveColorManagement } from '@/shared/graphics/color/managed-color'
  import { runPipelinedFrameLoop } from './pipelined-frame-loop'
  
-@@ -803,6 +804,8 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
+@@ -801,8 +802,12 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
+   })
+ 
    let frameRenderer: Awaited<ReturnType<typeof createCompositionRenderer>> | null = null
++  let releaseLuts = () => {}
  
    try {
-+    // Frameleaf (FL-1558): every LUT kept with the project is read before the first frame.
-+    await loadCompositionLutReferences(renderCompositionInput, { strict: true })
++    // Frameleaf (FL-1558): every LUT kept with the project is read before the first frame and
++    // held until the render ends.
++    releaseLuts = await loadCompositionLutReferences(renderCompositionInput, { strict: true })
      frameRenderer = await createCompositionRenderer(renderCompositionInput, renderCanvas, ctx, {
        strictLottie: options.strict,
        signal,
-@@ -953,6 +956,7 @@ export async function renderSingleFrame(options: SingleFrameOptions): Promise<Bl
+@@ -907,6 +912,8 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
+     if (audioTask) await Promise.allSettled([audioTask])
+     await outputTarget.discard()
+     throw error
++  } finally {
++    releaseLuts()
+   }
+ }
+ 
+@@ -953,6 +960,7 @@ export async function renderSingleFrame(options: SingleFrameOptions): Promise<Bl
    renderCtx.imageSmoothingQuality = 'high'
  
    // Use the SAME renderer as export – single source of truth
@@ -316,7 +329,7 @@ diff --git a/src/features/export/utils/canvas-render-orchestrator.ts b/src/featu
    const renderer = await createCompositionRenderer(composition, renderCanvas, renderCtx)
    try {
      await renderer.preload()
-@@ -1012,6 +1016,7 @@ export async function renderWorkingFrame(
+@@ -1012,6 +1020,7 @@ export async function renderWorkingFrame(
    const canvas = new OffscreenCanvas(width, height)
    const context = canvas.getContext('2d')
    if (!context) throw new Error('Failed to get 2d context')
@@ -389,7 +402,7 @@ new file mode 100644
 +    )
 +    await expect(
 +      loadCompositionLutReferences(composition, { strict: false }),
-+    ).resolves.toBeUndefined()
++    ).resolves.toBeTypeOf('function')
 +  })
 +
 +  it('reads every referenced file before the first frame', async () => {
@@ -410,12 +423,13 @@ diff --git a/src/features/export/utils/lut-reference-preload.ts b/src/features/e
 new file mode 100644
 --- /dev/null
 +++ b/src/features/export/utils/lut-reference-preload.ts
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,38 @@
 +/**
 + * Frameleaf (FL-1558): before a render, read every LUT kept with the project that the composition
 + * (and each sub-composition it reaches) names, so no frame is rendered ungraded while a file loads.
 + * An export refuses when one cannot be read (`LUT_REFERENCE_UNAVAILABLE`); a thumbnail or analysis
-+ * frame renders ungraded rather than fail.
++ * frame renders ungraded rather than fail. A strict load keeps the tables in memory until the
++ * returned release is called, so none is evicted while the render runs.
 + */
 +import type { CompositionInputProps } from '@/types/export'
 +import {
@@ -441,14 +455,12 @@ new file mode 100644
 +export async function loadCompositionLutReferences(
 +  composition: Pick<CompositionInputProps, 'tracks'>,
 +  options: { strict: boolean },
-+): Promise<void> {
++): Promise<() => void> {
 +  const ids = compositionLutReferenceIds(composition)
-+  if (ids.length === 0) return
-+  try {
-+    await loadLutReferences(ids)
-+  } catch (error) {
-+    if (options.strict) throw error
-+  }
++  if (ids.length === 0) return () => {}
++  if (options.strict) return loadLutReferences(ids, { retain: true })
++  await loadLutReferences(ids).catch(() => {})
++  return () => {}
 +}
 diff --git a/src/features/preview/hooks/use-preview-view-model.ts b/src/features/preview/hooks/use-preview-view-model.ts
 --- a/src/features/preview/hooks/use-preview-view-model.ts
@@ -482,16 +494,37 @@ diff --git a/src/headless/signal-frame.ts b/src/headless/signal-frame.ts
  
  /** Own one real float renderer; no image Blob or 8-bit canvas capture is returned. */
  export async function renderCompositionSignalFrame(
-@@ -14,6 +15,9 @@ export async function renderCompositionSignalFrame(
+@@ -14,15 +15,26 @@ export async function renderCompositionSignalFrame(
    const canvas = new OffscreenCanvas(composition.width, composition.height)
    const ctx = canvas.getContext('2d')
    if (!ctx) throw new Error('Signal frame requires a composition context')
-+  // Frameleaf (FL-1558): every LUT kept with the project is read before the frame is drawn.
-+  await loadCompositionLutReferences(composition, { strict: true })
-+  signal?.throwIfAborted()
-   const renderer = await createCompositionRenderer(composition, canvas, ctx, {
-     mode: 'export',
-     ...(hdrRasters ? { hdrRasters } : {}),
+-  const renderer = await createCompositionRenderer(composition, canvas, ctx, {
+-    mode: 'export',
+-    ...(hdrRasters ? { hdrRasters } : {}),
+-  })
++  // Frameleaf (FL-1558): every LUT kept with the project is read before the frame is drawn and
++  // held until it is.
++  const releaseLuts = await loadCompositionLutReferences(composition, { strict: true })
++  let renderer: Awaited<ReturnType<typeof createCompositionRenderer>>
++  try {
++    signal?.throwIfAborted()
++    renderer = await createCompositionRenderer(composition, canvas, ctx, {
++      mode: 'export',
++      ...(hdrRasters ? { hdrRasters } : {}),
++    })
++  } catch (error) {
++    releaseLuts()
++    throw error
++  }
+   let disposed = false
+   const dispose = () => {
+     if (disposed) return
+     disposed = true
+     renderer.dispose()
++    releaseLuts()
+   }
+   let rejectAbort!: (reason: unknown) => void
+   const aborted = new Promise<never>((_, reject) => {
 diff --git a/src/infrastructure/gpu-effects/effects/lut.ts b/src/infrastructure/gpu-effects/effects/lut.ts
 --- a/src/infrastructure/gpu-effects/effects/lut.ts
 +++ b/src/infrastructure/gpu-effects/effects/lut.ts
@@ -973,7 +1006,7 @@ diff --git a/src/infrastructure/gpu-effects/lut/lut-references.test.ts b/src/inf
 new file mode 100644
 --- /dev/null
 +++ b/src/infrastructure/gpu-effects/lut/lut-references.test.ts
-@@ -0,0 +1,183 @@
+@@ -0,0 +1,222 @@
 +import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 +import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
 +import type { ItemEffect } from '@/types/effects'
@@ -991,6 +1024,7 @@ new file mode 100644
 +  mergeGpuEffectParams,
 +  peekLutReference,
 +  resolveLutReferenceEffect,
++  retainLutReferences,
 +  setLutReference,
 +} from './lut-references'
 +
@@ -1097,7 +1131,45 @@ new file mode 100644
 +    blobUrlManager.registerUrl('notes', '/notes')
 +    await expect(loadLutReferences(['notes'])).rejects.toThrow(LUT_REFERENCE_UNAVAILABLE)
 +    setLutReference('ready', materializeLutFile(grid))
-+    await expect(loadLutReferences(['ready', 'ready'])).resolves.toBeUndefined()
++    await expect(loadLutReferences(['ready', 'ready'])).resolves.toBeTypeOf('function')
++  })
++
++  it('shares one read between callers and publishes only the read the entry names', async () => {
++    let answer!: (value: unknown) => void
++    vi.stubGlobal(
++      'fetch',
++      vi.fn(
++        () =>
++          new Promise((resolve) => {
++            answer = resolve
++          }),
++      ),
++    )
++    blobUrlManager.registerUrl('shared', '/shared')
++    expect(peekLutReference('shared')).toBeUndefined()
++    const strict = loadLutReferences(['shared'], { retain: true })
++    answer({ ok: true, arrayBuffer: async () => new TextEncoder().encode(table).buffer })
++    const release = await strict
++    expect(fetch).toHaveBeenCalledOnce()
++    expect(peekLutReference('shared')?.type).toBe('gpu-file-lut-1d-v1')
++    release()
++  })
++
++  it('keeps a retained LUT however full the cache gets, until it is released', () => {
++    const big = (name: string) => ({
++      ...materializeLutFile(grid),
++      name,
++      params: { fileLutData: 'x'.repeat(40 * 1024 * 1024) },
++    })
++    const release = retainLutReferences(['first'])
++    setLutReference('first', big('first'))
++    setLutReference('second', big('second'))
++    setLutReference('third', big('third'))
++    expect(peekLutReference('first')?.name).toBe('first')
++    expect(peekLutReference('second')).toBeUndefined()
++    release()
++    release()
++    expect(peekLutReference('third')?.name).toBe('third')
 +  })
 +
 +  it('collects the references enabled LUT effects name', () => {
@@ -1161,7 +1233,7 @@ diff --git a/src/infrastructure/gpu-effects/lut/lut-references.ts b/src/infrastr
 new file mode 100644
 --- /dev/null
 +++ b/src/infrastructure/gpu-effects/lut/lut-references.ts
-@@ -0,0 +1,233 @@
+@@ -0,0 +1,285 @@
 +/**
 + * Frameleaf (FL-1558): LUTs kept beside the project instead of inside the graph.
 + *
@@ -1200,12 +1272,14 @@ new file mode 100644
 +
 +type Entry =
 +  | { state: 'ready'; lut: ResolvedLut }
-+  | { state: 'loading'; url: string }
++  | { state: 'loading'; url: string; promise: Promise<ResolvedLut> }
 +  | { state: 'failed'; url: string | null; error: Error }
 +
 +/** Materialised tables kept in memory, by encoded size; the least recently used go first. */
 +const CACHE_BYTES = 96 * 1024 * 1024
 +const entries = new Map<string, Entry>()
++/** Ids a render is using, with how many renders hold each; these are never evicted. */
++const pins = new Map<string, number>()
 +let version = 0
 +const listeners = new Set<() => void>()
 +
@@ -1256,7 +1330,7 @@ new file mode 100644
 +  }
 +  for (const [id, entry] of entries) {
 +    if (bytes <= CACHE_BYTES) break
-+    if (entry.state !== 'ready') continue
++    if (entry.state !== 'ready' || pins.has(id)) continue
 +    bytes -= String(entry.lut.params.fileLutData).length
 +    entries.delete(id)
 +  }
@@ -1270,32 +1344,47 @@ new file mode 100644
 +  changed()
 +}
 +
++async function readLutFile(url: string, fileName: string): Promise<ResolvedLut> {
++  const response = await fetch(url, { credentials: 'same-origin' })
++  if (!response.ok) throw new Error(`HTTP ${response.status}`)
++  const text = new TextDecoder('utf-8', { fatal: true }).decode(await response.arrayBuffer())
++  return materializeLutFile(text, fileName)
++}
++
 +/**
 + * Read the file the host serves under `id` (registered with `blobUrlManager`), check and
 + * materialise it. Resolves with the LUT; rejects with `LUT_REFERENCE_UNAVAILABLE` when there is no
-+ * file for the id, it cannot be fetched, or it is not a valid `.cube` file.
++ * file for the id, it cannot be fetched, or it is not a valid `.cube` file. Callers that ask while
++ * the same file is being read share that one read; only the read the entry still names publishes
++ * its result.
 + */
 +export async function loadLutReference(id: string, fileName = ''): Promise<ResolvedLut> {
 +  const known = entries.get(id)
 +  if (known?.state === 'ready') return known.lut
 +  const url = blobUrlManager.get(id)
 +  if (!url) throw new Error(LUT_REFERENCE_UNAVAILABLE)
-+  entries.set(id, { state: 'loading', url })
++  if (known?.state === 'loading' && known.url === url) return known.promise
++  let settle!: { resolve: (lut: ResolvedLut) => void; reject: (error: Error) => void }
++  const promise = new Promise<ResolvedLut>((resolve, reject) => {
++    settle = { resolve, reject }
++  })
++  // A shared read that nobody awaits must not surface as an unhandled rejection.
++  promise.catch(() => {})
++  const entry: Entry = { state: 'loading', url, promise }
++  entries.set(id, entry)
 +  try {
-+    const response = await fetch(url, { credentials: 'same-origin' })
-+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-+    const text = new TextDecoder('utf-8', { fatal: true }).decode(await response.arrayBuffer())
-+    const lut = materializeLutFile(text, fileName)
-+    if (entries.get(id)?.state === 'loading') setLutReference(id, lut)
-+    return lut
++    const lut = await readLutFile(url, fileName)
++    if (entries.get(id) === entry) setLutReference(id, lut)
++    settle.resolve(lut)
 +  } catch (cause) {
 +    const error = new Error(LUT_REFERENCE_UNAVAILABLE, { cause })
-+    if (entries.get(id)?.state === 'loading') {
++    if (entries.get(id) === entry) {
 +      entries.set(id, { state: 'failed', url, error })
 +      changed()
 +    }
-+    throw error
++    settle.reject(error)
 +  }
++  return promise
 +}
 +
 +/**
@@ -1315,9 +1404,44 @@ new file mode 100644
 +  return undefined
 +}
 +
-+/** Wait for every LUT these ids name; reject with `LUT_REFERENCE_UNAVAILABLE` if one cannot be read. */
-+export async function loadLutReferences(ids: Iterable<string>): Promise<void> {
-+  await Promise.all([...new Set(ids)].map((id) => loadLutReference(id)))
++/**
++ * Keep the LUTs these ids name in memory, whatever the cache size, until the returned release is
++ * called: a render holds every table it was promised for its whole lifetime.
++ */
++export function retainLutReferences(ids: Iterable<string>): () => void {
++  const held = [...new Set(ids)]
++  for (const id of held) pins.set(id, (pins.get(id) ?? 0) + 1)
++  let released = false
++  return () => {
++    if (released) return
++    released = true
++    for (const id of held) {
++      const count = (pins.get(id) ?? 1) - 1
++      if (count > 0) pins.set(id, count)
++      else pins.delete(id)
++    }
++    evict()
++  }
++}
++
++/**
++ * Wait for every LUT these ids name; reject with `LUT_REFERENCE_UNAVAILABLE` if one cannot be read.
++ * With `retain`, the tables stay in memory until the returned release is called (see
++ * `retainLutReferences`); without it the release does nothing.
++ */
++export async function loadLutReferences(
++  ids: Iterable<string>,
++  options: { retain?: boolean } = {},
++): Promise<() => void> {
++  const unique = [...new Set(ids)]
++  const release = options.retain ? retainLutReferences(unique) : () => {}
++  try {
++    await Promise.all(unique.map((id) => loadLutReference(id)))
++  } catch (error) {
++    release()
++    throw error
++  }
++  return release
 +}
 +
 +/** The ids of every enabled `gpu-lut` that names a LUT kept with the project, in these items. */

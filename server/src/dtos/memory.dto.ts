@@ -104,7 +104,8 @@ const PetStorySchema = z
   .meta({ id: 'PetStoryDto' });
 
 /**
- * A named person's or pet's birthday (FL-62). `date` is the calendar day in this year the birthday falls on
+ * A named person's or pet's birthday (FL-62), or, for a person who has passed, a "Remembering {name}" memory on
+ * their birthday or on the anniversary of their passing (FL-864). `date` is the calendar day in this year the birthday falls on
  * (29 February becomes 28 February outside leap years); clients compare it with their own local
  * date, so the memory is "today" in every time zone on the person's actual birthday.
  */
@@ -117,6 +118,20 @@ const BirthdaySchema = z
     subjectId: z.uuidv4().describe("The owner's person or pet whose birthday it is"),
     name: z.string().describe('Their name when the memory was made'),
     age: z.int().min(0).nullable().describe('Age reached on this birthday'),
+    inMemoriam: z
+      .boolean()
+      .optional()
+      .describe(
+        'True for a "Remembering {name}" memory (FL-864): the person has passed, so the memory shows no age. ' +
+          'Absent or false for an ordinary birthday',
+      ),
+    deathAnniversary: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when the memory marks the anniversary of the date of passing rather than the birthday (FL-864); ' +
+          '`date` is then that anniversary. Always comes with `inMemoriam`',
+      ),
   })
   .meta({ id: 'BirthdayMemoryDto' });
 

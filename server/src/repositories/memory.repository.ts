@@ -211,6 +211,16 @@ const withMemoryAssetFilters = <O>(
         ),
       ),
     );
+/** FL-62, FL-864: a person or pet whose birthday, or whose date of passing, falls on a day memories are made for. */
+export type BirthdaySubject = {
+  subject: 'person' | 'pet';
+  id: string;
+  name: string;
+  /** 'YYYY-MM-DD'; null for a person matched only by their date of passing */
+  birthDate: string | null;
+  /** 'YYYY-MM-DD' (FL-864); null when none is set, and always for a pet */
+  deathDate?: string | null;
+};
 @Injectable()
 export class MemoryRepository implements IBulkAsset {
   constructor(
@@ -555,7 +565,7 @@ export class MemoryRepository implements IBulkAsset {
       .where('pet.id', 'in', petIds)
       .execute();
   }
-  /** FL-57: the owner's people a set of birthdays and recaps name, as they are now. */
+  /** FL-57: the owner's people a set of birthdays and recaps name, as they are now (FL-864: with their dates). */
   getStoryPeople(ownerId: string, ids: string[]) {
     const personGroupIds = ids.filter((id) => isUuid(id));
     if (personGroupIds.length === 0) {
@@ -563,7 +573,18 @@ export class MemoryRepository implements IBulkAsset {
     }
     return this.db
       .selectFrom('person')
-      .select(['person.personGroupId as id', 'person.name', 'person.isHidden'])
+      .leftJoin('person_profile', (join) =>
+        join
+          .onRef('person_profile.ownerId', '=', 'person.ownerId')
+          .onRef('person_profile.personId', '=', 'person.personGroupId'),
+      )
+      .select([
+        'person.personGroupId as id',
+        'person.name',
+        'person.isHidden',
+        sql<string | null>`to_char("person"."birthDate", 'YYYY-MM-DD')`.as('birthDate'),
+        sql<string | null>`to_char("person_profile"."deathDate", 'YYYY-MM-DD')`.as('deathDate'),
+      ])
       .where('person.ownerId', '=', ownerId)
       .where('person.personGroupId', 'in', personGroupIds)
       .execute();
@@ -840,34 +861,27 @@ export class MemoryRepository implements IBulkAsset {
   }
   /**
    * FL-62: the owner's named people and pets, not hidden, whose birth date falls on one of these
-   * `MM-DD` days. Only the owner's own rows are read.
+   * `MM-DD` days, and (FL-864) the people whose date of passing does. Only the owner's own rows are read.
    */
-  async getBirthdaySubjects(
-    ownerId: string,
-    monthDays: string[],
-  ): Promise<
-    {
-      subject: 'person' | 'pet';
-      id: string;
-      name: string;
-      birthDate: string;
-    }[]
-  > {
+  async getBirthdaySubjects(ownerId: string, monthDays: string[]): Promise<BirthdaySubject[]> {
     if (monthDays.length === 0) {
       return [];
     }
-    const { rows } = await sql<{
-      subject: 'person' | 'pet';
-      id: string;
-      name: string;
-      birthDate: string;
-    }>`
-      SELECT 'person' AS subject, "personGroupId"::text AS id, name, to_char("birthDate", 'YYYY-MM-DD') AS "birthDate"
+    const { rows } = await sql<BirthdaySubject>`
+      SELECT 'person' AS subject, person."personGroupId"::text AS id, person.name,
+        to_char(person."birthDate", 'YYYY-MM-DD') AS "birthDate",
+        to_char(person_profile."deathDate", 'YYYY-MM-DD') AS "deathDate"
       FROM person
-      WHERE "ownerId" = ${ownerId}::uuid AND "isHidden" = false AND name <> '' AND "birthDate" IS NOT NULL
-        AND to_char("birthDate", 'MM-DD') = ANY(${monthDays}::text[])
+      LEFT JOIN person_profile
+        ON person_profile."ownerId" = person."ownerId" AND person_profile."personId" = person."personGroupId"
+      WHERE person."ownerId" = ${ownerId}::uuid AND person."isHidden" = false AND person.name <> ''
+        AND (
+          to_char(person."birthDate", 'MM-DD') = ANY(${monthDays}::text[])
+          OR to_char(person_profile."deathDate", 'MM-DD') = ANY(${monthDays}::text[])
+        )
       UNION ALL
-      SELECT 'pet' AS subject, id::text AS id, name, to_char("birthDate", 'YYYY-MM-DD') AS "birthDate"
+      SELECT 'pet' AS subject, id::text AS id, name, to_char("birthDate", 'YYYY-MM-DD') AS "birthDate",
+        NULL::text AS "deathDate"
       FROM pet
       WHERE "ownerId" = ${ownerId}::uuid AND "isHidden" = false AND name <> '' AND "birthDate" IS NOT NULL
         AND to_char("birthDate", 'MM-DD') = ANY(${monthDays}::text[])
@@ -996,8 +1010,17 @@ export class MemoryRepository implements IBulkAsset {
     `.execute(this.db);
     return rows;
   }
-  /** FL-62: the owner's memories of one type whose data names this subject, for duplicate suppression. */
-  async hasSubjectMemory(ownerId: string, type: MemoryType, subjectId: string, year: number): Promise<boolean> {
+  /**
+   * FL-62: the owner's memories of one type whose data names this subject, for duplicate suppression. A
+   * birthday and the anniversary of a passing (FL-864) in the same year are told apart by `deathAnniversary`.
+   */
+  async hasSubjectMemory(
+    ownerId: string,
+    type: MemoryType,
+    subjectId: string,
+    year: number,
+    deathAnniversary = false,
+  ): Promise<boolean> {
     const row = await this.db
       .selectFrom('memory')
       .select('memory.id')
@@ -1005,6 +1028,7 @@ export class MemoryRepository implements IBulkAsset {
       .where('type', '=', type)
       .where(sql`"memory"."data"->>'subjectId'`, '=', subjectId)
       .where(sql`("memory"."data"->>'year')::int`, '=', year)
+      .where(sql`coalesce(("memory"."data"->>'deathAnniversary')::boolean, false)`, '=', deathAnniversary)
       .limit(1)
       .executeTakeFirst();
     return !!row;

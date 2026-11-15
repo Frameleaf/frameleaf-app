@@ -851,10 +851,15 @@
       "sha256": "3b65ed55534fb309729d80829ecdf80a4a2c8bc78225bacf9896efe7b9708433"
     },
     {
-      "path": "patches/0184-lut-references.patch",
+      "path": "patches/0188-sound-crossfades.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "0d5bf6d2e23645891f96c0653a23598d87db0e8186a35f48c8368a6efc5b0a54"
+      "sha256": "364558bf32649932bd705d2b4fd1c9759898f46c3ba821d5562aa9a5d9141236"
+    },
+    {
+      "path": "patches/0187-marker-ranges.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2db6f7a1a357563a44bddb18f051407f9165323a1ff04b983eb84cf7aed9ddd8"
     }
   ],
-  "sourceSha256": "c3a4a7610ee6be2b804644cd73b47997a632155563c5ff2cf7e7c51141dc292f"
+  "sourceSha256": "d6b987310298fd087ee08d8a7dae66ab867d566ebc7a20f35737d3b419d3ac4d"
 }

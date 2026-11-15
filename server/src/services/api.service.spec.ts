@@ -58,6 +58,10 @@ describe(ApiService.name, () => {
           headers[name] = value;
           return res;
         },
+        append: (name: string, value: string) => {
+          headers[name] = headers[name] ? `${headers[name]}, ${value}` : value;
+          return res;
+        },
         send: (html: string) => {
           sent.html = html;
         },
@@ -78,6 +82,19 @@ describe(ApiService.name, () => {
     it('sends /link with no referrer, so nothing in its address leaves in a Referer (CLD-004)', async () => {
       expect((await serve('/link?target=frameleaf_license&linkCode=flc_x'))['Referrer-Policy']).toBe('no-referrer');
       expect((await serve('/photos'))['Referrer-Policy']).toBeUndefined();
+    });
+
+    it('never lets another site frame the Allow pages (FL-780 TM-4)', async () => {
+      for (const path of ['/auth/allow-app?client_id=x&state=y', '/auth/allow-app/', '/auth/allow-extension']) {
+        const headers = await serve(path);
+        expect(headers['X-Frame-Options']).toBe('DENY');
+        expect(headers['Content-Security-Policy']).toBe("frame-ancestors 'none'");
+      }
+      for (const path of ['/photos', '/auth/login', '/auth/allow-apps']) {
+        const headers = await serve(path);
+        expect(headers['X-Frame-Options']).toBeUndefined();
+        expect(headers['Content-Security-Policy']).toBeUndefined();
+      }
     });
 
     it('gives a studio website its own title, description and share image (FL-702)', async () => {

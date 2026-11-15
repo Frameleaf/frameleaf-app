@@ -53,6 +53,7 @@ import {
 import { checkAccess } from 'src/utils/access.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { checkStudioCommandBatch, studioCommandMirror } from 'src/utils/studio-commands.js';
+import { studioEditorImportSourceOf } from 'src/utils/studio-interchange/media.js';
 import {
   STUDIO_AUTOSAVE_DEBOUNCE_MS,
   STUDIO_LEASE_MS,
@@ -1414,7 +1415,8 @@ export class StudioProjectService {
       lastOpenedAt: isOwner ? asIso(project.lastOpenedAt) : null,
       thumbnailAssetId: poster ? project.thumbnailAssetId : null,
       duplicatedFromId: isOwner ? project.duplicatedFromId : null,
-      importedFromBundle: isOwner && !!project.importedFromDigest,
+      importedFromBundle: isOwner && !!project.importedFromDigest && !project.importedFromDigest.startsWith('editor:'),
+      importedFromEditor: (isOwner && studioEditorImportSourceOf(project.importedFromDigest)) || null,
       createdAt: asRequiredIso(project.createdAt),
       updatedAt: asRequiredIso(project.updatedAt),
     };

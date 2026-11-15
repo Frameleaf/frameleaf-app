@@ -180,8 +180,10 @@ describe('backfillGrowth', () => {
       observedAt: new Date('2026-03-31T23:59:59.999Z'),
     });
     expect(month('2026-08')).toMatchObject({ [AnalyticsSeriesId.LibraryItems]: 15 });
-    // the month holding the reading keeps it, exactly as bound
+    expect(month('2026-03')).toMatchObject({ rebuilt: true });
+    // the month holding the reading keeps it, exactly as bound, and is not marked rebuilt
     expect(month('2026-09')).toBe(bound.at(-1));
+    expect(month('2026-09').rebuilt).toBeUndefined();
   });
 
   it('leaves growth alone when the window has no reading at all', () => {
