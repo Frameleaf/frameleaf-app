@@ -20470,6 +20470,34 @@ export type StudioExportCreateDto = {
     /** Defaults to `burn` */
     subtitleMode?: StudioExportSubtitleMode;
 };
+export type StudioProjectFontDto = {
+    /** SHA-256 of the bytes, hex */
+    checksum: string;
+    /** When it was uploaded */
+    createdAt: string;
+    /** The family name the file gives itself */
+    family: string;
+    /** The name the file was uploaded with */
+    fileName: string;
+    format: StudioProjectFontFormat;
+    /** Import id; the graph names it as `importId` in `metadata.fonts` */
+    id: string;
+    /** Size in bytes */
+    sizeBytes: number;
+    style: StudioProjectFontStyle;
+    /** The style name the file gives itself, such as Bold Italic; may be empty */
+    subfamily: string;
+    /** The file's weight, 100 to 900 */
+    weight: number;
+};
+export type StudioProjectFontCreateDto = {
+    /** The .ttf, .otf or .woff2 font file */
+    file: Blob;
+    /** The import id the editor gave this font; retrying the same file with it is idempotent */
+    id: string;
+    /** Already registered publication id */
+    publicationId?: string;
+};
 export type StudioReframeShotDto = {
     /** The library asset it shows, when this session may read it */
     assetId: string | null;
@@ -20587,6 +20615,8 @@ export type StudioProjectInventoryDto = {
     fonts: StudioProjectResourceUseDto[];
     /** Files kept with the project (FL-103, FL-105) */
     keptFiles: StudioProjectImportDto[];
+    /** Fonts kept with the project (FL-1562) */
+    keptFonts: StudioProjectFontDto[];
     /** Bundled LUTs the head graph names */
     luts: StudioProjectResourceUseDto[];
     /** Models the head graph names */
@@ -41132,6 +41162,35 @@ export function createStudioExport({ id, studioExportCreateDto }: {
     })));
 }
 /**
+ * List the fonts kept with a Studio project
+ */
+export function getStudioProjectFonts({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectFontDto[];
+    }>(`/studio/projects/${encodeURIComponent(id)}/fonts`, {
+        ...opts
+    }));
+}
+/**
+ * Keep a font with a Studio project
+ */
+export function importStudioProjectFont({ id, studioProjectFontCreateDto }: {
+    id: string;
+    studioProjectFontCreateDto: StudioProjectFontCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectFontDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/fonts`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: studioProjectFontCreateDto
+    })));
+}
+/**
  * Get the automatic framing of a Studio project’s shots
  */
 export function getStudioFraming({ id }: {
@@ -48553,6 +48612,15 @@ export enum StudioDeliveryShape {
     Landscape = "landscape",
     Vertical = "vertical",
     Square = "square"
+}
+export enum StudioProjectFontFormat {
+    Ttf = "ttf",
+    Otf = "otf",
+    Woff2 = "woff2"
+}
+export enum StudioProjectFontStyle {
+    Normal = "normal",
+    Italic = "italic"
 }
 export enum StudioReframeSubject {
     Face = "face",

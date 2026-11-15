@@ -6,7 +6,7 @@
   "engine": {
     "name": "freecut",
     "revision": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-    "patches": 176,
+    "patches": 177,
     "sourceDigest": {
       "files": 67,
       "sha256": "92f0bfd6a298dd23fee9783f1aa282be2dae5ea6d673b4621884ccc455eefb7b"

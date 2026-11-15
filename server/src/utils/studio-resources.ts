@@ -374,8 +374,10 @@ export const studioResourceRegistry: ReadonlyMap<StudioResourceKind, StudioResou
     kind: StudioResourceKind.Font,
     label: 'Font',
     description:
-      'A typeface for titles and captions. Only fonts bundled with the deployment resolve; a font ' +
-      'named by URL is refused so a render can never fetch from the network.',
+      'A typeface for titles and captions. A family resolves from the fonts bundled with the ' +
+      'deployment, or from font files kept with the project that the graph lists in ' +
+      '`metadata.fonts` (FL-1562), which win for a family they name; a font named by URL is ' +
+      'refused so a render can never fetch from the network.',
     owner: StudioResourceOwner.Deployment,
     accessCheck: StudioAccessCheck.BundledCatalog,
     egress: deploymentEgress,
@@ -388,6 +390,9 @@ export const studioResourceRegistry: ReadonlyMap<StudioResourceKind, StudioResou
       StudioRefusalReason.NotBundled,
       StudioRefusalReason.RightsBlocked,
       StudioRefusalReason.ExternalLocator,
+      StudioRefusalReason.UndeclaredImport,
+      StudioRefusalReason.ChecksumMismatch,
+      StudioRefusalReason.UnsupportedMediaType,
     ],
   }),
   define({
@@ -734,6 +739,69 @@ export const isExternalLocator = (value: string): boolean => forbiddenSchemes.te
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
+
+/** How many font faces a project may list (graph protocol 14.3.6). */
+export const STUDIO_MAX_PROJECT_FONT_FACES = 32;
+
+/** One face of a font kept with the project, as `metadata.fonts` lists it (FL-1562). */
+export type StudioProjectFontFace = {
+  importId: string;
+  family: string;
+  weight: number;
+  style: 'normal' | 'italic';
+};
+
+/** A family name a title can carry: printable, one line, no quote or backslash, never a locator. */
+export const isStudioFontFamilyName = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.length > 0 &&
+  value.length <= 128 &&
+  value.trim() === value &&
+  // eslint-disable-next-line no-control-regex
+  !/[\u{0}-\u{1F}\u{7F}"\\]/u.test(value) &&
+  !isExternalLocator(value);
+
+/**
+ * The project fonts a graph lists (`metadata.fonts`, graph protocol 14.3.6): each face names a
+ * font import by `importId`, the family titles use for it, and its weight (100 to 900) and style.
+ * An entry that is not well formed, or a second entry for the same family, weight and style, is
+ * left out, and so is everything past {@link STUDIO_MAX_PROJECT_FONT_FACES}: a family with no
+ * usable face is then not a project family, and a title naming it is reported like any other
+ * family the server cannot resolve.
+ */
+export const readStudioProjectFonts = (graph: unknown): StudioProjectFontFace[] => {
+  const listed = isRecord(graph) && isRecord(graph.metadata) ? graph.metadata.fonts : undefined;
+  if (!Array.isArray(listed)) {
+    return [];
+  }
+  const faces: StudioProjectFontFace[] = [];
+  const seen = new Set<string>();
+  for (const entry of listed.slice(0, STUDIO_MAX_PROJECT_FONT_FACES)) {
+    if (
+      !isRecord(entry) ||
+      !isStudioUuid(entry.importId) ||
+      !isStudioFontFamilyName(entry.family) ||
+      !Number.isSafeInteger(entry.weight) ||
+      (entry.weight as number) < 100 ||
+      (entry.weight as number) > 900 ||
+      (entry.style !== 'normal' && entry.style !== 'italic')
+    ) {
+      continue;
+    }
+    const face: StudioProjectFontFace = {
+      importId: entry.importId.toLowerCase(),
+      family: entry.family,
+      weight: entry.weight as number,
+      style: entry.style,
+    };
+    const identity = `${face.family}|${face.weight}|${face.style}`;
+    if (!seen.has(identity)) {
+      seen.add(identity);
+      faces.push(face);
+    }
+  }
+  return faces;
+};
 
 const tooManyReferences = (state: StudioReferenceExtraction, graphPath: string): boolean => {
   if (state.references.length < STUDIO_MAX_REFERENCES) {

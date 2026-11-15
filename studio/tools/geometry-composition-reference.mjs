@@ -155,8 +155,10 @@ export function compositionSourcesFor(sourceSha256) {
     sourceSha256 === '3b81da411c63fb3b648a86d1bc04d8446c0853cff3d5511ec9c0c874d1751feb' ||
     // FL-1561 channel mapping on a clip's sound; changes no composition or raster producer.
     sourceSha256 === '81b9a0517a735951598a080a5deeda55caae8a33687ff99e7f791f734256c09e' ||
+    // FL-1562 fonts kept with the project; changes no composition or raster producer.
+    sourceSha256 === '9b6c35d726f09c5d55879a48fe4dbcff40e10b473a3216ce88f0e999288c5781' ||
     // FL-1556 transitions and grades in linear HDR; changes no composition or raster producer.
-    sourceSha256 === 'dcf6f35c99fdc43370ecf214f496c962869676f22418487aeb05dc882a42cf12'
+    sourceSha256 === 'a4d2a7c6100e9c888b3f24c8804fe4646c761805fdbfc7b7ad2a10fc1da1726d'
   )
     return {
       ...COMPOSITION_SOURCES,

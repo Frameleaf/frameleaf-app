@@ -21,6 +21,7 @@ import {
   StudioImportPublicationPageDto,
   StudioImportPublicationQueryDto,
   StudioImportPublicationRegisterDto,
+  StudioProjectFontDto,
   StudioProjectImportDto,
 } from 'src/dtos/studio-project-import.dto.js';
 import { CacheControl, StorageFolder } from 'src/enum.js';
@@ -37,14 +38,22 @@ import {
   captureOwnerRestoreFile,
 } from 'src/utils/cloud-backup-owner-path.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import {
+  type StudioFontDescription,
+  describeStudioFont,
+  isStudioFontContentType,
+  studioFontFormatOf,
+} from 'src/utils/studio-font-file.js';
 import { bindProcessingProvenance, parseProcessingProvenance } from 'src/utils/studio-import-provenance.js';
 import {
+  STUDIO_IMPORT_FONT_MAX_BYTES,
   STUDIO_IMPORT_MAX_BYTES,
   STUDIO_IMPORT_TEXT_LIMITS,
   StudioImportRefusal,
   scanStudioVector,
   sniffStudioImport,
   studioImportKind,
+  validateStudioFontImport,
   validateStudioImportText,
 } from 'src/utils/studio-imports.js';
 import { studioProjectResourceUses } from 'src/utils/studio-inventory.js';
@@ -73,9 +82,18 @@ export const studioImportStagePath = (ownerId: string) =>
 export const studioImportProjectFolder = (ownerId: string, projectId: string) =>
   join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), IMPORT_FOLDER, projectId);
 
+/** The kind of an import listed among a project's files; fonts are never listed there (FL-1562). */
+const listedKind = (contentType: string): StudioProjectImportDto['kind'] => {
+  const kind = studioImportKind(contentType);
+  if (kind === 'font') {
+    throw new Error('A font import is listed with the project fonts, never among its files');
+  }
+  return kind;
+};
+
 export const mapStudioProjectImport = (item: StudioProjectImport | PublishedImportReceipt): StudioProjectImportDto => ({
   id: item.id,
-  kind: studioImportKind(item.contentType),
+  kind: listedKind(item.contentType),
   contentType: item.contentType,
   fileName: item.fileName,
   sizeBytes: item.sizeBytes,
@@ -93,7 +111,36 @@ export const mapStudioImportPublication = (item: PublicationReceipt): StudioImpo
   createdAt: item.createdAt,
   expiresAt: item.expiresAt,
   cleanupPending: item.cleanupPending,
-  ...(item.imported && { imported: mapStudioProjectImport(item.imported) }),
+  // A font's receipt names it by id only: the import DTO's kind is the six kinds native clients decode.
+  ...(item.imported &&
+    !isStudioFontContentType(item.imported.contentType) && { imported: mapStudioProjectImport(item.imported) }),
+});
+
+/** What a font file said about itself, by checksum: the bytes behind a checksum never change. */
+const fontDescriptions = new Map<string, StudioFontDescription>();
+const FONT_DESCRIPTION_CACHE = 256;
+
+const rememberFont = (checksum: string, description: StudioFontDescription) => {
+  if (fontDescriptions.size >= FONT_DESCRIPTION_CACHE) {
+    fontDescriptions.delete(fontDescriptions.keys().next().value!);
+  }
+  fontDescriptions.set(checksum, description);
+};
+
+export const mapStudioProjectFont = (
+  item: Pick<StudioProjectImport, 'id' | 'contentType' | 'fileName' | 'sizeBytes' | 'checksum' | 'createdAt'>,
+  description: StudioFontDescription,
+): StudioProjectFontDto => ({
+  id: item.id,
+  family: description.family,
+  subfamily: description.subfamily,
+  weight: description.weight,
+  style: description.style,
+  format: studioFontFormatOf(item.contentType) ?? description.format,
+  fileName: item.fileName,
+  sizeBytes: item.sizeBytes,
+  checksum: item.checksum,
+  createdAt: new Date(item.createdAt).toISOString(),
 });
 
 /**
@@ -127,6 +174,36 @@ export class StudioProjectImportService {
     reservationId?: string,
     options: RawOptionalLineage = {},
   ): Promise<StudioProjectImportDto> {
+    const { stored } = await this.keep(auth, projectId, rawId, file, reservationId, options, 'file');
+    return mapStudioProjectImport(stored);
+  }
+
+  /**
+   * FL-1562: keep a TrueType, OpenType or WOFF2 font with the project. It goes through the same
+   * checks, quota, publication and storage as any import, and is read whole first: a file that is
+   * not one well-formed font is refused before anything is kept.
+   */
+  async uploadFont(
+    auth: AuthDto,
+    projectId: string,
+    rawId: string | undefined,
+    file: Express.Multer.File | undefined,
+    reservationId?: string,
+    options: RawOptionalLineage = {},
+  ): Promise<StudioProjectFontDto> {
+    const { stored, font } = await this.keep(auth, projectId, rawId, file, reservationId, options, 'font');
+    return mapStudioProjectFont(stored, font!);
+  }
+
+  private async keep(
+    auth: AuthDto,
+    projectId: string,
+    rawId: string | undefined,
+    file: Express.Multer.File | undefined,
+    reservationId: string | undefined,
+    options: RawOptionalLineage,
+    expected: 'file' | 'font',
+  ): Promise<{ stored: StudioProjectImport; font?: StudioFontDescription }> {
     let retentionStarted = false;
     let textLabel = 'The file';
     try {
@@ -155,6 +232,20 @@ export class StudioProjectImportService {
         length: 1024,
       });
       const type = sniffStudioImport(new Uint8Array(head.subarray(0, Math.min(file.size, 1024))), file.mimetype);
+      if ((type.kind === 'font') !== (expected === 'font')) {
+        throw new BadRequestException(
+          expected === 'font'
+            ? 'Choose a .ttf, .otf or .woff2 font file'
+            : 'A font is kept with POST /studio/projects/{id}/fonts, not as a project file',
+        );
+      }
+      let font: StudioFontDescription | undefined;
+      if (type.kind === 'font') {
+        if (file.size > STUDIO_IMPORT_FONT_MAX_BYTES) {
+          throw new PayloadTooLargeException(`A font may be at most ${STUDIO_IMPORT_FONT_MAX_BYTES / 1024 / 1024} MB`);
+        }
+        font = validateStudioFontImport(new Uint8Array(await this.storage.readFile(file.path)));
+      }
       let externalReferences: number | null = null;
       // Graphics, caption files and LUTs are text: bounded, read whole and checked in full.
       const limit = STUDIO_IMPORT_TEXT_LIMITS[type.kind];
@@ -222,7 +313,10 @@ export class StudioProjectImportService {
       });
       this.studio.forgetResolutions([project.id]);
       this.logger.log(`Studio project ${project.id} import ${stored.id} registered (${stored.contentType})`);
-      return mapStudioProjectImport(stored);
+      if (font) {
+        rememberFont(stored.checksum, font);
+      }
+      return { stored, font };
     } catch (error) {
       if (!retentionStarted) {
         if (file?.path) await this.storage.unlink(file.path);
@@ -240,7 +334,37 @@ export class StudioProjectImportService {
 
   async list(auth: AuthDto, projectId: string): Promise<StudioProjectImportDto[]> {
     const project = await this.requireOwnedProject(auth, projectId);
-    return (await this.projects.listImports(project.id)).map((item) => mapStudioProjectImport(item));
+    return (await this.projects.listImports(project.id))
+      .filter((item) => !isStudioFontContentType(item.contentType))
+      .map((item) => mapStudioProjectImport(item));
+  }
+
+  /** FL-1562: the fonts kept with one of your projects, each described from its own bytes. */
+  async listFonts(auth: AuthDto, projectId: string): Promise<StudioProjectFontDto[]> {
+    const project = await this.requireOwnedProject(auth, projectId);
+    return this.describeFonts(await this.projects.listImports(project.id));
+  }
+
+  private async describeFonts(items: StudioProjectImport[]): Promise<StudioProjectFontDto[]> {
+    const fonts: StudioProjectFontDto[] = [];
+    for (const item of items) {
+      if (!isStudioFontContentType(item.contentType)) {
+        continue;
+      }
+      let description = fontDescriptions.get(item.checksum);
+      if (!description) {
+        try {
+          description = describeStudioFont(new Uint8Array(await this.storage.readFile(item.path)));
+          rememberFont(item.checksum, description);
+        } catch (error) {
+          // A kept font that can no longer be read is left out, as the resolver will refuse it.
+          this.logger.warn(`Studio project font ${item.id} could not be read: ${(error as Error).message}`);
+          continue;
+        }
+      }
+      fonts.push(mapStudioProjectFont(item, description));
+    }
+    return fonts;
   }
 
   async register(
@@ -283,15 +407,20 @@ export class StudioProjectImportService {
    */
   async inventory(auth: AuthDto, projectId: string): Promise<StudioProjectInventoryDto> {
     const project = await this.requireOwnedProject(auth, projectId);
-    const keptFiles = (await this.projects.listImports(project.id)).map((item) => mapStudioProjectImport(item));
+    const kept = await this.projects.listImports(project.id);
+    const keptFiles = kept
+      .filter((item) => !isStudioFontContentType(item.contentType))
+      .map((item) => mapStudioProjectImport(item));
     const head =
       project.currentRevision > 0 ? await this.projects.getRevision(project.id, project.currentRevision) : undefined;
     const graph = (head?.envelope as { graph?: unknown } | undefined)?.graph ?? null;
-    const uses = studioProjectResourceUses(graph);
+    const keptFonts = await this.describeFonts(kept);
+    const uses = studioProjectResourceUses(graph, undefined, new Set(keptFonts.map((font) => font.id)));
     return {
       projectId: project.id,
       revision: head ? project.currentRevision : 0,
       keptFiles,
+      keptFonts,
       fonts: uses.filter((use) => use.kind === 'font'),
       luts: uses.filter((use) => use.kind === 'lut'),
       models: uses.filter((use) => use.kind === 'model'),
