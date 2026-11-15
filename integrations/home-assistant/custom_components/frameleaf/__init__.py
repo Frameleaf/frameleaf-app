@@ -105,7 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: FrameleafConfigEntry) ->
     can_administer = entry.data.get(CONF_AUTH_METHOD) == AUTH_API_KEY and coordinator.data.is_admin
     entry.runtime_data = FrameleafRuntime(coordinator=coordinator, api=api, can_administer=can_administer)
     if can_administer and entry.data.get(CONF_EVENTS):
-        await async_setup_events(hass, entry, api)
+        await async_setup_events(hass, entry, api, coordinator)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

@@ -414,6 +414,19 @@ describe(PersonRepository.name, () => {
       await expect(sut.getNumberOfPeople(user.id)).resolves.toMatchObject({ total: 1 });
     });
 
+    it('counts only people the list shows, never through another account’s photos (FL-1365)', async () => {
+      const { ctx, sut } = setup();
+      const { person } = await personWithArchive(ctx);
+      const { user } = await ctx.newUser();
+      // the same person group, but none of this account's own photos show them
+      await ctx.newPerson({ ownerId: user.id, personGroupId: person.personGroupId, name: '' });
+      await includeArchived(defaultDatabase, user.id, true);
+
+      const { items } = await sut.getAllForUser({ take: 10, skip: 0 }, user.id);
+      expect(items).toEqual([]);
+      await expect(sut.getNumberOfPeople(user.id)).resolves.toMatchObject({ total: 0 });
+    });
+
     it('counts archived photos once the viewer includes them, and leaves them out again when turned off', async () => {
       const { ctx, sut } = setup();
       const { user, person } = await personWithArchive(ctx);

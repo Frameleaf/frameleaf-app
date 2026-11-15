@@ -9,6 +9,7 @@ import {
   resolveStudioExportRange,
   resolveStudioExportTiming,
   sameTimeBase,
+  studioAudioFiles,
 } from 'src/utils/studio-export-contract.js';
 import { StudioTimingError } from 'src/utils/studio-timing.js';
 
@@ -70,6 +71,36 @@ it('validates integer main-timeline ranges, preserves the graph and excludes out
   expect(() => resolveStudioExportRange(graph([video('a', { durationInFrames: 1.5 })]), range)).toThrow(
     StudioTimingError,
   );
+});
+
+it('FL-1203 / FL-1204: promises the sound of an imported song, a catalog track and a generated file', () => {
+  const input = graph([
+    video('shot'),
+    { type: 'audio', mediaId: 'song', trackId: 'a1', from: 0, durationInFrames: 30 },
+    { type: 'audio', musicId: 'track', trackId: 'a1', from: 0, durationInFrames: 30 },
+    { type: 'audio', generatedId: 'voice', trackId: 'a1', from: 0, durationInFrames: 30 },
+    { type: 'audio', mediaId: 'muted', trackId: 'a1', from: 0, durationInFrames: 30, muted: true },
+  ]);
+  const entries = [
+    { key: 'v', kind: 'library-asset', id: 'shot', path: '/library/shot.mp4' },
+    { key: 's', kind: 'project-import', id: 'song', path: '/studio/song.mp3' },
+    { key: 't', kind: 'audio', id: 'track', source: 'catalog', path: '/catalog/track.flac' },
+    { key: 'g', kind: 'audio', id: 'voice', source: 'generated', path: '/generated/voice.wav' },
+    { key: 'm', kind: 'project-import', id: 'muted', path: '/studio/muted.mp3' },
+    { key: 'p', kind: 'project-import', id: 'unplaced', path: '/studio/unplaced.mp3' },
+  ];
+  expect(studioAudioFiles(input, entries)).toEqual([
+    { id: 'song', path: '/studio/song.mp3' },
+    { id: 'track', path: '/catalog/track.flac' },
+    { id: 'voice', path: '/generated/voice.wav' },
+  ]);
+  const song = { assetId: 'song', video: null, packets: null };
+  // Make a movie: silent photo and video shots under an imported song (FL-1204).
+  const contract = buildStudioExportContract({ format: 'mp4-h264', color: 'preserve' }, input, [
+    facts('shot', { audio: null }) as never,
+    { ...song, audio: { codecName: 'mp3', channels: 2, channelLayout: 'stereo', sampleRate: 44_100 } },
+  ]);
+  expect(contract.audio).toEqual({ policy: 'preserve', channels: 2, channelLayout: 'stereo', sampleRate: 48_000 });
 });
 
 it('holds range output to exact rational packet duration, count and zero origin', () => {

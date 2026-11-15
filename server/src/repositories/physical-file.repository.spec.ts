@@ -110,6 +110,20 @@ it('reserves before a transaction and refuses a reservation that recovery alread
   expect(journal).toBeLessThan(transaction);
 });
 
+it('reserves again when another worker’s recovery cleared the reservation before it was locked (FL-1497)', async () => {
+  StorageCore.setMediaLocation('/data');
+  let checks = 0;
+  const { db } = scriptedKysely(({ sql }) => {
+    // the first reservation is gone by the time it is locked; the second is still there
+    if (sql.includes('SELECT id FROM public.move_history') && sql.includes('FOR UPDATE') && ++checks > 1) {
+      return { rows: [{ id: 'reserved' }] };
+    }
+  });
+  const callback = vi.fn().mockResolvedValue('trashed');
+  await expect(withFileTrashMove(db, path, 'photo.jpg', vi.fn(), callback)).resolves.toBe('trashed');
+  expect(callback).toHaveBeenCalledTimes(1);
+});
+
 describe('universal storage upload linking from the file trash', () => {
   const checksum = Buffer.alloc(32, 9);
   const upload = '/data/upload/owner/aa/bb/upload.jpg';

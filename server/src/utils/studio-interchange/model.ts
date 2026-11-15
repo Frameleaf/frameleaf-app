@@ -45,6 +45,22 @@ export type ClipFrameleaf = {
   title?: { text: string; font?: string; size?: number; color?: string; align?: 'left' | 'center' | 'right' };
   /** Effects the reader found, by the editor's own name. The mapper reports the ones Studio has no match for. */
   effects?: { name: string; fromPlugin?: boolean }[];
+  /** A grade the file or a sidecar carries (FL-1547). */
+  grade?: ClipGrade;
+};
+
+/** ASC CDL: per-channel slope, offset and power (red, green, blue), then saturation. */
+export type Cdl = {
+  slope: [number, number, number];
+  offset: [number, number, number];
+  power: [number, number, number];
+  saturation: number;
+};
+
+export type ClipGrade = {
+  cdl?: Cdl;
+  /** A 3D LUT as Studio stores it: `size`³ RGBA8 entries, red fastest, base64. */
+  lut?: { name: string; size: number; data: string };
 };
 
 export type Clip = {
@@ -124,6 +140,8 @@ export type InterchangeProject = {
   /** The editor's version when the file says, for "untested version" reports. */
   sourceVersion?: string;
   timelines: Timeline[];
+  /** Notes about the whole file for the import report: an untested version, what the format cannot carry. */
+  notices?: { code: 'version-untested' | 'format-limits' | 'sidecar-unused'; what: string; became: string }[];
 };
 
 export const seconds = (time: RationalTime) => (time.rate > 0 ? time.value / time.rate : 0);

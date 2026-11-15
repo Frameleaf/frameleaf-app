@@ -103,6 +103,11 @@ export type OAuthTokenResponse = {
   refresh_token: string;
   scope: string;
   frameleaf_account_id?: string;
+  /**
+   * FL-1371: the account that allowed the app, as an opaque value that is the same for every app of that account, so
+   * an app signing in again (Home Assistant registers anew) can tell whether the same person allowed it.
+   */
+  account_ref?: string;
 };
 
 const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
@@ -639,6 +644,7 @@ export class OAuthAppService extends BaseService {
     return {
       ...this.tokenResponse(tokens, found.scopes),
       ...(found.frameleafAccountId && { frameleaf_account_id: found.frameleafAccountId }),
+      account_ref: this.cryptoRepository.hashSha256(`frameleaf-app-account:${user.id}`).toString('base64url'),
     };
   }
 

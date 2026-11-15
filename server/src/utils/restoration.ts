@@ -539,6 +539,32 @@ export const planRifeFrameChunks = (
   return chunks;
 };
 
+/**
+ * FL-1444: where a Smooth motion chunk starts decoding and exactly which frames it keeps, so a
+ * chunk no longer decodes the source from its first frame. `framePts` is every decoded frame's
+ * timestamp in presentation order and `keyframePts` every keyframe's, both in stream ticks.
+ *
+ * Decoding starts at the last keyframe at or before the chunk's first frame, and the kept frames
+ * are those with timestamps in `[startPts, endPts)` (no end for the last chunk): the timestamps of
+ * the frames the old frame-index trim kept, so the boundaries are the same frames. A seek that
+ * lands early only decodes more; one that lands late loses frames, which the frame count catches.
+ */
+export const rifeChunkWindow = (
+  framePts: readonly number[],
+  keyframePts: readonly number[],
+  startFrame: number,
+  endFrame: number,
+) => {
+  const startPts = framePts[startFrame];
+  let seekPts: number | null = null;
+  for (const pts of keyframePts) {
+    if (pts <= startPts && (seekPts === null || pts > seekPts)) {
+      seekPts = pts;
+    }
+  }
+  return { seekPts, startPts, endPts: endFrame < framePts.length ? framePts[endFrame] : null };
+};
+
 const sha256Hex = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /**

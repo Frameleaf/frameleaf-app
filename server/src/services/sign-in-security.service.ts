@@ -58,6 +58,11 @@ export class SignInSecurityService extends BaseService {
       // another check for the same key is running now: wait for it
       attempt = await this.counters.acquireSignInAttempt(keys);
       wait = attempt ? await attempt.getWait() : 1;
+      // FL-1361: count the guess before it is checked, so a counter write that fails can never let an uncounted
+      // guess through. `succeeded` clears the count again when the credential is right.
+      if (attempt && wait === 0) {
+        await attempt.recordFailure();
+      }
     } catch {
       await attempt?.release();
       // Fail closed: a credential is never checked without its backoff, at home or away.
@@ -79,14 +84,13 @@ export class SignInSecurityService extends BaseService {
     return attempt;
   }
 
-  async failed(attempt?: SignInAttempt, user?: AlertUser): Promise<void> {
-    if (!attempt) return;
-    await attempt.recordFailure().catch(() => this.logger.warn('Could not record sign-in backoff'));
-    if (user) {
-      // Finish before responding only for address-scoped backoff. Account-specific notices must not reveal
-      // that the email exists through different response timing.
+  /** The guess was already counted in `check`; only the repeated-failure notice is left. */
+  failed(attempt?: SignInAttempt, user?: AlertUser): Promise<void> {
+    if (attempt && user) {
+      // Account-specific notices must not reveal that the email exists through different response timing.
       void this.failedAccount(user).catch(() => this.logger.warn('Could not send repeated sign-in failure notice'));
     }
+    return Promise.resolve();
   }
 
   async succeeded(attempt?: SignInAttempt): Promise<void> {

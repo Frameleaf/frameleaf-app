@@ -135,4 +135,41 @@ describe(SignInSecurityService.name, () => {
     ).rejects.toMatchObject({ status: 503 });
     expect(verify).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { name: 'the first counter (address)', failOn: 1 },
+    { name: 'the second counter (account)', failOn: 2 },
+  ])('counts a guess before checking it, and refuses it when $name cannot be written (FL-1361)', async ({ failOn }) => {
+    const acquire = counters.acquireSignInAttempt;
+    vi.spyOn(counters, 'acquireSignInAttempt').mockImplementation(async (keys) => {
+      const attempt = await acquire(keys);
+      let writes = 0;
+      return {
+        ...attempt!,
+        recordFailure: () => {
+          for (const name of keys as string[]) {
+            if (++writes === failOn) {
+              return Promise.reject(new Error('could not write counter'));
+            }
+            counters.failures.set(name, (counters.failures.get(name) ?? 0) + 1);
+          }
+          return Promise.resolve();
+        },
+      };
+    });
+    const verify = vi.fn();
+
+    await expect(sut.attempt('password', 'owner@example.com', from('203.0.113.1'), verify)).rejects.toMatchObject({
+      status: 503,
+    });
+    expect(verify).not.toHaveBeenCalled();
+    expect(counters.held.size).toBe(0);
+  });
+
+  it('has counted the guess by the time the password is checked', async () => {
+    await sut.attempt('password', 'owner@example.com', from('203.0.113.1'), () => {
+      expect(counters.failures.values().toArray()).toEqual([1, 1]);
+      return Promise.resolve();
+    });
+  });
 });

@@ -358,6 +358,10 @@
         "title": "Votre sauvegarde n’a pas pu être restaurée",
         "body": "{failure} Vos sauvegardes continuent de s’exécuter ; tant que ce problème n’est pas résolu, Frameleaf ne peut pas prouver qu’elles pourraient être restaurées."
       },
+      "restore-drill-not-recorded": {
+        "title": "L’exercice de restauration a échoué",
+        "body": "{error}"
+      },
       "studio-export-cancelled": {
         "title": "Rendu annulé",
         "body": "Votre export Studio a été annulé"
@@ -734,6 +738,10 @@
       "cloud-backup-drill-failed": {
         "title": "Tu copia de seguridad no se ha restaurado",
         "body": "{failure} Tus copias de seguridad siguen en marcha; hasta que se solucione, Frameleaf no puede demostrar que se podrían restaurar."
+      },
+      "restore-drill-not-recorded": {
+        "title": "El simulacro de restauración ha fallado",
+        "body": "{error}"
       },
       "studio-export-cancelled": {
         "title": "Renderizado cancelado",
@@ -1112,6 +1120,10 @@
         "title": "Deine Sicherung ließ sich nicht wiederherstellen",
         "body": "{failure} Deine Sicherungen laufen weiter; solange das nicht behoben ist, kann Frameleaf nicht belegen, dass sie sich wiederherstellen lassen."
       },
+      "restore-drill-not-recorded": {
+        "title": "Wiederherstellungsübung fehlgeschlagen",
+        "body": "{error}"
+      },
       "studio-export-cancelled": {
         "title": "Rendern abgebrochen",
         "body": "Dein Studio-Export wurde abgebrochen"
@@ -1488,6 +1500,10 @@
       "cloud-backup-drill-failed": {
         "title": "Il tuo backup non è stato ripristinato",
         "body": "{failure} I tuoi backup sono ancora in esecuzione; finché il problema non sarà risolto, Frameleaf non può garantire che si possano ripristinare."
+      },
+      "restore-drill-not-recorded": {
+        "title": "Prova di ripristino non riuscita",
+        "body": "{error}"
       },
       "studio-export-cancelled": {
         "title": "Rendering annullato",
@@ -1866,6 +1882,10 @@
         "title": "A sua cópia de segurança não foi restaurada",
         "body": "{failure} As suas cópias de segurança continuam em execução; até isto ser resolvido, o Frameleaf não consegue comprovar que seriam restauradas."
       },
+      "restore-drill-not-recorded": {
+        "title": "O teste de restauro falhou",
+        "body": "{error}"
+      },
       "studio-export-cancelled": {
         "title": "Renderização cancelada",
         "body": "A sua exportação do Studio foi cancelada"
@@ -2242,6 +2262,10 @@
       "cloud-backup-drill-failed": {
         "title": "Je back-up kon niet worden hersteld",
         "body": "{failure} Je back-ups draaien nog; zolang dit niet is opgelost, kan Frameleaf niet aantonen dat ze zouden kunnen worden hersteld."
+      },
+      "restore-drill-not-recorded": {
+        "title": "Herstelproef mislukt",
+        "body": "{error}"
       },
       "studio-export-cancelled": {
         "title": "Renderen geannuleerd",
@@ -2620,6 +2644,10 @@
         "title": "Twoja kopia zapasowa nie została przywrócona",
         "body": "{failure} Twoje kopie zapasowe nadal działają; dopóki to nie zostanie naprawione, Frameleaf nie może potwierdzić, że dałoby się je przywrócić."
       },
+      "restore-drill-not-recorded": {
+        "title": "Próba przywrócenia nie powiodła się",
+        "body": "{error}"
+      },
       "studio-export-cancelled": {
         "title": "Renderowanie anulowane",
         "body": "Twój eksport ze Studio został anulowany"
@@ -2996,6 +3024,10 @@
       "cloud-backup-drill-failed": {
         "title": "Din säkerhetskopia gick inte att återställa",
         "body": "{failure} Dina säkerhetskopior körs fortfarande. Tills detta är åtgärdat kan Frameleaf inte bevisa att de skulle kunna återställas."
+      },
+      "restore-drill-not-recorded": {
+        "title": "Återställningsövningen misslyckades",
+        "body": "{error}"
       },
       "studio-export-cancelled": {
         "title": "Renderingen avbröts",
@@ -3374,6 +3406,10 @@
         "title": "Din sikkerhedskopi kunne ikke gendannes",
         "body": "{failure} Dine sikkerhedskopier kører stadig; indtil dette er rettet, kan Frameleaf ikke bevise, at de ville kunne gendannes."
       },
+      "restore-drill-not-recorded": {
+        "title": "Gendannelsesøvelsen mislykkedes",
+        "body": "{error}"
+      },
       "studio-export-cancelled": {
         "title": "Rendering annulleret",
         "body": "Din eksport fra Studio blev annulleret"
@@ -3750,6 +3786,10 @@
       "cloud-backup-drill-failed": {
         "title": "Sikkerhetskopien din ble ikke gjenopprettet",
         "body": "{failure} Sikkerhetskopiene dine kjører fortsatt; helt til dette er løst kan ikke Frameleaf bevise at de lar seg gjenopprette."
+      },
+      "restore-drill-not-recorded": {
+        "title": "Gjenopprettingsøvelsen mislyktes",
+        "body": "{error}"
       },
       "studio-export-cancelled": {
         "title": "Rendering avbrutt",
