@@ -356,6 +356,20 @@ describe(OAuthAppService.name, () => {
     await expect(connect(client)).resolves.toHaveProperty('tokens.access_token');
   });
 
+  it('names the allowing account the same way for every app, and another account differently (FL-1371)', async () => {
+    const callback = 'https://home.example.net/auth/external/callback';
+    const first = await connect(repo.addClient([callback], 'Home Assistant'));
+    const second = await connect(repo.addClient([callback], 'Home Assistant'));
+    expect(first.tokens.account_ref).toMatch(/^[\w-]{43}$/);
+    expect(second.tokens.account_ref).toBe(first.tokens.account_ref);
+    expect(first.tokens.account_ref).not.toContain(me.user.id);
+
+    me = person('sam');
+    repo.users.set(me.user.id, me.user);
+    const other = await connect(repo.addClient([callback], 'Home Assistant'));
+    expect(other.tokens.account_ref).not.toBe(first.tokens.account_ref);
+  });
+
   it('binds broker grants to the linked Frameleaf account', async () => {
     const callback = 'https://mcp.frameleaf.cloud/oauth/library/callback/chatgpt';
     const client = repo.addClient([callback], 'Untrusted client name');
