@@ -874,7 +874,12 @@
       "path": "patches/0184-lut-references.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "7a526e48b8b16e1e00f2b80a3b80bd876c5925a36224041d1dc176e6581bd6d5"
+    },
+    {
+      "path": "patches/0196-sound-channel-mapping.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0d6404ce7906c73ed85ca091ee101185983126ae2aa311046630e82ac5d454c8"
     }
   ],
-  "sourceSha256": "3b81da411c63fb3b648a86d1bc04d8446c0853cff3d5511ec9c0c874d1751feb"
+  "sourceSha256": "81b9a0517a735951598a080a5deeda55caae8a33687ff99e7f791f734256c09e"
 }
