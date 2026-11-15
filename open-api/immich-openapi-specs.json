@@ -14296,6 +14296,61 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/albums/{id}/assets/order": {
+      "put": {
+        "description": "Places the photos, in the order given, after a photo (afterAssetId), after a text card (afterTextCardId) or at the start (afterAssetId null), and turns on custom order for the album. Owners and editors only; one request moves up to 10,000 photos.",
+        "operationId": "setAlbumAssetOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumAssetOrderDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Move photos in an album's custom order",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      }
+    },
     "/albums/{id}/bookmarks": {
       "delete": {
         "operationId": "removeBookmarksFromAlbum",
@@ -15255,6 +15310,266 @@
           }
         ],
         "x-immich-permission": "albumAsset.create"
+      }
+    },
+    "/albums/{id}/text-cards": {
+      "get": {
+        "description": "Cards in album order. Plain text: show heading and body as text, never as HTML.",
+        "operationId": "getAlbumTextCards",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlbumTextCardResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the text cards in an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      },
+      "post": {
+        "description": "A heading and a short paragraph between photos. Adding a card turns on custom order for the album. Owners and editors only.",
+        "operationId": "createAlbumTextCard",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumTextCardCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumTextCardResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add a text card to an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      }
+    },
+    "/albums/{id}/text-cards/{cardId}": {
+      "delete": {
+        "description": "Removes the card only; the album's photos are never touched. Owners and editors only.",
+        "operationId": "deleteAlbumTextCard",
+        "parameters": [
+          {
+            "name": "cardId",
+            "required": true,
+            "in": "path",
+            "description": "Text card ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Album ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a text card",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      },
+      "put": {
+        "description": "Change the heading or text, or move the card. Owners and editors only.",
+        "operationId": "updateAlbumTextCard",
+        "parameters": [
+          {
+            "name": "cardId",
+            "required": true,
+            "in": "path",
+            "description": "Text card ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Album ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumTextCardUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumTextCardResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Edit or move a text card",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
       }
     },
     "/albums/{id}/transfer": {
@@ -71792,7 +72107,8 @@
               "enum": [
                 "filename",
                 "rating",
-                "quality"
+                "quality",
+                "custom"
               ]
             }
           },
@@ -81297,6 +81613,38 @@
         ],
         "type": "object"
       },
+      "AlbumAssetOrderDto": {
+        "properties": {
+          "afterAssetId": {
+            "description": "Place after this photo in the album; null places at the start of the album",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "afterTextCardId": {
+            "description": "Place after this text card instead of after a photo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "assetIds": {
+            "description": "Photos to move, in the order they should appear. Ids not in the album are ignored.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
       "AlbumChangeRunKind": {
         "description": "What the run did",
         "enum": [
@@ -82703,6 +83051,10 @@
             "description": "Activity feed enabled",
             "type": "boolean"
           },
+          "isCustomOrder": {
+            "description": "True when the album shows its own order (GET /timeline/ordered?sort=custom&albumId=…) instead of the date order in order",
+            "type": "boolean"
+          },
           "isLocked": {
             "description": "The owner chose to lock this album: their items in it are locked as they are added, or by the hourly check. Unlocking stops that; items already locked stay locked. It does not prove that every item is locked yet.",
             "type": "boolean"
@@ -82770,6 +83122,13 @@
           "statsPending": {
             "description": "True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by the album lists: GET /albums, GET /albums/tree and GET /albums/hierarchy.",
             "type": "boolean"
+          },
+          "textCards": {
+            "description": "Text cards between the photos, in album order. Populated by GET /albums/{id} for a custom-order album.",
+            "items": {
+              "$ref": "#/components/schemas/AlbumTextCardResponseDto"
+            },
+            "type": "array"
           },
           "updatedAt": {
             "description": "Last update date",
@@ -83237,6 +83596,123 @@
           "tripEnd",
           "tripStart"
         ],
+        "type": "object"
+      },
+      "AlbumTextCardCreateDto": {
+        "description": "Leave out afterAssetId and afterTextCardId to add the card at the end of the album",
+        "properties": {
+          "afterAssetId": {
+            "description": "Place after this photo in the album; null places at the start of the album",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "afterTextCardId": {
+            "description": "Place after this text card instead of after a photo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "body": {
+            "default": "",
+            "description": "Short paragraph, plain text; new lines are kept",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "heading": {
+            "default": "",
+            "description": "Heading, plain text",
+            "maxLength": 120,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AlbumTextCardResponseDto": {
+        "properties": {
+          "afterAssetId": {
+            "description": "The photo just before the card in the album, or null when the card comes first",
+            "nullable": true,
+            "type": "string"
+          },
+          "albumId": {
+            "description": "Album ID",
+            "type": "string"
+          },
+          "body": {
+            "description": "Short paragraph, plain text with new lines; show it as text, never as HTML",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "Creation date",
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdById": {
+            "description": "Who wrote the card, or null when that account was removed",
+            "nullable": true,
+            "type": "string"
+          },
+          "heading": {
+            "description": "Heading, plain text; show it as text, never as HTML",
+            "type": "string"
+          },
+          "id": {
+            "description": "Text card ID",
+            "type": "string"
+          },
+          "position": {
+            "description": "Place in the album's custom order; compare with the photos' positions from sort=custom",
+            "format": "double",
+            "type": "number"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "afterAssetId",
+          "albumId",
+          "body",
+          "createdAt",
+          "createdById",
+          "heading",
+          "id",
+          "position",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "AlbumTextCardUpdateDto": {
+        "description": "Leave out afterAssetId and afterTextCardId to keep the card where it is",
+        "properties": {
+          "afterAssetId": {
+            "description": "Place after this photo in the album; null places at the start of the album",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "afterTextCardId": {
+            "description": "Place after this text card instead of after a photo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "body": {
+            "description": "Short paragraph, plain text; new lines are kept",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "heading": {
+            "description": "Heading, plain text",
+            "maxLength": 120,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AlbumTransferDto": {
@@ -180738,6 +181214,14 @@
             },
             "type": "array"
           },
+          "position": {
+            "description": "Each asset's place in the album's custom order (lowest first), aligned with id. Returned only for sort=custom; place an album's text cards by comparing their position",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
           "projectionType": {
             "description": "Array of projection types for 360° content (e.g., \"EQUIRECTANGULAR\", \"CUBEFACE\", \"CYLINDRICAL\")",
             "items": {
@@ -180940,7 +181424,8 @@
             "enum": [
               "filename",
               "rating",
-              "quality"
+              "quality",
+              "custom"
             ],
             "type": "string"
           },
@@ -181580,11 +182065,12 @@
         "type": "object"
       },
       "TimelineOrderedSort": {
-        "description": "filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture; quality: highest Best Photos score first (assets without a score of yours last), then newest capture. Use quality with bestPhotos=true",
+        "description": "filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture; quality: highest Best Photos score first (assets without a score of yours last), then newest capture. Use quality with bestPhotos=true; custom: the album's own order (requires albumId; see the album's isCustomOrder), returned with each asset's position",
         "enum": [
           "filename",
           "rating",
-          "quality"
+          "quality",
+          "custom"
         ],
         "type": "string"
       },
@@ -182197,6 +182683,10 @@
           },
           "isActivityEnabled": {
             "description": "Enable activity feed",
+            "type": "boolean"
+          },
+          "isCustomOrder": {
+            "description": "Show the album in its own order instead of by date. Turning it on the first time orders the photos by the current date order; turning it off keeps the custom order for next time. Read the custom order with GET /timeline/ordered?sort=custom&albumId=…",
             "type": "boolean"
           },
           "isLocked": {

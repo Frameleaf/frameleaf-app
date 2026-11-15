@@ -33,6 +33,7 @@ export class AlbumFactory {
       isActivityEnabled: false,
       isLocked: false,
       order: AssetOrder.Desc,
+      isCustomOrder: false,
       parentId: null,
       icon: null,
       color: null,

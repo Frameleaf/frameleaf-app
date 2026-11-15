@@ -19145,7 +19145,7 @@
   "frameleaf_studio_editor_import_accepts_bundle": "Een projectbestand (.zip)",
   "frameleaf_studio_editor_import_accepts_finalcut": "Een project dat is geëxporteerd als XML (.fcpxml, of een .fcpxmld-map)",
   "frameleaf_studio_editor_import_accepts_other": "Andere bewerkers",
-  "frameleaf_studio_editor_import_accepts_other_detail": "OpenTimelineIO (.otio, .otioz), Final Cut Pro 7 XML of EDL, met eventuele CDL- en LUT-bestanden ernaast",
+  "frameleaf_studio_editor_import_accepts_other_detail": "OpenTimelineIO (.otio, .otioz), AAF, Final Cut Pro 7 XML of EDL, met eventuele CDL- en LUT-bestanden ernaast",
   "frameleaf_studio_editor_import_accepts_premiere": "Het projectbestand (.prproj) of een sequentie die is geëxporteerd als Final Cut Pro XML (.xml)",
   "frameleaf_studio_editor_import_accepts_resolve": "Een tijdlijn die is geëxporteerd als Final Cut Pro XML (.fcpxml of .xml), OpenTimelineIO (.otio) of een EDL",
   "frameleaf_studio_editor_import_accepts_title": "Wat je kunt overnemen",

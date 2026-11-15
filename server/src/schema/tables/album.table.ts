@@ -117,6 +117,10 @@ export class AlbumTable {
   @Column({ default: AssetOrder.Desc })
   order!: Generated<AssetOrder>;
 
+  /** FL-869: show the album in its members' own order (album_asset.position) instead of by date. */
+  @Column({ type: 'boolean', default: false })
+  isCustomOrder!: Generated<boolean>;
+
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;
 }
