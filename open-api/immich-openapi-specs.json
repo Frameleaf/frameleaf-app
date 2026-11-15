@@ -78419,6 +78419,12 @@
           "server": {
             "$ref": "#/components/schemas/AdminConfigServerDto"
           },
+          "sharedLinks": {
+            "$ref": "#/components/schemas/AdminConfigSharedLinksDto",
+            "default": {
+              "defaultExpiryDays": null
+            }
+          },
           "signInPolicy": {
             "$ref": "#/components/schemas/AdminConfigSignInPolicyDto"
           },
@@ -80587,6 +80593,21 @@
           "loginPageMessage",
           "name",
           "publicUsers"
+        ],
+        "type": "object"
+      },
+      "AdminConfigSharedLinksDto": {
+        "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire",
+            "maximum": 3650,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "defaultExpiryDays"
         ],
         "type": "object"
       },
@@ -164519,6 +164540,10 @@
           },
           "type": {
             "$ref": "#/components/schemas/SharedLinkType"
+          },
+          "useDefaultExpiry": {
+            "description": "Without expiresAt, expire after the default number of days: the creator's preference, else the server's (none: never)",
+            "type": "boolean"
           }
         },
         "required": [
@@ -164771,6 +164796,19 @@
       },
       "SharedLinksResponse": {
         "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "enabled": {
             "description": "Whether shared links are enabled",
             "type": "boolean"
@@ -164788,6 +164826,19 @@
       },
       "SharedLinksUpdate": {
         "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires)",
+            "maximum": 3650,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "enabled": {
             "description": "Whether shared links are enabled",
             "type": "boolean"
@@ -182122,6 +182173,9 @@
           "server": {
             "$ref": "#/components/schemas/UserConfigServerDto"
           },
+          "sharedLinks": {
+            "$ref": "#/components/schemas/UserConfigSharedLinksDto"
+          },
           "theme": {
             "$ref": "#/components/schemas/UserConfigThemeDto"
           },
@@ -182143,6 +182197,7 @@
           "passwordLogin",
           "reverseGeocoding",
           "server",
+          "sharedLinks",
           "theme",
           "trash",
           "user"
@@ -182496,6 +182551,21 @@
           "loginPageMessage",
           "name",
           "publicUsers"
+        ],
+        "type": "object"
+      },
+      "UserConfigSharedLinksDto": {
+        "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire",
+            "maximum": 3650,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "defaultExpiryDays"
         ],
         "type": "object"
       },

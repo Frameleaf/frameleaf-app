@@ -2263,6 +2263,10 @@ export type AdminConfigServerDto = {
     /** Time zone the server's schedules and calendar day follow, as an IANA name such as America/Edmonton; empty uses the time zone of the computer the server runs on */
     timeZone?: string;
 };
+export type AdminConfigSharedLinksDto = {
+    /** Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire */
+    defaultExpiryDays: number | null;
+};
 export type AdminConfigSignInPolicyDto = {
     /** Older apps and sessions that predate this setting follow it too (default off) */
     applyToOlderApps?: boolean;
@@ -2373,6 +2377,7 @@ export type AdminConfigDto = {
     passwordLogin: AdminConfigPasswordLoginDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
+    sharedLinks?: AdminConfigSharedLinksDto;
     signInPolicy?: AdminConfigSignInPolicyDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
     storageTemplate: AdminConfigStorageTemplateDto;
@@ -2409,6 +2414,7 @@ export type AdminConfigDtoRead = {
     passwordLogin: AdminConfigPasswordLoginDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
+    sharedLinks?: AdminConfigSharedLinksDto;
     signInPolicy?: AdminConfigSignInPolicyDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
     storageTemplate: AdminConfigStorageTemplateDto;
@@ -4460,6 +4466,8 @@ export type SearchPreferencesResponse = {
     includeArchived: boolean;
 };
 export type SharedLinksResponse = {
+    /** Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires) */
+    defaultExpiryDays?: number | null;
     /** Whether shared links are enabled */
     enabled: boolean;
     /** Whether shared links appear in web sidebar */
@@ -4668,6 +4676,8 @@ export type SearchPreferencesUpdate = {
     includeArchived?: boolean;
 };
 export type SharedLinksUpdate = {
+    /** Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires) */
+    defaultExpiryDays?: number | null;
     /** Whether shared links are enabled */
     enabled?: boolean;
     /** Whether shared links appear in web sidebar */
@@ -9096,6 +9106,10 @@ export type UserConfigServerDto = {
     /** Public users */
     publicUsers: boolean;
 };
+export type UserConfigSharedLinksDto = {
+    /** Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire */
+    defaultExpiryDays: number | null;
+};
 export type UserConfigThemeDto = {
     /** Custom CSS for theming */
     customCss: string;
@@ -9121,6 +9135,7 @@ export type UserConfigDto = {
     passwordLogin: UserConfigPasswordLoginDto;
     reverseGeocoding: UserConfigReverseGeocodingDto;
     server: UserConfigServerDto;
+    sharedLinks: UserConfigSharedLinksDto;
     theme: UserConfigThemeDto;
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
@@ -18922,6 +18937,8 @@ export type SharedLinkCreateDto = {
     /** Custom URL slug */
     slug?: string | null;
     "type": SharedLinkType;
+    /** Without expiresAt, expire after the default number of days: the creator's preference, else the server's (none: never) */
+    useDefaultExpiry?: boolean;
 };
 export type SharedLinkLoginDto = {
     /** Shared link password */

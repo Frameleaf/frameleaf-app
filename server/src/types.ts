@@ -1851,6 +1851,8 @@ export type UserPreferences = {
   sharedLinks: {
     enabled: boolean;
     sidebarWeb: boolean;
+    /** FL-922: days a new link lasts when its form asks for the default expiry; null falls back to the server's */
+    defaultExpiryDays: number | null;
   };
   tags: {
     enabled: boolean;
