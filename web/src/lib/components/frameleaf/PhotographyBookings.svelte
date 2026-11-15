@@ -494,7 +494,7 @@
   }
   .money {
     display: grid;
-    text-align: right;
+    text-align: end;
     font-variant-numeric: tabular-nums;
   }
   .money small {
@@ -542,7 +542,7 @@
   .message {
     margin: 0;
     padding: 0.75rem 1rem;
-    border-left: 3px solid var(--fl-border);
+    border-inline-start: 3px solid var(--fl-border);
     background: var(--fl-raised);
     border-radius: var(--fl-radius-control);
     white-space: pre-wrap;
@@ -577,7 +577,7 @@
       grid-column: 1 / -1;
     }
     .money {
-      text-align: left;
+      text-align: start;
     }
     .facts {
       grid-template-columns: minmax(0, 1fr);
