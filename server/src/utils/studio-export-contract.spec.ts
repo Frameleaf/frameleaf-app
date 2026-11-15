@@ -260,6 +260,55 @@ describe('buildStudioExportContract (FL-102)', () => {
     ).toEqual({ policy: 'preserve', channels: 6, channelLayout: '5.1', sampleRate: 48_000 });
   });
 
+  it('hears the clips inside a composition through its sound clip, nested ones included (FL-1557)', () => {
+    const sources = [
+      facts('inner', { audio: { codecName: 'aac', channels: 2, channelLayout: 'stereo', sampleRate: 48_000 } }),
+      facts('deep', { audio: { codecName: 'aac', channels: 6, channelLayout: '5.1', sampleRate: 44_100 } }),
+      facts('quiet', { audio: { codecName: 'eac3', channels: 8, channelLayout: '7.1', sampleRate: 96_000 } }),
+    ];
+    const compositions = [
+      {
+        id: 'nest',
+        tracks: [{ id: 'n1' }, { id: 'n2', muted: true }],
+        items: [
+          { type: 'composition', trackId: 'n1', compositionId: 'deeper' },
+          { type: 'audio', trackId: 'n1', compositionId: 'deeper', src: '' },
+          { type: 'audio', trackId: 'n1', mediaId: 'inner' },
+          { type: 'audio', trackId: 'n2', mediaId: 'quiet' },
+        ],
+      },
+      { id: 'deeper', tracks: [{ id: 'd1' }], items: [{ type: 'audio', trackId: 'd1', mediaId: 'deep' }] },
+      // A loop the resolver refuses is still walked only once.
+      { id: 'loop', tracks: [{ id: 'l1' }], items: [{ type: 'audio', trackId: 'l1', compositionId: 'loop' }] },
+    ];
+    const sound = (compositionId: string, extra: Record<string, unknown> = {}) => ({
+      type: 'audio',
+      trackId: 'a1',
+      compositionId,
+      src: '',
+      from: 0,
+      durationInFrames: 30,
+      ...extra,
+    });
+    const contract = (items: Record<string, unknown>[]) =>
+      buildStudioExportContract(
+        { format: 'mp4-h264', color: 'preserve' },
+        graph(items, { compositions }),
+        sources as never,
+      ).audio;
+    const placed = { type: 'composition', trackId: 'v1', compositionId: 'nest', from: 0, durationInFrames: 30 };
+    expect(contract([placed, sound('nest')])).toEqual({
+      policy: 'preserve',
+      channels: 6,
+      channelLayout: '5.1',
+      sampleRate: 48_000,
+    });
+    // The picture alone is silent; a muted sound clip mutes the whole composition.
+    expect(contract([placed])).toBeNull();
+    expect(contract([placed, sound('nest', { muted: true })])).toBeNull();
+    expect(contract([sound('loop')])).toBeNull();
+  });
+
   it('preserves both PQ mastering and a selected frame range through construction and parsing', () => {
     const mastering = { primaries: 'bt2020' as const, maxNits: 1000, minNits: 0.005 };
     const range = { inPoint: 4, outPoint: 12 };

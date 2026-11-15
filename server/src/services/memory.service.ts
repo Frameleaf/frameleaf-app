@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { MemoryCurationFilter, MemoryShowLessRow } from 'src/repositories/memory.repository.js';
+import type { BirthdaySubject, MemoryCurationFilter, MemoryShowLessRow } from 'src/repositories/memory.repository.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Memory, MemoryExport } from 'src/database.js';
@@ -167,6 +167,32 @@ const memorySubject = (memory: Memory): { kind: 'person' | 'pet'; id: string } |
   }
   const kind = data.subject === 'person' || data.subject === 'pet' ? data.subject : undefined;
   return kind && typeof data.subjectId === 'string' ? { kind, id: data.subjectId } : undefined;
+};
+
+/**
+ * FL-864: a person's birthday memory reads as their dates are now. Once their date of passing is reached it is a
+ * "Remembering {name}" memory with no age; without one (or with a later one) it is an ordinary birthday again. The
+ * anniversary of a passing that was removed or moved is left out: false means drop the memory. Edits `data`.
+ */
+const rememberAsNow = (
+  data: Record<string, unknown>,
+  person: { birthDate?: string | null; deathDate?: string | null },
+): boolean => {
+  const date = typeof data.date === 'string' ? data.date : undefined;
+  const year = typeof data.year === 'number' ? data.year : undefined;
+  const deathDate = person.deathDate?.slice(0, 10);
+  const passed = !!deathDate && !!date && deathDate <= date;
+  if (data.deathAnniversary) {
+    return passed && year !== undefined && birthdayOn(deathDate!, year) === date;
+  }
+  if (passed) {
+    data.inMemoriam = true;
+    data.age = null;
+  } else if (data.inMemoriam) {
+    delete data.inMemoriam;
+    data.age = person.birthDate && year !== undefined ? birthdayAge(person.birthDate, year) : null;
+  }
+  return true;
 };
 
 @Injectable()
@@ -551,7 +577,11 @@ export class MemoryService extends BaseService {
         return [];
       }
       const species = memory.type === MemoryType.PetStory && 'species' in found ? { species: found.species } : {};
-      return [{ ...memory, data: { ...(memory.data as object), name: found.name, ...species } } as Memory];
+      const data = { ...(memory.data as object), name: found.name, ...species } as Record<string, unknown>;
+      if (memory.type === MemoryType.Birthday && 'deathDate' in found && !rememberAsNow(data, found)) {
+        return [];
+      }
+      return [{ ...memory, data } as Memory];
     });
   }
 
@@ -630,40 +660,67 @@ export class MemoryService extends BaseService {
       if (rules.some(({ kind, value }) => (kind === 'person' || kind === 'pet') && value === subject.id)) {
         continue;
       }
-      if (birthdayOn(subject.birthDate, target.year) !== date) {
-        continue;
+      const deathDate = subject.deathDate?.slice(0, 10);
+      // FL-864: once the date of passing is reached, the birthday is a "Remembering {name}" memory with no age
+      const passed = !!deathDate && deathDate <= date;
+      if (subject.birthDate && birthdayOn(subject.birthDate, target.year) === date) {
+        await this.createSubjectDayMemory(ownerId, target.year, date, subject, {
+          age: passed ? null : birthdayAge(subject.birthDate, target.year),
+          ...(passed && { inMemoriam: true }),
+        });
       }
-      if (await this.memoryRepository.hasSubjectMemory(ownerId, MemoryType.Birthday, subject.id, target.year)) {
-        continue;
+      // FL-864: and so is each anniversary of the passing, from the year after
+      if (deathDate && Number(deathDate.slice(0, 4)) < target.year && birthdayOn(deathDate, target.year) === date) {
+        await this.createSubjectDayMemory(ownerId, target.year, date, subject, {
+          age: null,
+          inMemoriam: true,
+          deathAnniversary: true,
+        });
       }
-      const candidates = suppressBursts(
-        await this.memoryRepository.getSubjectAssets(ownerId, subject.subject, subject.id),
-      );
-      if (candidates.length < MIN_BIRTHDAY_ASSETS) {
-        continue;
-      }
-      const kept = diversifyByYear(candidates, MAX_SUBJECT_MEMORY_ASSETS);
-      const { showAt, hideAt } = calendarDayWindow(date);
-      await this.memoryRepository.create(
-        {
-          ownerId,
-          type: MemoryType.Birthday,
-          data: {
-            kind: 'birthday',
-            year: target.year,
-            date,
-            subject: subject.subject,
-            subjectId: subject.id,
-            name: subject.name,
-            age: birthdayAge(subject.birthDate, target.year),
-          },
-          memoryAt: DateTime.fromISO(date, { zone: 'utc' }).toISO()!,
-          showAt: showAt.toISOString(),
-          hideAt: hideAt.toISOString(),
-        },
-        new Set(kept.map(({ id }) => id)),
-      );
     }
+  }
+
+  /** One birthday-type memory (FL-62, FL-864) of a person's or pet's photos across the years, once per year. */
+  private async createSubjectDayMemory(
+    ownerId: string,
+    year: number,
+    date: string,
+    subject: BirthdaySubject,
+    details: { age: number | null; inMemoriam?: boolean; deathAnniversary?: boolean },
+  ) {
+    const exists = details.deathAnniversary
+      ? await this.memoryRepository.hasSubjectMemory(ownerId, MemoryType.Birthday, subject.id, year, true)
+      : await this.memoryRepository.hasSubjectMemory(ownerId, MemoryType.Birthday, subject.id, year);
+    if (exists) {
+      return;
+    }
+    const candidates = suppressBursts(
+      await this.memoryRepository.getSubjectAssets(ownerId, subject.subject, subject.id),
+    );
+    if (candidates.length < MIN_BIRTHDAY_ASSETS) {
+      return;
+    }
+    const kept = diversifyByYear(candidates, MAX_SUBJECT_MEMORY_ASSETS);
+    const { showAt, hideAt } = calendarDayWindow(date);
+    await this.memoryRepository.create(
+      {
+        ownerId,
+        type: MemoryType.Birthday,
+        data: {
+          kind: 'birthday',
+          year,
+          date,
+          subject: subject.subject,
+          subjectId: subject.id,
+          name: subject.name,
+          ...details,
+        },
+        memoryAt: DateTime.fromISO(date, { zone: 'utc' }).toISO()!,
+        showAt: showAt.toISOString(),
+        hideAt: hideAt.toISOString(),
+      },
+      new Set(kept.map(({ id }) => id)),
+    );
   }
 
   /**

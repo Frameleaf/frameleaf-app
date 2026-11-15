@@ -194,7 +194,7 @@ export const readEdl = (bytes: Buffer | string, options: { rate?: Rate } = {}): 
 
   const notices: InterchangeNotice[] = [
     {
-      code: 'format-limits',
+      code: 'edl-limits',
       what: 'Colour, effects, titles and picture moves',
       became: 'Not in this kind of file: an edit decision list carries the cuts, timing and dissolves only',
     },
@@ -203,7 +203,8 @@ export const readEdl = (bytes: Buffer | string, options: { rate?: Rate } = {}): 
   if (!rate) {
     rate = guessRate(dropFrame, events);
     notices.push({
-      code: 'format-limits',
+      code: 'edl-frame-rate',
+      subject: String(Math.round((rate.num / rate.den) * 1000) / 1000),
       what: 'The frame rate, which an edit decision list does not state',
       became: `Read at ${Math.round((rate.num / rate.den) * 1000) / 1000} frames a second`,
     });
