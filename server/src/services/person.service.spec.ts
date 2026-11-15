@@ -79,11 +79,12 @@ describe(PersonService.name, () => {
     it('should get all hidden and visible people with thumbnails', async () => {
       const auth = AuthFactory.create();
       const [person, hiddenPerson] = [PersonFactory.create(), PersonFactory.create({ isHidden: true })];
+      const family = newUuid();
 
       mocks.person.getAllForUser.mockResolvedValue({
         items: [
-          { ...person, assetCount: 3, lastSeenAt: new Date('2026-01-02T03:04:05.000Z') },
-          { ...hiddenPerson, assetCount: 1, lastSeenAt: new Date('2025-06-07T08:09:10.000Z') },
+          { ...person, categoryIds: [family], assetCount: 3, lastSeenAt: new Date('2026-01-02T03:04:05.000Z') },
+          { ...hiddenPerson, categoryIds: [], assetCount: 1, lastSeenAt: new Date('2025-06-07T08:09:10.000Z') },
         ],
         hasNextPage: false,
       });
@@ -96,12 +97,14 @@ describe(PersonService.name, () => {
           expect.objectContaining({
             id: person.personGroupId,
             isHidden: false,
+            categoryIds: [family],
             assetCount: 3,
             lastSeenAt: '2026-01-02T03:04:05.000Z',
           }),
           expect.objectContaining({
             id: hiddenPerson.personGroupId,
             isHidden: true,
+            categoryIds: [],
             assetCount: 1,
             lastSeenAt: '2025-06-07T08:09:10.000Z',
           }),
@@ -157,8 +160,8 @@ describe(PersonService.name, () => {
 
       mocks.person.getAllForUser.mockResolvedValue({
         items: [
-          { ...isFavorite, assetCount: 2, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
-          { ...person, assetCount: 5, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
+          { ...isFavorite, categoryIds: [], assetCount: 2, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
+          { ...person, categoryIds: [], assetCount: 5, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
         ],
         hasNextPage: false,
       });
@@ -536,6 +539,30 @@ describe(PersonService.name, () => {
       mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set(['unknown']));
       await expect(sut.getById(auth, 'unknown')).rejects.toBeInstanceOf(NotFoundException);
       expect(mocks.access.person.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set(['unknown']));
+    });
+
+    it("returns the owner's categories for their own person (FL-874)", async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ ownerId: auth.user.id });
+      const categoryIds = [newUuid()];
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.getPersonCategoryIds.mockResolvedValue(categoryIds);
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+
+      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ categoryIds });
+      expect(mocks.person.getPersonCategoryIds).toHaveBeenCalledWith(person);
+    });
+
+    it('never returns categories for a person the caller does not own (FL-874)', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ ownerId: newUuid() });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.getPersonCategoryIds.mockResolvedValue([newUuid()]);
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+
+      const result = await sut.getById(auth, person.personGroupId);
+      expect(result).not.toHaveProperty('categoryIds');
+      expect(mocks.person.getPersonCategoryIds).not.toHaveBeenCalled();
     });
 
     it('should get a person by id', async () => {
@@ -1824,6 +1851,21 @@ describe(PersonService.name, () => {
       mocks.person.getAssetIdsForPeople.mockResolvedValue([assetId]);
       await sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
       expect(mocks.event.emit).toHaveBeenCalledWith('AssetsChanged', { assetIds: [assetId] });
+    });
+
+    it("keeps the merged-away person's categories on the person who stays, before deleting them (FL-874)", async () => {
+      const { auth, survivor, removed } = setupMerge();
+      await expect(sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] })).resolves.toEqual([
+        { id: removed.personGroupId, success: true },
+      ]);
+      expect(mocks.person.copyCategoryMembers).toHaveBeenCalledWith(
+        auth.user.id,
+        removed.personGroupId,
+        survivor.personGroupId,
+      );
+      expect(mocks.person.copyCategoryMembers.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.person.delete.mock.invocationCallOrder[0],
+      );
     });
 
     it('preserves the mapping when identity-refresh admission fails', async () => {

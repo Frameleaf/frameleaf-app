@@ -143,6 +143,7 @@ import { PartnerLockedNoticeService } from 'src/services/partner-locked-notice.s
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { PasskeyService } from 'src/services/passkey.service.js';
+import { PersonCategoryService } from 'src/services/person-category.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
@@ -392,6 +393,7 @@ export const services = [
   PartnerService,
   PasskeyService,
   PartnerCopyService,
+  PersonCategoryService,
   PersonService,
   PinnedCollectionService,
   PetRecognitionService,

@@ -402,6 +402,11 @@ const searchFilterBranchShape = {
   updatedAt: DateFilterSchema,
   trashedAt: DateFilterNullableSchema,
   personIds: IdsFilterSchema,
+  // FL-874: items with a face of someone in any (all, none) of the viewer's own person categories; categories are
+  // per viewer, so another account's category matches nothing, and through a shared link none does
+  personCategoryIds: IdsFilterSchema.describe(
+    "The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them",
+  ),
   // FL-58: matches the caller's own confirmed pet observations; another account's pet id matches nothing
   petIds: IdsFilterSchema,
   tagIds: IdsFilterSchema,

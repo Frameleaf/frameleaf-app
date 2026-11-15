@@ -207,6 +207,8 @@ export class PersonService extends BaseService {
     return {
       people: items.map((person) => ({
         ...mapPerson(person),
+        // FL-874: every person listed here is the caller's own, so are their categories
+        categoryIds: person.categoryIds,
         assetCount: Number(person.assetCount),
         lastSeenAt: person.lastSeenAt ? new Date(person.lastSeenAt).toISOString() : null,
       })),
@@ -972,7 +974,13 @@ export class PersonService extends BaseService {
    * as for the thumbnail, never one the session's NSFW setting hides.
    */
   private async mapOwnPerson(auth: AuthDto, person: Person): Promise<PersonResponseDto> {
-    return { ...mapPerson(person), featuredAssetId: await this.featuredAssetId(auth, person) };
+    const isOwner = person.ownerId === auth.user.id;
+    const [featuredAssetId, categoryIds] = await Promise.all([
+      this.featuredAssetId(auth, person),
+      // FL-874: categories are the owner's alone; every person read here is the caller's own, and this keeps it so
+      isOwner ? this.personRepository.getPersonCategoryIds(person) : undefined,
+    ]);
+    return { ...mapPerson(person), featuredAssetId, ...(isOwner && { categoryIds }) };
   }
 
   private async featuredAssetId(auth: AuthDto, person: Person): Promise<string | null> {
@@ -2009,6 +2017,8 @@ export class PersonService extends BaseService {
               mergeId,
               targetPerson.personGroupId,
             );
+            // FL-874: the person who stays is also in the merged-away person's categories
+            await this.personRepository.copyCategoryMembers(targetPerson.ownerId, mergeId, targetPerson.personGroupId);
             return this.personRepository.delete([mergeId], targetPerson.ownerId);
           }, targetPerson.ownerId);
           await this.emitAssetsChanged(affected);

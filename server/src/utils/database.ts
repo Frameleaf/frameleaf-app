@@ -884,6 +884,38 @@ function personIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
   });
 }
 /**
+ * FL-874: items with a visible face of someone the viewer put in these categories. Categories are the viewer's own
+ * (`person_category_member` is keyed by its owner), and a person group is shared across a cluster's accounts, so a
+ * partner's photo of someone in the viewer's Family matches too. Without a viewer (a shared link) the positive
+ * groups match nothing and `none` excludes nothing.
+ */
+function personCategoryIdsPredicates(
+  eb: AssetExpressionBuilder,
+  filter: IdsFilter | undefined,
+  viewerId: string | null | undefined,
+) {
+  if (filter === undefined) {
+    return [];
+  }
+  const matching = (ids: string[]) =>
+    visibleFaces(eb)
+      .innerJoin('person_category_member', 'person_category_member.personId', 'asset_face.personGroupId')
+      .where('person_category_member.ownerId', '=', viewerId ?? '')
+      .where('person_category_member.categoryId', '=', anyUuid(ids));
+  return idsPredicates(eb, filter, {
+    matchesAny: (ids) => (viewerId ? eb.exists(matching(ids)) : eb.lit(false)),
+    matchesAll: (ids) =>
+      viewerId
+        ? eb.exists(
+            matching(ids)
+              .select('asset_face.assetId')
+              .groupBy('asset_face.assetId')
+              .having((eb) => eb.fn.count('person_category_member.categoryId').distinct(), '=', ids.length),
+          )
+        : eb.lit(false),
+  });
+}
+/**
  * FL-58: `petIds` reads the owner's durable decisions only — `confirmed` observations of the viewer's
  * own pets (see `hasPets`). Without a viewer the positive groups match nothing and `none` excludes
  * nothing, so a missing owner can never widen a result.
@@ -1249,6 +1281,7 @@ function branchPredicates(
     ...(branch.color ? [assetColorPredicate(branch.color, paletteViewerId)] : []),
     ...(branch.hasTransparency ? [assetTransparencyPredicate(branch.hasTransparency.eq, paletteViewerId)] : []),
     ...personIdsPredicates(eb, branch.personIds),
+    ...personCategoryIdsPredicates(eb, branch.personCategoryIds, privateViewerId),
     ...petIdsPredicates(eb, branch.petIds, viewerId),
     ...tagIdsPredicates(eb, branch.tagIds),
     ...landmarkIdsPredicates(eb, branch.landmarkIds),

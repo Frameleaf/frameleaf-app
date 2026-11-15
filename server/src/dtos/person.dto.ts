@@ -91,6 +91,14 @@ export const PersonResponseSchema = z
           '(trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)',
       )
       .meta(new HistoryBuilder().added('v3.2.1').alpha('v3.2.1').getExtensions()),
+    categoryIds: z
+      .array(z.uuidv4())
+      .optional()
+      .describe(
+        "The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the " +
+          "person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else",
+      )
+      .meta(new HistoryBuilder().added('v3.2.1').alpha('v3.2.1').getExtensions()),
   })
   .meta({ id: 'PersonResponseDto' });
 

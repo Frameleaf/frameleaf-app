@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PersonCategoryService } from 'src/services/person-category.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { errorDto } from 'test/medium/responses.js';
 import { factory } from 'test/small.factory.js';
@@ -9,10 +10,12 @@ import { ControllerContext, automock, controllerSetup, mockBaseService } from 't
 describe(PersonController.name, () => {
   let ctx: ControllerContext;
   const service = mockBaseService(PersonService);
+  const categoryService = mockBaseService(PersonCategoryService);
 
   beforeAll(async () => {
     ctx = await controllerSetup(PersonController, [
       { provide: PersonService, useValue: service },
+      { provide: PersonCategoryService, useValue: categoryService },
       { provide: LoggingRepository, useValue: automock(LoggingRepository, { strict: false }) },
     ]);
     return () => ctx.close();
@@ -20,6 +23,7 @@ describe(PersonController.name, () => {
 
   beforeEach(() => {
     service.resetAllMocks();
+    categoryService.resetAllMocks();
     ctx.reset();
   });
 
@@ -272,5 +276,66 @@ describe(PersonController.name, () => {
       .send({ ids: [ids[1]] });
     expect(legacy.status).toBe(200);
     expect(service.mergePerson).toHaveBeenCalledWith(undefined, ids[0], { ids: [ids[1]] });
+  });
+
+  describe('person categories (FL-874)', () => {
+    it('routes GET /people/categories to the categories, never to a person id', async () => {
+      categoryService.getAll.mockResolvedValue([]);
+      const { status, body } = await request(ctx.getHttpServer()).get('/people/categories');
+      expect(status).toBe(200);
+      expect(body).toEqual([]);
+      expect(categoryService.getAll).toHaveBeenCalledWith(undefined);
+      expect(service.getById).not.toHaveBeenCalled();
+    });
+
+    it('creates a category with a name and an optional color', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/people/categories')
+        .send({ name: ' Neighbours ', color: 'ff0000' });
+      expect(status).toBe(201);
+      expect(categoryService.create).toHaveBeenCalledWith(undefined, { name: 'Neighbours', color: '#ff0000' });
+      expect(service.create).not.toHaveBeenCalled();
+    });
+
+    it('requires a name to create a category', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/people/categories').send({ name: '  ' });
+      expect(status).toBe(400);
+      expect(categoryService.create).not.toHaveBeenCalled();
+    });
+
+    it('updates a category by id, and requires something to change', async () => {
+      const id = factory.uuid();
+      const { status } = await request(ctx.getHttpServer())
+        .patch(`/people/categories/${id}`)
+        .send({ name: 'Kin', color: null, order: 2 });
+      expect(status).toBe(200);
+      expect(categoryService.update).toHaveBeenCalledWith(undefined, id, { name: 'Kin', color: null, order: 2 });
+      expect(service.update).not.toHaveBeenCalled();
+
+      const empty = await request(ctx.getHttpServer()).patch(`/people/categories/${id}`).send({});
+      expect(empty.status).toBe(400);
+    });
+
+    it('deletes a category by id without deleting a person', async () => {
+      const id = factory.uuid();
+      const { status } = await request(ctx.getHttpServer()).delete(`/people/categories/${id}`);
+      expect(status).toBe(204);
+      expect(categoryService.delete).toHaveBeenCalledWith(undefined, id);
+      expect(service.delete).not.toHaveBeenCalled();
+    });
+
+    it("sets a person's categories, requiring uuids", async () => {
+      const id = factory.uuid();
+      const categoryIds = [factory.uuid(), factory.uuid()];
+      const { status } = await request(ctx.getHttpServer()).put(`/people/${id}/categories`).send({ categoryIds });
+      expect(status).toBe(200);
+      expect(categoryService.setPersonCategories).toHaveBeenCalledWith(undefined, id, { categoryIds });
+
+      const invalid = await request(ctx.getHttpServer())
+        .put(`/people/${id}/categories`)
+        .send({ categoryIds: ['family'] });
+      expect(invalid.status).toBe(400);
+      expect(categoryService.setPersonCategories).toHaveBeenCalledTimes(1);
+    });
   });
 });
