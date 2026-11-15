@@ -137,6 +137,7 @@ const SHARED_LINK_ROUTES = new Set([
   'GET albums/:id/items',
   'GET albums/:id/map-markers',
   'GET albums/:id/people',
+  'GET albums/:id/text-cards',
   'GET assets/:id',
   // Studio timeline filmstrips and waveforms follow the thumbnail's access
   'GET assets/:id/filmstrip',

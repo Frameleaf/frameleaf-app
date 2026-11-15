@@ -1,4 +1,10 @@
-import { AlbumResponseDto, AlbumUserRole, AssetMediaResponseDto, LoginResponseDto, SharedLinkType } from '@frameleaf/sdk';
+import {
+  AlbumResponseDto,
+  AlbumUserRole,
+  AssetMediaResponseDto,
+  LoginResponseDto,
+  SharedLinkType,
+} from '@frameleaf/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -44,7 +50,7 @@ describe('/albums/:id custom order and text cards', () => {
 
   const orderedIds = async (query: string, auth?: string) => {
     const call = request(app).get(`/timeline/ordered?sort=custom&albumId=${album.id}${query}`);
-    const { status, body } = await (auth ? call.set('Authorization', asBearerAuth(auth)) : call);
+    const { status, body } = await (auth ? call.set(asBearerAuth(auth)) : call);
     expect(status).toBe(200);
     return JSON.parse(typeof body === 'string' ? body : JSON.stringify(body)).id as string[];
   };
@@ -52,20 +58,18 @@ describe('/albums/:id custom order and text cards', () => {
   it('lets an editor move a photo and turns custom order on', async () => {
     const { status } = await request(app)
       .put(`/albums/${album.id}/assets/order`)
-      .set('Authorization', asBearerAuth(editor.accessToken))
+      .set(asBearerAuth(editor.accessToken))
       .send({ assetIds: [assets[2].id], afterAssetId: null });
     expect(status).toBe(204);
 
-    const { body } = await request(app)
-      .get(`/albums/${album.id}`)
-      .set('Authorization', asBearerAuth(owner.accessToken));
+    const { body } = await request(app).get(`/albums/${album.id}`).set(asBearerAuth(owner.accessToken));
     expect(body.isCustomOrder).toBe(true);
   });
 
   it('refuses a viewer and a shared link, even one that may upload', async () => {
     const asViewer = await request(app)
       .put(`/albums/${album.id}/assets/order`)
-      .set('Authorization', asBearerAuth(viewer.accessToken))
+      .set(asBearerAuth(viewer.accessToken))
       .send({ assetIds: [assets[0].id], afterAssetId: null });
     expect(asViewer.status).toBe(400);
 
@@ -85,7 +89,7 @@ describe('/albums/:id custom order and text cards', () => {
   it('keeps a card as plain text and shows it to a shared link', async () => {
     const created = await request(app)
       .post(`/albums/${album.id}/text-cards`)
-      .set('Authorization', asBearerAuth(owner.accessToken))
+      .set(asBearerAuth(owner.accessToken))
       .send({ heading: '<script>alert(1)</script>', body: 'Day one', afterAssetId: assets[2].id });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ heading: '<script>alert(1)</script>', afterAssetId: assets[2].id });
@@ -96,7 +100,7 @@ describe('/albums/:id custom order and text cards', () => {
 
     const deleted = await request(app)
       .delete(`/albums/${album.id}/text-cards/${created.body.id}`)
-      .set('Authorization', asBearerAuth(editor.accessToken));
+      .set(asBearerAuth(editor.accessToken));
     expect(deleted.status).toBe(204);
     expect(await orderedIds('', owner.accessToken)).toHaveLength(3);
   });
