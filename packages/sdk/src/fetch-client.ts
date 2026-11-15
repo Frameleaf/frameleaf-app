@@ -13890,7 +13890,17 @@ export type PetObservationCreateDto = {
     /** Width of the image the region was drawn on */
     imageWidth?: number;
 };
+export type PhotoSourceCatalog = {
+    /** The catalog app, as the desktop names it, for example "lightroom-classic" */
+    app: string;
+    /** The desktop's stable identifier for the catalog */
+    catalogId: string;
+    /** The catalog's name, shown to the person */
+    name: string;
+};
 export type PhotoSourceCreateDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     deviceId: string;
     id: string;
     kind: PhotoSourceKind;
@@ -13899,6 +13909,8 @@ export type PhotoSourceCreateDto = {
     scopeFingerprint: string;
 };
 export type PhotoSourceResponseDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     createdAt: string;
     deviceId: string;
     id: string;
@@ -13909,6 +13921,8 @@ export type PhotoSourceResponseDto = {
     scopeFingerprint: string;
 };
 export type ApplePhotosSourceCreateDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     deviceId: string;
     id: string;
     kind: ApplePhotosSourceKind;
@@ -13917,6 +13931,8 @@ export type ApplePhotosSourceCreateDto = {
     scopeFingerprint: string;
 };
 export type ApplePhotosSourceResponseDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     createdAt: string;
     deviceId: string;
     id: string;
@@ -13925,6 +13941,55 @@ export type ApplePhotosSourceResponseDto = {
     name: string;
     revokedAt: string | null;
     scopeFingerprint: string;
+};
+export type PhotoSourceCatalogMetadataDto = {
+    /** Up to 500 catalog entries */
+    items: {
+        /** Caption */
+        caption?: string;
+        /** Collections (albums) the item is in */
+        collections?: {
+            /** The collection name */
+            name: string;
+            /** The collection sets the collection sits in, outermost first */
+            path: string[];
+        }[];
+        /** Colour label name, for example "Red" */
+        colorLabel?: string;
+        flag?: PhotoSourceCatalogFlag | null;
+        /** The source item (as planned for a copy run) the catalog entry describes */
+        itemId: string;
+        /** Keywords; a hierarchy is separated by "|", for example "Places|France|Paris" */
+        keywords?: string[];
+        /** Star rating, 0 (unrated) to 5 */
+        rating?: number;
+        /** Title */
+        title?: string;
+    }[];
+};
+export type PhotoSourceCatalogItemResult = {
+    /** Fields written for this item */
+    applied: PhotoSourceCatalogField[];
+    itemId: string;
+    /** Fields left alone because the person's own change wins */
+    keptEdits: PhotoSourceCatalogField[];
+    status: PhotoSourceCatalogItemStatus;
+};
+export type PhotoSourceCatalogSummary = {
+    /** Items where at least one field was written */
+    applied: number;
+    /** Items left as they are because the person changed a field in Frameleaf since the last read-in */
+    keptEdits: number;
+    /** Items unknown to this source, or whose photo is gone or not available to change */
+    notFound: number;
+    /** Items whose copy is not verified yet; send them again after verification */
+    notReady: number;
+    /** Items already as the catalog says */
+    unchanged: number;
+};
+export type PhotoSourceCatalogMetadataResponseDto = {
+    items: PhotoSourceCatalogItemResult[];
+    summary: PhotoSourceCatalogSummary;
 };
 export type PhotoSourceRunDto = {
     id: string;
@@ -36139,6 +36204,22 @@ export function revokePhotoSource({ id }: {
     }));
 }
 /**
+ * Apply ratings, flags, labels, keywords, captions and collections read from a photo catalog
+ */
+export function applyPhotoSourceCatalogMetadata({ id, photoSourceCatalogMetadataDto }: {
+    id: string;
+    photoSourceCatalogMetadataDto: PhotoSourceCatalogMetadataDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceCatalogMetadataResponseDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/catalog-metadata`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceCatalogMetadataDto
+    })));
+}
+/**
  * Start or recover a bounded photo-copy run
  */
 export function createPhotoSourceRun({ id, photoSourceRunDto }: {
@@ -46969,6 +47050,23 @@ export enum PhotoSourceCopyMode {
 }
 export enum ApplePhotosSourceKind {
     ApplePhotos = "apple-photos"
+}
+export enum PhotoSourceCatalogFlag {
+    Pick = "pick",
+    Reject = "reject"
+}
+export enum PhotoSourceCatalogField {
+    Rating = "rating",
+    Description = "description",
+    Tags = "tags",
+    Albums = "albums"
+}
+export enum PhotoSourceCatalogItemStatus {
+    Applied = "applied",
+    Unchanged = "unchanged",
+    KeptEdits = "keptEdits",
+    NotReady = "notReady",
+    NotFound = "notFound"
 }
 export enum PhotoSourceRunState {
     Open = "open",
