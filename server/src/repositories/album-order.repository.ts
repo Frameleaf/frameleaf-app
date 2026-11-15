@@ -187,7 +187,7 @@ export class AlbumOrderRepository {
       if (!positions) {
         await this.renumber(albumId, tx);
         bounds = await this.bounds(tx, albumId, placement, moving);
-        positions = bounds && spreadPositions(bounds.lower, bounds.upper, count);
+        positions = bounds ? spreadPositions(bounds.lower, bounds.upper, count) : null;
         if (!positions) {
           throw new Error('Could not place items after renumbering the album');
         }
