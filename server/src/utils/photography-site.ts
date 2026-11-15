@@ -74,6 +74,13 @@ export const PhotographySiteFields = z.strictObject({
   faq: z.array(z.strictObject({ q: z.string().max(200), a: z.string().max(2000) })).max(20),
   /** "Trusted by" on the Commercial template: typed by the photographer, never read from client records. */
   trustedBy: z.array(z.string().trim().min(1).max(60)).max(12),
+  /**
+   * FL-1606: the Booking section, a card for each active booking type, shown right after the section `bookingAfter`
+   * names (whether that one is on or not). Fields of their own rather than a section id: a new value in the
+   * sections enum would break apps that decode it strictly.
+   */
+  booking: z.boolean().default(true),
+  bookingAfter: SiteSectionIdSchema.default('services'),
   slug: z.string().regex(SITE_SLUG),
   /** FL-701 decision A: served through the Frameleaf Cloud relay for subscribers. */
   domain: z
@@ -84,13 +91,34 @@ export const PhotographySiteFields = z.strictObject({
   seoTitle: z.string().max(120),
   seoDescription: z.string().max(300),
 });
-export const PhotographySiteSchema = PhotographySiteFields.superRefine((site, context) => {
+const checkSite = (site: Pick<PhotographySite, 'cover' | 'collections'>, context: z.RefinementCtx) => {
   const ids = site.collections.map((c) => c.id);
   if (new Set(ids).size !== ids.length) context.addIssue({ code: 'custom', message: 'Repeated collection' });
   if (portfolioItems(site).length > 200)
     context.addIssue({ code: 'custom', message: 'A website holds at most 200 photographs' });
-});
+};
+export const PhotographySiteSchema = PhotographySiteFields.superRefine(checkSite);
 export type PhotographySite = z.infer<typeof PhotographySiteSchema>;
+/**
+ * FL-1606: what a save sends. The Booking fields have no defaults here: a client that leaves them out keeps the
+ * stored ones (`withBookingSettings`), which defaults applied during validation would overwrite.
+ */
+export const PhotographySiteSaveSchema = PhotographySiteFields.extend({
+  booking: z.boolean().optional(),
+  bookingAfter: SiteSectionIdSchema.optional(),
+}).superRefine(checkSite);
+export type PhotographySiteSave = z.infer<typeof PhotographySiteSaveSchema>;
+
+/** FL-1606: the saved site, taking the Booking fields a save left out from what is stored (or the defaults). */
+export function withBookingSettings(site: PhotographySiteSave, stored: unknown): PhotographySite {
+  const kept = (stored ?? {}) as Record<string, unknown>;
+  const after = SiteSectionIdSchema.safeParse(kept.bookingAfter);
+  return {
+    ...site,
+    booking: site.booking ?? (typeof kept.booking === 'boolean' ? kept.booking : true),
+    bookingAfter: site.bookingAfter ?? (after.success ? after.data : 'services'),
+  };
+}
 export type PortfolioItem = z.infer<typeof PortfolioItem>;
 
 export const portfolioKey = (item: PortfolioItem) => `${item.shootId}:${item.captureId}`;
@@ -132,6 +160,8 @@ export function defaultPhotographySite(title: string): PhotographySite {
     testimonials: [],
     faq: [],
     trustedBy: [],
+    booking: true,
+    bookingAfter: 'services',
     slug: siteSlug(title),
     domain: '',
     seoTitle: '',

@@ -71,7 +71,6 @@
   } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import PhotographyCampaigns from '$lib/components/frameleaf/PhotographyCampaigns.svelte';
-  import PhotographyBookingTypes from '$lib/components/frameleaf/PhotographyBookingTypes.svelte';
   import PhotographyPaymentLinks from '$lib/components/frameleaf/PhotographyPaymentLinks.svelte';
   import PhotographyContracts from '$lib/components/frameleaf/PhotographyContracts.svelte';
   import PhotographyInvoices from '$lib/components/frameleaf/PhotographyInvoices.svelte';
@@ -179,7 +178,7 @@
     /** A shoot to open first: the RAW develop editor's way back (FL-420). */
     initialShoot?: string;
     /** `galleries`: the editor's Proof opens the shoot's galleries; `website`: an inquiry email's link (FL-702). */
-    initialSection?: 'galleries' | 'website' | 'payments';
+    initialSection?: 'galleries' | 'website' | 'payments' | 'booking-types';
     /** Take Clients out of the top bar (back under Tools); omitted, the rail offers no such action. */
     onRemoveFromTopBar?: () => void;
     /** Removing is being saved. */
@@ -188,7 +187,7 @@
 
   // svelte-ignore state_referenced_locally
   let section = $state<Section>(
-    initialSection === 'website' || initialSection === 'payments'
+    initialSection && initialSection !== 'galleries'
       ? initialSection
       : initialShoot && initialSection === 'galleries'
         ? 'galleries'
@@ -372,7 +371,7 @@
             : section === 'payment-links'
               ? $t('frameleaf_clients_payment_links')
               : section === 'booking-types'
-                ? $t('frameleaf_clients_booking_types')
+                ? $t('frameleaf_clients_bookings')
                 : section === 'settings'
                   ? $t('settings')
                   : section === 'branding'
@@ -388,23 +387,23 @@
                             : (active?.name ?? $t('frameleaf_photography_shoots')),
   );
   const subtitle = $derived(
-    (
-      ['settings', 'campaigns', 'payments', 'contracts', 'invoices', 'payment-links', 'booking-types'] as Section[]
-    ).includes(section)
+    (['settings', 'campaigns', 'payments', 'contracts', 'invoices', 'payment-links'] as Section[]).includes(section)
       ? ''
-      : section === 'branding'
-        ? $t('frameleaf_photography_branding_lead')
-        : section === 'watermarks'
-          ? $t('frameleaf_photography_watermarks_lead')
-          : section === 'website'
-            ? $t('frameleaf_photography_website_lead')
-            : section === 'publishing'
-              ? $t('frameleaf_photography_publishing_lead')
-              : isShootSection(section)
-                ? $t(sectionLeads[section])
-                : active
-                  ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
-                  : $t('frameleaf_photography_shoots_lead'),
+      : section === 'booking-types'
+        ? $t('frameleaf_clients_bookings_lead')
+        : section === 'branding'
+          ? $t('frameleaf_photography_branding_lead')
+          : section === 'watermarks'
+            ? $t('frameleaf_photography_watermarks_lead')
+            : section === 'website'
+              ? $t('frameleaf_photography_website_lead')
+              : section === 'publishing'
+                ? $t('frameleaf_photography_publishing_lead')
+                : isShootSection(section)
+                  ? $t(sectionLeads[section])
+                  : active
+                    ? `${active.client} · ${$t(shootTypeKeys[active.type])} · ${dateLabel(active.date)}`
+                    : $t('frameleaf_photography_shoots_lead'),
   );
   const summaryFor = (id: string) => workflowSummaries.find((row) => row.shootId === id);
   /** The shoot whose pages the rail lists: the open one, else the one opened last, else the newest. */
@@ -982,7 +981,7 @@
         {/each}
       {/if}
       <p class="phw-rail-heading">{$t('frameleaf_photography_studio_heading')}</p>
-      {#each [['contracts', $t('frameleaf_clients_contract_title'), mdiFileDocumentOutline], ['invoices', $t('frameleaf_clients_invoice_title'), mdiReceiptTextOutline], ['campaigns', $t('campaign_title'), mdiEmailOutline], ['booking-types', $t('frameleaf_clients_booking_types'), mdiCalendarOutline], ['payment-links', $t('frameleaf_clients_payment_links'), mdiLinkVariant], ['payments', $t('frameleaf_clients_payments'), mdiCreditCardOutline], ['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
+      {#each [['contracts', $t('frameleaf_clients_contract_title'), mdiFileDocumentOutline], ['invoices', $t('frameleaf_clients_invoice_title'), mdiReceiptTextOutline], ['campaigns', $t('campaign_title'), mdiEmailOutline], ['booking-types', $t('frameleaf_clients_bookings'), mdiCalendarOutline], ['payment-links', $t('frameleaf_clients_payment_links'), mdiLinkVariant], ['payments', $t('frameleaf_clients_payments'), mdiCreditCardOutline], ['website', $t('frameleaf_photography_website'), mdiWeb], ['watermarks', $t('frameleaf_photography_watermarks'), mdiBrushOutline], ['branding', $t('frameleaf_photography_branding'), mdiPaletteOutline], ['publishing', $t('frameleaf_photography_publishing'), mdiCloudUploadOutline], ['settings', $t('settings'), mdiTune]] as const as [id, label, icon] (id)}
         <button
           type="button"
           aria-current={section === id ? 'page' : undefined}
@@ -1081,7 +1080,10 @@
       {:else if section === 'payments'}
         <PhotographyPayments studioName={studio?.name ?? ''} />
       {:else if section === 'booking-types'}
-        <PhotographyBookingTypes />
+        <!-- FL-1606: loaded when opened, so it isn't part of what /photography loads up front (bundle budget). -->
+        {#await import('$lib/components/frameleaf/PhotographyBookings.svelte') then { default: PhotographyBookings }}
+          <PhotographyBookings />
+        {/await}
       {:else if section === 'payment-links'}
         <PhotographyPaymentLinks onSetUpPayments={() => (section = 'payments')} />
       {:else if isShootSection(section)}

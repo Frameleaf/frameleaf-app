@@ -56,9 +56,26 @@ const BookingSchema = z.object({
   status: BookingStatusSchema,
   requestedAt: z.string(),
 });
-export class PhotographyBookingListDto extends createZodDto(z.object({ bookings: z.array(BookingSchema) })) {}
-export class PhotographyBookingDto extends createZodDto(BookingSchema) {}
-export class PhotographyBookingStatusDto extends createZodDto(z.strictObject({ status: BookingStatusSchema })) {}
+export class PhotographyBookingListDto extends createZodDto(
+  z.object({
+    bookings: z.array(BookingSchema),
+    /** FL-1606: whether this server can email clients, so the studio is offered the confirm/decline email. */
+    mailReady: z.boolean(),
+  }),
+) {}
+export class PhotographyBookingDto extends createZodDto(
+  BookingSchema.extend({
+    /** FL-1606: whether the client was emailed about this change. */
+    clientEmailed: z.boolean(),
+  }),
+) {}
+export class PhotographyBookingStatusDto extends createZodDto(
+  z.strictObject({
+    status: BookingStatusSchema,
+    /** FL-1606: email the client when the booking is confirmed or declined (when email is set up). */
+    notifyClient: z.boolean().default(false),
+  }),
+) {}
 
 /** The public booking form: what the client chose. Prices come from the server, never from here. */
 export class PhotographyBookingRequestDto extends createZodDto(

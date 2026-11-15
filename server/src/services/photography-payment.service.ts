@@ -49,8 +49,8 @@ export class PhotographyPaymentService {
     private logger?: LoggingRepository,
   ) {
     this.payments.onPayment('link', (event) => this.paymentEvent(event));
-    // FL-1049: booking deposits are payments too, with no link.
-    this.payments.onPayment('booking', (event) => this.paymentEvent(event));
+    // FL-1049: booking deposits are payments too, with no link. PhotographyBookingService registers them (FL-1606),
+    // so an open Bookings list hears when a deposit is paid.
   }
 
   private studio(auth: AuthDto) {

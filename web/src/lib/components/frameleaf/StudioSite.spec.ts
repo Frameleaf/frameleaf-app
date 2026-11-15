@@ -29,6 +29,8 @@ const site = (patch: Partial<PublicSite> = {}): PublicSite => ({
   testimonials: [{ quote: 'We forgot the camera was there.', name: 'Jamie' }],
   faq: [{ q: 'Do you travel?', a: 'Yes.' }],
   trustedBy: ['Northbound Journal'],
+  booking: true,
+  bookingAfter: 'services',
   cover: photo('s:a', 'Jamie by the lake'),
   collections: [
     { id: 'weddings', name: 'Weddings', photos: [photo('s:a', 'Jamie by the lake'), photo('s:b', 'First dance')] },
@@ -65,6 +67,71 @@ describe('StudioSite (FL-702)', () => {
     await fireEvent.click(screen.getByRole('tab', { name: 'Families' }));
     expect(screen.getByAltText('A walk together')).toBeInTheDocument();
     expect(screen.queryByAltText('First dance')).not.toBeInTheDocument();
+  });
+
+  it('shows a Booking card for each session right after Services, each opening the form on it (FL-1606)', async () => {
+    const onBook = vi.fn();
+    const bookings = [
+      {
+        id: 't1',
+        name: 'Family session',
+        description: '',
+        durationMinutes: 60,
+        price: 30_000,
+        deposit: 5000,
+        currency: 'CAD',
+        addOns: [],
+      },
+      {
+        id: 't2',
+        name: 'Mini session',
+        description: '',
+        durationMinutes: 20,
+        price: 12_000,
+        deposit: 0,
+        currency: 'CAD',
+        addOns: [],
+      },
+    ];
+    for (const template of ['editorial', 'minimal', 'gallery', 'cinematic', 'noir', 'commercial'] as const) {
+      const view = render(StudioSite, { site: site({ template }), bookings, onBook });
+      const section = document.querySelector('#ss-booking')!;
+      expect(section.previousElementSibling).toHaveClass('ss-services');
+      expect(screen.getByText(/60 minutes · .*50\.00 deposit to book/)).toBeInTheDocument();
+      expect(screen.getByText('20 minutes')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Book' })).toHaveAttribute('href', '#ss-booking');
+      // The section replaces the header's "Book a session" button.
+      expect(screen.queryByRole('button', { name: 'Book a session' })).not.toBeInTheDocument();
+      view.unmount();
+    }
+    // Moved in the editor: it follows the section it names.
+    const moved = render(StudioSite, { site: site({ bookingAfter: 'portfolio' }), bookings, onBook });
+    expect(document.querySelector('#ss-booking')!.previousElementSibling).toHaveClass('ss-portfolio');
+    moved.unmount();
+    render(StudioSite, { site: site(), bookings, onBook });
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Book' })[1]);
+    expect(onBook).toHaveBeenCalledWith('t2');
+  });
+
+  it('keeps only the header booking button when the Booking section is off', () => {
+    render(StudioSite, {
+      site: site({ booking: false }),
+      bookings: [
+        {
+          id: 't1',
+          name: 'Family',
+          description: '',
+          durationMinutes: 60,
+          price: 1,
+          deposit: 0,
+          currency: 'CAD',
+          addOns: [],
+        },
+      ],
+      onBook: vi.fn(),
+    });
+    expect(document.querySelector('#ss-booking')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Book a session' })).toBeInTheDocument();
   });
 
   it('shows the Commercial client list only on that template', () => {

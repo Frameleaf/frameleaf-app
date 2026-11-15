@@ -1,7 +1,12 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
-import { PhotographySiteFields, PhotographySiteSchema, SiteInquiryKindSchema } from 'src/utils/photography-site.js';
+import {
+  PhotographySiteFields,
+  PhotographySiteSaveSchema,
+  PhotographySiteSchema,
+  SiteInquiryKindSchema,
+} from 'src/utils/photography-site.js';
 
 const blockedReasons = ['permission', 'order', 'payment', 'approval', 'render'] as const;
 // Keep runtime null validation while avoiding a null member in generated TypeScript string enums.
@@ -523,7 +528,7 @@ export class PhotographyCallbackDto extends createZodDto(z.object({ received: z.
 export class PhotographyOrderAcceptDto extends createZodDto(z.strictObject({ expectedRevision: Revision })) {}
 export type { PhotographySite } from 'src/utils/photography-site.js';
 export class PhotographySiteSaveDto extends createZodDto(
-  z.strictObject({ expectedRevision: Revision, site: PhotographySiteSchema }),
+  z.strictObject({ expectedRevision: Revision, site: PhotographySiteSaveSchema }),
 ) {}
 
 export const PhotographyInquirySchema = z.object({
@@ -567,6 +572,8 @@ export class PhotographyPublicSiteDto extends createZodDto(
       testimonials: true,
       faq: true,
       trustedBy: true,
+      booking: true,
+      bookingAfter: true,
     }).shape,
     ownerId: Id,
     cover: PublicSitePhotoSchema.nullable(),

@@ -1,7 +1,8 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { loadBrand } from '$lib/frameleaf/photography/api';
 import { siteRequest } from '$lib/frameleaf/photography/workflow-api';
 import PhotographyWebsite from './PhotographyWebsite.svelte';
@@ -31,6 +32,8 @@ const site = {
   testimonials: [],
   faq: [],
   trustedBy: [],
+  booking: true,
+  bookingAfter: 'services',
   slug: 'cedar-and-light',
   domain: '',
   seoTitle: '',
@@ -46,6 +49,30 @@ beforeEach(() => {
     inquiries: [],
   } as never);
   vi.mocked(loadBrand).mockResolvedValue({ revision: 'b1', brand: { name: 'Cedar & Light' } } as never);
+  sdkMock.photographyBookingTypes.mockResolvedValue({ types: [] });
+});
+
+it('lists Booking after Services, moves it, and says when it stays hidden (FL-1606)', async () => {
+  vi.mocked(siteRequest).mockResolvedValue({
+    revision: 's1',
+    site: { ...site, sections: ['cover', 'services', 'inquiry'].map((id) => ({ id, on: true })) },
+    url: 'https://x/studio/cedar',
+    inquiries: [],
+  } as never);
+  render(PhotographyWebsite, { shoots: [] });
+  await fireEvent.click(await screen.findByRole('tab', { name: 'Sections' }));
+  const rows = screen.getAllByRole('switch', { name: /^Show / }).map((item) => item.getAttribute('aria-label'));
+  expect(rows).toEqual(['Show Cover', 'Show Services and packages', 'Show Booking', 'Show Inquiry form']);
+  expect(screen.getByText('Booking stays hidden until you add a booking type in Bookings.')).toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Move Booking up' }));
+  expect(screen.getAllByRole('switch', { name: /^Show / }).map((item) => item.getAttribute('aria-label'))).toEqual([
+    'Show Cover',
+    'Show Booking',
+    'Show Services and packages',
+    'Show Inquiry form',
+  ]);
+  await fireEvent.click(screen.getByRole('switch', { name: 'Show Booking' }));
+  expect(screen.queryByText(/Booking stays hidden/)).not.toBeInTheDocument();
 });
 
 it('puts Publish, the save state and Save website in the page header when there is one', async () => {

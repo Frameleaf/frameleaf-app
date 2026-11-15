@@ -18,13 +18,22 @@
     site,
     types,
     sent = false,
-  }: { open?: boolean; site: string; types: BookingType[]; sent?: boolean } = $props();
+    chosen = '',
+  }: {
+    open?: boolean;
+    site: string;
+    types: BookingType[];
+    sent?: boolean;
+    /** FL-1606: the session the website's Booking card was for; the first one otherwise. */
+    chosen?: string;
+  } = $props();
 
   type Phase = 'ready' | 'sending' | 'sent';
   // svelte-ignore state_referenced_locally
   let phase = $state<Phase>(sent ? 'sent' : 'ready');
   let failed = $state(false);
-  let typeId = $state('');
+  // svelte-ignore state_referenced_locally
+  let typeId = $state(chosen);
   let name = $state('');
   let email = $state('');
   let date = $state('');

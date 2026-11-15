@@ -147,5 +147,11 @@
   "invoice_pdf_paid": "Paid",
   "invoice_pdf_balance": "Balance due",
   "invoice_pdf_schedule": "Payment schedule",
-  "invoice_pdf_due": "Due {date}"
+  "invoice_pdf_due": "Due {date}",
+  "booking_confirmed_subject": "{studio} confirmed your {session}",
+  "booking_confirmed_heading": "Your booking is confirmed",
+  "booking_confirmed_body": "{studio} confirmed your {session} and will be in touch with the details. Reply to this email with any questions.",
+  "booking_declined_subject": "{studio} can’t take your {session} booking",
+  "booking_declined_heading": "Your booking wasn’t confirmed",
+  "booking_declined_body": "{studio} can’t take your {session} booking on the dates you asked for. Reply to this email to find another time."
 }

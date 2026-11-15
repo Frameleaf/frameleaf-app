@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
+import { ZodValidationPipe } from 'nestjs-zod';
 import { describe, expect, it, vi } from 'vitest';
+import { PhotographySiteSaveDto } from 'src/dtos/photography-workflow.dto.js';
 import { PhotographySiteService, STUDIO_DOMAIN_HELD } from 'src/services/photography-site.service.js';
 import { defaultPhotographySite } from 'src/utils/photography-site.js';
 
@@ -65,6 +67,34 @@ describe(PhotographySiteService.name, () => {
 
       expect(repository.mutateStudio).toHaveBeenCalledOnce();
       expect(saved.url).toBe('/studio/projects');
+    });
+
+    it('keeps the stored Booking settings when a save leaves them out (FL-1606)', async () => {
+      const { sut, repository, stored } = setup('north-studio');
+      await sut.saveSite({} as never, {
+        expectedRevision: REVISION,
+        site: { ...stored, booking: false, bookingAfter: 'about' },
+      });
+      // An older client knows nothing of Booking: no default may undo the studio's choice, including the request
+      // validation that runs before the service (the app's global ZodValidationPipe, run here as it is in requests).
+      const { booking: _booking, bookingAfter: _after, ...older } = stored;
+      const request = new ZodValidationPipe().transform(
+        { expectedRevision: REVISION, site: { ...older, about: 'Portraits' } },
+        { type: 'body', metatype: PhotographySiteSaveDto },
+      );
+      const answer = await sut.saveSite({} as never, request as never);
+      const after = (await repository.studioRecord(OWNER)).record as { site: typeof stored };
+      expect(after.site).toMatchObject({ about: 'Portraits', booking: false, bookingAfter: 'about' });
+      expect(answer.site).toMatchObject({ booking: false, bookingAfter: 'about' });
+      // A client that sends them changes them.
+      await sut.saveSite({} as never, {
+        expectedRevision: REVISION,
+        site: { ...stored, booking: true, bookingAfter: 'services' },
+      });
+      expect(((await repository.studioRecord(OWNER)).record as { site: typeof stored }).site).toMatchObject({
+        booking: true,
+        bookingAfter: 'services',
+      });
     });
   });
 

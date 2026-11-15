@@ -13964,8 +13964,10 @@ export type PhotographyBookingListDto = {
         total: number;
         typeName: string;
     }[];
+    mailReady: boolean;
 };
 export type PhotographyBookingStatusDto = {
+    notifyClient?: boolean;
     status: PhotographyBookingStatus;
 };
 export type PhotographyBookingDto = {
@@ -13977,6 +13979,7 @@ export type PhotographyBookingDto = {
     }[];
     bookingTypeId: string | null;
     clientEmail: string;
+    clientEmailed: boolean;
     clientName: string;
     currency: string;
     deposit: number;
@@ -15158,6 +15161,8 @@ export type PhotographySiteDto = {
     revision: string | null;
     site: {
         about: string;
+        booking?: boolean;
+        bookingAfter?: PhotographySiteSectionId;
         collections: {
             id: string;
             items: {
@@ -15206,6 +15211,8 @@ export type PhotographySiteSaveDto = {
     expectedRevision: string | null;
     site: {
         about: string;
+        booking?: boolean;
+        bookingAfter?: PhotographySiteSectionId;
         collections: {
             id: string;
             items: {
@@ -15268,6 +15275,8 @@ export type StudioSiteDomainResponseDto = {
 };
 export type PhotographyPublicSiteDto = {
     about: string;
+    booking?: boolean;
+    bookingAfter?: PhotographySiteSectionId;
     brand: {
         background: string;
         color: string;
@@ -46927,10 +46936,6 @@ export enum PhotographySiteInquiryKind {
     Inquiry = "inquiry",
     GalleryLink = "gallery-link"
 }
-export enum PhotographySiteColours {
-    Template = "template",
-    Brand = "brand"
-}
 export enum PhotographySiteSectionId {
     Cover = "cover",
     Portfolio = "portfolio",
@@ -46940,6 +46945,10 @@ export enum PhotographySiteSectionId {
     Faq = "faq",
     Inquiry = "inquiry",
     Clients = "clients"
+}
+export enum PhotographySiteColours {
+    Template = "template",
+    Brand = "brand"
 }
 export enum PhotographySiteTemplate {
     Editorial = "editorial",

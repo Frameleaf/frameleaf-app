@@ -315,6 +315,9 @@ export type Site = {
   testimonials: { quote: string; name: string }[];
   faq: { q: string; a: string }[];
   trustedBy: string[];
+  /** FL-1606: the Booking section (one card per active booking type), shown right after `bookingAfter`. */
+  booking: boolean;
+  bookingAfter: SiteSectionId;
   slug: string;
   domain: string;
   seoTitle: string;
@@ -345,6 +348,8 @@ export type PublicSite = Pick<
   | 'testimonials'
   | 'faq'
   | 'trustedBy'
+  | 'booking'
+  | 'bookingAfter'
 > & {
   ownerId: string;
   cover: SitePhoto | null;

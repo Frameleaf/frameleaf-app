@@ -1,6 +1,8 @@
 <script lang="ts">
   import { inquiryProblems, sectionOn, siteTemplate } from '$lib/frameleaf/photography/studio-site';
   import type { InquiryInput, PublicSite, SitePhoto } from '$lib/frameleaf/photography/workflow-api';
+  import { locale } from '$lib/stores/preferences.store';
+  import type { PhotographyPublicBookingTypeListDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
   import '$lib/frameleaf/photography/studio-site.css';
 
@@ -15,6 +17,7 @@
     emptyWork,
     onInquiry,
     onBook,
+    bookings = [],
   }: {
     site: PublicSite;
     /** A small, inert render for the template picker. */
@@ -23,8 +26,10 @@
     emptyWork?: string;
     /** Sends an inquiry; absent in the editor's preview, where nothing is sent. */
     onInquiry?: (inquiry: InquiryInput) => Promise<void>;
-    /** FL-1053: opens the booking form; set only when the studio has sessions to book. */
-    onBook?: () => void;
+    /** FL-1053: opens the booking form, on one session when the Booking section's card names it. */
+    onBook?: (typeId?: string) => void;
+    /** FL-1606: the studio's bookable sessions, shown by the Booking section. */
+    bookings?: PhotographyPublicBookingTypeListDto['types'];
   } = $props();
 
   const template = $derived(siteTemplate(site.template));
@@ -33,8 +38,10 @@
   const current = $derived(collections.find((collection) => collection.id === chosen) ?? collections[0]);
   const cover = $derived(site.cover ?? current?.photos[0] ?? null);
   const brandColours = $derived(site.colours === 'brand');
-  const on = $derived(site.sections.filter((section) => section.on));
   const has = (id: PublicSite['sections'][number]['id']) => sectionOn(site.sections, id);
+  const showBooking = $derived(site.booking && bookings.length > 0);
+  const money = (amount: number, currency: string) =>
+    new Intl.NumberFormat($locale, { style: 'currency', currency }).format(amount / 100);
   const style = $derived(
     [
       `--ss-accent:${site.brand.color}`,
@@ -241,6 +248,30 @@
   {/if}
 {/snippet}
 
+{#snippet bookingSection()}
+  <section class="ss-booking" id="ss-booking">
+    <div class="ss-section-head"><h2>{$t('frameleaf_clients_booking_book')}</h2></div>
+    <div class="ss-packages">
+      {#each bookings as item (item.id)}
+        <article>
+          <h3>{item.name}</h3>
+          <strong>{money(item.price, item.currency)}</strong>
+          <p>
+            {$t('frameleaf_studio_site_booking_minutes', {
+              values: { minutes: item.durationMinutes },
+            })}{#if item.deposit > 0}{` · ${$t('frameleaf_studio_site_booking_deposit', {
+                values: { amount: money(item.deposit, item.currency) },
+              })}`}{/if}
+          </p>
+          <button type="button" class="ss-login ss-book" tabindex={tabIndex} onclick={() => onBook?.(item.id)}
+            >{$t('frameleaf_studio_site_book')}</button
+          >
+        </article>
+      {/each}
+    </div>
+  </section>
+{/snippet}
+
 {#snippet testimonials()}
   {#if site.testimonials.length > 0}
     <section class="ss-testimonials" aria-label={$t('frameleaf_studio_site_kind_words')}>
@@ -410,8 +441,9 @@
         {#if has('services') && site.packages.length > 0}<a href="#ss-services" tabindex={tabIndex}
             >{$t('frameleaf_studio_site_services')}</a
           >{/if}
+        {#if showBooking}<a href="#ss-booking" tabindex={tabIndex}>{$t('frameleaf_studio_site_book')}</a>{/if}
         {#if has('inquiry')}<a href="#ss-inquiry" tabindex={tabIndex}>{$t('frameleaf_studio_site_contact')}</a>{/if}
-        {#if onBook}<button type="button" class="ss-login" onclick={onBook} tabindex={tabIndex}
+        {#if onBook && !showBooking}<button type="button" class="ss-login" onclick={() => onBook()} tabindex={tabIndex}
             >{$t('frameleaf_clients_booking_book')}</button
           >{/if}
         {#if has('clients')}<a class="ss-login" href="#ss-clients" tabindex={tabIndex}
@@ -419,16 +451,19 @@
           >{/if}
       </nav>
     </header>
-    {#each on as section (section.id)}
-      {#if section.id === 'cover'}{@render coverSection()}
-      {:else if section.id === 'portfolio'}{@render portfolio()}
-      {:else if section.id === 'about'}{@render about()}
-      {:else if section.id === 'services'}{@render services()}
-      {:else if section.id === 'testimonials'}{@render testimonials()}
-      {:else if section.id === 'faq'}{@render faq()}
-      {:else if section.id === 'inquiry'}{@render inquirySection()}
-      {:else if section.id === 'clients'}{@render clients()}
+    {#each site.sections as section (section.id)}
+      {#if section.on}
+        {#if section.id === 'cover'}{@render coverSection()}
+        {:else if section.id === 'portfolio'}{@render portfolio()}
+        {:else if section.id === 'about'}{@render about()}
+        {:else if section.id === 'services'}{@render services()}
+        {:else if section.id === 'testimonials'}{@render testimonials()}
+        {:else if section.id === 'faq'}{@render faq()}
+        {:else if section.id === 'inquiry'}{@render inquirySection()}
+        {:else if section.id === 'clients'}{@render clients()}
+        {/if}
       {/if}
+      {#if section.id === site.bookingAfter && showBooking}{@render bookingSection()}{/if}
     {/each}
     <footer class="ss-footer">
       <span>© {new Date().getFullYear()} {site.brand.name}</span>
