@@ -142,7 +142,19 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1429 adds Cloud caption batches to the clip menu; composition and raster producers are unchanged.
     sourceSha256 === 'f76d7aef72b9d3dc7489f990afead2e4901fbb67b19f036f03fcb7abbeaeb122' ||
     // FL-642 streams the export limiter and binds colour match to split parents' keys; composition and raster producers are unchanged.
-    sourceSha256 === '4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6'
+    sourceSha256 === '4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6' ||
+    // FL-1555 crossfades between sound clips and sound curves; changes no composition or raster producer.
+    sourceSha256 === '618ffdaaf2d499ecd7cf680d60879e3f173e18aa10e7aa8171764d822a7e3755' ||
+    // FL-1563 marker ranges, notes and clip markers; changes no composition or raster producer.
+    sourceSha256 === 'd6b987310298fd087ee08d8a7dae66ab867d566ebc7a20f35737d3b419d3ac4d' ||
+    // FL-1564 Film Dissolve, Cross Zoom, Cube Spin and Page Peel; changes no composition or raster producer.
+    sourceSha256 === 'bbcef0a3103b1ac8983a3ea53f8aee7d7995115891d8e40766135b64bd99b84c' ||
+    // FL-1559 ASC CDL, lift gamma gain per channel and hue curves; changes no composition or raster producer.
+    sourceSha256 === '3a3669ec17409883b5705c8044503ef6825972c8a75a90ef700a4829568695ca' ||
+    // FL-1558 LUTs kept with the project and 1D LUTs; changes no composition or raster producer.
+    sourceSha256 === '3b81da411c63fb3b648a86d1bc04d8446c0853cff3d5511ec9c0c874d1751feb' ||
+    // FL-1561 channel mapping on a clip's sound; changes no composition or raster producer.
+    sourceSha256 === '81b9a0517a735951598a080a5deeda55caae8a33687ff99e7f791f734256c09e'
   )
     return {
       ...COMPOSITION_SOURCES,

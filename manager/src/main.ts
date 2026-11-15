@@ -312,6 +312,8 @@ class Api {
       installation,
       operations: operations.history(),
       autoUpdate: store.get<boolean>('auto-update') !== false,
+      /** FL-973: the last update can be undone until `until`. */
+      rollback: operations.rollbackOffer(),
       /** Why the last automatic update check could not start an update, until a later check does. */
       autoUpdateFailure: store.get<{ code: string; at: string }>('auto-update-failure'),
       profile: store.get('profile'),
@@ -479,6 +481,14 @@ class Api {
   @Post('update') update(@Body() input: unknown) {
     const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
     return { id: operations.update(id, key).id };
+  }
+  // FL-973: go back to the release before the last update, with the database as it was just before it.
+  @Post('review-rollback') reviewRollback() {
+    return operations.reviewRollback();
+  }
+  @Post('rollback') rollback(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.rollback(id, key).id };
   }
   @Post('auto-update') autoUpdate(@Body() input: unknown) {
     const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(input);

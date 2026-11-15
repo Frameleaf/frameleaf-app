@@ -9,10 +9,20 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_API_KEY, CONF_URL
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.setup import async_setup_component
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.frameleaf.const import AUTH_API_KEY, AUTH_OAUTH, CONF_AUTH_METHOD, CONF_EVENTS, DOMAIN
+from custom_components.frameleaf.const import (
+    AUTH_API_KEY,
+    AUTH_OAUTH,
+    CONF_ACCOUNT_REF,
+    CONF_AUTH_METHOD,
+    CONF_CLIENT_ID,
+    CONF_EVENTS,
+    DOMAIN,
+)
 
-from .conftest import ADMIN, API, URL, mock_server
+from .conftest import ADMIN, API, URL, mock_server, oauth_entry
 
 
 async def test_api_key(hass: HomeAssistant, aioclient_mock) -> None:
@@ -142,3 +152,50 @@ async def test_server_that_does_not_answer(hass: HomeAssistant, aioclient_mock) 
         result["flow_id"], {CONF_URL: URL, CONF_AUTH_METHOD: AUTH_OAUTH}
     )
     assert result["errors"] == {"base": "cannot_connect"}
+
+
+@pytest.mark.usefixtures("current_request_with_host")
+@pytest.mark.parametrize(
+    ("allowed_by", "reason", "client_id"),
+    [("ref-sam", "reauth_successful", "client-2"), ("ref-someone-else", "wrong_account", "client-1")],
+)
+async def test_signing_in_again_must_be_the_same_account(
+    hass: HomeAssistant, aioclient_mock, hass_client_no_auth, allowed_by: str, reason: str, client_id: str
+) -> None:
+    """FL-1371: a sign-in allowed by another Frameleaf account would show its library under this entry."""
+    # the page Frameleaf's Allow sends the browser back to
+    assert await async_setup_component(hass, "auth", {})
+    added = oauth_entry()
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=added.unique_id, title=added.title, data={**added.data, CONF_ACCOUNT_REF: "ref-sam"}
+    )
+    entry.add_to_hass(hass)
+    aioclient_mock.get(
+        f"{URL}/.well-known/oauth-authorization-server",
+        json={"registration_endpoint": f"{API}/oauth/apps/register"},
+    )
+    aioclient_mock.post(f"{API}/oauth/apps/register", status=201, json={"client_id": "client-2"})
+    aioclient_mock.post(
+        f"{API}/oauth/apps/token",
+        json={
+            "access_token": "fla_new",
+            "refresh_token": "flr_new",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "account_ref": allowed_by,
+        },
+    )
+    aioclient_mock.get(f"{API}/assets/statistics", json={"images": 1, "videos": 0, "total": 1})
+
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.EXTERNAL_STEP
+    state = parse_qs(urlparse(result["url"]).query)["state"][0]
+    client = await hass_client_no_auth()
+    assert (await client.get(f"/auth/external/callback?code=code-1&state={state}")).status == 200
+    result = await hass.config_entries.flow.async_configure(result["flow_id"])
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == reason
+    assert entry.data[CONF_CLIENT_ID] == client_id
+    assert entry.data[CONF_ACCOUNT_REF] == "ref-sam"

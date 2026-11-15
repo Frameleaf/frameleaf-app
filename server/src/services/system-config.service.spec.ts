@@ -121,6 +121,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     transcode: TranscodePolicy.Required,
     accel: TranscodeHardwareAcceleration.Disabled,
     accelDecode: true,
+    softwareFallback: [],
     tonemap: ToneMapping.Hable,
     realtime: {
       enabled: false,
@@ -191,6 +192,11 @@ const updatedConfig = Object.freeze<SystemConfig>({
       minScore: 0.7,
       maxDistance: 0.5,
       minFaces: 3,
+    },
+    eyeScores: {
+      enabled: true,
+      closedBelow: 0.35,
+      softBelow: 0.3,
     },
     ocr: {
       enabled: true,
@@ -523,6 +529,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   help: { askEnabled: true },
   icloud: { enabled: true },
+  sharedLinks: { defaultExpiryDays: null },
 });
 
 describe(SystemConfigService.name, () => {
@@ -1306,6 +1313,24 @@ describe(SystemConfigService.name, () => {
         expect(partial.machineLearning?.imageDescription?.lastConfigChangeAt).toBe(initialLastChange);
         expect(partial.machineLearning?.imageDescription?.pendingRequeueAt).toBe(initialPendingRequeue);
       });
+    });
+  });
+
+  describe('playback self-test list (FL-977)', () => {
+    it('keeps the kinds the self-test put on the processor, whatever a settings save sends', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ ffmpeg: { softwareFallback: ['hdr10-pq'] } });
+
+      await sut.updateAdminConfig({ ...defaults, ffmpeg: { ...defaults.ffmpeg, crf: 30, softwareFallback: [] } });
+
+      const persisted = configWrites().at(-1) as { ffmpeg?: { crf?: number; softwareFallback?: string[] } };
+      expect(persisted.ffmpeg?.crf).toBe(30);
+      expect(persisted.ffmpeg?.softwareFallback).toEqual(['hdr10-pq']);
+    });
+
+    it('leaves the list out of the revision, so the self-test never makes a draft stale', () => {
+      const config = (softwareFallback: string[]) =>
+        ({ ...defaults, ffmpeg: { ...defaults.ffmpeg, softwareFallback } }) as unknown as SystemConfig;
+      expect(getConfigRevision(config(['hdr10-pq']))).toBe(getConfigRevision(config([])));
     });
   });
 

@@ -42,6 +42,7 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
       .fn()
       .mockImplementation((fileName: string) => Promise.resolve(`/tmp/frameleaf-color-luts/${fileName}`)),
     probeEmbeddedSubtitles: vitest.fn(),
+    inspectPlaybackCopy: vitest.fn(),
     probeHdrMastering: vitest.fn().mockResolvedValue([]),
     probePackets: vitest.fn().mockResolvedValue({
       totalDuration: 0,

@@ -16,6 +16,11 @@ import { writeHdrMaster } from './bundled-worker-hdr.mjs';
 import { BundledRefusal, bundledRecipe, outputMismatch } from './bundled-worker-recipe.mjs';
 
 const MEDIA_INPUT_KINDS = new Set(['library-asset', 'project-import']);
+/**
+ * FL-1558: a LUT kept with the project is served to the page by its id like media; the engine reads
+ * and checks it before the first frame, and refuses the render if it cannot.
+ */
+const SERVED_INPUT_KINDS = new Set([...MEDIA_INPUT_KINDS, 'lut']);
 /** Font inputs are verified and registered separately from timeline media. */
 const VERIFIED_ONLY_INPUT_KINDS = new Set(['font']);
 
@@ -209,14 +214,14 @@ async function renderClaim(claim, recipe, context) {
   let budget = maxInputBytes;
   for (const input of claim.inputs ?? []) {
     lease.assertLive();
-    const known = MEDIA_INPUT_KINDS.has(input.kind) || VERIFIED_ONLY_INPUT_KINDS.has(input.kind);
+    const known = SERVED_INPUT_KINDS.has(input.kind) || VERIFIED_ONLY_INPUT_KINDS.has(input.kind);
     if (!known) {
       throw new BundledRefusal(
         'unsupported_resource',
         `This project uses a ${input.kind} resource, which the bundled Studio worker cannot render yet.`,
       );
     }
-    const file = path.join(inputs, `${downloaded.size}-${MEDIA_INPUT_KINDS.has(input.kind) ? 'media' : 'verified'}`);
+    const file = path.join(inputs, `${downloaded.size}-${SERVED_INPUT_KINDS.has(input.kind) ? 'media' : 'verified'}`);
     let received;
     try {
       received = await client.download(claim.operationId, input, file, {
@@ -237,7 +242,7 @@ async function renderClaim(claim, recipe, context) {
     }
     budget -= received.size;
     downloaded.set(input.inputId, file);
-    if (MEDIA_INPUT_KINDS.has(input.kind)) files.set(input.resourceId, file);
+    if (SERVED_INPUT_KINDS.has(input.kind)) files.set(input.resourceId, file);
   }
   for (const id of recipe.mediaIds) {
     if (!files.has(id)) {

@@ -1,10 +1,12 @@
 import { AccountEventService } from 'src/services/account-event.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
+import { AlbumActionsService } from 'src/services/album-actions.service.js';
 import { AlbumChangeRunService } from 'src/services/album-change-run.service.js';
 import { AlbumCleanupService } from 'src/services/album-cleanup.service.js';
 import { AlbumDateHealService } from 'src/services/album-date-heal.service.js';
 import { AlbumItemsService } from 'src/services/album-items.service.js';
 import { AlbumMergeService } from 'src/services/album-merge.service.js';
+import { AlbumOrderService } from 'src/services/album-order.service.js';
 import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { AlbumSuggestionService } from 'src/services/album-suggestion.service.js';
 import { AlbumService } from 'src/services/album.service.js';
@@ -78,6 +80,7 @@ import { DuplicateService } from 'src/services/duplicate.service.js';
 import { EagleImportWorkerService } from 'src/services/eagle-import-worker.service.js';
 import { EagleImportService } from 'src/services/eagle-import.service.js';
 import { EnrichmentPlanService } from 'src/services/enrichment-plan.service.js';
+import { FolderAlbumService } from 'src/services/folder-album.service.js';
 import { FoundFilesService } from 'src/services/found-files.service.js';
 import { FrameleafAuthService } from 'src/services/frameleaf-auth.service.js';
 import { FrameleafCloudTourService } from 'src/services/frameleaf-cloud-tour.service.js';
@@ -147,6 +150,7 @@ import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
 import { PhotoLocationsService } from 'src/services/photo-locations.service.js';
+import { PhotoSourceCatalogService } from 'src/services/photo-source-catalog.service.js';
 import { PhotoSourceService } from 'src/services/photo-source.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyBookingService } from 'src/services/photography-booking.service.js';
@@ -162,6 +166,7 @@ import { PhotographyWorkflowService } from 'src/services/photography-workflow.se
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
+import { PlaybackSelfTestService } from 'src/services/playback-self-test.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
 import { PreservationService } from 'src/services/preservation.service.js';
@@ -192,6 +197,7 @@ import { StudioBundleService } from 'src/services/studio-bundle.service.js';
 import { StudioCaptionTranslationService } from 'src/services/studio-caption-translation.service.js';
 import { StudioCatalogService } from 'src/services/studio-catalog.service.js';
 import { StudioCutoutService } from 'src/services/studio-cutout.service.js';
+import { StudioEditorImportService } from 'src/services/studio-editor-import.service.js';
 import { StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioImportPublicationService } from 'src/services/studio-import-publication.service.js';
 import { StudioMediaService } from 'src/services/studio-media.service.js';
@@ -252,7 +258,9 @@ export const services = [
   ConnectService,
   ConnectEventService,
   ConnectMediaService,
+  AlbumActionsService,
   AlbumItemsService,
+  AlbumOrderService,
   AssetSourceService,
   BookmarkService,
   DevelopBatchService,
@@ -263,6 +271,7 @@ export const services = [
   DesktopDeviceService,
   DesktopOfflineAlbumService,
   PhotoSourceService,
+  PhotoSourceCatalogService,
   SourceResourceAuthService,
   DesktopMlService,
   DesktopNasProducerService,
@@ -337,6 +346,7 @@ export const services = [
   AttentionService,
   UpgradeCheckService,
   LibraryProgressService,
+  PlaybackSelfTestService,
   OvernightService,
   AuthService,
   LockedEncryptionService,
@@ -362,6 +372,7 @@ export const services = [
   LanDiscoveryService,
   LibraryScanService,
   LibraryService,
+  FolderAlbumService,
   LivePhotoService,
   UtilitiesService,
   MaintenanceService,
@@ -439,6 +450,7 @@ export const services = [
   StudioReverseConformCommandService,
   StudioCaptionTranslationService,
   StudioMovieService,
+  StudioEditorImportService,
   StudioStabiliseService,
   StudioTranscriptionService,
   StudioVoiceCleanupService,

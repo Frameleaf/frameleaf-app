@@ -20,6 +20,31 @@ def fingerprint(value: Any) -> str:
     ).hexdigest()
 
 
+# Windows' software renderer is a DirectX adapter too; DirectML on it is the processor, not a GPU.
+_SOFTWARE_ADAPTERS = ("Microsoft Basic Render Driver", "Microsoft Basic Display Adapter")
+
+
+def directx_adapters() -> list[str]:
+    """FL-1001: the hardware display adapters Windows lists, which DirectML can run on."""
+    executable = shutil.which("powershell")
+    if executable is None:
+        return []
+    try:
+        result = subprocess.run(
+            [executable, "-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController).Name"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    names = sorted({line.strip() for line in result.stdout.splitlines() if line.strip()} - set(_SOFTWARE_ADAPTERS))
+    if len(names) > 16 or any(len(name) > 128 or not name.isascii() for name in names):
+        raise ValueError("native_directx_adapter_report_invalid")
+    return names
+
+
 def snapshot(device_facts: dict[str, Any] | None = None) -> dict[str, Any]:
     from .native_device import validate_facts
     from .native_ort import current_policy
@@ -30,7 +55,8 @@ def snapshot(device_facts: dict[str, Any] | None = None) -> dict[str, Any]:
     if device_facts is not None:
         validate_facts(device_facts)
     versions = {}
-    for package in ("onnxruntime", "onnxruntime-gpu", "onnxruntime-openvino", "numpy", "Pillow", "tokenizers"):
+    packages = ("onnxruntime", "onnxruntime-gpu", "onnxruntime-openvino", "onnxruntime-directml", "numpy", "Pillow")
+    for package in (*packages, "tokenizers"):
         try:
             versions[package] = importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError:
@@ -78,6 +104,8 @@ def snapshot(device_facts: dict[str, Any] | None = None) -> dict[str, Any]:
         if len(devices) > 16 or any(not 1 <= len(device) <= 64 or not device.isascii() for device in devices):
             raise ValueError("native_openvino_device_report_invalid")
         stable["openvinoDevices"] = devices
+    if "DmlExecutionProvider" in stable["providers"]:
+        stable["directxAdapters"] = directx_adapters()
     if device_facts is not None:
         stable["deviceEvidence"] = device_facts
     return {

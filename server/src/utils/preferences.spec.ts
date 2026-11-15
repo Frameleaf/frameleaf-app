@@ -452,7 +452,7 @@ describe('navigation defaults (FL-30 / FL-146)', () => {
       people: { enabled: true, sidebarWeb: true },
       pets: { sidebarWeb: true },
       recentlyAdded: { sidebarWeb: true },
-      sharedLinks: { enabled: true, sidebarWeb: true },
+      sharedLinks: { enabled: true, sidebarWeb: true, defaultExpiryDays: null },
       tags: { enabled: true, sidebarWeb: true },
     });
   });
@@ -609,5 +609,28 @@ describe('Download format (FL-826)', () => {
     const schema = UserPreferencesUpdateDto.schema;
     expect(schema.safeParse({ download: { defaultFormat: 'jpeg' } }).success).toBe(true);
     expect(schema.safeParse({ download: { defaultFormat: 'tiff' } }).success).toBe(false);
+  });
+});
+
+describe('shared link default expiry preference (FL-922)', () => {
+  it('stores a chosen number of days, and clearing it falls back to the server default again', () => {
+    const chosen = mergePreferences(getPreferences([]), { sharedLinks: { defaultExpiryDays: 14 } }, 'user');
+    expect(chosen.sharedLinks).toEqual({ enabled: true, sidebarWeb: true, defaultExpiryDays: 14 });
+    expect(getPreferencesPartial(chosen)).toEqual({ sharedLinks: { defaultExpiryDays: 14 } });
+    expect(mapPreferences(chosen).sharedLinks.defaultExpiryDays).toBe(14);
+
+    const cleared = mergePreferences(chosen, { sharedLinks: { defaultExpiryDays: null } }, 'user');
+    expect(cleared.sharedLinks.defaultExpiryDays).toBeNull();
+    expect(getPreferencesPartial(cleared)).toEqual({});
+  });
+
+  it('takes positive whole days up to ten years, or null', () => {
+    const schema = UserPreferencesUpdateDto.schema;
+    for (const defaultExpiryDays of [1, 30, 3650, null]) {
+      expect(schema.safeParse({ sharedLinks: { defaultExpiryDays } }).success).toBe(true);
+    }
+    for (const defaultExpiryDays of [0, -3, 2.5, 3651, '7']) {
+      expect(schema.safeParse({ sharedLinks: { defaultExpiryDays } }).success).toBe(false);
+    }
   });
 });

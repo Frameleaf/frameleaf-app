@@ -146,6 +146,7 @@ import { SourceResourceRepository } from 'src/repositories/source-resource.repos
 import { SpeechRepository } from 'src/repositories/speech.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioEditorImportRepository } from 'src/repositories/studio-editor-import.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
 import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
@@ -309,6 +310,7 @@ export const repositories = [
   StudioImportFileRepository,
   StudioReverseConformRepository,
   StudioMovieRepository,
+  StudioEditorImportRepository,
   StudioStabiliseRepository,
   StudioTranscriptionRepository,
   StudioExportRepository,

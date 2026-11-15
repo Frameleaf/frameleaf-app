@@ -45,10 +45,10 @@ export class TimelineController {
     return this.service.getTimeBucket(auth, dto);
   }
 
-  // Public (shared link) pages never sort, and an order by file name or rating could reveal metadata
-  // a link that hides EXIF withholds, so shared links may not call this route.
+  // FL-869: a shared album link may read the album's custom order. An order by file name or rating could
+  // reveal metadata a link that hides EXIF withholds, so the service refuses those sorts to such a link.
   @Get('ordered')
-  @Authenticated({ permission: Permission.AssetRead })
+  @Authenticated({ permission: Permission.AssetRead, sharedLink: true })
   @ApiOkResponse({ type: TimeBucketAssetResponseDto })
   @Header('Content-Type', 'application/json')
   @Endpoint({

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "generatedBy": "server/src/utils/studio-resources.ts",
   "limits": {
-    "maxGraphBytes": 8388608,
+    "maxGraphBytes": 25165824,
     "maxGraphDepth": 64,
     "maxReferences": 10000,
     "maxSequenceDepth": 16

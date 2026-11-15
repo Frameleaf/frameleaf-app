@@ -27,6 +27,13 @@ const SharedLinkCreateSchema = z
     password: z.string().nullable().optional().describe('Link password'),
     slug: z.string().nullable().optional().describe('Custom URL slug'),
     expiresAt: isoDatetimeToDate.nullable().describe('Expiration date').default(null).optional(),
+    // FL-922: opt-in, so clients that do not send it (the native apps) keep links without an expiry
+    useDefaultExpiry: z
+      .boolean()
+      .optional()
+      .describe(
+        "Without expiresAt, expire after the default number of days: the creator's preference, else the server's (none: never)",
+      ),
     allowUpload: z.boolean().optional().describe('Allow uploads'),
     allowDownload: z.boolean().default(true).optional().describe('Allow downloads'),
     showMetadata: z.boolean().default(true).optional().describe('Show metadata'),

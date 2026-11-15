@@ -194,6 +194,15 @@ export async function buildPassedEntry({
  * id-prefix family - so evidence for them is naturally a single shared-layer report that should
  * route through every row, not a `blend.*`/`effect.*`/`transition.*`-style subset.
  */
+/** Row ids (`effect.<id>`, `transition.<id>`) of the operators in studio/frameleaf-operators.json. */
+export async function frameleafOperatorRows() {
+  const operators = JSON.parse(await readFile(path.join(ROOT, "studio/frameleaf-operators.json"), "utf8"));
+  return new Set([
+    ...operators.effects.map((id) => `effect.${id}`),
+    ...operators.transitions.map((id) => `transition.${id}`),
+  ]);
+}
+
 export async function applyFamilyCoverage(
   overlay,
   catalog,
@@ -212,7 +221,10 @@ export async function applyFamilyCoverage(
       "observation report runner source changed");
     for (const binding of coveredCases.source.bindings) assert.equal(sha256(await readFile(path.join(ROOT, binding.path))), binding.sha256,
       `observation report binding changed: ${binding.path}`);
+    const additions = await frameleafOperatorRows();
     for (const entry of coveredCases.observations) {
+      // Operators Frameleaf adds have no upstream row here; their evidence is studio/spec.
+      if (additions.has(entry.fixtureId.split("/")[0])) continue;
       const fixture = catalog.rows.find((value) => entry.fixtureId.startsWith(`${value.id}/`));
       assert(fixture && fixtureIds(fixture, axis).includes(entry.fixtureId), `unknown observed fixture: ${entry.fixtureId}`);
     }
