@@ -9,7 +9,7 @@
   "generatedBy": "studio/adapters/web/test/graph-parameters.test.ts (the engine registries; never edit by hand)",
   "regenerate": "GRAPH_PARAMETERS_WRITE=1 node studio/tools/adapter.mjs test",
   "counts": {
-    "effects": 54,
+    "effects": 57,
     "transitions": 44,
     "blendModes": 25
   },
@@ -2905,6 +2905,222 @@
           "name": "spillSuppression",
           "type": "number",
           "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-cdl",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "slopeR",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "slopeG",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "slopeB",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "offsetR",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "offsetG",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "offsetB",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "powerR",
+          "type": "number",
+          "default": 1,
+          "min": 0.1,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "powerG",
+          "type": "number",
+          "default": 1,
+          "min": 0.1,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "powerB",
+          "type": "number",
+          "default": 1,
+          "min": 0.1,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "saturation",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-lift-gamma-gain",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "liftR",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "liftG",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "liftB",
+          "type": "number",
+          "default": 0,
+          "min": -1,
+          "max": 1,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gammaR",
+          "type": "number",
+          "default": 1,
+          "min": 0.1,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gammaG",
+          "type": "number",
+          "default": 1,
+          "min": 0.1,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gammaB",
+          "type": "number",
+          "default": 1,
+          "min": 0.1,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gainR",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gainG",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        },
+        {
+          "name": "gainB",
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "max": 4,
+          "step": 0.01,
+          "animatable": true
+        }
+      ]
+    },
+    {
+      "id": "gpu-hue-curves",
+      "category": "color",
+      "parameters": [
+        {
+          "name": "hueHuePoints",
+          "type": "json",
+          "default": "",
+          "animatable": false
+        },
+        {
+          "name": "hueSatPoints",
+          "type": "json",
+          "default": "",
+          "animatable": false
+        },
+        {
+          "name": "hueLumaPoints",
+          "type": "json",
+          "default": "",
+          "animatable": false
+        },
+        {
+          "name": "mix",
+          "type": "number",
+          "default": 1,
           "min": 0,
           "max": 1,
           "step": 0.01,
@@ -6426,5 +6642,5 @@
       "section": "13.8.5"
     }
   ],
-  "contentSha256": "45b2a4445c21bc1a9a2b65eaf7c633f8d0e56702b3c8a7555a49d9b40f288b20"
+  "contentSha256": "e0e41036e8d2a5e4956cedb5ff9a116db89af974e55bf2a71c861b39e7c8f770"
 }

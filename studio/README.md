@@ -211,6 +211,15 @@ cover path smoothing, the crop coverage maths, the renderer transform at the cli
 the card. The estimator is verified on synthetic footage only (a still picture moved by a known crop
 path, and generated textures); real handheld footage, rolling shutter, browser preview/export pixel
 parity and speed-ramp spans in the live preview remain open.
+Patch 0186 (FL-1559) adds three colour effects that graded projects from other editors carry: ASC CDL
+(`gpu-cdl`: slope, offset and power per channel, then saturation about Rec. 709 luma), Lift Gamma Gain per
+channel (`gpu-lift-gamma-gain`) and Hue Curves (`gpu-hue-curves`: hue against hue, saturation and luma as
+periodic Catmull-Rom curves through JSON points, baked into a 256 x 1 table whose neutral is exact). Each
+has a catalogue entry, a spec page and goldens (`render-goldens.browser.mjs --write --only=<ids>`), and HDR
+projects refuse them until FL-1556. They are the first effects with no row in the pinned upstream feature
+manifest, so `graph-protocol.test.mjs` names them as Frameleaf additions. The editor panels for them wait
+for the FL-1615 mock; imports and the graph use them now.
+
 Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
 the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
 embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the offset is the peak of the
