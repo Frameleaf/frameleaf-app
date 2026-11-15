@@ -1940,7 +1940,7 @@ export type UserPreferences = {
    * Empty is Frameleaf's own order (RAW, HEIC, largest file, most details).
    */
   duplicates: {
-    keepRules: import('src/enum.js').DuplicateKeepRule[];
+    keepRules: import('src/utils/duplicate-keep-rules.js').DuplicateKeepRule[];
   };
 };
 

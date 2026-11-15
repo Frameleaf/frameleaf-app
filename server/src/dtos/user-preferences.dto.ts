@@ -1,7 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
-import { AssetOrderSchema, DUPLICATE_KEEP_RULES, UserAvatarColorSchema } from 'src/enum.js';
+import { AssetOrderSchema, UserAvatarColorSchema } from 'src/enum.js';
+import { DUPLICATE_KEEP_RULES } from 'src/utils/duplicate-keep-rules.js';
 import { NotificationLocalePreferencesSchema } from 'src/utils/notification-locale.js';
 import {
   type FrameleafUserPreferences,

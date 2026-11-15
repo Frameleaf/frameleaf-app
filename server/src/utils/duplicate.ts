@@ -1,5 +1,5 @@
 import type { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
-import { DUPLICATE_KEEP_RULES, type DuplicateKeepRule } from 'src/enum.js';
+import { DUPLICATE_KEEP_RULES, type DuplicateKeepRule } from 'src/utils/duplicate-keep-rules.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 /**

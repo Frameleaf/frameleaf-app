@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { ExifResponseSchema } from 'src/dtos/exif.dto.js';
-import { AssetType, AssetVisibility, DUPLICATE_KEEP_RULES } from 'src/enum.js';
+import { AssetType, AssetVisibility } from 'src/enum.js';
+import { DUPLICATE_KEEP_RULES } from 'src/utils/duplicate-keep-rules.js';
 import {
   DEFAULT_DUPLICATE_KEEP_RULES,
   getExifCount,
