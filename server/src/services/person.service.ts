@@ -76,6 +76,7 @@ import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { queueScopedCopies } from 'src/services/partner-copy.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
@@ -1880,6 +1881,10 @@ export class PersonService extends BaseService {
         }
         // partner copies show the source's people, so they take its faces again now one has a person
         await this.propagateFaces([face.assetId]);
+        // FL-774: a face given its person can bring the photo into a partner's scope
+        await queueScopedCopies({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, [
+          face.assetId,
+        ]);
         // FL-57: a named person now shows in this photo, so its generated text may name the wrong people
         if (person?.name) {
           await this.refreshIdentities(ownerId, { assetIds: [face.assetId] });

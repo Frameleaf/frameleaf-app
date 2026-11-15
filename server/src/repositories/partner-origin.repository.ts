@@ -19,6 +19,7 @@ import { DB } from 'src/schema/index.js';
 import { isInOwnerFolder, ownLibraryPath } from 'src/utils/library-path.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
+import { activeScopes, inScope, partnerScopePredicate } from 'src/utils/partner-scope.js';
 /** What kind of copy an origin row describes (FL-326, spec §4.2). */
 export type OriginKind = 'asset' | 'album';
 /**
@@ -1028,26 +1029,64 @@ export class PartnerOriginRepository {
     }
   }
 
-  /** One page of `ownerId`'s assets after `cursor`, in id order, for the backfill. */
-  async getOwnerAssetIdsAfter(ownerId: string, cursor: string | null, limit: number): Promise<string[]> {
+  /**
+   * One page of `ownerId`'s assets after `cursor`, in id order, for the backfill: with `sharedWithId`, only the
+   * ones that partnership's scope sends (FL-774).
+   */
+  async getOwnerAssetIdsAfter(
+    ownerId: string,
+    cursor: string | null,
+    limit: number,
+    sharedWithId?: string,
+  ): Promise<string[]> {
     const { rows } = await sql<{
       id: string;
     }>`
-      SELECT id FROM asset
-      WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL AND ${libraryScopePredicate(LibraryScope.Personal)}
-        ${cursor ? sql`AND id > ${cursor}::uuid` : sql``}
-      ORDER BY id
+      SELECT a.id FROM asset a
+      WHERE a."ownerId" = ${ownerId}::uuid AND a."deletedAt" IS NULL AND ${libraryScopePredicate(LibraryScope.Personal, 'a')}
+        ${sharedWithId ? sql`AND ${partnerScopePredicate(ownerId, sharedWithId)}` : sql``}
+        ${cursor ? sql`AND a.id > ${cursor}::uuid` : sql``}
+      ORDER BY a.id
       LIMIT ${limit}
     `.execute(this.db);
     return rows.map(({ id }) => id);
   }
-  async countOwnerAssets(ownerId: string): Promise<number> {
+  /** How many of `ownerId`'s assets the backfill walks; with `sharedWithId`, only that scope's (FL-774). */
+  async countOwnerAssets(ownerId: string, sharedWithId?: string): Promise<number> {
     const { rows } = await sql<{
       count: number;
     }>`
-      SELECT count(*)::int AS count FROM asset WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL AND ${libraryScopePredicate(LibraryScope.Personal)}
+      SELECT count(*)::int AS count FROM asset a
+      WHERE a."ownerId" = ${ownerId}::uuid AND a."deletedAt" IS NULL AND ${libraryScopePredicate(LibraryScope.Personal, 'a')}
+        ${sharedWithId ? sql`AND ${partnerScopePredicate(ownerId, sharedWithId)}` : sql``}
     `.execute(this.db);
     return rows[0]?.count ?? 0;
+  }
+  /** FL-774: whether `sharedById`'s scope for `sharedWithId` sends this asset (always, when they share Everything). */
+  async isInPartnerScope(assetId: string, sharedById: string, sharedWithId: string): Promise<boolean> {
+    const { rows } = await sql<{ inScope: boolean }>`
+      SELECT ${partnerScopePredicate(sharedById, sharedWithId)} AS "inScope" FROM asset a WHERE a.id = ${assetId}::uuid
+    `.execute(this.db);
+    return rows[0]?.inScope ?? false;
+  }
+  /**
+   * FL-774: the partnerships with a scope that sends these assets of their owner's. An edit can bring an item into
+   * a scope (added to a chosen album, a face named, a new date); partnerships that share Everything already copied it.
+   */
+  async getScopedRecipients(
+    assetIds: string[],
+  ): Promise<Array<{ assetId: string; sharedById: string; sharedWithId: string }>> {
+    if (assetIds.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ assetId: string; sharedById: string; sharedWithId: string }>`
+      SELECT a.id AS "assetId", s."sharedById", s."sharedWithId"
+      FROM asset a
+      JOIN ${activeScopes} s ON s."sharedById" = a."ownerId"
+      WHERE a.id = ANY(${assetIds}::uuid[]) AND a."deletedAt" IS NULL
+        AND ${libraryScopePredicate(LibraryScope.Personal, 'a')} AND ${inScope}
+    `.execute(this.db);
+    return rows;
   }
   /** An album as the copy engine needs it, with its owner (spec §4.4). */
   async getAlbumForCopy(albumId: string): Promise<AlbumForCopy | undefined> {
