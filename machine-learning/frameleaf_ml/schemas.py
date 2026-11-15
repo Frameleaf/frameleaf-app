@@ -7,7 +7,7 @@ import numpy.typing as npt
 import orjson
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 
 class ORJSONResponse(JSONResponse):
@@ -117,6 +117,9 @@ class DetectedFace(TypedDict):
     boundingBox: BoundingBox
     embedding: str
     score: float
+    # FL-843: only when the request sets `eyeScores`; None where the eyes can't be seen.
+    eyesOpen: NotRequired[float | None]
+    eyeSharpness: NotRequired[float | None]
 
 
 FacialRecognitionOutput = list[DetectedFace]
@@ -193,6 +196,9 @@ class FacialRecognitionDetectionOptions(_OptionsBase):
 
 class FacialRecognitionRecognitionOptions(_OptionsBase):
     """Options for the facial-recognition recognition task."""
+
+    # FL-843: add eyesOpen and eyeSharpness to each face (106-point landmarks, buffalo_l-landmarks).
+    eyeScores: bool | None = None
 
 
 class OcrDetectionOptions(_OptionsBase):
