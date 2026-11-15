@@ -9732,6 +9732,7 @@
           "0009-lut-cache-size.patch",
           "0049-portable-lut-import.patch",
           "0085-file-lut-float-admission.patch",
+          "0184-lut-references.patch",
           "b4113f6f99"
         ],
         "status": "shipped"

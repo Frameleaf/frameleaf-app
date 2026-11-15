@@ -95,6 +95,40 @@ test("file LUT consumes exact authorized bytes, keeps original graph and binds v
     /FILE_LUT_EXECUTION_CHANGED/,
   );
 });
+test("a 1D Cube file materializes as gpu-file-lut-1d-v1 and a display name is kept (FL-1558)", async () => {
+  const p = specimen();
+  const bytes = Buffer.from("TITLE \"Lift\"\nLUT_1D_SIZE 3\nDOMAIN_MAX 2 1 1\n0 1 0\n0.25 0.5 0.1\n1 0 1\n");
+  Object.assign(p.inputs.get("lut:grade"), {
+    bytes,
+    sha256: sha(bytes),
+    declaredChecksum: sha(bytes),
+  });
+  p.snapshot.studio.resources[0].checksum = sha(bytes);
+  const item = p.snapshot.studio.graph.timeline.items[0];
+  item.effects[0].effect.params.lutName = "Lift";
+  p.snapshot.studio.graph.timeline.keyframes = [
+    {
+      itemId: "a",
+      properties: [{ property: "effect:gpu-lut:fx:intensity", keyframes: [] }],
+    },
+  ];
+  const derived = await deriveClaimFileLuts(p, () => true);
+  const effect = derived.project.timeline.items[0].effects[0].effect;
+  assert.equal(effect.gpuEffectType, "gpu-file-lut-1d-v1");
+  assert.equal(effect.params.fileLut1dVersion, 1);
+  assert.equal(effect.params.fileLutSize, 3);
+  assert.equal(effect.params.fileLutDomainMax, "[2,1,1]");
+  assert.equal(effect.params.intensity, 0.5);
+  assert.equal(
+    derived.project.timeline.keyframes[0].properties[0].property,
+    "effect:gpu-file-lut-1d-v1:fx:intensity",
+  );
+  // One texture row of 512 entries, four float32 each, in canonical base64.
+  assert.equal(Buffer.from(effect.params.fileLutData, "base64").length, 512 * 16);
+  await verifyClaimFileLuts(p, derived, () => true);
+  item.effects[0].effect.params.lutName = "x".repeat(257);
+  await assert.rejects(deriveClaimFileLuts(p, () => true), /DIVERGENT_FILE_LUT/);
+});
 test("server-validated LF, CRLF and bare CR Cube bytes materialize identically", async () => {
   const expected = await deriveClaimFileLuts(specimen(), () => true);
   for (const ending of ["\n", "\r\n", "\r"]) {

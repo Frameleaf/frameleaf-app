@@ -1,0 +1,1425 @@
+diff --git a/src/features/effects/components/effects-section.tsx b/src/features/effects/components/effects-section.tsx
+--- a/src/features/effects/components/effects-section.tsx
++++ b/src/features/effects/components/effects-section.tsx
+@@ -40,6 +40,7 @@ import {
+   getResolvedGpuEffectForFrame,
+ } from '@/features/effects/utils/effect-keyframes'
+ import { useKeyframesByItemId } from '../hooks/use-keyframes-by-item-id'
++import { mergeGpuEffectParams } from '@/infrastructure/gpu-effects/lut/lut-references'
+ 
+ interface EffectsSectionProps {
+   /** Visual items (already filtered to exclude audio) */
+@@ -323,7 +324,12 @@ export const EffectsSection = memo(function EffectsSection({
+         updateEffect(item.id, targetEffect.id, {
+           effect: {
+             ...targetEffect.effect,
+-            params: { ...targetEffect.effect.params, ...fallbackUpdates },
++            // Frameleaf (FL-1558): a new LUT replaces every LUT field (inline or kept with the project).
++            params: mergeGpuEffectParams(
++              targetEffect.effect.gpuEffectType,
++              targetEffect.effect.params,
++              fallbackUpdates,
++            ),
+           },
+         })
+       })
+diff --git a/src/features/effects/components/panels/gpu-lut-panel.test.tsx b/src/features/effects/components/panels/gpu-lut-panel.test.tsx
+--- a/src/features/effects/components/panels/gpu-lut-panel.test.tsx
++++ b/src/features/effects/components/panels/gpu-lut-panel.test.tsx
+@@ -3,6 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { getGpuEffect, getGpuEffectDefaultParams } from '@/infrastructure/gpu-effects'
+ import type { GpuEffect, ItemEffect } from '@/types/effects'
+ import { createIdentityLutData, decodeLutData } from '@/infrastructure/gpu-effects/lut/cube-lut'
++import {
++  clearLutReferences,
++  installProjectLutKeeper,
++  peekLutReference,
++} from '@/infrastructure/gpu-effects/lut/lut-references'
+ import { GpuLutPanel } from './gpu-lut-panel'
+ 
+ const definition = getGpuEffect('gpu-lut')!
+@@ -114,3 +119,109 @@ describe('GpuLutPanel portable file import', () => {
+     expect(props.gpuEffect.params.lutData).toBe('encoded-data')
+   })
+ })
++
++describe('GpuLutPanel keeps imported LUTs with the project (FL-1558)', () => {
++  const grid = ['TITLE "Kept"', 'LUT_3D_SIZE 2', ...Array.from({ length: 8 }, () => '0.5 0.5 0.5')].join(
++    '\n',
++  )
++  let remove: (() => void) | undefined
++  afterEach(() => {
++    remove?.()
++    remove = undefined
++    clearLutReferences()
++    vi.restoreAllMocks()
++    vi.unstubAllGlobals()
++  })
++
++  function selectCube(text: string, name = 'kept.cube') {
++    vi.stubGlobal('showOpenFilePicker', undefined)
++    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (
++      this: HTMLInputElement,
++    ) {
++      const file = new File([text], name)
++      Object.defineProperty(file, 'text', { value: async () => text })
++      fireEvent.change(this, { target: { files: [file] } })
++    })
++  }
++
++  it('keeps the file with the project and names it instead of embedding the table', async () => {
++    const keep = vi.fn(async () => ({ id: '0198a1c2-0000-7000-8000-0000000000aa' }))
++    remove = installProjectLutKeeper({ keep })
++    selectCube(grid)
++    const props = makeProps()
++    render(<GpuLutPanel {...props} />)
++    fireEvent.click(screen.getByTitle('Load a .cube 3D LUT file'))
++    await waitFor(() => expect(props.onParamsBatchChange).toHaveBeenCalledOnce())
++    expect(keep).toHaveBeenCalledWith(expect.objectContaining({ name: 'kept.cube' }))
++    expect(props.onParamsBatchChange).toHaveBeenCalledWith('lut-1', {
++      lutName: 'Kept',
++      lutSize: '0',
++      lutData: '',
++      lutId: '0198a1c2-0000-7000-8000-0000000000aa',
++      lutSource: 'import',
++    })
++    // Already read, so the preview grades with it at once.
++    expect(peekLutReference('0198a1c2-0000-7000-8000-0000000000aa')?.type).toBe('gpu-file-lut-v1')
++  })
++
++  it('keeps a 1D LUT, which cannot be embedded', async () => {
++    remove = installProjectLutKeeper({ keep: async () => ({ id: 'one-d' }) })
++    selectCube('LUT_1D_SIZE 2\n0 0 0\n1 1 1\n', 'Lift.cube')
++    const props = makeProps()
++    render(<GpuLutPanel {...props} />)
++    fireEvent.click(screen.getByTitle('Load a .cube 3D LUT file'))
++    await waitFor(() => expect(props.onParamsBatchChange).toHaveBeenCalledOnce())
++    expect(props.onParamsBatchChange.mock.calls[0]![1]).toMatchObject({ lutName: 'Lift', lutId: 'one-d' })
++    expect(peekLutReference('one-d')?.type).toBe('gpu-file-lut-1d-v1')
++  })
++
++  it('embeds a 3D LUT when the host cannot keep the file', async () => {
++    remove = installProjectLutKeeper({
++      keep: async () => {
++        throw new Error('offline')
++      },
++    })
++    selectCube(grid)
++    const props = makeProps()
++    render(<GpuLutPanel {...props} />)
++    fireEvent.click(screen.getByTitle('Load a .cube 3D LUT file'))
++    await waitFor(() => expect(props.onParamsBatchChange).toHaveBeenCalledOnce())
++    expect(props.onParamsBatchChange.mock.calls[0]![1]).toEqual({
++      lutName: 'Kept',
++      lutSize: '2',
++      lutData: expect.any(String),
++    })
++  })
++
++  it('refuses an invalid file before sending it to the host', async () => {
++    const keep = vi.fn(async () => ({ id: 'x' }))
++    remove = installProjectLutKeeper({ keep })
++    selectCube('LUT_1D_SIZE 3\n0 0 0\n')
++    const props = makeProps()
++    render(<GpuLutPanel {...props} />)
++    fireEvent.click(screen.getByTitle('Load a .cube 3D LUT file'))
++    expect(await screen.findByText('Could not read this .cube file')).toBeInTheDocument()
++    expect(keep).not.toHaveBeenCalled()
++    expect(props.onParamsBatchChange).not.toHaveBeenCalled()
++  })
++
++  it('shows a kept LUT by name and resets it like an embedded one', () => {
++    const props = makeProps()
++    props.gpuEffect.params = {
++      intensity: 1,
++      lutName: 'Kept',
++      lutSize: '0',
++      lutData: '',
++      lutId: 'kept',
++      lutSource: 'import',
++    }
++    render(<GpuLutPanel {...props} />)
++    expect(screen.getByText('Kept')).toBeInTheDocument()
++    fireEvent.click(screen.getByRole('button', { name: /reset to defaults: lut$/i }))
++    expect(props.onParamsBatchChange).toHaveBeenCalledWith('lut-1', {
++      lutName: '',
++      lutSize: '0',
++      lutData: '',
++    })
++  })
++})
+diff --git a/src/features/effects/components/panels/gpu-lut-panel.tsx b/src/features/effects/components/panels/gpu-lut-panel.tsx
+--- a/src/features/effects/components/panels/gpu-lut-panel.tsx
++++ b/src/features/effects/components/panels/gpu-lut-panel.tsx
+@@ -7,6 +7,12 @@ import {
+   resampleCubeLut,
+   encodeLutData,
+ } from '@/infrastructure/gpu-effects/lut/cube-lut'
++import {
++  getProjectLutKeeper,
++  lutReferenceId,
++  materializeLutFile,
++  setLutReference,
++} from '@/infrastructure/gpu-effects/lut/lut-references'
+ import { KeyframeToggle } from '@/features/effects/deps/keyframes-contract'
+ import { PropertyRow, SliderInput } from '@/shared/ui/property-controls'
+ import { createLogger } from '@/shared/logging/logger'
+@@ -25,8 +31,11 @@ interface GpuLutPanelProps extends GpuKeyframePanelProps {
+ }
+ 
+ /**
+- * Panel for the gpu-lut effect: imports a .cube file, embeds the (resampled)
+- * LUT into the effect params, and exposes an intensity slider.
++ * Panel for the gpu-lut effect: imports a .cube file and exposes an intensity slider.
++ *
++ * Frameleaf (FL-1558): when the host keeps files with the project, the imported file (3D or 1D) is
++ * kept there and the effect names it (`lutId`), so the graph holds no table. Without such a host,
++ * or if it cannot take the file, a 3D LUT is embedded (resampled) in the params as before.
+  */
+ export const GpuLutPanel = memo(function GpuLutPanel({
+   itemIds,
+@@ -49,17 +58,22 @@ export const GpuLutPanel = memo(function GpuLutPanel({
+   const [collapsed, setCollapsed] = useState(false)
+ 
+   const lutName = typeof gpuEffect.params.lutName === 'string' ? gpuEffect.params.lutName : ''
+-  const hasLut = typeof gpuEffect.params.lutData === 'string' && gpuEffect.params.lutData.length > 0
++  const referenceId = lutReferenceId(gpuEffect.params)
++  const hasLut =
++    referenceId !== null ||
++    (typeof gpuEffect.params.lutData === 'string' && gpuEffect.params.lutData.length > 0)
+   const intensityParam = definition.params.intensity
+   const intensityDefault = typeof intensityParam?.default === 'number' ? intensityParam.default : 1
+   const intensity =
+     typeof gpuEffect.params.intensity === 'number' ? gpuEffect.params.intensity : intensityDefault
+   const lutParamKeys = ['lutName', 'lutSize', 'lutData'] as const
+-  const lutIsDefault = lutParamKeys.every(
+-    (key) =>
+-      (gpuEffect.params[key] ?? definition.params[key]?.default) ===
+-      definition.params[key]?.default,
+-  )
++  const lutIsDefault =
++    referenceId === null &&
++    lutParamKeys.every(
++      (key) =>
++        (gpuEffect.params[key] ?? definition.params[key]?.default) ===
++        definition.params[key]?.default,
++    )
+   const isDefault = lutIsDefault && intensity === intensityDefault
+   const fileLabel = t('effects.lut.file')
+   const resetFileLabel = `${t('effects.panel.resetToDefaults')}: ${fileLabel}`
+@@ -115,6 +129,34 @@ export const GpuLutPanel = memo(function GpuLutPanel({
+     }
+     if (!file) return
+ 
++    const keeper = getProjectLutKeeper()
++    if (keeper) {
++      let resolved: ReturnType<typeof materializeLutFile>
++      try {
++        resolved = materializeLutFile(await file.text(), file.name)
++      } catch (error) {
++        logger.warn('Failed to import .cube LUT:', error)
++        setImportError(t('effects.lut.importFailed'))
++        return
++      }
++      try {
++        const { id } = await keeper.keep(file)
++        setLutReference(id, resolved)
++        onParamsBatchChange(effect.id, {
++          lutName: resolved.name,
++          lutSize: '0',
++          lutData: '',
++          lutId: id,
++          lutSource: 'import',
++        })
++        setImportError(null)
++        return
++      } catch (error) {
++        // The host could not keep it (offline, or the project is not saved yet): embed it instead.
++        logger.warn('Could not keep the .cube LUT with the project; embedding it:', error)
++      }
++    }
++
+     try {
+       const parsed = resampleCubeLut(parseCubeLut(await file.text()), MAX_EMBEDDED_LUT_SIZE)
+       onParamsBatchChange(effect.id, {
+diff --git a/src/features/export/deps/timeline-composition-graph-contract.ts b/src/features/export/deps/timeline-composition-graph-contract.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/deps/timeline-composition-graph-contract.ts
+@@ -0,0 +1,4 @@
++// Frameleaf (FL-1558): the compositions store and its graph walk alone, without the timeline actions
++// timeline-compositions also carries, for code a render worker loads.
++export { useCompositionsStore } from '@/features/timeline/stores/compositions-store'
++export { collectReachableCompositionIdsFromTracks } from '@/features/timeline/utils/composition-graph'
+diff --git a/src/features/export/deps/timeline-composition-graph.ts b/src/features/export/deps/timeline-composition-graph.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/deps/timeline-composition-graph.ts
+@@ -0,0 +1,4 @@
++export {
++  useCompositionsStore,
++  collectReachableCompositionIdsFromTracks,
++} from './timeline-composition-graph-contract'
+diff --git a/src/features/export/utils/canvas-effects.ts b/src/features/export/utils/canvas-effects.ts
+--- a/src/features/export/utils/canvas-effects.ts
++++ b/src/features/export/utils/canvas-effects.ts
+@@ -9,6 +9,7 @@ import type { ItemEffect, GpuEffect } from '@/types/effects'
+ import type { AdjustmentItem, TimelineItem } from '@/types/timeline'
+ import { createLogger } from '@/shared/logging/logger'
+ import type { EffectsPipeline, GpuEffectInstance } from '@/infrastructure/gpu-effects'
++import { resolveLutReferenceEffect } from '@/infrastructure/gpu-effects/lut/lut-references'
+ import { applyMasks, type MaskCanvasSettings } from './canvas-masks'
+ import type { CanvasPool } from './canvas-pool'
+ import { HdrRenderUnavailableError } from './hdr-video-sources'
+@@ -102,12 +103,14 @@ export function getGpuEffectInstances(effects: ItemEffect[]): GpuEffectInstance[
+     .filter((e) => e.enabled && e.effect.type === 'gpu-effect')
+     .map((e) => {
+       const gpuEffect = e.effect as GpuEffect
++      // Frameleaf (FL-1558): a LUT kept with the project renders as its verified file LUT.
++      const { type, params } = resolveLutReferenceEffect(gpuEffect.gpuEffectType, gpuEffect.params)
+       return {
+         id: e.id,
+-        type: gpuEffect.gpuEffectType,
++        type,
+         name: gpuEffect.gpuEffectType,
+         enabled: true,
+-        params: { ...gpuEffect.params },
++        params: { ...params },
+       }
+     })
+ }
+diff --git a/src/features/export/utils/canvas-render-orchestrator.ts b/src/features/export/utils/canvas-render-orchestrator.ts
+--- a/src/features/export/utils/canvas-render-orchestrator.ts
++++ b/src/features/export/utils/canvas-render-orchestrator.ts
+@@ -33,6 +33,7 @@ import { createExportOutputTarget } from './export-output-target'
+ 
+ // Subsystems
+ import { createCompositionRenderer } from './client-render-engine'
++import { loadCompositionLutReferences } from './lut-reference-preload'
+ import { BT2020_TO_BT709, multiply, pqDecode, resolveColorManagement } from '@/shared/graphics/color/managed-color'
+ import { runPipelinedFrameLoop } from './pipelined-frame-loop'
+ 
+@@ -803,6 +804,8 @@ export async function renderComposition(options: RenderEngineOptions): Promise<C
+   let frameRenderer: Awaited<ReturnType<typeof createCompositionRenderer>> | null = null
+ 
+   try {
++    // Frameleaf (FL-1558): every LUT kept with the project is read before the first frame.
++    await loadCompositionLutReferences(renderCompositionInput, { strict: true })
+     frameRenderer = await createCompositionRenderer(renderCompositionInput, renderCanvas, ctx, {
+       strictLottie: options.strict,
+       signal,
+@@ -953,6 +956,7 @@ export async function renderSingleFrame(options: SingleFrameOptions): Promise<Bl
+   renderCtx.imageSmoothingQuality = 'high'
+ 
+   // Use the SAME renderer as export – single source of truth
++  await loadCompositionLutReferences(composition, { strict: false })
+   const renderer = await createCompositionRenderer(composition, renderCanvas, renderCtx)
+   try {
+     await renderer.preload()
+@@ -1012,6 +1016,7 @@ export async function renderWorkingFrame(
+   const canvas = new OffscreenCanvas(width, height)
+   const context = canvas.getContext('2d')
+   if (!context) throw new Error('Failed to get 2d context')
++  await loadCompositionLutReferences(composition, { strict: false })
+   const renderer = await createCompositionRenderer(composition, canvas, context)
+   try {
+     await renderer.preload()
+diff --git a/src/features/export/utils/lut-reference-preload.test.ts b/src/features/export/utils/lut-reference-preload.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/lut-reference-preload.test.ts
+@@ -0,0 +1,77 @@
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
++import {
++  clearLutReferences,
++  peekLutReference,
++} from '@/infrastructure/gpu-effects/lut/lut-references'
++import { useCompositionsStore } from '@/features/export/deps/timeline-composition-graph'
++import type { TimelineItem, TimelineTrack } from '@/types/timeline'
++import { compositionLutReferenceIds, loadCompositionLutReferences } from './lut-reference-preload'
++
++const graded = (id: string, lutId: string) =>
++  ({
++    id,
++    type: 'video',
++    trackId: 't',
++    from: 0,
++    durationInFrames: 30,
++    effects: [
++      {
++        id: `${id}-lut`,
++        enabled: true,
++        effect: {
++          type: 'gpu-effect',
++          gpuEffectType: 'gpu-lut',
++          params: { lutName: '', lutSize: '0', lutData: '', lutId, lutSource: 'import' },
++        },
++      },
++    ],
++  }) as unknown as TimelineItem
++const track = (items: TimelineItem[]) => ({ id: 't', items }) as unknown as TimelineTrack
++
++afterEach(() => {
++  clearLutReferences()
++  blobUrlManager.releaseAll()
++  useCompositionsStore.setState({ compositionById: {} })
++  vi.unstubAllGlobals()
++})
++
++describe('LUT references before a render (FL-1558)', () => {
++  it('names the LUTs of the composition and of every sub-composition it reaches', () => {
++    useCompositionsStore.setState({
++      compositionById: {
++        inner: { id: 'inner', items: [graded('nested', 'b')], tracks: [] },
++        unused: { id: 'unused', items: [graded('elsewhere', 'c')], tracks: [] },
++      } as never,
++    })
++    const wrapper = { id: 'w', type: 'composition', compositionId: 'inner', trackId: 't' } as never
++    expect(compositionLutReferenceIds({ tracks: [track([graded('top', 'a'), wrapper])] })).toEqual([
++      'a',
++      'b',
++    ])
++  })
++
++  it('refuses an export whose LUT cannot be read, and lets a thumbnail render ungraded', async () => {
++    const composition = { tracks: [track([graded('top', 'missing')])] }
++    await expect(loadCompositionLutReferences(composition, { strict: true })).rejects.toThrow(
++      'LUT_REFERENCE_UNAVAILABLE',
++    )
++    await expect(
++      loadCompositionLutReferences(composition, { strict: false }),
++    ).resolves.toBeUndefined()
++  })
++
++  it('reads every referenced file before the first frame', async () => {
++    const text = 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n'
++    vi.stubGlobal(
++      'fetch',
++      vi.fn(async () => ({
++        ok: true,
++        arrayBuffer: async () => new TextEncoder().encode(text).buffer,
++      })),
++    )
++    blobUrlManager.registerUrl('a', '/a')
++    await loadCompositionLutReferences({ tracks: [track([graded('top', 'a')])] }, { strict: true })
++    expect(peekLutReference('a')?.type).toBe('gpu-file-lut-1d-v1')
++  })
++})
+diff --git a/src/features/export/utils/lut-reference-preload.ts b/src/features/export/utils/lut-reference-preload.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/lut-reference-preload.ts
+@@ -0,0 +1,39 @@
++/**
++ * Frameleaf (FL-1558): before a render, read every LUT kept with the project that the composition
++ * (and each sub-composition it reaches) names, so no frame is rendered ungraded while a file loads.
++ * An export refuses when one cannot be read (`LUT_REFERENCE_UNAVAILABLE`); a thumbnail or analysis
++ * frame renders ungraded rather than fail.
++ */
++import type { CompositionInputProps } from '@/types/export'
++import {
++  collectLutReferenceIds,
++  loadLutReferences,
++} from '@/infrastructure/gpu-effects/lut/lut-references'
++import {
++  collectReachableCompositionIdsFromTracks,
++  useCompositionsStore,
++} from '@/features/export/deps/timeline-composition-graph'
++
++export function compositionLutReferenceIds(
++  composition: Pick<CompositionInputProps, 'tracks'>,
++): string[] {
++  const tracks = composition.tracks ?? []
++  const { compositionById } = useCompositionsStore.getState()
++  const items = tracks.flatMap((track) => track.items ?? [])
++  for (const id of collectReachableCompositionIdsFromTracks(tracks, compositionById))
++    items.push(...(compositionById[id]?.items ?? []))
++  return collectLutReferenceIds(items)
++}
++
++export async function loadCompositionLutReferences(
++  composition: Pick<CompositionInputProps, 'tracks'>,
++  options: { strict: boolean },
++): Promise<void> {
++  const ids = compositionLutReferenceIds(composition)
++  if (ids.length === 0) return
++  try {
++    await loadLutReferences(ids)
++  } catch (error) {
++    if (options.strict) throw error
++  }
++}
+diff --git a/src/features/preview/hooks/use-preview-view-model.ts b/src/features/preview/hooks/use-preview-view-model.ts
+--- a/src/features/preview/hooks/use-preview-view-model.ts
++++ b/src/features/preview/hooks/use-preview-view-model.ts
+@@ -17,6 +17,7 @@ import {
+   useMediaLibraryStore,
+ } from '@/features/preview/deps/media-library'
+ import { useBlobUrlVersion } from '@/infrastructure/browser/blob-url-manager'
++import { useLutReferencesVersion } from '@/infrastructure/gpu-effects/lut/lut-references'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { useMaskEditorStore } from '../stores/mask-editor-store'
+ import { isMarqueeJustFinished } from '@/shared/marquee/use-marquee-selection'
+@@ -72,7 +73,8 @@ export function usePreviewViewModel({
+   const zoom = usePlaybackStore((s) => s.zoom)
+   const useProxy = usePlaybackStore((s) => s.useProxy)
+   const busAudioEq = usePlaybackStore((s) => s.busAudioEq)
+-  const blobUrlVersion = useBlobUrlVersion()
++  // Frameleaf (FL-1558): a LUT kept with the project that finishes loading redraws like new media.
++  const blobUrlVersion = useBlobUrlVersion() + useLutReferencesVersion()
+   const proxyStatus = useMediaLibraryStore((s) => s.proxyStatus)
+   const proxyReadyCount = useMemo(() => {
+     let count = 0
+diff --git a/src/headless/signal-frame.ts b/src/headless/signal-frame.ts
+--- a/src/headless/signal-frame.ts
++++ b/src/headless/signal-frame.ts
+@@ -1,6 +1,7 @@
+ import type { CompositionInputProps } from '@/types/export'
+ import type { HdrRasterInput } from '@/features/export/utils/hdr-raster-sources'
+ import { createCompositionRenderer } from '@/features/export/utils/client-render-engine'
++import { loadCompositionLutReferences } from '@/features/export/utils/lut-reference-preload'
+ 
+ /** Own one real float renderer; no image Blob or 8-bit canvas capture is returned. */
+ export async function renderCompositionSignalFrame(
+@@ -14,6 +15,9 @@ export async function renderCompositionSignalFrame(
+   const canvas = new OffscreenCanvas(composition.width, composition.height)
+   const ctx = canvas.getContext('2d')
+   if (!ctx) throw new Error('Signal frame requires a composition context')
++  // Frameleaf (FL-1558): every LUT kept with the project is read before the frame is drawn.
++  await loadCompositionLutReferences(composition, { strict: true })
++  signal?.throwIfAborted()
+   const renderer = await createCompositionRenderer(composition, canvas, ctx, {
+     mode: 'export',
+     ...(hdrRasters ? { hdrRasters } : {}),
+diff --git a/src/infrastructure/gpu-effects/effects/lut.ts b/src/infrastructure/gpu-effects/effects/lut.ts
+--- a/src/infrastructure/gpu-effects/effects/lut.ts
++++ b/src/infrastructure/gpu-effects/effects/lut.ts
+@@ -1,6 +1,7 @@
+ import type { GpuEffectDefinition } from '../types'
+ import { createIdentityLutData, decodeLutData } from '../lut/cube-lut'
+ import { readFileLut, readFileLutDomain } from '../lut/file-lut'
++import { FILE_LUT_1D_ROW, readFileLut1d, readFileLut1dDomain } from '../lut/cube-file'
+ 
+ const IDENTITY_LUT_SIZE = 2
+ 
+@@ -145,3 +146,59 @@ fn fileEntry(p: vec3i) -> vec3f {
+     },
+   },
+ }
++
++/** Frameleaf (FL-1558): execution-only 1D Cube table, kept with the project and never in a graph.
++ * Each channel is looked up in its own column of raw float32 outputs, linearly interpolated, with
++ * the file's input domain (studio/spec/effects/gpu-lut.md, "LUTs kept with the project"). */
++export const fileLut1d: GpuEffectDefinition = {
++  id: 'gpu-file-lut-1d-v1',
++  name: 'Verified 1D file LUT',
++  category: 'color',
++  entryPoint: 'fileLut1dFragment',
++  uniformSize: 48,
++  shader: /* wgsl */ `
++struct FileLut1dParams { intensity: f32, size: f32, _p2: f32, _p3: f32, domainMin: vec4f, domainMax: vec4f };
++@group(0) @binding(0) var texSampler: sampler;
++@group(0) @binding(1) var inputTex: texture_2d<f32>;
++@group(0) @binding(2) var<uniform> params: FileLut1dParams;
++@group(0) @binding(3) var lutTex: texture_3d<f32>;
++fn unpackFile1dChannel(index: i32, channel: i32) -> f32 {
++  let p = vec3i((index % ${FILE_LUT_1D_ROW}) * 4 + channel, index / ${FILE_LUT_1D_ROW}, 0);
++  let bytes = vec4u(round(textureLoad(lutTex, p, 0) * 255.0));
++  return bitcast<f32>(bytes.x | (bytes.y << 8u) | (bytes.z << 16u) | (bytes.w << 24u));
++}
++fn file1dChannel(value: f32, channel: i32) -> f32 {
++  let u = clamp((value - params.domainMin[channel]) / (params.domainMax[channel] - params.domainMin[channel]), 0.0, 1.0);
++  let position = u * (params.size - 1.0);
++  let lo = i32(floor(position));
++  let hi = min(lo + 1, i32(params.size) - 1);
++  return mix(unpackFile1dChannel(lo, channel), unpackFile1dChannel(hi, channel), position - f32(lo));
++}
++@fragment fn fileLut1dFragment(input: VertexOutput) -> @location(0) vec4f {
++  let color = textureSample(inputTex, texSampler, input.uv);
++  let graded = vec3f(file1dChannel(color.r, 0), file1dChannel(color.g, 1), file1dChannel(color.b, 2));
++  return vec4f(mix(color.rgb, graded, clamp(params.intensity, 0.0, 1.0)), color.a);
++}`,
++  params: { intensity: lut3d.params.intensity! },
++  packUniforms: (p) => {
++    const table = readFileLut1dDomain(p)
++    return new Float32Array([
++      typeof p.intensity === 'number' ? p.intensity : 1,
++      table.size,
++      0,
++      0,
++      ...table.domainMin,
++      0,
++      ...table.domainMax,
++      0,
++    ])
++  },
++  dataTexture: {
++    dimension: '3d',
++    key: (p) => (typeof p.fileLutData === 'string' ? p.fileLutData : ''),
++    build: (p) => {
++      const { rows, data } = readFileLut1d(p)
++      return { width: FILE_LUT_1D_ROW * 4, height: rows, depth: 1, data }
++    },
++  },
++}
+diff --git a/src/infrastructure/gpu-effects/lut/cube-file.test.ts b/src/infrastructure/gpu-effects/lut/cube-file.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/lut/cube-file.test.ts
+@@ -0,0 +1,154 @@
++import { describe, expect, it } from 'vitest'
++import { fileLut1d } from '../effects/lut'
++import { getGpuEffect, GPU_EFFECT_REGISTRY } from '../registry'
++import {
++  CUBE_FILE_1D_MAX_SIZE,
++  FILE_LUT_1D_ROW,
++  describeCubeFile,
++  materializeCubeFileLut1d,
++  readFileLut1d,
++  sampleCubeFileLut1d,
++} from './cube-file'
++
++const cube3d = (size: number, headers = '') =>
++  `TITLE "Grid"\n${headers}LUT_3D_SIZE ${size}\n${'0.5 0.25 1\n'.repeat(size ** 3)}`
++/** A 1D table: red rises, green falls, blue is a curve, so every channel reads its own column. */
++const entries: [number, number, number][] = [
++  [0, 1, 0],
++  [0.25, 0.5, 0.1],
++  [1, 0, 1],
++]
++const cube1d = (headers = '') =>
++  `# a comment\nLUT_1D_SIZE 3\n${headers}${entries.map((row) => row.join(' ')).join('\n')}\n`
++
++describe('describeCubeFile (FL-1558)', () => {
++  it('reads a 3D grid and a 1D table, their domains and titles', () => {
++    expect(describeCubeFile(cube3d(2))).toEqual({
++      dimensions: 3,
++      size: 2,
++      domainMin: [0, 0, 0],
++      domainMax: [1, 1, 1],
++      title: 'Grid',
++    })
++    expect(describeCubeFile(cube1d('DOMAIN_MIN -1 0 0\nDOMAIN_MAX 1 2 1\n'))).toEqual({
++      dimensions: 1,
++      size: 3,
++      domainMin: [-1, 0, 0],
++      domainMax: [1, 2, 1],
++    })
++    expect(describeCubeFile(cube1d('LUT_1D_INPUT_RANGE -0.5 1.5\n'))).toMatchObject({
++      domainMin: [-0.5, -0.5, -0.5],
++      domainMax: [1.5, 1.5, 1.5],
++    })
++    expect(describeCubeFile(`TITLE Bare words\r\n${cube1d().slice(12)}`).title).toBe('Bare words')
++    const longest = `LUT_1D_SIZE ${CUBE_FILE_1D_MAX_SIZE}\n${'1 1 1\n'.repeat(CUBE_FILE_1D_MAX_SIZE)}`
++    expect(describeCubeFile(longest).size).toBe(CUBE_FILE_1D_MAX_SIZE)
++  })
++
++  it.each([
++    ['no size', 'TITLE "x"\n'],
++    ['both sizes', 'LUT_1D_SIZE 2\nLUT_3D_SIZE 2\n' + '0 0 0\n'.repeat(8)],
++    ['a 1D table one row short', 'LUT_1D_SIZE 3\n0 0 0\n1 1 1\n'],
++    ['a 1D table one row long', 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n1 1 1\n'],
++    ['a 1D table of one row', 'LUT_1D_SIZE 1\n0 0 0\n'],
++    ['a 1D table past the limit', `LUT_1D_SIZE ${CUBE_FILE_1D_MAX_SIZE + 1}\n`],
++    ['a 3D grid past the limit', 'LUT_3D_SIZE 66\n'],
++    ['a 3D input range on a 1D table', cube1d('LUT_3D_INPUT_RANGE 0 1\n')],
++    ['a 1D input range on a 3D grid', cube3d(2, 'LUT_1D_INPUT_RANGE 0 1\n')],
++    [
++      'an input range that conflicts with the domain',
++      cube1d('LUT_1D_INPUT_RANGE 0 2\nDOMAIN_MAX 1 2 2\n'),
++    ],
++    ['an empty domain', cube1d('DOMAIN_MIN 1 1 1\nDOMAIN_MAX 1 1 1\n')],
++    ['an unknown keyword', 'LUT_1D_SIZE 2\nINCLUDE x\n0 0 0\n1 1 1\n'],
++    ['a keyword inside the table', 'LUT_1D_SIZE 2\n0 0 0\nTITLE "late"\n1 1 1\n'],
++    ['a row of two numbers', 'LUT_1D_SIZE 2\n0 0 0\n1 1\n'],
++    ['a number that is not finite', 'LUT_1D_SIZE 2\n0 0 0\n1e999 1 1\n'],
++    ['a hexadecimal number', 'LUT_1D_SIZE 2\n0 0 0\n0x1 1 1\n'],
++    ['a control character', `${cube1d()}\u0000`],
++  ])('refuses a file with %s', (_name, text) => {
++    expect(() => describeCubeFile(text)).toThrow('INVALID_CUBE_FILE')
++  })
++})
++
++describe('1D file LUT execution params (FL-1558)', () => {
++  it('packs raw float outputs four texels an entry, 512 entries a row, padded with zeros', () => {
++    const descriptor = describeCubeFile(cube1d('DOMAIN_MIN -1 0 0\n'))
++    const params = materializeCubeFileLut1d(cube1d('DOMAIN_MIN -1 0 0\n'), descriptor)
++    expect(params).toMatchObject({ fileLut1dVersion: 1, fileLutSize: 3 })
++    const table = readFileLut1d(params)
++    expect(table.rows).toBe(1)
++    expect(table.domainMin).toEqual([-1, 0, 0])
++    expect(table.data.length).toBe(FILE_LUT_1D_ROW * 16)
++    const view = new DataView(table.data.buffer)
++    expect(view.getFloat32(16 + 0, true)).toBe(0.25)
++    expect(view.getFloat32(16 + 4, true)).toBe(0.5)
++    expect(view.getFloat32(16 + 8, true)).toBeCloseTo(0.1, 7)
++    expect(view.getFloat32(16 + 12, true)).toBe(1)
++    expect(view.getFloat32(3 * 16, true)).toBe(0)
++  })
++
++  it('wraps a long table onto further rows', () => {
++    const size = FILE_LUT_1D_ROW + 1
++    const text = `LUT_1D_SIZE ${size}\n${Array.from({ length: size }, (_, i) => `${i} 0 0`).join('\n')}`
++    const table = readFileLut1d(materializeCubeFileLut1d(text, describeCubeFile(text)))
++    expect(table.rows).toBe(2)
++    // Entry 512 is the first entry of the second row: texel (0, 1) of the shader's lookup.
++    const view = new DataView(table.data.buffer)
++    expect(view.getFloat32(FILE_LUT_1D_ROW * 16, true)).toBe(FILE_LUT_1D_ROW)
++    expect(
++      fileLut1d.dataTexture!.build(materializeCubeFileLut1d(text, describeCubeFile(text))),
++    ).toMatchObject({
++      width: FILE_LUT_1D_ROW * 4,
++      height: 2,
++      depth: 1,
++    })
++  })
++
++  it('refuses tampered params instead of rendering an identity', () => {
++    const params = materializeCubeFileLut1d(cube1d(), describeCubeFile(cube1d()))
++    const patches: Record<string, number | string>[] = [
++      { fileLut1dVersion: 2 },
++      { fileLutSize: 4 },
++      { fileLutData: `${params.fileLutData}\n` },
++      { fileLutDomainMax: '[0,1,1]' },
++    ]
++    for (const patch of patches) expect(() => readFileLut1d({ ...params, ...patch })).toThrow()
++  })
++
++  it('packs the uniforms the shader reads and stays out of the effect catalogue', () => {
++    const params = materializeCubeFileLut1d(
++      cube1d('DOMAIN_MAX 2 1 1\n'),
++      describeCubeFile(cube1d('DOMAIN_MAX 2 1 1\n')),
++    )
++    expect([...fileLut1d.packUniforms({ ...params, intensity: 0.5 }, 1, 1)!]).toEqual([
++      0.5, 3, 0, 0, 0, 0, 0, 0, 2, 1, 1, 0,
++    ])
++    expect(getGpuEffect('gpu-file-lut-1d-v1')).toBe(fileLut1d)
++    expect(GPU_EFFECT_REGISTRY.has('gpu-file-lut-1d-v1')).toBe(false)
++    expect(GPU_EFFECT_REGISTRY.has('gpu-file-lut-v1')).toBe(false)
++  })
++})
++
++describe('1D LUT reference values (studio/spec/effects/gpu-lut.md)', () => {
++  const min = [0, 0, 0]
++  const max = [1, 1, 1]
++  it('looks each channel up in its own column', () => {
++    expect(sampleCubeFileLut1d(entries, min, max, [0, 0, 0])).toEqual([0, 1, 0])
++    expect(sampleCubeFileLut1d(entries, min, max, [0.5, 0.5, 0.5])).toEqual([0.25, 0.5, 0.1])
++    expect(sampleCubeFileLut1d(entries, min, max, [1, 1, 1])).toEqual([1, 0, 1])
++  })
++  it('interpolates linearly between the two nearest entries', () => {
++    const [r, g, b] = sampleCubeFileLut1d(entries, min, max, [0.25, 0.75, 0.625])
++    expect(r).toBeCloseTo(0.125, 12)
++    expect(g).toBeCloseTo(0.25, 12)
++    expect(b).toBeCloseTo(0.1 + 0.9 * 0.25, 12)
++  })
++  it('maps the input through each channel’s domain and clamps it to the table', () => {
++    const [r, g, b] = sampleCubeFileLut1d(entries, [-1, 0, 0], [1, 2, 1], [0, 1, 7])
++    expect(r).toBe(0.25)
++    expect(g).toBe(0.5)
++    expect(b).toBe(1)
++    expect(sampleCubeFileLut1d(entries, min, max, [-3, -3, -3])).toEqual([0, 1, 0])
++  })
++})
+diff --git a/src/infrastructure/gpu-effects/lut/cube-file.ts b/src/infrastructure/gpu-effects/lut/cube-file.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/lut/cube-file.ts
+@@ -0,0 +1,242 @@
++/**
++ * Frameleaf (FL-1558): `.cube` files kept beside the project, 3D and 1D.
++ *
++ * A LUT kept with the project is not in the graph: the effect names it (`lutId`) and the editor
++ * reads its bytes, checks them with the strict grammar below and materialises the private execution
++ * params the GPU reads. A 3D file becomes `gpu-file-lut-v1` (`file-lut.ts`); a 1D file becomes
++ * `gpu-file-lut-1d-v1` (here). The server checks the same grammar when the file is imported
++ * (`validateStudioCubeLut`), so a file the server keeps is one this accepts.
++ */
++type Params = Record<string, number | boolean | string>
++interface Domain {
++  size: number
++  domainMin: number[]
++  domainMax: number[]
++}
++
++/** The largest 3D grid: 65 points an axis, the largest size grading tools write. */
++export const CUBE_FILE_3D_MAX_SIZE = 65
++/** The longest 1D table: the Adobe Cube specification's own ceiling. */
++export const CUBE_FILE_1D_MAX_SIZE = 65536
++/** 1D entries per texture row: four texels an entry keep a row within the 2048-texel 3D limit. */
++export const FILE_LUT_1D_ROW = 512
++
++export interface CubeFileDescriptor extends Domain {
++  dimensions: 1 | 3
++  title?: string
++}
++
++function checkDomain(value: unknown): number[] {
++  if (
++    !Array.isArray(value) ||
++    value.length !== 3 ||
++    value.some((v) => typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) > 1e37)
++  )
++    throw new Error('INVALID_FILE_LUT_DOMAIN')
++  return value
++}
++
++function bounds1d(value: Domain): Domain {
++  const { size } = value
++  if (!Number.isInteger(size) || size < 2 || size > CUBE_FILE_1D_MAX_SIZE)
++    throw new Error('FILE_LUT_ALLOCATION_LIMIT')
++  const domainMin = checkDomain(value.domainMin)
++  const domainMax = checkDomain(value.domainMax)
++  for (let i = 0; i < 3; i++) {
++    const span = Math.fround(domainMax[i]!) - Math.fround(domainMin[i]!)
++    if (!(span > 0) || !Number.isFinite(Math.fround(1 / span)))
++      throw new Error('INVALID_FILE_LUT_DOMAIN')
++  }
++  return { size, domainMin, domainMax }
++}
++
++const CUBE_NUMBER = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?`
++const CUBE_TRIPLE = new RegExp(
++  String.raw`^(${CUBE_NUMBER})[ \t]+(${CUBE_NUMBER})[ \t]+(${CUBE_NUMBER})$`,
++)
++const CUBE_PAIR = new RegExp(String.raw`^(${CUBE_NUMBER})[ \t]+(${CUBE_NUMBER})$`)
++const CUBE_KEYWORD =
++  /^(TITLE|LUT_3D_SIZE|LUT_1D_SIZE|DOMAIN_MIN|DOMAIN_MAX|LUT_3D_INPUT_RANGE|LUT_1D_INPUT_RANGE)(?:[ \t]|$)/
++// eslint-disable-next-line no-control-regex
++const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/
++
++function finiteTriple(text: string): number[] | undefined {
++  const values = CUBE_TRIPLE.exec(text)?.slice(1).map(Number)
++  return values?.every((v) => Number.isFinite(v) && Math.abs(v) <= 1e37) ? values : undefined
++}
++
++function invalid(): never {
++  throw new Error('INVALID_CUBE_FILE')
++}
++
++/**
++ * Read a whole `.cube` file (Adobe Cube LUT 1.0 plus the input ranges Resolve writes): a 3D grid of
++ * `LUT_3D_SIZE`³ rows (2 to 65 points) or a 1D table of `LUT_1D_SIZE` rows (2 to 65536), its input
++ * domain and its title. Both sizes in one file, an input range of the other kind, an unknown
++ * keyword, a keyword inside the table, a row of other than three finite numbers or the wrong number
++ * of rows throws `INVALID_CUBE_FILE`: a LUT is never guessed at.
++ */
++export function describeCubeFile(text: string): CubeFileDescriptor {
++  if (CONTROL.test(text)) invalid()
++  let size: number | undefined
++  let dimensions: 1 | 3 | undefined
++  let rows = 0
++  let title: string | undefined
++  let range: number[] | undefined
++  let rangeDimensions: 1 | 3 | undefined
++  const domain: { DOMAIN_MIN?: number[]; DOMAIN_MAX?: number[] } = {}
++  const body = text.codePointAt(0) === 0xfeff ? text.slice(1) : text
++  for (const raw of body.split(/\r\n|\r|\n/)) {
++    const line = raw.trim()
++    if (line === '' || line.startsWith('#')) continue
++    if (line.length > 250) invalid()
++    const keyword = CUBE_KEYWORD.exec(line)?.[1]
++    if (!keyword) {
++      if (!finiteTriple(line) || size === undefined) invalid()
++      if (++rows > (dimensions === 3 ? size ** 3 : size)) invalid()
++      continue
++    }
++    if (rows > 0) invalid()
++    const value = line.slice(keyword.length).trim()
++    if (keyword === 'TITLE') {
++      if (title !== undefined || value === '') invalid()
++      title = /^"(.*)"$/.exec(value)?.[1] ?? value
++    } else if (keyword === 'LUT_3D_SIZE' || keyword === 'LUT_1D_SIZE') {
++      const three = keyword === 'LUT_3D_SIZE'
++      if (size !== undefined || !(three ? /^\d{1,3}$/ : /^\d{1,5}$/).test(value)) invalid()
++      size = Number(value)
++      dimensions = three ? 3 : 1
++      if (size < 2 || size > (three ? CUBE_FILE_3D_MAX_SIZE : CUBE_FILE_1D_MAX_SIZE)) invalid()
++    } else if (keyword === 'DOMAIN_MIN' || keyword === 'DOMAIN_MAX') {
++      const triple = finiteTriple(value)
++      if (domain[keyword] || !triple) invalid()
++      domain[keyword] = triple
++    } else {
++      const pair = CUBE_PAIR.exec(value)?.slice(1).map(Number)
++      if (range || !pair || !pair.every(Number.isFinite) || !(pair[0]! < pair[1]!)) invalid()
++      range = pair
++      rangeDimensions = keyword === 'LUT_1D_INPUT_RANGE' ? 1 : 3
++    }
++  }
++  if (size === undefined || dimensions === undefined) invalid()
++  if (rangeDimensions !== undefined && rangeDimensions !== dimensions) invalid()
++  const [low, high] = range ?? []
++  if (
++    range &&
++    (domain.DOMAIN_MIN?.some((v) => v !== low) || domain.DOMAIN_MAX?.some((v) => v !== high))
++  )
++    invalid()
++  if (rows !== (dimensions === 3 ? size ** 3 : size)) invalid()
++  let checked: Domain
++  try {
++    checked = bounds1d({
++      size: dimensions === 3 ? 2 : size,
++      domainMin: domain.DOMAIN_MIN ?? [low ?? 0, low ?? 0, low ?? 0],
++      domainMax: domain.DOMAIN_MAX ?? [high ?? 1, high ?? 1, high ?? 1],
++    })
++  } catch {
++    invalid()
++  }
++  return { ...checked, size, dimensions, ...(title !== undefined && { title }) }
++}
++
++/** Texture rows a 1D table of `size` entries takes. */
++const rows1d = (size: number) => Math.ceil(size / FILE_LUT_1D_ROW)
++
++/**
++ * A 1D table as execution params for `gpu-file-lut-1d-v1`: raw float32 outputs, four texels an entry
++ * (R, G, B and 1), {@link FILE_LUT_1D_ROW} entries a texture row, the last row padded with zeros.
++ * Caller must first apply {@link describeCubeFile} to the same text.
++ */
++export function materializeCubeFileLut1d(text: string, descriptor: Domain): Params {
++  const { size, domainMin, domainMax } = bounds1d(descriptor)
++  const rows = text
++    .split(/\r\n|\r|\n/)
++    .map((line) => line.trim())
++    .filter((line) => /^[+\-.\d]/.test(line))
++  if (rows.length !== size) throw new Error('INVALID_FILE_LUT_TABLE')
++  const data = new Uint8Array(rows1d(size) * FILE_LUT_1D_ROW * 16)
++  const view = new DataView(data.buffer)
++  for (let i = 0; i < rows.length; i++) {
++    const values = rows[i]!.split(/\s+/).map(Number)
++    if (values.length !== 3 || values.some((v) => !Number.isFinite(v) || Math.abs(v) > 1e37))
++      throw new Error('INVALID_FILE_LUT_TABLE')
++    for (let c = 0; c < 3; c++) view.setFloat32(i * 16 + c * 4, values[c]!, true)
++    view.setFloat32(i * 16 + 12, 1, true)
++  }
++  let binary = ''
++  for (let i = 0; i < data.length; i += 8192)
++    binary += String.fromCharCode(...data.subarray(i, i + 8192))
++  return {
++    fileLut1dVersion: 1,
++    fileLutSize: size,
++    fileLutData: btoa(binary),
++    fileLutDomainMin: JSON.stringify(domainMin),
++    fileLutDomainMax: JSON.stringify(domainMax),
++  }
++}
++
++/** A 1D table's size and domain, checked without decoding the table: cheap enough for every frame. */
++export function readFileLut1dDomain(params: Params): Domain {
++  if (
++    params.fileLut1dVersion !== 1 ||
++    typeof params.fileLutSize !== 'number' ||
++    typeof params.fileLutData !== 'string' ||
++    typeof params.fileLutDomainMin !== 'string' ||
++    typeof params.fileLutDomainMax !== 'string'
++  )
++    throw new Error('INVALID_FILE_LUT_VERSION')
++  const bounds = bounds1d({
++    size: params.fileLutSize,
++    domainMin: JSON.parse(params.fileLutDomainMin),
++    domainMax: JSON.parse(params.fileLutDomainMax),
++  })
++  const length = rows1d(bounds.size) * FILE_LUT_1D_ROW * 16
++  if (params.fileLutData.length !== 4 * Math.ceil(length / 3))
++    throw new Error('FILE_LUT_ALLOCATION_LIMIT')
++  return bounds
++}
++
++/** Validate a 1D table before texture upload: entries finite, their fourth float 1, padding zero. */
++export function readFileLut1d(params: Params): Domain & { data: Uint8Array; rows: number } {
++  const bounds = readFileLut1dDomain(params)
++  const length = rows1d(bounds.size) * FILE_LUT_1D_ROW * 16
++  const binary = atob(params.fileLutData as string)
++  if (binary.length !== length || btoa(binary) !== params.fileLutData)
++    throw new Error('INVALID_FILE_LUT_ENCODING')
++  const data = Uint8Array.from(binary, (c) => c.charCodeAt(0))
++  const view = new DataView(data.buffer)
++  for (let i = 0; i < length; i += 4) {
++    const value = view.getFloat32(i, true)
++    const valid =
++      i >= bounds.size * 16
++        ? value === 0
++        : Number.isFinite(value) && Math.abs(value) <= 1e37 && (i % 16 !== 12 || value === 1)
++    if (!valid) throw new Error('INVALID_FILE_LUT_TABLE')
++  }
++  return { ...bounds, data, rows: rows1d(bounds.size) }
++}
++
++/**
++ * The reference value of a 1D table at `color` (CPU, float64), as `studio/spec/effects/gpu-lut.md`
++ * defines it: per channel, the input mapped through that channel's domain and clamped to [0, 1],
++ * then linear interpolation between the two nearest entries of that channel. The shader computes
++ * the same in float32.
++ */
++export function sampleCubeFileLut1d(
++  entries: ReadonlyArray<readonly [number, number, number]>,
++  domainMin: readonly number[],
++  domainMax: readonly number[],
++  color: readonly [number, number, number],
++): [number, number, number] {
++  const last = entries.length - 1
++  const channel = (c: 0 | 1 | 2) => {
++    const u = Math.min(1, Math.max(0, (color[c] - domainMin[c]!) / (domainMax[c]! - domainMin[c]!)))
++    const position = u * last
++    const lo = Math.floor(position)
++    const hi = Math.min(lo + 1, last)
++    const f = position - lo
++    return entries[lo]![c] + (entries[hi]![c] - entries[lo]![c]) * f
++  }
++  return [channel(0), channel(1), channel(2)]
++}
+diff --git a/src/infrastructure/gpu-effects/lut/lut-references.test.ts b/src/infrastructure/gpu-effects/lut/lut-references.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/lut/lut-references.test.ts
+@@ -0,0 +1,183 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
++import type { ItemEffect } from '@/types/effects'
++import {
++  LUT_REFERENCE_UNAVAILABLE,
++  clearLutReferences,
++  collectLutReferenceIds,
++  getLutReferencesVersion,
++  getProjectLutKeeper,
++  installProjectLutKeeper,
++  loadLutReference,
++  loadLutReferences,
++  lutReferenceId,
++  materializeLutFile,
++  mergeGpuEffectParams,
++  peekLutReference,
++  resolveLutReferenceEffect,
++  setLutReference,
++} from './lut-references'
++
++const grid = `TITLE "Teal"\nLUT_3D_SIZE 2\n${'0.5 0.25 1\n'.repeat(8)}`
++const table = 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n'
++const reference = (id: string) => ({
++  intensity: 0.75,
++  lutName: 'Teal',
++  lutSize: '0',
++  lutData: '',
++  lutId: id,
++  lutSource: 'import',
++})
++const gpu = (params: Record<string, string | number>, enabled = true): ItemEffect => ({
++  id: `fx-${String(params.lutId ?? 'inline')}`,
++  enabled,
++  effect: { type: 'gpu-effect', gpuEffectType: 'gpu-lut', params },
++})
++
++beforeEach(() => clearLutReferences())
++afterEach(() => {
++  vi.unstubAllGlobals()
++  blobUrlManager.releaseAll()
++})
++
++describe('LUT references (FL-1558)', () => {
++  it('names a LUT kept with the project only with an import id', () => {
++    expect(lutReferenceId(reference('a'))).toBe('a')
++    expect(lutReferenceId({ lutId: 'a' })).toBeNull()
++    expect(lutReferenceId({ lutId: '', lutSource: 'import' })).toBeNull()
++    expect(lutReferenceId({ lutData: 'AAAA', lutSize: '2' })).toBeNull()
++  })
++
++  it('materialises a 3D file as gpu-file-lut-v1 and a 1D file as gpu-file-lut-1d-v1', () => {
++    expect(materializeLutFile(grid, 'x.cube')).toMatchObject({
++      type: 'gpu-file-lut-v1',
++      name: 'Teal',
++      dimensions: 3,
++      size: 2,
++    })
++    expect(materializeLutFile(table, 'Lift.CUBE')).toMatchObject({
++      type: 'gpu-file-lut-1d-v1',
++      name: 'Lift',
++      dimensions: 1,
++    })
++    expect(() => materializeLutFile('LUT_3D_SIZE 2\n0 0 0\n')).toThrow('INVALID_CUBE_FILE')
++  })
++
++  it('renders a ready reference as its file LUT with the effect’s intensity, sharing the table', () => {
++    const lut = materializeLutFile(grid)
++    setLutReference('a', lut)
++    const first = resolveLutReferenceEffect('gpu-lut', reference('a'))
++    const second = resolveLutReferenceEffect('gpu-lut', { ...reference('a'), intensity: 0.2 })
++    expect(first.type).toBe('gpu-file-lut-v1')
++    expect(first.params).toMatchObject({ fileLutVersion: 1, fileLutSize: 2, intensity: 0.75 })
++    expect(second.params.intensity).toBe(0.2)
++    // The same string: the GPU texture key compares by reference and is built once.
++    expect(second.params.fileLutData).toBe(lut.params.fileLutData)
++    const inline = { lutName: 'x', lutSize: '2', lutData: 'AAAA' }
++    expect(resolveLutReferenceEffect('gpu-lut', inline)).toEqual({
++      type: 'gpu-lut',
++      params: inline,
++    })
++    expect(resolveLutReferenceEffect('gpu-brightness', { amount: 1 }).type).toBe('gpu-brightness')
++  })
++
++  it('leaves a reference ungraded until its file is read, then redraws', async () => {
++    const text = vi.fn(async () => new TextEncoder().encode(table).buffer)
++    vi.stubGlobal(
++      'fetch',
++      vi.fn(async () => ({ ok: true, status: 200, arrayBuffer: text })),
++    )
++    expect(resolveLutReferenceEffect('gpu-lut', reference('b')).type).toBe('gpu-lut')
++    expect(fetch).not.toHaveBeenCalled()
++    blobUrlManager.registerUrl('b', '/api/studio/projects/p/imports/b/file')
++    const before = getLutReferencesVersion()
++    expect(peekLutReference('b')).toBeUndefined()
++    await vi.waitFor(() => expect(getLutReferencesVersion()).toBeGreaterThan(before))
++    expect(fetch).toHaveBeenCalledWith('/api/studio/projects/p/imports/b/file', {
++      credentials: 'same-origin',
++    })
++    expect(resolveLutReferenceEffect('gpu-lut', reference('b')).type).toBe('gpu-file-lut-1d-v1')
++    expect(text).toHaveBeenCalledOnce()
++  })
++
++  it('refuses a render whose LUT is missing, unreadable or not a .cube file', async () => {
++    await expect(loadLutReferences(['missing'])).rejects.toThrow(LUT_REFERENCE_UNAVAILABLE)
++    vi.stubGlobal(
++      'fetch',
++      vi.fn(async () => ({ ok: false, status: 404 })),
++    )
++    blobUrlManager.registerUrl('gone', '/gone')
++    await expect(loadLutReference('gone')).rejects.toThrow(LUT_REFERENCE_UNAVAILABLE)
++    // A failed read is not retried every frame for the same file.
++    peekLutReference('gone')
++    expect(fetch).toHaveBeenCalledOnce()
++    vi.stubGlobal(
++      'fetch',
++      vi.fn(async () => ({
++        ok: true,
++        arrayBuffer: async () => new TextEncoder().encode('notes').buffer,
++      })),
++    )
++    blobUrlManager.registerUrl('notes', '/notes')
++    await expect(loadLutReferences(['notes'])).rejects.toThrow(LUT_REFERENCE_UNAVAILABLE)
++    setLutReference('ready', materializeLutFile(grid))
++    await expect(loadLutReferences(['ready', 'ready'])).resolves.toBeUndefined()
++  })
++
++  it('collects the references enabled LUT effects name', () => {
++    const items = [
++      { effects: [gpu(reference('a')), gpu(reference('b'), false)] },
++      { effects: [gpu(reference('a')), gpu({ lutData: 'AAAA', lutSize: '2', lutName: '' })] },
++      {
++        effects: [
++          {
++            id: 'b',
++            enabled: true,
++            effect: {
++              type: 'gpu-effect',
++              gpuEffectType: 'gpu-brightness',
++              params: { lutId: 'c', lutSource: 'import' },
++            },
++          } as ItemEffect,
++        ],
++      },
++      {},
++    ]
++    expect(collectLutReferenceIds(items)).toEqual(['a'])
++  })
++
++  it('replaces every LUT field when a new LUT is set, and only then', () => {
++    const kept = reference('a')
++    expect(mergeGpuEffectParams('gpu-lut', kept, { intensity: 0.1 })).toEqual({
++      ...kept,
++      intensity: 0.1,
++    })
++    expect(
++      mergeGpuEffectParams('gpu-lut', kept, { lutName: 'Inline', lutSize: '2', lutData: 'AAAA' }),
++    ).toEqual({
++      intensity: 0.75,
++      lutName: 'Inline',
++      lutSize: '2',
++      lutData: 'AAAA',
++    })
++    expect(
++      mergeGpuEffectParams(
++        'gpu-lut',
++        { intensity: 1, lutName: 'x', lutSize: '2', lutData: 'AAAA' },
++        reference('b'),
++      ),
++    ).toEqual(reference('b'))
++    expect(mergeGpuEffectParams('gpu-curves', { lutId: 'x' }, { lutData: 'y' })).toEqual({
++      lutId: 'x',
++      lutData: 'y',
++    })
++  })
++
++  it('has a keeper only while a host installs one', () => {
++    const keeper = { keep: vi.fn(async () => ({ id: 'k' })) }
++    const remove = installProjectLutKeeper(keeper)
++    expect(getProjectLutKeeper()).toBe(keeper)
++    remove()
++    expect(getProjectLutKeeper()).toBeUndefined()
++  })
++})
+diff --git a/src/infrastructure/gpu-effects/lut/lut-references.ts b/src/infrastructure/gpu-effects/lut/lut-references.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/lut/lut-references.ts
+@@ -0,0 +1,233 @@
++/**
++ * Frameleaf (FL-1558): LUTs kept beside the project instead of inside the graph.
++ *
++ * An inline `gpu-lut` carries its table as base64 in the graph (about 190 KB a clip at 33³), so a
++ * graded feature-length project outgrew the graph limit. A `gpu-lut` that names a LUT kept with the
++ * project instead carries only the reference:
++ *
++ *   { intensity, lutName, lutSize: '0', lutData: '', lutId: <project import id>, lutSource: 'import' }
++ *
++ * Every clip graded with the same file names the same import, once stored. At render time this
++ * module turns the reference into the private execution effect a render worker also materialises
++ * (`studio/tools/render-worker-lut-inputs.mjs`): `gpu-file-lut-v1` for a 3D file and
++ * `gpu-file-lut-1d-v1` for a 1D file, from the bytes the host serves under that id. Preview shows
++ * the clip ungraded until the file is read (the reference's inline fields are the identity table);
++ * export waits for every referenced file and refuses the render if one cannot be read.
++ */
++import { useSyncExternalStore } from 'react'
++import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
++import type { ItemEffect } from '@/types/effects'
++import { describeCubeFile, materializeCubeFileLut1d } from './cube-file'
++import { materializeCubeFileLut } from './file-lut'
++
++type Params = Record<string, number | boolean | string>
++
++export const LUT_REFERENCE_UNAVAILABLE = 'LUT_REFERENCE_UNAVAILABLE'
++
++/** The LUT a reference names, ready to render. */
++export interface ResolvedLut {
++  type: 'gpu-file-lut-v1' | 'gpu-file-lut-1d-v1'
++  params: Params
++  /** The file's TITLE, else its file name without `.cube`. */
++  name: string
++  dimensions: 1 | 3
++  size: number
++}
++
++type Entry =
++  | { state: 'ready'; lut: ResolvedLut }
++  | { state: 'loading'; url: string }
++  | { state: 'failed'; url: string | null; error: Error }
++
++/** Materialised tables kept in memory, by encoded size; the least recently used go first. */
++const CACHE_BYTES = 96 * 1024 * 1024
++const entries = new Map<string, Entry>()
++let version = 0
++const listeners = new Set<() => void>()
++
++function changed(): void {
++  version++
++  for (const listener of listeners) listener()
++}
++
++export const subscribeLutReferences = (listener: () => void): (() => void) => {
++  listeners.add(listener)
++  return () => listeners.delete(listener)
++}
++export const getLutReferencesVersion = (): number => version
++/** Changes whenever a referenced LUT becomes ready or fails: preview redraws with it. */
++export function useLutReferencesVersion(): number {
++  return useSyncExternalStore(subscribeLutReferences, getLutReferencesVersion)
++}
++
++/** The id a `gpu-lut`'s params name a LUT kept with the project by, or null for an inline LUT. */
++export function lutReferenceId(params: Readonly<Record<string, unknown>>): string | null {
++  return params.lutSource === 'import' &&
++    typeof params.lutId === 'string' &&
++    params.lutId.length > 0
++    ? params.lutId
++    : null
++}
++
++/** Check a whole `.cube` file and materialise it. Throws `INVALID_CUBE_FILE` for anything else. */
++export function materializeLutFile(text: string, fileName = ''): ResolvedLut {
++  const descriptor = describeCubeFile(text)
++  const three = descriptor.dimensions === 3
++  return {
++    type: three ? 'gpu-file-lut-v1' : 'gpu-file-lut-1d-v1',
++    params: three
++      ? materializeCubeFileLut(text, descriptor)
++      : materializeCubeFileLut1d(text, descriptor),
++    name: (descriptor.title ?? fileName.replace(/\.cube$/i, '')).slice(0, 256),
++    dimensions: descriptor.dimensions,
++    size: descriptor.size,
++  }
++}
++
++function evict(): void {
++  let bytes = 0
++  for (const entry of [...entries.values()].reverse()) {
++    if (entry.state !== 'ready') continue
++    bytes += String(entry.lut.params.fileLutData).length
++  }
++  for (const [id, entry] of entries) {
++    if (bytes <= CACHE_BYTES) break
++    if (entry.state !== 'ready') continue
++    bytes -= String(entry.lut.params.fileLutData).length
++    entries.delete(id)
++  }
++}
++
++/** Keep a LUT the editor has already read (just imported) under the id its effect names. */
++export function setLutReference(id: string, lut: ResolvedLut): void {
++  entries.delete(id)
++  entries.set(id, { state: 'ready', lut })
++  evict()
++  changed()
++}
++
++/**
++ * Read the file the host serves under `id` (registered with `blobUrlManager`), check and
++ * materialise it. Resolves with the LUT; rejects with `LUT_REFERENCE_UNAVAILABLE` when there is no
++ * file for the id, it cannot be fetched, or it is not a valid `.cube` file.
++ */
++export async function loadLutReference(id: string, fileName = ''): Promise<ResolvedLut> {
++  const known = entries.get(id)
++  if (known?.state === 'ready') return known.lut
++  const url = blobUrlManager.get(id)
++  if (!url) throw new Error(LUT_REFERENCE_UNAVAILABLE)
++  entries.set(id, { state: 'loading', url })
++  try {
++    const response = await fetch(url, { credentials: 'same-origin' })
++    if (!response.ok) throw new Error(`HTTP ${response.status}`)
++    const text = new TextDecoder('utf-8', { fatal: true }).decode(await response.arrayBuffer())
++    const lut = materializeLutFile(text, fileName)
++    if (entries.get(id)?.state === 'loading') setLutReference(id, lut)
++    return lut
++  } catch (cause) {
++    const error = new Error(LUT_REFERENCE_UNAVAILABLE, { cause })
++    if (entries.get(id)?.state === 'loading') {
++      entries.set(id, { state: 'failed', url, error })
++      changed()
++    }
++    throw error
++  }
++}
++
++/**
++ * The LUT a reference names if it is ready. A miss starts reading it, once per served URL, and
++ * returns undefined; `useLutReferencesVersion` changes when it is ready.
++ */
++export function peekLutReference(id: string): ResolvedLut | undefined {
++  const entry = entries.get(id)
++  if (entry?.state === 'ready') {
++    entries.delete(id)
++    entries.set(id, entry)
++    return entry.lut
++  }
++  const url = blobUrlManager.get(id)
++  if (!url || (entry && entry.url === url)) return undefined
++  void loadLutReference(id).catch(() => {})
++  return undefined
++}
++
++/** Wait for every LUT these ids name; reject with `LUT_REFERENCE_UNAVAILABLE` if one cannot be read. */
++export async function loadLutReferences(ids: Iterable<string>): Promise<void> {
++  await Promise.all([...new Set(ids)].map((id) => loadLutReference(id)))
++}
++
++/** The ids of every enabled `gpu-lut` that names a LUT kept with the project, in these items. */
++export function collectLutReferenceIds(
++  items: Iterable<{ effects?: readonly ItemEffect[] }>,
++): string[] {
++  const ids = new Set<string>()
++  for (const item of items) {
++    for (const entry of item.effects ?? []) {
++      if (!entry.enabled || entry.effect.type !== 'gpu-effect') continue
++      if (entry.effect.gpuEffectType !== 'gpu-lut') continue
++      const id = lutReferenceId(entry.effect.params)
++      if (id) ids.add(id)
++    }
++  }
++  return [...ids]
++}
++
++/**
++ * The effect to execute for a `gpu-effect`: a `gpu-lut` that names a ready LUT becomes its file
++ * LUT with the effect's (possibly animated) intensity; everything else, including a reference still
++ * being read, is unchanged. The table string is shared, so the GPU texture is built once.
++ */
++export function resolveLutReferenceEffect(
++  type: string,
++  params: Params,
++): { type: string; params: Params } {
++  if (type !== 'gpu-lut') return { type, params }
++  const id = lutReferenceId(params)
++  const lut = id ? peekLutReference(id) : undefined
++  if (!lut) return { type, params }
++  const intensity = typeof params.intensity === 'number' ? params.intensity : 1
++  return { type: lut.type, params: { ...lut.params, intensity } }
++}
++
++/** The fields a `gpu-lut` holds its LUT in: inline (`lutName`, `lutSize`, `lutData`) or by reference. */
++const LUT_FIELDS = new Set(['lutName', 'lutSize', 'lutData', 'lutId', 'lutSource'])
++
++/**
++ * Merge a parameter update into an effect's params. For `gpu-lut`, an update that sets the LUT
++ * (`lutData` or `lutId`) replaces every LUT field, so an inline LUT never keeps a stale reference
++ * and a reference never keeps a stale table.
++ */
++export function mergeGpuEffectParams(
++  type: string,
++  params: Readonly<Params>,
++  updates: Readonly<Params>,
++): Params {
++  if (type !== 'gpu-lut' || !('lutData' in updates || 'lutId' in updates))
++    return { ...params, ...updates }
++  const kept: Params = {}
++  for (const [key, value] of Object.entries(params)) if (!LUT_FIELDS.has(key)) kept[key] = value
++  return { ...kept, ...updates }
++}
++
++/** The host keeps an imported `.cube` file with the project and says the id the graph names it by. */
++export interface ProjectLutKeeper {
++  keep(file: File): Promise<{ id: string }>
++}
++
++let keeper: ProjectLutKeeper | undefined
++
++/** Installed by a host that keeps files with the project; without one, imports embed the LUT. */
++export function installProjectLutKeeper(next: ProjectLutKeeper): () => void {
++  keeper = next
++  return () => {
++    if (keeper === next) keeper = undefined
++  }
++}
++
++export const getProjectLutKeeper = (): ProjectLutKeeper | undefined => keeper
++
++/** Forget every LUT read so far (a project closed). */
++export function clearLutReferences(): void {
++  entries.clear()
++  changed()
++}
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -30,9 +30,12 @@ function isEffectDefinition(obj: unknown): obj is GpuEffectDefinition {
+   )
+ }
+ 
++/** File LUTs exist only at execution, materialised from a verified file; no graph names them. */
++const EXECUTION_ONLY_EFFECTS = new Set(['gpu-file-lut-v1', 'gpu-file-lut-1d-v1'])
++
+ function registerEffects(effects: Record<string, unknown>) {
+   Object.values(effects).forEach((effect) => {
+-    if (isEffectDefinition(effect) && effect.id !== 'gpu-file-lut-v1') {
++    if (isEffectDefinition(effect) && !EXECUTION_ONLY_EFFECTS.has(effect.id)) {
+       GPU_EFFECT_REGISTRY.set(effect.id, effect)
+       GPU_EFFECT_CATEGORIES[effect.category]?.push(effect)
+     }
+@@ -47,7 +50,9 @@ registerEffects(stylizeEffects)
+ registerEffects(keyingEffects)
+ 
+ export function getGpuEffect(id: string): GpuEffectDefinition | undefined {
+-  return id === 'gpu-file-lut-v1' ? lutEffects.fileLut3d : GPU_EFFECT_REGISTRY.get(id)
++  if (id === 'gpu-file-lut-v1') return lutEffects.fileLut3d
++  if (id === 'gpu-file-lut-1d-v1') return lutEffects.fileLut1d
++  return GPU_EFFECT_REGISTRY.get(id)
+ }
+ 
+ export function getGpuEffectDefaultParams(id: string): Record<string, number | boolean | string> {

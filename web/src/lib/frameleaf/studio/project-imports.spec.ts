@@ -8,6 +8,7 @@ import {
 } from '@frameleaf/sdk';
 import {
   isStudioBinImport,
+  isStudioEditorImport,
   createStudioRetentionApi,
   toStudioPublicationReceipt,
   loadStudioProjectImports,
@@ -61,6 +62,16 @@ describe('Studio project imports (FL-103 / FL-105)', () => {
     expect(isStudioBinImport({ ...dto, kind: StudioProjectImportKind.Vector })).toBe(true);
     expect(isStudioBinImport({ ...dto, kind: StudioProjectImportKind.Captions, contentType: 'text/vtt' })).toBe(false);
     expect(isStudioBinImport({ ...dto, kind: StudioProjectImportKind.Lut, contentType: 'text/x-cube-lut' })).toBe(
+      false,
+    );
+  });
+
+  it('gives the editor a kept LUT, which a colour effect names by id, but not a caption file (FL-1558)', () => {
+    const lut = { ...dto, kind: StudioProjectImportKind.Lut, contentType: 'text/x-cube-lut' };
+    expect(isStudioEditorImport(lut)).toBe(true);
+    expect(toStudioProjectImport('p', lut)).toMatchObject({ kind: 'lut', mimeType: 'text/x-cube-lut' });
+    expect(isStudioEditorImport(dto)).toBe(true);
+    expect(isStudioEditorImport({ ...dto, kind: StudioProjectImportKind.Captions, contentType: 'text/vtt' })).toBe(
       false,
     );
   });

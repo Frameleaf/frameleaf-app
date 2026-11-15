@@ -43,7 +43,7 @@ A Studio project's head revision carries an **envelope** (OpenAPI `StudioProject
 | `engineRevision` | The pinned engine revision above, as a string.                                               |
 | `graph`          | The graph this page specifies. The server stores it byte for byte and never reads inside it. |
 
-A save (`StudioProjectSaveDto`) sends the envelope, the head it was built on (`expectedRevision`), a `requestKey`, and the `commands` that produced it (section 8). The server checks the envelope's four fields, the graph's size, and each command envelope against the catalogue. It does **not** re-run the engine, so a native client is trusted to produce the graph this page describes. The conformance fixtures are how a client proves that it does.
+A save (`StudioProjectSaveDto`) sends the envelope, the head it was built on (`expectedRevision`), a `requestKey`, and the `commands` that produced it (section 8). The server checks the envelope's four fields, the graph's size (at most 24 MiB of UTF-8 JSON, `STUDIO_MAX_GRAPH_BYTES`; a larger graph is refused as `graph-too-large`), and each command envelope against the catalogue. It does **not** re-run the engine, so a native client is trusted to produce the graph this page describes. The conformance fixtures are how a client proves that it does.
 
 ## 2. The graph document
 
@@ -1569,6 +1569,7 @@ A clip's `effects` is its effect stack, drawn in array order. Each entry is:
 - Audio clips have no stack. Every other clip type may have one.
 - A clip that never had an effect has no `effects` field. A clip whose effects were all removed keeps an empty list.
 - Fields of an entry that this page does not name (the web editor writes `audioPulse` on some) must be preserved.
+- A `gpu-lut` names a `.cube` file kept with the project instead of embedding a table when its params carry `lutSource: "import"` and `lutId`, the id of a project import of kind `lut` (FL-1558). It then carries `lutSize: "0"` and `lutData: ""`, and `lutName` is a display name only. Clips graded with the same file name the same id. The file may be a 3D or a 1D table; `studio/spec/effects/gpu-lut.md` ("LUTs kept with the project") says how it is read and drawn. A client that imports a `.cube` file uploads it as a project import (`POST /studio/projects/{id}/imports`) and writes the reference; it replaces all five LUT fields together, so an embedded table and a reference never mix.
 
 #### 13.2.3 Transitions
 
@@ -2110,7 +2111,7 @@ The graph has no grade node, and `clip.setGrade` is refused. A grade is a set of
 1. `gpu-exposure` (exposure, offset, gamma), `gpu-temperature` (temperature, tint), `gpu-contrast` and `gpu-saturation`: the primaries.
 2. `gpu-color-wheels`: lift, gamma and gain, the tonal wheels and its own primaries. A client that uses the wheels' own `exposure`, `contrast`, `saturation`, `temperature` and `tint` leaves the four effects of step 1 out, so that no control is applied twice.
 3. `gpu-curves`: the master and channel curves.
-4. `gpu-lut`: a look, with `intensity` as its strength. A look the deployment does not bundle is refused when the project is resolved (`studio/resource-inventory.json`, kind `lut`).
+4. `gpu-lut`: a look, with `intensity` as its strength. A look the deployment does not bundle is refused when the project is resolved (`studio/resource-inventory.json`, kind `lut`). A look imported from a `.cube` file is kept with the project and named by `lutId` (13.2.2).
 
 The engine applies a stack in array order (13.2.2) and does not require this order; it is the order a client writes so that the same panel gives the same picture on every client. A client reads a grade back by finding these effects in the stack, skipping effects whose ids begin `colour-match:` (13.3.3): those are a colour match, not the grade, and a grade edit leaves them as they are. Effects of other kinds, and a second effect of one of these kinds, are not part of the grade and are left as they are. A grade for several clips at once is the same effects on an `adjustment` item on a track above them (`studio/spec/layers.md`, L8).
 

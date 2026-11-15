@@ -8,7 +8,8 @@ const require = createRequire(
 );
 const { tsImport } = require("tsx/esm/api");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
-const GRAPH_LIMIT = 8 * 1024 * 1024;
+// The server's graph limit (STUDIO_MAX_GRAPH_BYTES, FL-1558); the execution copy shares it.
+const GRAPH_LIMIT = 24 * 1024 * 1024;
 const TABLE_LIMIT = 8 * 1024 * 1024;
 
 export async function deriveClaimFileLuts(
@@ -55,8 +56,12 @@ export async function deriveClaimFileLuts(
             ["catalog", "import"].includes(p.lutSource),
           "INVALID_FILE_LUT_REFERENCE",
         );
+        // lutName is a display name only (FL-1558); the table is never inline beside a reference.
         assert.ok(
-          p.lutSize === "0" && p.lutData === "" && p.lutName === "",
+          p.lutSize === "0" &&
+            p.lutData === "" &&
+            typeof p.lutName === "string" &&
+            p.lutName.length <= 256,
           "DIVERGENT_FILE_LUT",
         );
         assert.ok(
@@ -87,7 +92,8 @@ export async function deriveClaimFileLuts(
     const node = pending.pop();
     if (!node || typeof node !== "object") continue;
     assert.ok(
-      node.gpuEffectType !== "gpu-file-lut-v1",
+      node.gpuEffectType !== "gpu-file-lut-v1" &&
+        node.gpuEffectType !== "gpu-file-lut-1d-v1",
       "PRIVATE_FILE_LUT_IN_REVISION",
     );
     if (Object.hasOwn(node, "lutId"))
@@ -167,22 +173,38 @@ export async function deriveClaimFileLuts(
           ).pathname,
           { parentURL: import.meta.url, tsconfig: false },
         ),
+        tsImport(
+          new URL(
+            "../engine/src/infrastructure/gpu-effects/lut/cube-file.ts",
+            import.meta.url,
+          ).pathname,
+          { parentURL: import.meta.url, tsconfig: false },
+        ),
       ]);
     if (waitForLease) await waitForLease();
     assert.ok(isLeaseActive(), "LEASE_LOST");
     const text = new TextDecoder("utf-8", { fatal: true }).decode(input.bytes);
     const descriptor = modules[0].validateStudioCubeLut(text);
-    const bytes = descriptor.size ** 3 * 16;
+    // FL-1558: a 1D table is one entry a row of 512 (four texels an entry), padded to whole rows.
+    const oneD = descriptor.dimensions === 1;
+    const executionType = oneD ? "gpu-file-lut-1d-v1" : "gpu-file-lut-v1";
+    const bytes = oneD
+      ? Math.ceil(descriptor.size / modules[2].FILE_LUT_1D_ROW) *
+        modules[2].FILE_LUT_1D_ROW *
+        16
+      : descriptor.size ** 3 * 16;
     allocated += bytes * uses.length;
     expansion += uses.length * (4 * Math.ceil(bytes / 3) + 512);
     assert.ok(
       allocated <= TABLE_LIMIT && expansion <= GRAPH_LIMIT,
       "FILE_LUT_ALLOCATION_LIMIT",
     );
-    const materialized = modules[1].materializeCubeFileLut(text, descriptor);
+    const materialized = oneD
+      ? modules[2].materializeCubeFileLut1d(text, descriptor)
+      : modules[1].materializeCubeFileLut(text, descriptor);
     const materializationSha256 = sha(JSON.stringify(materialized));
     for (const use of uses) {
-      use.effect.gpuEffectType = "gpu-file-lut-v1";
+      use.effect.gpuEffectType = executionType;
       use.effect.params = {
         ...materialized,
         intensity: use.params.intensity ?? 1,
@@ -195,7 +217,7 @@ export async function deriveClaimFileLuts(
         if (itemKeys.itemId !== use.itemId) continue;
         for (const property of itemKeys.properties ?? [])
           if (property.property === `effect:gpu-lut:${use.effectId}:intensity`)
-            property.property = `effect:gpu-file-lut-v1:${use.effectId}:intensity`;
+            property.property = `effect:${executionType}:${use.effectId}:intensity`;
       }
     }
     resources.push({
