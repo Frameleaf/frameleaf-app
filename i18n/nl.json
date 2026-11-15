@@ -2910,6 +2910,7 @@
   "frameleaf_activity_kind_speech_transcription": "Gesproken woorden",
   "frameleaf_activity_kind_studio_bundle_export": "Projectexport",
   "frameleaf_activity_kind_studio_bundle_import": "Projectimport",
+  "frameleaf_activity_kind_studio_editor_import": "Import uit een andere editor",
   "frameleaf_activity_kind_studio_export": "Exporteren",
   "frameleaf_activity_kind_studio_export_publish": "Exporteren",
   "frameleaf_activity_kind_studio_movie": "Een film maken",

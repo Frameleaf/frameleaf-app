@@ -2906,6 +2906,7 @@
   "frameleaf_activity_kind_speech_transcription": "Talade ord",
   "frameleaf_activity_kind_studio_bundle_export": "Projektexport",
   "frameleaf_activity_kind_studio_bundle_import": "Projektimport",
+  "frameleaf_activity_kind_studio_editor_import": "Import från ett annat redigeringsprogram",
   "frameleaf_activity_kind_studio_export": "Exportera",
   "frameleaf_activity_kind_studio_export_publish": "Exportera",
   "frameleaf_activity_kind_studio_movie": "Gör en film",

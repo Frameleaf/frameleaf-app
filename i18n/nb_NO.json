@@ -2910,6 +2910,7 @@
   "frameleaf_activity_kind_speech_transcription": "Talte ord",
   "frameleaf_activity_kind_studio_bundle_export": "Prosjekteksport",
   "frameleaf_activity_kind_studio_bundle_import": "Prosjektimport",
+  "frameleaf_activity_kind_studio_editor_import": "Import fra et annet redigeringsprogram",
   "frameleaf_activity_kind_studio_export": "Eksport",
   "frameleaf_activity_kind_studio_export_publish": "Eksport",
   "frameleaf_activity_kind_studio_movie": "Lag en film",
