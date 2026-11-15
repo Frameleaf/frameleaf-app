@@ -126,7 +126,10 @@ export class FolderAlbumService extends BaseService {
 
     // Albums for new folders, parents first.
     const order = getPreferences(await this.userRepository.getMetadata(ownerId)).albums.defaultAssetOrder;
-    const nodes = [...tree.values()].toSorted((a, b) => a.depth - b.depth || a.folderPath.localeCompare(b.folderPath));
+    const nodes = tree
+      .values()
+      .toArray()
+      .toSorted((a, b) => a.depth - b.depth || a.folderPath.localeCompare(b.folderPath));
     for (const node of nodes) {
       const link = byPath.get(node.folderPath);
       if (link) {
@@ -153,7 +156,10 @@ export class FolderAlbumService extends BaseService {
     const add = nodes
       .filter((node) => node.photos > 0)
       .map((node) => ({ folderPath: node.folderPath, albumId: byPath.get(node.folderPath)!.albumId }));
-    const current = [...byPath.values()].map(({ folderPath, albumId }) => ({ folderPath, albumId }));
+    const current = byPath
+      .values()
+      .map(({ folderPath, albumId }) => ({ folderPath, albumId }))
+      .toArray();
     const { added, removed } = await this.albumRepository.syncFolderMemberships(libraryId, add, [
       ...current,
       ...previousPaths,
@@ -180,10 +186,12 @@ export class FolderAlbumService extends BaseService {
     }
 
     // Folders that are gone: their albums go too, unless the owner made them their own (or one inside them).
-    const gone = [...byPath.values()]
+    const gone = byPath
+      .values()
       .filter((link) => !tree.has(link.folderPath))
+      .toArray()
       .toSorted((a, b) => b.folderPath.length - a.folderPath.length);
-    const kept = new Set([...byPath.keys()].filter((folderPath) => tree.has(folderPath) || edited.has(folderPath)));
+    const kept = new Set(byPath.keys().filter((folderPath) => tree.has(folderPath) || edited.has(folderPath)));
     for (const link of gone) {
       const keepsSomething = [...kept].some((folderPath) => folderPath.startsWith(`${link.folderPath}/`));
       if (edited.has(link.folderPath) || keepsSomething) {
@@ -208,8 +216,11 @@ export class FolderAlbumService extends BaseService {
     tree: Map<string, FolderNode>,
     byPath: Map<string, FolderAlbumLink>,
   ) {
-    const goneFolders = [...byPath.keys()].filter((folderPath) => !tree.has(folderPath));
-    const free = new Set([...tree.keys()].filter((folderPath) => !byPath.has(folderPath)));
+    const goneFolders = byPath
+      .keys()
+      .filter((folderPath) => !tree.has(folderPath))
+      .toArray();
+    const free = new Set(tree.keys().filter((folderPath) => !byPath.has(folderPath)));
     if (goneFolders.length === 0 || free.size === 0) {
       return new Map<string, string>();
     }

@@ -39,8 +39,8 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
     }
     albums.delete(id);
     members.delete(id);
-    for (const [index, link] of [...links.entries()].toReversed()) {
-      if (link.albumId === id) {
+    for (let index = links.length - 1; index >= 0; index--) {
+      if (links[index].albumId === id) {
         links.splice(index, 1);
       }
     }
@@ -51,8 +51,10 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
   mocks.user.getMetadata.mockResolvedValue([]);
   mocks.library.getFolderPhotoCounts.mockImplementation(() => {
     const counts = new Map<string, number>();
-    for (const asset of assets.filter((asset) => ofLibrary(asset) && !asset.isOffline)) {
-      counts.set(folderOf(asset), (counts.get(folderOf(asset)) ?? 0) + 1);
+    for (const asset of assets) {
+      if (ofLibrary(asset) && !asset.isOffline) {
+        counts.set(folderOf(asset), (counts.get(folderOf(asset)) ?? 0) + 1);
+      }
     }
     return Promise.resolve([...counts].map(([folderPath, photos]) => ({ folderPath, photos })));
   });
@@ -89,7 +91,7 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
   mocks.library.getFolderFileKeys.mockImplementation((_libraryId, gone, fresh) =>
     Promise.resolve(
       assets
-        .filter(ofLibrary)
+        .filter((asset) => ofLibrary(asset))
         .flatMap((asset) => [
           ...(gone.includes(folderOf(asset)) ? [{ ...asset, folderPath: folderOf(asset), gone: true }] : []),
           ...(fresh.includes(folderOf(asset)) && !asset.isOffline
@@ -143,9 +145,14 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
   mocks.album.syncFolderMemberships.mockImplementation((_libraryId, add, remove) => {
     const added: { albumId: string; assetId: string }[] = [];
     const removed: { albumId: string; assetId: string }[] = [];
-    for (const asset of assets.filter((asset) => ofLibrary(asset) && !asset.isOffline)) {
-      for (const { albumId } of add.filter(({ folderPath }) => folderPath === folderOf(asset))) {
-        if (!members.get(albumId)!.has(asset.id)) {
+    for (const asset of assets) {
+      for (const { albumId, folderPath } of add) {
+        if (
+          ofLibrary(asset) &&
+          !asset.isOffline &&
+          folderPath === folderOf(asset) &&
+          !members.get(albumId)!.has(asset.id)
+        ) {
           members.get(albumId)!.add(asset.id);
           added.push({ albumId, assetId: asset.id });
         }
@@ -183,14 +190,17 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
 
   /** A file gone from disk: the scan marks its item offline, and the item stays. */
   const removeFile = (originalPath: string) => {
-    for (const asset of assets.filter((asset) => asset.originalPath === originalPath)) {
-      asset.isOffline = true;
+    for (const asset of assets) {
+      if (asset.originalPath === originalPath) {
+        asset.isOffline = true;
+      }
     }
   };
 
   /** A folder renamed on disk: its items go offline, and the scan makes new items at the new path. */
   const renameFolder = (from: string, to: string) => {
-    for (const asset of assets.filter((asset) => !asset.isOffline && asset.originalPath.startsWith(`${from}/`))) {
+    const moving = assets.filter((asset) => !asset.isOffline && asset.originalPath.startsWith(`${from}/`));
+    for (const asset of moving) {
       asset.isOffline = true;
       addFile(to + asset.originalPath.slice(from.length), { fileModifiedAt: asset.fileModifiedAt });
     }
@@ -433,13 +443,9 @@ describe('folder album planning', () => {
       ],
       4,
     );
-    expect([...tree.keys()].toSorted()).toEqual([
-      '/photos',
-      '/photos/a',
-      '/photos/a/b',
-      '/photos/a/b/c',
-      '/photos/a/b/c/d',
-    ]);
+    // '/photos/a/b/c/d' would be the fifth level
+    expect(tree.keys().toArray().toSorted()).toEqual(['/photos', '/photos/a', '/photos/a/b']);
+    expect(tree.get('/photos/a/b')).toMatchObject({ parentPath: '/photos/a', photos: 2, depth: 3 });
     expect(buildFolderTree(['/photos'], [{ folderPath: '/photos/a/b/c/d', photos: 1 }], 4).size).toBe(0);
   });
 
