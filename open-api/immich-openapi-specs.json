@@ -8450,6 +8450,56 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/library-progress/best-photos": {
+      "post": {
+        "description": "Score every photo again for Best Photos, now or in the next overnight run: after an update brings a better score for the Visual search model.",
+        "operationId": "redoBestPhotos",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryBestPhotosRedoDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Score Best Photos again",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/library-progress/media-copies": {
       "get": {
         "description": "How many photos have no preview yet, how many videos have a playback copy, the space previews and playback copies take (as last measured), and what waits for tonight.",
@@ -118869,6 +118919,36 @@
         ],
         "type": "string"
       },
+      "LibraryBestPhotosProgressDto": {
+        "properties": {
+          "outdated": {
+            "description": "FL-1597: photos Best Photos scored before the learned score of the current Visual search model; 0 when the model has none",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tonight": {
+            "description": "Best Photos scores the library again in the next overnight run",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "outdated",
+          "tonight"
+        ],
+        "type": "object"
+      },
+      "LibraryBestPhotosRedoDto": {
+        "properties": {
+          "when": {
+            "$ref": "#/components/schemas/LibraryRedoWhen"
+          }
+        },
+        "required": [
+          "when"
+        ],
+        "type": "object"
+      },
       "LibraryBookmarkItemKind": {
         "enum": [
           "bookmark"
@@ -119397,6 +119477,9 @@
       },
       "LibraryProgressResponseDto": {
         "properties": {
+          "bestPhotos": {
+            "$ref": "#/components/schemas/LibraryBestPhotosProgressDto"
+          },
           "features": {
             "items": {
               "$ref": "#/components/schemas/LibraryFeatureProgressDto"
@@ -119411,6 +119494,7 @@
           }
         },
         "required": [
+          "bestPhotos",
           "features",
           "measuredSince"
         ],

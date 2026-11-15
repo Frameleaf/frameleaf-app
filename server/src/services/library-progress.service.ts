@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { VideoCardState } from 'src/types.js';
 import {
   LIBRARY_PROGRESS_FEATURES,
+  LibraryBestPhotosRedoDto,
   LibraryProgressResponseDto,
   LibraryRedoDto,
   LibraryRedoResponseDto,
@@ -9,13 +10,17 @@ import {
   REDO_QUEUES,
   VideoCardDto,
 } from 'src/dtos/library-progress.dto.js';
-import { AnalyticsSeriesId, QueueCommand, SystemMetadataKey } from 'src/enum.js';
+import { AnalyticsSeriesId, JobName, QueueCommand, SystemMetadataKey } from 'src/enum.js';
 import { AnalyticsRepository } from 'src/repositories/analytics.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { QueueService } from 'src/services/queue.service.js';
+import { getAestheticHead } from 'src/utils/aesthetic-head.js';
+import { getConfig } from 'src/utils/config.js';
 
 /** A reading is kept at most this often, so a page left open does not fill the list. */
 export const PROGRESS_SAMPLE_EVERY_MS = 10 * 60_000;
@@ -53,6 +58,8 @@ export class LibraryProgressService {
     private systemMetadataRepository: SystemMetadataRepository,
     private queueService: QueueService,
     private hardwareProbeRepository: HardwareProbeRepository,
+    private configRepository: ConfigRepository,
+    private jobRepository: JobRepository,
   ) {
     this.logger.setContext(LibraryProgressService.name);
   }
@@ -60,6 +67,7 @@ export class LibraryProgressService {
   async getProgress(now = new Date()): Promise<LibraryProgressResponseDto> {
     const counts = await this.assetJobRepository.countFeatureProgress();
     const stored = await this.systemMetadataRepository.get(SystemMetadataKey.LibraryProgressSamples);
+    const bestPhotos = await this.bestPhotosProgress();
     const samples = stored?.samples ?? [];
     const done = Object.fromEntries(LIBRARY_PROGRESS_FEATURES.map((feature) => [feature, counts[feature][0]]));
 
@@ -75,6 +83,7 @@ export class LibraryProgressService {
 
     return {
       measuredSince: measured ? since.at : null,
+      bestPhotos,
       features: LIBRARY_PROGRESS_FEATURES.map((feature) => {
         const [read, total] = counts[feature];
         const perHour = measured ? Math.max(0, (read - (since.done[feature] ?? read)) / hours) : null;
@@ -157,8 +166,39 @@ export class LibraryProgressService {
     } else {
       waiting.push(queue);
     }
-    await this.systemMetadataRepository.set(SystemMetadataKey.OvernightRedo, { queues: waiting });
+    await this.systemMetadataRepository.set(SystemMetadataKey.OvernightRedo, { ...stored, queues: waiting });
     return { tonight: waiting };
+  }
+
+  /**
+   * FL-1597: "Recalculate tonight / now" once a learned Best Photos score arrives for the search model.
+   * ponytail: rescores every photo (the Job manager's "Recalculate Best Photos"), not only the outdated
+   * ones; narrow the selection if a large library makes that night too long.
+   */
+  async redoBestPhotos({ when }: LibraryBestPhotosRedoDto): Promise<void> {
+    const stored = await this.systemMetadataRepository.get(SystemMetadataKey.OvernightRedo);
+    if (when === 'now') {
+      await this.jobRepository.queue({ name: JobName.BestPhotosScoreQueueAll, data: { force: true } });
+    }
+    await this.systemMetadataRepository.set(SystemMetadataKey.OvernightRedo, {
+      queues: stored?.queues ?? [],
+      bestPhotos: when === 'tonight',
+    });
+  }
+
+  private async bestPhotosProgress(): Promise<LibraryProgressResponseDto['bestPhotos']> {
+    const [{ machineLearning }, redo] = await Promise.all([
+      getConfig(
+        { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
+        { withCache: true },
+      ),
+      this.systemMetadataRepository.get(SystemMetadataKey.OvernightRedo),
+    ]);
+    const modelName = machineLearning.clip.modelName;
+    const outdated = getAestheticHead(modelName)
+      ? await this.assetJobRepository.countBestPhotosWithoutLearnedScore(modelName)
+      : 0;
+    return { outdated, tonight: redo?.bestPhotos ?? false };
   }
 
   private tonight(queues?: string[]): RedoQueue[] {

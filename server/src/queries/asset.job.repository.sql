@@ -824,6 +824,18 @@ where
     )
   )
 
+-- AssetJobRepository.countBestPhotosWithoutLearnedScore
+select
+  count(*) as "count"
+from
+  "asset_best_photo_score"
+  inner join "asset" on "asset"."id" = "asset_best_photo_score"."assetId"
+  inner join "smart_search" on "smart_search"."assetId" = "asset_best_photo_score"."assetId"
+where
+  "asset"."type" = 'IMAGE'
+  and "asset"."deletedAt" is null
+  and "asset_best_photo_score"."metadata"->>'aestheticModel' is distinct from $1
+
 -- AssetJobRepository.getForBestPhotoScoring
 select
   "asset"."id",

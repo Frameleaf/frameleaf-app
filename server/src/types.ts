@@ -1740,7 +1740,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.LibraryProgressSamples]: { samples: { at: string; done: Record<string, number> }[] };
-  [SystemMetadataKey.OvernightRedo]: { queues: string[] };
+  [SystemMetadataKey.OvernightRedo]: { queues: string[]; bestPhotos?: boolean };
   [SystemMetadataKey.VideoCardState]: VideoCardState;
   [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
   [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };

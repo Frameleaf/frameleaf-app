@@ -3081,6 +3081,12 @@ export type LibraryMovePauseStatusDto = {
     /** Write requests still being answered */
     writesInFlight: number;
 };
+export type LibraryBestPhotosProgressDto = {
+    /** FL-1597: photos Best Photos scored before the learned score of the current Visual search model; 0 when the model has none */
+    outdated: number;
+    /** Best Photos scores the library again in the next overnight run */
+    tonight: boolean;
+};
 export type LibraryFeatureProgressDto = {
     /** Photos and videos this feature has read */
     done: number;
@@ -3093,9 +3099,13 @@ export type LibraryFeatureProgressDto = {
     total: number;
 };
 export type LibraryProgressResponseDto = {
+    bestPhotos: LibraryBestPhotosProgressDto;
     features: LibraryFeatureProgressDto[];
     /** The start of the period the rate is measured over */
     measuredSince: string | null;
+};
+export type LibraryBestPhotosRedoDto = {
+    when: LibraryRedoWhen;
 };
 export type VideoCardTestDto = {
     /** When it was tested */
@@ -26495,6 +26505,18 @@ export function getLibraryProgress(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Score Best Photos again
+ */
+export function redoBestPhotos({ libraryBestPhotosRedoDto }: {
+    libraryBestPhotosRedoDto: LibraryBestPhotosRedoDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/library-progress/best-photos", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryBestPhotosRedoDto
+    })));
+}
+/**
  * Get the previews and playback copies
  */
 export function getMediaCopies(opts?: Oazapfts.RequestOpts) {
@@ -44140,15 +44162,15 @@ export enum LibraryProgressFeature {
     Captions = "captions",
     Locked = "locked"
 }
+export enum LibraryRedoWhen {
+    Now = "now",
+    Tonight = "tonight"
+}
 export enum LibraryRedoQueue {
     SmartSearch = "smartSearch",
     FacialRecognition = "facialRecognition",
     ThumbnailGeneration = "thumbnailGeneration",
     VideoConversion = "videoConversion"
-}
-export enum LibraryRedoWhen {
-    Now = "now",
-    Tonight = "tonight"
 }
 export enum LicenseKind {
     Server = "server",
