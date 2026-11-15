@@ -261,8 +261,12 @@ export type RetainedProcessingProvenance = ProcessingProvenanceInput & { outputS
 export interface StudioProjectImportRef {
   /** The media id the editor gave the file; clips place it by this id. */
   id: string;
-  /** What the server read from the bytes. */
-  kind: 'audio' | 'image' | 'video' | 'vector';
+  /**
+   * What the server read from the bytes. A `font` (FL-1562) is never bin media: the editor reads
+   * it by id for the titles whose family the project's `metadata.fonts` maps to it. A `lut` is a
+   * `.cube` file a colour effect names by `lutId` (FL-1558); the editor never offers it in the bin.
+   */
+  kind: 'audio' | 'image' | 'video' | 'vector' | 'font' | 'lut';
   name: string;
   /** Content type the server read from the bytes. */
   mimeType: string;
@@ -384,6 +388,11 @@ export interface StudioHostContext {
    * starts there once, when it mounts; later updates never move the playhead.
    */
   handoffPlayhead?: { num: number; den: number } | null;
+  /**
+   * Move the playhead to an exact instant (FL-1545: a note of an imported project). Applied once per
+   * `id`; the same request in a later update does nothing.
+   */
+  seekRequest?: { id: number; num: number; den: number } | null;
   /**
    * The host holds edits the person has not decided about: a conflict (the head moved, for example
    * after a take over) or a lost lease. The engine keeps showing those edits and does not reload

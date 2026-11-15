@@ -1,0 +1,534 @@
+diff --git a/src/features/projects/stores/project-store.ts b/src/features/projects/stores/project-store.ts
+--- a/src/features/projects/stores/project-store.ts
++++ b/src/features/projects/stores/project-store.ts
+@@ -20,6 +20,7 @@ import { createProjectObject, duplicateProject } from '../utils/project-helpers'
+ // v3: Lazy-load media service for cascade operations
+ import { importMediaLibraryService } from '@/features/projects/deps/media-library-contract'
+ import { createLogger } from '@/shared/logging/logger'
++import { setProjectFonts } from '@/shared/typography/project-fonts'
+ import { clearUnsavedMetadata, queueProjectWrite } from '@/shared/projects/project-write-queue'
+ 
+ const logger = createLogger('ProjectStore')
+@@ -591,3 +592,11 @@ useSettingsStore.subscribe((state, prevState) => {
+     }
+   }
+ })
++
++// Frameleaf (FL-1562): titles draw with the fonts the open project keeps with it.
++setProjectFonts(useProjectStore.getState().currentProject?.metadata?.fonts)
++useProjectStore.subscribe((state, prevState) => {
++  if (state.currentProject?.metadata?.fonts !== prevState.currentProject?.metadata?.fonts) {
++    setProjectFonts(state.currentProject?.metadata?.fonts)
++  }
++})
+diff --git a/src/headless/main.ts b/src/headless/main.ts
+--- a/src/headless/main.ts
++++ b/src/headless/main.ts
+@@ -70,6 +70,7 @@ import {
+ } from './validation'
+ import { hasAudioContent } from '@/features/export/utils/canvas-audio'
+ import { ensureFontsLoaded } from '@/shared/typography/font-loader'
++import { setProjectFonts } from '@/shared/typography/project-fonts'
+ import {
+   collectVisibleTextFontFamilies,
+   resolveTrackRenderState,
+@@ -239,6 +240,8 @@ interface HeadlessTimelineInput {
+   masterLoudness?: import('@/shared/utils/master-audio').MasterLoudness
+   /** Project managed colour (FL-97); absent renders as an SDR project. */
+   colorManagement?: ProjectColorManagement
++  /** Frameleaf (FL-1562): `metadata.fonts`, the fonts kept with the project, read from `media`. */
++  fonts?: unknown
+   compositions?: SubComposition[]
+   media?: HeadlessMediaSource[]
+   settings: ClientExportSettings
+@@ -449,6 +452,12 @@ function reportProgress(progress: RenderProgress): void {
+  * downloading the bytes: mediabunny then reads via UrlSource (HTTP Range),
+  * so large clips stream instead of being held fully in memory.
+  */
++/** Frameleaf (FL-1562): the `metadata.fonts` of a raw project document, unchecked. */
++function projectFontsOf(project: unknown): unknown {
++  const metadata = (project as { metadata?: { fonts?: unknown } } | null | undefined)?.metadata
++  return metadata?.fonts
++}
++
+ function registerMediaUrls(media: HeadlessMediaSource[] | undefined): void {
+   if (!media?.length) return
+   for (const { mediaId, url } of media) {
+@@ -621,6 +630,8 @@ async function renderTimeline(input: HeadlessTimelineInput): Promise<HeadlessRen
+     media,
+     settings: requestedSettings,
+   } = input
++  // Frameleaf (FL-1562): the project's own fonts, read from the media URLs registered below.
++  setProjectFonts(input.fonts)
+ 
+   log.info('Headless render starting', {
+     mode: requestedSettings.mode,
+@@ -753,6 +764,7 @@ async function renderProject(input: HeadlessProjectInput): Promise<HeadlessRende
+     masterGainEnvelope: (timeline.masterGainEnvelope ?? []).map((point) => ({ ...point })),
+     masterLoudness: timeline.masterLoudness,
+     colorManagement: meta?.colorManagement,
++    fonts: meta?.fonts,
+     compositions: (timeline.compositions ?? []) as unknown as SubComposition[],
+     media,
+     settings,
+@@ -993,6 +1005,7 @@ async function renderFrame(input: HeadlessFrameInput): Promise<HeadlessFrameSumm
+   const composition = buildComposition(view)
+   // Same font gate as the full render — a single frame grab that quietly used the
+   // fallback family would be indistinguishable from a correct one.
++  setProjectFonts(projectFontsOf(input.project))
+   const warnings = await prepareFonts(composition.tracks)
+   await assertGpuForComposition(composition, view.compositions)
+   composition.tracks = await resolveMediaUrls(composition.tracks, { useProxy: false })
+@@ -1077,6 +1090,7 @@ async function renderFrameSignal(input: HeadlessSignalFrameInput) {
+   registerMediaUrls(input.media)
+   seedMediaLibrary(input.media)
+   const composition = { ...buildComposition(view), width: view.width, height: view.height }
++  setProjectFonts(projectFontsOf(input.project))
+   const warnings = await prepareFonts(composition.tracks)
+   input.signal?.throwIfAborted()
+   await assertGpuForComposition(composition, view.compositions)
+@@ -1213,6 +1227,7 @@ async function dumpLayout(input: HeadlessLayoutInput): Promise<HeadlessLayoutRes
+   // expandTextTransformToFitContent, which measures with a real canvas 2D context.
+   // Without the same font gate the render path uses, the boxes reported here are
+   // fallback-font measurements and silently disagree with what /frame draws.
++  setProjectFonts(projectFontsOf(input.project))
+   const warnings = await prepareFonts(composition.tracks)
+   const canvas = { width: view.width, height: view.height, fps: view.fps }
+   const keyframesMap = buildKeyframesMap(composition.keyframes)
+diff --git a/src/shared/typography/font-loader.ts b/src/shared/typography/font-loader.ts
+--- a/src/shared/typography/font-loader.ts
++++ b/src/shared/typography/font-loader.ts
+@@ -6,6 +6,7 @@ import { requireResource } from '@/shared/utils/resource-admission.mjs'
+  */
+ 
+ import { DEFAULT_TEXT_FONT_FAMILY, FONT_CATALOG, type FontCatalogEntry } from './font-catalog'
++import { isProjectFontFamily, loadProjectFontFamily } from './project-fonts'
+ import { createLogger } from '@/shared/logging/logger'
+ 
+ const logger = createLogger('FontLoader')
+@@ -92,6 +93,11 @@ function buildGoogleFontsUrl(config: FontConfig): string {
+  * Load a font from Google Fonts
+  */
+ async function loadGoogleFont(fontName: string): Promise<string> {
++  // Frameleaf (FL-1562): a family kept with the project is read from its import, never fetched.
++  if (isProjectFontFamily(fontName)) {
++    await loadProjectFontFamily(fontName)
++    return `"${fontName}", sans-serif`
++  }
+     requireResource('font:' + fontName)
+   if (typeof document === 'undefined') {
+     return fontName
+@@ -169,6 +175,10 @@ async function loadGoogleFont(fontName: string): Promise<string> {
+  * @returns The CSS font-family value to use in styles
+  */
+ export function loadFont(fontName: string): string {
++  if (isProjectFontFamily(fontName)) {
++    void loadGoogleFont(fontName)
++    return `"${fontName}", sans-serif`
++  }
+     requireResource('font:' + fontName)
+   // Check if font is already loaded and return cached fontFamily
+   const cached = loadedFontFamilies.get(fontName)
+@@ -192,7 +202,7 @@ export async function ensureFontsLoaded(
+   fontNames: readonly string[],
+   weights: readonly number[] = [400],
+ ): Promise<void> {
+-  for (const fontName of fontNames) requireResource('font:' + fontName)
++  for (const fontName of fontNames) if (!isProjectFontFamily(fontName)) requireResource('font:' + fontName)
+   if (fontNames.length === 0 || typeof document === 'undefined' || !document.fonts) {
+     return
+   }
+diff --git a/src/shared/typography/project-fonts.test.ts b/src/shared/typography/project-fonts.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/typography/project-fonts.test.ts
+@@ -0,0 +1,164 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
++import { ensureFontsLoaded, loadFont } from './font-loader'
++import {
++  getProjectFonts,
++  isProjectFontFamily,
++  loadProjectFontFamily,
++  MAX_PROJECT_FONT_FACES,
++  normalizeProjectFonts,
++  projectFontWeightDescriptor,
++  projectFontWeightRanges,
++  setProjectFonts,
++} from './project-fonts'
++
++const REGULAR = '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c6'
++const BLACK = '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c7'
++const ITALIC = '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c8'
++
++const face = (importId: string, weight: number, style = 'normal', family = 'Brand Sans') => ({
++  importId,
++  family,
++  weight,
++  style,
++})
++
++describe('project fonts (FL-1562)', () => {
++  it('keeps only well-formed faces, once each, and at most the limit', () => {
++    expect(
++      normalizeProjectFonts([
++        face(REGULAR.toUpperCase(), 400),
++        face(BLACK, 400),
++        face(BLACK, 950),
++        face(BLACK, 450.5),
++        face(BLACK, 700, 'oblique'),
++        face('not-a-uuid', 700),
++        face(BLACK, 700, 'normal', 'https://fonts.example/brand'),
++        face(BLACK, 700, 'normal', 'Quote"d'),
++        face(BLACK, 700, 'normal', ' Padded'),
++        null,
++        face(BLACK, 900),
++      ]),
++    ).toEqual([face(REGULAR, 400), face(BLACK, 900)])
++    expect(normalizeProjectFonts({ importId: REGULAR })).toEqual([])
++    const many = Array.from({ length: MAX_PROJECT_FONT_FACES + 4 }, (_, index) =>
++      face(REGULAR, 400, 'normal', `Family ${index}`),
++    )
++    expect(normalizeProjectFonts(many)).toHaveLength(MAX_PROJECT_FONT_FACES)
++  })
++
++  it('gives every weight to the nearest listed weight, the lighter of two equally near', () => {
++    expect([...projectFontWeightRanges([700, 400])]).toEqual([
++      [400, [1, 550]],
++      [700, [551, 1000]],
++    ])
++    expect([...projectFontWeightRanges([300, 800, 900])]).toEqual([
++      [300, [1, 550]],
++      [800, [551, 850]],
++      [900, [851, 1000]],
++    ])
++    expect([...projectFontWeightRanges([400])]).toEqual([[400, [1, 1000]]])
++    // Italic faces are ranged among the italic faces only.
++    const faces = normalizeProjectFonts([
++      face(REGULAR, 400),
++      face(BLACK, 900),
++      face(ITALIC, 300, 'italic'),
++    ])
++    expect(faces.map((item) => projectFontWeightDescriptor(item, faces))).toEqual([
++      '1 650',
++      '651 1000',
++      '1 1000',
++    ])
++  })
++
++  describe('loading', () => {
++    const added: Array<{ family: string; descriptors: FontFaceDescriptors }> = []
++    const fonts = {
++      add: vi.fn(),
++      delete: vi.fn(),
++      load: vi.fn().mockResolvedValue([]),
++      ready: Promise.resolve(),
++    }
++
++    beforeEach(() => {
++      added.length = 0
++      fonts.add.mockClear()
++      fonts.delete.mockClear()
++      Object.defineProperty(document, 'fonts', { value: fonts, configurable: true })
++      vi.stubGlobal(
++        'FontFace',
++        class {
++          constructor(family: string, _source: ArrayBuffer, descriptors: FontFaceDescriptors) {
++            added.push({ family, descriptors })
++          }
++          load() {
++            return Promise.resolve(this)
++          }
++        },
++      )
++      vi.stubGlobal(
++        'fetch',
++        vi.fn(async (url: string) => ({
++          ok: !url.endsWith('/gone'),
++          status: url.endsWith('/gone') ? 404 : 200,
++          arrayBuffer: async () => new ArrayBuffer(8),
++        })),
++      )
++      blobUrlManager.registerUrl(REGULAR, `/api/studio/projects/p/imports/${REGULAR}/file`)
++      blobUrlManager.registerUrl(BLACK, `/api/studio/projects/p/imports/${BLACK}/file`)
++    })
++
++    afterEach(() => {
++      setProjectFonts(undefined)
++      blobUrlManager.releaseAll()
++      vi.unstubAllGlobals()
++    })
++
++    it('reads each face from its import and registers it with its weight range', async () => {
++      setProjectFonts([face(REGULAR, 400), face(BLACK, 900)])
++      expect(isProjectFontFamily('Brand Sans')).toBe(true)
++      expect(isProjectFontFamily('Inter')).toBe(false)
++      expect(await loadProjectFontFamily('Brand Sans')).toBe(true)
++      expect(fetch).toHaveBeenCalledWith(`/api/studio/projects/p/imports/${REGULAR}/file`)
++      expect(added).toEqual([
++        { family: 'Brand Sans', descriptors: { weight: '1 650', style: 'normal' } },
++        { family: 'Brand Sans', descriptors: { weight: '651 1000', style: 'normal' } },
++      ])
++      expect(fonts.add).toHaveBeenCalledTimes(2)
++      // Loaded once: a second load registers nothing more.
++      expect(await loadProjectFontFamily('Brand Sans')).toBe(true)
++      expect(fonts.add).toHaveBeenCalledTimes(2)
++    })
++
++    it('draws in the fallback while a file is not registered, and retries on the next load', async () => {
++      setProjectFonts([face(ITALIC, 400, 'italic')])
++      expect(await loadProjectFontFamily('Brand Sans')).toBe(false)
++      expect(fonts.add).not.toHaveBeenCalled()
++      blobUrlManager.registerUrl(ITALIC, '/files/gone')
++      expect(await loadProjectFontFamily('Brand Sans')).toBe(false)
++      blobUrlManager.release(ITALIC)
++      blobUrlManager.registerUrl(ITALIC, `/api/studio/projects/p/imports/${ITALIC}/file`)
++      expect(await loadProjectFontFamily('Brand Sans')).toBe(true)
++    })
++
++    it('removes faces the project no longer lists, or whose range changed', async () => {
++      setProjectFonts([face(REGULAR, 400)])
++      await loadProjectFontFamily('Brand Sans')
++      setProjectFonts([face(REGULAR, 400), face(BLACK, 900)])
++      expect(fonts.delete).toHaveBeenCalledTimes(1)
++      expect(getProjectFonts()).toHaveLength(2)
++      setProjectFonts([])
++      expect(isProjectFontFamily('Brand Sans')).toBe(false)
++    })
++
++    it('never asks the resource admission or the network catalogue for a project family', async () => {
++      setProjectFonts([face(REGULAR, 400, 'normal', 'Not In Any Catalogue')])
++      expect(loadFont('Not In Any Catalogue')).toBe('"Not In Any Catalogue", sans-serif')
++      await expect(ensureFontsLoaded(['Not In Any Catalogue'], [400, 700])).resolves.toBeUndefined()
++      expect(document.querySelector('link[data-font="Not In Any Catalogue"]')).toBeNull()
++      expect(fonts.load).toHaveBeenCalledWith('400 16px "Not In Any Catalogue"', 'BESbswy')
++      // A family that is neither listed nor admitted is still refused, as before.
++      expect(() => loadFont('Not In Any Catalogue Either')).toThrow(/FRAMELEAF_RESOURCE_BLOCKED/)
++    })
++  })
++})
+diff --git a/src/shared/typography/project-fonts.ts b/src/shared/typography/project-fonts.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/typography/project-fonts.ts
+@@ -0,0 +1,205 @@
++/**
++ * Frameleaf (FL-1562): fonts kept with the project.
++ *
++ * A project lists the font files a person imported in `metadata.fonts` (graph protocol 14.3.6):
++ * each face names a project import by `importId`, the family titles use for it, and its weight
++ * and style. A family listed there is the project's own: it is never looked up in the font
++ * catalogue or fetched from the network, and the resource admission rows for catalogue fonts do
++ * not apply to it. Its bytes are the import's, read through the URL the host registered for the
++ * import id, exactly as media is read.
++ *
++ * Every face is registered with a weight range, so a title asking for any weight draws the
++ * family's nearest listed weight (the lighter of two equally near), the rule the render spec (X4)
++ * and the render worker use, rather than the browser's own matching order.
++ */
++import { blobUrlManager } from '@/infrastructure/browser/blob-url-manager'
++import { createLogger } from '@/shared/logging/logger'
++
++const logger = createLogger('ProjectFonts')
++
++/** How many faces a project may list; the server and the render worker read no more. */
++export const MAX_PROJECT_FONT_FACES = 32
++
++export interface ProjectFontFace {
++  /** The project import that holds the font file. */
++  importId: string
++  /** The family titles name; it need not be the family the file gives itself. */
++  family: string
++  /** 100 to 900. */
++  weight: number
++  style: 'normal' | 'italic'
++}
++
++const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i
++const LOCATOR = /^(?:[a-z][\d+.a-z-]*:|\/|\\\\|[a-z]:\\)|(?:^|[/\\])\.\.(?:[/\\]|$)/i
++
++/** A family name a CSS font string can carry and a graph may hold: never a locator. */
++export function isProjectFontFamilyName(value: unknown): value is string {
++  return (
++    typeof value === 'string' &&
++    value.length > 0 &&
++    value.length <= 128 &&
++    value.trim() === value &&
++    // eslint-disable-next-line no-control-regex
++    !/[\u0000-\u001F\u007F"\\]/.test(value) &&
++    !LOCATOR.test(value)
++  )
++}
++
++/**
++ * The well-formed faces of a `metadata.fonts` value, in order: a malformed entry, a repeat of a
++ * family, weight and style, and everything past {@link MAX_PROJECT_FONT_FACES} are left out, as
++ * the server's resolver leaves them out.
++ */
++export function normalizeProjectFonts(value: unknown): ProjectFontFace[] {
++  if (!Array.isArray(value)) return []
++  const faces: ProjectFontFace[] = []
++  const seen = new Set<string>()
++  for (const entry of value.slice(0, MAX_PROJECT_FONT_FACES)) {
++    if (!entry || typeof entry !== 'object') continue
++    const { importId, family, weight, style } = entry as Record<string, unknown>
++    if (
++      typeof importId !== 'string' ||
++      !UUID.test(importId) ||
++      !isProjectFontFamilyName(family) ||
++      typeof weight !== 'number' ||
++      !Number.isInteger(weight) ||
++      weight < 100 ||
++      weight > 900 ||
++      (style !== 'normal' && style !== 'italic')
++    ) {
++      continue
++    }
++    const identity = `${family}|${weight}|${style}`
++    if (seen.has(identity)) continue
++    seen.add(identity)
++    faces.push({ importId: importId.toLowerCase(), family, weight, style })
++  }
++  return faces
++}
++
++/**
++ * The weight range each listed weight answers for, over CSS's 1 to 1000: every weight goes to the
++ * nearest listed one, and a weight exactly between two goes to the lighter.
++ */
++export function projectFontWeightRanges(weights: readonly number[]): Map<number, [number, number]> {
++  const sorted = [...new Set(weights)].sort((a, b) => a - b)
++  const ranges = new Map<number, [number, number]>()
++  sorted.forEach((weight, index) => {
++    const low = index === 0 ? 1 : Math.floor((sorted[index - 1]! + weight) / 2) + 1
++    const high = index === sorted.length - 1 ? 1000 : Math.floor((weight + sorted[index + 1]!) / 2)
++    ranges.set(weight, [low, high])
++  })
++  return ranges
++}
++
++/** The weight descriptor of one face among its family's faces of the same style. */
++export function projectFontWeightDescriptor(
++  face: ProjectFontFace,
++  faces: readonly ProjectFontFace[],
++): string {
++  const range = projectFontWeightRanges(
++    faces
++      .filter((other) => other.family === face.family && other.style === face.style)
++      .map((other) => other.weight),
++  ).get(face.weight)!
++  return `${range[0]} ${range[1]}`
++}
++
++type Registered = { key: string; face: FontFace }
++
++let listed: ProjectFontFace[] = []
++let families = new Map<string, ProjectFontFace[]>()
++/** Faces added to the document, by face identity and weight range. */
++const registered = new Map<string, Registered>()
++const loading = new Map<string, Promise<boolean>>()
++
++const faceKey = (face: ProjectFontFace, descriptor: string) =>
++  `${face.importId}|${face.family}|${face.style}|${descriptor}`
++
++/**
++ * Make the project's list the one titles draw from. Faces no longer listed (or whose weight range
++ * changed because the family gained or lost a face) are removed from the document.
++ */
++export function setProjectFonts(value: unknown): void {
++  const next = normalizeProjectFonts(value)
++  if (JSON.stringify(next) === JSON.stringify(listed)) return
++  listed = next
++  families = new Map()
++  for (const face of next) families.set(face.family, [...(families.get(face.family) ?? []), face])
++  const keep = new Set(next.map((face) => faceKey(face, projectFontWeightDescriptor(face, next))))
++  for (const [key, entry] of registered) {
++    if (keep.has(key)) continue
++    registered.delete(key)
++    if (typeof document !== 'undefined' && document.fonts) document.fonts.delete(entry.face)
++  }
++}
++
++export function getProjectFonts(): readonly ProjectFontFace[] {
++  return listed
++}
++
++export function isProjectFontFamily(family: string): boolean {
++  return families.has(family)
++}
++
++async function loadFace(face: ProjectFontFace, descriptor: string): Promise<boolean> {
++  const key = faceKey(face, descriptor)
++  if (registered.has(key)) return true
++  const url = blobUrlManager.get(face.importId)
++  if (!url) {
++    // Not yet registered by the host, or no longer kept: the title draws in the fallback face,
++    // and the next draw tries again.
++    logger.warn(`The font file of "${face.family}" (${face.weight} ${face.style}) is not available`)
++    return false
++  }
++  try {
++    const response = await fetch(url)
++    if (!response.ok) throw new Error(`HTTP ${response.status}`)
++    const loaded = await new FontFace(face.family, await response.arrayBuffer(), {
++      weight: descriptor,
++      style: face.style,
++    }).load()
++    // The list may have changed while the file was read.
++    const current = listed.find(
++      (other) =>
++        other.importId === face.importId &&
++        other.family === face.family &&
++        other.style === face.style &&
++        projectFontWeightDescriptor(other, listed) === descriptor,
++    )
++    if (!current || registered.has(key)) return Boolean(current)
++    document.fonts.add(loaded)
++    registered.set(key, { key, face: loaded })
++    return true
++  } catch (error) {
++    logger.warn(`The font file of "${face.family}" could not be read:`, error)
++    return false
++  }
++}
++
++/**
++ * Load every face of a project family. Resolves true when all of them are in the document; a face
++ * that could not be read leaves the family drawing in its other faces or the fallback.
++ */
++export function loadProjectFontFamily(family: string): Promise<boolean> {
++  const faces = families.get(family)
++  if (
++    !faces ||
++    typeof document === 'undefined' ||
++    !document.fonts ||
++    typeof FontFace === 'undefined'
++  ) {
++    return Promise.resolve(false)
++  }
++  const snapshot = listed
++  const pending = loading.get(family)
++  if (pending) return pending
++  const promise = Promise.all(
++    faces.map((face) => loadFace(face, projectFontWeightDescriptor(face, snapshot))),
++  )
++    .then((results) => results.every(Boolean))
++    .finally(() => loading.delete(family))
++  loading.set(family, promise)
++  return promise
++}
+diff --git a/src/types/project.ts b/src/types/project.ts
+--- a/src/types/project.ts
++++ b/src/types/project.ts
+@@ -1,3 +1,4 @@
++import type { ProjectFontFace } from '@/shared/typography/project-fonts'
+ import type { ItemKeyframes } from './keyframe'
+ import type { AudioEqSettings } from './audio'
+ import type { Transition } from './transition'
+@@ -315,4 +316,6 @@ export interface ProjectResolution {
+   backgroundColor?: string // Hex color, defaults to #000000
+   /** Frameleaf managed colour (FL-97). Absent = SDR, Freecut's reference behaviour. */
+   colorManagement?: ProjectColorManagement
++  /** Frameleaf (FL-1562): fonts kept with the project, read by `setProjectFonts`. */
++  fonts?: ProjectFontFace[]
+ }

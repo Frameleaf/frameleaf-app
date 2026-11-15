@@ -322,7 +322,8 @@ describe(JobService.name, () => {
       },
       {
         item: { name: JobName.AssetDetectFaces, data: { id: 'asset-1' } },
-        jobs: [JobName.BestPhotosScore],
+        // FL-863: and the faces' eye scores
+        jobs: [JobName.BestPhotosScore, JobName.FaceEyeScore],
         stub: [AssetFactory.create({ id: 'asset-1' })],
       },
       {
@@ -800,7 +801,10 @@ describe(JobService.name, () => {
         data: { id: 'asset-1' },
       });
 
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.BestPhotosScore, data: { id: 'asset-1' } });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.BestPhotosScore, data: { id: 'asset-1' } },
+        { name: JobName.FaceEyeScore, data: { id: 'asset-1' } },
+      ]);
     });
 
     it('should requeue Best Photos scoring after edited image thumbnails are generated', async () => {

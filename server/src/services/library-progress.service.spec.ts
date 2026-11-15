@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AnalyticsSeriesId, QueueCommand, QueueName, SystemMetadataKey } from 'src/enum.js';
+import { AnalyticsSeriesId, JobName, QueueCommand, QueueName, SystemMetadataKey } from 'src/enum.js';
 import { LibraryProgressService } from 'src/services/library-progress.service.js';
+import { getConfig } from 'src/utils/config.js';
+
+vi.mock('src/utils/config.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/utils/config.js')>()),
+  getConfig: vi.fn(),
+}));
+
+const useModel = (modelName: string) =>
+  vi.mocked(getConfig).mockResolvedValue({ machineLearning: { clip: { modelName } } } as never);
 
 const counts = (search: number) => ({
   search: [search, 1000] as [number, number],
@@ -18,10 +27,16 @@ const setup = (stored: Partial<Record<SystemMetadataKey, unknown>> = {}) => {
       return Promise.resolve();
     }),
   };
-  const assetJob = { countFeatureProgress: vi.fn(), countMediaCopies: vi.fn() };
+  const assetJob = {
+    countFeatureProgress: vi.fn(),
+    countMediaCopies: vi.fn(),
+    countBestPhotosWithoutLearnedScore: vi.fn().mockResolvedValue(0),
+  };
   const analytics = { getLatestHostSamples: vi.fn().mockResolvedValue([]) };
   const queue = { runCommandLegacy: vi.fn().mockResolvedValue({}) };
   const probe = { testVideoCard: vi.fn() };
+  const job = { queue: vi.fn() };
+  useModel('ViT-B-32__openai');
   const sut = new LibraryProgressService(
     { setContext: vi.fn(), warn: vi.fn() } as never,
     assetJob as never,
@@ -29,8 +44,10 @@ const setup = (stored: Partial<Record<SystemMetadataKey, unknown>> = {}) => {
     metadata as never,
     queue as never,
     probe as never,
+    {} as never,
+    job as never,
   );
-  return { sut, metadata, assetJob, analytics, queue, probe, stored };
+  return { sut, metadata, assetJob, analytics, queue, probe, job, stored };
 };
 
 describe(LibraryProgressService.name, () => {
@@ -234,5 +251,37 @@ describe(LibraryProgressService.name, () => {
       command: QueueCommand.Start,
       force: true,
     });
+  });
+
+  it('counts the photos a learned Best Photos score would improve, only for a model that has one (FL-1597)', async () => {
+    const { sut, assetJob } = setup({ [SystemMetadataKey.OvernightRedo]: { queues: [], bestPhotos: true } });
+    assetJob.countFeatureProgress.mockResolvedValue(counts(400));
+    assetJob.countBestPhotosWithoutLearnedScore.mockResolvedValue(120);
+
+    await expect(sut.getProgress()).resolves.toEqual(
+      expect.objectContaining({ bestPhotos: { outdated: 120, tonight: true } }),
+    );
+    expect(assetJob.countBestPhotosWithoutLearnedScore).toHaveBeenCalledWith('ViT-B-32__openai');
+
+    useModel('my-org/clip-vit-l-14');
+    await expect(sut.getProgress()).resolves.toEqual(
+      expect.objectContaining({ bestPhotos: { outdated: 0, tonight: true } }),
+    );
+    expect(assetJob.countBestPhotosWithoutLearnedScore).toHaveBeenCalledTimes(1);
+  });
+
+  it('scores Best Photos again now, or keeps it for tonight beside the other work (FL-1597)', async () => {
+    const { sut, job, stored } = setup({ [SystemMetadataKey.OvernightRedo]: { queues: [QueueName.SmartSearch] } });
+
+    await sut.redoBestPhotos({ when: 'tonight' });
+    expect(stored[SystemMetadataKey.OvernightRedo]).toEqual({ queues: [QueueName.SmartSearch], bestPhotos: true });
+    expect(job.queue).not.toHaveBeenCalled();
+
+    await sut.redo({ queue: QueueName.FacialRecognition, when: 'tonight' });
+    expect(stored[SystemMetadataKey.OvernightRedo]).toEqual(expect.objectContaining({ bestPhotos: true }));
+
+    await sut.redoBestPhotos({ when: 'now' });
+    expect(job.queue).toHaveBeenCalledWith({ name: JobName.BestPhotosScoreQueueAll, data: { force: true } });
+    expect(stored[SystemMetadataKey.OvernightRedo]).toEqual(expect.objectContaining({ bestPhotos: false }));
   });
 });

@@ -285,6 +285,19 @@ export const SUBJECT_MATTE_FILE_PREFIX = 'frameleaf-subject-matte-'
 export const isSubjectMatteImport = (item: Pick<StudioProjectImportRef, 'name' | 'mimeType'>): boolean =>
   item.mimeType === 'image/png' && item.name.startsWith(SUBJECT_MATTE_FILE_PREFIX)
 
+/**
+ * FL-1562: a font kept with the project is read by the titles whose family `metadata.fonts` maps
+ * to it, by its id, never offered in the bin.
+ */
+export const isProjectFontImport = (item: Pick<StudioProjectImportRef, 'kind'>): boolean =>
+  item.kind === 'font'
+
+/**
+ * FL-1558: a `.cube` LUT kept with the project is read by the effect that names it (`lutId`), never
+ * offered in the bin.
+ */
+export const isLutImport = (item: Pick<StudioProjectImportRef, 'kind'>): boolean => item.kind === 'lut'
+
 export function createLibraryMediaSeeder(options: {
   workspace: VirtualWorkspace
   /** The project new assets are linked to: the current editor mount's. */
@@ -435,10 +448,11 @@ export function createLibraryMediaSeeder(options: {
     },
     async seedImports(all) {
       if (controller.signal.aborted) return
-      // FL-639: a cut-out matte is read by the renderer by its id, never offered in the bin.
+      // FL-639: a cut-out matte is read by the renderer by its id, never offered in the bin; so is
+      // a font (FL-1562) or a LUT (FL-1558) kept with the project.
       const imports: StudioProjectImportRef[] = []
       for (const item of all) {
-        if (!isSubjectMatteImport(item)) imports.push(item)
+        if (!isSubjectMatteImport(item) && !isProjectFontImport(item) && !isLutImport(item)) imports.push(item)
         else if (!seeded.has(item.id)) {
           seeded.add(item.id)
           blobUrlManager.registerUrl(item.id, item.url)

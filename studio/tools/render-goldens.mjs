@@ -23,7 +23,8 @@ export const LINEAR_HDR_EFFECTS = [
 export const GPU_TRANSITIONS = [
   'fade', 'wipe', 'slide', 'flip', 'clockWipe', 'iris', 'dissolve', 'additiveDissolve', 'blurDissolve',
   'dipToColorDissolve', 'nonAdditiveDissolve', 'smoothCut', 'sparkles', 'glitch', 'pixelate', 'chromatic',
-  'radialBlur', 'liquidDistort', 'lensWarpZoom', 'lightLeakBurn', 'filmGateSlip',
+  'radialBlur', 'liquidDistort', 'lensWarpZoom', 'lightLeakBurn', 'filmGateSlip', 'filmDissolve', 'crossZoom',
+  'cubeSpin', 'pagePeel',
 ];
 
 const q8 = (v) => Math.round(Math.min(1, Math.max(0, v)) * 255) / 255;
@@ -109,6 +110,10 @@ export function lutFixture() {
 // them (README C9: a graph written by another client can lack keys); `clock` sets the effect
 // clock of a temporal effect. A `null` value is a key that is present but not a finite number.
 export const EFFECT_EXTRA_CASES = {
+  // FL-1559: all three hue curves at once, with points that wrap past hue 1.
+  'gpu-hue-curves': [
+    { name: 'curves', params: { hueHuePoints: '[[0.05,0.1],[0.4,-0.05],[0.8,0]]', hueSatPoints: '[[0,1.5],[0.5,0.4]]', hueLumaPoints: '[[0.15,1.3],[0.6,0.8]]' } },
+  ],
   'gpu-curves': [
     { name: 'points', params: { masterPoints: '[[0,0],[0.3,0.15],[0.7,0.9],[1,1]]', redPoints: '[[0,0.1],[1,0.9]]' } },
     { name: 'points-invalid-json', params: { masterPoints: 'not json' } },

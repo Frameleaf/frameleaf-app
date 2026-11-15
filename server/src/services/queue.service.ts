@@ -716,6 +716,11 @@ export class QueueService extends BaseService {
       jobs.push({ name: JobName.FacialRecognitionQueueAll, data: { force: false, nightly: true } });
     }
 
+    // FL-863: faces still without eye scores (found while the worker couldn't score eyes, or before scoring existed)
+    if (tidy && config.nightlyTasks.clusterNewFaces && config.machineLearning.eyeScores.enabled) {
+      jobs.push({ name: JobName.FaceEyeScoreQueueAll, data: {} });
+    }
+
     // FL-79: the local analytics collector runs every night. It only reads counts and sizes and
     // writes them to this server's database, never elsewhere. FL-71: an administrator can turn it
     // off ("Collect local metrics"); the collector also checks the setting when it runs.

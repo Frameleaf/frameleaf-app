@@ -1,6 +1,9 @@
 import {
   importStudioProjectFile,
+  StudioProjectFontFormat,
+  StudioProjectFontStyle,
   StudioProjectImportKind,
+  getStudioProjectFonts,
   getStudioProjectImports,
   registerStudioImportPublication,
   getStudioImportPublications,
@@ -8,6 +11,7 @@ import {
 } from '@frameleaf/sdk';
 import {
   isStudioBinImport,
+  isStudioEditorImport,
   createStudioRetentionApi,
   toStudioPublicationReceipt,
   loadStudioProjectImports,
@@ -19,6 +23,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   importStudioProjectFile: vi.fn(),
   getStudioProjectImports: vi.fn(),
+  getStudioProjectFonts: vi.fn(async () => []),
   registerStudioImportPublication: vi.fn(),
   getStudioImportPublications: vi.fn(),
   cancelStudioImportPublication: vi.fn(),
@@ -61,6 +66,16 @@ describe('Studio project imports (FL-103 / FL-105)', () => {
     expect(isStudioBinImport({ ...dto, kind: StudioProjectImportKind.Vector })).toBe(true);
     expect(isStudioBinImport({ ...dto, kind: StudioProjectImportKind.Captions, contentType: 'text/vtt' })).toBe(false);
     expect(isStudioBinImport({ ...dto, kind: StudioProjectImportKind.Lut, contentType: 'text/x-cube-lut' })).toBe(
+      false,
+    );
+  });
+
+  it('gives the editor a kept LUT, which a colour effect names by id, but not a caption file (FL-1558)', () => {
+    const lut = { ...dto, kind: StudioProjectImportKind.Lut, contentType: 'text/x-cube-lut' };
+    expect(isStudioEditorImport(lut)).toBe(true);
+    expect(toStudioProjectImport('p', lut)).toMatchObject({ kind: 'lut', mimeType: 'text/x-cube-lut' });
+    expect(isStudioEditorImport(dto)).toBe(true);
+    expect(isStudioEditorImport({ ...dto, kind: StudioProjectImportKind.Captions, contentType: 'text/vtt' })).toBe(
       false,
     );
   });
@@ -226,4 +241,34 @@ it('reloads every canonical import independently of an unavailable receipt page'
   const loaded = await loadStudioProjectImports(retentionProject, controller.signal);
   expect(loaded).toHaveLength(101);
   expect(new Set(loaded.map((item) => item.id)).size).toBe(101);
+});
+
+it('hands the editor the fonts kept with the project, by id and never as bin media (FL-1562)', async () => {
+  const font = {
+    id: '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e09',
+    family: 'Brand Sans',
+    subfamily: 'Bold',
+    weight: 700,
+    style: StudioProjectFontStyle.Normal,
+    format: StudioProjectFontFormat.Woff2,
+    fileName: 'Brand-Bold.woff2',
+    sizeBytes: 40_000,
+    checksum: 'c'.repeat(64),
+    createdAt: '2026-11-15T00:00:00.000Z',
+  };
+  vi.mocked(getStudioProjectImports).mockResolvedValueOnce([]);
+  vi.mocked(getStudioProjectFonts).mockResolvedValueOnce([font]);
+  const controller = new AbortController();
+  expect(await loadStudioProjectImports(retentionProject, controller.signal)).toEqual([
+    {
+      id: font.id,
+      kind: 'font',
+      name: 'Brand-Bold.woff2',
+      mimeType: 'font/woff2',
+      sizeBytes: 40_000,
+      checksum: font.checksum,
+      url: expect.stringContaining(`/studio/projects/${retentionProject}/imports/${font.id}/file`),
+    },
+  ]);
+  expect(getStudioProjectFonts).toHaveBeenLastCalledWith({ id: retentionProject }, { signal: controller.signal });
 });

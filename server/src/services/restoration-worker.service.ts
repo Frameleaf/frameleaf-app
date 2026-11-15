@@ -77,6 +77,7 @@ import {
   restorationOutputPaths,
   restorationWorkDir,
   resultExpiryAfterAbandon,
+  rifeChunkWindow,
   selectRestorationDestination,
   stageOfKind,
 } from 'src/utils/restoration.js';
@@ -135,6 +136,29 @@ type LocalRifePlan = {
   cadence: { num: number; den: number };
   frameCount: number;
   maxFrames: number;
+  /** FL-1444: the video stream and its time base, for the frame-exact chunk seek. */
+  streamIndex?: number;
+  timeBase?: { num: number; den: number } | null;
+};
+
+/**
+ * FL-1444: ffmpeg input options for a Smooth motion chunk: keep the source's own timestamps so the
+ * trim selects frames by them, and start decoding at the chunk's keyframe (an absolute timestamp,
+ * no accurate-seek trim of ffmpeg's own). Without a window the chunk decodes from the start.
+ */
+const rifeChunkInput = (
+  window: ReturnType<typeof rifeChunkWindow> | null,
+  timeBase: { num: number; den: number } | undefined,
+): string[] => {
+  if (!window) {
+    return [];
+  }
+  if (window.seekPts === null || window.seekPts <= 0 || !timeBase) {
+    return ['-copyts'];
+  }
+  // Rounding down only lands on an earlier keyframe, which decodes a few more frames.
+  const seconds = Math.floor(((window.seekPts * timeBase.num) / timeBase.den) * 1e6) / 1e6;
+  return ['-copyts', '-noaccurate_seek', '-seek_timestamp', '1', '-ss', seconds.toFixed(6)];
 };
 
 type RunContext = {
@@ -763,7 +787,14 @@ export class RestorationWorkerService {
         'The original needs a measured constant video cadence and frame count',
       );
     }
-    return { cadence, frameCount, fingerprint: model.fingerprint, maxFrames: model.maxFrames };
+    return {
+      cadence,
+      frameCount,
+      fingerprint: model.fingerprint,
+      maxFrames: model.maxFrames,
+      streamIndex: stream?.index,
+      timeBase: stream?.timeBaseRational,
+    };
   }
 
   private async previewVideo(ctx: RunContext, total: number): Promise<StageOutput> {
@@ -948,6 +979,8 @@ export class RestorationWorkerService {
     // in-between frames across the join are made too; the worker uses it as context and drops it.
     const frameSeconds = !rife && snapshot.interpolationFactor ? await this.sourceFrameSeconds(source.originalPath) : 0;
 
+    const frameIndex = rife ? await this.rifeFrameIndex(ctx, rife) : null;
+
     let processed = 2;
     const outputs: string[] = [];
     // Every chunk reused from a checkpoint ran the reviewed model, so it names the result.
@@ -986,9 +1019,13 @@ export class RestorationWorkerService {
       const frameChunk = 'startFrame' in plan.chunk ? (plan.chunk as RifeFrameChunk) : null;
       const contextFrame = frameChunk?.context ?? (frameSeconds > 0 && plan.sequence < planned.length - 1);
       const endFrame = frameChunk ? frameChunk.endFrame + Number(contextFrame) : 0;
+      const window =
+        frameChunk && frameIndex
+          ? rifeChunkWindow(frameIndex.framePts, frameIndex.keyframePts, frameChunk.startFrame, endFrame)
+          : null;
       await this.mediaRepository.transcode(source.originalPath, chunkIn, {
         inputOptions: frameChunk
-          ? []
+          ? rifeChunkInput(window, frameIndex?.timeBase)
           : [
               '-ss',
               plan.chunk.startSeconds.toFixed(3),
@@ -1004,7 +1041,9 @@ export class RestorationWorkerService {
           ? [
               ...chunkClipOutputOptions(),
               '-vf',
-              `trim=start_frame=${frameChunk.startFrame}:end_frame=${endFrame},setpts=PTS-STARTPTS`,
+              window
+                ? `trim=start_pts=${window.startPts}${window.endPts === null ? '' : `:end_pts=${window.endPts}`},setpts=PTS-STARTPTS`
+                : `trim=start_frame=${frameChunk.startFrame}:end_frame=${endFrame},setpts=PTS-STARTPTS`,
               '-frames:v',
               String(endFrame - frameChunk.startFrame),
             ]
@@ -1483,6 +1522,26 @@ export class RestorationWorkerService {
       jobId: ctx.operation.id,
       signal: ctx.signal,
     };
+  }
+
+  /**
+   * FL-1444: every frame's and keyframe's timestamp, read once per render from the packets (no
+   * decode), so each chunk can seek instead of decoding the source from its first frame. Null when
+   * the scan does not account for exactly the frames the plan counted: those chunks keep the
+   * frame-index trim from the start, which is slow but exact.
+   */
+  private async rifeFrameIndex(ctx: RunContext, rife: LocalRifePlan) {
+    if (rife.streamIndex === undefined || !rife.timeBase) {
+      return null;
+    }
+    const packets = await this.mediaRepository
+      .probePackets(ctx.source.originalPath, rife.streamIndex, { framePts: true, signal: ctx.signal })
+      .catch(() => null);
+    this.check(ctx);
+    if (packets?.framePts?.length !== rife.frameCount) {
+      return null;
+    }
+    return { framePts: packets.framePts, keyframePts: packets.keyframePts, timeBase: rife.timeBase };
   }
 
   /** How long one frame of the source lasts, from its measured frame rate (FL-162 Smooth motion chunks). */

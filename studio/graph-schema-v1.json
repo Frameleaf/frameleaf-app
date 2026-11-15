@@ -47,6 +47,12 @@
     "id": { "type": "string", "minLength": 1 },
     "frame": { "type": "integer", "minimum": 0 },
     "length": { "type": "integer", "minimum": 1 },
+    "audioChannelList": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "type": "integer", "minimum": 0, "maximum": 31 }
+    },
     "rational": {
       "type": "object",
       "required": ["num", "den"],
@@ -98,6 +104,22 @@
             "sdrMonitoring": { "enum": ["bt2390", "none"] }
           },
           "additionalProperties": true
+        },
+        "fonts": {
+          "description": "Fonts kept with the project (14.3.6, FL-1562): each face names a font import by importId, the family titles use for it, its weight and its style. A family listed here is drawn only from these files.",
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "required": ["importId", "family", "weight", "style"],
+            "additionalProperties": false,
+            "properties": {
+              "importId": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+              "family": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\s\"\\\\\\u0000-\\u001f\\u007f](?:[^\"\\\\\\u0000-\\u001f\\u007f]*[^\\s\"\\\\\\u0000-\\u001f\\u007f])?$" },
+              "weight": { "type": "integer", "minimum": 100, "maximum": 900 },
+              "style": { "enum": ["normal", "italic"] }
+            }
+          }
         }
       },
       "additionalProperties": true
@@ -165,6 +187,7 @@
         "generatedId": { "type": "string" },
         "originId": { "type": "string" },
         "linkedGroupId": { "type": "string" },
+        "markers": { "type": "array", "minItems": 1, "maxItems": 10000, "items": { "$ref": "#/$defs/clipMarker" } },
         "compositionId": { "type": "string" },
         "src": { "type": "string" },
         "sourceStart": { "type": "integer", "minimum": 0 },
@@ -191,6 +214,20 @@
         "muted": { "type": "boolean" },
         "audioPitchSemitones": { "type": "integer", "minimum": -12, "maximum": 12 },
         "audioPitchCents": { "type": "integer", "minimum": -100, "maximum": 100 },
+        "audioChannelMap": {
+          "description": "FL-1561: source plane indexes summed into the clip's left and right outputs, each side times 1 / (indexes listed). Absent plays the source planes as they are.",
+          "type": "object",
+          "required": ["left", "right"],
+          "additionalProperties": false,
+          "properties": {
+            "left": { "$ref": "#/$defs/audioChannelList" },
+            "right": { "$ref": "#/$defs/audioChannelList" }
+          },
+          "anyOf": [
+            { "properties": { "left": { "minItems": 1 } } },
+            { "properties": { "right": { "minItems": 1 } } }
+          ]
+        },
         "effects": { "type": "array", "items": { "$ref": "#/$defs/itemEffect" } },
         "motionModifiers": { "type": "array", "items": { "$ref": "#/$defs/motionModifier" } },
         "motionLayers": { "type": "array" },
@@ -282,6 +319,7 @@
         },
         { "if": { "properties": { "type": { "const": "text" } } }, "then": { "required": ["text", "color"] } },
         { "if": { "required": ["stabilisation"] }, "then": { "properties": { "type": { "const": "video" } } } },
+        { "if": { "required": ["audioChannelMap"] }, "then": { "properties": { "type": { "enum": ["video", "audio"] } } } },
         {
           "if": { "properties": { "type": { "const": "composition" } } },
           "then": { "required": ["compositionId", "compositionWidth", "compositionHeight"] }
@@ -492,7 +530,23 @@
         "id": { "$ref": "#/$defs/id" },
         "frame": { "$ref": "#/$defs/frame" },
         "color": { "type": "string" },
-        "label": { "type": "string", "minLength": 1 }
+        "label": { "type": "string", "minLength": 1 },
+        "durationInFrames": { "description": "FL-1563: a range marker covers this many frames from frame.", "type": "integer", "minimum": 1 },
+        "note": { "description": "FL-1563: free-text note.", "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "clipMarker": {
+      "description": "FL-1563: a marker on a clip, in the clip's source frames at its source rate.",
+      "type": "object",
+      "required": ["id", "sourceFrame", "color"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "sourceFrame": { "$ref": "#/$defs/frame" },
+        "durationInFrames": { "type": "integer", "minimum": 1 },
+        "color": { "type": "string" },
+        "label": { "type": "string", "minLength": 1 },
+        "note": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },
@@ -512,6 +566,7 @@
         "alignment": { "type": "number", "minimum": 0, "maximum": 1 },
         "bezierPoints": { "$ref": "#/$defs/bezier" },
         "presetId": { "type": "string", "minLength": 1 },
+        "audioCurve": { "description": "Gain law for the sound of both clips under the transition (FL-1555); constant power when absent.", "enum": ["constant-power", "constant-gain", "exponential"] },
         "properties": { "type": "object" },
         "createdAt": { "type": "integer", "minimum": 0 },
         "lastModifiedAt": { "type": "integer", "minimum": 0 }

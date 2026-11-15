@@ -113,6 +113,17 @@ const SharedLinksUpdateSchema = z
   .object({
     enabled: z.boolean().optional().describe('Whether shared links are enabled'),
     sidebarWeb: z.boolean().optional().describe('Whether shared links appear in web sidebar'),
+    // FL-922: positive whole days (at most ten years); null clears it, so new links follow the server's default
+    defaultExpiryDays: z
+      .int()
+      .min(1)
+      .max(3650)
+      .nullable()
+      .optional()
+      .describe(
+        "Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires)",
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .optional()
   .meta({ id: 'SharedLinksUpdate' });
@@ -472,6 +483,15 @@ const SharedLinksResponseSchema = z
   .object({
     enabled: z.boolean().describe('Whether shared links are enabled'),
     sidebarWeb: z.boolean().describe('Whether shared links appear in web sidebar'),
+    // always sent; optional in the schema so clients built before it existed keep compiling
+    defaultExpiryDays: z
+      .int()
+      .nullable()
+      .optional()
+      .describe(
+        "Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires)",
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'SharedLinksResponse' });
 

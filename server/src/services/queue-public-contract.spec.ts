@@ -26,6 +26,8 @@ const setup = (rows: QueueJobRow[]) => {
 describe('public queue job compatibility (FL-283)', () => {
   it('retains every legacy job name in runtime validation and the response schema', () => {
     const internal = new Set<JobName>([
+      JobName.FaceEyeScore,
+      JobName.FaceEyeScoreQueueAll,
       JobName.PhotographyWorkflowRender,
       JobName.PhotographyBulkGallery,
       JobName.PhotographyCampaignSend,
@@ -49,6 +51,7 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.MediaHealthPutBackUpload,
       JobName.WorkflowEventDispatch,
       JobName.WorkflowEventTrigger,
+      JobName.LibraryFolderAlbumSync,
       JobName.MediaImport,
     ]);
     const legacyNames = Object.values(JobName).filter((name) => !internal.has(name));

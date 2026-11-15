@@ -570,6 +570,8 @@ describe('Studio route, engine present', () => {
       'projectImports',
       // FL-42: what qualified render workers verified, for the export sheet (no credentials).
       'renderEvidence',
+      // FL-1545: a playhead jump asked for from an import note, as an exact frame; never a credential.
+      'seekRequest',
       // FL-96: whether the host shows the server preview itself; a boolean, never the stream.
       'serverPreviewOpen',
       // FL-105: invalidates saved source grants; a numeric declaration epoch, never a credential.

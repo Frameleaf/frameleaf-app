@@ -102,6 +102,19 @@ that references a font or holds a title, as above: it cannot draw a title with t
 by ignoring `files`. A worker that draws titles must load fonts only from these inputs; when a
 title needs a family, weight or glyph the claim does not grant, it refuses the frame.
 
+**Fonts kept with the project (FL-1562; additive, `schemaVersion` stays 1).** A family the graph
+lists in `metadata.fonts` (graph protocol 14.3.6) resolves from the project's own font imports and
+wins over a bundled or catalogue family of the same name. Its resource has `sourceAccess:
+"project"` and the same shape, with each file `{ inputId, file, weight, style, subset: "full",
+format, checksum }`: `file` is `<importId>.<format>`, `format` is `ttf`, `otf` or `woff2` (the
+bytes as the person uploaded them, at most 32 MiB), and `weight` is any integer from 100 to 900.
+The resource's own input is the upright face nearest 400. A face whose import the project does not
+keep, or that is not a font, refuses the family (`undeclared-import`, `checksum-mismatch`,
+`unsupported-media-type`), so a title is never drawn in another face without notice. The listed
+imports are also ordinary `project-import` inputs of the claim. A worker registers each project
+face for the range of weights nearest it (`weightRangeFor`), so the browser draws the nearest
+listed weight as `facesFor` would choose. The bundled worker allows 64 MiB of font bytes per claim.
+
 `render-worker-font-inputs.mjs` is the worker side of the contract: `deriveClaimFonts` checks a
 claim's font resources against its inputs and returns the faces, `verifyFontBytes` checks fetched
 bytes against the named checksum and that they are TrueType, and `facesFor` gives the faces for a

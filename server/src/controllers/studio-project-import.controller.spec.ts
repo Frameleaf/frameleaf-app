@@ -157,6 +157,19 @@ describe('StudioProjectImportController upload reservation', () => {
       processingProvenance: undefined,
     });
   });
+
+  it('keeps a font through the same reservation and lists the fonts (FL-1562)', async () => {
+    const service = { uploadFont: vi.fn().mockResolvedValue({}), listFonts: vi.fn().mockResolvedValue([]) };
+    const controller = new StudioProjectImportController(service as never, {} as never);
+    const auth = { user: { id: 'owner' } } as never;
+    const file = { path: '/private/reserved.zip' } as Express.Multer.File;
+    await controller.importStudioProjectFont(auth, 'project', { id: 'font', publicationId: 'p' }, file, {
+      studioBundleUploadId: 'reserved',
+    } as never);
+    expect(service.uploadFont).toHaveBeenCalledWith(auth, 'project', 'font', file, 'reserved', { publicationId: 'p' });
+    await controller.getStudioProjectFonts(auth, { id: 'project' });
+    expect(service.listFonts).toHaveBeenCalledWith(auth, 'project');
+  });
 });
 
 describe('canonical publication raw multipart boundary', () => {

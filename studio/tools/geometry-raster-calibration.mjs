@@ -261,7 +261,31 @@ export function validateBaseRaster(capture, envelope, binding) {
             'e6bb2e8e859dfb80309ae119edd40662bd09ffb13fdb473fe52062153f46cc6c' ||
           // FL-1429 Cloud caption batches; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            'f76d7aef72b9d3dc7489f990afead2e4901fbb67b19f036f03fcb7abbeaeb122')),
+            'f76d7aef72b9d3dc7489f990afead2e4901fbb67b19f036f03fcb7abbeaeb122' ||
+          // FL-642 windowed limiter and split-part colour match; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6' ||
+          // FL-1555 sound crossfades; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '618ffdaaf2d499ecd7cf680d60879e3f173e18aa10e7aa8171764d822a7e3755' ||
+          // FL-1563 marker ranges; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            'd6b987310298fd087ee08d8a7dae66ab867d566ebc7a20f35737d3b419d3ac4d' ||
+          // FL-1564 new transitions; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            'bbcef0a3103b1ac8983a3ea53f8aee7d7995115891d8e40766135b64bd99b84c' ||
+          // FL-1559 grading effects; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '3a3669ec17409883b5705c8044503ef6825972c8a75a90ef700a4829568695ca' ||
+          // FL-1558 LUT references; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '3b81da411c63fb3b648a86d1bc04d8446c0853cff3d5511ec9c0c874d1751feb' ||
+          // FL-1561 sound channel mapping; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '81b9a0517a735951598a080a5deeda55caae8a33687ff99e7f791f734256c09e' ||
+          // FL-1562 project fonts; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '9b6c35d726f09c5d55879a48fe4dbcff40e10b473a3216ce88f0e999288c5781')),
     'SOURCE_BROWSER',
   )
   check(

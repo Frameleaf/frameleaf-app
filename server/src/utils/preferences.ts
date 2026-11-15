@@ -159,6 +159,8 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     sharedLinks: {
       enabled: true,
       sidebarWeb: true,
+      // FL-922: no personal default; a new link follows the server's default expiry, if any
+      defaultExpiryDays: null,
     },
     // D6 (owner, 2026-10-16): star ratings are on by default.
     ratings: {

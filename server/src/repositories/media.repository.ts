@@ -27,6 +27,7 @@ import type {
 } from 'src/types.js';
 import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
 import type { FontFacts } from 'src/utils/font-file.js';
+import type { PlaybackCopyFacts } from 'src/utils/playback-self-test.js';
 import { Exif } from 'src/database.js';
 import {
   AacProfile,
@@ -797,6 +798,78 @@ export class MediaRepository {
     };
   }
 
+  /**
+   * FL-977: what the playback self-test checks in a copy: its format and sample-entry tag, its colour
+   * tags, and how bright it looks. The brightness is the mean Rec. 709 luma (0-255) of the frame at
+   * 0.5 s after it is scaled to 64x36 RGB, so it does not depend on the copy's range or matrix.
+   */
+  async inspectPlaybackCopy(input: string, signal?: AbortSignal): Promise<PlaybackCopyFacts> {
+    const { streams } = await probe(input, ['-select_streams', 'v:0'], signal);
+    const stream = streams.find((candidate) => candidate.codec_type === 'video');
+    if (!stream) {
+      throw new Error('The playback copy has no picture');
+    }
+    const pixels = await this.readFramePixels(input, signal);
+    let sum = 0;
+    for (let index = 0; index + 2 < pixels.length; index += 3) {
+      sum += 0.2126 * pixels[index] + 0.7152 * pixels[index + 1] + 0.0722 * pixels[index + 2];
+    }
+    const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
+    return {
+      codecName: text(stream.codec_name),
+      codecTag: text(stream.codec_tag_string),
+      colorPrimaries: text(stream.color_primaries),
+      colorTransfer: text(stream.color_transfer),
+      meanLuma: Math.round((sum / (pixels.length / 3)) * 10) / 10,
+    };
+  }
+
+  private readFramePixels(input: string, signal?: AbortSignal): Promise<Buffer> {
+    signal?.throwIfAborted();
+    const child = spawn(
+      'ffmpeg',
+      [
+        '-hide_banner',
+        '-v',
+        'error',
+        '-ss',
+        '0.5',
+        '-i',
+        input,
+        '-frames:v',
+        '1',
+        '-vf',
+        'scale=64:36:flags=area,format=rgb24',
+        '-f',
+        'rawvideo',
+        'pipe:1',
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const lifetime = superviseMediaProcess(child, { signal, deadlineMs: 30_000 });
+    const chunks: Buffer[] = [];
+    let stderr = '';
+    let failure: Error | undefined;
+    child.stdout.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr = (stderr + chunk.toString()).slice(-4096);
+    });
+    child.on('error', (error) => {
+      failure = error;
+    });
+    return new Promise((resolve, reject) => {
+      child.once('close', (code) => {
+        const pixels = Buffer.concat(chunks);
+        if (lifetime.error() || failure || code !== 0 || pixels.length < 3) {
+          return reject(lifetime.error() ?? failure ?? new Error(`ffmpeg could not read a frame: ${stderr}`));
+        }
+        resolve(pixels);
+      });
+    });
+  }
+
   /** Independently decode the canonical media's one timed-text track, with bounded subprocess output. */
   async probeEmbeddedSubtitles(input: string) {
     const data = await probe(input, ['-select_streams', 's']);
@@ -860,7 +933,7 @@ export class MediaRepository {
   probePackets(
     input: string,
     streamIndex: number,
-    options?: { maxPackets?: number; signal?: AbortSignal; onProgress?: () => void },
+    options?: { maxPackets?: number; signal?: AbortSignal; onProgress?: () => void; framePts?: boolean },
   ): Promise<VideoPacketInfo | null> {
     if (options?.maxPackets !== undefined && (!Number.isSafeInteger(options.maxPackets) || options.maxPackets <= 0)) {
       throw new Error('Invalid media packet probe limit');
@@ -1026,13 +1099,19 @@ export class MediaRepository {
           keyframeOwnDuration,
           startPts: startPts ?? 0,
           variableFrameRate,
+          ...(options?.framePts && { framePts: postDiscard.map(({ pts }) => pts).sort((a, b) => a - b) }),
         });
       });
     });
   }
 
-  async transcode(input: string, output: string | Writable, options: TranscodeCommand): Promise<void> {
-    const signal = jobSignal();
+  async transcode(
+    input: string,
+    output: string | Writable,
+    options: TranscodeCommand,
+    // FL-977: the playback self-test runs outside a job and stops its own encodes
+    signal: AbortSignal | undefined = jobSignal(),
+  ): Promise<void> {
     signal?.throwIfAborted();
     const run = (target: string | Writable, pass?: number) =>
       new Promise<void>((resolve, reject) => {
