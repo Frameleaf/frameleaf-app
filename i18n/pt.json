@@ -19120,7 +19120,7 @@
   "frameleaf_studio_editor_import_accepts_other": "Outros editores",
   "frameleaf_studio_editor_import_accepts_other_detail": "OpenTimelineIO (.otio, .otioz), AAF, Final Cut Pro 7 XML ou EDL, com quaisquer ficheiros CDL e LUT ao lado",
   "frameleaf_studio_editor_import_accepts_premiere": "O ficheiro de projeto (.prproj) ou uma sequência exportada como Final Cut Pro XML (.xml)",
-  "frameleaf_studio_editor_import_accepts_resolve": "Uma linha cronológica exportada como Final Cut Pro XML (.fcpxml ou .xml), OpenTimelineIO (.otio) ou EDL",
+  "frameleaf_studio_editor_import_accepts_resolve": "Um projeto (.drp) ou uma linha cronológica (.drt) exportados, ou uma linha cronológica exportada como Final Cut Pro XML (.fcpxml ou .xml), OpenTimelineIO (.otio) ou EDL",
   "frameleaf_studio_editor_import_accepts_title": "O que pode trazer",
   "frameleaf_studio_editor_import_added": "{count, plural, one {# adicionado à sua biblioteca} other {# adicionados à sua biblioteca}}",
   "frameleaf_studio_editor_import_added_album": "No álbum “{album}”.",
