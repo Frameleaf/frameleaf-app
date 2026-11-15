@@ -34,8 +34,17 @@ export class BackupRestoreReportRepository {
       .execute();
   }
 
-  async finish(id: string, values: Updateable<BackupRestoreReportTable>): Promise<void> {
-    await this.db.updateTable('backup_restore_report').set(values).where('id', '=', id).execute();
+  async finish(
+    id: string,
+    values: Updateable<BackupRestoreReportTable>,
+    { onlyUnfinished = false }: { onlyUnfinished?: boolean } = {},
+  ): Promise<void> {
+    await this.db
+      .updateTable('backup_restore_report')
+      .set(values)
+      .where('id', '=', id)
+      .$if(onlyUnfinished, (qb) => qb.where('finishedAt', 'is', null))
+      .execute();
   }
 
   async remove(id: string): Promise<void> {
