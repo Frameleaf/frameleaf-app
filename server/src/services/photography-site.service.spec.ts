@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
+import { PhotographySiteSaveDto } from 'src/dtos/photography-workflow.dto.js';
 import { PhotographySiteService, STUDIO_DOMAIN_HELD } from 'src/services/photography-site.service.js';
 import { defaultPhotographySite } from 'src/utils/photography-site.js';
 
@@ -73,11 +74,17 @@ describe(PhotographySiteService.name, () => {
         expectedRevision: REVISION,
         site: { ...stored, booking: false, bookingAfter: 'about' },
       });
-      // An older client knows nothing of Booking: the schema's defaults must not undo the studio's choice.
+      // An older client knows nothing of Booking: no default may undo the studio's choice, including the request
+      // validation that runs before the service (the global ZodValidationPipe parses with the same schema).
       const { booking: _booking, bookingAfter: _after, ...older } = stored;
-      await sut.saveSite({} as never, { expectedRevision: REVISION, site: { ...older, about: 'Portraits' } as never });
+      const request = PhotographySiteSaveDto.schema.parse({
+        expectedRevision: REVISION,
+        site: { ...older, about: 'Portraits' },
+      });
+      const answer = await sut.saveSite({} as never, request as never);
       const after = (await repository.studioRecord(OWNER)).record as { site: typeof stored };
       expect(after.site).toMatchObject({ about: 'Portraits', booking: false, bookingAfter: 'about' });
+      expect(answer.site).toMatchObject({ booking: false, bookingAfter: 'about' });
       // A client that sends them changes them.
       await sut.saveSite({} as never, {
         expectedRevision: REVISION,

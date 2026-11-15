@@ -145387,12 +145387,10 @@
                 "type": "string"
               },
               "booking": {
-                "default": true,
                 "type": "boolean"
               },
               "bookingAfter": {
-                "$ref": "#/components/schemas/PhotographySiteSectionId",
-                "default": "services"
+                "$ref": "#/components/schemas/PhotographySiteSectionId"
               },
               "collections": {
                 "items": {

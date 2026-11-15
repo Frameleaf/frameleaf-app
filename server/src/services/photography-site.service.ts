@@ -34,13 +34,13 @@ import { FileDownloadResponse } from 'src/utils/file.js';
 import { OpenGraphTags, getExternalDomain } from 'src/utils/misc.js';
 import {
   PhotographySite,
-  PhotographySiteFields,
   SITE_PHOTO_WIDTHS,
   SITE_SLUG,
   STUDIO_APP_PAGES,
   normalisePhotographySite,
   portfolioItems,
   portfolioKey,
+  withBookingSettings,
 } from 'src/utils/photography-site.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -97,7 +97,8 @@ export class PhotographySiteService {
 
   async saveSite(auth: AuthDto, input: PhotographySiteSaveDto) {
     const ownerId = this.workflow.studioOwner(auth);
-    const { expectedRevision, site } = PhotographySiteSaveDto.schema.parse(input);
+    const { expectedRevision, site: sent } = PhotographySiteSaveDto.schema.parse(input);
+    const site = withBookingSettings(sent, (await this.repository.studioRecord(ownerId)).record.site);
     if (STUDIO_APP_PAGES.has(site.slug)) {
       // FL-711: a site saved with such an address before it was reserved stays editable where it is.
       const { record: stored } = await this.repository.studioRecord(ownerId);
@@ -112,10 +113,13 @@ export class PhotographySiteService {
     const { record: current } = await this.repository.studioRecord(ownerId);
     const { media, created } = await this.copyNewPhotos(ownerId, site, current.media ?? {});
     let saved;
+    let written = site;
     try {
       saved = await this.repository.mutateStudio(ownerId, expectedRevision, (record) => {
         const removed = Object.entries(record.media ?? {}).filter(([key]) => !media[key]);
-        record.site = keepBookingSettings(site, input, record.site);
+        // Read again inside the write, so a Booking change saved meanwhile isn't undone by a client that omits it.
+        written = withBookingSettings(sent, record.site);
+        record.site = written;
         record.media = media;
         return removed.map(([, item]) => item);
       });
@@ -126,7 +130,7 @@ export class PhotographySiteService {
     }
     this.reportOwnDomain(ownerId, current.site, site);
     for (const item of saved.result) await this.removeFiles(item);
-    return this.view(saved.revision, site, saved.record);
+    return this.view(saved.revision, written, saved.record);
   }
 
   /** The latest domain report; each one waits for the one before (never rejects). */
@@ -638,23 +642,6 @@ export class PhotographySiteService {
           : undefined,
     };
   }
-}
-
-/**
- * FL-1606: a save from a client that doesn't know the Booking fields keeps what is stored, instead of the
- * schema's defaults turning a hidden Booking section back on or moving it.
- */
-function keepBookingSettings(site: PhotographySite, input: unknown, stored: unknown): PhotographySite {
-  const sent = ((input as { site?: object } | undefined)?.site ?? {}) as Partial<PhotographySite>;
-  const kept = (stored ?? {}) as Partial<PhotographySite>;
-  return {
-    ...site,
-    booking: 'booking' in sent || typeof kept.booking !== 'boolean' ? site.booking : kept.booking,
-    bookingAfter:
-      'bookingAfter' in sent || !PhotographySiteFields.shape.bookingAfter.safeParse(kept.bookingAfter).success
-        ? site.bookingAfter
-        : kept.bookingAfter!,
-  };
 }
 
 async function atomicFile(file: string, bytes: Buffer) {
