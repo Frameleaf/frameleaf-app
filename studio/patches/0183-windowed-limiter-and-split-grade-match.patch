@@ -1,0 +1,439 @@
+diff --git a/src/features/export/utils/canvas-audio.limiter.test.ts b/src/features/export/utils/canvas-audio.limiter.test.ts
+--- a/src/features/export/utils/canvas-audio.limiter.test.ts
++++ b/src/features/export/utils/canvas-audio.limiter.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, it } from 'vite-plus/test'
+-import { getAudioPacketPassthroughPlan, supportsWindowedAudioProcessing } from './canvas-audio'
++import { getAudioPacketPassthroughPlan } from './canvas-audio'
+ import type { CompositionInputProps } from '@/types/export'
+ 
+ const composition = (limiter: boolean) => ({
+@@ -8,8 +8,7 @@ const composition = (limiter: boolean) => ({
+ }) as unknown as CompositionInputProps
+ 
+ describe('export mix with the true-peak limiter (FL-623)', () => {
+-  it('never streams in windows or copies packets while the limiter is on', () => {
+-    expect(supportsWindowedAudioProcessing(composition(true))).toBe(false)
++  it('never copies packets while the limiter is on', () => {
+     expect(getAudioPacketPassthroughPlan(composition(true))).toBeNull()
+   })
+ })
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -788,6 +788,38 @@ describe('windowed audio processing', () => {
+     }
+   })
+ 
++  it('limits a long mix in windows exactly as the whole-mix export does (FL-642)', async () => {
++    const frames = 61 * 30
++    const composition = {
++      ...simpleComposition({ durationInFrames: frames }),
++      durationInFrames: frames,
++      // A -30 dBTP ceiling makes the limiter hold the 0.1 test signal down throughout.
++      masterLoudness: { targetLufs: -16, ceilingDbtp: -30, limiter: true },
++    } as CompositionInputProps
++
++    expect(supportsWindowedAudioProcessing(composition)).toBe(true)
++    const full = await processAudio(composition)
++    const windows = []
++    for await (const window of processAudioWindows(composition)) windows.push(window)
++
++    expect(windows.length).toBeGreaterThan(2)
++    let offset = 0
++    let worst = 0
++    let peak = 0
++    for (const window of windows) {
++      window.samples.forEach((channel, c) => {
++        for (let i = 0; i < channel.length; i += 1) {
++          worst = Math.max(worst, Math.abs(channel[i]! - full!.samples[c]![offset + i]!))
++          if (offset + i >= 48_000) peak = Math.max(peak, Math.abs(channel[i]!))
++        }
++      })
++      offset += window.samples[0]!.length
++    }
++    expect(offset).toBe(full!.samples[0]!.length)
++    expect(worst).toBeLessThan(1e-6)
++    expect(peak).toBeLessThan(0.0317)
++  }, 60_000)
++
+   it('uses bounded windows for ordinary long-form clips', async () => {
+     const composition = simpleComposition()
+ 
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -1,7 +1,7 @@
+ import { applyDucking, collectDuckingSources as collectSharedDuckingSources, resolveCompositionWrapper, mapNestedItemWindow, buildNestedWrapper, type DuckingSource } from '@/shared/utils/audio-ducking'
+ import { applyTrackGain, validateTrackStages, type TrackGainStage } from '@/shared/utils/track-audio'
+ import { applyMasterGain } from '@/shared/utils/master-audio'
+-import { limitTruePeak } from '@/shared/utils/true-peak-limiter'
++import { createTruePeakLimiter, limitTruePeak } from '@/shared/utils/true-peak-limiter'
+ /**
+  * Canvas Audio Processing System
+  *
+@@ -1982,8 +1982,7 @@ function supportsWindowedAudioSegment(segment: AudioSegment): boolean {
+  * identical to preview.
+  */
+ export function supportsWindowedAudioProcessing(composition: CompositionInputProps): boolean {
+-  // The true-peak limiter looks ahead across the whole mix (FL-623).
+-  if (composition.masterLoudness?.limiter === true) return false
++  // The true-peak limiter streams across windows with its lookahead carried over (FL-642).
+   const segments = extractAudioSegments(composition, composition.fps).filter(
+     (segment) => !segment.muted,
+   )
+@@ -2512,6 +2511,11 @@ export async function* processAudioWindows(
+       if (channels > 2) throw new Error('Track pan requires a mono or stereo source')
+       channels = 2
+     }
++    // FL-642: the final stage, as in processAudio; it hands audio back one lookahead margin late.
++    const limiter =
++      composition.masterLoudness?.limiter === true
++        ? createTruePeakLimiter(sampleRate, composition.masterLoudness.ceilingDbtp)
++        : null
+     for (let chunkStart = 0; chunkStart < totalSamples; chunkStart += chunkSamples) {
+       if (signal?.aborted) throw new DOMException('Audio processing cancelled', 'AbortError')
+ 
+@@ -2536,8 +2540,11 @@ export async function* processAudioWindows(
+       softClipAudioMix(mixed)
+       applyMasterGain(mixed, composition, sampleRate, chunkStart)
+ 
+-      yield { samples: mixed, sampleRate, channels }
++      const samples = limiter ? limiter.push(mixed) : mixed
++      if (samples[0]!.length > 0) yield { samples, sampleRate, channels }
+     }
++    const rest = limiter?.flush()
++    if (rest && rest[0]!.length > 0) yield { samples: rest, sampleRate, channels }
+   } finally {
+     await decoderPool.dispose()
+   }
+diff --git a/src/features/export/utils/timeline-to-composition.ts b/src/features/export/utils/timeline-to-composition.ts
+--- a/src/features/export/utils/timeline-to-composition.ts
++++ b/src/features/export/utils/timeline-to-composition.ts
+@@ -273,6 +273,20 @@ export function convertTimelineToComposition(
+   }
+ }
+ 
++/**
++ * The keyframes export renders one item with (FL-642): its own, or for a split
++ * part with none of its own, its parent's moved by the part's split offset.
++ * `items` is the whole timeline, which the split offset is measured against.
++ */
++export function keyframesForItem(
++  item: TimelineItem,
++  items: TimelineItem[],
++  keyframes: ItemKeyframes[],
++  fps: number,
++): ItemKeyframes | undefined {
++  return processKeyframesForExport(keyframes, [item], items, new Map(), new Set([item.id]), fps)[0]
++}
++
+ /**
+  * Process keyframes for export, handling split clips and IO markers.
+  *
+diff --git a/src/features/timeline/deps/export-contract.ts b/src/features/timeline/deps/export-contract.ts
+--- a/src/features/timeline/deps/export-contract.ts
++++ b/src/features/timeline/deps/export-contract.ts
+@@ -3,7 +3,7 @@
+  * Timeline modules should import export rendering utilities from here.
+  */
+ 
+-export { convertTimelineToComposition } from '@/features/export/utils/timeline-to-composition'
++export { convertTimelineToComposition, keyframesForItem } from '@/features/export/utils/timeline-to-composition'
+ export type { ClientExportSettings, RenderProgress } from '@/features/export/utils/client-renderer'
+ 
+ export const importCanvasRenderOrchestrator = () =>
+diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
+--- a/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
++++ b/src/features/timeline/stores/actions/edit/colour-match-actions.test.ts
+@@ -163,6 +163,37 @@ describe('colour match actions', () => {
+     expect(applyColourMatches([{ result: result(item), strength: 1 }]).stale).toEqual(['v1'])
+   })
+ 
++  it('binds a split part to its parent\'s grade keys at the export offset (FL-642)', () => {
++    const exposure = (frames: number[]) => [{
++      itemId: 'p1',
++      properties: [{
++        property: 'effect:grade:exposure',
++        keyframes: frames.map((frame, index) => ({ id: `k${index}`, frame, value: index, easing: 'linear' })),
++      }],
++    }] as never
++    // A clip split at its 30th frame: the left part keeps the id, the right part names it as origin.
++    const left = video({ id: 'p1', durationInFrames: 30, sourceEnd: 30, effects: [grade] })
++    const right = video({ id: 'v2', from: 30, durationInFrames: 30, sourceStart: 30, sourceEnd: 60, originId: 'p1', effects: [grade] })
++    useItemsStore.getState().setItems([left, right, referenceClip()])
++    useKeyframesStore.getState().setKeyframes(exposure([0, 60]))
++    try {
++      // Export reads the parent's keys 30 frames in: the key at 60 lands on the part's frame 30.
++      const [target] = JSON.parse(colourMatchBinding(right, 1, referenceClip(), 0.5)) as [unknown[]]
++      expect(target[11]).toEqual([
++        expect.objectContaining({
++          property: 'effect:grade:exposure',
++          keyframes: [expect.objectContaining({ frame: 0, value: 0.5 }), expect.objectContaining({ frame: 30, value: 1 })],
++        }),
++      ])
++      // Editing the parent's keys makes a match analysed on the part stale.
++      const bound = { ...result(right), binding: colourMatchBinding(right, 1, referenceClip(), 0.5) }
++      useKeyframesStore.getState().setKeyframes(exposure([0, 90]))
++      expect(applyColourMatches([{ result: bound, strength: 1 }]).stale).toEqual(['v2'])
++    } finally {
++      useKeyframesStore.getState().setKeyframes([])
++    }
++  })
++
+   it('treats results as stale when the project colour management changes (e.g. becomes HDR)', () => {
+     const item = video()
+     useItemsStore.getState().setItems([item, referenceClip()])
+diff --git a/src/features/timeline/stores/actions/edit/colour-match-actions.ts b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
+--- a/src/features/timeline/stores/actions/edit/colour-match-actions.ts
++++ b/src/features/timeline/stores/actions/edit/colour-match-actions.ts
+@@ -7,7 +7,7 @@ import { useKeyframesStore } from '../../keyframes-store'
+ import { execute } from '../shared'
+ import { hasLockedEditParticipants } from '../linked-edit'
+ import { useMediaLibraryStore } from '@/features/timeline/deps/media-library-store'
+-import { convertTimelineToComposition, importCanvasRenderOrchestrator } from '@/features/timeline/deps/export-contract'
++import { convertTimelineToComposition, importCanvasRenderOrchestrator, keyframesForItem } from '@/features/timeline/deps/export-contract'
+ import { resolveMediaUrls } from '@/features/timeline/deps/media-library-resolver'
+ import { useProjectStore } from '@/features/timeline/deps/projects'
+ import { workingRangeOfSources } from '@/shared/graphics/color/managed-color'
+@@ -75,9 +75,14 @@ function sourceSecondsAt(item: VideoItem, frame: number, fps: number): number {
+  * (its match effects excluded), the reference's source, timing, direction and
+  * full grade, and the project's colour management.
+  */
+-/** The effect keyframes the sampler renders with (a target's own match keyframes left out). */
+-function effectKeyframes(itemId: string, keepMatch: boolean) {
+-  return (useKeyframesStore.getState().keyframesByItemId[itemId]?.properties ?? [])
++/**
++ * The effect keyframes the sampler renders with (a target's own match keyframes left out): the
++ * ones export uses, so a split part with no keys of its own takes its parent's at its offset (FL-642).
++ */
++function effectKeyframes(item: TimelineItem, keepMatch: boolean, fps: number) {
++  const byId = useKeyframesStore.getState().keyframesByItemId
++  const stored = [byId[item.id], item.originId ? byId[item.originId] : undefined].filter((entry) => entry !== undefined)
++  return (keyframesForItem(item, useItemsStore.getState().items, stored, fps)?.properties ?? [])
+     .filter((property) => property.property.startsWith('effect:') && (keepMatch || !property.property.includes('colour-match:')))
+ }
+ 
+@@ -93,7 +98,7 @@ export function colourMatchBinding(
+   const describe = (clip: TimelineItem, effects: readonly ItemEffect[], keepMatch: boolean) => {
+     const video = clip as VideoItem
+     return [clip.id, clip.mediaId, clip.from, clip.durationInFrames, video.sourceStart ?? 0, video.sourceEnd ?? null,
+-      video.sourceFps ?? fps, fps, video.speed ?? 1, video.isReversed === true, effects, effectKeyframes(clip.id, keepMatch)]
++      video.sourceFps ?? fps, fps, video.speed ?? 1, video.isReversed === true, effects, effectKeyframes(clip, keepMatch, fps)]
+   }
+   return JSON.stringify([
+     describe(item, (item.effects ?? []).filter((effect) => !isColourMatchEffect(effect)), false), seconds,
+@@ -115,7 +120,7 @@ async function sampleGradedFrame(item: VideoItem, frame: number, keepMatch: bool
+   const sourceWidth = item.sourceWidth ?? project?.metadata.width ?? 1920
+   const sourceHeight = item.sourceHeight ?? project?.metadata.height ?? 1080
+   const height = Math.max(2, Math.round((SAMPLE_WIDTH * sourceHeight) / sourceWidth))
+-  const effectKeys = effectKeyframes(item.id, keepMatch)
++  const effectKeys = effectKeyframes(item, keepMatch, fps)
+   const clip = {
+     ...item,
+     trackId: 'colour-match-sample',
+diff --git a/src/shared/utils/true-peak-limiter.test.ts b/src/shared/utils/true-peak-limiter.test.ts
+--- a/src/shared/utils/true-peak-limiter.test.ts
++++ b/src/shared/utils/true-peak-limiter.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, expect, it } from 'vite-plus/test'
+ import { measureLoudness } from './loudness'
+-import { limitTruePeak } from './true-peak-limiter'
++import { createTruePeakLimiter, limitTruePeak } from './true-peak-limiter'
+ 
+ const RATE = 48000
+ 
+@@ -58,6 +58,27 @@ describe('limitTruePeak', () => {
+     expect(worst).toBeLessThan(1e-6)
+   })
+ 
++  it('streams window by window to exactly the whole-mix result, one margin behind (FL-642)', () => {
++    const whole = burstySignal(3)
++    const source = whole.map((channel) => Float32Array.from(channel))
++    limitTruePeak(whole, RATE, -1)
++    const limiter = createTruePeakLimiter(RATE, -1)
++    const streamed: Float32Array[][] = []
++    // Uneven windows, some shorter than the limiter's chunk and margin.
++    const sizes = [10, 70_000, 3, 48_000, 131_072, 1, 500]
++    for (let start = 0, k = 0; start < source[0]!.length; k += 1) {
++      const end = Math.min(source[0]!.length, start + sizes[k % sizes.length]!)
++      streamed.push(limiter.push(source.map((channel) => channel.slice(start, end))))
++      start = end
++    }
++    streamed.push(limiter.flush())
++    for (let c = 0; c < whole.length; c += 1) {
++      const joined = Float32Array.from(streamed.flatMap((part) => [...part[c]!]))
++      expect(joined).toEqual(whole[c])
++    }
++    expect(limiter.flush()[0]).toHaveLength(0)
++  })
++
+   it('fails instead of skipping when the ceiling is not a number', () => {
+     expect(() => limitTruePeak(burstySignal(1), RATE, Number.NaN)).toThrow(/true-peak ceiling/)
+   })
+diff --git a/src/shared/utils/true-peak-limiter.ts b/src/shared/utils/true-peak-limiter.ts
+--- a/src/shared/utils/true-peak-limiter.ts
++++ b/src/shared/utils/true-peak-limiter.ts
+@@ -9,22 +9,24 @@ import { samplePeaks } from './loudness'
+  * recover gradually. Channels share one gain, so the image does not shift.
+  * It runs in chunks with a margin of original samples on each side, so memory
+  * stays bounded for long exports and the result matches one whole-mix pass.
++ * The streaming form (FL-642) takes the mix window by window and hands back
++ * limited audio one margin behind, so a windowed export never holds the mix.
+  * Algorithm id: tp-lookahead-1.5ms-v1.
+  */
+ 
+ const LOOKAHEAD_SECONDS = 0.0015
+ const RELEASE_SECONDS = 0.05
+ 
+-export function limitTruePeak(
+-  channels: Float32Array[],
+-  sampleRate: number,
+-  ceilingDbtp: number,
+-  chunkSize = 1 << 16,
+-): void {
++export interface TruePeakLimiter {
++  /** Take the next samples of the mix; returns the limited audio that is ready (possibly none). */
++  push(channels: Float32Array[]): Float32Array[]
++  /** The mix has ended: returns the rest of the limited audio. */
++  flush(): Float32Array[]
++}
++
++export function createTruePeakLimiter(sampleRate: number, ceilingDbtp: number, chunkSize = 1 << 16): TruePeakLimiter {
+   // An invalid ceiling would silently skip limiting; fail the export instead.
+   if (!Number.isFinite(ceilingDbtp)) throw new Error(`Invalid true-peak ceiling: ${ceilingDbtp}`)
+-  const length = channels[0]?.length ?? 0
+-  if (length === 0) return
+   const ceiling = 10 ** (ceilingDbtp / 20)
+   const lookahead = Math.max(8, Math.round(LOOKAHEAD_SECONDS * sampleRate))
+   const half = Math.floor(lookahead / 2)
+@@ -32,21 +34,27 @@ export function limitTruePeak(
+   const margin = lookahead + half + 16
+   const chunk = Math.max(chunkSize, margin)
+   const release = 1 - Math.exp(-1 / (RELEASE_SECONDS * sampleRate))
+-  // Original samples just before the current chunk; the chunk before has already been limited.
+-  let saved: Float32Array[] = channels.map(() => new Float32Array(0))
++  // Original samples just before `pending`; the audio before them has already been limited.
++  let saved: Float32Array[] = []
++  // Original samples not limited yet: `pending` from `offset` on.
++  let pending: Float32Array[] = []
++  let offset = 0
+   let gain = 1
+ 
+-  for (let start = 0; start < length; start += chunk) {
+-    const end = Math.min(length, start + chunk)
+-    const extFrom = Math.max(0, start - margin)
+-    const extTo = Math.min(length, end + margin)
+-    const ext = channels.map((channel, c) => {
+-      const copy = new Float32Array(extTo - extFrom)
+-      copy.set(saved[c]!.subarray(saved[c]!.length - (start - extFrom)))
+-      copy.set(channel.subarray(start, extTo), start - extFrom)
++  /** Limit the first `count` pending samples, reading up to `margin` pending samples past them. */
++  const limitNext = (count: number): Float32Array[] => {
++    const available = pending[0]!.length - offset
++    const extTo = Math.min(available, count + margin)
++    const extFrom = saved[0]?.length ?? 0
++    const ext = pending.map((channel, c) => {
++      const copy = new Float32Array(extFrom + extTo)
++      if (saved[c]) copy.set(saved[c]!)
++      copy.set(channel.subarray(offset, offset + extTo), extFrom)
+       return copy
+     })
+-    saved = channels.map((channel) => channel.slice(Math.max(start, end - margin), end))
++    const output = pending.map((channel) => channel.slice(offset, offset + count))
++    saved = pending.map((channel) => channel.slice(offset + Math.max(0, count - margin), offset + count))
++    offset += count
+ 
+     const peaks = samplePeaks(ext)
+     const required = new Float32Array(peaks.length)
+@@ -55,7 +63,7 @@ export function limitTruePeak(
+       required[i] = peaks[i]! > ceiling ? ceiling / peaks[i]! : 1
+       if (required[i]! < 1) limiting = true
+     }
+-    if (!limiting && gain >= 1) continue
++    if (!limiting && gain >= 1) return output
+ 
+     // Running minimum over [i - L, i + L] with a monotonic deque (indices within ext).
+     const windowMin = new Float32Array(required.length)
+@@ -74,13 +82,77 @@ export function limitTruePeak(
+     // Box average over [i - L/2, i + L/2]; never above the peak's own requirement.
+     const prefix = new Float64Array(windowMin.length + 1)
+     for (let i = 0; i < windowMin.length; i += 1) prefix[i + 1] = prefix[i]! + windowMin[i]!
+-    for (let i = start; i < end; i += 1) {
+-      const from = Math.max(0, i - half) - extFrom
+-      const to = Math.min(length, i + half + 1) - extFrom
++    for (let i = 0; i < count; i += 1) {
++      const from = Math.max(0, extFrom + i - half)
++      const to = Math.min(ext[0]!.length, extFrom + i + half + 1)
+       const smoothed = (prefix[to]! - prefix[from]!) / (to - from)
+       // Attack follows the lookahead envelope; release rises at most at the release rate.
+       gain = Math.min(smoothed, gain + (1 - gain) * release)
+-      for (const channel of channels) channel[i] = channel[i]! * gain
++      for (const channel of output) channel[i] = channel[i]! * gain
++    }
++    return output
++  }
++
++  const drain = (final: boolean): Float32Array[] => {
++    const parts: Float32Array[][] = []
++    const left = () => (pending[0]?.length ?? 0) - offset
++    // A chunk is limited once its margin of later samples is known, or the mix has ended.
++    while (left() > 0 && (final || left() >= chunk + margin)) {
++      parts.push(limitNext(Math.min(chunk, left())))
++    }
++    pending = pending.map((channel) => channel.slice(offset))
++    offset = 0
++    return concatChannels(parts, pending.length)
++  }
++
++  return {
++    push(channels) {
++      if (pending.length === 0) pending = channels.map(() => new Float32Array(0))
++      if (channels.length !== pending.length) throw new Error('The mix changed its channel count')
++      pending = pending.map((channel, c) => {
++        const joined = new Float32Array(channel.length + channels[c]!.length)
++        joined.set(channel)
++        joined.set(channels[c]!, channel.length)
++        return joined
++      })
++      return drain(false)
++    },
++    flush: () => drain(true),
++  }
++}
++
++function concatChannels(parts: Float32Array[][], channelCount: number): Float32Array[] {
++  if (parts.length === 1) return parts[0]!
++  return Array.from({ length: channelCount }, (_, c) => {
++    const joined = new Float32Array(parts.reduce((total, part) => total + part[c]!.length, 0))
++    let offset = 0
++    for (const part of parts) {
++      joined.set(part[c]!, offset)
++      offset += part[c]!.length
+     }
++    return joined
++  })
++}
++
++/** Limit a whole mix in place, through the streaming limiter a slice at a time. */
++export function limitTruePeak(
++  channels: Float32Array[],
++  sampleRate: number,
++  ceilingDbtp: number,
++  chunkSize = 1 << 16,
++): void {
++  const limiter = createTruePeakLimiter(sampleRate, ceilingDbtp, chunkSize)
++  const length = channels[0]?.length ?? 0
++  if (length === 0) return
++  const slice = Number.isFinite(chunkSize) ? Math.max(1, chunkSize) : length
++  let written = 0
++  const write = (limited: Float32Array[]) => {
++    channels.forEach((channel, c) => channel.set(limited[c]!, written))
++    written += limited[0]?.length ?? 0
++  }
++  for (let start = 0; start < length; start += slice) {
++    // The limiter copies what it is given, so writing behind the read position is safe.
++    write(limiter.push(channels.map((channel) => channel.subarray(start, Math.min(length, start + slice)))))
+   }
++  write(limiter.flush())
+ }

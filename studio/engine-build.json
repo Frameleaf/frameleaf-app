@@ -844,7 +844,12 @@
       "path": "patches/0182-cloud-caption-batches.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "1ffd4505f6ae08999fe7a4e2917122cf26c5259032efedbb23a5408f8e6a711d"
+    },
+    {
+      "path": "patches/0183-windowed-limiter-and-split-grade-match.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3b65ed55534fb309729d80829ecdf80a4a2c8bc78225bacf9896efe7b9708433"
     }
   ],
-  "sourceSha256": "f76d7aef72b9d3dc7489f990afead2e4901fbb67b19f036f03fcb7abbeaeb122"
+  "sourceSha256": "4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6"
 }
