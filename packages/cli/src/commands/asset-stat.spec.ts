@@ -4,6 +4,10 @@ import * as fs from 'node:fs/promises';
 import { checkForDuplicates, deleteFiles, findSidecar, uploadFiles } from 'src/commands/asset';
 import { hashFile } from 'src/utils';
 
+/** Requests other than the OPTIONS support check (FL-849). */
+const uploads = (fetch: ReturnType<typeof vi.fn>) =>
+  fetch.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method !== 'OPTIONS');
+
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   checkBulkUpload: vi.fn(),
@@ -111,7 +115,8 @@ describe('upload metadata admission', () => {
     vi.stubGlobal('fetch', fetch);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await expect(uploadFiles(['photo.jpg'], { concurrency: 1 })).resolves.toEqual([]);
-    expect(fetch).not.toHaveBeenCalled();
+    // FL-849: only the resumable-upload support check went out, never an upload.
+    expect(uploads(fetch)).toEqual([]);
   });
 
   it('still tolerates a selected sidecar disappearing before its upload stat', async () => {
@@ -130,7 +135,7 @@ describe('upload metadata admission', () => {
     await expect(uploadFiles(['photo.jpg'], { concurrency: 1 })).resolves.toEqual([
       { id: 'asset', filepath: 'photo.jpg' },
     ]);
-    const form = fetch.mock.calls[0][1].body as FormData;
+    const form = uploads(fetch)[0][1].body as FormData;
     expect(form.has('sidecarData')).toBe(false);
     expect(form.get('fileCreatedAt')).toBe(form.get('fileModifiedAt'));
   });

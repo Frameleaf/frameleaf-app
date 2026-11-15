@@ -18,11 +18,15 @@
    * processor (it clears once a copy is made on the card again), with **Test it** (a short test video
    * on the card and on the processor, `testVideoCard`) and Graphics card check. Each playback quality
    * says about how many MB a minute it takes, from the copies this server measured.
+   *
+   * FL-977: "HDR videos" under Speed says what the server's playback self-test found while the card
+   * is on: the card plays HDR correctly, or HDR videos are converted on the processor.
    */
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Checks from '$lib/components/frameleaf/settings/editing/Checks.svelte';
+  import HdrPlaybackCheck from '$lib/components/frameleaf/settings/editing/HdrPlaybackCheck.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Amount from '$lib/components/frameleaf/settings/kit/Amount.svelte';
   import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
@@ -534,6 +538,9 @@
         />
       </span>
     </Row>
+    {#if config.ffmpeg.accel !== TranscodeHWAccel.Disabled}
+      <HdrPlaybackCheck card={$t(KIND_NAME[config.ffmpeg.accel])} slowdown={copies?.videoCard.slowdown ?? null} />
+    {/if}
     <Row label={$t('frameleaf_play_vid_card_where')} help={$t('frameleaf_play_vid_card_where_help')}>
       <Button onclick={() => goto(commandCenterUrl('processing', 'hardware'))}>
         {$t('frameleaf_play_vid_card_check')}

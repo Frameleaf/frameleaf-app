@@ -317,6 +317,8 @@ const FAILED_TASK_TEMPLATE = {
   'Cloud backup check': 'cloud-backup-check-failed',
   'Cloud backup clean-up': 'cloud-backup-cleanup-failed',
   'Restore from cloud backup': 'cloud-restore-failed',
+  // FL-1378: a drill whose report, even a failed unsigned one, could not be kept
+  'Restore drill': 'restore-drill-not-recorded',
 } as const;
 /** FL-164: a restore uses the bucket too, so it never runs beside a backup operation, nor they beside it. */
 const RESTORE_KIND = MediaOperationKind.CloudRestore;
@@ -3688,11 +3690,25 @@ export class CloudBackupService {
         );
       }
     }
+    await this.recordDrill(operation, claimToken, outcome, { target, scheduled, startedAt });
+  }
+
+  /**
+   * Keeps the drill's report. An unreadable identity key or a failed write must not leave the drill running and other
+   * backup work blocked, nor hide it: a report not yet stored is kept as a failed, unsigned drill, so Backups shows
+   * it. When even that can't be kept (FL-1378), the operation fails and administrators are told, so an earlier passed
+   * drill never stands as the latest result unnoticed.
+   */
+  private async recordDrill(
+    operation: MediaOperation,
+    claimToken: string,
+    outcome: DrillOutcome,
+    context: { target: string; scheduled: boolean; startedAt: Date },
+  ): Promise<void> {
     try {
-      await this.finishDrill(operation, claimToken, outcome, { target, scheduled, startedAt });
+      await this.finishDrill(operation, claimToken, outcome, context);
+      return;
     } catch (error) {
-      // An unreadable identity key or a failed write must not leave the drill running and other backup work
-      // blocked, nor hide it: a report not yet stored is kept as a failed, unsigned drill, so Backups shows it.
       this.logger.warn(`Restore drill ${operation.id} could not be recorded: ${errorMessage(error)}`);
       // A report that can't be read is left alone: an unknown state never overwrites a signed report.
       const stored = await this.drills
@@ -3702,21 +3718,33 @@ export class CloudBackupService {
           this.logger.warn(`Restore drill ${operation.id} report could not be read: ${errorMessage(readError)}`);
           return null;
         });
-      if (stored && !stored.row?.finishedAt) {
-        await this.drills
-          .finish(operation.id, {
-            finishedAt: new Date().toISOString(),
-            result: 'failed',
-            failedStep: outcome.failedStep,
-            signature: null,
-            keyFingerprint: null,
-            signerKey: null,
-          })
-          .catch((writeError: unknown) =>
-            this.logger.error(`Restore drill ${operation.id} failure could not be stored: ${errorMessage(writeError)}`),
-          );
+      let recorded = !!stored?.row?.finishedAt;
+      if (stored && !recorded) {
+        // only while it is still unfinished: a signed report stored meanwhile is never overwritten
+        recorded = await this.drills
+          .finish(
+            operation.id,
+            {
+              finishedAt: new Date().toISOString(),
+              result: 'failed',
+              failedStep: outcome.failedStep,
+              signature: null,
+              keyFingerprint: null,
+              signerKey: null,
+            },
+            { onlyUnfinished: true },
+          )
+          .then(() => true)
+          .catch((writeError: unknown) => {
+            this.logger.error(`Restore drill ${operation.id} failure could not be stored: ${errorMessage(writeError)}`);
+            return false;
+          });
       }
-      await this.completeTask(operation, claimToken);
+      if (recorded) {
+        await this.completeTask(operation, claimToken);
+      } else {
+        await this.failTask(operation, claimToken, error, 'Restore drill');
+      }
     }
   }
 

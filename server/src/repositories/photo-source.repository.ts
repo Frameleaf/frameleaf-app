@@ -10,13 +10,29 @@ import type {
 import type { DB } from 'src/schema/index.js';
 import type { PhotoSourceResourceTable } from 'src/schema/tables/photo-source.table.js';
 import type { FolderUploadSourceIdentity } from 'src/utils/asset-upload-resource.js';
-import { AssetStatus, AssetVisibility } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetStatus, AssetVisibility } from 'src/enum.js';
 import { lockChecksum, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { isMotionOfLockedStill, isNotLockedAsset } from 'src/utils/database.js';
 
 export type SourceAuthority = { ownerId: string; sessionId: string };
 type Item = Selectable<PhotoSourceResourceTable>;
 export type SourceCopyTarget = { item: Item; assetId: string; path: string; uploadResourceId: string };
+/**
+ * FL-1030: where what a catalog read-in last wrote to an item is remembered, in `asset_metadata`. A free-text key,
+ * deliberately not an `AssetMetadataKey` member.
+ */
+export const CATALOG_METADATA_KEY = 'frameleaf.catalog';
+export type CatalogTarget = {
+  id: string;
+  state: 'planned' | 'verified';
+  /** The photo the verified copy is associated with, even when it is gone since. */
+  copiedAssetId: string | null;
+  /** That photo, when it is still the owner's and not in the trash. */
+  assetId: string | null;
+  rating: number | null;
+  description: string | null;
+  applied: Record<string, unknown> | null;
+};
 @Injectable()
 export class PhotoSourceRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -109,9 +125,10 @@ export class PhotoSourceRepository {
         .forShare()
         .executeTakeFirst();
       if (!device || device.state === 'paused') throw new NotFoundException('Photo source device unavailable');
+      const { catalog, ...identity } = dto;
       const row = await tx
         .insertInto('photo_source')
-        .values({ ...dto, ownerId: auth.ownerId, photoSessionId: auth.sessionId })
+        .values({ ...identity, catalog: catalog ?? null, ownerId: auth.ownerId, photoSessionId: auth.sessionId })
         .onConflict((oc) => oc.column('id').doNothing())
         .returningAll()
         .executeTakeFirst();
@@ -130,17 +147,87 @@ export class PhotoSourceRepository {
         existing.kind !== dto.kind ||
         existing.mode !== dto.mode ||
         existing.name !== dto.name ||
-        existing.scopeFingerprint !== dto.scopeFingerprint
+        existing.scopeFingerprint !== dto.scopeFingerprint ||
+        // FL-1030: a source reads one catalog for life. A retry that leaves it out keeps it, and a source made
+        // before it named one may name it now.
+        (existing.catalog &&
+          catalog &&
+          (existing.catalog.app !== catalog.app || existing.catalog.catalogId !== catalog.catalogId))
       )
         throw new ConflictException('photo_source_identity_changed');
-      if (existing.photoSessionId === auth.sessionId) return existing;
+      const renamed = !!catalog && existing.catalog?.name !== catalog.name;
+      if (existing.photoSessionId === auth.sessionId && !renamed) return existing;
       return tx
         .updateTable('photo_source')
-        .set({ photoSessionId: auth.sessionId })
+        .set({ photoSessionId: auth.sessionId, ...(renamed && { catalog }) })
         .where('id', '=', existing.id)
         .returningAll()
         .executeTakeFirstOrThrow();
     });
+  }
+  /**
+   * FL-1030: the named items of one of the owner's sources, with what a catalog read-in needs to decide each field.
+   * The same session, device and revocation checks as every other source call.
+   */
+  catalogTargets(auth: SourceAuthority, sourceId: string, itemIds: string[]): Promise<CatalogTarget[]> {
+    return this.db.transaction().execute(async (tx) => {
+      await this.source(tx, auth, sourceId);
+      if (itemIds.length === 0) return [];
+      return tx
+        .selectFrom('photo_source_resource as item')
+        .innerJoin('photo_source_run as run', 'run.id', 'item.runId')
+        .leftJoin('asset', (join) =>
+          join
+            .onRef('asset.id', '=', 'item.assetId')
+            .on('asset.ownerId', '=', auth.ownerId)
+            .on('asset.deletedAt', 'is', null)
+            .on('asset.status', '=', AssetStatus.Active),
+        )
+        .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .leftJoin('asset_metadata', (join) =>
+          join.onRef('asset_metadata.assetId', '=', 'asset.id').on('asset_metadata.key', '=', CATALOG_METADATA_KEY),
+        )
+        .select([
+          'item.id',
+          'item.state',
+          'item.assetId as copiedAssetId',
+          'asset.id as assetId',
+          'asset_exif.rating',
+          'asset_exif.description',
+          'asset_metadata.value as applied',
+        ])
+        .where('run.sourceId', '=', sourceId)
+        .where('item.id', 'in', itemIds)
+        .execute();
+    });
+  }
+  /**
+   * FL-1030: the owner's own album (or, for a collection set, collection) with this name directly under `parentId`,
+   * to reuse for a catalog collection. Never a shared space, a Locked album (adding to one would lock the photo) or
+   * one in the trash.
+   */
+  findCatalogAlbum(ownerId: string, albumName: string, parentId: string | null, leaf: boolean) {
+    return (
+      this.db
+        .selectFrom('album')
+        .innerJoin('album_user', (join) =>
+          join
+            .onRef('album_user.albumId', '=', 'album.id')
+            .on('album_user.userId', '=', ownerId)
+            .on('album_user.role', '=', AlbumUserRole.Owner),
+        )
+        .select(['album.id'])
+        .where('album.albumName', '=', albumName)
+        .where('album.deletedAt', 'is', null)
+        .where('album.isLocked', '=', false)
+        .where('album.kind', 'in', leaf ? [AlbumKind.Album] : [AlbumKind.Collection, AlbumKind.Album])
+        .where((eb) => (parentId ? eb('album.parentId', '=', parentId) : eb('album.parentId', 'is', null)))
+        // a collection set prefers a collection over a same-name album
+        .orderBy('album.kind', 'desc')
+        .orderBy('album.createdAt')
+        .limit(1)
+        .executeTakeFirst()
+    );
   }
   revoke(auth: SourceAuthority, id: string) {
     return this.db.transaction().execute(async (tx) => {

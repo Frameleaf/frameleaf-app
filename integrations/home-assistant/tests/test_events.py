@@ -8,8 +8,15 @@ import json
 import time
 
 from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMockResponse
 
-from custom_components.frameleaf.const import CONF_WEBHOOK_ID, CONF_WEBHOOK_SECRET, CONF_WORKFLOW_IDS, EVENT_FRAMELEAF
+from custom_components.frameleaf.const import (
+    CONF_WEBHOOK_ID,
+    CONF_WEBHOOK_SECRET,
+    CONF_WORKFLOW_IDS,
+    CONF_WORKFLOW_TRIGGERS,
+    EVENT_FRAMELEAF,
+)
 from custom_components.frameleaf.events import signature_ok
 
 from .conftest import API, api_key_entry, mock_server
@@ -136,3 +143,46 @@ async def test_message_without_an_object_is_refused(hass: HomeAssistant, aioclie
     await hass.async_block_till_done()
     # only the well-formed message fires, keyed on the signed delivery header
     assert [event.data["delivery_id"] for event in events] == ["d-2"]
+
+
+async def test_unfinished_events_setup_carries_on_at_the_next_refresh(hass: HomeAssistant, aioclient_mock) -> None:
+    """FL-1371: a setup that stopped partway makes only the missing workflow later, and never one twice."""
+    hass.config.external_url = "https://home.example.com"
+    mock_server(aioclient_mock)
+    events = [
+        {"trigger": "CloudBackupFailed", "event": "cloud.backup.failed"},
+        {"trigger": "StudioExportFinished", "event": "studio.export.finished"},
+    ]
+    aioclient_mock.get(f"{API}/workflows/automation/discovery", json={**DISCOVERY, "eventTriggers": events})
+    # the first workflow is made, then the server is busy; the next try works
+    answers = [(200, {"id": "workflow-1"}), (503, {}), (200, {"id": "workflow-2"})]
+
+    async def answer(method, url, data):
+        status, body = answers.pop(0)
+        return AiohttpClientMockResponse(method, url, status=status, json=body)
+
+    aioclient_mock.post(f"{API}/workflows", side_effect=answer)
+    entry = api_key_entry(events=True)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.data[CONF_WORKFLOW_IDS] == ["workflow-1"]
+
+    def posted() -> list[str]:
+        return [
+            call[2]["trigger"]
+            for call in aioclient_mock.mock_calls
+            if call[0] == "POST" and str(call[1]).endswith("/workflows")
+        ]
+
+    coordinator = entry.runtime_data.coordinator
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert entry.data[CONF_WORKFLOW_IDS] == ["workflow-1", "workflow-2"]
+    assert entry.data[CONF_WORKFLOW_TRIGGERS] == ["CloudBackupFailed", "StudioExportFinished"]
+    assert posted() == ["CloudBackupFailed", "StudioExportFinished", "StudioExportFinished"]
+
+    # finished: later refreshes make nothing more
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert len(posted()) == 3

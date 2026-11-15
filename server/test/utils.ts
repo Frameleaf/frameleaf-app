@@ -520,6 +520,8 @@ export const getMocks = () => {
   // no album is filled by smart album rules, and no classification rule exists, unless a test says so (FL-60)
   mocks.albumSummary.getByIds.mockResolvedValue([]);
   mocks.albumSummary.getChangedAt.mockResolvedValue([]);
+  // FL-838: albums are not folder albums unless a test says so
+  mocks.album.getFolderAlbumSources.mockResolvedValue(new Map());
   mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map());
   mocks.smartAlbum.getHiddenAlbumIds.mockResolvedValue(new Set());
   // FL-1484: nobody keeps their photos at home unless a test says so

@@ -1,0 +1,344 @@
+diff --git a/src/infrastructure/gpu-effects/effects/grade.test.ts b/src/infrastructure/gpu-effects/effects/grade.test.ts
+new file mode 100644
+index 0000000..4f97427
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/effects/grade.test.ts
+@@ -0,0 +1,56 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import { getGpuEffect } from '../registry'
++import { buildHueCurvesTable, cdl, evaluateHueCurve, liftGammaGain, parseHuePoints } from './grade'
++
++describe('FL-1559 grading effects', () => {
++  it('registers ASC CDL, lift gamma gain and hue curves as colour effects', () => {
++    for (const id of ['gpu-cdl', 'gpu-lift-gamma-gain', 'gpu-hue-curves']) {
++      expect(getGpuEffect(id)?.category).toBe('color')
++    }
++  })
++
++  it('packs CDL slope, offset and power per channel with saturation', () => {
++    const packed = cdl.packUniforms(
++      { slopeR: 1.2, slopeG: 0.9, slopeB: 1, offsetB: -0.05, powerG: 1.4, saturation: 0.8 },
++      1,
++      1,
++    )
++    expect(Array.from(packed!).map((v) => Number(v.toFixed(4)))).toEqual([
++      1.2, 0.9, 1, 0.8, 0, 0, -0.05, 0, 1, 1.4, 1, 0,
++    ])
++  })
++
++  it('defaults lift gamma gain to the identity', () => {
++    expect(Array.from(liftGammaGain.packUniforms({}, 1, 1)!)).toEqual([
++      0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0,
++    ])
++  })
++
++  it('parses hue points, wrapping hue and clamping values', () => {
++    expect(parseHuePoints('[[1.25, 3], [0.5, -1], ["x", 1], [0.1]]', 0, 2)).toEqual([
++      [0.25, 2],
++      [0.5, 0],
++    ])
++    expect(parseHuePoints('not json', 0, 2)).toEqual([])
++  })
++
++  it('interpolates a periodic curve through its points, wrapping past hue 1', () => {
++    const points = parseHuePoints('[[0, 1], [0.25, 2], [0.5, 1], [0.75, 0]]', 0, 2)
++    for (const [h, v] of points) expect(evaluateHueCurve(points, h, 1)).toBeCloseTo(v, 10)
++    expect(evaluateHueCurve(points, 0.999, 1)).toBeCloseTo(evaluateHueCurve(points, 0, 1), 1)
++    expect(evaluateHueCurve(points, 0.125, 1)).toBeGreaterThan(1.5)
++    expect(evaluateHueCurve([], 0.3, 1)).toBe(1)
++    expect(evaluateHueCurve([[0.4, 0.7]], 0.9, 1)).toBe(0.7)
++  })
++
++  it('builds a neutral table without points and encodes each curve in its channel', () => {
++    const neutral = buildHueCurvesTable({})
++    expect([neutral[0], neutral[1], neutral[2], neutral[3]]).toEqual([127, 127, 127, 255])
++    const table = buildHueCurvesTable({ hueSatPoints: '[[0, 0], [0.5, 2]]', hueHuePoints: '[[0, 0.5]]' })
++    expect(table[1]).toBe(0)
++    expect(table[127 * 4 + 1]).toBeGreaterThan(250)
++    expect(table[0]).toBe(254)
++  })
++})
+diff --git a/src/infrastructure/gpu-effects/effects/grade.ts b/src/infrastructure/gpu-effects/effects/grade.ts
+new file mode 100644
+index 0000000..ce1f398
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/effects/grade.ts
+@@ -0,0 +1,256 @@
++import type { EffectParam, GpuEffectDefinition } from '../types'
++
++// FL-1559: grading operators that projects from other editors carry: ASC CDL, lift/gamma/gain per
++// channel, and hue curves. studio/spec/effects/<id>.md is the contract.
++
++const num = (label: string, def: number, min: number, max: number, step = 0.01): EffectParam => ({
++  type: 'number',
++  label,
++  default: def,
++  min,
++  max,
++  step,
++  animatable: true,
++})
++
++const value = (p: Record<string, number | boolean | string>, key: string, fallback: number) => {
++  const v = p[key]
++  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
++}
++
++const BINDINGS = /* wgsl */ `
++@group(0) @binding(0) var texSampler: sampler;
++@group(0) @binding(1) var inputTex: texture_2d<f32>;
++`
++
++export const cdl: GpuEffectDefinition = {
++  id: 'gpu-cdl',
++  name: 'ASC CDL',
++  category: 'color',
++  entryPoint: 'cdlFragment',
++  uniformSize: 48,
++  shader: /* wgsl */ `
++struct CdlParams {
++  slope: vec3f, saturation: f32,
++  offset: vec3f, _p1: f32,
++  power: vec3f, _p2: f32,
++};
++${BINDINGS}
++@group(0) @binding(2) var<uniform> params: CdlParams;
++@fragment
++fn cdlFragment(input: VertexOutput) -> @location(0) vec4f {
++  let color = textureSample(inputTex, texSampler, input.uv);
++  let sop = pow(max(color.rgb * params.slope + params.offset, vec3f(0.0)), params.power);
++  let luma = dot(sop, vec3f(0.2126, 0.7152, 0.0722));
++  let graded = vec3f(luma) + params.saturation * (sop - vec3f(luma));
++  return vec4f(fl_range3(graded), color.a);
++}`,
++  params: {
++    slopeR: num('Slope red', 1, 0, 4),
++    slopeG: num('Slope green', 1, 0, 4),
++    slopeB: num('Slope blue', 1, 0, 4),
++    offsetR: num('Offset red', 0, -1, 1),
++    offsetG: num('Offset green', 0, -1, 1),
++    offsetB: num('Offset blue', 0, -1, 1),
++    powerR: num('Power red', 1, 0.1, 4),
++    powerG: num('Power green', 1, 0.1, 4),
++    powerB: num('Power blue', 1, 0.1, 4),
++    saturation: num('Saturation', 1, 0, 4),
++  },
++  packUniforms: (p) =>
++    new Float32Array([
++      value(p, 'slopeR', 1),
++      value(p, 'slopeG', 1),
++      value(p, 'slopeB', 1),
++      value(p, 'saturation', 1),
++      value(p, 'offsetR', 0),
++      value(p, 'offsetG', 0),
++      value(p, 'offsetB', 0),
++      0,
++      value(p, 'powerR', 1),
++      value(p, 'powerG', 1),
++      value(p, 'powerB', 1),
++      0,
++    ]),
++}
++
++export const liftGammaGain: GpuEffectDefinition = {
++  id: 'gpu-lift-gamma-gain',
++  name: 'Lift Gamma Gain',
++  category: 'color',
++  entryPoint: 'liftGammaGainFragment',
++  uniformSize: 48,
++  shader: /* wgsl */ `
++struct LggParams {
++  lift: vec3f, _p1: f32,
++  gamma: vec3f, _p2: f32,
++  gain: vec3f, _p3: f32,
++};
++${BINDINGS}
++@group(0) @binding(2) var<uniform> params: LggParams;
++@fragment
++fn liftGammaGainFragment(input: VertexOutput) -> @location(0) vec4f {
++  let color = textureSample(inputTex, texSampler, input.uv);
++  let lifted = params.gain * (color.rgb + params.lift * (vec3f(1.0) - color.rgb));
++  let graded = pow(max(lifted, vec3f(0.0)), vec3f(1.0) / params.gamma);
++  return vec4f(fl_range3(graded), color.a);
++}`,
++  params: {
++    liftR: num('Lift red', 0, -1, 1),
++    liftG: num('Lift green', 0, -1, 1),
++    liftB: num('Lift blue', 0, -1, 1),
++    gammaR: num('Gamma red', 1, 0.1, 4),
++    gammaG: num('Gamma green', 1, 0.1, 4),
++    gammaB: num('Gamma blue', 1, 0.1, 4),
++    gainR: num('Gain red', 1, 0, 4),
++    gainG: num('Gain green', 1, 0, 4),
++    gainB: num('Gain blue', 1, 0, 4),
++  },
++  packUniforms: (p) =>
++    new Float32Array([
++      value(p, 'liftR', 0),
++      value(p, 'liftG', 0),
++      value(p, 'liftB', 0),
++      0,
++      value(p, 'gammaR', 1),
++      value(p, 'gammaG', 1),
++      value(p, 'gammaB', 1),
++      0,
++      value(p, 'gainR', 1),
++      value(p, 'gainG', 1),
++      value(p, 'gainB', 1),
++      0,
++    ]),
++}
++
++/** Table width of the hue curves: entry i is hue i / 255, so hue 0 and hue 1 share a value. */
++export const HUE_CURVES_TABLE_WIDTH = 256
++
++type HuePoint = [number, number]
++
++/** Parse `[[hue, value], ...]` (hue in turns, 0..1), keeping finite points in range, sorted by hue. */
++export function parseHuePoints(raw: unknown, min: number, max: number): HuePoint[] {
++  let parsed: unknown
++  try {
++    parsed = typeof raw === 'string' && raw.length > 0 ? JSON.parse(raw) : []
++  } catch {
++    return []
++  }
++  if (!Array.isArray(parsed)) return []
++  const points: HuePoint[] = []
++  for (const entry of parsed) {
++    if (!Array.isArray(entry) || entry.length !== 2) continue
++    const [h, v] = entry
++    if (typeof h !== 'number' || typeof v !== 'number' || !Number.isFinite(h) || !Number.isFinite(v)) {
++      continue
++    }
++    points.push([h - Math.floor(h), Math.min(max, Math.max(min, v))])
++  }
++  return points.toSorted((a, b) => a[0] - b[0]).slice(0, 16)
++}
++
++/**
++ * The periodic curve through the points at hue h: uniform Catmull-Rom between neighbours,
++ * wrapping around the hue circle. No points gives `neutral`; one point is constant.
++ */
++export function evaluateHueCurve(points: HuePoint[], h: number, neutral: number): number {
++  const n = points.length
++  if (n === 0) return neutral
++  if (n === 1) return points[0]![1]
++  // Point i of the periodic sequence: points repeat each turn, one turn further per n.
++  const at = (i: number): HuePoint => {
++    const j = ((i % n) + n) % n
++    return [points[j]![0] + Math.floor(i / n), points[j]![1]]
++  }
++  // The last point at or before h; before the first point the segment wraps from the last one.
++  let k = -1
++  for (let i = 0; i < n; i++) if (points[i]![0] <= h) k = i
++  const x = k === -1 ? h + 1 : h
++  if (k === -1) k = n - 1
++  const [p0, p1, p2, p3] = [at(k - 1), at(k), at(k + 1), at(k + 2)]
++  const span = p2[0] - p1[0]
++  const t = span > 0 ? (x - p1[0]) / span : 0
++  const t2 = t * t
++  const t3 = t2 * t
++  return (
++    0.5 *
++    (2 * p1[1] +
++      (-p0[1] + p2[1]) * t +
++      (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 +
++      (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)
++  )
++}
++
++const HUE_CURVE_KEYS = ['hueHuePoints', 'hueSatPoints', 'hueLumaPoints'] as const
++
++/**
++ * The 256x1 rgba8 table. Neutral is byte 127 in every channel so an empty curve is exact:
++ * R = 127 + 254 x hue shift (turns, -0.5..0.5), G = 127 x saturation gain, B = 127 x luma gain (0..2).
++ */
++export function buildHueCurvesTable(p: Record<string, number | boolean | string>): Uint8Array {
++  const shift = parseHuePoints(p.hueHuePoints, -0.5, 0.5)
++  const sat = parseHuePoints(p.hueSatPoints, 0, 2)
++  const luma = parseHuePoints(p.hueLumaPoints, 0, 2)
++  const data = new Uint8Array(HUE_CURVES_TABLE_WIDTH * 4)
++  const byte = (v: number) => Math.round(Math.min(254, Math.max(0, v)))
++  for (let i = 0; i < HUE_CURVES_TABLE_WIDTH; i++) {
++    const h = i / (HUE_CURVES_TABLE_WIDTH - 1)
++    data[i * 4] = byte(127 + 254 * evaluateHueCurve(shift, h, 0))
++    data[i * 4 + 1] = byte(127 * evaluateHueCurve(sat, h, 1))
++    data[i * 4 + 2] = byte(127 * evaluateHueCurve(luma, h, 1))
++    data[i * 4 + 3] = 255
++  }
++  return data
++}
++
++export const hueCurves: GpuEffectDefinition = {
++  id: 'gpu-hue-curves',
++  name: 'Hue Curves',
++  category: 'color',
++  entryPoint: 'hueCurvesFragment',
++  uniformSize: 16,
++  shader: /* wgsl */ `
++struct HueCurvesParams { mixAmount: f32, _p1: f32, _p2: f32, _p3: f32 };
++${BINDINGS}
++@group(0) @binding(2) var<uniform> params: HueCurvesParams;
++@group(0) @binding(3) var hueTable: texture_2d<f32>;
++fn hcRgbToHsv(c: vec3f) -> vec3f {
++  let K = vec4f(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
++  let p = select(vec4f(c.gb, K.xy), vec4f(c.bg, K.wz), c.g < c.b);
++  let q = select(vec4f(c.r, p.yzx), vec4f(p.xyw, c.r), c.r < p.x);
++  let d = q.x - min(q.w, q.y);
++  return vec3f(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
++}
++fn hcHsvToRgb(c: vec3f) -> vec3f {
++  let k = abs(fract(c.xxx + vec3f(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - vec3f(3.0));
++  return c.z * mix(vec3f(1.0), clamp(k - vec3f(1.0), vec3f(0.0), vec3f(1.0)), c.y);
++}
++@fragment
++fn hueCurvesFragment(input: VertexOutput) -> @location(0) vec4f {
++  let color = textureSample(inputTex, texSampler, input.uv);
++  let hsv = hcRgbToHsv(clamp(color.rgb, vec3f(0.0), vec3f(1.0)));
++  let entry = textureSampleLevel(hueTable, texSampler, vec2f((hsv.x * 255.0 + 0.5) / 256.0, 0.5), 0.0);
++  let bytes = entry.rgb * 255.0;
++  let shift = (bytes.r - 127.0) / 254.0;
++  let satGain = bytes.g / 127.0;
++  let lumaGain = bytes.b / 127.0;
++  let graded = hcHsvToRgb(vec3f(
++    fract(hsv.x + shift),
++    clamp(hsv.y * satGain, 0.0, 1.0),
++    hsv.z * mix(1.0, lumaGain, hsv.y)
++  ));
++  return vec4f(fl_range3(mix(color.rgb, graded, params.mixAmount)), color.a);
++}`,
++  params: {
++    hueHuePoints: { type: 'json', label: 'Hue vs hue', default: '', animatable: false },
++    hueSatPoints: { type: 'json', label: 'Hue vs saturation', default: '', animatable: false },
++    hueLumaPoints: { type: 'json', label: 'Hue vs luma', default: '', animatable: false },
++    mix: num('Mix', 1, 0, 1),
++  },
++  packUniforms: (p) => new Float32Array([value(p, 'mix', 1), 0, 0, 0]),
++  dataTexture: {
++    dimension: '2d',
++    key: (p) => HUE_CURVE_KEYS.map((key) => String(p[key] ?? '')).join('|'),
++    build: (p) => ({ width: HUE_CURVES_TABLE_WIDTH, height: 1, depth: 1, data: buildHueCurvesTable(p) }),
++  },
++}
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+index 85dc0b2..de5393c 100644
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -6,6 +6,7 @@ import * as blurEffects from './effects/blur'
+ import * as distortEffects from './effects/distort'
+ import * as stylizeEffects from './effects/stylize'
+ import * as keyingEffects from './effects/keying'
++import * as gradeEffects from './effects/grade'
+ 
+ export const GPU_EFFECT_REGISTRY = new Map<string, GpuEffectDefinition>()
+ 
+@@ -45,6 +46,7 @@ registerEffects(blurEffects)
+ registerEffects(distortEffects)
+ registerEffects(stylizeEffects)
+ registerEffects(keyingEffects)
++registerEffects(gradeEffects)
+ 
+ export function getGpuEffect(id: string): GpuEffectDefinition | undefined {
+   return id === 'gpu-file-lut-v1' ? lutEffects.fileLut3d : GPU_EFFECT_REGISTRY.get(id)
