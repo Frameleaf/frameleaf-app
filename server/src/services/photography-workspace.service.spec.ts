@@ -31,6 +31,7 @@ const setup = () => {
     save: vi.fn().mockResolvedValue({ updateId: nextRevision }),
     currentRevisions: vi.fn().mockResolvedValue(new Map()),
     eyeSummaries: vi.fn().mockResolvedValue(new Map()),
+    automaticStackIds: vi.fn().mockResolvedValue(new Set()),
     coverThumbhashes: vi.fn().mockResolvedValue(new Map()),
   };
   const albums = {

@@ -406,9 +406,11 @@ export class PhotographyWorkspaceService {
       }),
     );
     const ids = result.assets.items.map(({ id }) => id);
-    const [current, eyes] = await Promise.all([
+    const stackIds = result.assets.items.flatMap((asset) => (asset.stack ? [asset.stack.id] : []));
+    const [current, eyes, bursts] = await Promise.all([
       this.repository.currentRevisions(auth.user.id, ids),
       this.repository.eyeSummaries(ids),
+      this.repository.automaticStackIds(stackIds),
     ]);
     return {
       nextCursor: result.assets.nextCursor ?? null,
@@ -439,6 +441,7 @@ export class PhotographyWorkspaceService {
             : 'foreign',
         processing: asset.isOffline ? 'failed' : asset.thumbhash ? 'ready' : 'pending',
         ...(eyes.has(asset.id) && { eyes: eyes.get(asset.id) }),
+        ...(asset.stack && bursts.has(asset.stack.id) && { burst: true }),
       })),
     };
   }

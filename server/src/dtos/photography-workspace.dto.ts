@@ -89,6 +89,8 @@ export class PhotographyPhotosDto extends createZodDto(
         eligible: z.boolean(),
         exclusion: z.string().nullable(),
         processing: z.enum(['ready', 'pending', 'failed']),
+        // FL-953: optional for older native clients; true when the photo leads a burst stacked automatically
+        burst: z.boolean().optional().describe('Leads a burst that stacked itself automatically'),
         // FL-863: optional, so older native clients decode the list unchanged; absent for a photo with no face
         eyes: z
           .object({

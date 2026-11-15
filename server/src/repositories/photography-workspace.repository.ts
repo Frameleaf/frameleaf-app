@@ -124,6 +124,18 @@ export class PhotographyWorkspaceRepository {
     return new Map(rows.map(({ assetId, id }) => [assetId, id]));
   }
 
+  /** FL-953: which of these stacks automatic burst stacking made. */
+  async automaticStackIds(stackIds: string[]): Promise<Set<string>> {
+    if (stackIds.length === 0) return new Set();
+    const rows = await this.db
+      .selectFrom('stack')
+      .select('id')
+      .where('id', 'in', stackIds)
+      .where('isAutomatic', '=', true)
+      .execute();
+    return new Set(rows.map(({ id }) => id));
+  }
+
   /**
    * FL-863: each photo's faces for culling: how many, how many have closed or soft eyes by the admin's
    * thresholds (`machineLearning.eyeScores`), and how many aren't scored yet. Photos with no face are left out.
