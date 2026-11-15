@@ -5414,6 +5414,12 @@ export type UpdateAlbumDto = {
     /** Sibling display position. Lower values appear first. Computed by the client as a midpoint. */
     sortOrder?: number;
 };
+export type AlbumMoveAssetsDto = {
+    /** Photos and videos to move out of this album */
+    assetIds: string[];
+    /** The album the photos and videos move to. It must be an album, not a collection or shared space. */
+    targetAlbumId: string;
+};
 export type AlbumAssetOrderDto = {
     /** Place after this photo in the album; null places at the start of the album */
     afterAssetId?: string | null;
@@ -5921,6 +5927,10 @@ export type AlbumTextCardUpdateDto = {
     /** Heading, plain text */
     heading?: string;
 };
+export type AlbumTransferDto = {
+    /** The new owner: someone already in the album, or a partner you share your library with */
+    userId: string;
+};
 export type UpdateAlbumUserDto = {
     role: AlbumUserRole;
 };
@@ -6264,6 +6274,8 @@ export type AnalyticsBucketDto = {
     photos: number;
     /** Bytes */
     physicalBytes: number | null;
+    /** True when the growth values were rebuilt from the items in the library today, because the bucket ends before the first nightly reading; false for a nightly reading or a gap. Left out by older servers */
+    rebuilt?: boolean;
     through: string;
     /** Videos added in this period and still in the library (a video taken before the server started counts from the day it was taken) */
     videos: number;
@@ -8423,6 +8435,16 @@ export type ClassificationContributionDto = {
     /** The tag this rule added, when it added one */
     tag: (ClassificationTagDto) | null;
 };
+export type NumberFilter = {
+    eq?: number;
+    gt?: number;
+    gte?: number;
+    "in"?: number[];
+    lt?: number;
+    lte?: number;
+    ne?: number;
+    notIn?: number[];
+};
 export type IdsFilter = {
     all?: string[];
     "any"?: string[];
@@ -8474,16 +8496,6 @@ export type DateFilter = {
     lte?: string;
     ne?: string;
 };
-export type NumberFilter = {
-    eq?: number;
-    gt?: number;
-    gte?: number;
-    "in"?: number[];
-    lt?: number;
-    lte?: number;
-    ne?: number;
-    notIn?: number[];
-};
 export type BoolFilter = {
     eq: boolean;
 };
@@ -8534,6 +8546,8 @@ export type EnumFilterAssetVisibility = {
     notIn?: AssetVisibility[];
 };
 export type SearchFilterBranch = {
+    /** Number of non-deleted albums the viewer owns or is a member of that contain the item */
+    albumCount?: NumberFilter;
     albumIds?: IdsFilter;
     albumSubtreeIds?: AlbumSubtreeFilter;
     artist?: StringPatternFilter;
@@ -8591,6 +8605,8 @@ export type SearchFilterBranch = {
     width?: NumberFilterNullable;
 };
 export type SearchFilter = {
+    /** Number of non-deleted albums the viewer owns or is a member of that contain the item */
+    albumCount?: NumberFilter;
     albumIds?: IdsFilter;
     albumSubtreeIds?: AlbumSubtreeFilter;
     artist?: StringPatternFilter;
@@ -27894,6 +27910,22 @@ export function addAssetsToAlbum({ id, bulkIdsDto }: {
     })));
 }
 /**
+ * Move assets to another album
+ */
+export function moveAlbumAssets({ id, albumMoveAssetsDto }: {
+    id: string;
+    albumMoveAssetsDto: AlbumMoveAssetsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BulkIdResponseDto[];
+    }>(`/albums/${encodeURIComponent(id)}/assets/move`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumMoveAssetsDto
+    })));
+}
+/**
  * Move photos in an album's custom order
  */
 export function setAlbumAssetOrder({ id, albumAssetOrderDto }: {
@@ -28198,6 +28230,19 @@ export function updateAlbumTextCard({ cardId, id, albumTextCardUpdateDto }: {
         ...opts,
         method: "PUT",
         body: albumTextCardUpdateDto
+    })));
+}
+/**
+ * Transfer album ownership
+ */
+export function transferAlbum({ id, albumTransferDto }: {
+    id: string;
+    albumTransferDto: AlbumTransferDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/albums/${encodeURIComponent(id)}/transfer`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumTransferDto
     })));
 }
 /**
