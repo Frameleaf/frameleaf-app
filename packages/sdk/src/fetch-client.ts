@@ -3004,14 +3004,6 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
-export type AssetLedgerMissingOwnerDto = {
-    /** Originals of that account that are missing */
-    count: number;
-    /** The account the originals belonged to */
-    ownerId: string;
-    /** When the first of them was found missing */
-    since: string;
-};
 export type AssetLedgerCountsDto = {
     /** Originals in the library */
     kept: number;
@@ -3024,9 +3016,33 @@ export type AssetLedgerCountsDto = {
     /** Originals in the Trash */
     trashed: number;
 };
+export type AssetLedgerOwnerTotalsDto = {
+    ownerId: string;
+    states: AssetLedgerCountsDto;
+    total: number;
+};
+export type AssetLedgerMissingOwnerDto = {
+    /** Originals of that account that are missing */
+    count: number;
+    /** The account the originals belonged to */
+    ownerId: string;
+    /** When the first of them was found missing */
+    since: string;
+};
+export type AssetLedgerMonthDto = {
+    /** The month the originals were added, as YYYY-MM (UTC) */
+    month: string;
+    states: AssetLedgerCountsDto;
+    /** Originals added that month */
+    total: number;
+};
 export type AssetLedgerAdminSummaryResponseDto = {
+    /** Every account’s totals, most originals first; empty when the summary is for one account. No file is named. */
+    byOwner: AssetLedgerOwnerTotalsDto[];
     /** The accounts with originals the server cannot account for, most first. No file is named. */
     missingByOwner: AssetLedgerMissingOwnerDto[];
+    /** Per month the originals were added, where they are now; newest first */
+    months: AssetLedgerMonthDto[];
     states: AssetLedgerCountsDto;
     /** Every original the server has accepted, for every account */
     total: number;
@@ -21584,6 +21600,8 @@ export type AssetLedgerListResponseDto = {
     nextCursor: string | null;
 };
 export type AssetLedgerSummaryResponseDto = {
+    /** Per month the originals were added, where they are now; newest first */
+    months: AssetLedgerMonthDto[];
     states: AssetLedgerCountsDto;
     /** Every original the server has accepted for this account */
     total: number;
@@ -22278,6 +22296,10 @@ export type AssetFilmstripSpriteOptionsDto = {
     height?: number;
     /** The `version` from the filmstrip index. When given and the video changed since, 404 is returned */
     version?: string;
+};
+export type AssetLedgerAdminQueryDto = {
+    /** Only this account’s totals and months */
+    userId?: string;
 };
 export type AssetLedgerQueryDto = {
     /** The nextCursor of the previous page */
@@ -26420,11 +26442,15 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
 /**
  * Get the server’s nothing-lost totals
  */
-export function getLedgerAdminSummary(opts?: Oazapfts.RequestOpts) {
+export function getLedgerAdminSummary({ userId }: {
+    userId?: string;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetLedgerAdminSummaryResponseDto;
-    }>("/admin/ledger/summary", {
+    }>(`/admin/ledger/summary${QS.query(QS.explode({
+        userId
+    }))}`, {
         ...opts
     }));
 }
