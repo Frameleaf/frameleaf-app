@@ -5,7 +5,7 @@
 | Category | color |
 | Temporal | no |
 | Pass | single fragment pass |
-| HDR | refused |
+| HDR | linear-display-bt709-v1 (grade on the encoding) [C4] |
 
 ## What it does
 A primary colour-correction stage in one pass:
@@ -105,7 +105,7 @@ Passed through unchanged; RGB processed regardless of alpha.
 
 ## SDR and HDR
 - SDR: there is no clamping between steps. The gamma step zeroes negatives (`max(c, 0)`). The only final clamp is to [0, 1].
-- HDR: refused [C4]. The extended-range variant (a signed gamma power and a range limit of ±65504) never runs.
+- HDR [C4], GRADE: the steps above run on E = SRGB of each linear channel (hdr.md H5, odd), with two changes: the gamma step is the signed power sign(c)·|c|^(1/max(gamma, 0.05)) instead of zeroing negatives, and there is no final clamp to [0, 1]. The result is decoded with SRGB⁻¹ and limited to ±65504; alpha is unchanged. The zone masks therefore split shadows, midtones and highlights on the encoding as in SDR (every value above encoded 1, reference white, is wholly highlight). For a triplet with a negative component the HSV hue step extrapolates (C7 applied as written); this is implementation-defined.
 
 ## Notes
 These are observed behaviours, all implementation-defined:

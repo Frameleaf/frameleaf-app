@@ -208,6 +208,7 @@ import {
 import { OcrSearchTable } from 'src/schema/tables/ocr-search.table.js';
 import { OperationalMetricSampleTable } from 'src/schema/tables/operational-metric-sample.table.js';
 import { PartnerAuditTable } from 'src/schema/tables/partner-audit.table.js';
+import { PartnerScopeTable } from 'src/schema/tables/partner-scope.table.js';
 import { PartnerTable } from 'src/schema/tables/partner.table.js';
 import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
 import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.table.js';
@@ -529,6 +530,7 @@ export class ImmichDatabase {
     OcrSearchTable,
     OperationalMetricSampleTable,
     PartnerAuditTable,
+    PartnerScopeTable,
     PartnerTable,
     PersonTable,
     PersonAuditTable,
@@ -850,6 +852,7 @@ export interface DB extends QueueDatabase {
   operational_metric_sample: OperationalMetricSampleTable;
   partner: PartnerTable;
   partner_audit: PartnerAuditTable;
+  partner_scope: PartnerScopeTable;
 
   person: PersonTable;
   person_audit: PersonAuditTable;

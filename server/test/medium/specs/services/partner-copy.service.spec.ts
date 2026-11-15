@@ -40,7 +40,7 @@ import {
   PartnerBackfillState,
   PartnerOriginRepository,
 } from 'src/repositories/partner-origin.repository.js';
-import { PartnerRepository } from 'src/repositories/partner.repository.js';
+import { PartnerDirection, PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import {
   PhysicalFileRepository,
@@ -1820,6 +1820,222 @@ describe(PartnerCopyService.name, () => {
           new Set([copyId]),
         );
       }
+    });
+  });
+
+  describe('partner scope (FL-774)', () => {
+    const partnerService = () => {
+      const { sut: partners, ctx: partnerCtx } = newMediumService(PartnerService, {
+        database: db,
+        real,
+        mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
+      });
+      partnerCtx.getMock(EventRepository).emit.mockResolvedValue();
+      partnerCtx.getMock(JobRepository).queue.mockResolvedValue();
+      partnerCtx.getMock(JobRepository).queueAll.mockResolvedValue();
+      return { partners, partnerCtx };
+    };
+
+    /** An item of `ownerId`'s taken on `day`, in `folder` of their upload folder. */
+    const takenOn = async (ctx: Ctx, ownerId: string, day: string, folder = 'misc') => {
+      const at = new Date(`${day}T12:00:00.000Z`);
+      const { asset } = await ctx.newAsset({
+        ownerId,
+        originalPath: `/data/upload/${ownerId}/${folder}/${randomUUID()}.jpg`,
+        localDateTime: at,
+        fileCreatedAt: at,
+      });
+      await ctx.newExif({ assetId: asset.id, fileSizeInByte: 1234 });
+      return asset;
+    };
+
+    /** The items `ownerId` holds copies of. */
+    const copiedFrom = async (ownerId: string) =>
+      (
+        await sql<{ sourceAssetId: string }>`SELECT "sourceAssetId" FROM public.asset_origin
+          WHERE "ownerId" = ${ownerId}::uuid AND "sourceAssetId" IS NOT NULL`.execute(db)
+      ).rows
+        .map(({ sourceAssetId }) => sourceAssetId)
+        .toSorted();
+
+    const albumsCopiedFrom = async (ownerId: string) =>
+      (
+        await sql<{ sourceAlbumId: string }>`SELECT "sourceAlbumId" FROM public.album_origin
+          WHERE "ownerId" = ${ownerId}::uuid`.execute(db)
+      ).rows
+        .map(({ sourceAlbumId }) => sourceAlbumId)
+        .toSorted();
+
+    it('copies only items in a chosen album or of a chosen person taken since the chosen day, and only chosen albums', async () => {
+      const { sut, ctx, origins } = setup();
+      const { partners, partnerCtx } = partnerService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const { person } = await ctx.newPerson({ ownerId: alice.id });
+      const inAlbum = await takenOn(ctx, alice.id, '2021-06-01');
+      const ofPerson = await takenOn(ctx, alice.id, '2022-06-01');
+      const tooOld = await takenOn(ctx, alice.id, '2019-06-01');
+      const elsewhere = await takenOn(ctx, alice.id, '2023-06-01');
+      await ctx.newAssetFace({ assetId: ofPerson.id, personGroupId: person.personGroupId });
+      await ctx.newAssetFace({ assetId: tooOld.id, personGroupId: person.personGroupId });
+      const { album: chosen } = await ctx.newAlbum({ ownerId: alice.id }, [inAlbum.id, tooOld.id]);
+      const { album: other } = await ctx.newAlbum({ ownerId: alice.id }, [inAlbum.id, elsewhere.id]);
+
+      const scope = await partners.updateScope(factory.auth({ user: alice }), bob.id, {
+        mode: 'chosen',
+        sinceDate: '2020-01-01',
+        albumIds: [chosen.id],
+        personIds: [person.personGroupId],
+      });
+      expect(scope).toMatchObject({ mode: 'chosen', sinceDate: '2020-01-01', count: 2 });
+      await drain(sut, [ctx, partnerCtx]);
+
+      expect(await copiedFrom(bob.id)).toEqual([inAlbum.id, ofPerson.id].toSorted());
+      expect(await origins.getBackfill(alice.id, bob.id)).toMatchObject({ state: 'done', total: 2 });
+      expect(await albumsCopiedFrom(bob.id)).toEqual([chosen.id]);
+      expect(await albumsCopiedFrom(bob.id)).not.toContain(other.id);
+    });
+
+    it('sends a later item only once an edit brings it into scope (an album, a named face)', async () => {
+      const { sut, ctx } = setup();
+      const { partners, partnerCtx } = partnerService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const { album } = await ctx.newAlbum({ ownerId: alice.id });
+      const { person } = await ctx.newPerson({ ownerId: alice.id });
+      await partners.updateScope(factory.auth({ user: alice }), bob.id, {
+        mode: 'chosen',
+        albumIds: [album.id],
+        personIds: [person.personGroupId],
+      });
+      await drain(sut, [ctx, partnerCtx]);
+
+      // a new upload outside the scope never reaches the partner
+      const later = await takenOn(ctx, alice.id, '2024-01-01');
+      const portrait = await takenOn(ctx, alice.id, '2024-01-02');
+      await sut.onAssetMetadataExtracted({ assetId: later.id, userId: alice.id });
+      await sut.onAssetMetadataExtracted({ assetId: portrait.id, userId: alice.id });
+      await sut.onAssetsChanged({ assetIds: [later.id, portrait.id] });
+      await drain(sut, [ctx, partnerCtx]);
+      expect(await copiedFrom(bob.id)).toEqual([]);
+
+      // added to the chosen album, and the person's face named: both go
+      await ctx.newAlbumAsset({ albumId: album.id, assetId: later.id });
+      await ctx.newAssetFace({ assetId: portrait.id, personGroupId: person.personGroupId });
+      await sut.onAssetsChanged({ assetIds: [later.id, portrait.id] });
+      await drain(sut, [ctx, partnerCtx]);
+      expect(await copiedFrom(bob.id)).toEqual([later.id, portrait.id].toSorted());
+    });
+
+    it('narrowing keeps what the partner has and stops new copies; widening copies the rest', async () => {
+      const { sut, ctx } = setup();
+      const { partners, partnerCtx } = partnerService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const trip = await takenOn(ctx, alice.id, '2021-01-01', 'trip');
+      const home = await takenOn(ctx, alice.id, '2021-01-02', 'home');
+      const auth = factory.auth({ user: alice });
+      const tripFolder = `/data/upload/${alice.id}/trip`;
+
+      await partners.updateScope(auth, bob.id, { mode: 'chosen', folders: [`${tripFolder}/`] });
+      await drain(sut, [ctx, partnerCtx]);
+      expect(await copiedFrom(bob.id)).toEqual([trip.id]);
+
+      // narrowed to a day after both: nothing new goes, and the trip copy stays
+      await partners.updateScope(auth, bob.id, { mode: 'chosen', sinceDate: '2022-01-01' });
+      const newTrip = await takenOn(ctx, alice.id, '2021-06-01', 'trip');
+      await sut.onAssetMetadataExtracted({ assetId: newTrip.id, userId: alice.id });
+      await drain(sut, [ctx, partnerCtx]);
+      expect(await copiedFrom(bob.id)).toEqual([trip.id]);
+
+      // back to Everything: the rest follows
+      await expect(partners.updateScope(auth, bob.id, { mode: 'everything' })).resolves.toMatchObject({
+        mode: 'everything',
+        count: 3,
+      });
+      await drain(sut, [ctx, partnerCtx]);
+      expect(await copiedFrom(bob.id)).toEqual([trip.id, home.id, newTrip.id].toSorted());
+    });
+
+    it("applies each hop's own scope from A to B to C", async () => {
+      const { sut, ctx } = setup();
+      const { partners, partnerCtx } = partnerService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      await ctx.newPartner({ sharedById: bob.id, sharedWithId: carol.id });
+      const older = await takenOn(ctx, alice.id, '2021-01-01');
+      const newer = await takenOn(ctx, alice.id, '2023-01-01');
+      await partners.updateScope(factory.auth({ user: bob }), carol.id, { mode: 'chosen', sinceDate: '2022-01-01' });
+      await partners.updateScope(factory.auth({ user: alice }), bob.id, { mode: 'everything' });
+      await drain(sut, [ctx, partnerCtx]);
+
+      expect(await copiedFrom(bob.id)).toEqual([older.id, newer.id].toSorted());
+      const carols = await db
+        .selectFrom('asset')
+        .select('localDateTime')
+        .where('ownerId', '=', carol.id)
+        .where('deletedAt', 'is', null)
+        .execute();
+      expect(carols.map(({ localDateTime }) => new Date(localDateTime as unknown as string).getUTCFullYear())).toEqual([
+        2023,
+      ]);
+    });
+
+    it('only the owner chooses, from their own albums and people', async () => {
+      const { ctx } = setup();
+      const { partners } = partnerService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const { album: bobsAlbum } = await ctx.newAlbum({ ownerId: bob.id });
+      const { person: bobsPerson } = await ctx.newPerson({ ownerId: bob.id });
+
+      // the partner names only their own partnership, and has none with alice
+      await expect(
+        partners.updateScope(factory.auth({ user: bob }), alice.id, { mode: 'chosen', sinceDate: '2020-01-01' }),
+      ).rejects.toThrow('Partner not found');
+      await expect(partners.getScope(factory.auth({ user: bob }), alice.id)).rejects.toThrow('Partner not found');
+      const auth = factory.auth({ user: alice });
+      await expect(partners.updateScope(auth, bob.id, { mode: 'chosen', albumIds: [bobsAlbum.id] })).rejects.toThrow(
+        'Choose only your own albums and people',
+      );
+      await expect(
+        partners.updateScope(auth, bob.id, { mode: 'chosen', personIds: [bobsPerson.personGroupId] }),
+      ).rejects.toThrow('Choose only your own albums and people');
+      await expect(partners.updateScope(auth, bob.id, { mode: 'chosen' })).rejects.toThrow('Choose at least one');
+      await expect(partners.getScope(auth, bob.id)).resolves.toMatchObject({ mode: 'everything' });
+    });
+
+    it('shows the partner what they receive, read-only, and counts a draft before it is saved', async () => {
+      const { ctx } = setup();
+      const { partners } = partnerService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const photo = await takenOn(ctx, alice.id, '2021-01-01');
+      await takenOn(ctx, alice.id, '2021-01-02');
+      const { album } = await ctx.newAlbum({ ownerId: alice.id, albumName: 'Summer' }, [photo.id]);
+      const auth = factory.auth({ user: alice });
+
+      await expect(partners.estimateScope(auth, { mode: 'chosen', albumIds: [album.id] })).resolves.toEqual({
+        count: 1,
+      });
+      await expect(partners.estimateScope(auth, { mode: 'everything' })).resolves.toEqual({ count: 2 });
+      await partners.updateScope(auth, bob.id, { mode: 'chosen', albumIds: [album.id] });
+
+      const [received] = await partners.search(factory.auth({ user: bob }), { direction: PartnerDirection.SharedWith });
+      expect(received.scope).toEqual({
+        mode: 'chosen',
+        sinceDate: null,
+        albums: [{ id: album.id, name: 'Summer' }],
+        people: [],
+        folders: [],
+      });
     });
   });
 

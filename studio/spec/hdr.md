@@ -262,8 +262,8 @@ The result is full-range non-linear BT.2020 R′G′B′ in [0, 1] with straight
 
 - the float GPU compositor is unavailable;
 - an item's blend mode is anything other than normal;
-- a stack holds an enabled effect outside the 16 of C4;
-- a transition is active, other than the one the engine has migrated (see the note below), or a nested composition contains any transition;
+- a stack holds an enabled effect outside the 21 of C4;
+- a transition is active other than the 13 of T5, or a nested composition contains any transition;
 - an item cannot be drawn on the float route. This includes an HDR video whose intermediate is missing, cannot be decoded, or has a layout H11 does not accept;
 - a layer mask cannot be rendered on the float route.
 
@@ -273,7 +273,7 @@ Three failures are plain errors, not this class: a rejected raster (H11), a rast
 
 **Native rule.** A native client refuses the same frames: it reports that the frame cannot be rendered in HDR and shows or exports nothing for it. It does not fall back to SDR, does not skip the offending effect, blend or transition, and does not tone-map a source to work around a refusal.
 
-**Note on transitions.** At this revision the engine renders one transition, additive dissolve, in an HDR project (`studio/additive-hdr-contract.md`), and refuses the other 43. T5 and the additive dissolve page still say that every transition is refused. Until those are reconciled, T5 governs a native client: refusing additive dissolve in HDR is safe, and rendering it is not yet specified here.
+**Note on transitions and grades.** At this revision the engine renders 13 transitions in an HDR project and refuses the other 31; T5 of `README.md` and each transition page's HDR section specify them, with goldens. The grades among the 21 effects of C4 (curves, LUT, colour wheels, chroma key) act on SRGB(v) of H5 and decode the result with SRGB⁻¹ (the GRADE rule of C4), so their parameters keep their display-encoded meaning and an SDR source graded in an HDR project matches the SDR project up to binary32 rounding and the texture unit's weight steps.
 
 ## Goldens
 

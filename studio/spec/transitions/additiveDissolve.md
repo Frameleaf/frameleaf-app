@@ -6,7 +6,7 @@
 | Directions | none |
 | Duration (frames) | default 30, min 10, max 90 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 A linear dissolve with an additive brightness flash: around the midpoint, a fraction of the sum of both clips is added on top, so the image brightens (and highlights clip) through the middle of the transition.
@@ -33,6 +33,9 @@ None.
 
 ## Alpha
 The RGB clamp is to 1, not to α. Where α < 1 the clamped premultiplied RGB can exceed α, so after un-premultiplying [T2] straight RGB can exceed 1 (and is not re-clamped on the float route). Where α = 0 the output is all zero regardless of the flash.
+
+## HDR
+Renders in an HDR project by its own contract, `studio/additive-hdr-contract.md`, which T5 adopts: the blend above on premultiplied linear light with the flash coefficient 0.22 kept as a dimensionless gain, no clamp, exact endpoints, coverage rounded to binary16 and RGB over the unrounded coverage, not limited to ±65504.
 
 ## Notes
 - Peak flash at p = 0.5 adds 0.22 × (a + b) = 0.44 × the average of the clips.

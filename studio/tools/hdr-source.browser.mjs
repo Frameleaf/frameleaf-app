@@ -115,8 +115,9 @@ window.__vite_plugin_react_preamble_installed__ = true
     }
     const c = SIZE / 2;
     const out = {};
-    // Exposure is admitted in linear HDR. Historical refusal probes use the
-    // still-unmigrated chroma key; the rendered source/mask oracles stay effect-free.
+    // Exposure and (FL-1556) the chroma key are admitted in linear HDR. Historical refusal
+    // probes use the still-unmigrated levels effect and glitch transition; the rendered
+    // source/mask oracles stay effect-free.
     const historicalHdrRefusals = [];
     const expectHdrOperatorRefusal = async (composition, options, frame, scenario) => {
       const canvas = new OffscreenCanvas(composition.width, composition.height);
@@ -219,9 +220,9 @@ window.__vite_plugin_react_preamble_installed__ = true
         from: 0, durationInFrames: 30, sourceStart: 0, sourceEnd: 30, sourceFps: FPS,
         sourceDuration: 30, speed: 1, sourceWidth: SIZE, sourceHeight: SIZE,
         transform: { x, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity },
-        effects: [{ id: `mixed-chroma-key-${transfer}`, enabled: true,
-          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-chroma-key',
-            params: { keyColor: 'green', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] }],
+        effects: [{ id: `mixed-levels-${transfer}`, enabled: true,
+          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-levels',
+            params: { inputBlack: 0, inputWhite: 1, gamma: 1, outputBlack: 0, outputWhite: 1 } } }] }],
     }));
     const sdrRgb = [0.25, 0.5, 0.75].map(color.srgbDecodeExtended);
     const sdrOpacity = 0.5;
@@ -241,7 +242,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     try {
       const historicalMixed = { fps: FPS, width, height: SIZE, durationInFrames: 30,
         backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' }, tracks: mixedTracks };
-      await expectHdrOperatorRefusal(historicalMixed, {}, 15, 'mixed decoded PQ/HLG with chroma key');
+      await expectHdrOperatorRefusal(historicalMixed, {}, 15, 'mixed decoded PQ/HLG with levels');
       const admittedTracks = mixedTracks.map(track => ({ ...track, items: track.items.map(item => ({ ...item, effects: [] })) }));
       mixedRenderer = await createCompositionRenderer({ ...historicalMixed, tracks: admittedTracks },
         mixedCanvas, mixedCanvas.getContext('2d'), { mode: 'export' });
@@ -302,9 +303,9 @@ window.__vite_plugin_react_preamble_installed__ = true
             sourceStart: 0, sourceEnd: 30, sourceFps: FPS, sourceDuration: 30, speed: 1,
             sourceWidth: SIZE, sourceHeight: SIZE,
             transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 },
-            effects: [{ id: `nested-chroma-key-${transfer}`, enabled: true,
-              effect: { type: 'gpu-effect', gpuEffectType: 'gpu-chroma-key',
-                params: { keyColor: 'green', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] };
+            effects: [{ id: `nested-levels-${transfer}`, enabled: true,
+              effect: { type: 'gpu-effect', gpuEffectType: 'gpu-levels',
+                params: { inputBlack: 0, inputWhite: 1, gamma: 1, outputBlack: 0, outputWhite: 1 } } }] };
           const mask = { id: `nested-mask-${transfer}`, type: 'shape', trackId: 'nested-mask',
             from: 0, durationInFrames: 30, label: 'upper-half alpha mask', shapeType: 'rectangle',
             fillColor: '#ffffff', strokeEnabled: false, strokeWidth: 0, isMask: true, maskType: 'alpha',
@@ -326,7 +327,7 @@ window.__vite_plugin_react_preamble_installed__ = true
             { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 0.5 });
           await expectHdrOperatorRefusal({ fps: FPS, width: SIZE, height: SIZE, durationInFrames: 30,
             backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
-            tracks: [nestedTrack(historicalInstance.trackId, 0, [historicalInstance])] }, {}, 15, `nested chroma key ${transfer}`);
+            tracks: [nestedTrack(historicalInstance.trackId, 0, [historicalInstance])] }, {}, 15, `nested levels ${transfer}`);
           const admittedInner = storeComposition(innerId, [nestedTrack('nested-sdr', 0, [graphic]),
             nestedTrack('nested-mask', 1, [mask]), nestedTrack('nested-video', 2, [{ ...clip, effects: [] }])]);
           useCompositionsStore.getState().setCompositions([admittedInner, outer]);
@@ -441,9 +442,9 @@ window.__vite_plugin_react_preamble_installed__ = true
               sourceStart: 0, sourceEnd: 30, sourceFps: FPS, sourceDuration: 30, speed: 1,
               sourceWidth: SIZE, sourceHeight: SIZE,
               transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 },
-              effects: [{ id: `variant-chroma-key-${transfer}-${variant.name}`, enabled: true,
-                effect: { type: 'gpu-effect', gpuEffectType: 'gpu-chroma-key',
-                  params: { keyColor: 'green', tolerance: 0.1, softness: 0, spillSuppression: 0 } } }] };
+              effects: [{ id: `variant-levels-${transfer}-${variant.name}`, enabled: true,
+                effect: { type: 'gpu-effect', gpuEffectType: 'gpu-levels',
+                  params: { inputBlack: 0, inputWhite: 1, gamma: 1, outputBlack: 0, outputWhite: 1 } } }] };
             const id = `variant-comp-${transfer}-${variant.name}`;
             const variantTracks = [...variant.masks.map((mask, order) => nestedTrack(mask.trackId, order, [mask])),
               nestedTrack('variant-video', variant.masks.length, [clip])];
@@ -452,7 +453,7 @@ window.__vite_plugin_react_preamble_installed__ = true
               { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 0.75 });
             await expectHdrOperatorRefusal({ fps: FPS, width: SIZE, height: SIZE, durationInFrames: 30,
               backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
-              tracks: [nestedTrack(instance.trackId, 0, [instance])] }, {}, 15, `mask chroma key ${transfer}/${variant.name}`);
+              tracks: [nestedTrack(instance.trackId, 0, [instance])] }, {}, 15, `mask levels ${transfer}/${variant.name}`);
             useCompositionsStore.getState().setCompositions([storeComposition(id,
               variantTracks.map(track => ({ ...track, items: track.items.map(item => ({ ...item, effects: [] })) })))]);
             const canvas = new OffscreenCanvas(SIZE, SIZE);
@@ -531,7 +532,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     const rightInput = { ...rasterInput,
       rgb: new Uint16Array(Array.from({ length: SIZE * SIZE }, () => rightCodes).flat()) };
     const rightWorking = color.signalToWorking(rightCodes.map((value) => value / 65535), 'pq');
-    const rasterTransition = [{ id: 'masked-raster-cut', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
+    const rasterTransition = [{ id: 'masked-raster-cut', type: 'crossfade', presentation: 'glitch', timing: 'linear',
       trackId: 'raster-clips', leftClipId: 'raster-left', rightClipId: 'raster-right', durationInFrames: 20, alignment: 0.5 }];
     const rasterOutputs = [];
     const rasterCutCases = [];
@@ -779,7 +780,7 @@ window.__vite_plugin_react_preamble_installed__ = true
             durationInFrames: 60, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
             tracks: [nestedTrack('raster-mask', 0, [rasterMask]),
               nestedTrack('refusal-clips', 1, [clip('refusal-left', 0), clip('refusal-right', 30)])],
-            transitions: [{ id: 'refusal-cut', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
+            transitions: [{ id: 'refusal-cut', type: 'crossfade', presentation: 'glitch', timing: 'linear',
               trackId: 'refusal-clips', leftClipId: 'refusal-left', rightClipId: 'refusal-right',
               durationInFrames: 20, alignment: 0.5 }] }, canvas, canvas.getContext('2d'), { mode: 'export' });
           await renderer.preload?.();
@@ -817,7 +818,7 @@ window.__vite_plugin_react_preamble_installed__ = true
               tracks: [nestedTrack('pending-sibling', 2, [graphic]), nestedTrack('pending-clips', 1,
                 scenario === 'item' ? [clip('pending-left', 0)] : [clip('pending-left', 0), clip('pending-right', 30)])],
               transitions: scenario === 'item' ? [] : [{ id: 'pending-cut', type: 'crossfade',
-                presentation: 'dissolve', timing: 'linear', trackId: 'pending-clips',
+                presentation: 'glitch', timing: 'linear', trackId: 'pending-clips',
                 leftClipId: 'pending-left', rightClipId: 'pending-right', durationInFrames: 20, alignment: 0.5 }] },
               canvas, canvas.getContext('2d'), { mode });
             try {
@@ -884,7 +885,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     let canvasStateReuse;
     try {
       const right = { ...hdrItem, id: 'owner-sdr', mediaId: undefined, src: 'delayed-sdr.mp4', from: 30 };
-      const active = { transition: { id: 'owner-cut', type: 'crossfade', presentation: 'dissolve',
+      const active = { transition: { id: 'owner-cut', type: 'crossfade', presentation: 'glitch',
         timing: 'linear', trackId: 'owner-track', leftClipId: hdrItem.id, rightClipId: right.id, durationInFrames: 20 },
         leftClip: hdrItem, rightClip: right, progress: 0.5, transitionStart: 20, transitionEnd: 40,
         durationInFrames: 20, leftPortion: 10, rightPortion: 10, cutPoint: 30 };
@@ -959,7 +960,7 @@ window.__vite_plugin_react_preamble_installed__ = true
           durationInFrames: 60, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
           tracks: [nestedTrack('raster-mask', 0, [rasterMask]), nestedTrack('priority-track', 1, [left, right]),
             nestedTrack('priority-sibling', 2, [sibling])],
-          transitions: [{ id: 'priority-cut', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
+          transitions: [{ id: 'priority-cut', type: 'crossfade', presentation: 'glitch', timing: 'linear',
             trackId: 'priority-track', leftClipId: left.id, rightClipId: right.id, durationInFrames: 20, alignment: 0.5 }] },
           canvas, canvas.getContext('2d'), { mode: 'export', hdrRasters: { 'masked-raster': rasterInput } });
         try {
