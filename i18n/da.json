@@ -19141,7 +19141,7 @@
   "frameleaf_studio_editor_import_accepts_other": "Andre editorer",
   "frameleaf_studio_editor_import_accepts_other_detail": "OpenTimelineIO (.otio, .otioz), AAF, Final Cut Pro 7 XML eller EDL, med eventuelle CDL- og LUT-filer ved siden af",
   "frameleaf_studio_editor_import_accepts_premiere": "Projektfilen (.prproj) eller en sekvens eksporteret som Final Cut Pro XML (.xml)",
-  "frameleaf_studio_editor_import_accepts_resolve": "En tidslinje eksporteret som Final Cut Pro XML (.fcpxml eller .xml), OpenTimelineIO (.otio) eller en EDL",
+  "frameleaf_studio_editor_import_accepts_resolve": "Et eksporteret projekt (.drp) eller en eksporteret tidslinje (.drt), eller en tidslinje eksporteret som Final Cut Pro XML (.fcpxml eller .xml), OpenTimelineIO (.otio) eller en EDL",
   "frameleaf_studio_editor_import_accepts_title": "Hvad du kan tage med",
   "frameleaf_studio_editor_import_added": "{count, plural, one {# tilføjet til dit bibliotek} other {# tilføjet til dit bibliotek}}",
   "frameleaf_studio_editor_import_added_album": "I albummet “{album}”.",

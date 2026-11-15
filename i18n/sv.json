@@ -19143,7 +19143,7 @@
   "frameleaf_studio_editor_import_accepts_other": "Andra redigeringsprogram",
   "frameleaf_studio_editor_import_accepts_other_detail": "OpenTimelineIO (.otio, .otioz), AAF, Final Cut Pro 7 XML eller EDL, med eventuella CDL- och LUT-filer bredvid",
   "frameleaf_studio_editor_import_accepts_premiere": "Projektfilen (.prproj) eller en sekvens exporterad som Final Cut Pro XML (.xml)",
-  "frameleaf_studio_editor_import_accepts_resolve": "En tidslinje exporterad som Final Cut Pro XML (.fcpxml eller .xml), OpenTimelineIO (.otio) eller en EDL",
+  "frameleaf_studio_editor_import_accepts_resolve": "Ett exporterat projekt (.drp) eller en exporterad tidslinje (.drt), eller en tidslinje exporterad som Final Cut Pro XML (.fcpxml eller .xml), OpenTimelineIO (.otio) eller en EDL",
   "frameleaf_studio_editor_import_accepts_title": "Vad du kan ta med",
   "frameleaf_studio_editor_import_added": "{count, plural, one {# tillagd i ditt bibliotek} other {# tillagda i ditt bibliotek}}",
   "frameleaf_studio_editor_import_added_album": "I albumet ”{album}”.",
