@@ -2410,6 +2410,8 @@ export enum JobName {
   LibraryScanQueueAll = 'LibraryScanQueueAll',
   /** Drains queued external library scans (FL-78); the scan itself is a durable media operation. */
   LibraryScanRun = 'LibraryScanRun',
+  /** FL-838: keeps a library's folder albums in step with its folders, after each scan and when turned on. */
+  LibraryFolderAlbumSync = 'LibraryFolderAlbumSync',
 
   HlsSessionCleanup = 'HlsSessionCleanup',
 
@@ -2550,7 +2552,7 @@ export enum JobName {
 // Locked encryption jobs are observed through the Locked encryption status. Landmark inference
 // is observed through asset details rather than the public job catalogue, and FL-1092's album auto-add
 // and FL-1094's outfit crops through the album itself. FL-819's workflow event jobs are observed
-// through the workflow's run history.
+// through the workflow's run history. FL-838's folder album sync is observed through the albums it keeps.
 export const JobNameSchema = z
   .enum(JobName)
   .exclude([
@@ -2577,6 +2579,7 @@ export const JobNameSchema = z
     JobName.MediaHealthPutBackUpload,
     JobName.WorkflowEventDispatch,
     JobName.WorkflowEventTrigger,
+    JobName.LibraryFolderAlbumSync,
     // the member's key: its value is 'media-import', unlike the names above
     'MediaImport',
   ])
@@ -2712,6 +2715,8 @@ export enum DatabaseLock {
   PhotographyReminders = 981,
   /** FL-1037: one worker collects the studios' payment events from Frameleaf Cloud at a time. */
   ClientsPaymentEvents = 982,
+  /** FL-838: a library's folder albums are synced, or removed, by one worker at a time. */
+  LibraryFolderAlbums = 988,
 }
 
 export enum MaintenanceAction {

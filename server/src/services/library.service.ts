@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { Insertable } from 'kysely';
+import { Insertable, Updateable } from 'kysely';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import picomatch from 'picomatch';
@@ -37,7 +37,9 @@ import {
   UserStatus,
 } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { FolderAlbumService } from 'src/services/folder-album.service.js';
 import {
   DEFAULT_LIBRARY_EXCLUSION_PATTERNS,
   type ImportPathNeighbour,
@@ -83,6 +85,10 @@ export class LibraryService extends BaseService {
   private lock = false;
   private watchers = new Map<string, () => Promise<void>>();
   private watchRequests = new Map<string, symbol>();
+
+  private get folderAlbums() {
+    return BaseService.create(FolderAlbumService, this);
+  }
 
   @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({
@@ -531,10 +537,11 @@ export class LibraryService extends BaseService {
     if (dto.importPaths) {
       await this.requireValidImportPaths(dto.importPaths, id);
     }
-    const update: UpdateLibraryDto = {
+    const update: Updateable<LibraryTable> = {
       name: dto.name,
       importPaths: dto.importPaths?.map((importPath) => normalizeImportPath(importPath)),
       exclusionPatterns: dto.exclusionPatterns,
+      folderAlbums: dto.folderAlbums,
     };
 
     if (update.exclusionPatterns) {
@@ -543,6 +550,14 @@ export class LibraryService extends BaseService {
 
     const library = await this.libraryRepository.update(id, update);
     await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryUpdated)]);
+
+    // FL-838: folder albums. Turned on, the albums are made in the background; turned off, they stay as ordinary
+    // albums, or are deleted when asked (never their photos). Nothing is written to the library's folders.
+    if (dto.folderAlbums === true && !existing.folderAlbums) {
+      await this.folderAlbums.queueSync(id);
+    } else if (dto.folderAlbums === false && existing.folderAlbums) {
+      await this.folderAlbums.removeAll(id, { removeAlbums: dto.removeFolderAlbums === true });
+    }
 
     const foldersChanged =
       libraryPathsFingerprint(existing) !==
