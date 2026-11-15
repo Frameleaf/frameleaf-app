@@ -82,8 +82,14 @@ describe(PersonService.name, () => {
 
       mocks.person.getAllForUser.mockResolvedValue({
         items: [
-          { ...person, assetCount: 3, lastSeenAt: new Date('2026-01-02T03:04:05.000Z') },
-          { ...hiddenPerson, assetCount: 1, lastSeenAt: new Date('2025-06-07T08:09:10.000Z') },
+          { ...person, deathDate: null, notes: null, assetCount: 3, lastSeenAt: new Date('2026-01-02T03:04:05.000Z') },
+          {
+            ...hiddenPerson,
+            deathDate: null,
+            notes: null,
+            assetCount: 1,
+            lastSeenAt: new Date('2025-06-07T08:09:10.000Z'),
+          },
         ],
         hasNextPage: false,
       });
@@ -157,8 +163,14 @@ describe(PersonService.name, () => {
 
       mocks.person.getAllForUser.mockResolvedValue({
         items: [
-          { ...isFavorite, assetCount: 2, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
-          { ...person, assetCount: 5, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
+          {
+            ...isFavorite,
+            deathDate: null,
+            notes: null,
+            assetCount: 2,
+            lastSeenAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+          { ...person, deathDate: null, notes: null, assetCount: 5, lastSeenAt: new Date('2026-01-01T00:00:00.000Z') },
         ],
         hasNextPage: false,
       });
