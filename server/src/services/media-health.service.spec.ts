@@ -5511,6 +5511,33 @@ describe(MediaHealthService.name, () => {
       await expect(readFile(asset.originalPath)).resolves.toEqual(before);
     });
 
+    it('does nothing with an older Try again waiting for its drive once a newer one replaced it (FL-1362)', async () => {
+      const upload = StorageCore.getBaseFolder(StorageFolder.Upload);
+      asset = { ...asset, originalPath: join(upload, 'user-id', 'as', 'se', 'asset-1.jpg') };
+      vi.mocked(mediaHealthRepository.getAssets).mockResolvedValue([asset] as never);
+      vi.mocked(mocks.storage.stat).mockImplementation((file) =>
+        file === join(upload, '.frameleaf')
+          ? Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }))
+          : Promise.resolve(settledStat({ size: 10 }) as never),
+      );
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(false);
+      // the newer Try again recorded its own fix; the older one's drive-wait put-back comes round after
+      recorded(
+        finding(MediaHealthCategory.Missing, MediaHealthStatus.Missing, {
+          retriedAt: '2026-11-10T10:00:00.000Z',
+          retryId: 'newer',
+        }),
+      );
+      const waiting = { id: 'asset-1', from: 'person' as const, attempt: 0, waits: 1, requeue: 1 };
+
+      await expect(sut.handleFixAsset({ ...waiting, retry: 'older' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+
+      // the newer one carries on waiting for the drive
+      await expect(sut.handleFixAsset({ ...waiting, retry: 'newer' })).resolves.toBe(JobStatus.Success);
+      expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+    });
+
     it('waits while the drive is unplugged', async () => {
       const upload = StorageCore.getBaseFolder(StorageFolder.Upload);
       asset = { ...asset, originalPath: join(upload, 'user-id', 'as', 'se', 'asset-1.jpg') };
@@ -7090,10 +7117,10 @@ describe(MediaHealthService.name, () => {
           name: JobName.MediaHealthFixAsset,
           data: { id: 'asset-1', from: 'person', attempt: 0, retry: expect.any(String) },
         });
-        // only the time of the choice is recorded; the decline and the fix state stay as they are
+        // only the choice (its time and its fix) is recorded; the decline and the fix state stay as they are
         expect(mediaHealthRepository.settleFinding).toHaveBeenCalledWith({
           healthId: 'health-1',
-          evidence: { retriedAt: expect.any(String) },
+          evidence: { retriedAt: expect.any(String), retryId: vi.mocked(mocks.job.queue).mock.calls[0][0].data.retry },
         });
         expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
       });
