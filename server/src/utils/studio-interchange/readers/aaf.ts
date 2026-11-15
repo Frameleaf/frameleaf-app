@@ -66,6 +66,8 @@ const PID = {
   sourceId: 0x11_01,
   sourceSlotId: 0x11_02,
   startTime: 0x12_01,
+  fadeInLength: 0x12_02,
+  fadeOutLength: 0x12_04,
   cutPoint: 0x18_02,
   transitionGroup: 0x18_01,
   operation: 0x0b_01,
