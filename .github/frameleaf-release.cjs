@@ -1590,6 +1590,12 @@ async function createBundle(
             `${image.image}@${image.digest}`,
           ]),
       ),
+      // FL-997: which platforms each variant was built for, so Manager picks one an arm64 host can run.
+      machineLearningVariantPlatforms: Object.fromEntries(
+        manifest.images
+          .filter((image) => image.image === ml.image && image.suffix)
+          .map((image) => [image.suffix.slice(1), image.platforms ?? []]),
+      ),
       postgres: dependency("database"),
     },
     platforms: server.platforms.filter((platform) =>

@@ -855,6 +855,13 @@ test("install bundle keeps :latest in Compose and env and preserves data configu
           platforms: ["linux/amd64", "linux/arm64"],
           sourceCommit: sha,
         },
+        {
+          image: "ghcr.io/frameleaf/frameleaf-machine-learning",
+          suffix: "-cuda",
+          digest: digest(5),
+          platforms: ["linux/amd64", "linux/arm64"],
+          sourceCommit: sha,
+        },
       ],
     };
     const originalManifest = clone(manifest);
@@ -893,10 +900,17 @@ test("install bundle keeps :latest in Compose and env and preserves data configu
     ]);
     assert.deepEqual(Object.keys(nas.images).sort(), [
       "machineLearning",
+      "machineLearningVariantPlatforms",
       "machineLearningVariants",
       "postgres",
       "server",
     ]);
+    assert.deepEqual(nas.images.machineLearningVariants, {
+      cuda: `ghcr.io/frameleaf/frameleaf-machine-learning@${digest(5)}`,
+    });
+    assert.deepEqual(nas.images.machineLearningVariantPlatforms, {
+      cuda: ["linux/amd64", "linux/arm64"],
+    });
     assert.equal(nas.sourceCommit, sha);
     assert.equal(nas.buildRun, originalManifest.buildRun);
     assert.deepEqual(nas.platforms, ["linux/amd64", "linux/arm64"]);
