@@ -51,7 +51,7 @@
    * and awaited before a remount, so two engines can never share the page.
    */
   import '$lib/frameleaf/tokens.css';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import { Icon, Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import {
@@ -169,6 +169,8 @@
     onBackToEditor,
     quickEditWaiting = false,
     handoffPlayhead = null,
+    seekRequest = null,
+    banner,
     draftHeld = false,
     onOpenActivity,
     onExportBundle,
@@ -239,6 +241,10 @@
     quickEditWaiting?: boolean;
     /** Where the quick editor's playhead was (FL-113), so the engine starts at the same instant. */
     handoffPlayhead?: { num: number; den: number } | null;
+    /** Move the engine's playhead (FL-1545), once per request id. */
+    seekRequest?: { id: number; num: number; den: number } | null;
+    /** A banner under the header, such as an imported project's notes (FL-1545). */
+    banner?: Snippet;
     /** The session holds undecided edits (a conflict or a lost lease): the engine keeps what it shows. */
     draftHeld?: boolean;
     /**
@@ -541,6 +547,7 @@
     mode,
     workspace,
     handoffPlayhead,
+    seekRequest,
     draftHeld,
     // The adapter's own chrome (its server preview panel) speaks the host's language (FL-96).
     strings: {
@@ -1009,6 +1016,8 @@
       {/if}
     </div>
   </header>
+
+  {@render banner?.()}
 
   {#if bannerStatus}
     <!--
