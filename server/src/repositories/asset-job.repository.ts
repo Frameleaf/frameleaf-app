@@ -1086,6 +1086,37 @@ export class AssetJobRepository {
   }
 
   /**
+   * FL-863: photos with a face whose eye scores are missing or from an older scoring (`force`: every photo
+   * with a face). `inShoot` picks the photos in a Clients shoot's album, or the rest, so shoots are queued first.
+   */
+  selectionForFaceEyeScores({ force, inShoot, version }: { force?: boolean; inShoot: boolean; version: number }) {
+    // photography_workflow is written with raw SQL (photography-workflow.repository.ts), not a typed table
+    const inAShoot = sql<boolean>`exists (
+      select 1 from album_asset
+      join album on album.id = album_asset."albumId" and album."deletedAt" is null
+      join photography_workflow workflow on workflow."albumId" = album.id
+      where album_asset."assetId" = asset.id
+    )`;
+    return this.assetsWithPreviews()
+      .where(libraryScopePredicate(LibraryScope.Personal))
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset_face')
+            .whereRef('asset_face.assetId', '=', 'asset.id')
+            .where('asset_face.deletedAt', 'is', null)
+            .$if(!force, (qb) =>
+              qb.where((eb) =>
+                eb.or([eb('asset_face.eyeScoreVersion', 'is', null), eb('asset_face.eyeScoreVersion', '<', version)]),
+              ),
+            ),
+        ),
+      )
+      .where(inShoot ? inAShoot : sql<boolean>`not ${inAShoot}`)
+      .select(['asset.id']);
+  }
+
+  /**
    * FL-1408: whether any of this owner's photos still waits for face detection: what "find the missing
    * ones" would queue, so a file that is offline is not waited for. No @GenerateSql: one probe row.
    */

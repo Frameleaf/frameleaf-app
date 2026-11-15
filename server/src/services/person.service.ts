@@ -4,7 +4,6 @@ import type { Insertable, Selectable, Updateable } from 'kysely';
 import type { Person } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
 import type {
   FaceBoxPixels,
   FaceCorrection,
@@ -76,6 +75,7 @@ import { deferJobAdoption, publishJobResult } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
+import { type BoundingBox, EyeScoresUnavailableError } from 'src/repositories/machine-learning.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
@@ -153,6 +153,9 @@ const DETECTED_FACE_BOX_KEYS = [
   'boundingBoxX2',
   'boundingBoxY2',
 ] as const;
+
+/** FL-863: the eye scoring stored in `asset_face.eyeScoreVersion` (FL-843's landmark model and fit). */
+export const EYE_SCORE_VERSION = 1;
 
 /**
  * FL-864, FL-941: what a merge changes in the surviving person's profile, or undefined for nothing. The survivor
@@ -1407,6 +1410,70 @@ export class PersonService extends BaseService {
       await this.jobRepository.queue({ name: JobName.PersonCleanup });
     }
 
+    return JobStatus.Success;
+  }
+
+  /** FL-863: photos whose faces have no eye scores yet, a Clients shoot's photos first. */
+  @OnJob({ name: JobName.FaceEyeScoreQueueAll, queue: QueueName.FaceDetection })
+  async handleQueueFaceEyeScores({ force }: JobOf<JobName.FaceEyeScoreQueueAll>): Promise<JobStatus> {
+    const { machineLearning } = await this.getConfig({ withCache: false });
+    if (!isFacialRecognitionEnabled(machineLearning) || !machineLearning.eyeScores.enabled) {
+      return JobStatus.Skipped;
+    }
+    for (const inShoot of [true, false]) {
+      await this.jobRepository.queueSelection(
+        JobName.FaceEyeScore,
+        this.assetJobRepository.selectionForFaceEyeScores({ force, inShoot, version: EYE_SCORE_VERSION }),
+      );
+    }
+    return JobStatus.Success;
+  }
+
+  /**
+   * FL-863: eyes open and eye sharpness for one photo's faces, from their stored boxes on the preview faces were
+   * found in, by this server's own machine learning (the landmark step is a few milliseconds a face). A worker
+   * that can't score eyes yet leaves the faces unscored; the nightly run picks them up later.
+   */
+  @OnJob({ name: JobName.FaceEyeScore, queue: QueueName.FaceDetection })
+  async handleFaceEyeScore({ id }: JobOf<JobName.FaceEyeScore>): Promise<JobStatus> {
+    const { machineLearning } = await this.getConfig({ withCache: true });
+    if (!isFacialRecognitionEnabled(machineLearning) || !machineLearning.eyeScores.enabled) {
+      return JobStatus.Skipped;
+    }
+    const asset = await this.assetJobRepository.getForDetectFacesJob(id);
+    const preview = asset?.files[0];
+    const faces = asset?.faces.filter((face) => !face.deletedAt && face.eyeScoreVersion !== EYE_SCORE_VERSION) ?? [];
+    if (!preview || faces.length === 0) {
+      return JobStatus.Skipped;
+    }
+    const { width, height } = await this.mediaRepository.getImageMetadata(preview.path);
+    const boxes = faces.map((face): [number, number, number, number] => {
+      const x = width / (face.imageWidth || width);
+      const y = height / (face.imageHeight || height);
+      return [face.boundingBoxX1 * x, face.boundingBoxY1 * y, face.boundingBoxX2 * x, face.boundingBoxY2 * y];
+    });
+    const valid = boxes.map(([x1, y1, x2, y2]) => x1 < x2 && y1 < y2);
+    if (!valid.includes(true)) {
+      return JobStatus.Skipped;
+    }
+    let scores;
+    try {
+      scores = await this.machineLearningRepository.faceEyeScoresLocal(
+        preview.path,
+        boxes.filter((_, index) => valid[index]),
+      );
+    } catch (error) {
+      if (error instanceof EyeScoresUnavailableError) {
+        this.logger.debug(`Eye scores skipped for asset ${id}: ${error.message}`);
+        return JobStatus.Skipped;
+      }
+      throw error;
+    }
+    const scored = faces.filter((_, index) => valid[index]);
+    await this.personRepository.updateEyeScores(
+      scored.map((face, index) => ({ id: face.id, ...scores[index] })),
+      EYE_SCORE_VERSION,
+    );
     return JobStatus.Success;
   }
 
