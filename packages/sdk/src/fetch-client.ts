@@ -19390,6 +19390,150 @@ export type StudioBundleUploadDto = {
     sizeBytes: string;
     sources: StudioBundleSourceDto[];
 };
+export type StudioEditorImportCreateDto = {
+    /** For an edit decision list, which does not state its frame rate: frames a second, e.g. 23.976 */
+    frameRate?: number;
+    /** CDL (.cdl, .cc, .ccc) and LUT (.cube) files to apply to the clips they name */
+    sidecarUploadIds?: string[];
+    /** The project file, uploaded with `POST /studio/editor-imports/uploads` */
+    uploadId: string;
+};
+export type StudioEditorImportQueuedDto = {
+    /** The job id; it also shows in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioEditorImportNote = {
+    /** Where on the timeline */
+    atSeconds: number;
+    /** What it became in Studio */
+    became: string;
+    /** The clip, transition or marker it is about */
+    clip: string;
+    /** What kind of difference, e.g. `transition-unmatched` */
+    code: string;
+    /** What it was in the other editor */
+    what: string;
+};
+export type StudioEditorImportNotice = {
+    /** In English, for reference */
+    became: string;
+    /** `version-untested`, `clips-disabled`, `items-unknown`, `edl-limits`, `edl-frame-rate`, `lut-resampled`, `sidecar-unused` or `sidecar-unreadable` */
+    code: string;
+    /** What it is about: a version, a count, a file name or a frame rate */
+    subject?: string;
+    /** In English, for reference */
+    what: string;
+};
+export type StudioEditorImportProjectNotesDto = {
+    fileName: string;
+    /** What came over differently or could not come over, with where on the timeline */
+    notes: StudioEditorImportNote[];
+    notices: StudioEditorImportNotice[];
+    source: StudioEditorImportSource;
+};
+export type StudioEditorImportUploadDto = {
+    fileName: string;
+    /** The upload; name it when starting the import */
+    id: string;
+    sizeBytes: number;
+};
+export type StudioEditorImportMediaTotals = {
+    /** Added to the library: sent from a folder or carried in the archive */
+    added: number;
+    /** Found in the library without asking */
+    found: number;
+    /** Matches the person chose */
+    matched: number;
+    /** Still missing; the clip keeps its place until it is relinked */
+    placeholders: number;
+    total: number;
+};
+export type StudioEditorImportBuildDto = {
+    fileName: string;
+    media: StudioEditorImportMediaTotals;
+    name: string;
+    /** What came over differently or could not come over */
+    notes: StudioEditorImportNote[];
+    notices: StudioEditorImportNotice[];
+    projectId: string;
+    source: StudioEditorImportSource;
+    timeline: number;
+};
+export type StudioEditorImportMedia = {
+    /** The library item found or suggested */
+    assetId: string | null;
+    /** That item’s file name */
+    assetName: string | null;
+    /** The file came inside the uploaded archive and is added to the library if needed */
+    carried: boolean;
+    /** How many clips use it */
+    clips: number;
+    confidence: number;
+    /** The file as the project names it; send it back in `media` when importing */
+    key: string;
+    kind: StudioEditorImportMediaKind | null;
+    match: StudioEditorImportMatch;
+    /** The file name alone */
+    name: string;
+};
+export type StudioEditorImportTimeline = {
+    /** Video clips and stills */
+    clips: number;
+    durationSeconds: number;
+    /** Name it in `timelines` when importing */
+    index: number;
+    markers: number;
+    name: string;
+    /** What will come over differently, media aside */
+    notes: StudioEditorImportNote[];
+    /** Sound clips */
+    sound: number;
+    titles: number;
+    transitions: number;
+};
+export type StudioEditorImportCheckDto = {
+    fileName: string;
+    media: StudioEditorImportMedia[];
+    notices: StudioEditorImportNotice[];
+    source: StudioEditorImportSource;
+    sourceVersion: string | null;
+    timelines: StudioEditorImportTimeline[];
+};
+export type StudioEditorImportDto = {
+    /** Once a `build` job has completed */
+    build: (StudioEditorImportBuildDto) | null;
+    /** Once a `check` job has completed */
+    check: (StudioEditorImportCheckDto) | null;
+    error: string | null;
+    id: string;
+    progress: number;
+    stage: StudioEditorImportStage;
+    status: MediaOperationStatus;
+    step: StudioEditorImportStep;
+};
+export type StudioEditorImportStartDto = {
+    /** The album that added files go into, in the person’s language; defaults to the project name */
+    albumName?: string;
+    /** The person’s choice for each file; a file left out keeps what the check found */
+    media: {
+        /** The person sent this file from their folder just now */
+        added?: boolean;
+        /** The library item to use, or null to leave a placeholder */
+        assetId: string | null;
+        key: string;
+    }[];
+    /** The timelines to bring; each becomes a project */
+    timelines: number[];
+};
+export type StudioEditorImportJob = {
+    id: string;
+    status: MediaOperationStatus;
+    timeline: number;
+};
+export type StudioEditorImportStartedDto = {
+    jobs: StudioEditorImportJob[];
+};
 export type StudioExportMastering = {
     maxNits: number;
     minNits: number;
@@ -19698,6 +19842,8 @@ export type StudioProjectDto = {
     id: string;
     /** The project was read in from a portable bundle; always false for a reviewer */
     importedFromBundle: boolean;
+    /** The editor the project was imported from (Beta); null otherwise and for a reviewer */
+    importedFromEditor?: (StudioEditorImportSource) | null;
     /** When an editor last opened it; null for a reviewer */
     lastOpenedAt: string | null;
     lease: StudioProjectLeaseDto;
@@ -19786,6 +19932,8 @@ export type StudioProjectDetailDto = {
     id: string;
     /** The project was read in from a portable bundle; always false for a reviewer */
     importedFromBundle: boolean;
+    /** The editor the project was imported from (Beta); null otherwise and for a reviewer */
+    importedFromEditor?: (StudioEditorImportSource) | null;
     /** When an editor last opened it; null for a reviewer */
     lastOpenedAt: string | null;
     lease: StudioProjectLeaseDto;
@@ -39921,6 +40069,78 @@ export function getStudioBundleUpload({ id }: {
     }));
 }
 /**
+ * Check a project from another editor
+ */
+export function createStudioEditorImport({ studioEditorImportCreateDto }: {
+    studioEditorImportCreateDto: StudioEditorImportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioEditorImportQueuedDto;
+    }>("/studio/editor-imports", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioEditorImportCreateDto
+    })));
+}
+/**
+ * Get the import notes of a project
+ */
+export function getStudioEditorImportNotes({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioEditorImportProjectNotesDto;
+    }>(`/studio/editor-imports/projects/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Upload a project file from another editor
+ */
+export function uploadStudioEditorImportFile({ studioBundleUploadCreateDto }: {
+    studioBundleUploadCreateDto: StudioBundleUploadCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioEditorImportUploadDto;
+    }>("/studio/editor-imports/uploads", oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: studioBundleUploadCreateDto
+    })));
+}
+/**
+ * Get an import from another editor
+ */
+export function getStudioEditorImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioEditorImportDto;
+    }>(`/studio/editor-imports/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Import the checked project
+ */
+export function startStudioEditorImport({ id, studioEditorImportStartDto }: {
+    id: string;
+    studioEditorImportStartDto: StudioEditorImportStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioEditorImportStartedDto;
+    }>(`/studio/editor-imports/${encodeURIComponent(id)}/import`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioEditorImportStartDto
+    })));
+}
+/**
  * Get a Studio export
  */
 export function getStudioExport({ id }: {
@@ -44343,6 +44563,7 @@ export enum MediaOperationKind {
     StudioReverseConform = "studio_reverse_conform",
     StudioTranscription = "studio_transcription",
     StudioMovie = "studio_movie",
+    StudioEditorImport = "studio_editor_import",
     StudioPreviewStream = "studio_preview_stream",
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",
@@ -47678,6 +47899,39 @@ export enum StudioBundleSourceResolution {
     Kept = "kept",
     Suggested = "suggested",
     Missing = "missing"
+}
+export enum StudioEditorImportSource {
+    Premiere = "premiere",
+    Resolve = "resolve",
+    Finalcut = "finalcut",
+    Imovie = "imovie",
+    Otio = "otio",
+    Fcp7 = "fcp7",
+    Edl = "edl",
+    Aaf = "aaf"
+}
+export enum StudioEditorImportMediaKind {
+    Video = "video",
+    Audio = "audio",
+    Image = "image"
+}
+export enum StudioEditorImportMatch {
+    Found = "found",
+    VeryLikely = "very-likely",
+    Likely = "likely",
+    Possible = "possible",
+    Missing = "missing"
+}
+export enum StudioEditorImportStage {
+    Check = "check",
+    Build = "build"
+}
+export enum StudioEditorImportStep {
+    Reading = "reading",
+    Media = "media",
+    Building = "building",
+    Checking = "checking",
+    Done = "done"
 }
 export enum StudioExportScope {
     Library = "library",

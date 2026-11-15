@@ -16955,6 +16955,7 @@
   "frameleaf_render_workers_kind_restoration_preview": "Podgląd renowacji",
   "frameleaf_render_workers_kind_studio_bundle_export": "Eksport projektu",
   "frameleaf_render_workers_kind_studio_bundle_import": "Import projektu",
+  "frameleaf_render_workers_kind_studio_editor_import": "Import z innego edytora",
   "frameleaf_render_workers_kind_studio_export": "Eksport ze Studio",
   "frameleaf_render_workers_kind_studio_export_publish": "Publikowanie eksportu ze Studio",
   "frameleaf_render_workers_kind_studio_movie": "Film",

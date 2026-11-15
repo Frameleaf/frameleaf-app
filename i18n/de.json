@@ -16954,6 +16954,7 @@
   "frameleaf_render_workers_kind_restoration_preview": "Restaurierungsvorschau",
   "frameleaf_render_workers_kind_studio_bundle_export": "Projektexport",
   "frameleaf_render_workers_kind_studio_bundle_import": "Projektimport",
+  "frameleaf_render_workers_kind_studio_editor_import": "Import aus einem anderen Schnittprogramm",
   "frameleaf_render_workers_kind_studio_export": "Studio-Export",
   "frameleaf_render_workers_kind_studio_export_publish": "Studio-Export veröffentlichen",
   "frameleaf_render_workers_kind_studio_movie": "Film",

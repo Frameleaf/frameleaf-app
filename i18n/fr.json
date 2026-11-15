@@ -16952,6 +16952,7 @@
   "frameleaf_render_workers_kind_restoration_preview": "Aperçu de la restauration",
   "frameleaf_render_workers_kind_studio_bundle_export": "Export de projet",
   "frameleaf_render_workers_kind_studio_bundle_import": "Import de projet",
+  "frameleaf_render_workers_kind_studio_editor_import": "Import depuis un autre logiciel de montage",
   "frameleaf_render_workers_kind_studio_export": "Export Studio",
   "frameleaf_render_workers_kind_studio_export_publish": "Publication d’export Studio",
   "frameleaf_render_workers_kind_studio_movie": "Film",
