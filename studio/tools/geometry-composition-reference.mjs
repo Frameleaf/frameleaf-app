@@ -142,7 +142,11 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1429 adds Cloud caption batches to the clip menu; composition and raster producers are unchanged.
     sourceSha256 === 'f76d7aef72b9d3dc7489f990afead2e4901fbb67b19f036f03fcb7abbeaeb122' ||
     // FL-642 streams the export limiter and binds colour match to split parents' keys; composition and raster producers are unchanged.
-    sourceSha256 === '4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6'
+    sourceSha256 === '4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6' ||
+    // FL-1555 crossfades between sound clips and sound curves; changes no composition or raster producer.
+    sourceSha256 === '618ffdaaf2d499ecd7cf680d60879e3f173e18aa10e7aa8171764d822a7e3755' ||
+    // FL-1563 marker ranges, notes and clip markers; changes no composition or raster producer.
+    sourceSha256 === 'd6b987310298fd087ee08d8a7dae66ab867d566ebc7a20f35737d3b419d3ac4d'
   )
     return {
       ...COMPOSITION_SOURCES,

@@ -24,6 +24,7 @@ export const operationNames: Record<string, string> = {
   restore: 'Restoring your library',
   backup: 'Protecting your database',
   update: 'Updating Frameleaf',
+  rollback: 'Going back to the previous version',
   start: 'Starting services',
   stop: 'Stopping services',
   restart: 'Restarting services',
@@ -68,6 +69,8 @@ export const stepNames: Record<string, string> = {
   'rollback-restore-database': 'Restore the database from before the update',
   'rollback-previous-database': 'Switch back to the database folder from before the update',
   'rollback-start-previous': 'Start the previous release',
+  'restore-database': 'Put back the database from before the update',
+  'start-previous': 'Start Frameleaf and check the library',
   'restore-new-database': 'Restore into the new empty database',
   'reconstruct-execution-state': 'Reconcile restored background work',
   'stop-previous-installation': 'Stop and retain the previous installation',
@@ -111,6 +114,7 @@ const plans: Record<string, string[]> = {
     'prepare-library',
   ],
   update: ['download-images', 'stop-application', 'database-checkpoint', 'database-move', 'apply-release'],
+  rollback: ['download-images', 'stop-application', 'restore-database', 'start-previous'],
   'move-database': ['stop-application', 'database-checkpoint', 'database-move', 'start'],
   // FL-1323: the steps the Storage page's review lists (frameleaf-prototype MOVES.thumbs and MOVES.rebuild).
   'move-thumbnails': ['move-stop-writers', 'move-copy', 'move-verify', 'move-switch', 'move-start'],
@@ -209,6 +213,13 @@ const refusals: Record<string, string> = {
     'That host folder is outside the folders Manager may mount. Map it into Manager and add its Manager path to MANAGER_MOUNT_ROOTS, or choose a folder inside the media or database roots.',
   claim_proxied_address_unverified:
     'This connection reached Manager through a proxy, so Manager cannot tell it came from your home network. Open Manager directly on its LAN address, or set MANAGER_TRUSTED_PROXIES for the proxy. The Manager container log has the details.',
+  rollback_unavailable: 'There is no update to undo: the last one is more than 14 days old, or the library was moved or restored since.',
+  rollback_checkpoint_unreadable:
+    'The recovery point from before the update could not be read, so nothing was changed. Frameleaf is still on the newer version.',
+  rollback_checkpoint_mismatch:
+    'The recovery point does not match the update it was taken for, so nothing was changed. Frameleaf is still on the newer version.',
+  rollback_resume_required: 'Frameleaf is stopped part way through going back. Choose Resume safely to finish; nothing runs until then.',
+  rollback_cancelled: 'Going back was cancelled before anything stopped. Frameleaf is still on the newer version.',
   update_failed_rolled_back:
     'The new release did not start, so Manager put back the previous release and the library as it was before the update. Nothing was lost; try the update again later.',
   update_review_expired:
@@ -372,6 +383,8 @@ function grouped(operation: JournalOperation, within: Record<string, string>): J
 }
 export function canCancel(operation: JournalOperation, installation: { mayHaveWrittenMedia: boolean } | null) {
   if (!['failed', 'interrupted'].includes(operation.state)) return false;
+  // FL-973: once the stack stopped, going back can only be finished, not cancelled.
+  if (operation.kind === 'rollback') return operation.step !== 'stop-application' && !operation.completed.includes('stop-application');
   return (
     operation.kind === 'backup' ||
     operation.kind === 'reconfigure' ||
@@ -440,6 +453,7 @@ const operationSections: Record<string, string> = {
   backup: 'backups',
   restore: 'backups',
   update: 'updates',
+  rollback: 'updates',
   start: 'services',
   stop: 'services',
   restart: 'services',

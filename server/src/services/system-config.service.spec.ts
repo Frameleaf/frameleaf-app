@@ -523,6 +523,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
   },
   help: { askEnabled: true },
   icloud: { enabled: true },
+  sharedLinks: { defaultExpiryDays: null },
 });
 
 describe(SystemConfigService.name, () => {

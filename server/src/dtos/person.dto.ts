@@ -26,8 +26,28 @@ const PersonCreateSchema = z
   })
   .meta({ id: 'PersonCreateDto' });
 
+/** FL-941: the longest note an owner can keep about a person. */
+export const PERSON_NOTES_MAX_LENGTH = 2000;
+
 const PersonUpdateSchema = PersonCreateSchema.extend({
   featureFaceAssetId: z.uuidv4().optional().describe('Asset ID used for feature face thumbnail'),
+  deathDate: z
+    .string()
+    .meta({ format: 'date' })
+    .nullable()
+    .optional()
+    .refine((val) => (val ? new Date(val) <= new Date() : true), { error: 'Date of passing cannot be in the future' })
+    .describe(
+      'Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one)',
+    ),
+  notes: z
+    .string()
+    .max(PERSON_NOTES_MAX_LENGTH)
+    .nullable()
+    .optional()
+    .describe(
+      `Private plain-text notes about the person (FL-941), at most ${PERSON_NOTES_MAX_LENGTH} characters. An empty string or null clears them`,
+    ),
 }).meta({ id: 'PersonUpdateDto' });
 
 const PeopleUpdateItemSchema = PersonUpdateSchema.extend({
@@ -91,6 +111,21 @@ export const PersonResponseSchema = z
           '(trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)',
       )
       .meta(new HistoryBuilder().added('v3.2.1').alpha('v3.2.1').getExtensions()),
+    deathDate: z
+      .string()
+      .meta({ format: 'date' })
+      .nullable()
+      .optional()
+      .describe(
+        'Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller',
+      ),
+    notes: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        "The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner",
+      ),
   })
   .meta({ id: 'PersonResponseDto' });
 
@@ -475,7 +510,16 @@ const PeopleResponseSchema = z
   .describe('People response');
 export class PeopleResponseDto extends createZodDto(PeopleResponseSchema) {}
 
-export function mapPerson(person: MaybeDehydrated<Person>): PersonResponseDto {
+/**
+ * FL-864, FL-941: a person's `person_profile` details, as a query that joins them selects them. A query that
+ * does not join the profile leaves both out, and so does the response.
+ */
+export type PersonProfileFields = {
+  deathDate?: Date | string | null;
+  notes?: string | null;
+};
+
+export function mapPerson(person: MaybeDehydrated<Person> & PersonProfileFields): PersonResponseDto {
   return {
     id: person.personGroupId,
     name: person.name,
@@ -485,6 +529,8 @@ export function mapPerson(person: MaybeDehydrated<Person>): PersonResponseDto {
     isFavorite: person.isFavorite,
     color: person.color ?? undefined,
     updatedAt: asDateTimeString(person.updatedAt),
+    ...(person.deathDate !== undefined && { deathDate: asDateString(person.deathDate) }),
+    ...(person.notes !== undefined && { notes: person.notes }),
   };
 }
 
