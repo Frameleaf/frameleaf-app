@@ -539,6 +539,9 @@ export const getMocks = () => {
   // Write wrappers run their callback by default so a test cannot pass while silently skipping the write.
   mocks.partnerOrigin.withOwnerTagEdit.mockImplementation(async (_owner, write) => write());
   mocks.person.withMergeWrite.mockImplementation(async (write) => write());
+  // FL-934: nobody leaves a folder out of face recognition unless a test says so
+  mocks.person.getFaceFolderExcludedAssetIds.mockResolvedValue(new Set());
+  mocks.person.markFaceFolderExcludedDetected.mockResolvedValue(0);
   mocks.album.withMembershipWrite.mockImplementation(async (_ids, write) =>
     write(undefined as never, mocks.album as never),
   );

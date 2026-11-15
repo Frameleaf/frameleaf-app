@@ -304,11 +304,14 @@ export class PartnerCopyService extends BaseService {
     const maxDistance = !overriddenFields.includes(AssetOriginField.Faces)
       ? (await this.getConfig({ withCache: true })).machineLearning.facialRecognition.maxDistance
       : undefined;
+    // FL-934: no faces come across when either owner left that photo's folder out of face recognition; a copy
+    // whose own owner did not finds its own
+    const faceExcluded = (await this.personRepository.getFaceFolderExcludedAssetIds([source.id, copyId])).size > 0;
     await this.partnerOriginRepository.withFollowingOrigin('asset', source.id, copyId, async (origin) => {
       if (!origin.overriddenFields.includes(AssetOriginField.Tags)) {
         await this.copyTags(source.id, copyId, targetOwnerId);
       }
-      if (!origin.overriddenFields.includes(AssetOriginField.Faces)) {
+      if (!origin.overriddenFields.includes(AssetOriginField.Faces) && !faceExcluded) {
         await this.copyFaces({
           sourceAssetId: source.id,
           targetAssetId: copyId,
@@ -584,10 +587,18 @@ export class PartnerCopyService extends BaseService {
       followers.some((follower) => !follower.overriddenFields.includes(AssetOriginField.Faces))
         ? (await this.getConfig({ withCache: true })).machineLearning.facialRecognition.maxDistance
         : undefined;
+    // FL-934: faces do not follow out of, or into, a folder its owner left out of face recognition
+    const faceExcluded = fields.includes(AssetOriginField.Faces)
+      ? await this.personRepository.getFaceFolderExcludedAssetIds([sourceId, ...followers.map(({ id }) => id)])
+      : new Set<string>();
     const onward: JobItem[] = [];
     for (const selected of followers) {
       await this.partnerOriginRepository.withFollowingOrigin('asset', sourceId, selected.id, async (follower) => {
-        const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
+        const apply = fields.filter(
+          (field) =>
+            !follower.overriddenFields.includes(field) &&
+            (field !== AssetOriginField.Faces || (!faceExcluded.has(sourceId) && !faceExcluded.has(follower.id))),
+        );
         if (apply.length === 0) {
           return;
         }

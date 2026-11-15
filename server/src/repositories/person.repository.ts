@@ -25,6 +25,7 @@ import {
   withFilePath,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
+import { faceFolderExcluded } from 'src/utils/face-folder-exclusion.js';
 import { FACE_MIN_FRAME_SHARE, FACE_SIDEWAYS_RATIO } from 'src/utils/face-quality.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, revealedLockScope } from 'src/utils/locked.js';
@@ -41,6 +42,19 @@ const faceFrameShare = sql<number>`(greatest(${faceBoxWidth}, ${faceBoxHeight}):
 const splitCandidateIsOpen = sql<boolean>`(person_split_candidate."dismissedUntil" is null or person_split_candidate."dismissedUntil" < now())`;
 /** FL-1384: how many of a person's faces their centre is read from when people are compared. */
 const MERGE_CENTRE_FACES = 10;
+/**
+ * FL-934: a face no one confirmed, so leaving its folder out of face recognition removes it: found by machine
+ * learning, never moved or decided about by a person (FL-57), and not on a person the photo's owner named.
+ * Expects `asset_face` joined to its `asset`.
+ */
+const faceIsUnconfirmed = sql<boolean>`(
+  asset_face."sourceType" = ${sql.lit(SourceType.MachineLearning)}
+  and asset_face."correctedAt" is null
+  and not exists (
+    select 1 from person named
+    where named."ownerId" = asset."ownerId" and named."personGroupId" = asset_face."personGroupId" and named.name <> ''
+  )
+)`;
 /** Sideways, cut off by the frame, or tiny. */
 const faceIsPoorMainPhoto = sql<boolean>`(
   ${faceLooksSidewaysSql}
@@ -2311,5 +2325,145 @@ export class PersonRepository {
       .set({ personGroupId, correctedAt: sql`clock_timestamp()` })
       .where('asset_face.id', '=', id)
       .execute();
+  }
+
+  /** FL-934: the folders this owner left out of face recognition. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getFaceFolderExclusions(ownerId: string) {
+    return this.db
+      .selectFrom('face_folder_exclusion')
+      .select(['id', 'pathPrefix', 'createdAt'])
+      .where('ownerId', '=', ownerId)
+      .orderBy('pathPrefix')
+      .execute();
+  }
+
+  /** FL-934: leaves a folder out of face recognition; the same folder twice keeps the first one. */
+  async createFaceFolderExclusion(ownerId: string, pathPrefix: string) {
+    const created = await this.db
+      .insertInto('face_folder_exclusion')
+      .values({ ownerId, pathPrefix })
+      .onConflict((oc) => oc.columns(['ownerId', 'pathPrefix']).doNothing())
+      .returning(['id', 'pathPrefix', 'createdAt'])
+      .executeTakeFirst();
+    return (
+      created ??
+      this.db
+        .selectFrom('face_folder_exclusion')
+        .select(['id', 'pathPrefix', 'createdAt'])
+        .where('ownerId', '=', ownerId)
+        .where('pathPrefix', '=', pathPrefix)
+        .executeTakeFirstOrThrow()
+    );
+  }
+
+  /** FL-934: takes a folder back into face recognition; undefined when the owner has no such exclusion. */
+  async deleteFaceFolderExclusion(ownerId: string, id: string) {
+    return this.db
+      .deleteFrom('face_folder_exclusion')
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .returning(['id', 'pathPrefix', 'createdAt'])
+      .executeTakeFirst();
+  }
+
+  /**
+   * FL-934: what leaving `pathPrefix` out of face recognition would do to this owner's photos: how many are in
+   * it, how many of their faces would be removed (unconfirmed) and how many stay. Trashed photos count too.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, '/photos/scans/'] })
+  async getFaceFolderPreview(ownerId: string, pathPrefix: string) {
+    const row = await this.db
+      .selectFrom('asset')
+      .leftJoin('asset_face', (join) =>
+        join.onRef('asset_face.assetId', '=', 'asset.id').on('asset_face.deletedAt', 'is', null),
+      )
+      .select([
+        sql<number>`count(distinct asset.id)::int`.as('assetCount'),
+        sql<number>`(count(asset_face.id) filter (where ${faceIsUnconfirmed}))::int`.as('removableFaceCount'),
+        sql<number>`(count(asset_face.id) filter (where not ${faceIsUnconfirmed}))::int`.as('keptFaceCount'),
+      ])
+      .where('asset.ownerId', '=', ownerId)
+      .where(sql<boolean>`starts_with(asset."originalPath", ${pathPrefix})`)
+      .executeTakeFirstOrThrow();
+    return row;
+  }
+
+  /**
+   * FL-934: removes the unconfirmed faces of this owner's photos in `pathPrefix` (see `faceIsUnconfirmed`).
+   * Returns how many went, the photos they were on and the people whose main photo was one of them.
+   */
+  async removeUnconfirmedFolderFaces(ownerId: string, pathPrefix: string) {
+    const inFolder = sql<boolean>`asset."ownerId" = ${ownerId} and starts_with(asset."originalPath", ${pathPrefix})
+      and asset_face."deletedAt" is null and ${faceIsUnconfirmed}`;
+    const featured = await this.db
+      .selectFrom('person')
+      .innerJoin('asset_face', 'asset_face.id', 'person.faceAssetId')
+      .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+      .select(['person.ownerId', 'person.personGroupId'])
+      .where(inFolder)
+      .execute();
+    const removed = await this.db
+      .deleteFrom('asset_face')
+      .using('asset')
+      .whereRef('asset_face.assetId', '=', 'asset.id')
+      .where(inFolder)
+      .returning('asset_face.assetId')
+      .execute();
+    return {
+      faceCount: removed.length,
+      assetIds: [...new Set(removed.map(({ assetId }) => assetId))],
+      featured,
+    };
+  }
+
+  /**
+   * FL-934: marks faces as found on photos in a folder their owner left out of face recognition (all owners,
+   * or one), so the overnight check does not wait for them.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async markFaceFolderExcludedDetected(ownerId?: string): Promise<number> {
+    const result = await this.db
+      .updateTable('asset_job_status')
+      .from('asset')
+      .set({ facesRecognizedAt: sql`now()` })
+      .whereRef('asset_job_status.assetId', '=', 'asset.id')
+      .where('asset_job_status.facesRecognizedAt', 'is', null)
+      .$if(ownerId !== undefined, (qb) => qb.where('asset.ownerId', '=', ownerId!))
+      .where(faceFolderExcluded())
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows ?? 0);
+  }
+
+  /**
+   * FL-934: a folder taken back into face recognition waits for faces again, except where another of the
+   * owner's exclusions still holds a photo.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, '/photos/scans/'] })
+  async resetFaceFolderDetected(ownerId: string, pathPrefix: string): Promise<number> {
+    const result = await this.db
+      .updateTable('asset_job_status')
+      .from('asset')
+      .set({ facesRecognizedAt: null })
+      .whereRef('asset_job_status.assetId', '=', 'asset.id')
+      .where('asset.ownerId', '=', ownerId)
+      .where(sql<boolean>`starts_with(asset."originalPath", ${pathPrefix})`)
+      .where(sql<boolean>`not ${faceFolderExcluded()}`)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows ?? 0);
+  }
+
+  /** FL-934: which of these photos are in a folder their own owner left out of face recognition. */
+  async getFaceFolderExcludedAssetIds(assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', anyUuid(assetIds))
+      .where(faceFolderExcluded())
+      .execute();
+    return new Set(rows.map(({ id }) => id));
   }
 }

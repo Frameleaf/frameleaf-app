@@ -1326,6 +1326,9 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // FL-934: photos in a folder their owner left out are never queued; they count as done so nothing waits
+    await this.personRepository.markFaceFolderExcludedDetected();
+
     // Per-asset publication refreshes ML faces while retaining explicit decisions.
     await this.jobRepository.queueSelection(
       JobName.AssetDetectFaces,
@@ -1364,15 +1367,25 @@ export class PersonService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // FL-934: its owner left its folder out of face recognition, so it is not read here, on Frameleaf Cloud or
+    // on a computer's Frameleaf Desktop; marked done so the overnight check does not queue it again
+    if (asset.isFaceFolderExcluded) {
+      await this.assetRepository.upsertJobStatus({ assetId: asset.id, facesRecognizedAt: new Date() });
+      return JobStatus.Skipped;
+    }
+
     // A partner copy that follows its source's faces takes them from the source (`PartnerPropagate`), so a
     // picture shared between libraries is detected once. One with none yet asks for them: the source may have
     // finished before this copy was made.
+    // FL-934: exclusions follow each copy's owner, so a copy whose source's owner left that folder out finds its
+    // own faces (the source has none to give).
     const origin = await this.partnerOriginRepository.getOrigin('asset', id);
     if (
       origin?.sourceId &&
       origin.following &&
       !origin.overriddenFields.includes(AssetOriginField.Faces) &&
-      (await this.partnerOriginRepository.getLiveSourceId(id))
+      (await this.partnerOriginRepository.getLiveSourceId(id)) &&
+      !(await this.personRepository.getFaceFolderExcludedAssetIds([origin.sourceId])).has(origin.sourceId)
     ) {
       if (asset.faces.length === 0) {
         await this.propagateFaces([origin.sourceId]);
@@ -1456,6 +1469,12 @@ export class PersonService extends BaseService {
     await publishJobResult(async () => {
       await assertPublicationSource(id, checksum);
       const latest = await this.assetJobRepository.getForDetectFacesJob(id);
+      // FL-934: faces found before the owner left this folder out (a Frameleaf Cloud batch, a computer's
+      // Frameleaf Desktop, a job already running) are not stored
+      if (latest?.isFaceFolderExcluded) {
+        await this.assetRepository.upsertJobStatus({ assetId: id, facesRecognizedAt: new Date() });
+        return;
+      }
       if (!latest || !latest.checksum.equals(checksum) || latest.files[0]?.path !== detection.previewPath) {
         throw new Error('Face source changed before publication');
       }

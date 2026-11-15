@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { FaceFolderExclusionService } from 'src/services/face-folder-exclusion.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { errorDto } from 'test/medium/responses.js';
 import { factory } from 'test/small.factory.js';
@@ -9,10 +10,12 @@ import { ControllerContext, automock, controllerSetup, mockBaseService } from 't
 describe(PersonController.name, () => {
   let ctx: ControllerContext;
   const service = mockBaseService(PersonService);
+  const exclusions = mockBaseService(FaceFolderExclusionService);
 
   beforeAll(async () => {
     ctx = await controllerSetup(PersonController, [
       { provide: PersonService, useValue: service },
+      { provide: FaceFolderExclusionService, useValue: exclusions },
       { provide: LoggingRepository, useValue: automock(LoggingRepository, { strict: false }) },
     ]);
     return () => ctx.close();
@@ -20,6 +23,7 @@ describe(PersonController.name, () => {
 
   beforeEach(() => {
     service.resetAllMocks();
+    exclusions.resetAllMocks();
     ctx.reset();
   });
 
@@ -40,6 +44,69 @@ describe(PersonController.name, () => {
         .set('Authorization', `Bearer token`);
       expect(status).toBe(400);
       expect(body).toEqual(errorDto.validationError([{ path: ['closestAssetId'], message: 'Invalid UUID' }]));
+    });
+  });
+
+  describe('GET /people/face-exclusions', () => {
+    it('is not taken for a person id', async () => {
+      exclusions.getAll.mockResolvedValue([]);
+      const { status, body } = await request(ctx.getHttpServer()).get('/people/face-exclusions');
+      expect(status).toBe(200);
+      expect(body).toEqual([]);
+      expect(service.getById).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /people/face-exclusions/preview', () => {
+    it('requires a folder', async () => {
+      const { status } = await request(ctx.getHttpServer()).get('/people/face-exclusions/preview');
+      expect(status).toBe(400);
+      expect(exclusions.preview).not.toHaveBeenCalled();
+    });
+
+    it('passes the folder on', async () => {
+      exclusions.preview.mockResolvedValue({
+        pathPrefix: '/photos/scans/',
+        assetCount: 2,
+        removableFaceCount: 3,
+        keptFaceCount: 1,
+      });
+      const { status } = await request(ctx.getHttpServer())
+        .get('/people/face-exclusions/preview')
+        .query({ pathPrefix: '/photos/scans' });
+      expect(status).toBe(200);
+      expect(exclusions.preview.mock.calls[0][1]).toEqual({ pathPrefix: '/photos/scans' });
+    });
+  });
+
+  describe('POST /people/face-exclusions', () => {
+    it('requires a folder path', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/people/face-exclusions').send({ pathPrefix: '' });
+      expect(status).toBe(400);
+      expect(exclusions.create).not.toHaveBeenCalled();
+    });
+
+    it('requires a string', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/people/face-exclusions').send({ pathPrefix: 3 });
+      expect(status).toBe(400);
+      expect(exclusions.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('DELETE /people/face-exclusions/:id', () => {
+    it('requires a valid uuid', async () => {
+      const { status, body } = await request(ctx.getHttpServer()).delete('/people/face-exclusions/123');
+      expect(status).toBe(400);
+      expect(body).toEqual(errorDto.validationError([{ path: ['id'], message: 'Invalid UUID' }]));
+      expect(exclusions.delete).not.toHaveBeenCalled();
+    });
+
+    it('responds with 204', async () => {
+      const id = factory.uuid();
+      const { status } = await request(ctx.getHttpServer()).delete(`/people/face-exclusions/${id}`);
+      expect(status).toBe(204);
+      expect(exclusions.delete.mock.calls[0][1]).toBe(id);
+      expect(service.delete).not.toHaveBeenCalled();
     });
   });
 

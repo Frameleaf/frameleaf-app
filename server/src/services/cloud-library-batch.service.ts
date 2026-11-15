@@ -760,6 +760,10 @@ export class CloudLibraryBatchService extends BaseService {
       return path ? { previewPath: path, checksum: '' } : { refused: 'no-preview' };
     }
     const faces = await this.assetJobRepository.getForDetectFacesJob(assetId);
+    // FL-934: its owner left its folder out of face recognition since it was queued, so it is not uploaded
+    if (faces?.isFaceFolderExcluded) {
+      return { refused: 'excluded' };
+    }
     const preview = faces?.files[0];
     return preview && faces
       ? { previewPath: preview.path, checksum: faces.checksum.toString('hex') }

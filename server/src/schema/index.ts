@@ -157,6 +157,7 @@ import {
 import { DevelopStyleProfileTable } from 'src/schema/tables/develop-style-profile.table.js';
 import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.table.js';
 import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
+import { FaceFolderExclusionTable } from 'src/schema/tables/face-folder-exclusion.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
@@ -494,6 +495,7 @@ export class ImmichDatabase {
     ClusterGroupRequestTable,
     DuplicateDecisionTable,
     FaceSearchTable,
+    FaceFolderExclusionTable,
     GeodataPlacesTable,
     LandmarkTable,
     LandmarkAreaTable,
@@ -799,6 +801,7 @@ export interface DB extends QueueDatabase {
   duplicate_decision: DuplicateDecisionTable;
 
   face_search: FaceSearchTable;
+  face_folder_exclusion: FaceFolderExclusionTable;
 
   geodata_places: GeodataPlacesTable;
   landmark: LandmarkTable;

@@ -200,6 +200,7 @@ export const getForDetectedFaces = (asset: ReturnType<AssetFactory['build']>) =>
   id: asset.id,
   visibility: asset.visibility,
   checksum: asset.checksum,
+  isFaceFolderExcluded: false,
   exifInfo: getDehydrated(asset.exifInfo),
   faces: asset.faces.map((face) => getDehydrated(face)),
   // FL-1387: as the query does, only the unedited previews

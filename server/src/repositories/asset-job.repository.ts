@@ -36,6 +36,7 @@ import {
   withVideoFormat,
   withVideoStream,
 } from 'src/utils/database.js';
+import { faceFolderExcluded } from 'src/utils/face-folder-exclusion.js';
 import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, getLockedOwnerId, isLocked, isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
@@ -663,6 +664,8 @@ export class AssetJobRepository {
         .where(libraryScopePredicate(LibraryScope.Personal))
         // FL-57: the checksum tells whether a face decision was made about this original
         .select(['asset.id', 'asset.visibility', 'asset.checksum'])
+        // FL-934: in a folder its owner left out of face recognition, so no faces are found or stored for it
+        .select(faceFolderExcluded().as('isFaceFolderExcluded'))
         .$call(withExifInner)
         .select((eb) => withFaces(eb, true, true))
         // FL-1387: a stored face box is a box on the unedited picture (the viewer applies the edits and
@@ -1063,11 +1066,23 @@ export class AssetJobRepository {
   }
 
   selectionForDetectFacesJob(force?: boolean) {
-    return this.assetsWithPreviews()
-      .where(libraryScopePredicate(LibraryScope.Personal))
-      .$if(force === false, (qb) => qb.where('job_status.facesRecognizedAt', 'is', null))
-      .select(['asset.id'])
-      .orderBy('asset.fileCreatedAt', 'desc');
+    return (
+      this.assetsWithPreviews()
+        .where(libraryScopePredicate(LibraryScope.Personal))
+        // FL-934: a folder its owner left out of face recognition is never queued, forced or not
+        .where(sql<boolean>`not ${faceFolderExcluded()}`)
+        .$if(force === false, (qb) => qb.where('job_status.facesRecognizedAt', 'is', null))
+        .select(['asset.id'])
+        .orderBy('asset.fileCreatedAt', 'desc')
+    );
+  }
+
+  /** FL-934: this owner's photos in `pathPrefix` that face detection may read, for a folder taken back in. */
+  selectionForFaceFolderDetection(ownerId: string, pathPrefix: string) {
+    return this.selectionForDetectFacesJob()
+      .clearOrderBy()
+      .where('asset.ownerId', '=', ownerId)
+      .where(sql<boolean>`starts_with(asset."originalPath", ${pathPrefix})`);
   }
 
   /**

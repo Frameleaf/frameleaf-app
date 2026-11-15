@@ -19,6 +19,13 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import {
+  FaceFolderExclusionCreateDto,
+  FaceFolderExclusionCreateResponseDto,
+  FaceFolderExclusionPreviewQueryDto,
+  FaceFolderExclusionPreviewResponseDto,
+  FaceFolderExclusionResponseDto,
+} from 'src/dtos/face-folder-exclusion.dto.js';
+import {
   AssetFaceUpdateDto,
   MergePersonDto,
   MergeSuggestionsResponseDto,
@@ -44,6 +51,7 @@ import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { FaceFolderExclusionService } from 'src/services/face-folder-exclusion.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -53,6 +61,7 @@ import { UUIDParamDto } from 'src/validation.js';
 export class PersonController {
   constructor(
     private service: PersonService,
+    private faceFolderExclusionService: FaceFolderExclusionService,
     private logger: LoggingRepository,
   ) {
     this.logger.setContext(PersonController.name);
@@ -184,6 +193,65 @@ export class PersonController {
   })
   deleteSplitVerdict(@Auth() auth: AuthDto, @Body() dto: PersonSplitVerdictDeleteDto): Promise<void> {
     return this.service.deleteSplitVerdict(auth, dto);
+  }
+
+  // FL-934: declared before `getPerson(:id)`, like the merge suggestions above.
+  @Get('face-exclusions')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: 'Get folders left out of face recognition',
+    description: 'Retrieve the folders whose photos you leave out of face recognition.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getFaceFolderExclusions(@Auth() auth: AuthDto): Promise<FaceFolderExclusionResponseDto[]> {
+    return this.faceFolderExclusionService.getAll(auth);
+  }
+
+  @Get('face-exclusions/preview')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: 'Preview leaving a folder out of face recognition',
+    description:
+      'Count your photos in a folder, and how many of their faces leaving it out would remove (found automatically, ' +
+      'never confirmed, not on a named person) and keep. Nothing changes.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  previewFaceFolderExclusion(
+    @Auth() auth: AuthDto,
+    @Query() dto: FaceFolderExclusionPreviewQueryDto,
+  ): Promise<FaceFolderExclusionPreviewResponseDto> {
+    return this.faceFolderExclusionService.preview(auth, dto);
+  }
+
+  @Post('face-exclusions')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @Endpoint({
+    summary: 'Leave a folder out of face recognition',
+    description:
+      'Stop finding faces in your photos in a folder and its subfolders, on this server, Frameleaf Cloud and Frameleaf ' +
+      'Desktop. Faces found automatically that no one confirmed are removed from those photos; faces added or ' +
+      'confirmed by a person, and faces on a named person, stay. Leaving out a folder that is already left out ' +
+      'returns the existing entry.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  createFaceFolderExclusion(
+    @Auth() auth: AuthDto,
+    @Body() dto: FaceFolderExclusionCreateDto,
+  ): Promise<FaceFolderExclusionCreateResponseDto> {
+    return this.faceFolderExclusionService.create(auth, dto);
+  }
+
+  @Delete('face-exclusions/:id')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Take a folder back into face recognition',
+    description:
+      'Find faces in your photos in this folder again, except in a subfolder you still leave out separately.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  deleteFaceFolderExclusion(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.faceFolderExclusionService.delete(auth, id);
   }
 
   @Post('corrections/:id/undo')
