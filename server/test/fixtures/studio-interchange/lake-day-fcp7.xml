@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<xmeml version="5">
+  <sequence id="sequence-1">
+    <name>Lake day</name>
+    <duration>450</duration>
+    <rate><timebase>25</timebase><ntsc>FALSE</ntsc></rate>
+    <marker><name>Chapter one</name><comment>Opening</comment><in>25</in><out>-1</out></marker>
+    <media>
+      <video>
+        <format><samplecharacteristics><width>1920</width><height>1080</height></samplecharacteristics></format>
+        <track>
+          <clipitem id="clipitem-1">
+            <name>Lake morning</name>
+            <rate><timebase>25</timebase><ntsc>FALSE</ntsc></rate>
+            <start>0</start><end>-1</end><in>50</in><out>200</out>
+            <file id="file-1">
+              <name>Lake morning.mov</name>
+              <pathurl>file://localhost/Volumes/Jamie/Rockies/Lake%20morning.mov</pathurl>
+              <rate><timebase>25</timebase><ntsc>FALSE</ntsc></rate>
+              <duration>1500</duration>
+              <media><video><samplecharacteristics><width>3840</width><height>2160</height></samplecharacteristics></video><audio/></media>
+            </file>
+            <filter><effect><name>Basic Motion</name><effectid>basic</effectid>
+              <parameter><parameterid>scale</parameterid><value>120</value></parameter>
+              <parameter><parameterid>rotation</parameterid><value>3</value></parameter>
+              <parameter><parameterid>center</parameterid><value><horiz>0.1</horiz><vert>-0.05</vert></value></parameter>
+            </effect></filter>
+            <filter><effect><name>Gaussian Blur</name><effectid>GaussianBlur</effectid></effect></filter>
+            <marker><name>Heron</name><in>75</in><out>-1</out></marker>
+          </clipitem>
+          <transitionitem>
+            <start>125</start><end>175</end><alignment>center</alignment>
+            <effect><name>Cross Dissolve</name><effectid>Cross Dissolve</effectid></effect>
+          </transitionitem>
+          <clipitem id="clipitem-2">
+            <name>Kayak</name>
+            <rate><timebase>25</timebase><ntsc>FALSE</ntsc></rate>
+            <start>-1</start><end>350</end><in>50</in><out>250</out>
+            <file id="file-2">
+              <name>Kayak.mp4</name>
+              <pathurl>file://localhost/Volumes/Jamie/Rockies/Kayak.mp4</pathurl>
+              <rate><timebase>25</timebase><ntsc>FALSE</ntsc></rate>
+              <duration>750</duration>
+              <media><video><samplecharacteristics><width>1920</width><height>1080</height></samplecharacteristics></video><audio/></media>
+            </file>
+            <filter><effect><name>Time Remap</name><effectid>timeremap</effectid>
+              <parameter><parameterid>speed</parameterid><value>200</value></parameter>
+              <parameter><parameterid>reverse</parameterid><value>FALSE</value></parameter>
+            </effect></filter>
+          </clipitem>
+          <clipitem id="clipitem-3">
+            <name>Ridge pan</name>
+            <start>350</start><end>450</end><in>0</in><out>100</out>
+            <sequence id="sequence-2">
+              <name>Ridge pan</name>
+              <rate><timebase>25</timebase><ntsc>FALSE</ntsc></rate>
+              <media><video><track>
+                <clipitem id="clipitem-4">
+                  <name>Ridge</name>
+                  <start>0</start><end>100</end><in>0</in><out>100</out>
+                  <file id="file-3"><name>Ridge.jpg</name><pathurl>file://localhost/Volumes/Jamie/Rockies/Ridge.jpg</pathurl></file>
+                </clipitem>
+              </track></video></media>
+            </sequence>
+          </clipitem>
+        </track>
+        <track>
+          <generatoritem id="generator-1">
+            <name>Lake day</name>
+            <start>25</start><end>100</end><in>0</in><out>75</out>
+            <effect><name>Text</name><effectid>Text</effectid><effecttype>generator</effecttype>
+              <parameter><parameterid>str</parameterid><value>Lake day</value></parameter>
+              <parameter><parameterid>font</parameterid><value>Helvetica</value></parameter>
+              <parameter><parameterid>fontsize</parameterid><value>36</value></parameter>
+            </effect>
+          </generatoritem>
+        </track>
+      </video>
+      <audio>
+        <track>
+          <clipitem id="clipitem-5">
+            <name>Lake morning</name>
+            <start>0</start><end>150</end><in>50</in><out>200</out>
+            <file id="file-1"/>
+            <filter><effect><name>Audio Levels</name><effectid>audiolevels</effectid>
+              <parameter><parameterid>level</parameterid><value>0.5</value></parameter>
+            </effect></filter>
+          </clipitem>
+        </track>
+      </audio>
+    </media>
+  </sequence>
+</xmeml>

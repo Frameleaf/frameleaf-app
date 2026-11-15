@@ -1,0 +1,11 @@
+# A size 2 LUT that swaps red and blue.
+TITLE "Swap"
+LUT_3D_SIZE 2
+0 0 0
+0 0 1
+0 1 0
+0 1 1
+1 0 0
+1 0 1
+1 1 0
+1 1 1
