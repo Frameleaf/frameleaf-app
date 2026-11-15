@@ -24,22 +24,26 @@ const COMMON_TRANSITIONS: Readonly<Record<string, string>> = {
   clockwipe: 'clockWipe',
 };
 
+const PREMIERE_TRANSITIONS: Readonly<Record<string, string>> = {
+  additivedissolve: 'additiveDissolve',
+  filmdissolve: 'nonAdditiveDissolve',
+  nonadditivedissolve: 'nonAdditiveDissolve',
+  morphcut: 'smoothCut',
+  centersplit: 'split',
+  split: 'split',
+  bandwipe: 'bandWipe',
+  radialwipe: 'radialWipe',
+  venetianblinds: 'venetianBlindWipe',
+  irisround: 'ovalIris',
+  irisbox: 'squareIris',
+  irisdiamond: 'diamondIris',
+  iriscross: 'crossIris',
+};
+
 const EDITOR_TRANSITIONS: Readonly<Partial<Record<Source, Readonly<Record<string, string>>>>> = {
-  premiere: {
-    additivedissolve: 'additiveDissolve',
-    filmdissolve: 'nonAdditiveDissolve',
-    nonadditivedissolve: 'nonAdditiveDissolve',
-    morphcut: 'smoothCut',
-    centersplit: 'split',
-    split: 'split',
-    bandwipe: 'bandWipe',
-    radialwipe: 'radialWipe',
-    venetianblinds: 'venetianBlindWipe',
-    irisround: 'ovalIris',
-    irisbox: 'squareIris',
-    irisdiamond: 'diamondIris',
-    iriscross: 'crossIris',
-  },
+  premiere: PREMIERE_TRANSITIONS,
+  // Final Cut Pro 7 XML is also what Premiere Pro and Resolve export, under Premiere's names.
+  fcp7: { ...PREMIERE_TRANSITIONS, diptocolordissolve: 'dipToColorDissolve', crosszoom: 'lensWarpZoom' },
   resolve: {
     additivedissolve: 'additiveDissolve',
     blurdissolve: 'blurDissolve',
@@ -74,7 +78,9 @@ const normalise = (name: string) => name.toLowerCase().replaceAll(/[\s_-]+/g, ''
 /** Studio's transition for an editor's name, or null when Studio has no match. */
 export const studioTransitionFor = (source: Source, name: string): string | null => {
   const key = normalise(name);
-  return EDITOR_TRANSITIONS[source]?.[key] ?? COMMON_TRANSITIONS[key] ?? null;
+  // An EDL names wipes by SMPTE number ("Wipe 001"); the number picks a pattern Studio draws as a wipe.
+  const unnumbered = key.replace(/\d+$/, '');
+  return EDITOR_TRANSITIONS[source]?.[key] ?? COMMON_TRANSITIONS[key] ?? COMMON_TRANSITIONS[unnumbered] ?? null;
 };
 
 /** OpenTimelineIO's marker colour names to Studio's ruler colours. */
