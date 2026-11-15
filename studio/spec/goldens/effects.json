@@ -9,7 +9,7 @@
     "patches": 170,
     "sourceDigest": {
       "files": 63,
-      "sha256": "497f14758d45152f99e0b49839cd91792d3432622c3e30ee5c04dd05ef7aff6c"
+      "sha256": "e0aad14a18faa7150659d5cf52ddeb5bb995b4092278f41007b9f9208fdff0ff"
     }
   },
   "generatedBy": "studio/tools/render-goldens.browser.mjs --write",

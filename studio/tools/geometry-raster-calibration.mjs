@@ -267,7 +267,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             '4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6' ||
           // FL-1564 new transitions; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            '4ace3b17890b50144f07d809d80778573a386eb8bd8fa44ba0c9c4385527e4d5')),
+            '726e431a9dd920fe6fa9588dd0d454075bbfa3f5052cb2f9f21a0c2a19811e62')),
     'SOURCE_BROWSER',
   )
   check(

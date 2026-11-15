@@ -853,8 +853,8 @@
     {
       "path": "patches/0185-editor-import-transitions.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "9e8f83f1a5f721f1fd8ac43ec80b176a4a2cd4b3ecb374a24b1412d9e948d764"
+      "sha256": "f833d036d5a8cdcb007f3390318b33e47fae16854920aadea876ef5f67ebd0db"
     }
   ],
-  "sourceSha256": "4ace3b17890b50144f07d809d80778573a386eb8bd8fa44ba0c9c4385527e4d5"
+  "sourceSha256": "726e431a9dd920fe6fa9588dd0d454075bbfa3f5052cb2f9f21a0c2a19811e62"
 }

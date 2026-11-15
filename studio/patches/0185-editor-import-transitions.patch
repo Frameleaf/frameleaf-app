@@ -43,10 +43,10 @@ index 76584a5..f14c043 100644
    return GPU_TRANSITION_REGISTRY.get(id)
 diff --git a/src/infrastructure/gpu-transitions/transitions/editor-import.ts b/src/infrastructure/gpu-transitions/transitions/editor-import.ts
 new file mode 100644
-index 0000000..5b51a29
+index 0000000..f23ae87
 --- /dev/null
 +++ b/src/infrastructure/gpu-transitions/transitions/editor-import.ts
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,229 @@
 +import type { GpuTransitionDefinition } from '../types'
 +
 +// FL-1564: transitions other editors use that Studio lacked: Film Dissolve, Cross Zoom,
@@ -259,16 +259,20 @@ index 0000000..5b51a29
 +  let a = textureSampleLevel(leftTex, texSampler, uv, 0.0);
 +  let b = textureSampleLevel(rightTex, texSampler, uv, 0.0);
 +  let aq = textureSampleLevel(leftTex, texSampler, qUv, 0.0);
-+  let peeled = s < f;
++  // Edges are anti-aliased over one pixel (px, in aspect-correct units) so no pixel centre
++  // sits on a hard boundary that GPUs could round either way.
++  let px = 1.0 / max(params.height, 1.0);
++  let live = select(0.0, 1.0, f > 0.0);
++  let peel = live * clamp((f - s) / px + 0.5, 0.0, 1.0);
 +  let shadow = 0.35 * (1.0 - p) * (1.0 - clamp((f - s) / w, 0.0, 1.0));
 +  let under = vec4f(b.rgb * (1.0 - shadow), b.a);
-+  let base = select(a, under, peeled);
-+  let qInside = qUv.x >= 0.0 && qUv.x <= 1.0 && qUv.y >= 0.0 && qUv.y <= 1.0;
-+  let onFlap = f > 0.0 && !peeled && s <= 2.0 * f && qInside;
++  let base = mix(a, under, peel);
++  let outside = max(max(-q.x, q.x - aspect), max(-q.y, q.y - 1.0));
++  let inFrame = clamp(0.5 - outside / px, 0.0, 1.0);
++  let cover = live * clamp((s - f) / px + 0.5, 0.0, 1.0) * clamp((2.0 * f - s) / px + 0.5, 0.0, 1.0) * inFrame;
 +  let shade = 0.85 + 0.15 * clamp((s - f) / w, 0.0, 1.0);
-+  let flap = vec4f(mix(aq.rgb, vec3f(aq.a), 0.6) * shade, aq.a);
-+  let over = flap + base * (1.0 - flap.a);
-+  return select(base, over, onFlap);
++  let flap = vec4f(mix(aq.rgb, vec3f(aq.a), 0.6) * shade, aq.a) * cover;
++  return flap + base * (1.0 - flap.a);
 +}`,
 +  packUniforms: (progress, width, height) => new Float32Array([progress, width, height, 0]),
 +}

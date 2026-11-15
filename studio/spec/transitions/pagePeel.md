@@ -24,18 +24,18 @@ Work in aspect-correct coordinates P = (u·a, v) with a = W/H. Let K = (a, 1) (t
 - Q = P + 2(s − f)·g, the point of the page that folds onto this pixel, and q = (Q.x/a, Q.y).
 
 ## Blend
-Samples, premultiplied and at an explicit level 0: a = S(A, uv), b = S(B, uv), a_q = S(A, q).
+Samples, premultiplied and at an explicit level 0: a = S(A, uv), b = S(B, uv), a_q = S(A, q). Edges are anti-aliased over one pixel: with px = 1/H (one pixel in these units) and λ = 1 when f > 0, else 0:
 
-1. **Base.** Where s < f (peeled) the base is b with its RGB multiplied by 1 − 0.35·(1 − p′)·(1 − clamp((f − s)/w, 0, 1)) (the crease shadow); elsewhere it is a.
-2. **Flap.** The pixel is on the flap when f > 0, s ≥ f, s ≤ 2f and q lies in [0, 1] × [0, 1] (inclusive). The flap colour is (mix(a_q.rgb, (a_q.α, a_q.α, a_q.α), 0.6)·k, a_q.α) with k = 0.85 + 0.15·clamp((s − f)/w, 0, 1): paper-white mixed into the mirrored picture, darker near the crease.
-3. On the flap the output is flap + base·(1 − flap.α) (premultiplied source-over); elsewhere it is the base.
+1. **Base.** The peeled weight is k_p = λ·clamp((f − s)/px + 0.5, 0, 1). The incoming clip under the crease is b with its RGB multiplied by 1 − 0.35·(1 − p′)·(1 − clamp((f − s)/w, 0, 1)) (the crease shadow). The base is mix(a, that, k_p) on all four premultiplied channels.
+2. **Flap.** Its coverage is k_f = λ·clamp((s − f)/px + 0.5, 0, 1)·clamp((2f − s)/px + 0.5, 0, 1)·clamp(0.5 − o/px, 0, 1), where o = max(−Q.x, Q.x − a, −Q.y, Q.y − 1) is how far Q lies outside the frame. Its colour is (mix(a_q.rgb, (a_q.α, a_q.α, a_q.α), 0.6)·k, a_q.α)·k_f with k = 0.85 + 0.15·clamp((s − f)/w, 0, 1): paper-white mixed into the mirrored picture, darker near the crease.
+3. Output = flap + base·(1 − flap.α) (premultiplied source-over).
 
 ## Edges
-The crease and the flap's outline are hard (no anti-aliasing).
+The crease, the flap's far edge and the flap's outline (the frame's edge reflected) blend linearly over one pixel width, as above.
 
 ## Alpha
-As in the blend: the base's alpha, or the flap composited over it. Converted to straight alpha per [T2].
+As in the blend. Converted to straight alpha per [T2].
 
 ## Notes
-- Endpoints: p = 0 gives A exactly (f = 0, no flap, nothing peeled). At p = 1, f = L: every pixel centre is peeled (s < L inside the frame) and the shadow factor is 0, so the output is B.
+- Endpoints: p = 0 gives A exactly (λ = 0). At p = 1, f = L: every pixel centre is at least about 0.7 px inside the crease, so k_p = 1 and k_f = 0, and the shadow factor is 0: the output is B.
 - The flap's mirror image is the outgoing picture reflected across the crease, as the back of a printed page would show it through thin paper.
