@@ -1715,6 +1715,13 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'download.includeSidecar',
   },
   {
+    pattern: 'duplicates.keepRules',
+    // FL-832: the owner's rules for which duplicate is suggested as the keeper; the settings control follows the approved FL-886 mock
+    kind: 'api-only',
+    file: '../server/src/services/duplicate.service.ts',
+    evidence: '.duplicates.keepRules',
+  },
+  {
     pattern: 'emailNotifications.albumInvite',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/NotificationsSettings.svelte',
