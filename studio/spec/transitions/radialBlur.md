@@ -6,7 +6,7 @@
 | Directions | none |
 | Duration (frames) | default 25, min 10, max 60 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 Both clips get a combined zoom-and-spin blur about the frame centre that peaks at the midpoint, while they cross-fade; a light vignette darkens the corners during the peak.
@@ -52,6 +52,9 @@ Samples are clamped to the frame (edge-extend). In uv space the blur and vignett
 
 ## Alpha
 Blur and cross-fade on premultiplied values. The vignette darkens premultiplied RGB only, so on semi-transparent pixels it darkens the straight colour by the same factor. Output converted to straight alpha per [T2].
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. The taps average premultiplied light and coverage; the vignette multiplies light only, a dimensionless gain of at least 0.75 that darkens without changing coverage.
 
 ## Notes
 - Endpoints (SDR float route): p = 0: σ = 0, all samples at uv, result A (weighted average of identical samples; binary32 rounding only). p = 1: σ ≈ −1.3·10⁻⁸ · blurStrength (binary32 sin(π) residual), t = 1, vig ≈ 1, result B.

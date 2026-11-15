@@ -5,7 +5,7 @@
 | Category | color |
 | Temporal | no |
 | Pass | single fragment pass + 3D data texture N×N×N (8-bit RGBA), trilinear |
-| HDR | refused |
+| HDR | linear-display-bt709-v1 (grade on the encoding) [C4] |
 
 ## What it does
 Applies a colour lookup table, blended with the original by `intensity`. The table is either embedded in the effect parameters (a 3D table imported from an Adobe/Resolve `.cube` file and stored as base64 RGBA8) or a `.cube` file kept with the project, which the effect names by id (see *LUTs kept with the project*; FL-1558). A kept file may be a 3D or a 1D table.
@@ -58,7 +58,7 @@ Passed through unchanged. Table alpha is ignored.
 
 ## SDR and HDR
 - SDR: the input is clamped to [0, 1] only for the lookup. The blend itself is not clamped. G is in [0, 1], and the result is stored per [C3].
-- HDR: refused [C4]. The shader has an extended-range domain-offset term (add c − clamp01(c) to G), but it is unreachable.
+- HDR [C4], GRADE: E = SRGB of each linear channel (hdr.md H5, odd). The table is sampled at clamp01(E) exactly as in SDR, giving G; each channel's encoded excess E − clamp01(E) is added to G; the intensity mix is E + (G + E − clamp01(E) − E) · intensity on the encoding; the output is SRGB⁻¹ of that, limited to ±65504. Alpha is unchanged. A table authored for display-encoded BT.709 therefore grades an SDR source in an HDR project exactly as in an SDR project, and light above reference white keeps its encoded excess. Trilinear weights are quantised by the texture unit [C2], one step being 1/256 of the table's range on the encoding.
 
 ## Import (authoring side, CPU)
 This describes how the Studio UI turns a `.cube` file into the parameters above. A native client that imports `.cube` files must do the same to produce identical projects.

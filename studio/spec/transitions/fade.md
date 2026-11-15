@@ -6,7 +6,7 @@
 | Directions | none |
 | Duration (frames) | default 30, min 5, max 90 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 Equal-power cross-fade (cos² / sin² weights that sum to 1) combined with a 4 % scale drift: the outgoing clip shrinks from 100 % to 96 % while the incoming clip settles from 104 % to 100 %. Where the shrinking outgoing clip no longer covers the frame its contribution is zero (transparent), not edge-stretched.
@@ -44,6 +44,9 @@ Outside the shrunk outgoing image (a border that grows to 2 % of each dimension 
 
 ## Alpha
 Premultiplied weighted sum, alpha clamped to [0, 1]; output converted to straight alpha per [T2].
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. The cos²/sin² weights and the 4 % scale drift are unchanged; a tap outside the scaled frame adds nothing, as in SDR. The alpha clamp to [0, 1] stays.
 
 ## Notes
 - Endpoints (SDR float route, nothing forced): p = 0 gives exactly A (c = 1, sA = 1). p = 1 gives B up to the GPU's cos(π/2) residual (c² ≈ 2·10⁻¹⁵ in binary32; WGSL permits larger absolute error for cos, up to 2⁻¹¹, i.e. c² ≤ 2.4·10⁻⁷).

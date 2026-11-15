@@ -6,7 +6,7 @@
 | Directions | none |
 | Duration (frames) | default 30, min 10, max 90 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 A linear dissolve that gently holds back highlights in the middle of the transition: channels brighter than the mix's luma + 0.18 are pulled down slightly toward that ceiling, so the overlap never looks brighter than the clips.
@@ -34,6 +34,9 @@ None.
 
 ## Alpha
 Luma and the ceiling are computed on premultiplied values, so the 0.18 offset is relative to premultiplied luma (semi-transparent pixels are guarded more strongly in straight terms). RGB is clamped to [0, 1], not to α. Output converted to straight alpha per [T2].
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. The SDR clamp to [0, 1] is lifted. The guard's luminance is BT.709 luminance of the premultiplied linear mix, and its 0.18 is in reference-white units (36.5 cd/m² at the default 203 cd/m²): a highlight brighter than the pixel's luminance plus 0.18 is pulled towards that cap by up to 0.18·sin(π·p), so the guard still keeps one clip's bright channel from flaring through the other.
 
 ## Notes
 - The guard only lowers channels (c ≤ n); at most 18 % of the excess above Y + 0.18 is removed.

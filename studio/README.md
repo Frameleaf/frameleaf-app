@@ -192,6 +192,23 @@ mount/teardown callbacks. They qualify these ownership controls only; real
 Chromium/Firefox/Safari permission, hotplug and measured recording latency remain
 open. The adapted source digest still requires the artifact owner's binding.
 
+Patch 0198 (FL-1556) lets HDR projects keep their transitions and grades. Thirteen transitions
+render in linear HDR (render spec T5): additive dissolve as before, and dissolve, fade, non-additive
+dissolve, dip to colour, blur dissolve, wipe, slide (Push), iris, clock wipe, flip, pixelate and radial
+blur, which only select, move, scale or mix the two clips' pixels. Each runs its own fragment on
+premultiplied linear light with the SDR display clamps lifted, exact endpoints and binary16 coverage;
+the dip colour is decoded with the extended sRGB curve first. Curves, LUT, colour wheels and chroma key
+act on the extended sRGB encoding of the working value and decode the result (spec C4, GRADE), so an
+SDR source graded in an HDR project matches its SDR grade and light above reference white keeps its
+encoded excess past a table; sharpen is the same unsharp mask on premultiplied linear light. The HDR
+goldens (`spec/goldens/transitions.json` and `effects.json`, written with `render-goldens.browser.mjs
+--write --only=<id>/hdr`), `tools/linear-hdr-operators.test.mjs` (the pages' equations, engine-free)
+and the effects and transition matrices (homogeneity, page arithmetic without clamps, independent
+grade references in `tools/grade-reference.mjs`) pin them. Glitch, sparkles, light leak burn, film
+gate slip, chromatic, liquid distort, lens warp zoom and smooth cut stay refused, as do the 23 Canvas
+2D transitions, transitions inside nested compositions and every other effect. Hardware HDR display
+measurement and other browsers remain unqualified.
+
 Patch 0164 (FL-638) adds Stabilise. The Motion tab of one video clip has a Stabilise card: an
 Original / Stabilised preview, Smoothness (Gentle, Smooth, Locked off, cropping in 4, 7 and 12 percent),
 Stabilise clip, progress while the camera movement is analysed, then the level and crop with Turn off.
@@ -471,9 +488,9 @@ Patch 0065 establishes the current HDR working boundary (FL-97), specified in
   keeps the same encoded equation and clamp. Gaussian, box and motion blur
   preserve the pinned kernels and parameter bounds, accumulating premultiplied
   linear light and coverage before returning straight alpha. SDR keeps encoded
-  hardware sampling. The other 47 enabled effects, 21 transitions and 24
-  non-normal blends throw the shared `HdrRenderUnavailableError` until individually migrated and
-  measured in this domain. Nested compositions containing a transition refuse
+  hardware sampling. The effects, transitions and non-normal blends not yet migrated
+  (patch 0198 later admits the grades and 12 more transitions) throw the shared
+  `HdrRenderUnavailableError` until individually migrated and measured in this domain. Nested compositions containing a transition refuse
   as a whole. A declined HDR float item also refuses Canvas fallback.
 - **Historical contracts.** Patch 0031's extended sRGB-encoded HDR classifications
   and prior receipts belong to that historical domain. The effect/transition

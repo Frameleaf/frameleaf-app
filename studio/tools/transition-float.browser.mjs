@@ -74,7 +74,8 @@ try {
         }
       };
       pipeline.setWorkingRange('hdr');
-      const hdrProject = [0, 0.5, 1].map(progress => refuse(() => direct(sdrWitness, sdrWitness, progress)));
+      // A stylised transition stays refused in an HDR project (dissolve renders since FL-1556).
+      const hdrProject = [0, 0.5, 1].map(progress => refuse(() => direct(sdrWitness, sdrWitness, progress, undefined, 'rgba16float', 'glitch')));
       pipeline.setWorkingRange('sdr');
       const crossfade = direct([1, 0, 0, 1], [0, 0, 1, 0], 0.5);
       const identity = direct([0.75, 0.25, 0.5, 0.5], [0, 0, 1, 0], 0);
@@ -83,7 +84,7 @@ try {
       const legacy = direct([0.5, 0, 0, 0.5], [0, 0, 0, 0], 0, 'premultiplied', 'rgba8unorm');
       const straightSdr = direct([0.5, 0.25, 0, 0.5], [0, 0, 1, 0], 0, 'straight',
         'rgba8unorm', 'dissolve', undefined, 'straight');
-      const variantIds = ['nonAdditiveDissolve', 'lightLeakBurn',
+      const variantIds = ['smoothCut', 'lightLeakBurn',
         'filmGateSlip', 'sparkles', 'chromatic', 'lensWarpZoom', 'liquidDistort'];
       const hdr = [2, -0.5, 0.25, 1];
       const properties = { intensity: 0, glow: 0, grain: 0, exposure: 0, spread: 0,

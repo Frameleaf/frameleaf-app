@@ -6,7 +6,7 @@
 | Directions | from-left, from-right, from-top, from-bottom [T3] |
 | Duration (frames) | default 30, min 10, max 60 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 A card flip without perspective: the outgoing clip is squashed about the frame centre line to zero width (or height), then the incoming clip expands from zero back to full size. The area not covered by the squashed image is opaque black.
@@ -38,6 +38,9 @@ The squashed image has a hard edge to the black surround (no anti-aliasing); the
 
 ## Alpha
 In-bounds alpha is the clip's alpha; the surround is opaque. Output converted to straight alpha per [T2].
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. Outside the squeezed frame the picture is opaque black, zero light.
 
 ## Notes
 - Endpoints (SDR float route): p = 0 gives exactly A (σ = 1). p = 1 gives B (σ = sin(π/2) = 1 within GPU sin precision).

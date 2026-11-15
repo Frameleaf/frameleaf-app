@@ -1,4 +1,4 @@
-// All registered effects: real pinned SDR measurements, linear HDR brightness/contrast and typed refusals.
+// All registered effects: real pinned SDR measurements, linear HDR tone, spatial and grade operators, and typed refusals.
 // HDR refusals never qualify rendered HDR fixtures. Historical encoded-HDR classifications
 // are retained in effect-hdr-semantics.json; current HDR is linear display-referred BT.709.
 import assert from 'node:assert/strict';
@@ -10,6 +10,7 @@ import { photometricCases, photometricInput, linearColorCases, photometricTolera
 import { blurReference, HDR_BLURS } from './blur-reference.mjs';
 import { pixelateReference } from './pixelate-reference.mjs';
 import { geometryReference, HDR_GEOMETRY } from './geometry-reference.mjs';
+import { HDR_GRADES, chromaKeyReference, clampedEncoding, colorWheelsReference, lutFixture, sharpenReference, srgbDecode, srgbEncode, tableReference } from './grade-reference.mjs';
 import { testedSource, domainObservations } from './lib/working-domain-report.mjs';
 import { createHarness } from './lib/cross-browser-harness.mjs';
 import { createChromiumDriver, createWebDriverClassicDriver } from './lib/browser-driver.mjs';
@@ -73,7 +74,8 @@ const source = await testedSource(new URL(import.meta.url));
 // digest (unrelated approved runtime policy changes may alter that digest).
 const photometricSource = {};
 for (const [file, expected] of Object.entries({
-  'effects/color.ts': '3db983b8869e446d3a5b3037e8a1a0efcf146927f1f65cade0bd01c280695e90',
+  // FL-1556: curves and colour wheels gain an HDR-only encode/decode around unchanged SDR arithmetic.
+  'effects/color.ts': 'd371087282f69f6dcf7dd0a38acb58d339118dbfd7e9b3f3ce2ac20708910de0',
   'common.ts': 'aa331c3e74e465b567a2e319d8227001e33ed9be927970e89014edb621fa6410',
   'effects/blur.ts': 'd74a29218cc2a0d77ff0a150b81865bb127ab753e6d129d4b20fd6d626c0d416',
   // The shared HDR gate admits reviewed operators and decodes SDR ingress first.
@@ -109,13 +111,19 @@ const alphaRow = [[1, 0, 0, q(0.5)], [0, 1, 0, q(0.25)], [0, 0, 1, q(0.75)], [1,
   [q(0.5), q(0.5), q(0.5), q(0.5)], [q(0.2), q(0.4), q(0.6), 1], [1, q(0.5), 0, q(0.1)], [0, 0, 0, 1]];
 const floatInput = [...sdrRows, hdrRow, alphaRow].flat(2);
 const sdrInput = [...sdrRows, sdrRows[0], alphaRow].flat(2);
+// Grades (FL-1556): SDR rows as SDR media in an HDR project (decoded with H5), the HDR row as it is.
+const gradeInput = [...sdrRows, hdrRow, alphaRow].flatMap((row, y) => row.map((texel) =>
+  y === 2 ? texel : texel.map((v, c) => (c === 3 ? v : srgbDecode(v))))).flat();
+const gradeInput16 = Array.from(new Float16Array(gradeInput));
+// The SDR-route probe of the tables: the clamped encoding of the stored grade input.
+const gradeProbeInput = clampedEncoding(gradeInput16);
 const affineInput = [0,.25,.5,1].flatMap(alpha => [
   [-.25,.5,1.25],[-4,-2,-1],[4,2,1],[8,8,8],
   [65504,65504,65504],[-65504,-65504,-65504],[65504,-65504,.5],[.1,-.1,0],
 ].flatMap(rgb => [...rgb,alpha]));
 
 const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.env.WEBDRIVER_ENDPOINT }, async (page) =>
-  page.evaluate(async ({ W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases, affineInput, HDR_GEOMETRY }) => {
+  page.evaluate(async ({ W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases, affineInput, HDR_GEOMETRY, HDR_GRADES, gradeInput, gradeProbeInput, gradeLut }) => {
     const { HdrRenderUnavailableError } = await import('/src/shared/graphics/color/managed-color.ts');
     const { EffectsPipeline, GPU_EFFECT_REGISTRY, EFFECT_CLOCK_PARAM, getGpuEffectDefaultParams } =
       await import('/src/infrastructure/gpu-effects/index.ts');
@@ -143,6 +151,10 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
 
     const affineTexture = device.createTexture({size:[W,H],format:'rgba16float',usage});
     device.queue.writeTexture({texture:affineTexture},new Float16Array(affineInput),{bytesPerRow:W*8},[W,H]);
+    const gradeTexture = device.createTexture({size:[W,H],format:'rgba16float',usage});
+    device.queue.writeTexture({texture:gradeTexture},new Float16Array(gradeInput),{bytesPerRow:W*8},[W,H]);
+    const gradeProbeTexture = device.createTexture({size:[W,H],format:'rgba16float',usage});
+    device.queue.writeTexture({texture:gradeProbeTexture},new Float16Array(gradeProbeInput),{bytesPerRow:W*8},[W,H]);
     const render = async (source, effects) => {
       const output = device.createTexture({ size: [W, H], format: source.format, usage });
       const buffer = device.createBuffer({ size: 256 * H, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
@@ -223,8 +235,16 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         // Classic WebDriver cannot serialize typed arrays across Firefox's boundary.
         entry.hdrAffine = {cases:[],invalid:[],uniformSize:definition.uniformSize,packedDefault:packedDefault===null?null:Array.from(packedDefault)};
       }
-      const hdr = entry.hdr ?? entry.hdrSpatial ?? entry.hdrAffine;
-      const hdrInput = entry.hdrAffine ? affineTexture : inputs.rgba16float;
+      if (HDR_GRADES.includes(definition.id)) entry.hdrGrade = { cases: [], invalid: [] };
+      const hdr = entry.hdr ?? entry.hdrSpatial ?? entry.hdrAffine ?? entry.hdrGrade;
+      const hdrInput = entry.hdrAffine ? affineTexture : entry.hdrGrade ? gradeTexture : inputs.rgba16float;
+      // A grade's table oracle needs the SDR route on the clamped encoding of the same input.
+      const probe = async (effects) => {
+        if (!entry.hdrGrade) return {};
+        const range = pipeline.getWorkingRange();
+        pipeline.setWorkingRange('sdr');
+        try { return { probe: await render(gradeProbeTexture, effects) }; } finally { pipeline.setWorkingRange(range); }
+      };
       for (const { name, params } of cases(definition)) {
         const effect = [instance(definition.id, params)];
         // SDR project: Freecut's reference behaviour on both routes.
@@ -236,8 +256,14 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         entry.cases.push({ name, params, again, floatSdr, sdrFloat, sdr });
         if (hdr) {
           pipeline.setWorkingRange('hdr');
-          hdr.cases.push({ name, amount: params.amount, params, ...await render(hdrInput, effect) });
+          hdr.cases.push({ name, amount: params.amount, params, ...await render(hdrInput, effect), ...await probe(effect) });
         }
+      }
+      if (definition.id === 'gpu-lut') {
+        const effect = [instance(definition.id, { ...getGpuEffectDefaultParams(definition.id), ...gradeLut })];
+        pipeline.setWorkingRange('hdr');
+        hdr.cases.push({ name: 'fixture-lut', params: { ...getGpuEffectDefaultParams(definition.id), ...gradeLut },
+          ...await render(hdrInput, effect), ...await probe(effect) });
       }
       pipeline.setWorkingRange('hdr');
       if (!hdr) entry.hdrRefusal = await render(inputs.rgba16float, [instance(definition.id, getGpuEffectDefaultParams(definition.id))]);
@@ -270,7 +296,7 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
           frames[frame] = { value, ...rendered };
           if (hdr) {
             pipeline.setWorkingRange('hdr');
-            hdrFrames[frame] = { value, ...await render(hdrInput, resolved) };
+            hdrFrames[frame] = { value, ...await render(hdrInput, resolved), ...await probe(resolved) };
             pipeline.setWorkingRange('sdr');
           }
         }
@@ -349,7 +375,8 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
           pipeline.setWorkingRange('hdr');
           hdr.invalid.push({ name, amount: meant.amount, params: meant,
             got: await render(hdrInput, [instance(definition.id, given)]),
-            want: await render(hdrInput, [instance(definition.id, meant)]) });
+            want: await render(hdrInput, [instance(definition.id, meant)]),
+            ...await probe([instance(definition.id, meant)]) });
           pipeline.setWorkingRange('sdr');
         }
       }
@@ -362,6 +389,14 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
         entry.hdrAffine.stack={params,forward:await render(affineTexture,[effect,next]),reverse:await render(affineTexture,[next,effect])};
         entry.hdrAffine.disabled=await render(affineTexture,[{...effect,enabled:false}]);
         entry.hdrAffine.extra=[await render(affineTexture,[instance(definition.id,{})]),await render(affineTexture,[instance(definition.id,{amount:'invalid','not-a-param':NaN})])];
+        pipeline.setWorkingRange('sdr');
+      }
+      if (entry.hdrGrade) {
+        // Composed: the grade, then one stop of exposure, is twice the grade in linear light.
+        pipeline.setWorkingRange('hdr');
+        const grade = instance(definition.id, getGpuEffectDefaultParams(definition.id));
+        const exposure = instance('gpu-exposure', { exposure: 1, offset: 0, gamma: 1 }, 'exposure');
+        entry.hdrGrade.stack = { single: await render(gradeTexture, [grade]), chained: await render(gradeTexture, [grade, exposure]) };
         pipeline.setWorkingRange('sdr');
       }
       if (entry.hdrSpatial) {
@@ -397,10 +432,10 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
       linearColor.push({ ...entry, ...await render(numericalInput, [instance(entry.id, entry.params)]) });
     numericalInput.destroy();
     pipeline.destroy();
-    for (const texture of [...Object.values(inputs), sdrFloatInput, affineTexture]) texture.destroy();
+    for (const texture of [...Object.values(inputs), sdrFloatInput, affineTexture, gradeTexture, gradeProbeTexture]) texture.destroy();
     device.destroy();
     return { adapter: { vendor: adapter.vendor, architecture: adapter.architecture }, effects, unknownEffect, photometric, linearColor };
-  }, { W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases, affineInput, HDR_GEOMETRY }),
+  }, { W, H, floatInput, sdrInput, photometricCases, photometricInput, linearColorCases, affineInput, HDR_GEOMETRY, HDR_GRADES, gradeInput, gradeProbeInput, gradeLut: lutFixture() }),
 );
 report.photometricSource = photometricSource;
 
@@ -552,6 +587,43 @@ for (const effect of report.effects) {
     }
     const filtered = Array.from(new Float16Array(expected(effect.hdrSpatial.defaults)));
     pixels(effect.hdrSpatial.stack,filtered.map((v,i)=>i%4===3?v:v*2),`HDR ${effect.id} exposure stack`);
+  } else if (effect.hdrGrade) {
+    // FL-1556 grades: tables, wheels and key on the extended sRGB encoding; sharpen on premultiplied light.
+    check(rule.hdr === 'linear-display-bt709-v1', `${effect.id}: linear domain required`);
+    const halfRound = (v) => new Float16Array([v])[0];
+    const oracle = (params, probePixels) => {
+      if (effect.id === 'gpu-curves' || effect.id === 'gpu-lut') return probePixels ? tableReference(gradeInput16, probePixels) : null;
+      if (effect.id === 'gpu-chroma-key') return chromaKeyReference(gradeInput16, params);
+      if (effect.id === 'gpu-color-wheels') return colorWheelsReference(gradeInput16, params);
+      return sharpenReference(gradeInput16, W, H, params, halfRound);
+    };
+    // A 3D table's trilinear weights are quantised by the texture unit (C2, commonly to 1/256): one step of
+    // the table's range on the encoding, decoded. The probe's coordinate is the stored binary16 encoding.
+    const step = (v) => effect.id === 'gpu-lut' ? Math.abs(srgbDecode(srgbEncode(v) + Math.sign(v || 1) / 256) - v) : 0;
+    // The wheels' signed power 1/gamma (to 20 at the gamma floor) multiplies the backend's power error.
+    const gain = (params) => effect.id === 'gpu-color-wheels' ? Math.max(1, 1 / (4 * Math.max(params?.gamma ?? 1, .05))) : 1;
+    const pixels = (result, want, label, params) => {
+      check(!result.error && !result.errorType && result.pixels?.length === want?.length, `${label}: linear grade render failed`);
+      if (result.pixels && want) want.forEach((v, i) => check(Number.isFinite(result.pixels[i]) && Math.abs(result.pixels[i] - v) <= Math.max(.004, Math.abs(v) * .003 * gain(params)) + (i % 4 === 3 ? 0 : step(v)), `${label}: independent channel ${i} ${result.pixels[i]} != ${v}`));
+    };
+    const grade = effect.hdrGrade;
+    check(grade.cases.length === effect.cases.length + (effect.id === 'gpu-lut' ? 1 : 0), `${effect.id}: every parameter bound requires HDR measurement`);
+    for (const entry of grade.cases) pixels(entry, oracle(entry.params, entry.probe?.pixels), `HDR ${effect.id} ${entry.name}`, entry.params);
+    // Some measured case changes the picture.
+    check(grade.cases.some((entry) => entry.pixels?.some((v, i) => i % 4 !== 3 && Math.abs(v - gradeInput16[i]) > .01)), `${effect.id}: grade did not reach the picture`);
+    const { key, min, max, frames } = grade.animation;
+    for (const frame of [0, 5, 10]) {
+      check(frames[frame].value === min + (max - min) * frame / 10, `${effect.id}: HDR animation resolver`);
+      const defaults = grade.cases[0].params;
+      pixels(frames[frame], oracle({ ...defaults, [key]: frames[frame].value }, frames[frame].probe?.pixels), `HDR ${effect.id} animation ${frame}`, { ...defaults, [key]: frames[frame].value });
+    }
+    for (const entry of grade.invalid) {
+      check(entry.got.pixels?.every((v, i) => Object.is(v, entry.want.pixels?.[i])), `HDR ${effect.id} invalid ${entry.name}: not its declared meaning`);
+      pixels(entry.want, oracle(entry.params, entry.probe?.pixels), `HDR ${effect.id} invalid meaning ${entry.name}`, entry.params);
+    }
+    const { single, chained } = grade.stack;
+    check(single.pixels && chained.pixels && single.pixels.every((v, i) => i % 4 === 3 ? Object.is(chained.pixels[i], v)
+      : Math.abs(chained.pixels[i] - 2 * v) <= Math.max(2 ** -23, Math.abs(v) * 2 ** -9)), `HDR ${effect.id} then exposure +1 is not twice the grade`);
   } else {
     check(rule.hdr === 'refused', `${effect.id}: undeclared HDR admission`);
     check(effect.hdrRefusal.errorType === 'HdrRenderUnavailableError', `${effect.id}: missing typed HDR refusal`);
@@ -630,7 +702,7 @@ assert.deepEqual(await testedSource(new URL(import.meta.url)), source, 'tested i
 Object.assign(report, { schemaVersion: 1, kind: 'studio-domain-regression', result: 'passed', source });
 report.observations = domainObservations(report);
 if (process.env.EFFECTS_MATRIX_REPORT) await writeFile(process.env.EFFECTS_MATRIX_REPORT, JSON.stringify(report));
-console.log(JSON.stringify({ check: 'every GPU effect: SDR parameter extremes, independent math, determinism, parity, animation, stack order, invalid parameters; linear HDR tone and alpha-aware spatial blur and remaining typed refusals',
+console.log(JSON.stringify({ check: 'every GPU effect: SDR parameter extremes, independent math, determinism, parity, animation, stack order, invalid parameters; linear HDR tone, alpha-aware spatial blur, extended-sRGB grades and remaining typed refusals',
   browser: report.browser, adapter: report.adapter, effects: report.effects.length, cases: caseCount,
   photometric, linearColor, photometricSource,
   invalid: report.effects.reduce((sum, effect) => sum + effect.invalid.length, 0) }));
