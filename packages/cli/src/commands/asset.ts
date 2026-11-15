@@ -533,6 +533,10 @@ const uploadTransfer = async (options: UploadOptionsDto): Promise<Transfer> => {
 const isDeletedByOwner = (error: unknown) =>
   error instanceof ResumableUploadError && error.reason === 'deleted_by_owner';
 
+/** The server refused to open another resumable upload because the account already has its limit in progress. */
+const isTooManyIncomplete = (error: unknown) =>
+  error instanceof ResumableUploadError && error.status === 429 && error.message.startsWith('create:');
+
 /** A media type the server accepts on create; the asset's own type still comes from its file name. */
 const mediaType = (filepath: string, isImage: boolean) =>
   `${isImage ? 'image' : 'video'}/${
@@ -615,6 +619,11 @@ const uploadFile = async (
     if (isDeletedByOwner(error)) {
       state.delete(key);
       return DELETED;
+    }
+    if (isTooManyIncomplete(error)) {
+      // The server holds a few incomplete uploads per account; with more files in flight this one goes in one piece.
+      state.delete(key);
+      return uploadMultipart(input, stats, options);
     }
     // Kept in the state file: the next run (or the queue's retry) continues from the server's offset.
     throw error;

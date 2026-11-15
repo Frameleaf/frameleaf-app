@@ -167,7 +167,12 @@ describe('uploadFiles with resumable uploads (FL-849)', () => {
     vi.mocked(defaults).baseUrl = 'https://example.com';
     vi.mocked(defaults).headers = { 'x-api-key': 'key' };
     vi.mocked(getUploadLimits).mockResolvedValue({ maxSize: 1e12, maxAppendSize: 8, maxAge: 86_400, maxParallel: 4 });
-    vi.mocked(getSupportedMediaTypes).mockResolvedValue({ image: ['.png'], video: ['.mp4'], sidecar: ['.xmp'], font: [] });
+    vi.mocked(getSupportedMediaTypes).mockResolvedValue({
+      image: ['.png'],
+      video: ['.mp4'],
+      sidecar: ['.xmp'],
+      font: [],
+    });
   });
 
   afterEach(() => {
@@ -229,6 +234,29 @@ describe('uploadFiles with resumable uploads (FL-849)', () => {
       expect(process.exitCode ?? 0).toBe(0);
     } finally {
       log.mockRestore();
+    }
+  });
+
+  it('sends a file in one piece when the server has too many incomplete uploads', async () => {
+    vi.mocked(startResumableUpload).mockRejectedValue(
+      Object.assign(new ResumableUploadError(429, 'other', 'create: HTTP 429 Too many incomplete uploads'), {
+        status: 429,
+        reason: 'other',
+        message: 'create: HTTP 429 Too many incomplete uploads',
+      }),
+    );
+    const fetchMocker = createFetchMock(vi);
+    fetchMocker.enableMocks();
+    fetchMocker.doMockIf(/\/assets$/, () => ({
+      status: 201,
+      body: JSON.stringify({ id: done.id, status: 'created' }),
+    }));
+    try {
+      await expect(run()).resolves.toEqual([{ id: done.id, filepath: testFilePath }]);
+      expect(startResumableUpload).toHaveBeenCalledTimes(1);
+      expect(savedUrls()).toEqual([]);
+    } finally {
+      fetchMocker.disableMocks();
     }
   });
 
