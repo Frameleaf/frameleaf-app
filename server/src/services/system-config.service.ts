@@ -524,6 +524,11 @@ export class SystemConfigService extends BaseService {
             resolveCredentials(credentials, current);
             copyCredentials(prepared.config, credentials);
 
+            // FL-977: the playback self-test's list is not part of the revision either.
+            if (prepared.config.ffmpeg) {
+              prepared.config.ffmpeg.softwareFallback = current.ffmpeg.softwareFallback;
+            }
+
             // The re-queue reminder is not part of the revision and may have moved since step 1.
             const description = prepared.config.machineLearning?.imageDescription;
             if (description) {
@@ -605,6 +610,11 @@ export class SystemConfigService extends BaseService {
     // Inbound writes must not be allowed to clobber them — always overwrite
     // whatever the client sent with the stored values BEFORE comparing the
     // imageDescription block, then maybe bump lastConfigChangeAt below.
+    // FL-977: which kinds of video are converted on the processor is written by the playback
+    // self-test (`PlaybackSelfTestService`); a settings save keeps the stored list.
+    if (dto.ffmpeg) {
+      dto.ffmpeg.softwareFallback = oldConfig.ffmpeg.softwareFallback;
+    }
     if (dto.machineLearning?.imageDescription) {
       dto.machineLearning.imageDescription.pendingRequeueAt =
         oldConfig.machineLearning.imageDescription.pendingRequeueAt;

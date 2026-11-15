@@ -484,6 +484,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'ffmpeg.refs',
   },
   {
+    // FL-977: written by the playback self-test; Video playback copies › Speed says what it found
+    pattern: 'ffmpeg.softwareFallback',
+    kind: 'server-managed',
+    file: 'src/lib/frameleaf/system-config-draft.ts',
+    evidence: 'ffmpeg.softwareFallback',
+  },
+  {
     pattern: 'ffmpeg.targetAudioCodec',
     kind: 'control',
     file: 'src/routes/admin/system-settings/FFmpegSettings.svelte',
