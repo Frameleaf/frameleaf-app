@@ -131,7 +131,15 @@ export class PhotographyWorkspaceRepository {
    * values don't apply here; read them through the config service if that's ever needed.
    */
   async eyeSummaries(assetIds: string[]) {
-    type Summary = { faceCount: number; closedCount: number; softCount: number; unscoredCount: number };
+    type Face = { closed: boolean; soft: boolean; checked: boolean };
+    type Summary = {
+      faceCount: number;
+      closedCount: number;
+      softCount: number;
+      unscoredCount: number;
+      quality: number | null;
+      faces: Face[];
+    };
     if (assetIds.length === 0) {
       return new Map<string, Summary>();
     }
@@ -141,14 +149,22 @@ export class PhotographyWorkspaceRepository {
         SELECT coalesce((value->'machineLearning'->'eyeScores'->>'closedBelow')::real, ${closedBelow}) AS closed,
           coalesce((value->'machineLearning'->'eyeScores'->>'softBelow')::real, ${softBelow}) AS soft
         FROM (SELECT (SELECT value FROM public.system_metadata WHERE key = 'system-config') AS value) config
+      ), faces AS (
+        SELECT face."assetId", face."boundingBoxX1", face."eyeScoreVersion" IS NOT NULL AS checked,
+          coalesce(face."eyesOpen" < limits.closed, false) AS closed,
+          coalesce(face."eyeSharpness" < limits.soft, false) AS soft,
+          0.6 * face."eyesOpen" + 0.4 * face."eyeSharpness" AS quality
+        FROM public.asset_face face CROSS JOIN limits
+        WHERE face."assetId" = ANY(${assetIds}::uuid[]) AND face."deletedAt" IS NULL AND face."isVisible"
       )
-      SELECT face."assetId", count(*)::int AS "faceCount",
-        count(*) FILTER (WHERE face."eyesOpen" < limits.closed)::int AS "closedCount",
-        count(*) FILTER (WHERE face."eyeSharpness" < limits.soft)::int AS "softCount",
-        count(*) FILTER (WHERE face."eyeScoreVersion" IS NULL)::int AS "unscoredCount"
-      FROM public.asset_face face CROSS JOIN limits
-      WHERE face."assetId" = ANY(${assetIds}::uuid[]) AND face."deletedAt" IS NULL AND face."isVisible"
-      GROUP BY face."assetId"
+      SELECT "assetId", count(*)::int AS "faceCount",
+        count(*) FILTER (WHERE closed)::int AS "closedCount",
+        count(*) FILTER (WHERE soft)::int AS "softCount",
+        count(*) FILTER (WHERE NOT checked)::int AS "unscoredCount",
+        min(quality)::float8 AS quality,
+        jsonb_agg(jsonb_build_object('closed', closed, 'soft', soft, 'checked', checked) ORDER BY "boundingBoxX1") AS faces
+      FROM faces
+      GROUP BY "assetId"
     `.execute(this.db);
     return new Map(rows.map(({ assetId, ...summary }) => [assetId, summary]));
   }

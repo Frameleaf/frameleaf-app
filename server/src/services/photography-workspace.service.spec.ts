@@ -187,7 +187,17 @@ describe(PhotographyWorkspaceService.name, () => {
     });
     repository.currentRevisions.mockResolvedValue(new Map([[id, current]]));
     // FL-863: the photo's faces for culling
-    const eyes = { faceCount: 3, closedCount: 1, softCount: 0, unscoredCount: 1 };
+    const eyes = {
+      faceCount: 2,
+      closedCount: 1,
+      softCount: 0,
+      unscoredCount: 1,
+      quality: 0.2,
+      faces: [
+        { closed: true, soft: false, checked: true },
+        { closed: false, soft: false, checked: false },
+      ],
+    };
     repository.eyeSummaries.mockResolvedValue(new Map([[id, eyes]]));
     await expect(
       sut.photos({ ...auth, session: { ...auth.session!, hasElevatedPermission: true } }, shoot.id, {}),
