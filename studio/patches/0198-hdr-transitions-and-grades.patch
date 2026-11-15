@@ -1,0 +1,523 @@
+diff --git a/src/infrastructure/gpu-effects/effects/color.ts b/src/infrastructure/gpu-effects/effects/color.ts
+--- a/src/infrastructure/gpu-effects/effects/color.ts
++++ b/src/infrastructure/gpu-effects/effects/color.ts
+@@ -9,6 +9,7 @@ import {
+   getGpuCurvesPointsParamKey,
+ } from '@/shared/utils/gpu-curves'
+ import { effectClockSeconds } from '../effect-clock'
++import { LINEAR_GRADE_WGSL } from './linear-grade'
+ 
+ function readNumberParam(
+   params: Record<string, number | boolean | string>,
+@@ -490,6 +491,7 @@ export const curves: GpuEffectDefinition = {
+ @group(0) @binding(0) var texSampler: sampler;
+ @group(0) @binding(1) var inputTex: texture_2d<f32>;
+ @group(0) @binding(3) var curveLut: texture_2d<f32>;
++${LINEAR_GRADE_WGSL}
+ 
+ fn sampleCurveLut(value: f32) -> vec3f {
+   let lutWidth = ${GPU_CURVES_LUT_WIDTH}.0;
+@@ -500,13 +502,18 @@ fn sampleCurveLut(value: f32) -> vec3f {
+ @fragment
+ fn curvesFragment(input: VertexOutput) -> @location(0) vec4f {
+   let color = textureSample(inputTex, texSampler, input.uv);
++  // HDR (FL-1556): the curve covers [0, 1] of the extended sRGB encoding; encoded
++  // light outside it keeps its offset, and the result is decoded back to linear light.
++  let e = fl_grade_encode3(color.rgb);
+   let c = vec3f(
+-    sampleCurveLut(color.r).r,
+-    sampleCurveLut(color.g).g,
+-    sampleCurveLut(color.b).b,
++    sampleCurveLut(e.r).r,
++    sampleCurveLut(e.g).g,
++    sampleCurveLut(e.b).b,
+   );
+-  // HDR: the curve covers [0, 1]; out-of-domain light keeps its offset (FL-97).
+-  return vec4f(c + fl_domain_offset3(color.rgb), color.a);
++  if (FL_EXTENDED_RANGE) {
++    return vec4f(fl_range3(fl_grade_decode3(c + fl_domain_offset3(e))), color.a);
++  }
++  return vec4f(c, color.a);
+ }`,
+   params: Object.fromEntries([
+     ...GPU_CURVES_CHANNELS.flatMap((channel): Array<[string, EffectParam]> => {
+@@ -608,6 +615,7 @@ struct WheelsParams {
+ @group(0) @binding(0) var texSampler: sampler;
+ @group(0) @binding(1) var inputTex: texture_2d<f32>;
+ @group(0) @binding(2) var<uniform> params: WheelsParams;
++${LINEAR_GRADE_WGSL}
+ 
+ fn wheelTint(color: vec3f, hue: f32, amount: f32, mask: f32) -> vec3f {
+   if (amount < 0.001) { return color; }
+@@ -619,7 +627,8 @@ fn wheelTint(color: vec3f, hue: f32, amount: f32, mask: f32) -> vec3f {
+ @fragment
+ fn colorWheelsFragment(input: VertexOutput) -> @location(0) vec4f {
+   let color = textureSample(inputTex, texSampler, input.uv);
+-  var c = color.rgb;
++  // HDR (FL-1556): the wheels act on the extended sRGB encoding, unclamped, then decode.
++  var c = fl_grade_encode3(color.rgb);
+   let luma = luminance601(c);
+   let shadowMask = 1.0 - smoothstep(0.0, 0.5, luma);
+   let highlightMask = smoothstep(0.5, 1.0, luma);
+@@ -667,6 +676,7 @@ fn colorWheelsFragment(input: VertexOutput) -> @location(0) vec4f {
+   }
+   let postLuma = luminance601(c);
+   c = mix(vec3f(postLuma), c, clamp(params.lumMix / 100.0, 0.0, 1.0));
++  if (FL_EXTENDED_RANGE) { return vec4f(fl_range3(fl_grade_decode3(c)), color.a); }
+   return vec4f(fl_range3(c), color.a);
+ }`,
+   params: {
+diff --git a/src/infrastructure/gpu-effects/effects/keying.ts b/src/infrastructure/gpu-effects/effects/keying.ts
+--- a/src/infrastructure/gpu-effects/effects/keying.ts
++++ b/src/infrastructure/gpu-effects/effects/keying.ts
+@@ -1,4 +1,5 @@
+ import type { GpuEffectDefinition } from '../types'
++import { LINEAR_GRADE_WGSL } from './linear-grade'
+ 
+ export const chromaKey: GpuEffectDefinition = {
+   id: 'gpu-chroma-key',
+@@ -14,6 +15,7 @@ struct ChromaKeyParams {
+ @group(0) @binding(0) var texSampler: sampler;
+ @group(0) @binding(1) var inputTex: texture_2d<f32>;
+ @group(0) @binding(2) var<uniform> params: ChromaKeyParams;
++${LINEAR_GRADE_WGSL}
+ 
+ fn rgb2ycbcr(rgb: vec3f) -> vec3f {
+   let y = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+@@ -25,8 +27,11 @@ fn rgb2ycbcr(rgb: vec3f) -> vec3f {
+ @fragment
+ fn chromaKeyFragment(input: VertexOutput) -> @location(0) vec4f {
+   let color = textureSample(inputTex, texSampler, input.uv);
++  // HDR (FL-1556): the key, its tolerances and the spill act on the extended sRGB
++  // encoding of the pixel; RGB is decoded back to linear light afterwards.
++  let encoded = fl_grade_encode3(color.rgb);
+   let keyColor = vec3f(params.keyR, params.keyG, params.keyB);
+-  let colorYCbCr = rgb2ycbcr(color.rgb);
++  let colorYCbCr = rgb2ycbcr(encoded);
+   let keyYCbCr = rgb2ycbcr(keyColor);
+   let cbcrDist = length(colorYCbCr.yz - keyYCbCr.yz);
+   let innerTolerance = params.tolerance;
+@@ -39,7 +44,7 @@ fn chromaKeyFragment(input: VertexOutput) -> @location(0) vec4f {
+   if (outerTolerance > innerTolerance) {
+     alpha = smoothstep(innerTolerance, outerTolerance, cbcrDist);
+   }
+-  var finalColor = color.rgb;
++  var finalColor = encoded;
+   if (params.spillSuppression > 0.0) {
+     if (params.keyG > params.keyR && params.keyG > params.keyB) {
+       let spillAmount = max(0.0, finalColor.g - max(finalColor.r, finalColor.b)) * params.spillSuppression;
+@@ -53,6 +58,7 @@ fn chromaKeyFragment(input: VertexOutput) -> @location(0) vec4f {
+       finalColor.g += spillAmount * 0.5;
+     }
+   }
++  if (FL_EXTENDED_RANGE) { return vec4f(fl_range3(fl_grade_decode3(finalColor)), color.a * alpha); }
+   return vec4f(finalColor, color.a * alpha);
+ }`,
+   params: {
+diff --git a/src/infrastructure/gpu-effects/effects/linear-grade.ts b/src/infrastructure/gpu-effects/effects/linear-grade.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/gpu-effects/effects/linear-grade.ts
+@@ -0,0 +1,28 @@
++/**
++ * FL-1556: grading operators in linear HDR.
++ *
++ * Curves, LUTs, colour wheels and the chroma key are authored against display-encoded
++ * values: curve points and LUT tables cover [0, 1] of an sRGB-encoded signal, wheel zones
++ * and key tolerances are measured on it. In an HDR project they act on the extended sRGB
++ * encoding of the linear working value (IEC 61966-2-1 by odd symmetry, the curve SDR
++ * media are decoded with on ingest), and the result is decoded back to linear light.
++ * So an SDR source in an HDR project is graded exactly as in an SDR project, light above
++ * reference white keeps its encoded offset past a [0, 1] table, and negative (wide-gamut)
++ * components keep their sign. SDR projects and the rgba8 route run the pinned SDR
++ * arithmetic unchanged: both helpers are identities there.
++ *
++ * Requires effectRangeWgsl (FL_EXTENDED_RANGE) earlier in the module.
++ */
++export const LINEAR_GRADE_WGSL = /* wgsl */ `
++fn fl_grade_encode3(c: vec3f) -> vec3f {
++  if (!FL_EXTENDED_RANGE) { return c; }
++  let a = abs(c);
++  let curve = 1.055 * pow(a, vec3f(1.0 / 2.4)) - vec3f(0.055);
++  return sign(c) * select(curve, a * 12.92, a <= vec3f(0.0031308));
++}
++fn fl_grade_decode3(c: vec3f) -> vec3f {
++  if (!FL_EXTENDED_RANGE) { return c; }
++  let a = abs(c);
++  let curve = pow((a + vec3f(0.055)) / 1.055, vec3f(2.4));
++  return sign(c) * select(curve, a / 12.92, a <= vec3f(0.04045));
++}`
+diff --git a/src/infrastructure/gpu-effects/effects/lut.ts b/src/infrastructure/gpu-effects/effects/lut.ts
+--- a/src/infrastructure/gpu-effects/effects/lut.ts
++++ b/src/infrastructure/gpu-effects/effects/lut.ts
+@@ -1,6 +1,7 @@
+ import type { GpuEffectDefinition } from '../types'
+ import { createIdentityLutData, decodeLutData } from '../lut/cube-lut'
+ import { readFileLut, readFileLutDomain } from '../lut/file-lut'
++import { LINEAR_GRADE_WGSL } from './linear-grade'
+ 
+ const IDENTITY_LUT_SIZE = 2
+ 
+@@ -22,14 +23,19 @@ struct LutParams { intensity: f32, size: f32, _p2: f32, _p3: f32 };
+ @group(0) @binding(1) var inputTex: texture_2d<f32>;
+ @group(0) @binding(2) var<uniform> params: LutParams;
+ @group(0) @binding(3) var lutTex: texture_3d<f32>;
++${LINEAR_GRADE_WGSL}
+ @fragment
+ fn lutFragment(input: VertexOutput) -> @location(0) vec4f {
+   let color = textureSample(inputTex, texSampler, input.uv);
++  // HDR (FL-1556): the table covers [0, 1] of the extended sRGB encoding; encoded light
++  // outside it keeps its offset, and the result is decoded back to linear light.
++  let e = fl_grade_encode3(color.rgb);
+   let size = max(params.size, 2.0);
+-  let coords = (clamp(color.rgb, vec3f(0.0), vec3f(1.0)) * (size - 1.0) + vec3f(0.5)) / size;
+-  // HDR: the LUT covers [0, 1]; out-of-domain light keeps its offset (FL-97).
+-  let graded = textureSample(lutTex, texSampler, coords).rgb + fl_domain_offset3(color.rgb);
+-  return vec4f(mix(color.rgb, graded, clamp(params.intensity, 0.0, 1.0)), color.a);
++  let coords = (clamp(e, vec3f(0.0), vec3f(1.0)) * (size - 1.0) + vec3f(0.5)) / size;
++  let graded = textureSample(lutTex, texSampler, coords).rgb + fl_domain_offset3(e);
++  let mixed = mix(e, graded, clamp(params.intensity, 0.0, 1.0));
++  if (FL_EXTENDED_RANGE) { return vec4f(fl_range3(fl_grade_decode3(mixed)), color.a); }
++  return vec4f(mixed, color.a);
+ }`,
+   params: {
+     intensity: {
+diff --git a/src/infrastructure/gpu-effects/effects/stylize.ts b/src/infrastructure/gpu-effects/effects/stylize.ts
+--- a/src/infrastructure/gpu-effects/effects/stylize.ts
++++ b/src/infrastructure/gpu-effects/effects/stylize.ts
+@@ -150,9 +150,35 @@ struct SharpenParams { amount: f32, radius: f32, width: f32, height: f32 };
+ @group(0) @binding(0) var texSampler: sampler;
+ @group(0) @binding(1) var inputTex: texture_2d<f32>;
+ @group(0) @binding(2) var<uniform> params: SharpenParams;
++// HDR (FL-1556): the same unsharp mask on linear light. Taps accumulate premultiplied
++// light and coverage; the blurred reference is their coverage-weighted mean colour, so
++// hidden RGB under zero alpha never enters it. Overshoot keeps its sign; alpha is the
++// centre's, rounded to binary16, and zero coverage writes zero.
++fn linearSharpen(uv: vec2f, texelSize: vec2f) -> vec4f {
++  let center = fl_blur_sample(inputTex, texSampler, uv);
++  var blur = vec4f(0.0);
++  var totalWeight = 0.0;
++  let samples = 3;
++  let sigma = params.radius * 0.5 + 0.5;
++  for (var x = -samples; x <= samples; x++) {
++    for (var y = -samples; y <= samples; y++) {
++      let offset = vec2f(f32(x), f32(y)) * texelSize * params.radius;
++      let distSq = f32(x * x + y * y);
++      let weight = exp(-distSq / (2.0 * sigma * sigma));
++      blur += fl_blur_sample(inputTex, texSampler, uv + offset) * weight;
++      totalWeight += weight;
++    }
++  }
++  let coverage = fl_half_coverage(center.a);
++  if (coverage <= 0.0 || blur.a <= 0.0) { return vec4f(0.0); }
++  let straight = center.rgb / center.a;
++  let reference = blur.rgb / blur.a;
++  return vec4f(fl_range3(straight + (straight - reference) * params.amount), coverage);
++}
+ @fragment
+ fn sharpenFragment(input: VertexOutput) -> @location(0) vec4f {
+   let texelSize = vec2f(1.0 / params.width, 1.0 / params.height);
++  if (FL_EXTENDED_RANGE) { return linearSharpen(input.uv, texelSize); }
+   let center = textureSample(inputTex, texSampler, input.uv);
+   var blur = vec4f(0.0);
+   var totalWeight = 0.0;
+diff --git a/src/infrastructure/gpu-effects/registry.ts b/src/infrastructure/gpu-effects/registry.ts
+--- a/src/infrastructure/gpu-effects/registry.ts
++++ b/src/infrastructure/gpu-effects/registry.ts
+@@ -60,11 +60,20 @@ export function getGpuEffectDefaultParams(id: string): Record<string, number | b
+   return defaults
+ }
+ 
+-/** Reviewed in linear display-light BT.709; 1.0 is 203 cd/m². */
++/**
++ * Reviewed in linear display-light BT.709; 1.0 is 203 cd/m². FL-1556 adds the grades:
++ * curves, LUT, colour wheels and chroma key act on the extended sRGB encoding of the
++ * working value (effects/linear-grade.ts); sharpen filters premultiplied linear light.
++ */
++const LINEAR_HDR_EFFECT_TYPES: ReadonlySet<string> = new Set([
++  'gpu-brightness', 'gpu-contrast', 'gpu-exposure', 'gpu-saturation', 'gpu-temperature',
++  'gpu-vibrance', 'gpu-grayscale', 'gpu-sepia', 'gpu-invert',
++  'gpu-box-blur', 'gpu-gaussian-blur', 'gpu-motion-blur', 'gpu-pixelate', 'gpu-twirl', 'gpu-wave', 'gpu-bulge',
++  'gpu-curves', 'gpu-lut', 'gpu-color-wheels', 'gpu-chroma-key', 'gpu-sharpen',
++])
++
+ export function isLinearHdrEffectType(type: string): boolean {
+-  return type === 'gpu-brightness' || type === 'gpu-contrast' || type === 'gpu-exposure' || type === 'gpu-saturation' || type === 'gpu-temperature' ||
+-    type === 'gpu-vibrance' || type === 'gpu-grayscale' || type === 'gpu-sepia' || type === 'gpu-invert' ||
+-    type === 'gpu-box-blur' || type === 'gpu-gaussian-blur' || type === 'gpu-motion-blur' || type === 'gpu-pixelate' || type === 'gpu-twirl' || type === 'gpu-wave' || type === 'gpu-bulge'
++  return LINEAR_HDR_EFFECT_TYPES.has(type)
+ }
+ 
+ /** True when the gpu effect type belongs to the color category (a "grade" effect). */
+diff --git a/src/infrastructure/gpu-transitions/linear-additive.ts b/src/infrastructure/gpu-transitions/linear-additive.ts
+--- a/src/infrastructure/gpu-transitions/linear-additive.ts
++++ b/src/infrastructure/gpu-transitions/linear-additive.ts
+@@ -1,13 +1,52 @@
+ import { effectRangeWgsl } from '@/infrastructure/gpu-effects/common'
++import { srgbDecodeExtended } from '@/shared/graphics/color/managed-color'
++import { TRANSITION_COMMON_WGSL } from './common'
++import type { GpuTransitionDefinition } from './types'
+ 
+ /**
+- * FL-97: additive dissolve in linear display-referred BT.709 (1 = reference white).
+- * The pinned 0.22 flash is a dimensionless light gain, not an encoded offset.
+- * Inputs are premultiplied before filtering; output is straight rgba16float.
+- * All other transition operators remain unqualified and refused.
++ * FL-97 / FL-1556: transitions in linear display-referred BT.709 (1 = reference white).
++ *
++ * additiveDissolve keeps its dedicated shader: the pinned 0.22 flash is a dimensionless
++ * light gain, not an encoded offset. The other admitted transitions only select, move,
++ * scale or mix the two clips' pixels (or, for dipToColorDissolve, a decoded authored
++ * colour), so their page arithmetic is run unchanged on premultiplied linear light with
++ * the SDR display clamps lifted. Inputs are premultiplied before filtering; output is
++ * straight rgba16float with binary16 coverage. Stylised and noise-driven operators
++ * (glitch, sparkles, light leak, chromatic, ...) stay refused.
+  */
++const LINEAR_HDR_TRANSITIONS: ReadonlySet<string> = new Set([
++  'additiveDissolve',
++  'dissolve',
++  'fade',
++  'nonAdditiveDissolve',
++  'dipToColorDissolve',
++  'blurDissolve',
++  'wipe',
++  'slide',
++  'iris',
++  'clockWipe',
++  'flip',
++  'pixelate',
++  'radialBlur',
++])
++
+ export function isLinearHdrTransition(id: string): boolean {
+-  return id === 'additiveDissolve'
++  return LINEAR_HDR_TRANSITIONS.has(id)
++}
++
++export function getLinearHdrTransitionIds(): string[] {
++  return [...LINEAR_HDR_TRANSITIONS]
++}
++
++/**
++ * Authored colours are sRGB-encoded values; HDR decodes them with the extended sRGB curve
++ * (odd, so out-of-range components keep their sign) before they meet linear light.
++ */
++export function packLinearHdrUniforms(id: string, uniforms: Float32Array): Float32Array {
++  if (id !== 'dipToColorDissolve') return uniforms
++  const out = new Float32Array(uniforms)
++  for (const index of [3, 4, 5]) out[index] = srgbDecodeExtended(out[index]!)
++  return out
+ }
+ 
+ export const LINEAR_TRANSITION_INPUT_WGSL = /* wgsl */ `
+@@ -55,3 +94,48 @@ fn linearAdditiveFragment(input: VertexOutput) -> @location(0) vec4f {
+   let coverage = mix(left.a, right.a, p);
+   return linearTransitionStraight(vec4f(rgb, coverage));
+ }`
++
++const SDR_RANGE_OVERRIDE = 'override preserveTransitionRange: bool = false;'
++if (!TRANSITION_COMMON_WGSL.includes(SDR_RANGE_OVERRIDE))
++  throw new Error('Transition common WGSL lost its range override')
++/** Common transition WGSL with the SDR display clamps lifted at compile time. */
++export const LINEAR_TRANSITION_COMMON_WGSL = TRANSITION_COMMON_WGSL.replace(
++  SDR_RANGE_OVERRIDE,
++  'const preserveTransitionRange: bool = true;',
++)
++
++/** Entry point of every linear HDR transition pipeline. */
++export function linearHdrEntryPoint(id: string): string {
++  return id === 'additiveDissolve' ? 'linearAdditiveFragment' : 'linearTransitionFragment'
++}
++
++/**
++ * Linear HDR shader of an admitted transition, to follow LINEAR_TRANSITION_COMMON_WGSL
++ * (preserveTransitionRange is a true constant there, so no SDR display clamp applies).
++ * The page's fragment runs on premultiplied linear light; p <= 0 and p >= 1 are the
++ * outgoing and incoming clips exactly; the result returns straight RGB divided by the
++ * unrounded coverage, coverage rounded to binary16, RGB limited to the binary16 range.
++ */
++export function linearHdrTransitionWgsl(def: GpuTransitionDefinition): string {
++  if (def.id === 'additiveDissolve') return LINEAR_ADDITIVE_WGSL
++  const signature = `@fragment\nfn ${def.entryPoint}(input: VertexOutput) -> @location(0) vec4f`
++  if (!def.shader.includes(signature))
++    throw new Error(`Unsupported transition entry point: ${def.id}`)
++  return /* wgsl */ `
++${effectRangeWgsl(true)}
++${def.shader.replace(signature, `fn ${def.entryPoint}(input: VertexOutput) -> vec4f`)}
++@fragment
++fn linearTransitionFragment(input: VertexOutput) -> @location(0) vec4f {
++  var color: vec4f;
++  if (params.progress <= 0.0) {
++    color = textureSampleLevel(leftTex, texSampler, input.uv, 0.0);
++  } else if (params.progress >= 1.0) {
++    color = textureSampleLevel(rightTex, texSampler, input.uv, 0.0);
++  } else {
++    color = ${def.entryPoint}(input);
++  }
++  let coverage = fl_half_coverage(color.a);
++  if (coverage <= 0.0) { return vec4f(0.0); }
++  return vec4f(fl_range3(color.rgb / color.a), coverage);
++}`
++}
+diff --git a/src/infrastructure/gpu-transitions/linear-hdr.test.ts b/src/infrastructure/gpu-transitions/linear-hdr.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/gpu-transitions/linear-hdr.test.ts
+@@ -0,0 +1,100 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import { isLinearHdrEffectType } from '@/infrastructure/gpu-effects/registry'
++import { srgbDecodeExtended } from '@/shared/graphics/color/managed-color'
++import { getGpuTransition, getGpuTransitionIds } from './registry'
++import {
++  getLinearHdrTransitionIds,
++  isLinearHdrTransition,
++  LINEAR_TRANSITION_COMMON_WGSL,
++  linearHdrEntryPoint,
++  linearHdrTransitionWgsl,
++  packLinearHdrUniforms,
++} from './linear-additive'
++
++// FL-1556: the operators admitted to linear HDR. Every other operator stays refused.
++const LINEAR_TRANSITIONS = [
++  'additiveDissolve',
++  'dissolve',
++  'fade',
++  'nonAdditiveDissolve',
++  'dipToColorDissolve',
++  'blurDissolve',
++  'wipe',
++  'slide',
++  'iris',
++  'clockWipe',
++  'flip',
++  'pixelate',
++  'radialBlur',
++]
++const REFUSED_GPU_TRANSITIONS = [
++  'smoothCut',
++  'sparkles',
++  'glitch',
++  'chromatic',
++  'liquidDistort',
++  'lensWarpZoom',
++  'lightLeakBurn',
++  'filmGateSlip',
++]
++
++describe('linear HDR operators', () => {
++  it('admits exactly the mix, selection and geometric transitions', () => {
++    expect(getLinearHdrTransitionIds().sort()).toEqual([...LINEAR_TRANSITIONS].sort())
++    expect(getGpuTransitionIds().filter((id) => !isLinearHdrTransition(id)).sort()).toEqual(
++      [...REFUSED_GPU_TRANSITIONS].sort(),
++    )
++    expect(isLinearHdrTransition('crossfade')).toBe(false)
++  })
++
++  it('compiles each admitted page fragment behind the linear wrapper without SDR clamps', () => {
++    expect(LINEAR_TRANSITION_COMMON_WGSL).toContain('const preserveTransitionRange: bool = true;')
++    expect(LINEAR_TRANSITION_COMMON_WGSL).not.toContain('override preserveTransitionRange')
++    for (const id of LINEAR_TRANSITIONS) {
++      const def = getGpuTransition(id)!
++      const wgsl = linearHdrTransitionWgsl(def)
++      const entry = linearHdrEntryPoint(id)
++      expect(wgsl).toContain(`fn ${entry}(input: VertexOutput) -> @location(0) vec4f`)
++      expect(wgsl).toContain('fl_half_coverage')
++      if (id !== 'additiveDissolve') {
++        expect(wgsl).toContain(`fn ${def.entryPoint}(input: VertexOutput) -> vec4f`)
++        expect(wgsl).not.toContain(`fn ${def.entryPoint}(input: VertexOutput) -> @location(0) vec4f`)
++      }
++    }
++  })
++
++  it('decodes the dip colour, and only it, into linear light', () => {
++    const def = getGpuTransition('dipToColorDissolve')!
++    const packed = def.packUniforms(0.25, 48, 27, 0, { color: [0.5, 1, -0.25] })
++    const linear = packLinearHdrUniforms('dipToColorDissolve', packed)
++    expect(Array.from(linear.slice(0, 3))).toEqual(Array.from(packed.slice(0, 3)))
++    expect(linear[3]).toBeCloseTo(srgbDecodeExtended(0.5), 6)
++    expect(linear[4]).toBe(1)
++    expect(linear[5]).toBeCloseTo(-srgbDecodeExtended(0.25), 6)
++    const dissolve = getGpuTransition('dissolve')!.packUniforms(0.5, 48, 27, 0)
++    expect(packLinearHdrUniforms('dissolve', dissolve)).toBe(dissolve)
++  })
++
++  it('admits the grading effects and keeps stylised effects refused', () => {
++    for (const id of [
++      'gpu-curves',
++      'gpu-lut',
++      'gpu-color-wheels',
++      'gpu-chroma-key',
++      'gpu-sharpen',
++      'gpu-brightness',
++    ])
++      expect(isLinearHdrEffectType(id), id).toBe(true)
++    for (const id of [
++      'gpu-levels',
++      'gpu-hue-shift',
++      'gpu-glow',
++      'gpu-vignette',
++      'gpu-file-lut-v1',
++      'gpu-grain',
++    ])
++      expect(isLinearHdrEffectType(id), id).toBe(false)
++  })
++})
+diff --git a/src/infrastructure/gpu-transitions/transition-pipeline.ts b/src/infrastructure/gpu-transitions/transition-pipeline.ts
+--- a/src/infrastructure/gpu-transitions/transition-pipeline.ts
++++ b/src/infrastructure/gpu-transitions/transition-pipeline.ts
+@@ -2,8 +2,11 @@ import { createLogger } from '@/shared/logging/logger'
+ import { TRANSITION_COMMON_WGSL } from './common'
+ import {
+   isLinearHdrTransition,
+-  LINEAR_ADDITIVE_WGSL,
++  LINEAR_TRANSITION_COMMON_WGSL,
+   LINEAR_TRANSITION_INPUT_WGSL,
++  linearHdrEntryPoint,
++  linearHdrTransitionWgsl,
++  packLinearHdrUniforms,
+ } from './linear-additive'
+ import type { GpuTransitionDefinition } from './types'
+ import { GPU_TRANSITION_REGISTRY, getGpuTransition } from './registry'
+@@ -176,11 +179,11 @@ fn straightFragment(input: VertexOutput) -> @location(0) vec4f {
+   return vec4f(color.rgb / color.a, color.a);
+ }`,
+       })
+-      // Dedicated linear implementation; never run the historical encoded HDR wrapper.
++      // Linear implementation (FL-97, FL-1556); never run the historical encoded HDR wrapper.
+       const hdrShader = isLinearHdrTransition(id)
+         ? this.device.createShaderModule({
+             label: `transition-${id}-linear-hdr`,
+-            code: `${TRANSITION_COMMON_WGSL}\n${LINEAR_ADDITIVE_WGSL}`,
++            code: `${LINEAR_TRANSITION_COMMON_WGSL}\n${linearHdrTransitionWgsl(def)}`,
+           })
+         : null
+       const floatPipeline = hdrShader
+@@ -190,7 +193,7 @@ fn straightFragment(input: VertexOutput) -> @location(0) vec4f {
+             vertex: { module: hdrShader, entryPoint: 'vertexMain' },
+             fragment: {
+               module: hdrShader,
+-              entryPoint: 'linearAdditiveFragment',
++              entryPoint: linearHdrEntryPoint(id),
+               targets: [{ format: 'rgba16float' }],
+             },
+             primitive: { topology: 'triangle-list' },
+@@ -280,13 +283,16 @@ fn straightFragment(input: VertexOutput) -> @location(0) vec4f {
+   ): GPUBuffer | null {
+     if (def.uniformSize <= 0) return null
+ 
+-    const uniformData = def.packUniforms(
++    const packed = def.packUniforms(
+       progress,
+       width,
+       height,
+       directionToNumber(direction),
+       properties,
+     )
++    // HDR: authored colours meet linear light only after the extended sRGB decode.
++    const uniformData =
++      this.workingRange === 'hdr' ? packLinearHdrUniforms(transitionId, packed) : packed
+     if (uniformData.byteLength > def.uniformSize) {
+       log.warn(
+         `Uniform data for "${transitionId}" is ${uniformData.byteLength} bytes, exceeding declared size ${def.uniformSize}`,

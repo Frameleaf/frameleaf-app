@@ -13,11 +13,18 @@ export const TRANSITION_SIZE = { width: 48, height: 27 };
 export const TRANSITION_PROGRESS = [0.25, 0.5, 0.75];
 export const TRANSITION_ENDPOINTS = [0, 1];
 export const EFFECT_CLOCKS = [0.75, 2.5];
-// The 16 effects that render in linear HDR (effect-hdr-semantics.json); every other effect is refused.
+// The 21 effects that render in linear HDR (effect-hdr-semantics.json); every other effect is refused.
 export const LINEAR_HDR_EFFECTS = [
   'gpu-brightness', 'gpu-contrast', 'gpu-exposure', 'gpu-saturation', 'gpu-temperature', 'gpu-vibrance',
   'gpu-grayscale', 'gpu-sepia', 'gpu-invert', 'gpu-box-blur', 'gpu-gaussian-blur', 'gpu-motion-blur',
   'gpu-pixelate', 'gpu-twirl', 'gpu-wave', 'gpu-bulge',
+  'gpu-curves', 'gpu-lut', 'gpu-color-wheels', 'gpu-chroma-key', 'gpu-sharpen',
+];
+// The 13 transitions that render in linear HDR (transition-semantics.json, README T5); the other
+// GPU transitions are refused, and the Canvas 2D transitions have no HDR route at all.
+export const LINEAR_HDR_TRANSITIONS = [
+  'additiveDissolve', 'dissolve', 'fade', 'nonAdditiveDissolve', 'dipToColorDissolve', 'blurDissolve',
+  'wipe', 'slide', 'iris', 'clockWipe', 'flip', 'pixelate', 'radialBlur',
 ];
 // Transitions drawn by the GPU transition pipeline; the rest are drawn with Canvas 2D.
 export const GPU_TRANSITIONS = [
@@ -92,6 +99,34 @@ export function transitionInputs() {
       b.push(...(cross ? [1, 1, 1] : [q8(0.1), q8(((x + y) % 5) / 4), q8(0.9 - 0.6 * (y / (H - 1)))]), 1);
     }
   }
+  return { a, b };
+}
+
+/**
+ * Linear HDR transition inputs, 48 x 27, straight alpha, linear display-referred BT.709
+ * (1.0 = 203 cd/m2): the SDR inputs decoded with the sRGB EOTF, then
+ *   A  x 8..11, y 4..7 = (6, 4, 2); pixel (0, 0) = (-0.25, 0.5, 1.25);
+ *      x >= 40, y >= 20 alpha 0.5; pixel (47, 26) = (50, 0, 50) with alpha 0 (hidden RGB)
+ *   B  x 30..35, y 15..20 = (3, 8, 0.5); pixel (47, 0) = (1.5, -0.5, 2);
+ *      x <= 7, y >= 20 alpha 0.25; pixel (0, 26) = (0, 40, 0) with alpha 0 (hidden RGB)
+ */
+export function transitionHdrInputs() {
+  const { width: W, height: H } = TRANSITION_SIZE;
+  const decode = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const { a: sdrA, b: sdrB } = transitionInputs();
+  const a = sdrA.map((v, i) => (i % 4 === 3 ? v : decode(v)));
+  const b = sdrB.map((v, i) => (i % 4 === 3 ? v : decode(v)));
+  const set = (out, x, y, rgba) => { const at = (y * W + x) * 4; rgba.forEach((v, c) => { if (v !== null) out[at + c] = v; }); };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (x >= 8 && x <= 11 && y >= 4 && y <= 7) set(a, x, y, [6, 4, 2, null]);
+    if (x >= 40 && y >= 20) set(a, x, y, [null, null, null, 0.5]);
+    if (x >= 30 && x <= 35 && y >= 15 && y <= 20) set(b, x, y, [3, 8, 0.5, null]);
+    if (x <= 7 && y >= 20) set(b, x, y, [null, null, null, 0.25]);
+  }
+  set(a, 0, 0, [-0.25, 0.5, 1.25, null]);
+  set(a, W - 1, H - 1, [50, 0, 50, 0]);
+  set(b, W - 1, 0, [1.5, -0.5, 2, null]);
+  set(b, 0, H - 1, [0, 40, 0, 0]);
   return { a, b };
 }
 
@@ -198,32 +233,49 @@ export function effectCases(catalogue) {
   return cases;
 }
 
+/**
+ * Transition cases. SDR (the cases without a `domain`): every direction at p = 0.25, 0.5 and
+ * 0.75, the first direction at p = 0 and 1, each parameter halfway towards its maximum at
+ * p = 0.5, and the extra cases. Then, after every SDR case, the linear HDR cases (`domain:
+ * 'hdr'`): the same list for each transition of LINEAR_HDR_TRANSITIONS on the HDR inputs,
+ * and one refusal for each other GPU transition (the Canvas 2D ones have no HDR route).
+ */
 export function transitionCases(catalogue) {
   const cases = [];
+  const hdrCases = [];
   for (const t of catalogue.transitions) {
     const directions = t.directions?.length ? t.directions : [null];
     const route = GPU_TRANSITIONS.includes(t.id) ? 'gpu' : 'canvas';
     const tag = (d) => (d ? `/${d}` : '');
+    const list = [];
     for (const direction of directions) {
       for (const progress of TRANSITION_PROGRESS) {
-        cases.push({ name: `${t.id}${tag(direction)}/p=${progress}`, id: t.id, route, direction, progress, properties: null });
+        list.push({ name: `${tag(direction)}/p=${progress}`, direction, progress, properties: null });
       }
     }
     for (const progress of TRANSITION_ENDPOINTS) {
-      cases.push({ name: `${t.id}${tag(directions[0])}/p=${progress}`, id: t.id, route, direction: directions[0], progress, properties: null });
+      list.push({ name: `${tag(directions[0])}/p=${progress}`, direction: directions[0], progress, properties: null });
     }
     for (const p of t.parameters ?? []) {
       let value;
       if (p.type === 'number') value = Number((p.default + ((p.max !== p.default ? p.max : p.min) - p.default) / 2).toPrecision(6));
       else if (p.type === 'color') value = [0.2, 0.4, 0.8];
       else continue;
-      cases.push({ name: `${t.id}${tag(directions[0])}/p=0.5/${p.name}=${JSON.stringify(value)}`, id: t.id, route, direction: directions[0], progress: 0.5, properties: { [p.name]: value } });
+      list.push({ name: `${tag(directions[0])}/p=0.5/${p.name}=${JSON.stringify(value)}`, direction: directions[0], progress: 0.5, properties: { [p.name]: value } });
     }
     for (const extra of TRANSITION_EXTRA_CASES[t.id] ?? []) {
-      cases.push({ name: `${t.id}${tag(directions[0])}/p=0.5/${extra.name}`, id: t.id, route, direction: directions[0], progress: 0.5, properties: extra.properties });
+      list.push({ name: `${tag(directions[0])}/p=0.5/${extra.name}`, direction: directions[0], progress: 0.5, properties: extra.properties });
+    }
+    const shape = (entry, name, domain) => ({ name, id: t.id, route, ...(domain ? { domain } : {}),
+      direction: entry.direction, progress: entry.progress, properties: entry.properties });
+    for (const entry of list) cases.push(shape(entry, `${t.id}${entry.name}`));
+    if (LINEAR_HDR_TRANSITIONS.includes(t.id)) {
+      for (const entry of list) hdrCases.push(shape(entry, `${t.id}/hdr${entry.name}`, 'hdr'));
+    } else if (route === 'gpu') {
+      hdrCases.push({ name: `${t.id}/hdr/refused`, id: t.id, route, domain: 'hdr', direction: directions[0], progress: 0.5, properties: null, refused: true });
     }
   }
-  return cases;
+  return [...cases, ...hdrCases];
 }
 
 // Progress curve fixtures: (localFrame, duration, timing, bezier) -> progress, computed by the engine.
@@ -309,7 +361,9 @@ export const sha256 = (text) => createHash('sha256').update(text).digest('hex');
  * case on the canonical software WebGPU backend (SwiftShader, CPU Canvas 2D) and on a hardware
  * backend (Metal, GPU Canvas 2D) and sets, from the cross-backend differences d,
  *   abs      = max(floor, 1.5 x the largest d among channels with d <= 0.03) when at most 10 % of
- *              channels have d > 0.03; otherwise max(floor, 1.5 x max d), capped at 0.25
+ *              channels have d > 0.03; otherwise max(floor, 1.5 x max d), capped at 0.25. In linear
+ *              HDR a channel with d <= 0.2 % of its value is met by the relative term and is left
+ *              out of both maxima, and d > 0.03 reads d > max(0.03, 0.2 % of the value)
  *   outliers = 2 x the channels that bound still misses
  *   meanAbs  = max(floor / 2, 1.5 x mean d)
  * HASH_DRIVEN ids are always `statistical`, with at least 10 % outliers and meanAbs 0.02.
@@ -360,10 +414,12 @@ export function deriveTolerance(domain, canonical, other, id) {
     // Sparse divergence (a few channels on edges or exact level boundaries): keep a tight bound
     // for every other channel and count the divergent ones as outliers.
     const big = diffs.map((d, i) => d > Math.max(0.03, relative * Math.abs(canonical[i])));
+    // A linear HDR channel within the relative bound already passes; it does not set abs.
+    const free = diffs.map((d, i) => relative > 0 && d <= relative * Math.abs(canonical[i]));
     const bound = (limit) => Math.max(floor, sig(limit * 1.5));
     abs = big.filter(Boolean).length <= 0.1 * n
-      ? bound(Math.max(0, ...diffs.filter((_, i) => !big[i])))
-      : Math.min(0.25, bound(worst));
+      ? bound(Math.max(0, ...diffs.filter((_, i) => !big[i] && !free[i])))
+      : Math.min(0.25, bound(Math.max(0, ...diffs.filter((_, i) => !free[i]))));
     outliers = 2 * canonical.filter((v, i) => diffs[i] > Math.max(abs, relative * Math.abs(v))).length;
   }
   let meanAbs = Math.max(floor / 2, sig(mean * 1.5));
@@ -385,7 +441,7 @@ export function validateGoldens(kind, goldens, catalogue) {
   assert.deepEqual(goldens.cases.map((c) => c.name), expectedCases.map((c) => c.name), `${kind}: cases must be complete and ordered`);
   const inputs = kind === 'effects'
     ? { sdr: effectSdrInput(), hdr: effectHdrInput() }
-    : transitionInputs();
+    : { ...transitionInputs(), hdrA: transitionHdrInputs().a, hdrB: transitionHdrInputs().b };
   for (const [name, values] of Object.entries(inputs)) {
     const stored = goldens.inputs[name];
     assert(stored, `${kind}: input ${name} missing`);
@@ -410,9 +466,14 @@ export function validateGoldens(kind, goldens, catalogue) {
       }
     } else {
       assert.equal(c.route, spec.route);
+      assert.equal(c.domain, spec.domain, `${c.name}: domain`);
       assert.equal(c.direction, spec.direction);
       assert.equal(c.progress, spec.progress);
       assert.deepEqual(c.properties, spec.properties);
+      if (spec.refused) {
+        assert.equal(c.outcome, 'refused', `${c.name}: must be refused in HDR`);
+        return;
+      }
     }
     assert.equal(c.outcome, 'rendered', `${c.name}: not rendered`);
     const values = decodeBuffer(c.output.data, c.output.encoding);
@@ -459,7 +520,8 @@ export function buildIndex(catalogue, effectGoldens, transitionGoldens, previous
       const old = keep('transitions', t.id);
       return {
         id: t.id, category: t.category, directions: t.directions ?? [], spec: `transitions/${t.id}.md`,
-        route: GPU_TRANSITIONS.includes(t.id) ? 'gpu' : 'canvas', hdr: 'refused',
+        route: GPU_TRANSITIONS.includes(t.id) ? 'gpu' : 'canvas',
+        hdr: LINEAR_HDR_TRANSITIONS.includes(t.id) ? 'linear-display-bt709-v1' : 'refused',
         status: old.status ?? 'full', notSpecifiable: old.notSpecifiable ?? [],
         goldens: counts(transitionGoldens.cases.filter((c) => c.id === t.id)),
       };
@@ -476,15 +538,15 @@ export function renderIndexMarkdown(index, progressValues) {
   const counts = (x) => `${x.goldens.pixel} / ${x.goldens.edge} / ${x.goldens.statistical}`;
   const lines = [
     `- **Effects:** ${E.length} specified, ${E.filter((x) => x.status === 'full').length} fully and ${E.filter((x) => x.status === 'partial').length} partly (${ids(E)}). Goldens: ${sum(E, 'cases')} cases, of which ${sum(E, 'pixel')} are pixel, ${sum(E, 'edge')} edge and ${sum(E, 'statistical')} statistical, plus ${sum(E, 'refused')} HDR refusals.`,
-    `- **Transitions:** ${T.length} specified, ${T.filter((x) => x.status === 'full').length} fully and ${T.filter((x) => x.status === 'partial').length} partly (${ids(T)}); ${T.filter((x) => x.route === 'gpu').length} on the GPU route and ${T.filter((x) => x.route === 'canvas').length} on Canvas 2D. Goldens: ${sum(T, 'cases')} cases, of which ${sum(T, 'pixel')} are pixel, ${sum(T, 'edge')} edge and ${sum(T, 'statistical')} statistical, plus ${progressValues} progress-curve values.`,
+    `- **Transitions:** ${T.length} specified, ${T.filter((x) => x.status === 'full').length} fully and ${T.filter((x) => x.status === 'partial').length} partly (${ids(T)}); ${T.filter((x) => x.route === 'gpu').length} on the GPU route and ${T.filter((x) => x.route === 'canvas').length} on Canvas 2D; ${T.filter((x) => x.hdr !== 'refused').length} render in linear HDR. Goldens: ${sum(T, 'cases')} cases, of which ${sum(T, 'pixel')} are pixel, ${sum(T, 'edge')} edge and ${sum(T, 'statistical')} statistical, plus ${sum(T, 'refused')} HDR refusals and ${progressValues} progress-curve values.`,
     '',
     '| Effect | Category | HDR | Status | Goldens (pixel / edge / statistical) |',
     '| --- | --- | --- | --- | --- |',
     ...E.map((x) => `| [\`${x.id}\`](${x.spec}) | ${x.category}${x.temporal ? ', temporal' : ''} | ${x.hdr === 'refused' ? 'refused' : 'linear'} | ${x.status} | ${counts(x)} |`),
     '',
-    '| Transition | Category | Route | Status | Goldens (pixel / edge / statistical) |',
-    '| --- | --- | --- | --- | --- |',
-    ...T.map((x) => `| [\`${x.id}\`](${x.spec}) | ${x.category} | ${x.route === 'gpu' ? 'GPU' : 'Canvas 2D'} | ${x.status} | ${counts(x)} |`),
+    '| Transition | Category | Route | HDR | Status | Goldens (pixel / edge / statistical) |',
+    '| --- | --- | --- | --- | --- | --- |',
+    ...T.map((x) => `| [\`${x.id}\`](${x.spec}) | ${x.category} | ${x.route === 'gpu' ? 'GPU' : 'Canvas 2D'} | ${x.hdr === 'refused' ? 'refused' : 'linear'} | ${x.status} | ${counts(x)} |`),
   ];
   return `${INDEX_START}\n${lines.join('\n')}\n${INDEX_END}`;
 }

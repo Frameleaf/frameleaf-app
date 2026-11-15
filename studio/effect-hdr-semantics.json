@@ -44,8 +44,8 @@
     "gpu-chroma-key": {
       "sdrParity": true,
       "sdrClamped": false,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR measures the key distance, tolerance, softness and spill on the extended sRGB encoding (H5) of the pixel, so the matte matches SDR for SDR colours and grey highlights stay opaque; RGB is decoded to linear light; alpha = input alpha x matte. RGB limited to +-65504. SDR retains the pinned key."
     },
     "gpu-color-glitch": {
       "sdrParity": true,
@@ -56,8 +56,8 @@
     "gpu-color-wheels": {
       "sdrParity": true,
       "sdrClamped": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR runs the pinned wheel arithmetic (zone masks, tints, temperature/tint offsets, exposure, contrast pivot, lift/offset/gain, signed gamma, black/white points, saturation, colour boost, hue rotation, luminance mix) on the extended sRGB encoding (H5) of the pixel without the SDR [0, 1] clamp, then decodes to linear light. Alpha unchanged; RGB limited to +-65504. SDR retains the pinned clamps."
     },
     "gpu-contrast": {
       "sdrParity": true,
@@ -74,8 +74,8 @@
     "gpu-curves": {
       "sdrParity": true,
       "sdrClamped": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR evaluates the pinned [0, 1] curve tables on the extended sRGB encoding (H5) of each linear channel; encoded light outside [0, 1] keeps its offset past the table; the result is decoded to linear light. An SDR source in an HDR project is therefore graded exactly as in an SDR project. Alpha unchanged; RGB limited to +-65504. SDR retains the pinned table and its range."
     },
     "gpu-dither": {
       "sdrParity": true,
@@ -182,8 +182,8 @@
     "gpu-lut": {
       "sdrParity": true,
       "sdrClamped": false,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR looks the extended sRGB encoding (H5) of the pixel up in the pinned [0, 1] 3D table (trilinear); each channel's encoded excess outside [0, 1] is added back; intensity mixes on the encoding; the result is decoded to linear light. Alpha unchanged; RGB limited to +-65504. SDR retains the pinned lookup."
     },
     "gpu-mirror": {
       "sdrParity": true,
@@ -272,8 +272,8 @@
     "gpu-sharpen": {
       "sdrParity": true,
       "sdrClamped": true,
-      "hdr": "refused",
-      "semantics": "SDR retains pinned parameters, clamps, endpoints and directions. HDR is typed-refused until this operator is migrated and measured in the linear working domain."
+      "hdr": "linear-display-bt709-v1",
+      "semantics": "HDR applies the pinned 7x7 unsharp mask to linear light: taps accumulate premultiplied light and coverage; the blurred reference is their coverage-weighted mean colour (hidden RGB never enters it); result = centre + (centre - reference) * amount with signed overshoot kept; alpha is the centre's, rounded to binary16; zero coverage writes zero. RGB limited to +-65504. SDR retains the pinned straight-RGBA sharpen and clamp."
     },
     "gpu-temperature": {
       "sdrParity": true,

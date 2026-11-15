@@ -142,7 +142,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1429 adds Cloud caption batches to the clip menu; composition and raster producers are unchanged.
     sourceSha256 === 'f76d7aef72b9d3dc7489f990afead2e4901fbb67b19f036f03fcb7abbeaeb122' ||
     // FL-642 streams the export limiter and binds colour match to split parents' keys; composition and raster producers are unchanged.
-    sourceSha256 === '4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6'
+    sourceSha256 === '4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6' ||
+    // FL-1556 HDR transitions and grading effects; changes no composition or raster producer.
+    sourceSha256 === 'bbf57d94c7e87dfb4710628c2e5a3c03e9afe8cfcc789d33003ca0ad80f22e73'
   )
     return {
       ...COMPOSITION_SOURCES,

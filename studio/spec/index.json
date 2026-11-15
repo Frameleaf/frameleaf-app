@@ -172,15 +172,15 @@
       "category": "color",
       "temporal": false,
       "spec": "effects/gpu-curves.md",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 24,
-        "pixel": 23,
+        "cases": 46,
+        "pixel": 46,
         "edge": 0,
         "statistical": 0,
-        "refused": 1
+        "refused": 0
       }
     },
     {
@@ -188,15 +188,15 @@
       "category": "color",
       "temporal": false,
       "spec": "effects/gpu-color-wheels.md",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 28,
-        "pixel": 27,
+        "cases": 54,
+        "pixel": 54,
         "edge": 0,
         "statistical": 0,
-        "refused": 1
+        "refused": 0
       }
     },
     {
@@ -268,15 +268,15 @@
       "category": "color",
       "temporal": false,
       "spec": "effects/gpu-lut.md",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 5,
-        "pixel": 4,
+        "cases": 8,
+        "pixel": 8,
         "edge": 0,
         "statistical": 0,
-        "refused": 1
+        "refused": 0
       }
     },
     {
@@ -616,15 +616,15 @@
       "category": "stylize",
       "temporal": false,
       "spec": "effects/gpu-sharpen.md",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 4,
-        "pixel": 3,
+        "cases": 6,
+        "pixel": 6,
         "edge": 0,
         "statistical": 0,
-        "refused": 1
+        "refused": 0
       }
     },
     {
@@ -882,15 +882,15 @@
       "category": "keying",
       "temporal": false,
       "spec": "effects/gpu-chroma-key.md",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 6,
-        "pixel": 5,
+        "cases": 10,
+        "pixel": 10,
         "edge": 0,
         "statistical": 0,
-        "refused": 1
+        "refused": 0
       }
     }
   ],
@@ -901,12 +901,12 @@
       "directions": [],
       "spec": "transitions/fade.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 5,
-        "pixel": 5,
+        "cases": 10,
+        "pixel": 10,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -957,12 +957,12 @@
       ],
       "spec": "transitions/wipe.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 14,
-        "pixel": 14,
+        "cases": 28,
+        "pixel": 28,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1008,12 +1008,12 @@
       "directions": [],
       "spec": "transitions/clockWipe.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 6,
-        "pixel": 6,
+        "cases": 12,
+        "pixel": 12,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1126,12 +1126,12 @@
       ],
       "spec": "transitions/slide.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 14,
-        "pixel": 14,
+        "cases": 28,
+        "pixel": 28,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1148,12 +1148,12 @@
       ],
       "spec": "transitions/flip.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 14,
-        "pixel": 14,
+        "cases": 28,
+        "pixel": 28,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1165,12 +1165,12 @@
       "directions": [],
       "spec": "transitions/iris.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 6,
-        "pixel": 6,
+        "cases": 12,
+        "pixel": 12,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1426,12 +1426,12 @@
       "directions": [],
       "spec": "transitions/dissolve.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 5,
-        "pixel": 5,
+        "cases": 10,
+        "pixel": 10,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1443,12 +1443,12 @@
       "directions": [],
       "spec": "transitions/additiveDissolve.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 5,
-        "pixel": 5,
+        "cases": 10,
+        "pixel": 10,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1460,12 +1460,12 @@
       "directions": [],
       "spec": "transitions/blurDissolve.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 6,
-        "pixel": 6,
+        "cases": 12,
+        "pixel": 12,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1477,12 +1477,12 @@
       "directions": [],
       "spec": "transitions/dipToColorDissolve.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 6,
-        "pixel": 6,
+        "cases": 12,
+        "pixel": 12,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1494,12 +1494,12 @@
       "directions": [],
       "spec": "transitions/nonAdditiveDissolve.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 5,
-        "pixel": 5,
+        "cases": 10,
+        "pixel": 10,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1517,11 +1517,11 @@
         "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
       ],
       "goldens": {
-        "cases": 6,
+        "cases": 7,
         "pixel": 0,
         "edge": 0,
         "statistical": 6,
-        "refused": 0
+        "refused": 1
       }
     },
     {
@@ -1536,11 +1536,11 @@
         "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
       ],
       "goldens": {
-        "cases": 9,
+        "cases": 10,
         "pixel": 0,
         "edge": 0,
         "statistical": 9,
-        "refused": 0
+        "refused": 1
       }
     },
     {
@@ -1555,11 +1555,11 @@
         "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
       ],
       "goldens": {
-        "cases": 8,
+        "cases": 9,
         "pixel": 0,
         "edge": 0,
         "statistical": 8,
-        "refused": 0
+        "refused": 1
       }
     },
     {
@@ -1568,12 +1568,12 @@
       "directions": [],
       "spec": "transitions/pixelate.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 6,
-        "pixel": 6,
+        "cases": 12,
+        "pixel": 12,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1594,11 +1594,11 @@
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 16,
+        "cases": 17,
         "pixel": 16,
         "edge": 0,
         "statistical": 0,
-        "refused": 0
+        "refused": 1
       }
     },
     {
@@ -1607,12 +1607,12 @@
       "directions": [],
       "spec": "transitions/radialBlur.md",
       "route": "gpu",
-      "hdr": "refused",
+      "hdr": "linear-display-bt709-v1",
       "status": "full",
       "notSpecifiable": [],
       "goldens": {
-        "cases": 9,
-        "pixel": 9,
+        "cases": 18,
+        "pixel": 18,
         "edge": 0,
         "statistical": 0,
         "refused": 0
@@ -1635,11 +1635,11 @@
         "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
       ],
       "goldens": {
-        "cases": 20,
+        "cases": 21,
         "pixel": 0,
         "edge": 0,
         "statistical": 20,
-        "refused": 0
+        "refused": 1
       }
     },
     {
@@ -1654,11 +1654,11 @@
         "The ring term raises a possibly negative base to the power 2, which WGSL leaves undefined; the page specifies plain squaring as the native rule."
       ],
       "goldens": {
-        "cases": 11,
+        "cases": 12,
         "pixel": 11,
         "edge": 0,
         "statistical": 0,
-        "refused": 0
+        "refused": 1
       }
     },
     {
@@ -1678,11 +1678,11 @@
         "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
       ],
       "goldens": {
-        "cases": 19,
+        "cases": 20,
         "pixel": 0,
         "edge": 0,
         "statistical": 19,
-        "refused": 0
+        "refused": 1
       }
     },
     {
@@ -1697,11 +1697,11 @@
         "Per-pixel noise values come from HASH at large arguments (C6). The range reduction of C6 reproduces the canonical goldens, but other GPUs differ, so only structure, timing and magnitude are pinned across GPUs."
       ],
       "goldens": {
-        "cases": 12,
+        "cases": 13,
         "pixel": 0,
         "edge": 0,
         "statistical": 12,
-        "refused": 0
+        "refused": 1
       }
     }
   ]

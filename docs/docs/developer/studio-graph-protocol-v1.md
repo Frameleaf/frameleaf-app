@@ -2976,7 +2976,7 @@ This protocol says which effects and transitions a graph may name, and with whic
 **Native rules.**
 
 - A native client renders an effect or transition so that it passes every `pixel` and `edge` golden case of its id under the comparison rule of the render spec, and every `statistical` case by its mean bound.
-- An HDR project renders only the 16 effects the render spec lists for linear HDR, and no transition. When a frame needs anything else, a native client refuses to render that frame, as the engine does, and does not substitute an SDR render.
+- An HDR project renders only the 21 effects and the 13 transitions the render spec lists for linear HDR (README C4 and T5), and no transition inside a nested composition. When a frame needs anything else, a native client refuses to render that frame, as the engine does, and does not substitute an SDR render.
 - Where a page marks behaviour as not specifiable (platform font rasterisation of ASCII glyphs, for one), a native client draws its closest equivalent and must still pass the goldens that page names as binding.
 
 **Drift.** `studio/tools/render-goldens.browser.mjs` renders every golden case through the prepared engine and fails when one leaves its tolerance; `--write` regenerates the goldens. Font-atlas ASCII cases check the actual platform atlas against an independent rasterization and compare the complete frame to a prose-derived CPU reference within the same tolerance; stored Mac outputs remain platform snapshots. `studio/tools/render-goldens.test.mjs` checks coverage, the inputs, the progress curve and the clean-room rule without the engine. When an effect or transition changes, change its page and regenerate the goldens in the same change.

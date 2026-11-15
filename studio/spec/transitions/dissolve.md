@@ -6,7 +6,7 @@
 | Directions | none |
 | Duration (frames) | default 30, min 10, max 90 (editor) |
 | Route | GPU, single fragment pass |
-| HDR | refused [T5] |
+| HDR | linear [T5] |
 
 ## What it does
 Cross dissolve: a straight per-pixel mix of the two clips with a cosine (ease-in-out) weight. Nothing moves.
@@ -28,6 +28,9 @@ None.
 
 ## Alpha
 Alpha mixes with the same weight; the premultiplied mix followed by un-premultiplying [T2] gives the correct straight-alpha cross dissolve of partially transparent clips.
+
+## HDR
+Renders in an HDR project by T5: the arithmetic above on premultiplied linear light, with no SDR clamp, p ≤ 0 and p ≥ 1 drawing A and B exactly, and binary16 coverage with RGB over the unrounded alpha. The mix is of light, so the midpoint of two clips is their average luminance, not the average of their encodings.
 
 ## Notes
 - Endpoints (SDR float route): p = 0 gives exactly A. p = 1 gives B within GPU cos precision (cos(π) evaluated in binary32; WGSL's permitted cos error is up to 2⁻¹¹ absolute, typical hardware is far better).
