@@ -5941,6 +5941,58 @@ describe(CloudBackupService.name, () => {
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).not.toHaveProperty('drillDueAt');
     });
 
+    describe('when the report cannot be kept (FL-1378)', () => {
+      const outcome = { result: 'passed', failedStep: null } as never;
+      const context = { target: 'byo-s3', scheduled: true, startedAt: new Date() };
+      const drillOperation = () => operationOf({ snapshot: { task: 'drill' } });
+      const notified = () =>
+        mocks.event.emit.mock.calls.filter(([name]) => name === 'AdminNotify').map(([, notice]) => notice);
+
+      beforeEach(() => {
+        // signing fails: the identity key can't be read
+        vi.spyOn(sut as unknown as { finishDrill: () => Promise<void> }, 'finishDrill').mockRejectedValue(
+          new Error('identity key unreadable'),
+        );
+        drills.get.mockResolvedValue(report({ finishedAt: null, result: 'running', signature: null }));
+      });
+
+      it('keeps a failed, unsigned report, only while it is unfinished, and completes', async () => {
+        await sut['recordDrill'](drillOperation(), 'claim', outcome, context);
+
+        expect(drills.finish).toHaveBeenCalledWith(
+          'run-1',
+          expect.objectContaining({ result: 'failed', signature: null }),
+          { onlyUnfinished: true },
+        );
+        expect(operations.complete).toHaveBeenCalled();
+        expect(operations.fail).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        { name: 'the report cannot be read', fail: () => drills.get.mockRejectedValue(new Error('read failed')) },
+        {
+          name: 'the failed report cannot be written',
+          fail: () => drills.finish.mockRejectedValue(new Error('write failed')),
+        },
+      ])('fails the operation and tells administrators when $name', async ({ fail }) => {
+        fail();
+
+        await sut['recordDrill'](drillOperation(), 'claim', outcome, context);
+
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(operations.fail).toHaveBeenCalledWith(
+          'run-1',
+          'claim',
+          expect.objectContaining({ error: expect.any(String) }),
+        );
+        expect(notified()).toContainEqual(
+          expect.objectContaining({
+            systemTemplate: { version: 1, key: 'restore-drill-not-recorded', args: { error: expect.any(String) } },
+          }),
+        );
+      });
+    });
+
     it('serves a finished report with the key that signed it, and nothing for an unfinished one', async () => {
       drills.get.mockResolvedValue(report());
       await expect(sut.getDrillReport('id')).resolves.toMatchObject({

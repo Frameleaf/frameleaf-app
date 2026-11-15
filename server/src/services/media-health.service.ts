@@ -255,6 +255,20 @@ const backupFacts = ({ since }: LostOriginalRestore) => ({ backup: 'cloud', ...(
 const isOpenFinding = (finding: Pick<MediaHealthFinding, 'resolvedAt' | 'dismissedAt'>) =>
   !finding.resolvedAt && !finding.dismissedAt;
 
+/**
+ * FL-1362: a person's fix that a newer Try again replaced. Each Try again records its `retryId` with `retriedAt`;
+ * the latest one recorded is the fix that runs.
+ */
+const isReplacedTry = (job: FixJob, open: MediaHealthFinding[]) => {
+  if (job.from !== 'person') return false;
+  let latest: { at: string; id: string } | undefined;
+  for (const { evidence } of open) {
+    const { retriedAt: at, retryId: id } = (evidence ?? {}) as Record<string, unknown>;
+    if (typeof at === 'string' && typeof id === 'string' && (!latest || at > latest.at)) latest = { at, id };
+  }
+  return !!latest && latest.id !== job.retry;
+};
+
 /** Damaged and missing files (FL-1337 ruling 1): the fix states of Fixed for you, and of Needs you. */
 const FIXED_FILE_STATES: ReadonlySet<string> = new Set<FixState>(['repaired', 'part-saved', 'found-again', 'restored']);
 const NEEDS_FILE_STATES: ReadonlySet<string> = new Set<FixState>([
@@ -1625,13 +1639,17 @@ export class MediaHealthService {
       // one fix per photo at a time: a Try again (or a fix carrying on) waits for the one running to settle
       return this.putFixBack(job, { delay: FIX_RUNNING_WAIT_MS });
     }
+    const open = (await this.mediaHealthRepository.getFindingsForAsset(asset.id)).filter((finding) =>
+      isOpenFinding(finding),
+    );
+    if (isReplacedTry(job, open)) {
+      // FL-1362: a newer Try again replaced this person's fix, wherever it was waiting (for a drive, a busy file)
+      return JobStatus.Skipped;
+    }
     if (!(await this.canReach(asset.originalPath))) {
       // Review Focus 1: on an unplugged drive every file looks lost. Wait for it, recording nothing.
       return this.waitForDrive(job, asset);
     }
-    const open = (await this.mediaHealthRepository.getFindingsForAsset(asset.id)).filter((finding) =>
-      isOpenFinding(finding),
-    );
     const exists = await this.storageRepository.checkFileExists(asset.originalPath, constants.R_OK);
     const category = exists ? MediaHealthCategory.Corrupt : MediaHealthCategory.Missing;
     if (
@@ -3066,10 +3084,12 @@ export class MediaHealthService {
     // 2. Then this fix is queued, and only after that are the waiting fixes cancelled, so they are never
     //    cancelled with nothing in their place. Its own key is not among the ones cancelled.
     // A problem already resolved has no open finding for a fix to carry on from: nothing to record.
+    const retry = randomUUID();
     if (!record.resolvedAt) {
       const recorded = await this.mediaHealthRepository.settleFinding({
         healthId: record.id,
-        evidence: { retriedAt: new Date().toISOString() },
+        // FL-1362: the fix this Try again queues is the one that runs; earlier ones waiting do nothing
+        evidence: { retriedAt: new Date().toISOString(), retryId: retry },
       });
       if (!recorded) {
         throw new ConflictException('This photo changed meanwhile. Look at it again.');
@@ -3077,7 +3097,7 @@ export class MediaHealthService {
     }
     await this.jobRepository.queue({
       name: JobName.MediaHealthFixAsset,
-      data: { id: record.assetId, from: 'person', attempt: 0, retry: randomUUID() },
+      data: { id: record.assetId, from: 'person', attempt: 0, retry },
     });
     await this.jobRepository.cancelWaitingFixes(record.assetId);
     return this.getFileProblem(auth, id);
