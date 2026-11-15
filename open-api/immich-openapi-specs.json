@@ -45158,6 +45158,224 @@
         "x-immich-state": "Stable"
       }
     },
+    "/people/categories": {
+      "get": {
+        "description": "Retrieve the caller's categories for their people, such as Family, Friends and Work, in their order. An account starts with Family, Friends and Work, made the first time its categories are read; once deleted, they are not made again. Categories are per account: a partner never sees them.",
+        "operationId": "getPersonCategories",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PersonCategoryResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get person categories",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Add a category for the caller's people. It comes after the caller's other categories.",
+        "operationId": "createPersonCategory",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonCategoryCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonCategoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a person category",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/people/categories/{id}": {
+      "delete": {
+        "description": "Delete one of the caller's categories. The people in it are not changed.",
+        "operationId": "deletePersonCategory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a person category",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      },
+      "patch": {
+        "description": "Rename, recolor or reorder one of the caller's categories.",
+        "operationId": "updatePersonCategory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonCategoryUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonCategoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a person category",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/people/corrections/{id}/undo": {
       "post": {
         "description": "Reverse one manual face decision from the correction history, while the face still stands as the decision left it (same original, same place, same person). Otherwise 409 with a `reason`.",
@@ -45759,6 +45977,73 @@
         ],
         "x-immich-permission": "person.update",
         "x-immich-state": "Deprecated"
+      }
+    },
+    "/people/{id}/categories": {
+      "put": {
+        "description": "Put one of the caller's own people in exactly these of the caller's categories, replacing the ones they were in. An empty list takes them out of all of them. A category that is not the caller's answers 400.",
+        "operationId": "setPersonCategories",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonCategoriesSetDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonCategoriesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set a person's categories",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/people/{id}/corrections": {
@@ -133861,6 +134146,26 @@
             "nullable": true,
             "type": "string"
           },
+          "categoryIds": {
+            "description": "The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.1",
+                "state": "Alpha"
+              }
+            ],
+            "x-immich-state": "Alpha"
+          },
           "color": {
             "description": "Person color (hex)",
             "type": "string",
@@ -134377,6 +134682,128 @@
         ],
         "type": "string"
       },
+      "PersonCategoriesResponseDto": {
+        "properties": {
+          "categoryIds": {
+            "description": "The caller's categories the person is in",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "categoryIds"
+        ],
+        "type": "object"
+      },
+      "PersonCategoriesSetDto": {
+        "properties": {
+          "categoryIds": {
+            "description": "The caller's categories the person is in from now on; an empty list takes them out of all",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          }
+        },
+        "required": [
+          "categoryIds"
+        ],
+        "type": "object"
+      },
+      "PersonCategoryCreateDto": {
+        "properties": {
+          "color": {
+            "description": "Category color (hex)",
+            "nullable": true,
+            "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Category name",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "PersonCategoryResponseDto": {
+        "properties": {
+          "color": {
+            "description": "Category color (hex)",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "Creation date",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Category ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Category name",
+            "type": "string"
+          },
+          "order": {
+            "description": "Position among the categories, lowest first",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "color",
+          "createdAt",
+          "id",
+          "name",
+          "order",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PersonCategoryUpdateDto": {
+        "properties": {
+          "color": {
+            "description": "Category color (hex); null clears it",
+            "nullable": true,
+            "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Category name",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "order": {
+            "description": "Position among the categories, lowest first",
+            "maximum": 100000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "PersonCorrectionAction": {
         "description": "What the decision did",
         "enum": [
@@ -134741,6 +135168,26 @@
             "format": "date",
             "nullable": true,
             "type": "string"
+          },
+          "categoryIds": {
+            "description": "The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.1",
+                "state": "Alpha"
+              }
+            ],
+            "x-immich-state": "Alpha"
           },
           "color": {
             "description": "Person color (hex)",
@@ -164260,6 +164707,10 @@
           "originalPath": {
             "$ref": "#/components/schemas/StringPatternFilter"
           },
+          "personCategoryIds": {
+            "$ref": "#/components/schemas/IdsFilter",
+            "description": "The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them"
+          },
           "personIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
@@ -164424,6 +164875,10 @@
           },
           "originalPath": {
             "$ref": "#/components/schemas/StringPatternFilter"
+          },
+          "personCategoryIds": {
+            "$ref": "#/components/schemas/IdsFilter",
+            "description": "The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them"
           },
           "personIds": {
             "$ref": "#/components/schemas/IdsFilter"
