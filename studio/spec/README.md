@@ -30,6 +30,7 @@ Where the engine's behaviour is accidental (a parameter that does nothing, a dea
 | `text.md` | Titles and text: style fields, layout, spans, text motion, colours and alpha, and the bundled font files. |
 | `goldens/text.json` | Text goldens: layout and motion values and small frames, made with the bundled fonts it names by hash. |
 | `../tools/layer-goldens.*`, `../tools/text-goldens.*` | Cases and prose references, engine runs and engine-free checks of the layer and text pages; run from the two render-goldens files. |
+| `sound-channels.md` | Sound channel mapping (FL-1561): the `audioChannelMap` clip field, which source planes feed left and right, presets for mono, dual mono and picks from 5.1, worked values, its place before EQ and pan, and plane counts in a mix (rules M1 to M10). |
 
 The five colour effects that had numeric oracles before this spec (brightness, contrast, exposure, saturation, levels) keep `../tools/photometric-goldens.mjs` as an independent equation check; their pages restate those equations.
 

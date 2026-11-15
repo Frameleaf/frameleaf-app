@@ -5721,9 +5721,10 @@
           "0055-channel-preserving-gain-mix.patch",
           "0067-persisted-clip-mute.patch",
           "0087-preview-track-gain.patch",
-          "0111-multichannel-shared-retiming.patch"
+          "0111-multichannel-shared-retiming.patch",
+          "0196-sound-channel-mapping.patch"
         ],
-        "note": "Preview half delivered. The export half is not: the existing render-worker executor refuses audio.",
+        "note": "Preview half delivered. The export half is not: the existing render-worker executor refuses audio. FL-1561 (0196) adds per-clip channel mapping (mono from either side, mono mix, dual mono, picks from 5.1) with track pan after it, the same in preview and browser export.",
         "status": "shipped"
       },
       "id": "readme.audio.4",

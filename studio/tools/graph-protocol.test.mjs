@@ -166,6 +166,38 @@ test('FL-638: stabilisation is a video field with base64 paths', () => {
   assert.notDeepEqual(withItem((item) => ({ ...item, stabilisation: { ...stabilisation, level: 'wobbly' } })), []);
 });
 
+test('FL-1561: audioChannelMap is a video or audio field of source plane indexes', () => {
+  const [, graph] = normalGraphs().find(([, candidate]) => candidate.timeline.items.some((item) => item.type === 'video'));
+  const withMap = (audioChannelMap, type) => {
+    const copy = structuredClone(graph);
+    const index = copy.timeline.items.findIndex((item) => item.type === 'video');
+    copy.timeline.items[index] = { ...copy.timeline.items[index], ...(type ? { type } : {}), audioChannelMap };
+    return validate(schema, copy);
+  };
+  for (const map of [
+    { left: [0], right: [1] },
+    { left: [0, 1], right: [0, 1] },
+    { left: [2], right: [2] },
+    { left: [4], right: [5] },
+    { left: [0], right: [] },
+    { left: [31], right: [0, 1, 2, 3, 4, 5, 6, 7] },
+  ])
+    assert.deepEqual(withMap(map), [], JSON.stringify(map));
+  assert.deepEqual(withMap({ left: [3], right: [3] }, 'audio'), []);
+  for (const bad of [
+    { left: [], right: [] },
+    { left: [0, 0], right: [1] },
+    { left: [32], right: [1] },
+    { left: [-1], right: [1] },
+    { left: [0.5], right: [1] },
+    { left: [0] },
+    { left: [0], right: [1], gain: 1 },
+    { left: Array.from({ length: 33 }, (_, index) => index % 32), right: [] },
+  ])
+    assert.notDeepEqual(withMap(bad), [], JSON.stringify(bad));
+  assert.notDeepEqual(withMap({ left: [0], right: [1] }, 'image'), []);
+});
+
 test('a case is outside normal form exactly when it is marked so', () => {
   for (const entry of fixtures.cases) {
     if (!applied(entry)) {
