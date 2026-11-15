@@ -5034,6 +5034,12 @@ export type ContributorCountResponseDto = {
     /** User ID */
     userId: string;
 };
+export type AlbumFolderSourceDto = {
+    /** The folder on the server the album shows */
+    folderPath: string;
+    /** External library ID */
+    libraryId: string;
+};
 export type PartnerOriginDto = {
     /** The account that originally uploaded or created it */
     rootOwnerId: string;
@@ -5062,6 +5068,8 @@ export type AlbumResponseDto = {
     description: string;
     /** End date (latest asset) */
     endDate?: string;
+    /** Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}. */
+    folderAlbum?: AlbumFolderSourceDto;
     /** Has shared link */
     hasSharedLink: boolean;
     /** Icon: a Material Design Icons name or legacy key (null = default icon) */
@@ -11535,6 +11543,8 @@ export type LibraryResponseDto = {
     deletedAt: string | null;
     /** Exclusion patterns */
     exclusionPatterns: string[];
+    /** The library keeps an album for each of its folders, in sync after every scan */
+    folderAlbums: boolean;
     /** Library ID */
     id: string;
     /** Import paths */
@@ -11583,10 +11593,14 @@ export type ManagedUploadsStatsResponseDto = {
 export type UpdateLibraryDto = {
     /** Exclusion patterns (max 128) */
     exclusionPatterns?: string[];
+    /** Keep an album for each folder of the library, in sync after every scan. Albums belong to the library's owner. */
+    folderAlbums?: boolean;
     /** Import paths (max 128) */
     importPaths?: string[];
     /** Library name */
     name?: string;
+    /** When folderAlbums is turned off: true deletes the folder albums (their photos stay in the library); left out or false keeps them as ordinary albums. */
+    removeFolderAlbums?: boolean;
 };
 export type LibraryRemovalReviewDto = {
     /** Albums that lose items */

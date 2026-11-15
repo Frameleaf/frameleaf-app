@@ -82012,6 +82012,25 @@
         ],
         "type": "object"
       },
+      "AlbumFolderSourceDto": {
+        "properties": {
+          "folderPath": {
+            "description": "The folder on the server the album shows",
+            "type": "string"
+          },
+          "libraryId": {
+            "description": "External library ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "folderPath",
+          "libraryId"
+        ],
+        "type": "object"
+      },
       "AlbumHierarchyNode": {
         "properties": {
           "album": {
@@ -82575,6 +82594,10 @@
             "description": "End date (latest asset)",
             "format": "date-time",
             "type": "string"
+          },
+          "folderAlbum": {
+            "$ref": "#/components/schemas/AlbumFolderSourceDto",
+            "description": "Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}."
           },
           "hasSharedLink": {
             "description": "Has shared link",
@@ -120452,6 +120475,10 @@
             },
             "type": "array"
           },
+          "folderAlbums": {
+            "description": "The library keeps an album for each of its folders, in sync after every scan",
+            "type": "boolean"
+          },
           "id": {
             "description": "Library ID",
             "format": "uuid",
@@ -120509,6 +120536,7 @@
           "createdAt",
           "deletedAt",
           "exclusionPatterns",
+          "folderAlbums",
           "id",
           "importPaths",
           "name",
@@ -182061,6 +182089,10 @@
             "maxItems": 128,
             "type": "array"
           },
+          "folderAlbums": {
+            "description": "Keep an album for each folder of the library, in sync after every scan. Albums belong to the library's owner.",
+            "type": "boolean"
+          },
           "importPaths": {
             "description": "Import paths (max 128)",
             "items": {
@@ -182075,6 +182107,10 @@
             "maxLength": 160,
             "minLength": 1,
             "type": "string"
+          },
+          "removeFolderAlbums": {
+            "description": "When folderAlbums is turned off: true deletes the folder albums (their photos stay in the library); left out or false keeps them as ordinary albums.",
+            "type": "boolean"
           }
         },
         "type": "object"
