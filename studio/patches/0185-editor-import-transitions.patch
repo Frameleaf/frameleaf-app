@@ -1,0 +1,488 @@
+diff --git a/src/features/editor/utils/transition-ui-config.test.ts b/src/features/editor/utils/transition-ui-config.test.ts
+index 0ba8eae..5b8a406 100644
+--- a/src/features/editor/utils/transition-ui-config.test.ts
++++ b/src/features/editor/utils/transition-ui-config.test.ts
+@@ -51,6 +51,7 @@ describe('transition-ui-config', () => {
+       'dipToColorDissolve',
+       'nonAdditiveDissolve',
+       'smoothCut',
++      'filmDissolve',
+     ])
+     expect(dissolveConfigs.map((config) => config.label)).toEqual([
+       'Cross Dissolve',
+@@ -59,6 +60,7 @@ describe('transition-ui-config', () => {
+       'Dip To Color Dissolve',
+       'Non-Additive Dissolve',
+       'Smooth Cut',
++      'Film Dissolve',
+     ])
+   })
+ 
+diff --git a/src/infrastructure/gpu-transitions/registry.ts b/src/infrastructure/gpu-transitions/registry.ts
+index 76584a5..f14c043 100644
+--- a/src/infrastructure/gpu-transitions/registry.ts
++++ b/src/infrastructure/gpu-transitions/registry.ts
+@@ -23,6 +23,7 @@ import { liquidDistort } from './transitions/liquid-distort'
+ import { lensWarpZoom } from './transitions/lens-warp-zoom'
+ import { lightLeakBurn } from './transitions/light-leak-burn'
+ import { filmGateSlip } from './transitions/film-gate-slip'
++import { crossZoom, cubeSpin, filmDissolve, pagePeel } from './transitions/editor-import'
+ 
+ export const GPU_TRANSITION_REGISTRY = new Map<string, GpuTransitionDefinition>()
+ 
+@@ -51,6 +52,10 @@ register(liquidDistort)
+ register(lensWarpZoom)
+ register(lightLeakBurn)
+ register(filmGateSlip)
++register(filmDissolve)
++register(crossZoom)
++register(cubeSpin)
++register(pagePeel)
+ 
+ export function getGpuTransition(id: string): GpuTransitionDefinition | undefined {
+   return GPU_TRANSITION_REGISTRY.get(id)
+diff --git a/src/infrastructure/gpu-transitions/transitions/editor-import.ts b/src/infrastructure/gpu-transitions/transitions/editor-import.ts
+new file mode 100644
+index 0000000..5b51a29
+--- /dev/null
++++ b/src/infrastructure/gpu-transitions/transitions/editor-import.ts
+@@ -0,0 +1,225 @@
++import type { GpuTransitionDefinition } from '../types'
++
++// FL-1564: transitions other editors use that Studio lacked: Film Dissolve, Cross Zoom,
++// Cube Spin and Page Peel. Inputs are premultiplied; outputs are premultiplied (the
++// pipeline converts back to straight alpha). studio/spec/transitions/<id>.md is the contract.
++
++const BINDINGS = /* wgsl */ `
++@group(0) @binding(0) var texSampler: sampler;
++@group(0) @binding(1) var leftTex: texture_2d<f32>;
++@group(0) @binding(2) var rightTex: texture_2d<f32>;
++`
++
++export const filmDissolve: GpuTransitionDefinition = {
++  id: 'filmDissolve',
++  name: 'Film Dissolve',
++  category: 'dissolve',
++  hasDirection: false,
++  entryPoint: 'filmDissolveFragment',
++  uniformSize: 16,
++  shader: /* wgsl */ `
++struct FilmDissolveParams {
++  progress: f32,
++  width: f32,
++  height: f32,
++  _pad: f32,
++};
++${BINDINGS}
++@group(0) @binding(3) var<uniform> params: FilmDissolveParams;
++
++fn filmDecode(c: vec3f) -> vec3f {
++  let x = max(c, vec3f(0.0));
++  return select(pow((x + 0.055) / 1.055, vec3f(2.4)), x / 12.92, x <= vec3f(0.04045));
++}
++
++fn filmEncode(c: vec3f) -> vec3f {
++  let x = max(c, vec3f(0.0));
++  return select(1.055 * pow(x, vec3f(1.0 / 2.4)) - 0.055, x * 12.92, x <= vec3f(0.0031308));
++}
++
++fn filmLinear(c: vec4f) -> vec3f {
++  return select(vec3f(0.0), filmDecode(c.rgb / max(c.a, 1e-6)) * c.a, c.a > 0.0);
++}
++
++@fragment
++fn filmDissolveFragment(input: VertexOutput) -> @location(0) vec4f {
++  let a = textureSample(leftTex, texSampler, input.uv);
++  let b = textureSample(rightTex, texSampler, input.uv);
++  let t = clamp(params.progress, 0.0, 1.0);
++  let alpha = mix(a.a, b.a, t);
++  let lin = mix(filmLinear(a), filmLinear(b), t);
++  let rgb = select(vec3f(0.0), filmEncode(lin / max(alpha, 1e-6)) * alpha, alpha > 0.0);
++  return vec4f(rgb, alpha);
++}`,
++  packUniforms: (progress, width, height) => new Float32Array([progress, width, height, 0]),
++}
++
++export const crossZoom: GpuTransitionDefinition = {
++  id: 'crossZoom',
++  name: 'Cross Zoom',
++  category: 'motion',
++  hasDirection: false,
++  entryPoint: 'crossZoomFragment',
++  uniformSize: 16,
++  shader: /* wgsl */ `
++struct CrossZoomParams {
++  progress: f32,
++  width: f32,
++  height: f32,
++  strength: f32,
++};
++${BINDINGS}
++@group(0) @binding(3) var<uniform> params: CrossZoomParams;
++
++@fragment
++fn crossZoomFragment(input: VertexOutput) -> @location(0) vec4f {
++  let uv = input.uv;
++  let p = clamp(params.progress, 0.0, 1.0);
++  let s = params.strength;
++  let blur = s * sin(p * PI);
++  let zoomA = 1.0 + 2.0 * s * p;
++  let zoomB = 1.0 + 2.0 * s * (1.0 - p);
++  let centre = vec2f(0.5, 0.5);
++  var a = vec4f(0.0);
++  var b = vec4f(0.0);
++  for (var i = 0u; i < 12u; i++) {
++    let k = 1.0 - blur * (f32(i) / 11.0);
++    a += textureSampleLevel(leftTex, texSampler, centre + (uv - centre) * (k / zoomA), 0.0);
++    b += textureSampleLevel(rightTex, texSampler, centre + (uv - centre) * (k / zoomB), 0.0);
++  }
++  let m = p * p * (3.0 - 2.0 * p);
++  return mix(a / 12.0, b / 12.0, m);
++}`,
++  packUniforms: (progress, width, height, _direction, properties) => {
++    const strength = properties?.strength
++    return new Float32Array([
++      progress,
++      width,
++      height,
++      typeof strength === 'number' && Number.isFinite(strength) ? strength : 0.4,
++    ])
++  },
++}
++
++export const cubeSpin: GpuTransitionDefinition = {
++  id: 'cubeSpin',
++  name: 'Cube Spin',
++  category: 'flip',
++  hasDirection: true,
++  directions: ['from-left', 'from-right', 'from-top', 'from-bottom'],
++  entryPoint: 'cubeSpinFragment',
++  uniformSize: 16,
++  shader: /* wgsl */ `
++struct CubeSpinParams {
++  progress: f32,
++  width: f32,
++  height: f32,
++  direction: f32,
++};
++${BINDINGS}
++@group(0) @binding(3) var<uniform> params: CubeSpinParams;
++
++const CUBE_EYE: f32 = 3.0;
++
++// Distance along the ray to a face with centre c, normal n and right axis r; the face's
++// local coordinates are returned in yz, and x is a large number when the face is missed.
++fn cubeFace(ray: vec3f, c: vec3f, n: vec3f, r: vec3f) -> vec3f {
++  let eye = vec3f(0.0, 0.0, CUBE_EYE);
++  let denom = dot(ray, n);
++  let t = select(1e9, dot(c - eye, n) / denom, denom < 0.0);
++  let hit = eye + ray * t;
++  let ls = dot(hit - c, r);
++  let lo = hit.y - c.y;
++  let inside = t > 0.0 && t < 1e8 && abs(ls) <= 1.0 && abs(lo) <= 1.0;
++  return vec3f(select(1e9, t, inside), ls, lo);
++}
++
++// Local face coordinates back to texture uv for the direction (inverse of the screen mapping).
++fn cubeUv(ls: f32, lo: f32, dir: u32) -> vec2f {
++  var x = ls;
++  var y = lo;
++  if (dir == 1u) { x = -ls; }
++  else if (dir == 2u) { x = lo; y = -ls; }
++  else if (dir == 3u) { x = lo; y = ls; }
++  return vec2f((x + 1.0) * 0.5, (1.0 - y) * 0.5);
++}
++
++@fragment
++fn cubeSpinFragment(input: VertexOutput) -> @location(0) vec4f {
++  let uv = input.uv;
++  let dir = u32(params.direction);
++  let x = uv.x * 2.0 - 1.0;
++  let y = 1.0 - uv.y * 2.0;
++  var s = x;
++  var o = y;
++  if (dir == 1u) { s = -x; }
++  else if (dir == 2u) { s = -y; o = x; }
++  else if (dir == 3u) { s = y; o = x; }
++  let theta = clamp(params.progress, 0.0, 1.0) * PI * 0.5;
++  let cs = cos(theta);
++  let sn = sin(theta);
++  let ray = vec3f(s, o, -CUBE_EYE);
++  let centre = vec3f(0.0, 0.0, -1.0);
++  let nA = vec3f(sn, 0.0, cs);
++  let nB = vec3f(-cs, 0.0, sn);
++  let fa = cubeFace(ray, centre + nA, nA, vec3f(cs, 0.0, -sn));
++  let fb = cubeFace(ray, centre + nB, nB, vec3f(sn, 0.0, cs));
++  let a = textureSampleLevel(leftTex, texSampler, cubeUv(fa.y, fa.z, dir), 0.0);
++  let b = textureSampleLevel(rightTex, texSampler, cubeUv(fb.y, fb.z, dir), 0.0);
++  let black = vec4f(0.0, 0.0, 0.0, 1.0);
++  let hitA = fa.x < 1e8;
++  let hitB = fb.x < 1e8;
++  let useA = hitA && (!hitB || fa.x <= fb.x);
++  return select(select(black, b, hitB), a, useA);
++}`,
++  packUniforms: (progress, width, height, direction) =>
++    new Float32Array([progress, width, height, direction]),
++}
++
++export const pagePeel: GpuTransitionDefinition = {
++  id: 'pagePeel',
++  name: 'Page Peel',
++  category: 'wipe',
++  hasDirection: false,
++  entryPoint: 'pagePeelFragment',
++  uniformSize: 16,
++  shader: /* wgsl */ `
++struct PagePeelParams {
++  progress: f32,
++  width: f32,
++  height: f32,
++  _pad: f32,
++};
++${BINDINGS}
++@group(0) @binding(3) var<uniform> params: PagePeelParams;
++
++@fragment
++fn pagePeelFragment(input: VertexOutput) -> @location(0) vec4f {
++  let uv = input.uv;
++  let p = clamp(params.progress, 0.0, 1.0);
++  let aspect = params.width / max(params.height, 1.0);
++  let corner = vec2f(aspect, 1.0);
++  let len = length(corner);
++  let g = corner / len;
++  let f = p * len;
++  let w = 0.05 * len;
++  let pos = vec2f(uv.x * aspect, uv.y);
++  let s = dot(corner - pos, g);
++  let q = pos + 2.0 * (s - f) * g;
++  let qUv = vec2f(q.x / aspect, q.y);
++  let a = textureSampleLevel(leftTex, texSampler, uv, 0.0);
++  let b = textureSampleLevel(rightTex, texSampler, uv, 0.0);
++  let aq = textureSampleLevel(leftTex, texSampler, qUv, 0.0);
++  let peeled = s < f;
++  let shadow = 0.35 * (1.0 - p) * (1.0 - clamp((f - s) / w, 0.0, 1.0));
++  let under = vec4f(b.rgb * (1.0 - shadow), b.a);
++  let base = select(a, under, peeled);
++  let qInside = qUv.x >= 0.0 && qUv.x <= 1.0 && qUv.y >= 0.0 && qUv.y <= 1.0;
++  let onFlap = f > 0.0 && !peeled && s <= 2.0 * f && qInside;
++  let shade = 0.85 + 0.15 * clamp((s - f) / w, 0.0, 1.0);
++  let flap = vec4f(mix(aq.rgb, vec3f(aq.a), 0.6) * shade, aq.a);
++  let over = flap + base * (1.0 - flap.a);
++  return select(base, over, onFlap);
++}`,
++  packUniforms: (progress, width, height) => new Float32Array([progress, width, height, 0]),
++}
+diff --git a/src/shared/timeline/transitions/register-builtins.ts b/src/shared/timeline/transitions/register-builtins.ts
+index 6aff122..e356116 100644
+--- a/src/shared/timeline/transitions/register-builtins.ts
++++ b/src/shared/timeline/transitions/register-builtins.ts
+@@ -16,6 +16,7 @@ import {
+   registerIrisTransitions,
+   registerShapeTransitions,
+   registerGpuTransitions,
++  registerEditorImportTransitions,
+ } from './renderers'
+ 
+ let registered = false
+@@ -33,4 +34,5 @@ export function registerBuiltinTransitions(): void {
+   registerIrisTransitions(transitionRegistry)
+   registerShapeTransitions(transitionRegistry)
+   registerGpuTransitions(transitionRegistry)
++  registerEditorImportTransitions(transitionRegistry)
+ }
+diff --git a/src/shared/timeline/transitions/renderers/editor-import.ts b/src/shared/timeline/transitions/renderers/editor-import.ts
+new file mode 100644
+index 0000000..27f1418
+--- /dev/null
++++ b/src/shared/timeline/transitions/renderers/editor-import.ts
+@@ -0,0 +1,166 @@
++/**
++ * FL-1564: Film Dissolve, Cross Zoom, Cube Spin and Page Peel.
++ *
++ * Each draws with its WebGPU shader (src/infrastructure/gpu-transitions/transitions/editor-import.ts),
++ * which is the contract (studio/spec/transitions). The Canvas 2D fallbacks below are only used
++ * without WebGPU and approximate the shader.
++ */
++
++import type { TransitionRegistry, TransitionRenderer } from '../registry'
++import type { TransitionDefinition, WipeDirection } from '@/types/transition'
++import { clamp01, getNumericProperty } from './gpu'
++
++const ALL_TIMINGS = ['linear', 'ease-in', 'ease-out', 'ease-in-out', 'cubic-bezier'] as const
++const ALL_DIRECTIONS: WipeDirection[] = ['from-left', 'from-right', 'from-top', 'from-bottom']
++
++const filmDissolveRenderer: TransitionRenderer = {
++  gpuTransitionId: 'filmDissolve',
++  renderCanvas(ctx, leftCanvas, rightCanvas, progress, _direction, canvas) {
++    const w = canvas?.width ?? leftCanvas.width
++    const h = canvas?.height ?? leftCanvas.height
++    ctx.drawImage(leftCanvas, 0, 0, w, h)
++    ctx.save()
++    ctx.globalAlpha = clamp01(progress)
++    ctx.drawImage(rightCanvas, 0, 0, w, h)
++    ctx.restore()
++  },
++}
++
++const filmDissolveDef: TransitionDefinition = {
++  id: 'filmDissolve',
++  label: 'Film Dissolve',
++  description: 'Dissolve that mixes the clips in linear light, as film does',
++  category: 'dissolve',
++  icon: 'Film',
++  hasDirection: false,
++  supportedTimings: [...ALL_TIMINGS],
++  defaultDuration: 30,
++  minDuration: 10,
++  maxDuration: 90,
++}
++
++const crossZoomRenderer: TransitionRenderer = {
++  gpuTransitionId: 'crossZoom',
++  renderCanvas(ctx, leftCanvas, rightCanvas, progress, _direction, canvas, properties) {
++    const p = clamp01(progress)
++    const w = canvas?.width ?? leftCanvas.width
++    const h = canvas?.height ?? leftCanvas.height
++    const strength = getNumericProperty(properties, 'strength', 0.4)
++    const drawZoomed = (source: OffscreenCanvas, zoom: number, alpha: number) => {
++      ctx.save()
++      ctx.globalAlpha = alpha
++      ctx.drawImage(source, (w - w * zoom) / 2, (h - h * zoom) / 2, w * zoom, h * zoom)
++      ctx.restore()
++    }
++    const m = p * p * (3 - 2 * p)
++    drawZoomed(leftCanvas, 1 + 2 * strength * p, 1)
++    drawZoomed(rightCanvas, 1 + 2 * strength * (1 - p), m)
++  },
++}
++
++const crossZoomDef: TransitionDefinition = {
++  id: 'crossZoom',
++  label: 'Cross Zoom',
++  description: 'Zooms into the outgoing clip and out of the incoming one with a radial blur',
++  category: 'motion',
++  icon: 'CircleDot',
++  hasDirection: false,
++  supportedTimings: [...ALL_TIMINGS],
++  defaultDuration: 24,
++  minDuration: 8,
++  maxDuration: 72,
++  parameters: [
++    {
++      key: 'strength',
++      label: 'Strength',
++      type: 'number',
++      defaultValue: 0.4,
++      min: 0,
++      max: 1,
++      step: 0.05,
++      description: 'How far the clips zoom and blur',
++    },
++  ],
++}
++
++const cubeSpinRenderer: TransitionRenderer = {
++  gpuTransitionId: 'cubeSpin',
++  renderCanvas(ctx, leftCanvas, rightCanvas, progress, direction, canvas) {
++    const p = clamp01(progress)
++    const w = canvas?.width ?? leftCanvas.width
++    const h = canvas?.height ?? leftCanvas.height
++    const dir = (direction as WipeDirection) || 'from-left'
++    ctx.fillStyle = '#000'
++    ctx.fillRect(0, 0, w, h)
++    // Flat approximation: the incoming face grows from its side while the outgoing one shrinks.
++    if (dir === 'from-left' || dir === 'from-right') {
++      const split = dir === 'from-left' ? w * p : w * (1 - p)
++      const [bx, bw, ax, aw] =
++        dir === 'from-left' ? [0, split, split, w - split] : [split, w - split, 0, split]
++      if (bw > 0) ctx.drawImage(rightCanvas, bx, 0, bw, h)
++      if (aw > 0) ctx.drawImage(leftCanvas, ax, 0, aw, h)
++    } else {
++      const split = dir === 'from-top' ? h * p : h * (1 - p)
++      const [by, bh, ay, ah] =
++        dir === 'from-top' ? [0, split, split, h - split] : [split, h - split, 0, split]
++      if (bh > 0) ctx.drawImage(rightCanvas, 0, by, w, bh)
++      if (ah > 0) ctx.drawImage(leftCanvas, 0, ay, w, ah)
++    }
++  },
++}
++
++const cubeSpinDef: TransitionDefinition = {
++  id: 'cubeSpin',
++  label: 'Cube Spin',
++  description: 'Turns the picture like the side of a cube to reveal the next clip',
++  category: 'flip',
++  icon: 'RotateCw',
++  hasDirection: true,
++  directions: ALL_DIRECTIONS,
++  supportedTimings: [...ALL_TIMINGS],
++  defaultDuration: 30,
++  minDuration: 10,
++  maxDuration: 90,
++}
++
++const pagePeelRenderer: TransitionRenderer = {
++  gpuTransitionId: 'pagePeel',
++  renderCanvas(ctx, leftCanvas, rightCanvas, progress, _direction, canvas) {
++    const p = clamp01(progress)
++    const w = canvas?.width ?? leftCanvas.width
++    const h = canvas?.height ?? leftCanvas.height
++    ctx.drawImage(leftCanvas, 0, 0, w, h)
++    // Flat approximation: the corner triangle (w - x) * w + (h - y) * h < p * (w² + h²) shows
++    // the next clip; the fold's flap is not drawn.
++    const reach = p * (w * w + h * h)
++    ctx.save()
++    ctx.beginPath()
++    ctx.moveTo(w, h)
++    ctx.lineTo(w - reach / w, h)
++    ctx.lineTo(w, h - reach / h)
++    ctx.closePath()
++    ctx.clip()
++    ctx.drawImage(rightCanvas, 0, 0, w, h)
++    ctx.restore()
++  },
++}
++
++const pagePeelDef: TransitionDefinition = {
++  id: 'pagePeel',
++  label: 'Page Peel',
++  description: 'The picture peels from the corner like a page to reveal the next clip',
++  category: 'wipe',
++  icon: 'Layers',
++  hasDirection: false,
++  supportedTimings: [...ALL_TIMINGS],
++  defaultDuration: 30,
++  minDuration: 10,
++  maxDuration: 90,
++}
++
++export function registerEditorImportTransitions(registry: TransitionRegistry): void {
++  registry.register('filmDissolve', filmDissolveDef, filmDissolveRenderer)
++  registry.register('crossZoom', crossZoomDef, crossZoomRenderer)
++  registry.register('cubeSpin', cubeSpinDef, cubeSpinRenderer)
++  registry.register('pagePeel', pagePeelDef, pagePeelRenderer)
++}
+diff --git a/src/shared/timeline/transitions/renderers/index.ts b/src/shared/timeline/transitions/renderers/index.ts
+index d776078..9c41627 100644
+--- a/src/shared/timeline/transitions/renderers/index.ts
++++ b/src/shared/timeline/transitions/renderers/index.ts
+@@ -11,3 +11,4 @@ export { registerMaskTransitions } from './mask'
+ export { registerIrisTransitions } from './iris'
+ export { registerShapeTransitions } from './shape'
+ export { registerGpuTransitions } from './gpu'
++export { registerEditorImportTransitions } from './editor-import'
+diff --git a/src/types/transition.ts b/src/types/transition.ts
+index 880391c..58b5a87 100644
+--- a/src/types/transition.ts
++++ b/src/types/transition.ts
+@@ -53,6 +53,10 @@ export type BuiltinTransitionPresentation =
+   | 'lensWarpZoom'
+   | 'lightLeakBurn'
+   | 'filmGateSlip'
++  | 'filmDissolve'
++  | 'crossZoom'
++  | 'cubeSpin'
++  | 'pagePeel'
+   | 'arrowIris'
+   | 'crossIris'
+   | 'diamondIris'

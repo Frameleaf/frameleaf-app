@@ -849,7 +849,12 @@
       "path": "patches/0183-windowed-limiter-and-split-grade-match.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "3b65ed55534fb309729d80829ecdf80a4a2c8bc78225bacf9896efe7b9708433"
+    },
+    {
+      "path": "patches/0185-editor-import-transitions.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "9e8f83f1a5f721f1fd8ac43ec80b176a4a2cd4b3ecb374a24b1412d9e948d764"
     }
   ],
-  "sourceSha256": "4e35723a02ac6547846dc741ea948902791fef6c97e9562505204b234f65afd6"
+  "sourceSha256": "4ace3b17890b50144f07d809d80778573a386eb8bd8fa44ba0c9c4385527e4d5"
 }

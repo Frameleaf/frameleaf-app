@@ -211,6 +211,16 @@ cover path smoothing, the crop coverage maths, the renderer transform at the cli
 the card. The estimator is verified on synthetic footage only (a still picture moved by a known crop
 path, and generated textures); real handheld footage, rolling shutter, browser preview/export pixel
 parity and speed-ramp spans in the live preview remain open.
+Patch 0185 (FL-1564) adds four transitions other editors use: Film Dissolve (a cross dissolve mixed in
+linear light), Cross Zoom (both clips zoom with a radial blur, `strength`), Cube Spin (the clips are two
+faces of a box turning a quarter turn in perspective, four directions) and Page Peel (the outgoing clip
+folds back from the bottom-right corner). Each is a WebGPU shader with a Canvas 2D fallback, a catalogue
+entry, a spec page (`spec/transitions/<id>.md`) and goldens, written with the new
+`render-goldens.browser.mjs --write --only=<ids>`, which renders and writes only the named ids' cases and
+keeps every other committed golden. HDR projects refuse them like every other transition (T5) until
+FL-1556. Push already existed (`slide`, labelled Push). A gradient wipe from an image, and transitions on
+text or at a clip edge with no neighbour, are follow-ups; start-at-cut and end-at-cut are `alignment` 0 and 1.
+
 Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
 the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
 embedded sound) becomes a 1 ms onset envelope smoothed by a 30 ms triangle; the offset is the peak of the

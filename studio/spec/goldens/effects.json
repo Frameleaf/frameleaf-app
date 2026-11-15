@@ -6,16 +6,16 @@
   "engine": {
     "name": "freecut",
     "revision": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-    "patches": 124,
+    "patches": 170,
     "sourceDigest": {
-      "files": 61,
-      "sha256": "53d463cf973a2584b0ec02ae6f18f179d2e0f16dd76abc21e8fb67d91aa81645"
+      "files": 63,
+      "sha256": "497f14758d45152f99e0b49839cd91792d3432622c3e30ee5c04dd05ef7aff6c"
     }
   },
   "generatedBy": "studio/tools/render-goldens.browser.mjs --write",
   "renderer": {
     "canonical": {
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
       "adapter": {
         "vendor": "google",
         "architecture": "swiftshader",
@@ -24,7 +24,7 @@
       }
     },
     "crossCheck": {
-      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 Safari/537.36",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
       "adapter": {
         "vendor": "apple",
         "architecture": "metal-3",
