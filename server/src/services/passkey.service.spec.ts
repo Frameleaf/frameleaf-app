@@ -385,6 +385,23 @@ describe(PasskeyService.name, () => {
       expect(passkeys).toHaveLength(0);
     });
 
+    it('refuses a passkey when the reset lands just after an earlier password check is found (FL-1367)', async () => {
+      const passkey = new SoftPasskey({ origin: ORIGIN });
+      // the password was checked earlier in this session
+      await sut.getRegistrationOptions(auth, { password: 'password' }, headers(), details);
+      // the stored check is found, then the administrator's reset moves the version on and deletes it
+      mocks.passkey.hasPasswordProof.mockImplementationOnce(() => {
+        versions.set(user.id, 1);
+        challenges = challenges.filter(({ purpose }) => purpose !== 'password-proof');
+        return Promise.resolve(true);
+      });
+      const { options } = await sut.getRegistrationOptions(auth, {}, headers(), details);
+      await expect(sut.register(auth, { credential: passkey.register(options!) }, details)).rejects.toThrow(
+        'reset while adding',
+      );
+      expect(passkeys).toHaveLength(0);
+    });
+
     it('refuses an answer made at another address or without verifying the person', async () => {
       const elsewhere = new SoftPasskey({ origin: 'https://photos.evil.test' });
       const first = await sut.getRegistrationOptions(auth, { password: 'password' }, headers(), details);
