@@ -812,6 +812,8 @@ export type JobItem =
   | { name: JobName.LibraryDelete; data: IEntityJob }
   | { name: JobName.LibraryScanQueueAll; data?: IBaseJob }
   | { name: JobName.LibraryScanRun; data?: IBaseJob }
+  // FL-838: `id` is the library
+  | { name: JobName.LibraryFolderAlbumSync; data: IEntityJob }
   | { name: JobName.LibraryDeleteCheck; data: IBaseJob }
 
   // Notification

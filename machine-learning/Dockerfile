@@ -107,6 +107,19 @@ RUN apt-get update && \
     apt-get remove wget -yqq && \
     rm -rf /var/lib/apt/lists/*
 
+# FL-984: Intel's NPU user-space driver (Level Zero NPU plugin and its compiler), so OpenVINO lists an Intel
+# Core Ultra NPU passed in as /dev/accel. The firmware belongs to the host kernel and is not installed here.
+ADD --checksum=sha256:1efcd4b60c22abee751d8f2705962cbcc2a569de45c7e0e670cf08afbfcdc1d2 \
+    https://github.com/intel/linux-npu-driver/releases/download/v1.38.0/linux-npu-driver-v1.38.0.20260910-34487311128-ubuntu2404.tar.gz \
+    /tmp/npu-driver.tar.gz
+RUN mkdir /tmp/npu-driver && \
+    tar -xzf /tmp/npu-driver.tar.gz -C /tmp/npu-driver && \
+    apt-get update && \
+    find /tmp/npu-driver -name '*.deb' ! -name 'intel-fw-npu*' -print0 | \
+      xargs -0 apt-get install --no-install-recommends -yqq libze1 && \
+    ldconfig -p | grep -q libze_intel_npu && \
+    rm -rf /tmp/npu-driver /tmp/npu-driver.tar.gz /var/lib/apt/lists/*
+
 FROM ${CUDA_IMAGE} AS prod-cuda
 
 # CI only: GitHub runners stopped resolving *.ubuntu.com (FL-1453); empty keeps the default archive.

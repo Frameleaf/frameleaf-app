@@ -943,6 +943,13 @@ function startAtHandoffPlayhead(state: Session, at: { num: number; den: number }
   state.unsubscribe.push(stop)
 }
 
+/** The host moves the playhead to an exact instant (FL-1545), to the nearest frame of the timeline. */
+function seekTo(at: { num: number; den: number }) {
+  if (!(at.den > 0) || at.num < 0) return
+  const cadence = cadenceFromDecimal(useTimelineSettingsStore.getState().fps || 30)
+  if (cadence) usePlaybackStore.getState().setCurrentFrame(nearestTimelineFrame(at, cadence))
+}
+
 /** The playhead, as an exact rational instant, for review comments pinned in the host (FL-93). */
 function watchPlayhead(state: Session) {
   let last = -1
@@ -1144,6 +1151,9 @@ async function update(context: StudioHostContext): Promise<void> {
   }
   state.context = context
   applyTheme(context)
+  if (context.seekRequest && context.seekRequest.id !== previous.seekRequest?.id) {
+    seekTo(context.seekRequest)
+  }
   if ((state.relinkCommitting || state.relinkGuarded) && !changedOrigin) return
   if (changedOrigin) { state.relinkGuarded = false; state.relinkGuardStop?.(); state.relinkGuardStop = undefined }
   if ((context.generatedMedia?.length ?? 0) > 0) {
