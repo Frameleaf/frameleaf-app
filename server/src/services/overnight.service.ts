@@ -202,11 +202,16 @@ export class OvernightService {
    * remake playback copies). Each starts over every photo once, on its own queue, alongside the night.
    */
   private async startRequestedRedo() {
-    const queues = (await this.systemMetadataRepository.get(SystemMetadataKey.OvernightRedo))?.queues ?? [];
-    if (queues.length === 0) {
+    const { queues = [], bestPhotos = false } =
+      (await this.systemMetadataRepository.get(SystemMetadataKey.OvernightRedo)) ?? {};
+    if (queues.length === 0 && !bestPhotos) {
       return;
     }
     await this.systemMetadataRepository.set(SystemMetadataKey.OvernightRedo, { queues: [] });
+    if (bestPhotos) {
+      // FL-1597: "Recalculate tonight" on Visual search
+      await this.jobRepository.queue({ name: JobName.BestPhotosScoreQueueAll, data: { force: true } });
+    }
     for (const name of queues) {
       try {
         await this.queueService.runCommandLegacy(name as QueueName, { command: QueueCommand.Start, force: true });

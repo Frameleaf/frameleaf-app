@@ -91,6 +91,7 @@ describe('Studio measured render progress', () => {
     ['bundled_hdr_mastering_exceeded', 'Review the grading'],
     ['bundled_hdr_master_failed', 'HDR encoder support'],
     ['bundled_inputs_too_large', 'larger input size limit'],
+    ['bundled_lottie_dependencies', 'Embed them in the animation'],
   ])('gives the producer-specific remedy for %s', (code, remedy) => {
     expect(studioExportFailure(code)).toContain(remedy);
     expect(studioExportFailure(code)).not.toContain('worker connection');

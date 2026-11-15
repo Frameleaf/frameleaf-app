@@ -37,6 +37,17 @@ const LibraryProgressResponseSchema = z
       .meta({ format: 'date-time' })
       .nullable()
       .describe('The start of the period the rate is measured over'),
+    bestPhotos: z
+      .object({
+        outdated: z
+          .int()
+          .nonnegative()
+          .describe(
+            'FL-1597: photos Best Photos scored before the learned score of the current Visual search model; 0 when the model has none',
+          ),
+        tonight: z.boolean().describe('Best Photos scores the library again in the next overnight run'),
+      })
+      .meta({ id: 'LibraryBestPhotosProgressDto' }),
   })
   .meta({ id: 'LibraryProgressResponseDto' });
 
@@ -55,15 +66,17 @@ const LibraryRedoQueueSchema = z
   )
   .meta({ id: 'LibraryRedoQueue' });
 
+const LibraryRedoWhenSchema = z
+  .enum(['now', 'tonight'])
+  .describe('now: start over every photo now; tonight: in the next overnight run')
+  .meta({ id: 'LibraryRedoWhen' });
+
 const LibraryRedoSchema = z
-  .object({
-    queue: LibraryRedoQueueSchema,
-    when: z
-      .enum(['now', 'tonight'])
-      .describe('now: start over every photo now; tonight: in the next overnight run')
-      .meta({ id: 'LibraryRedoWhen' }),
-  })
+  .object({ queue: LibraryRedoQueueSchema, when: LibraryRedoWhenSchema })
   .meta({ id: 'LibraryRedoDto' });
+
+/** FL-1597: "Recalculate tonight / now" for Best Photos. */
+const LibraryBestPhotosRedoSchema = z.object({ when: LibraryRedoWhenSchema }).meta({ id: 'LibraryBestPhotosRedoDto' });
 
 const LibraryRedoResponseSchema = z
   .object({
@@ -136,6 +149,7 @@ const MediaCopiesResponseSchema = z
 
 export class LibraryProgressResponseDto extends createZodDto(LibraryProgressResponseSchema) {}
 export class LibraryRedoDto extends createZodDto(LibraryRedoSchema) {}
+export class LibraryBestPhotosRedoDto extends createZodDto(LibraryBestPhotosRedoSchema) {}
 export class LibraryRedoResponseDto extends createZodDto(LibraryRedoResponseSchema) {}
 export class MediaCopiesResponseDto extends createZodDto(MediaCopiesResponseSchema) {}
 export class VideoCardDto extends createZodDto(VideoCardSchema) {}

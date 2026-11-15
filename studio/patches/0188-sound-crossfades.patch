@@ -1,0 +1,1191 @@
+diff --git a/src/features/editor/components/audio-meter-utils.ts b/src/features/editor/components/audio-meter-utils.ts
+index c7dd607..be86d60 100644
+--- a/src/features/editor/components/audio-meter-utils.ts
++++ b/src/features/editor/components/audio-meter-utils.ts
+@@ -284,6 +284,9 @@ function getDirectSegmentGain(
+     fadeInFrames: 'crossfadeFadeIn' in segment ? segment.crossfadeFadeIn : undefined,
+     fadeOutFrames: 'crossfadeFadeOut' in segment ? segment.crossfadeFadeOut : undefined,
+     useEqualPower: true,
++    crossfadeInCurve: 'crossfadeFadeInCurve' in segment ? segment.crossfadeFadeInCurve : undefined,
++    crossfadeOutCurve:
++      'crossfadeFadeOutCurve' in segment ? segment.crossfadeFadeOutCurve : undefined,
+   })
+ 
+   return Math.max(0, toLinearGain(segment.volumeDb) * clipFadeMultiplier * crossfadeMultiplier)
+@@ -432,6 +435,8 @@ function appendCompoundSegmentSources(params: {
+     fadeInFrames: segment.crossfadeFadeIn,
+     fadeOutFrames: segment.crossfadeFadeOut,
+     useEqualPower: true,
++    crossfadeInCurve: segment.crossfadeFadeInCurve,
++    crossfadeOutCurve: segment.crossfadeFadeOutCurve,
+   })
+   const nestedFrame =
+     segment.trimBefore + timelineToSourceFrames(localFrame, segment.playbackRate, fps, sourceFps)
+@@ -915,6 +920,8 @@ function appendAudioMeterSourcesFromGraph(params: {
+       fadeInFrames: compoundEntry.segment.crossfadeFadeIn,
+       fadeOutFrames: compoundEntry.segment.crossfadeFadeOut,
+       useEqualPower: true,
++      crossfadeInCurve: compoundEntry.segment.crossfadeFadeInCurve,
++      crossfadeOutCurve: compoundEntry.segment.crossfadeFadeOutCurve,
+     })
+     const nestedFrame =
+       compoundEntry.segment.trimBefore +
+diff --git a/src/features/export/utils/canvas-audio.test.ts b/src/features/export/utils/canvas-audio.test.ts
+index bedd20d..254a44b 100644
+--- a/src/features/export/utils/canvas-audio.test.ts
++++ b/src/features/export/utils/canvas-audio.test.ts
+@@ -626,6 +626,35 @@ describe('extractAudioSegments', () => {
+     })
+   })
+ 
++  it('carries a transition sound curve onto both expanded segments (FL-1555)', () => {
++    const composition = makeLinkedTransitionComposition({ includeVideoTransition: true })
++    composition.transitions![0]!.audioCurve = 'exponential'
++
++    const segments = extractAudioSegments(composition, composition.fps)
++
++    expect(segments[0]).toMatchObject({ itemId: 'audio-1', crossfadeFadeOutCurve: 'exponential' })
++    expect(segments[1]).toMatchObject({ itemId: 'audio-2', crossfadeFadeInCurve: 'exponential' })
++  })
++
++  it.each([
++    ['constant-power', 0.1414],
++    ['constant-gain', 0.1],
++    ['exponential', 0.05],
++  ] as const)(
++    'mixes the middle of a %s crossfade at its gain law (FL-1555)',
++    async (curve, mid) => {
++      const composition = makeLinkedTransitionComposition({ includeVideoTransition: true })
++      composition.transitions![0]!.audioCurve = curve
++
++      const audio = await processAudio(composition)
++
++      const mixed = audio!.samples[0]!
++      const overlapMidIndex = Math.floor((30 / composition.fps) * audio!.sampleRate)
++      expect(mixed[overlapMidIndex]!).toBeCloseTo(mid, 2)
++      expect(mixed[Math.floor((10 / composition.fps) * audio!.sampleRate)]!).toBeCloseTo(0.1, 2)
++    },
++  )
++
+   it('uses only linked audio companions for linked clips with an explicit audio transition', () => {
+     const composition = makeLinkedTransitionComposition({ includeAudioTransition: true })
+ 
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+index f882c13..bf05c32 100644
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -50,7 +50,9 @@ import {
+   getAudioFadeMultiplier,
+   evaluateAudioFadeInCurve,
+   evaluateAudioFadeOutCurve,
++  getAudioCrossfadeGain,
+   type AudioClipFadeSpan,
++  type AudioCrossfadeCurve,
+ } from '@/shared/utils/audio-fade-curve'
+ import { createMediabunnyInputSource } from '@/infrastructure/browser/mediabunny-input-source'
+ import {
+@@ -119,6 +121,8 @@ interface AudioSegment {
+   clipFadeSpans?: AudioClipFadeSpan[]
+   crossfadeFadeInFrames?: number
+   crossfadeFadeOutFrames?: number
++  crossfadeFadeInCurve?: AudioCrossfadeCurve
++  crossfadeFadeOutCurve?: AudioCrossfadeCurve
+   speed: number // Playback rate
+   isReversed: boolean
+   muted: boolean
+@@ -316,6 +320,8 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+       overlapFadeIn: number
+       fadeInDelay: number
+       fadeOutLead: number
++      overlapFadeInCurve?: AudioCrossfadeCurve
++      overlapFadeOutCurve?: AudioCrossfadeCurve
+     }
+   >()
+   const ensureExtension = (
+@@ -327,10 +333,21 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+     overlapFadeIn: number
+     fadeInDelay: number
+     fadeOutLead: number
++    overlapFadeInCurve?: AudioCrossfadeCurve
++    overlapFadeOutCurve?: AudioCrossfadeCurve
+   } => {
+     const existing = extensionByClipId.get(clipId)
+     if (existing) return existing
+-    const created = {
++    const created: {
++      before: number
++      after: number
++      overlapFadeOut: number
++      overlapFadeIn: number
++      fadeInDelay: number
++      fadeOutLead: number
++      overlapFadeInCurve?: AudioCrossfadeCurve
++      overlapFadeOutCurve?: AudioCrossfadeCurve
++    } = {
+       before: 0,
+       after: 0,
+       overlapFadeOut: 0,
+@@ -373,9 +390,11 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+     if (window.durationInFrames > 0) {
+       const leftExt = ensureExtension(left.id)
+       leftExt.overlapFadeOut = Math.max(leftExt.overlapFadeOut, window.durationInFrames)
++      leftExt.overlapFadeOutCurve = window.transition.audioCurve
+       leftExt.fadeOutLead = Math.max(leftExt.fadeOutLead, window.leftPortion)
+       const rightExt = ensureExtension(right.id)
+       rightExt.overlapFadeIn = Math.max(rightExt.overlapFadeIn, window.durationInFrames)
++      rightExt.overlapFadeInCurve = window.transition.audioCurve
+       rightExt.fadeInDelay = Math.max(rightExt.fadeInDelay, window.rightPortion)
+     }
+   }
+@@ -486,6 +505,8 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+       ],
+       crossfadeFadeInFrames,
+       crossfadeFadeOutFrames,
++      crossfadeFadeInCurve: extension.overlapFadeInCurve,
++      crossfadeFadeOutCurve: extension.overlapFadeOutCurve,
+       speed,
+       isReversed: item.isReversed === true,
+       muted: entry.muted,
+@@ -558,6 +579,8 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+     clipFadeSpans: segment.clipFadeSpans,
+     crossfadeFadeInFrames: segment.crossfadeFadeInFrames,
+     crossfadeFadeOutFrames: segment.crossfadeFadeOutFrames,
++    crossfadeFadeInCurve: segment.crossfadeFadeInCurve,
++    crossfadeFadeOutCurve: segment.crossfadeFadeOutCurve,
+     speed: segment.speed,
+     isReversed: segment.isReversed,
+     muted: segment.muted,
+@@ -583,6 +606,7 @@ function buildManagedTransitionAudioSegments<TItem extends TransitionAudioItem>(
+       active.contentEndOffsetFrames = segment.contentEndOffsetFrames
+       active.fadeOutLeadFrames = segment.fadeOutLeadFrames
+       active.crossfadeFadeOutFrames = segment.crossfadeFadeOutFrames
++      active.crossfadeFadeOutCurve = segment.crossfadeFadeOutCurve
+       active.clipFadeSpans = [
+         ...(active.clipFadeSpans ?? []),
+         ...(segment.clipFadeSpans ?? []).map((span) => ({
+@@ -1572,6 +1596,26 @@ function applyFades(
+   return output
+ }
+ 
++/** Crossfade gain under a transition, per its sound curve (FL-1555). */
++function applyCrossfades(
++  samples: Float32Array,
++  fadeInSamples: number,
++  fadeOutSamples: number,
++  fadeInCurve: AudioCrossfadeCurve | undefined,
++  fadeOutCurve: AudioCrossfadeCurve | undefined,
++): Float32Array {
++  const output = new Float32Array(samples)
++  for (let i = 0; i < fadeInSamples && i < output.length; i++) {
++    output[i] = output[i]! * getAudioCrossfadeGain(i / fadeInSamples, 'in', fadeInCurve)
++  }
++  const fadeOutStart = Math.max(0, output.length - fadeOutSamples)
++  for (let i = fadeOutStart; i < output.length; i++) {
++    output[i] =
++      output[i]! * getAudioCrossfadeGain((i - fadeOutStart) / fadeOutSamples, 'out', fadeOutCurve)
++  }
++  return output
++}
++
+ function applyClipFadeSpans(
+   samples: Float32Array,
+   fadeSpans: AudioClipFadeSpan[] | undefined,
+@@ -2172,11 +2216,18 @@ function applyCrossfadesToWindow(
+   for (let i = 0; i < output.length; i++) {
+     const globalIndex = segmentOffsetSamples + i
+     if (crossfadeIn > 0 && globalIndex < crossfadeIn) {
+-      output[i] = output[i]! * Math.sin(((globalIndex / crossfadeIn) * Math.PI) / 2)
++      output[i] =
++        output[i]! *
++        getAudioCrossfadeGain(globalIndex / crossfadeIn, 'in', segment.crossfadeFadeInCurve)
+     }
+     if (crossfadeOut > 0 && globalIndex >= fadeOutStart) {
+       output[i] =
+-        output[i]! * Math.cos((((globalIndex - fadeOutStart) / crossfadeOut) * Math.PI) / 2)
++        output[i]! *
++        getAudioCrossfadeGain(
++          (globalIndex - fadeOutStart) / crossfadeOut,
++          'out',
++          segment.crossfadeFadeOutCurve,
++        )
+     }
+   }
+ }
+@@ -2736,11 +2787,12 @@ export async function processAudio(
+         }
+ 
+         if (crossfadeFadeInSamples > 0 || crossfadeFadeOutSamples > 0) {
+-          channelSamples = applyFades(
++          channelSamples = applyCrossfades(
+             channelSamples,
+             crossfadeFadeInSamples,
+             crossfadeFadeOutSamples,
+-            true,
++            segment.crossfadeFadeInCurve,
++            segment.crossfadeFadeOutCurve,
+           )
+         }
+ 
+diff --git a/src/features/preview/hooks/use-gpu-effects-overlay.ts b/src/features/preview/hooks/use-gpu-effects-overlay.ts
+index e6ac1d3..b77bdb4 100644
+--- a/src/features/preview/hooks/use-gpu-effects-overlay.ts
++++ b/src/features/preview/hooks/use-gpu-effects-overlay.ts
+@@ -175,7 +175,10 @@ export function buildContinuousPreviewOverlayIndex(
+     }
+     return false
+   })
+-  const clipsById = new Map(items.map((item) => [item.id, item]))
++  // Sound-clip crossfades (FL-1555) draw nothing.
++  const clipsById = new Map(
++    items.filter((item) => item.type !== 'audio').map((item) => [item.id, item]),
++  )
+ 
+   return {
+     candidateItems,
+@@ -324,7 +327,7 @@ export function shouldForceContinuousPreviewOverlayInWindow(
+   if (Array.isArray(transitionsOrCount) && transitionsOrCount.length > 0) {
+     const clipMap = new Map<string, TimelineItem>()
+     for (const item of items) {
+-      clipMap.set(item.id, item)
++      if (item.type !== 'audio') clipMap.set(item.id, item)
+     }
+ 
+     for (const transitionWindow of resolveTransitionWindows(transitionsOrCount, clipMap)) {
+diff --git a/src/features/preview/hooks/use-preview-transition-model.ts b/src/features/preview/hooks/use-preview-transition-model.ts
+index 6e4f693..7d85b80 100644
+--- a/src/features/preview/hooks/use-preview-transition-model.ts
++++ b/src/features/preview/hooks/use-preview-transition-model.ts
+@@ -165,7 +165,8 @@ export function buildPreviewTransitionData({
+   const clipMap = new Map<string, TimelineItem>()
+   for (const track of fastScrubScaledTracks) {
+     for (const item of track.items as TimelineItem[]) {
+-      clipMap.set(item.id, item)
++      // Sound-clip crossfades (FL-1555) draw nothing.
++      if (item.type !== 'audio') clipMap.set(item.id, item)
+     }
+   }
+   const playbackTransitionWindows = resolveTransitionWindows(safeTransitions, clipMap)
+diff --git a/src/features/project-bundle/schemas/project-schema.ts b/src/features/project-bundle/schemas/project-schema.ts
+index a8b4408..c6dd299 100644
+--- a/src/features/project-bundle/schemas/project-schema.ts
++++ b/src/features/project-bundle/schemas/project-schema.ts
+@@ -663,6 +663,7 @@ const transitionSchema = z.object({
+     })
+     .optional(),
+   presetId: z.string().min(1).optional(),
++  audioCurve: z.enum(['constant-power', 'constant-gain', 'exponential']).optional(),
+   properties: z.record(z.string(), z.unknown()).optional(),
+   createdAt: z.number().int().min(0).optional(),
+   lastModifiedAt: z.number().int().min(0).optional(),
+diff --git a/src/features/timeline/stores/actions/transition-actions.ts b/src/features/timeline/stores/actions/transition-actions.ts
+index 9347f36..84a7130 100644
+--- a/src/features/timeline/stores/actions/transition-actions.ts
++++ b/src/features/timeline/stores/actions/transition-actions.ts
+@@ -21,6 +21,7 @@ import {
+   canAddTransition,
+   areFramesAligned,
+   getMaxTransitionDurationForHandles,
++  isLinkedSoundClip,
+ } from '../../utils/transition-utils'
+ import { execute, getLogger } from './shared'
+ 
+@@ -47,6 +48,11 @@ export function addTransition(
+         return false
+       }
+ 
++      if (isLinkedSoundClip(leftClip, items) || isLinkedSoundClip(rightClip, items)) {
++        getLogger().warn('[addTransition] Linked sound follows its video clip transition')
++        return false
++      }
++
+       const maxByClipDuration = Math.floor(
+         Math.min(leftClip.durationInFrames, rightClip.durationInFrames) - 1,
+       )
+@@ -126,6 +132,7 @@ type TransitionUpdates = Partial<
+     | 'alignment'
+     | 'bezierPoints'
+     | 'presetId'
++    | 'audioCurve'
+     | 'properties'
+   >
+ >
+diff --git a/src/features/timeline/stores/transitions-store.ts b/src/features/timeline/stores/transitions-store.ts
+index b22ea48..2f33c26 100644
+--- a/src/features/timeline/stores/transitions-store.ts
++++ b/src/features/timeline/stores/transitions-store.ts
+@@ -53,6 +53,7 @@ interface TransitionsActions {
+         | 'alignment'
+         | 'bezierPoints'
+         | 'presetId'
++        | 'audioCurve'
+         | 'properties'
+       >
+     >,
+diff --git a/src/features/timeline/utils/transition-auto-repair.test.ts b/src/features/timeline/utils/transition-auto-repair.test.ts
+index f0fbe2c..1b1f940 100644
+--- a/src/features/timeline/utils/transition-auto-repair.test.ts
++++ b/src/features/timeline/utils/transition-auto-repair.test.ts
+@@ -52,6 +52,31 @@ describe('repairTransitions', () => {
+     expect(result.valid[0]?.id).toBe('t1')
+   })
+ 
++  it('keeps a crossfade between two sound clips when they move (FL-1555)', () => {
++    const sound = (id: string, from: number): TimelineItem =>
++      ({
++        id,
++        type: 'audio',
++        trackId: 'v2',
++        from,
++        durationInFrames: 60,
++        label: id,
++        src: `${id}.wav`,
++        sourceStart: 30,
++        sourceEnd: 90,
++        sourceDuration: 300,
++      }) as unknown as TimelineItem
++
++    const result = repairTransitions(
++      ['c1', 'c2'],
++      [sound('c1', 0), sound('c2', 60)],
++      [makeTransition({ audioCurve: 'constant-gain' })],
++    )
++
++    expect(result.broken).toHaveLength(0)
++    expect(result.valid[0]).toMatchObject({ id: 't1', audioCurve: 'constant-gain' })
++  })
++
+   it('still removes a transition whose clips genuinely landed on different tracks', () => {
+     const make = (id: string, trackId: string, from: number): TimelineItem =>
+       ({
+diff --git a/src/features/timeline/utils/transition-auto-repair.ts b/src/features/timeline/utils/transition-auto-repair.ts
+index 0da1c0a..e8164e0 100644
+--- a/src/features/timeline/utils/transition-auto-repair.ts
++++ b/src/features/timeline/utils/transition-auto-repair.ts
+@@ -22,16 +22,12 @@ import {
+   areFramesAligned,
+   areFramesOverlapping,
+   getMaxTransitionDurationForHandles,
++  isTransitionPair,
+ } from './transition-utils'
+ 
+-/**
+- * Clip types that can have transitions.
+- * Must stay in sync with `canAddTransition()` in transition-utils.ts — otherwise
+- * a transition that was legitimately created (e.g. between composition clips) gets
+- * flagged `invalid_type` and removed by the repair pass on the next clip change
+- * (a false positive, e.g. when reordering whole tracks).
+- */
+-const VALID_TRANSITION_TYPES = new Set(['video', 'image', 'composition'])
++// Clip types share `isTransitionPair()` with `canAddTransition()`: otherwise a transition that
++// was legitimately created (between composition clips, or two sound clips) is flagged
++// `invalid_type` and removed by the repair pass on the next clip change.
+ 
+ /**
+  * Repair transitions after clip changes.
+@@ -57,7 +53,7 @@ export function repairTransitions(
+   // Build track adjacency index for reassignment
+   const trackItems = new Map<string, TimelineItem[]>()
+   for (const item of currentItems) {
+-    if (!VALID_TRANSITION_TYPES.has(item.type)) continue
++    if (!isTransitionPair(item, item)) continue
+     if (!trackItems.has(item.trackId)) trackItems.set(item.trackId, [])
+     trackItems.get(item.trackId)!.push(item)
+   }
+@@ -175,7 +171,7 @@ function tryRepairTransition(
+   }
+ 
+   // Check types
+-  if (!VALID_TRANSITION_TYPES.has(leftClip.type) || !VALID_TRANSITION_TYPES.has(rightClip.type)) {
++  if (!isTransitionPair(leftClip, rightClip)) {
+     return {
+       status: 'broken',
+       breakage: createBreakage(
+@@ -323,7 +319,7 @@ function tryReassignClip(
+     }
+   }
+ 
+-  if (!candidate || !VALID_TRANSITION_TYPES.has(candidate.type)) return null
++  if (!candidate || !isTransitionPair(candidate, existingClip)) return null
+ 
+   // Found a valid replacement
+   const repairedTransition: Transition = {
+diff --git a/src/features/timeline/utils/transition-targets.ts b/src/features/timeline/utils/transition-targets.ts
+index c31aa2e..80aacbf 100644
+--- a/src/features/timeline/utils/transition-targets.ts
++++ b/src/features/timeline/utils/transition-targets.ts
+@@ -1,6 +1,11 @@
+ import { TRANSITION_CONFIGS, type Transition } from '@/types/transition'
+ import type { TimelineItem } from '@/types/timeline'
+-import { areFramesAligned, getMaxTransitionDurationForHandles } from './transition-utils'
++import {
++  areFramesAligned,
++  getMaxTransitionDurationForHandles,
++  isLinkedSoundClip,
++  isTransitionPair,
++} from './transition-utils'
+ 
+ export interface ResolvedTransitionTarget {
+   leftClipId: string
+@@ -18,10 +23,6 @@ export interface ResolvedTransitionTarget {
+ 
+ type TransitionEdge = 'left' | 'right'
+ 
+-function isTransitionableItem(item: TimelineItem): boolean {
+-  return item.type === 'video' || item.type === 'image' || item.type === 'composition'
+-}
+-
+ function buildExistingTransitionByPair(transitions: Transition[]): Map<string, Transition> {
+   return new Map(
+     transitions.map((transition) => [
+@@ -40,7 +41,7 @@ function resolveTargetForPair(
+   allowDurationClamp = true,
+   timelineFps = 30,
+ ): ResolvedTransitionTarget | null {
+-  if (!isTransitionableItem(leftClip) || !isTransitionableItem(rightClip)) return null
++  if (!isTransitionPair(leftClip, rightClip)) return null
+   if (leftClip.trackId !== rightClip.trackId) return null
+ 
+   const leftEnd = leftClip.from + leftClip.durationInFrames
+@@ -137,10 +138,15 @@ export function resolveTransitionTargetForEdge(params: {
+   } = params
+ 
+   const item = items.find((candidate) => candidate.id === itemId)
+-  if (!item || !isTransitionableItem(item)) return null
++  if (!item || !isTransitionPair(item, item) || isLinkedSoundClip(item, items)) return null
+ 
+   const trackItems = items
+-    .filter((candidate) => candidate.trackId === item.trackId && isTransitionableItem(candidate))
++    .filter(
++      (candidate) =>
++        candidate.trackId === item.trackId &&
++        isTransitionPair(item, candidate) &&
++        !isLinkedSoundClip(candidate, items),
++    )
+     .toSorted((a, b) => a.from - b.from || a.id.localeCompare(b.id))
+ 
+   if (edge === 'right') {
+diff --git a/src/features/timeline/utils/transition-utils.test.ts b/src/features/timeline/utils/transition-utils.test.ts
+index 3616080..b5127ee 100644
+--- a/src/features/timeline/utils/transition-utils.test.ts
++++ b/src/features/timeline/utils/transition-utils.test.ts
+@@ -1,7 +1,7 @@
+ // @vitest-environment node
+ 
+ import { describe, expect, it } from 'vite-plus/test'
+-import type { VideoItem, ImageItem } from '@/types/timeline'
++import type { AudioItem, VideoItem, ImageItem } from '@/types/timeline'
+ import type { Transition } from '@/types/transition'
+ import {
+   areFramesAligned,
+@@ -12,6 +12,7 @@ import {
+   clampSlideDeltaToPreserveTransitions,
+   clampSlipDeltaToPreserveTransitions,
+   getMaxTransitionDurationForHandles,
++  isLinkedSoundClip,
+ } from './transition-utils'
+ 
+ function createVideoClip(
+@@ -162,6 +163,30 @@ describe('transition-utils', () => {
+     expect(getMaxTransitionDurationForHandles(left, right, 0.5)).toBe(299)
+   })
+ 
++  it('allows a crossfade between two plain sound clips but not linked or mixed ones (FL-1555)', () => {
++    const sound = (id: string, from: number, extra: Partial<AudioItem> = {}): AudioItem => ({
++      id,
++      type: 'audio',
++      trackId: 'track-1',
++      from,
++      durationInFrames: 60,
++      label: id,
++      src: `${id}.wav`,
++      sourceStart: 30,
++      sourceEnd: 90,
++      sourceDuration: 300,
++      ...extra,
++    })
++    expect(canAddTransition(sound('a', 0), sound('b', 60), 20).canAdd).toBe(true)
++    expect(canAddTransition(createVideoClip('v', 0, 60), sound('b', 60), 20).canAdd).toBe(false)
++    // Unlinking leaves each clip a group of its own; only a shared group is linked.
++    const video = { ...createVideoClip('v', 0, 60), linkedGroupId: 'g' }
++    const linked = sound('a', 0, { linkedGroupId: 'g' })
++    const unlinked = sound('b', 60, { linkedGroupId: 'b' })
++    expect(isLinkedSoundClip(linked, [video, linked, unlinked])).toBe(true)
++    expect(isLinkedSoundClip(unlinked, [video, linked, unlinked])).toBe(false)
++  })
++
+   it('rejects transition when clips are on different tracks', () => {
+     const left = createVideoClip('A', 0, 100, 60)
+     const right = { ...createVideoClip('B', 100, 100, 60), trackId: 'track-2' }
+diff --git a/src/features/timeline/utils/transition-utils.ts b/src/features/timeline/utils/transition-utils.ts
+index 6b48b02..279bd0a 100644
+--- a/src/features/timeline/utils/transition-utils.ts
++++ b/src/features/timeline/utils/transition-utils.ts
+@@ -78,6 +78,37 @@ export function getMaxTransitionDurationForHandles(
+  * transition portions around the cut. Existing legacy overlap transitions remain
+  * valid as long as their clips still overlap.
+  */
++const VISUAL_TRANSITION_TYPES = new Set(['video', 'image', 'composition'])
++
++/** A sound clip that is not a compound wrapper. */
++function isPlainSoundClip(item: TimelineItem): boolean {
++  return item.type === 'audio' && !item.compositionId
++}
++
++/**
++ * Sound that is still linked to another clip (its video). It follows that clip's transition
++ * instead of taking its own, so new transitions refuse it. Unlinking gives each clip a group
++ * of its own, so a group id alone does not mean linked.
++ */
++export function isLinkedSoundClip(item: TimelineItem, items: readonly TimelineItem[]): boolean {
++  return (
++    item.type === 'audio' &&
++    !!item.linkedGroupId &&
++    items.some((other) => other.id !== item.id && other.linkedGroupId === item.linkedGroupId)
++  )
++}
++
++/**
++ * Two visual clips, or two sound clips (FL-1555: a crossfade between sound clips). New
++ * transitions also refuse linked sound (`isLinkedSoundClip`).
++ */
++export function isTransitionPair(leftClip: TimelineItem, rightClip: TimelineItem): boolean {
++  if (VISUAL_TRANSITION_TYPES.has(leftClip.type) && VISUAL_TRANSITION_TYPES.has(rightClip.type)) {
++    return true
++  }
++  return isPlainSoundClip(leftClip) && isPlainSoundClip(rightClip)
++}
++
+ export function canAddTransition(
+   leftClip: TimelineItem,
+   rightClip: TimelineItem,
+@@ -98,9 +129,8 @@ export function canAddTransition(
+     return { canAdd: false, reason: 'Clips must meet at the cut' }
+   }
+ 
+-  // Check clip types - visual clips can have transitions
+-  const validTypes = ['video', 'image', 'composition']
+-  if (!validTypes.includes(leftClip.type) || !validTypes.includes(rightClip.type)) {
++  // Check clip types - visual clips, or two plain sound clips, can have transitions
++  if (!isTransitionPair(leftClip, rightClip)) {
+     return { canAdd: false, reason: 'Transitions only work with video and image clips' }
+   }
+ 
+@@ -387,12 +417,7 @@ function getAvailableHandle(
+     return Infinity
+   }
+ 
+-  // Audio items don't support visual transitions
+-  if (clip.type === 'audio') {
+-    return 0
+-  }
+-
+-  // Video items have source-based constraints
++  // Video and sound items have source-based constraints
+   const { sourceStart, sourceEnd, sourceDuration, sourceFps, speed } = getSourceProperties(clip)
+   const effectiveSourceFps = sourceFps ?? timelineFps
+   const effectiveSourceEnd = sourceEnd ?? sourceDuration ?? 0
+diff --git a/src/runtime/composition-runtime/components/audio-playback-props.ts b/src/runtime/composition-runtime/components/audio-playback-props.ts
+index 1d726d1..f450cc1 100644
+--- a/src/runtime/composition-runtime/components/audio-playback-props.ts
++++ b/src/runtime/composition-runtime/components/audio-playback-props.ts
+@@ -1,4 +1,4 @@
+-import type { AudioClipFadeSpan } from '@/shared/utils/audio-fade-curve'
++import type { AudioClipFadeSpan, AudioCrossfadeCurve } from '@/shared/utils/audio-fade-curve'
+ import type { ResolvedAudioEqSettings } from '@/types/audio'
+ 
+ /**
+@@ -39,5 +39,7 @@ export interface AudioPlaybackProps {
+   fadeOutLeadFrames?: number
+   crossfadeFadeIn?: number
+   crossfadeFadeOut?: number
++  crossfadeFadeInCurve?: AudioCrossfadeCurve
++  crossfadeFadeOutCurve?: AudioCrossfadeCurve
+   volumeMultiplier?: number
+ }
+diff --git a/src/runtime/composition-runtime/components/composition-content.tsx b/src/runtime/composition-runtime/components/composition-content.tsx
+index 6f12ba6..3911060 100644
+--- a/src/runtime/composition-runtime/components/composition-content.tsx
++++ b/src/runtime/composition-runtime/components/composition-content.tsx
+@@ -33,6 +33,7 @@ import {
+ import { useNestedMediaResolutionMode } from '../contexts/nested-media-resolution-context'
+ import { clearMixerLiveGain } from '@/shared/state/mixer-live-gain'
+ import { appendResolvedAudioEqSources } from '@/shared/utils/audio-eq'
++import { getAudioCrossfadeGain, type AudioCrossfadeCurve } from '@/shared/utils/audio-fade-curve'
+ import { ItemContent } from './item-content'
+ import type { MaskInfo, RenderCompositionContentProps } from './item-content'
+ import { StableVideoSequence, type StableVideoSequenceItem } from './stable-video-sequence'
+@@ -79,6 +80,8 @@ interface CompositionContentProps {
+   audioPitchShiftSemitones?: number
+   crossfadeFadeInFrames?: number
+   crossfadeFadeOutFrames?: number
++  crossfadeFadeInCurve?: AudioCrossfadeCurve
++  crossfadeFadeOutCurve?: AudioCrossfadeCurve
+ }
+ 
+ /**
+@@ -205,6 +208,8 @@ export const CompositionContent = React.memo<CompositionContentProps>(
+     audioPitchShiftSemitones = 0,
+     crossfadeFadeInFrames,
+     crossfadeFadeOutFrames,
++    crossfadeFadeInCurve,
++    crossfadeFadeOutCurve,
+   }) => {
+     const subComp = useCompositionsStore((s) =>
+       s.compositions.find((c) => c.id === item.compositionId),
+@@ -448,11 +453,11 @@ export const CompositionContent = React.memo<CompositionContentProps>(
+     const hasCrossfadeOut = (crossfadeFadeOutFrames ?? 0) > 0
+     if (hasCrossfadeIn && frame < (crossfadeFadeInFrames ?? 0)) {
+       const progress = frame / Math.max(1, crossfadeFadeInFrames ?? 1)
+-      wrapperFadeMultiplier = Math.sin((progress * Math.PI) / 2)
++      wrapperFadeMultiplier = getAudioCrossfadeGain(progress, 'in', crossfadeFadeInCurve)
+     } else if (hasCrossfadeOut && frame >= item.durationInFrames - (crossfadeFadeOutFrames ?? 0)) {
+       const fadeOutStart = item.durationInFrames - (crossfadeFadeOutFrames ?? 0)
+       const progress = (frame - fadeOutStart) / Math.max(1, crossfadeFadeOutFrames ?? 1)
+-      wrapperFadeMultiplier = Math.cos((progress * Math.PI) / 2)
++      wrapperFadeMultiplier = getAudioCrossfadeGain(progress, 'out', crossfadeFadeOutCurve)
+     }
+     const effectiveAudioGainMultiplier = audioGainMultiplier * Math.max(0, wrapperFadeMultiplier)
+     const effectiveAudioGainLiveItemIds = useMemo(
+diff --git a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
+index 4410d76..c6a45ff 100644
+--- a/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-audio.tsx
+@@ -78,6 +78,8 @@ const DecodedPitchFallbackAudio: React.FC<DecodedPitchFallbackAudioProps> = ({
+   fadeOutLeadFrames,
+   crossfadeFadeIn,
+   crossfadeFadeOut,
++  crossfadeFadeInCurve,
++  crossfadeFadeOutCurve,
+   volumeMultiplier,
+ }) => {
+   const [decodedSrc, setDecodedSrc] = useState<string | null>(null)
+@@ -149,6 +151,8 @@ const DecodedPitchFallbackAudio: React.FC<DecodedPitchFallbackAudioProps> = ({
+       fadeOutLeadFrames={fadeOutLeadFrames}
+       crossfadeFadeIn={crossfadeFadeIn}
+       crossfadeFadeOut={crossfadeFadeOut}
++      crossfadeFadeInCurve={crossfadeFadeInCurve}
++      crossfadeFadeOutCurve={crossfadeFadeOutCurve}
+       volumeMultiplier={volumeMultiplier}
+     />
+   )
+@@ -212,6 +216,8 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+   fadeOutLeadFrames,
+   crossfadeFadeIn,
+   crossfadeFadeOut,
++  crossfadeFadeInCurve,
++  crossfadeFadeOutCurve,
+   volumeMultiplier = 1,
+ }) => {
+   const { frame, fps, playing, transportPlaybackRate, isPreviewScrubbing } = useAudioPlaybackState({
+@@ -239,6 +245,8 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+     fadeOutLeadFrames,
+     crossfadeFadeIn,
+     crossfadeFadeOut,
++    crossfadeFadeInCurve,
++    crossfadeFadeOutCurve,
+     volumeMultiplier,
+   })
+   const [decodedSource, setDecodedSource] = useState<DecodedPitchSource | null>(null)
+@@ -443,6 +451,8 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+       fadeOutLeadFrames={fadeOutLeadFrames}
+       crossfadeFadeIn={crossfadeFadeIn}
+       crossfadeFadeOut={crossfadeFadeOut}
++      crossfadeFadeInCurve={crossfadeFadeInCurve}
++      crossfadeFadeOutCurve={crossfadeFadeOutCurve}
+       volumeMultiplier={volumeMultiplier}
+     />
+   )
+@@ -482,6 +492,8 @@ const CustomDecoderPitchPreservedAudio: React.FC<CustomDecoderAudioProps> = ({
+       fadeOutLeadFrames={fadeOutLeadFrames}
+       crossfadeFadeIn={crossfadeFadeIn}
+       crossfadeFadeOut={crossfadeFadeOut}
++      crossfadeFadeInCurve={crossfadeFadeInCurve}
++      crossfadeFadeOutCurve={crossfadeFadeOutCurve}
+       volumeMultiplier={volumeMultiplier}
+     />
+   )
+diff --git a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
+index 7b133e9..f10c847 100644
+--- a/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
++++ b/src/runtime/composition-runtime/components/custom-decoder-buffered-audio.tsx
+@@ -122,6 +122,8 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+     fadeOutLeadFrames = 0,
+     crossfadeFadeIn,
+     crossfadeFadeOut,
++    crossfadeFadeInCurve,
++    crossfadeFadeOutCurve,
+     liveGainItemIds,
+     volumeMultiplier = 1,
+   }) => {
+@@ -157,6 +159,8 @@ export const CustomDecoderBufferedAudio: React.FC<CustomDecoderBufferedAudioProp
+       fadeOutLeadFrames,
+       crossfadeFadeIn,
+       crossfadeFadeOut,
++      crossfadeFadeInCurve,
++      crossfadeFadeOutCurve,
+       volumeMultiplier,
+     })
+     const mediaPlaybackRate = getBrowserMediaPlaybackRate(playbackRate, transportPlaybackRate)
+diff --git a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+index eeecde1..bb8b0cf 100644
+--- a/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
++++ b/src/runtime/composition-runtime/components/hooks/use-audio-playback-state.ts
+@@ -74,6 +74,8 @@ export function useAudioPlaybackState({
+   fadeOutLeadFrames = 0,
+   crossfadeFadeIn,
+   crossfadeFadeOut,
++  crossfadeFadeInCurve,
++  crossfadeFadeOutCurve,
+   volumeMultiplier = 1,
+ }: AudioPlaybackProps): AudioPlaybackState {
+   const resolvedAudioPanStages = useTrackAudioPanStages(itemId, liveGainItemIds)
+@@ -141,6 +143,8 @@ export function useAudioPlaybackState({
+       fadeInFrames: crossfadeFadeIn,
+       fadeOutFrames: crossfadeFadeOut,
+       useEqualPower: true,
++      crossfadeInCurve: crossfadeFadeInCurve,
++      crossfadeOutCurve: crossfadeFadeOutCurve,
+     })
+ 
+   const trackStages = useTrackGainStages(itemId,liveGainItemIds)
+diff --git a/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx b/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
+index 0f4ac80..203ebc3 100644
+--- a/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
++++ b/src/runtime/composition-runtime/components/pitch-corrected-audio.tsx
+@@ -169,6 +169,8 @@ export const NativePitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = Rea
+     fadeOutLeadFrames = 0,
+     crossfadeFadeIn,
+     crossfadeFadeOut,
++    crossfadeFadeInCurve,
++    crossfadeFadeOutCurve,
+     liveGainItemIds,
+     volumeMultiplier = 1,
+   }) => {
+@@ -203,6 +205,8 @@ export const NativePitchCorrectedAudio: React.FC<PitchCorrectedAudioProps> = Rea
+       fadeOutLeadFrames,
+       crossfadeFadeIn,
+       crossfadeFadeOut,
++      crossfadeFadeInCurve,
++      crossfadeFadeOutCurve,
+       volumeMultiplier,
+     })
+     const isReverseShuttle = transportPlaybackRate < 0
+@@ -503,6 +507,8 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+       fadeOutLeadFrames = 0,
+       crossfadeFadeIn,
+       crossfadeFadeOut,
++      crossfadeFadeInCurve,
++      crossfadeFadeOutCurve,
+       liveGainItemIds,
+       volumeMultiplier = 1,
+     } = props
+@@ -530,6 +536,8 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+         fadeOutLeadFrames,
+         crossfadeFadeIn,
+         crossfadeFadeOut,
++        crossfadeFadeInCurve,
++        crossfadeFadeOutCurve,
+         volumeMultiplier,
+       })
+ 
+@@ -759,6 +767,8 @@ const DecodedPitchCorrectedAudio: React.FC<DecodedPitchCorrectedAudioProps> = Re
+         fadeOutLeadFrames={fadeOutLeadFrames}
+         crossfadeFadeIn={crossfadeFadeIn}
+         crossfadeFadeOut={crossfadeFadeOut}
++        crossfadeFadeInCurve={crossfadeFadeInCurve}
++        crossfadeFadeOutCurve={crossfadeFadeOutCurve}
+         liveGainItemIds={liveGainItemIds}
+         volumeMultiplier={volumeMultiplier}
+       />
+diff --git a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
+index fa96837..cc04313 100644
+--- a/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
++++ b/src/runtime/composition-runtime/components/soundtouch-worklet-audio.tsx
+@@ -68,6 +68,8 @@ export const SoundTouchWorkletAudio: React.FC<SoundTouchWorkletAudioProps> = Rea
+     fadeOutLeadFrames = 0,
+     crossfadeFadeIn,
+     crossfadeFadeOut,
++    crossfadeFadeInCurve,
++    crossfadeFadeOutCurve,
+     liveGainItemIds,
+     volumeMultiplier = 1,
+   }) => {
+@@ -106,6 +108,8 @@ export const SoundTouchWorkletAudio: React.FC<SoundTouchWorkletAudioProps> = Rea
+       fadeOutLeadFrames,
+       crossfadeFadeIn,
+       crossfadeFadeOut,
++      crossfadeFadeInCurve,
++      crossfadeFadeOutCurve,
+       volumeMultiplier,
+     })
+     const isReverseShuttle = transportPlaybackRate < 0
+diff --git a/src/runtime/composition-runtime/compositions/main-composition.tsx b/src/runtime/composition-runtime/compositions/main-composition.tsx
+index d51b708..868cf75 100644
+--- a/src/runtime/composition-runtime/compositions/main-composition.tsx
++++ b/src/runtime/composition-runtime/compositions/main-composition.tsx
+@@ -515,6 +515,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({
+                           fadeOutLeadFrames={segment.fadeOutLeadFrames}
+                           crossfadeFadeIn={segment.crossfadeFadeIn}
+                           crossfadeFadeOut={segment.crossfadeFadeOut}
++                          crossfadeFadeInCurve={segment.crossfadeFadeInCurve}
++                          crossfadeFadeOutCurve={segment.crossfadeFadeOutCurve}
+                         />
+                       ) : (
+                         <PitchCorrectedAudio
+@@ -546,6 +548,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({
+                           fadeOutLeadFrames={segment.fadeOutLeadFrames}
+                           crossfadeFadeIn={segment.crossfadeFadeIn}
+                           crossfadeFadeOut={segment.crossfadeFadeOut}
++                          crossfadeFadeInCurve={segment.crossfadeFadeInCurve}
++                          crossfadeFadeOutCurve={segment.crossfadeFadeOutCurve}
+                         />
+                       )}
+                     </Sequence>
+@@ -660,6 +664,8 @@ export const MainComposition: React.FC<MainCompositionProps> = ({
+                         audioPitchShiftSemitones={segment.audioPitchShiftSemitones}
+                         crossfadeFadeInFrames={segment.crossfadeFadeIn}
+                         crossfadeFadeOutFrames={segment.crossfadeFadeOut}
++                        crossfadeFadeInCurve={segment.crossfadeFadeInCurve}
++                        crossfadeFadeOutCurve={segment.crossfadeFadeOutCurve}
+                       />
+                     </Sequence>
+                   )
+diff --git a/src/runtime/composition-runtime/utils/audio-scene.ts b/src/runtime/composition-runtime/utils/audio-scene.ts
+index 40d605d..4a04d5c 100644
+--- a/src/runtime/composition-runtime/utils/audio-scene.ts
++++ b/src/runtime/composition-runtime/utils/audio-scene.ts
+@@ -1,6 +1,6 @@
+ import type { AudioItem, VideoItem } from '@/types/timeline'
+ import type { ResolvedAudioEqSettings } from '@/types/audio'
+-import type { Transition } from '@/types/transition'
++import type { AudioCrossfadeCurve, Transition } from '@/types/transition'
+ import {
+   timelineToSourceFrames,
+   sourceToTimelineFrames,
+@@ -93,6 +93,8 @@ export interface VideoAudioSegment extends AudioSegment {
+   fadeOutLeadFrames?: number
+   crossfadeFadeIn?: number
+   crossfadeFadeOut?: number
++  crossfadeFadeInCurve?: AudioCrossfadeCurve
++  crossfadeFadeOutCurve?: AudioCrossfadeCurve
+ }
+ 
+ export interface CompoundAudioSegment {
+@@ -110,6 +112,8 @@ export interface CompoundAudioSegment {
+   audioPitchShiftSemitones: number
+   crossfadeFadeIn?: number
+   crossfadeFadeOut?: number
++  crossfadeFadeInCurve?: AudioCrossfadeCurve
++  crossfadeFadeOutCurve?: AudioCrossfadeCurve
+ }
+ 
+ interface ClipAudioExtension {
+@@ -119,6 +123,8 @@ interface ClipAudioExtension {
+   overlapFadeIn: number
+   fadeInDelay: number
+   fadeOutLead: number
++  overlapFadeInCurve?: AudioCrossfadeCurve
++  overlapFadeOutCurve?: AudioCrossfadeCurve
+ }
+ 
+ function getAudioPlaybackSrc(item: TransitionAudioItem): string {
+@@ -468,9 +474,11 @@ export function buildTransitionVideoAudioSegments(
+     if (window.durationInFrames > 0) {
+       const leftExt = ensureExtension(left.id)
+       leftExt.overlapFadeOut = Math.max(leftExt.overlapFadeOut, window.durationInFrames)
++      leftExt.overlapFadeOutCurve = window.transition.audioCurve
+       leftExt.fadeOutLead = Math.max(leftExt.fadeOutLead, window.leftPortion)
+       const rightExt = ensureExtension(right.id)
+       rightExt.overlapFadeIn = Math.max(rightExt.overlapFadeIn, window.durationInFrames)
++      rightExt.overlapFadeInCurve = window.transition.audioCurve
+       rightExt.fadeInDelay = Math.max(rightExt.fadeInDelay, window.rightPortion)
+     }
+   }
+@@ -573,6 +581,8 @@ export function buildTransitionVideoAudioSegments(
+       fadeOutLeadFrames: extension.fadeOutLead,
+       crossfadeFadeIn,
+       crossfadeFadeOut,
++      crossfadeFadeInCurve: extension.overlapFadeInCurve,
++      crossfadeFadeOutCurve: extension.overlapFadeOutCurve,
+       beforeFrames: before,
+       afterFrames: after,
+     })
+@@ -614,6 +624,7 @@ export function buildTransitionVideoAudioSegments(
+       active.contentEndOffsetFrames = segment.contentEndOffsetFrames
+       active.fadeOutLeadFrames = segment.fadeOutLeadFrames
+       active.crossfadeFadeOut = segment.crossfadeFadeOut
++      active.crossfadeFadeOutCurve = segment.crossfadeFadeOutCurve
+       active.clipFadeSpans = [
+         ...(active.clipFadeSpans ?? []),
+         ...(segment.clipFadeSpans ?? []).map((span) => ({
+@@ -657,6 +668,8 @@ export function buildTransitionVideoAudioSegments(
+       fadeOutLeadFrames: active.fadeOutLeadFrames,
+       crossfadeFadeIn: active.crossfadeFadeIn,
+       crossfadeFadeOut: active.crossfadeFadeOut,
++      crossfadeFadeInCurve: active.crossfadeFadeInCurve,
++      crossfadeFadeOutCurve: active.crossfadeFadeOutCurve,
+     })
+     active = { ...segment }
+   }
+@@ -693,6 +706,8 @@ export function buildTransitionVideoAudioSegments(
+       fadeOutLeadFrames: active.fadeOutLeadFrames,
+       crossfadeFadeIn: active.crossfadeFadeIn,
+       crossfadeFadeOut: active.crossfadeFadeOut,
++      crossfadeFadeInCurve: active.crossfadeFadeInCurve,
++      crossfadeFadeOutCurve: active.crossfadeFadeOutCurve,
+     })
+   }
+ 
+@@ -753,8 +768,10 @@ export function buildCompoundAudioTransitionSegments(
+     if (window.durationInFrames > 0) {
+       const leftExt = ensureExtension(left.id)
+       leftExt.overlapFadeOut = Math.max(leftExt.overlapFadeOut, window.durationInFrames)
++      leftExt.overlapFadeOutCurve = window.transition.audioCurve
+       const rightExt = ensureExtension(right.id)
+       rightExt.overlapFadeIn = Math.max(rightExt.overlapFadeIn, window.durationInFrames)
++      rightExt.overlapFadeInCurve = window.transition.audioCurve
+     }
+   }
+ 
+@@ -810,6 +827,8 @@ export function buildCompoundAudioTransitionSegments(
+         extension.overlapFadeIn > 0 ? extension.overlapFadeIn : before > 0 ? before : undefined,
+       crossfadeFadeOut:
+         extension.overlapFadeOut > 0 ? extension.overlapFadeOut : after > 0 ? after : undefined,
++      crossfadeFadeInCurve: extension.overlapFadeInCurve,
++      crossfadeFadeOutCurve: extension.overlapFadeOutCurve,
+     } satisfies CompoundAudioSegment
+   })
+ }
+diff --git a/src/shared/utils/audio-fade-curve.test.ts b/src/shared/utils/audio-fade-curve.test.ts
+index afa9bd7..4b7a2d5 100644
+--- a/src/shared/utils/audio-fade-curve.test.ts
++++ b/src/shared/utils/audio-fade-curve.test.ts
+@@ -6,6 +6,9 @@ import {
+   clampAudioFadeCurveX,
+   evaluateAudioFadeInCurve,
+   evaluateAudioFadeOutCurve,
++  getAudioCrossfadeGain,
++  getAudioFadeMultiplier,
++  normalizeAudioCrossfadeCurve,
+ } from './audio-fade-curve'
+ 
+ describe('audio-fade-curve', () => {
+@@ -36,3 +39,36 @@ describe('audio-fade-curve', () => {
+     expect(evaluateAudioFadeOutCurve(0.75, -1, 1)).toBeLessThan(0.3)
+   })
+ })
++
++describe('audio crossfade curves (FL-1555)', () => {
++  it('keeps constant power as the default and for unknown values', () => {
++    expect(normalizeAudioCrossfadeCurve(undefined)).toBe('constant-power')
++    expect(normalizeAudioCrossfadeCurve('loud')).toBe('constant-power')
++    expect(getAudioCrossfadeGain(0.5, 'in')).toBeCloseTo(Math.SQRT1_2, 6)
++  })
++
++  it('evaluates each gain law in and out', () => {
++    expect(getAudioCrossfadeGain(0.25, 'in', 'constant-gain')).toBeCloseTo(0.25, 6)
++    expect(getAudioCrossfadeGain(0.25, 'out', 'constant-gain')).toBeCloseTo(0.75, 6)
++    expect(getAudioCrossfadeGain(0.5, 'in', 'exponential')).toBeCloseTo(0.25, 6)
++    expect(getAudioCrossfadeGain(0.5, 'out', 'exponential')).toBeCloseTo(0.25, 6)
++    for (const curve of ['constant-power', 'constant-gain', 'exponential'] as const) {
++      expect(getAudioCrossfadeGain(0, 'in', curve)).toBe(0)
++      expect(getAudioCrossfadeGain(1, 'in', curve)).toBeCloseTo(1, 6)
++      expect(getAudioCrossfadeGain(0, 'out', curve)).toBeCloseTo(1, 6)
++    }
++  })
++
++  it('applies the chosen law in the equal-power crossfade multiplier', () => {
++    const at = (crossfadeInCurve: 'constant-gain' | undefined) =>
++      getAudioFadeMultiplier({
++        frame: 5,
++        durationInFrames: 100,
++        fadeInFrames: 10,
++        useEqualPower: true,
++        crossfadeInCurve,
++      })
++    expect(at(undefined)).toBeCloseTo(Math.SQRT1_2, 6)
++    expect(at('constant-gain')).toBeCloseTo(0.5, 6)
++  })
++})
+diff --git a/src/shared/utils/audio-fade-curve.ts b/src/shared/utils/audio-fade-curve.ts
+index ef2b091..401a486 100644
+--- a/src/shared/utils/audio-fade-curve.ts
++++ b/src/shared/utils/audio-fade-curve.ts
+@@ -1,3 +1,35 @@
++import type { AudioCrossfadeCurve } from '@/types/transition'
++
++export type { AudioCrossfadeCurve }
++
++export const AUDIO_CROSSFADE_CURVES: readonly AudioCrossfadeCurve[] = [
++  'constant-power',
++  'constant-gain',
++  'exponential',
++]
++
++export function normalizeAudioCrossfadeCurve(curve: unknown): AudioCrossfadeCurve {
++  return AUDIO_CROSSFADE_CURVES.includes(curve as AudioCrossfadeCurve)
++    ? (curve as AudioCrossfadeCurve)
++    : 'constant-power'
++}
++
++export function getAudioCrossfadeGain(
++  progress: number,
++  direction: 'in' | 'out',
++  curve?: AudioCrossfadeCurve,
++): number {
++  const p = Math.max(0, Math.min(1, direction === 'in' ? progress : 1 - progress))
++  switch (normalizeAudioCrossfadeCurve(curve)) {
++    case 'constant-gain':
++      return p
++    case 'exponential':
++      return p * p
++    default:
++      return Math.sin((p * Math.PI) / 2)
++  }
++}
++
+ const AUDIO_FADE_CURVE_MIN = -1
+ const AUDIO_FADE_CURVE_MAX = 1
+ export const AUDIO_FADE_CURVE_X_MIN = 0.04
+@@ -141,6 +173,9 @@ interface AudioFadeMultiplierOptions {
+   fadeInCurveX?: number
+   fadeOutCurveX?: number
+   useEqualPower?: boolean
++  /** Gain law of an equal-power crossfade in or out; defaults to constant power. */
++  crossfadeInCurve?: AudioCrossfadeCurve
++  crossfadeOutCurve?: AudioCrossfadeCurve
+ }
+ 
+ export function getAudioFadeMultiplier({
+@@ -157,6 +192,8 @@ export function getAudioFadeMultiplier({
+   fadeInCurveX = AUDIO_FADE_CURVE_X_DEFAULT,
+   fadeOutCurveX = AUDIO_FADE_CURVE_X_DEFAULT,
+   useEqualPower = false,
++  crossfadeInCurve,
++  crossfadeOutCurve,
+ }: AudioFadeMultiplierOptions): number {
+   const clampedFadeInFrames = Math.min(Math.max(0, fadeInFrames), durationInFrames)
+   const clampedFadeOutFrames = Math.min(Math.max(0, fadeOutFrames), durationInFrames)
+@@ -189,13 +226,13 @@ export function getAudioFadeMultiplier({
+   if (useEqualPower) {
+     if (hasFadeIn && frame < clampedFadeInFrames) {
+       const progress = frame / Math.max(clampedFadeInFrames, 1)
+-      return Math.sin((progress * Math.PI) / 2)
++      return getAudioCrossfadeGain(progress, 'in', crossfadeInCurve)
+     }
+ 
+     if (hasFadeOut && frame >= durationInFrames - clampedFadeOutFrames) {
+       const progress =
+         (frame - (durationInFrames - clampedFadeOutFrames)) / Math.max(clampedFadeOutFrames, 1)
+-      return Math.cos((progress * Math.PI) / 2)
++      return getAudioCrossfadeGain(progress, 'out', crossfadeOutCurve)
+     }
+ 
+     return 1
+diff --git a/src/shared/utils/linked-media.test.ts b/src/shared/utils/linked-media.test.ts
+index b4eefcf..344a5e2 100644
+--- a/src/shared/utils/linked-media.test.ts
++++ b/src/shared/utils/linked-media.test.ts
+@@ -5,6 +5,7 @@ import type { AudioItem, VideoItem } from '@/types/timeline'
+ import {
+   getLinkedAudioCompanion,
+   getLinkedVideoIdsWithAudio,
++  getManagedLinkedAudioTransitions,
+   hasLinkedAudioCompanion,
+ } from './linked-media'
+ 
+@@ -73,4 +74,27 @@ describe('linked-media', () => {
+       Array.from(getLinkedVideoIdsWithAudio([pairedVideo, pairedAudio, standaloneVideo])),
+     ).toEqual(['video-paired'])
+   })
++
++  it('crossfades two plain sound clips directly, but not linked sound (FL-1555)', () => {
++    const left = makeAudioItem({ id: 'a1', from: 0, mediaId: 'm1' })
++    const right = makeAudioItem({ id: 'a2', from: 90, mediaId: 'm2' })
++    const transition = {
++      id: 't1',
++      type: 'crossfade' as const,
++      presentation: 'fade' as const,
++      timing: 'linear' as const,
++      leftClipId: 'a1',
++      rightClipId: 'a2',
++      trackId: 'track-a1',
++      durationInFrames: 10,
++    }
++    expect(getManagedLinkedAudioTransitions([left, right], [transition])).toEqual([
++      { transition, leftAudio: left, rightAudio: right },
++    ])
++    const linked = { ...left, linkedGroupId: 'g1' }
++    const video = makeVideoItem({ id: 'v1', linkedGroupId: 'g1', trackId: 'track-v1' })
++    expect(getManagedLinkedAudioTransitions([video, linked, right], [transition])).toEqual([])
++    const ownGroup = { ...left, linkedGroupId: 'a1' }
++    expect(getManagedLinkedAudioTransitions([video, ownGroup, right], [transition])).toHaveLength(1)
++  })
+ })
+diff --git a/src/shared/utils/linked-media.ts b/src/shared/utils/linked-media.ts
+index d582a16..eccc1ea 100644
+--- a/src/shared/utils/linked-media.ts
++++ b/src/shared/utils/linked-media.ts
+@@ -138,6 +138,24 @@ function getManagedLinkedAudioTransitionPair(
+   return { leftAudio, rightAudio }
+ }
+ 
++/** FL-1555: a transition between two plain sound clips crossfades them directly. */
++function getSoundClipTransitionPair(
++  items: TimelineItem[],
++  leftClip: TimelineItem,
++  rightClip: TimelineItem,
++): ManagedLinkedAudioTransitionPair | null {
++  const isPlainSound = (item: TimelineItem): item is AudioItem =>
++    item.type === 'audio' &&
++    !item.compositionId &&
++    !(
++      item.linkedGroupId &&
++      items.some((other) => other.id !== item.id && other.linkedGroupId === item.linkedGroupId)
++    )
++  if (!isPlainSound(leftClip) || !isPlainSound(rightClip)) return null
++  if (leftClip.trackId !== rightClip.trackId) return null
++  return { leftAudio: leftClip, rightAudio: rightClip }
++}
++
+ export function getManagedLinkedAudioTransitions(
+   items: TimelineItem[],
+   transitions: Transition[],
+@@ -150,7 +168,9 @@ export function getManagedLinkedAudioTransitions(
+     const rightClip = itemById.get(transition.rightClipId)
+     if (!leftClip || !rightClip) continue
+ 
+-    const pair = getManagedLinkedAudioTransitionPair(items, leftClip, rightClip)
++    const pair =
++      getManagedLinkedAudioTransitionPair(items, leftClip, rightClip) ??
++      getSoundClipTransitionPair(items, leftClip, rightClip)
+     if (!pair) continue
+ 
+     managed.push({
+diff --git a/src/types/transition.ts b/src/types/transition.ts
+index 880391c..9b9d2b2 100644
+--- a/src/types/transition.ts
++++ b/src/types/transition.ts
+@@ -118,6 +118,13 @@ export interface BezierPoints {
+  * The transition is centered around the cut according to `alignment` and
+  * consumes hidden source handles from each side without moving clip positions.
+  */
++/**
++ * Gain law for the sound under a transition (FL-1555).
++ * constant-power keeps loudness steady (sin/cos, the default and the behaviour before FL-1555);
++ * constant-gain is a straight line; exponential dips in the middle (p², (1-p)²).
++ */
++export type AudioCrossfadeCurve = 'constant-power' | 'constant-gain' | 'exponential'
++
+ export interface Transition {
+   /** Unique identifier */
+   id: string
+@@ -148,6 +155,8 @@ export interface Transition {
+   bezierPoints?: BezierPoints
+   /** Reference to a preset configuration */
+   presetId?: string
++  /** Gain law for the sound of both clips under the transition; constant power when absent */
++  audioCurve?: AudioCrossfadeCurve
+   /** Custom properties for extensibility */
+   properties?: Record<string, unknown>
+   /** Timestamp when transition was created */

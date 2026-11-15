@@ -1,0 +1,193 @@
+diff --git a/src/features/project-bundle/schemas/project-schema.ts b/src/features/project-bundle/schemas/project-schema.ts
+index a8b4408..f37e061 100644
+--- a/src/features/project-bundle/schemas/project-schema.ts
++++ b/src/features/project-bundle/schemas/project-schema.ts
+@@ -641,6 +641,8 @@ const markerSchema = z.object({
+   frame: z.number().int().min(0),
+   label: z.string().optional(),
+   color: z.string(),
++  durationInFrames: z.number().int().min(0).optional(),
++  note: z.string().optional(),
+ })
+ 
+ const transitionSchema = z.object({
+diff --git a/src/features/timeline/stores/actions/composition-duration-actions.test.ts b/src/features/timeline/stores/actions/composition-duration-actions.test.ts
+index e3201bd..5fe1ee4 100644
+--- a/src/features/timeline/stores/actions/composition-duration-actions.test.ts
++++ b/src/features/timeline/stores/actions/composition-duration-actions.test.ts
+@@ -249,6 +249,24 @@ describe('trimCompositionToActiveRegion', () => {
+     ])
+   })
+ 
++  it('cuts a range marker that overlaps the region to it (FL-1563)', () => {
++    openCompositionWithLayers()
++    useMarkersStore.getState().setMarkers([
++      { id: 'across-start', frame: 150, durationInFrames: 100, color: '#00ff00', note: 'intro' },
++      { id: 'across-end', frame: 350, durationInFrames: 200, color: '#00ff00' },
++      { id: 'outside', frame: 50, durationInFrames: 40, color: '#00ff00' },
++      { id: 'ends-at-start', frame: 150, durationInFrames: 50, color: '#00ff00' },
++      { id: 'starts-at-end', frame: 400, durationInFrames: 10, color: '#00ff00' },
++    ])
++
++    trimCompositionToActiveRegion()
++
++    expect(useMarkersStore.getState().markers).toEqual([
++      { id: 'across-start', frame: 0, durationInFrames: 50, color: '#00ff00', note: 'intro' },
++      { id: 'across-end', frame: 150, durationInFrames: 50, color: '#00ff00' },
++    ])
++  })
++
+   it('undoes as one step', () => {
+     openCompositionWithLayers()
+     trimCompositionToActiveRegion()
+diff --git a/src/features/timeline/stores/actions/composition-duration-actions.ts b/src/features/timeline/stores/actions/composition-duration-actions.ts
+index 9deee40..5382640 100644
+--- a/src/features/timeline/stores/actions/composition-duration-actions.ts
++++ b/src/features/timeline/stores/actions/composition-duration-actions.ts
+@@ -194,9 +194,18 @@ export function trimCompositionToActiveRegion(): boolean {
+ 
+       const nextDuration = outPoint - inPoint
+       const markersState = useMarkersStore.getState()
+-      const nextMarkers = markersState.markers
+-        .map((marker) => ({ ...marker, frame: marker.frame - inPoint }))
+-        .filter((marker) => marker.frame >= 0 && marker.frame <= nextDuration)
++      // FL-1563: a range marker that overlaps the kept span is cut to it.
++      const nextMarkers = markersState.markers.flatMap((marker) => {
++        const start = marker.frame - inPoint
++        const end = start + Math.max(0, marker.durationInFrames ?? 0)
++        const isRange = (marker.durationInFrames ?? 0) > 0
++        // A range keeps only frames inside the span; a point keeps the span's ends too.
++        if (isRange ? end <= 0 || start >= nextDuration : start < 0 || start > nextDuration) return []
++        const frame = Math.max(0, start)
++        const length = Math.min(nextDuration, end) - frame
++        const { durationInFrames: _drop, ...rest } = marker
++        return [{ ...rest, frame, ...(length > 0 && { durationInFrames: length }) }]
++      })
+ 
+       useItemsStore.getState().setItems(nextItems)
+       useKeyframesStore
+diff --git a/src/features/timeline/stores/timeline-persistence.test.ts b/src/features/timeline/stores/timeline-persistence.test.ts
+index 383837e..a1849d7 100644
+--- a/src/features/timeline/stores/timeline-persistence.test.ts
++++ b/src/features/timeline/stores/timeline-persistence.test.ts
+@@ -14,6 +14,7 @@ import { useItemsStore } from './items-store'
+ import { useCompositionsStore } from './compositions-store'
+ import { useCompositionNavigationStore } from './composition-navigation-store'
+ import { useKeyframesStore } from './keyframes-store'
++import { useMarkersStore } from './markers-store'
+ import { usePlaybackStore } from '@/shared/state/playback'
+ import { buildTimelineFromStores, hydrateTimelineStoresFromProject } from './timeline-persistence'
+ 
+@@ -29,6 +30,18 @@ describe('timeline project hydration', () => {
+   beforeEach(() => resetTimelineCompositionTestState())
+   afterEach(() => resetTimelineCompositionTestState())
+ 
++  it('saves a range marker with its note, and a point marker without them (FL-1563)', () => {
++    useMarkersStore.getState().setMarkers([
++      { id: 'range', frame: 10, durationInFrames: 20, color: '#ff0000', label: 'Intro', note: 'Trim later' },
++      { id: 'point', frame: 40, durationInFrames: 0, color: '#00ff00', note: '' },
++    ])
++
++    expect(buildTimelineFromStores().markers).toEqual([
++      { id: 'range', frame: 10, color: '#ff0000', label: 'Intro', durationInFrames: 20, note: 'Trim later' },
++      { id: 'point', frame: 40, color: '#00ff00' },
++    ])
++  })
++
+   it('joins a child chain with scoped history and saves/reopens from the entered child', async () => {
+     useEditorStore.setState({ linkedSelectionEnabled: true })
+     const childTracks = [
+diff --git a/src/features/timeline/stores/timeline-persistence.ts b/src/features/timeline/stores/timeline-persistence.ts
+index e04ce84..83455ce 100644
+--- a/src/features/timeline/stores/timeline-persistence.ts
++++ b/src/features/timeline/stores/timeline-persistence.ts
+@@ -855,6 +855,8 @@ function buildTimelineFromPersistenceSnapshot(
+         frame: m.frame,
+         color: m.color,
+         ...(m.label && { label: m.label }),
++        ...(m.durationInFrames && m.durationInFrames > 0 && { durationInFrames: m.durationInFrames }),
++        ...(m.note && { note: m.note }),
+       })),
+     }),
+     ...(rootTimeline.transitions.length > 0 && {
+diff --git a/src/features/timeline/utils/project-retime.test.ts b/src/features/timeline/utils/project-retime.test.ts
+index c2db58c..ced6408 100644
+--- a/src/features/timeline/utils/project-retime.test.ts
++++ b/src/features/timeline/utils/project-retime.test.ts
+@@ -325,6 +325,20 @@ describe('project retime (FL-94)', () => {
+     expect([next.inPoint, next.outPoint, next.currentFrame, next.durationInFrames]).toEqual([2, null, 6, 1])
+   })
+ 
++  it('keeps a range marker ending on the same moment (FL-1563)', () => {
++    const next = retimeContent(
++      {
++        items: [],
++        markers: [{ id: 'm', frame: 9, durationInFrames: 31, color: '#fff', note: 'n' }],
++        inPoint: null,
++        outPoint: null,
++      },
++      60,
++      30,
++    )
++    expect(next.markers).toEqual([{ id: 'm', frame: 5, durationInFrames: 15, color: '#fff', note: 'n' }])
++  })
++
+   it('moves the source frames of clips that read a retimed composition', () => {
+     const items = retimeCompositionReaders(
+       [
+diff --git a/src/features/timeline/utils/project-retime.ts b/src/features/timeline/utils/project-retime.ts
+index 2d747ea..42e4e9b 100644
+--- a/src/features/timeline/utils/project-retime.ts
++++ b/src/features/timeline/utils/project-retime.ts
+@@ -370,7 +370,15 @@ export function retimeContent<T extends RetimableContent>(content: T, fromFps: n
+   }
+   if (content.keyframes) next.keyframes = content.keyframes.map((entry) => retimeKeyframes(entry, ratio))
+   if (content.markers) {
+-    next.markers = content.markers.map((marker) => ({ ...marker, frame: scaleFrame(marker.frame, ratio) }))
++    next.markers = content.markers.map((marker) => ({
++      ...marker,
++      frame: scaleFrame(marker.frame, ratio),
++      // FL-1563: a range keeps its end on the same moment.
++      ...(marker.durationInFrames && {
++        durationInFrames:
++          scaleFrame(marker.frame + marker.durationInFrames, ratio) - scaleFrame(marker.frame, ratio),
++      }),
++    }))
+   }
+   if ('inPoint' in content) next.inPoint = scaleNullable(content.inPoint, ratio)
+   if ('outPoint' in content) next.outPoint = scaleNullable(content.outPoint, ratio)
+diff --git a/src/types/timeline.ts b/src/types/timeline.ts
+index 628cd70..a01b18f 100644
+--- a/src/types/timeline.ts
++++ b/src/types/timeline.ts
+@@ -71,6 +71,7 @@ type BaseTimelineItem = {
+   compositionId?: string // Reference to a sub-composition for compound wrappers
+   originId?: string // Tracks lineage - items from same split share this for stable React keys
+   linkedGroupId?: string // Links paired timeline items like synced video/audio companions
++  markers?: ClipMarker[] // FL-1563: clip markers in source frames, carried from other editors
+   // Trim properties for media items
+   trimStart?: number // Frames trimmed from start of source media
+   trimEnd?: number // Frames trimmed from end of source media
+@@ -584,4 +585,22 @@ export interface ProjectMarker {
+    */
+   label?: string
+   color: string
++  /** FL-1563: a range marker covers this many frames from `frame`; absent or 0 is a point. */
++  durationInFrames?: number
++  /** FL-1563: free-text note, as other editors keep with markers. */
++  note?: string
++}
++
++/**
++ * FL-1563: a marker on a clip, in the clip's source frames (it moves with the media through
++ * moves, trims and splits). Imports from other editors carry these.
++ */
++export interface ClipMarker {
++  id: string
++  /** Source frame, at the clip's source rate */
++  sourceFrame: number
++  durationInFrames?: number
++  label?: string
++  note?: string
++  color: string
+ }

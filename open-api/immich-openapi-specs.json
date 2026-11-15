@@ -8132,9 +8132,21 @@
     },
     "/admin/ledger/summary": {
       "get": {
-        "description": "How many of the originals the server accepted, for every account, are kept, in the Trash, removed, sharing an identical file, or missing, and which accounts have originals the server cannot account for. No file is named.",
+        "description": "How many of the originals the server accepted, for every account (or for one, with userId), are kept, in the Trash, removed, sharing an identical file, or missing, per account and per month added, and which accounts have originals the server cannot account for. No file is named.",
         "operationId": "getLedgerAdminSummary",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Only this account’s totals and months",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -8447,6 +8459,56 @@
           }
         ],
         "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-progress/best-photos": {
+      "post": {
+        "description": "Score every photo again for Best Photos, now or in the next overnight run: after an update brings a better score for the Visual search model.",
+        "operationId": "redoBestPhotos",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryBestPhotosRedoDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Score Best Photos again",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
         "x-immich-state": "Alpha"
       }
     },
@@ -14072,6 +14134,76 @@
         "x-immich-state": "Stable"
       }
     },
+    "/albums/{id}/assets/move": {
+      "post": {
+        "description": "Move photos and videos from this album into another album in one step. Only album membership changes: nothing is trashed or deleted. Needs permission to remove assets from this album and to add assets to the target, which must be an album, not a collection or shared space. Each asset is reported on its own; one already in the target simply leaves this album.",
+        "operationId": "moveAlbumAssets",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumMoveAssetsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BulkIdResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Move assets to another album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "albumAsset.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums/{id}/bookmarks": {
       "delete": {
         "operationId": "removeBookmarksFromAlbum",
@@ -15031,6 +15163,66 @@
           }
         ],
         "x-immich-permission": "albumAsset.create"
+      }
+    },
+    "/albums/{id}/transfer": {
+      "post": {
+        "description": "Make someone else the owner of this album. Only the owner can do this, and stays on as an editor. The new owner must already be in the album, or be a partner you share a library with. A shared space can only go to one of its members.",
+        "operationId": "transferAlbum",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumTransferDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Transfer album ownership",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.delete",
+        "x-immich-state": "Alpha"
       }
     },
     "/albums/{id}/user/{userId}": {
@@ -56900,7 +57092,7 @@
             "name": "name",
             "required": true,
             "in": "query",
-            "description": "Person name to search for",
+            "description": "Person name to search for; the caller's own notes about a person match too (FL-941)",
             "schema": {
               "type": "string"
             }
@@ -78289,6 +78481,12 @@
           "server": {
             "$ref": "#/components/schemas/AdminConfigServerDto"
           },
+          "sharedLinks": {
+            "$ref": "#/components/schemas/AdminConfigSharedLinksDto",
+            "default": {
+              "defaultExpiryDays": null
+            }
+          },
           "signInPolicy": {
             "$ref": "#/components/schemas/AdminConfigSignInPolicyDto"
           },
@@ -80460,6 +80658,21 @@
         ],
         "type": "object"
       },
+      "AdminConfigSharedLinksDto": {
+        "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire",
+            "maximum": 3650,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "defaultExpiryDays"
+        ],
+        "type": "object"
+      },
       "AdminConfigSignInPolicyDto": {
         "properties": {
           "applyToOlderApps": {
@@ -82032,6 +82245,31 @@
         ],
         "type": "object"
       },
+      "AlbumMoveAssetsDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Photos and videos to move out of this album",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "targetAlbumId": {
+            "description": "The album the photos and videos move to. It must be an album, not a collection or shared space.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetIds",
+          "targetAlbumId"
+        ],
+        "type": "object"
+      },
       "AlbumOrderDto": {
         "properties": {
           "albumIds": {
@@ -82727,6 +82965,20 @@
         ],
         "type": "object"
       },
+      "AlbumTransferDto": {
+        "properties": {
+          "userId": {
+            "description": "The new owner: someone already in the album, or a partner you share your library with",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "type": "object"
+      },
       "AlbumTreeResponseDto": {
         "properties": {
           "albums": {
@@ -83087,6 +83339,10 @@
             "minimum": 0,
             "nullable": true,
             "type": "integer"
+          },
+          "rebuilt": {
+            "description": "True when the growth values were rebuilt from the items in the library today, because the bucket ends before the first nightly reading; false for a nightly reading or a gap. Left out by older servers",
+            "type": "boolean"
           },
           "through": {
             "format": "date",
@@ -89545,12 +89801,37 @@
         ],
         "type": "object"
       },
+      "AssetLedgerAdminQueryDto": {
+        "properties": {
+          "userId": {
+            "description": "Only this account’s totals and months",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AssetLedgerAdminSummaryResponseDto": {
         "properties": {
+          "byOwner": {
+            "description": "Every account’s totals, most originals first; empty when the summary is for one account. No file is named.",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerOwnerTotalsDto"
+            },
+            "type": "array"
+          },
           "missingByOwner": {
             "description": "The accounts with originals the server cannot account for, most first. No file is named.",
             "items": {
               "$ref": "#/components/schemas/AssetLedgerMissingOwnerDto"
+            },
+            "type": "array"
+          },
+          "months": {
+            "description": "Per month the originals were added, where they are now; newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerMonthDto"
             },
             "type": "array"
           },
@@ -89565,7 +89846,9 @@
           }
         },
         "required": [
+          "byOwner",
           "missingByOwner",
+          "months",
           "states",
           "total"
         ],
@@ -89714,6 +89997,50 @@
         ],
         "type": "object"
       },
+      "AssetLedgerMonthDto": {
+        "properties": {
+          "month": {
+            "description": "The month the originals were added, as YYYY-MM (UTC)",
+            "type": "string"
+          },
+          "states": {
+            "$ref": "#/components/schemas/AssetLedgerCountsDto"
+          },
+          "total": {
+            "description": "Originals added that month",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "states",
+          "total"
+        ],
+        "type": "object"
+      },
+      "AssetLedgerOwnerTotalsDto": {
+        "properties": {
+          "ownerId": {
+            "type": "string"
+          },
+          "states": {
+            "$ref": "#/components/schemas/AssetLedgerCountsDto"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ownerId",
+          "states",
+          "total"
+        ],
+        "type": "object"
+      },
       "AssetLedgerQueryDto": {
         "properties": {
           "cursor": {
@@ -89748,6 +90075,13 @@
       },
       "AssetLedgerSummaryResponseDto": {
         "properties": {
+          "months": {
+            "description": "Per month the originals were added, where they are now; newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerMonthDto"
+            },
+            "type": "array"
+          },
           "states": {
             "$ref": "#/components/schemas/AssetLedgerCountsDto"
           },
@@ -89759,6 +90093,7 @@
           }
         },
         "required": [
+          "months",
           "states",
           "total"
         ],
@@ -93910,6 +94245,14 @@
           "date": {
             "description": "The birthday this year, 'yyyy-MM-dd'",
             "type": "string"
+          },
+          "deathAnniversary": {
+            "description": "True when the memory marks the anniversary of the date of passing rather than the birthday (FL-864); `date` is then that anniversary. Always comes with `inMemoriam`",
+            "type": "boolean"
+          },
+          "inMemoriam": {
+            "description": "True for a \"Remembering {name}\" memory (FL-864): the person has passed, so the memory shows no age. Absent or false for an ordinary birthday",
+            "type": "boolean"
           },
           "kind": {
             "description": "Discriminator for a birthday",
@@ -119158,6 +119501,36 @@
         ],
         "type": "string"
       },
+      "LibraryBestPhotosProgressDto": {
+        "properties": {
+          "outdated": {
+            "description": "FL-1597: photos Best Photos scored before the learned score of the current Visual search model; 0 when the model has none",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tonight": {
+            "description": "Best Photos scores the library again in the next overnight run",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "outdated",
+          "tonight"
+        ],
+        "type": "object"
+      },
+      "LibraryBestPhotosRedoDto": {
+        "properties": {
+          "when": {
+            "$ref": "#/components/schemas/LibraryRedoWhen"
+          }
+        },
+        "required": [
+          "when"
+        ],
+        "type": "object"
+      },
       "LibraryBookmarkItemKind": {
         "enum": [
           "bookmark"
@@ -119686,6 +120059,9 @@
       },
       "LibraryProgressResponseDto": {
         "properties": {
+          "bestPhotos": {
+            "$ref": "#/components/schemas/LibraryBestPhotosProgressDto"
+          },
           "features": {
             "items": {
               "$ref": "#/components/schemas/LibraryFeatureProgressDto"
@@ -119700,6 +120076,7 @@
           }
         },
         "required": [
+          "bestPhotos",
           "features",
           "measuredSince"
         ],
@@ -132114,6 +132491,12 @@
             ],
             "x-immich-state": "Stable"
           },
+          "deathDate": {
+            "description": "Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "featuredAssetId": {
             "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)",
             "format": "uuid",
@@ -132165,6 +132548,11 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner",
+            "nullable": true,
             "type": "string"
           },
           "thumbnailPath": {
@@ -132360,6 +132748,12 @@
             "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
+          "deathDate": {
+            "description": "Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one)",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "featureFaceAssetId": {
             "description": "Asset ID used for feature face thumbnail",
             "format": "uuid",
@@ -132382,6 +132776,12 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them",
+            "maxLength": 2000,
+            "nullable": true,
             "type": "string"
           }
         },
@@ -132972,6 +133372,12 @@
             ],
             "x-immich-state": "Stable"
           },
+          "deathDate": {
+            "description": "Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "featuredAssetId": {
             "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)",
             "format": "uuid",
@@ -133017,6 +133423,11 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner",
+            "nullable": true,
             "type": "string"
           },
           "thumbnailPath": {
@@ -133249,6 +133660,12 @@
             "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
+          "deathDate": {
+            "description": "Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one)",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "featureFaceAssetId": {
             "description": "Asset ID used for feature face thumbnail",
             "format": "uuid",
@@ -133265,6 +133682,12 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them",
+            "maxLength": 2000,
+            "nullable": true,
             "type": "string"
           }
         },
@@ -161874,6 +162297,10 @@
       "SearchFilter": {
         "additionalProperties": false,
         "properties": {
+          "albumCount": {
+            "$ref": "#/components/schemas/NumberFilter",
+            "description": "Number of non-deleted albums the viewer owns or is a member of that contain the item"
+          },
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
@@ -162045,6 +162472,10 @@
       "SearchFilterBranch": {
         "additionalProperties": false,
         "properties": {
+          "albumCount": {
+            "$ref": "#/components/schemas/NumberFilter",
+            "description": "Number of non-deleted albums the viewer owns or is a member of that contain the item"
+          },
           "albumIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
@@ -163050,7 +163481,7 @@
       "SearchPeopleDto": {
         "properties": {
           "name": {
-            "description": "Person name to search for",
+            "description": "Person name to search for; the caller's own notes about a person match too (FL-941)",
             "type": "string"
           },
           "withHidden": {
@@ -164338,6 +164769,10 @@
           },
           "type": {
             "$ref": "#/components/schemas/SharedLinkType"
+          },
+          "useDefaultExpiry": {
+            "description": "Without expiresAt, expire after the default number of days: the creator's preference, else the server's (none: never)",
+            "type": "boolean"
           }
         },
         "required": [
@@ -164590,6 +165025,19 @@
       },
       "SharedLinksResponse": {
         "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "enabled": {
             "description": "Whether shared links are enabled",
             "type": "boolean"
@@ -164607,6 +165055,19 @@
       },
       "SharedLinksUpdate": {
         "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires)",
+            "maximum": 3650,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "enabled": {
             "description": "Whether shared links are enabled",
             "type": "boolean"
@@ -181941,6 +182402,9 @@
           "server": {
             "$ref": "#/components/schemas/UserConfigServerDto"
           },
+          "sharedLinks": {
+            "$ref": "#/components/schemas/UserConfigSharedLinksDto"
+          },
           "theme": {
             "$ref": "#/components/schemas/UserConfigThemeDto"
           },
@@ -181962,6 +182426,7 @@
           "passwordLogin",
           "reverseGeocoding",
           "server",
+          "sharedLinks",
           "theme",
           "trash",
           "user"
@@ -182315,6 +182780,21 @@
           "loginPageMessage",
           "name",
           "publicUsers"
+        ],
+        "type": "object"
+      },
+      "UserConfigSharedLinksDto": {
+        "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire",
+            "maximum": 3650,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "defaultExpiryDays"
         ],
         "type": "object"
       },
