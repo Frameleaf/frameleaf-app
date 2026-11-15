@@ -603,6 +603,7 @@ where
           "asset"
         where
           "asset"."id" = "asset_face"."assetId"
+          and "asset"."ownerId" = "person"."ownerId"
           and (
             (
               "asset"."visibility" = 'timeline'
