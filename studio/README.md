@@ -885,6 +885,8 @@ cache contract. Hardware monitor limits, semantic source/output layouts, real
 decoder/encoder/mux round trips, latency and per-browser acceptance remain open.
 Focused synthetic PCM/source tests, typechecking and builds do not close those gates.
 
+Patch `0196-sound-channel-mapping.patch` adds a clip's sound channel mapping (FL-1561): the optional `audioChannelMap` item field, `{left, right}` lists of decoded source plane indexes, each side the sum of its planes times 1 / (number listed). It covers mono from either side, the mono mix, dual mono and picks from 5.1 (front, centre, LFE, surrounds), and is the explicit layout the refusals above ask for: a mapped clip contributes two planes, so a mapped 5.1 clip exports as stereo, mixes with stereo clips and can take track pan, which runs after the map. Export maps the decoded planes before retiming, EQ and pan, in both the full and the windowed mixer, and never packet-copies a mapped clip. Preview maps the source planes at decode, before its stereo preview reduction, in windows kept apart from the unmapped cache, and a mapped clip never plays from the file's own media element. Meters estimate a mapped clip from a mono envelope only. The field survives split, join, save and reopen, and the project schema refuses a malformed map. The rules and worked values are `spec/sound-channels.md`; there is no editor control yet.
+
 ## Retained Anime4K completion source (FL-111)
 
 Patch `0132-anime4k-retained-provenance.patch` passes the admitted Anime4K worker result through

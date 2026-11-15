@@ -346,7 +346,21 @@ const timelineFilterExample: TimeBucketOptions = {
  * FL-30 (S-15): the flat Browse/Work orders the time buckets cannot give. LIB-P3: `quality` is the
  * viewer's own Best Photos score, highest first; an asset without a score of theirs sorts last.
  */
-export type TimelineOrderedSort = 'filename' | 'rating' | 'quality';
+export type TimelineOrderedSort = 'filename' | 'rating' | 'quality' | 'custom';
+/**
+ * FL-869: `custom` is an album's own order (album_asset.position, lowest first); it needs an albumId. A
+ * photo without a position yet (added by a path that did not place it) sorts after every placed one.
+ */
+export const CUSTOM_ORDER_UNPLACED = 1e15;
+const customOrderKey = sql`coalesce(album_order.position, ${sql.lit(CUSTOM_ORDER_UNPLACED)})`;
+const joinCustomOrder = <QB extends SelectQueryBuilder<DB, 'asset', any>>(qb: QB, albumId: string | undefined): QB => {
+  if (!albumId) {
+    throw new Error('Custom order needs an album');
+  }
+  return qb.innerJoin('album_asset as album_order', (join) =>
+    join.onRef('album_order.assetId', '=', 'asset.id').on('album_order.albumId', '=', asUuid(albumId)),
+  ) as QB;
+};
 export interface TimelineOrderedPage {
   sort: TimelineOrderedSort;
   cursor?: { key: string | number; date: string; id: string };
@@ -3092,7 +3106,9 @@ export class AssetRepository {
         filename: sql`asset."originalFileName" collate "und-x-icu"`,
         rating: sql`coalesce(asset_exif.rating, 0)`,
         quality: sql`coalesce(best_photo_score.score, -1)`,
+        custom: customOrderKey,
       };
+      const ascending = pages.sort === 'filename' || pages.sort === 'custom';
       const selection = this.timelineAssets(options, auth, this.timelineBucketDate(options))
         .$if(!options.bbox && !options.filter, (qb) => qb.innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId'))
         .$if(pages.sort === 'quality', (qb) =>
@@ -3102,9 +3118,10 @@ export class AssetRepository {
               .on('best_photo_score.ownerId', '=', asUuid(auth.user.id)),
           ),
         )
+        .$if(pages.sort === 'custom', (qb) => joinCustomOrder(qb, options.albumId))
         .select([
           'asset.id',
-          sql<number>`row_number() over (order by ${sortKeys[pages.sort]} ${sql.raw(pages.sort === 'filename' ? 'asc' : 'desc')}, asset."fileCreatedAt" desc, asset.id asc)`.as(
+          sql<number>`row_number() over (order by ${sortKeys[pages.sort]} ${sql.raw(ascending ? 'asc' : 'desc')}, asset."fileCreatedAt" desc, asset.id asc)`.as(
             'position',
           ),
           sql<number>`count(*) over ()`.as('total'),
@@ -3405,9 +3422,10 @@ export class AssetRepository {
       rating: sql`coalesce(asset_exif.rating, 0)`,
       // LIB-P3: never null, so the keyset seek holds; scores are 0 to 1, so -1 puts the unscored last
       quality: sql`coalesce(best_photo_score.score, -1)`,
+      custom: customOrderKey,
     };
     const sortKey = sortKeys[page?.sort ?? 'rating'];
-    const keyAscending = page?.sort === 'filename';
+    const keyAscending = page?.sort === 'filename' || page?.sort === 'custom';
     const reverse = !!page?.reverse;
     const order = options.order ?? 'desc';
     const calendarOrder = calendarPage?.before ? (order === 'asc' ? 'desc' : 'asc') : order;
@@ -3450,6 +3468,7 @@ export class AssetRepository {
                 .on('best_photo_score.ownerId', '=', asUuid(auth.user.id)),
             ),
           )
+          .$if(page?.sort === 'custom', (qb) => joinCustomOrder(qb, options.albumId))
           .select((eb) => [
             'asset.duration',
             'asset.id',
@@ -3715,6 +3734,10 @@ export class AssetRepository {
               sql<string | null>`(array_agg(cursor))[1]`.as('startCursor'),
               sql<string | null>`(array_agg(cursor))[count(*)::int]`.as('endCursor'),
             ]),
+          )
+          // FL-869/FL-881: each photo's place in the album's custom order, so text cards can sit between them
+          .$if(page?.sort === 'custom', (qb) =>
+            qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['sortKey']), sql.lit('{}')).as('position')),
           )
           .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
             qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['lockReason']), sql.lit('{}')).as('lockReason')),

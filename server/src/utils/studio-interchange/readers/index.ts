@@ -6,6 +6,7 @@
  */
 import type { InterchangeProject } from 'src/utils/studio-interchange/model.js';
 import { ZipByteSource, ZipEntry, ZipReadLimits, readZipDirectory, readZipEntry } from 'src/utils/studio-bundle.js';
+import { readAaf } from 'src/utils/studio-interchange/readers/aaf.js';
 import { InterchangeReadError } from 'src/utils/studio-interchange/readers/common.js';
 import { readEdl } from 'src/utils/studio-interchange/readers/edl.js';
 import { readFcp7Xml } from 'src/utils/studio-interchange/readers/fcp7.js';
@@ -27,7 +28,17 @@ export const INTERCHANGE_ZIP_LIMITS: ZipReadLimits = Object.freeze({
 });
 
 /** The file kinds the import accepts, by extension. */
-export const INTERCHANGE_EXTENSIONS = ['fcpxml', 'fcpxmld', 'xml', 'otio', 'otioz', 'otiod', 'edl', 'prproj'] as const;
+export const INTERCHANGE_EXTENSIONS = [
+  'fcpxml',
+  'fcpxmld',
+  'xml',
+  'otio',
+  'otioz',
+  'otiod',
+  'edl',
+  'prproj',
+  'aaf',
+] as const;
 export const INTERCHANGE_SIDECAR_EXTENSIONS = ['cdl', 'cc', 'ccc', 'cube'] as const;
 
 export type InterchangeReadResult = {
@@ -127,6 +138,10 @@ export const readInterchangeFile = async (
     case 'otioz':
     case 'otiod': {
       result = await readArchive(zip, (entry) => /(^|\/)content\.otio$/i.test(entry), readOtio);
+      break;
+    }
+    case 'aaf': {
+      result = { project: readAaf(await whole()), carried: new Map() };
       break;
     }
     case 'prproj': {
