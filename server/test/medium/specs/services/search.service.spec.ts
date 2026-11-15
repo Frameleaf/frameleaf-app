@@ -628,6 +628,51 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe('albumCount filter (FL-976)', () => {
+    it('counts only the non-deleted albums the viewer owns or is a member of, in every branch', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset: inTwoOwn } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: ownAndShared } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: ownAndDeleted } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: ownAndForeign } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: inNone } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
+
+      const { album: first } = await ctx.newAlbum({ ownerId: user.id });
+      const { album: second } = await ctx.newAlbum({ ownerId: user.id });
+      const { album: deleted } = await ctx.newAlbum({ ownerId: user.id, deletedAt: new Date() });
+      const { album: sharedWithMe } = await ctx.newAlbum({ ownerId: other.id });
+      await ctx.newAlbumUser({ albumId: sharedWithMe.id, userId: user.id, role: AlbumUserRole.Viewer });
+      const { album: foreign } = await ctx.newAlbum({ ownerId: other.id });
+
+      for (const [albumId, assetId] of [
+        [first.id, inTwoOwn.id],
+        [second.id, inTwoOwn.id],
+        [first.id, ownAndShared.id],
+        [sharedWithMe.id, ownAndShared.id],
+        [first.id, ownAndDeleted.id],
+        [deleted.id, ownAndDeleted.id],
+        [first.id, ownAndForeign.id],
+        [foreign.id, ownAndForeign.id],
+      ]) {
+        await ctx.newAlbumAsset({ albumId, assetId });
+      }
+
+      const auth = factory.auth({ user: { id: user.id } });
+      const ids = async (filter: object) => {
+        const response = await sut.searchMetadata(auth, { filter, size: 100 });
+        return response.assets.items.map(({ id }) => id).toSorted();
+      };
+
+      await expect(ids({ albumCount: { gt: 1 } })).resolves.toEqual([inTwoOwn.id, ownAndShared.id].toSorted());
+      await expect(ids({ albumCount: { eq: 1 } })).resolves.toEqual([ownAndDeleted.id, ownAndForeign.id].toSorted());
+      await expect(
+        ids({ or: [{ albumCount: { eq: 0 }, isFavorite: { eq: true } }, { albumCount: { gte: 2 } }] }),
+      ).resolves.toEqual([inTwoOwn.id, ownAndShared.id, inNone.id].toSorted());
+    });
+  });
+
   describe('NSFW privacy hiding', () => {
     it('should use private review state, not visible tags, when hiding search results', async () => {
       const { sut, ctx } = setup(await getKyselyDB());
