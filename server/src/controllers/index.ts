@@ -1,5 +1,6 @@
 import { AccountEventAdminController, AccountEventController } from 'src/controllers/account-event.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
+import { AlbumActionsController } from 'src/controllers/album-actions.controller.js';
 import { AlbumCleanupController } from 'src/controllers/album-cleanup.controller.js';
 import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
 import { AlbumMergeController } from 'src/controllers/album-merge.controller.js';
@@ -204,6 +205,7 @@ export const controllers = [
   ConnectMediaController,
   OAuthAppAdminController,
   OAuthAppWellKnownController,
+  AlbumActionsController,
   AlbumItemsController,
   AssetSourceController,
   BookmarkController,

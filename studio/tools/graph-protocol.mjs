@@ -347,6 +347,9 @@ export function transitionKept(transition, graph) {
   if (!left || !right) return false;
   if (left.trackId !== right.trackId) return false;
   if (right.from > endOf(left) + 1) return false;
+  // FL-1555: two sound clips that are not compound items may share a transition.
+  const sound = (item) => item.type === 'audio' && !item.compositionId;
+  if (sound(left) && sound(right)) return true;
   return [left, right].every((item) => ['video', 'image', 'composition'].includes(item.type));
 }
 

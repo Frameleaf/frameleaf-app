@@ -177,6 +177,7 @@ SUPPORTED_PROVIDERS = [
     "CUDAExecutionProvider",
     "MIGraphXExecutionProvider",
     "OpenVINOExecutionProvider",
+    "DmlExecutionProvider",
     "CoreMLExecutionProvider",
     "CPUExecutionProvider",
 ]

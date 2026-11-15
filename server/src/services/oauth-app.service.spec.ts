@@ -356,6 +356,20 @@ describe(OAuthAppService.name, () => {
     await expect(connect(client)).resolves.toHaveProperty('tokens.access_token');
   });
 
+  it('names the allowing account the same way for every app, and another account differently (FL-1371)', async () => {
+    const callback = 'https://home.example.net/auth/external/callback';
+    const first = await connect(repo.addClient([callback], 'Home Assistant'));
+    const second = await connect(repo.addClient([callback], 'Home Assistant'));
+    expect(first.tokens.account_ref).toMatch(/^[\w-]{43}$/);
+    expect(second.tokens.account_ref).toBe(first.tokens.account_ref);
+    expect(first.tokens.account_ref).not.toContain(me.user.id);
+
+    me = person('sam');
+    repo.users.set(me.user.id, me.user);
+    const other = await connect(repo.addClient([callback], 'Home Assistant'));
+    expect(other.tokens.account_ref).not.toBe(first.tokens.account_ref);
+  });
+
   it('binds broker grants to the linked Frameleaf account', async () => {
     const callback = 'https://mcp.frameleaf.cloud/oauth/library/callback/chatgpt';
     const client = repo.addClient([callback], 'Untrusted client name');
@@ -560,6 +574,36 @@ describe(OAuthAppService.name, () => {
       expect(scope.get('state')).toBe('s1');
       expect(scope.get('iss')).toBe(ISSUER);
     });
+  });
+
+  it('issues tokens only for a resource on this server (FL-780 TM-1)', async () => {
+    const client = repo.addClient([CLAUDE_REDIRECT]);
+    const { dto } = request(client);
+    const base = {
+      response_type: 'code',
+      client_id: client.id,
+      redirect_uri: CLAUDE_REDIRECT,
+      scope: 'library:read',
+      code_challenge: dto.codeChallenge,
+      code_challenge_method: 'S256',
+    };
+    for (const resource of [
+      'https://evil.example/api/mcp',
+      'https://evil.example/',
+      'https://photos.example.test.evil.example/api/mcp',
+      'https://photos.example.test:8443/api/mcp',
+    ]) {
+      const url = await sut.authorizeRedirect({ ...base, resource }, ISSUER);
+      expect(new URL(url).searchParams.get('error')).toBe('invalid_target');
+      await expect(
+        sut.authorize(me, { ...dto, scope: 'library:read', resource, allow: true } as never, ISSUER),
+      ).rejects.toThrow(BadRequestException);
+    }
+    expect(repo.codes.size).toBe(0);
+
+    for (const resource of [`${ISSUER}/api/mcp`, `${ISSUER}/api`, 'http://photos.example.test/api']) {
+      expect(await sut.authorizeRedirect({ ...base, resource }, ISSUER)).toMatch(/^\/auth\/allow-app\?/);
+    }
   });
 
   it('keeps original downloads outside the MCP resource and consent', async () => {

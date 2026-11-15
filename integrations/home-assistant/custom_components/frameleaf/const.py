@@ -5,12 +5,15 @@ from typing import Final
 
 DOMAIN: Final = "frameleaf"
 
+CONF_ACCOUNT_REF: Final = "account_ref"
 CONF_AUTH_METHOD: Final = "auth_method"
 CONF_CLIENT_ID: Final = "client_id"
 CONF_EVENTS: Final = "events"
 CONF_WEBHOOK_ID: Final = "webhook_id"
 CONF_WEBHOOK_SECRET: Final = "webhook_secret"
 CONF_WORKFLOW_IDS: Final = "workflow_ids"
+# FL-1371: the Frameleaf events already given a workflow, so an unfinished setup carries on where it stopped
+CONF_WORKFLOW_TRIGGERS: Final = "workflow_triggers"
 
 AUTH_OAUTH: Final = "oauth"
 AUTH_API_KEY: Final = "api_key"

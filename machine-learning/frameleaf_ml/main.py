@@ -2,6 +2,7 @@ import asyncio
 import base64
 import gc
 import importlib.util
+import math
 import os
 import secrets
 import signal
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any, AsyncGenerator, Callable
 from zipfile import BadZipFile
 
+import numpy as np
 import onnxruntime as ort
 import orjson
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -30,6 +32,7 @@ from frameleaf_ml.models import assistant_planner, get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.clip.hugging_face import inspect_custom_clip_model
 from frameleaf_ml.models.constants import SUPPORTED_PROVIDERS, get_model_source, is_custom_clip_model
+from frameleaf_ml.models.facial_recognition.landmarks import FaceLandmarker, eye_scores
 from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.subject_matte import MAX_FRAME_BYTES as SUBJECT_MATTE_MAX_FRAME_BYTES
 from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
@@ -381,6 +384,7 @@ def _inference_stream_error(task: ModelTask, message: str) -> bytes:
 _INFERENCE_ROUTES = {
     "/predict-bound": ModelTask.SEARCH,
     "/predict-face-bound": ModelTask.FACIAL_RECOGNITION,
+    "/face-eye-scores": ModelTask.FACIAL_RECOGNITION,
     "/transcribe": ModelTask.TRANSCRIBE,
     "/music": ModelTask.MUSIC,
     "/translate": ModelTask.TRANSLATE,
@@ -602,6 +606,46 @@ async def predict_bound(
     except Exception as error:
         raise HTTPException(409, "model_identity_unavailable") from error
     return ORJSONResponse(result)
+
+
+eye_landmarker: FaceLandmarker | None = None
+
+
+def _eye_scores_for_boxes(image: bytes, boxes: list[list[float]]) -> list[dict[str, float | None]]:
+    global eye_landmarker
+    if eye_landmarker is None:
+        eye_landmarker = FaceLandmarker()
+    pixels = np.asarray(decode_pil(image), dtype=np.uint8)
+    array = np.asarray(boxes, dtype=np.float32).reshape(-1, 4)
+    points = eye_landmarker.predict(pixels, array)
+    scores = [eye_scores(pixels, box, face) for box, face in zip(array, points)]
+    return [{"eyesOpen": open_, "eyeSharpness": sharp} for open_, sharp in scores]
+
+
+@app.post("/face-eye-scores", dependencies=[Depends(update_state)])
+async def face_eye_scores(image: bytes = File(), boxes: str = Form()) -> ORJSONResponse:
+    """FL-863 backfill: eye scores for faces already found, from their stored boxes, without detecting again."""
+    try:
+        parsed = orjson.loads(boxes)
+    except orjson.JSONDecodeError as error:
+        raise HTTPException(422, "boxes must be JSON") from error
+    if (
+        not isinstance(parsed, list)
+        or not 0 < len(parsed) <= 256
+        or any(
+            not isinstance(box, list)
+            or len(box) != 4
+            or any(type(v) not in (int, float) or not math.isfinite(v) for v in box)
+            or not (box[0] < box[2] and box[1] < box[3])
+            for box in parsed
+        )
+    ):
+        raise HTTPException(422, "boxes must be 1 to 256 [x1, y1, x2, y2] lists")
+    try:
+        faces = await run(_eye_scores_for_boxes, image, parsed)
+    except ModelUnavailableError as error:
+        raise HTTPException(503, str(error)) from error
+    return ORJSONResponse({"faces": faces})
 
 
 @app.post("/predict", dependencies=[Depends(update_state)])

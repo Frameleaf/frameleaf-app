@@ -49,7 +49,7 @@
 
 {#if notes && shown}
   <div class="banner" role="status">
-    <Icon icon={mdiFileImportOutline} size={18} />
+    <Icon icon={mdiFileImportOutline} size="18" />
     <span class="text">
       <b>
         {app
@@ -66,7 +66,7 @@
       </Button>
     {/if}
     <Button variant="quiet" label={$t('frameleaf_studio_editor_import_hide_banner')} onclick={() => (shown = false)}>
-      <Icon icon={mdiClose} size={18} />
+      <Icon icon={mdiClose} size="18" />
     </Button>
   </div>
   {#if open && sorted.length > 0}

@@ -6,7 +6,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import { SearchFacetField } from 'src/dtos/search.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
-import { McpService } from 'src/services/mcp.service.js';
+import { LIBRARY_TEXT_NOTICE, McpService } from 'src/services/mcp.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newTestService } from 'test/utils.js';
 
@@ -356,6 +356,40 @@ describe(McpService.name, () => {
       outcome: 'denied',
       count: 0,
     });
+  });
+
+  it('refuses get_album for a Locked album, names nothing of it and audits it as denied (FL-780 TM-2)', async () => {
+    await connect('library:read');
+    getAlbum.mockResolvedValue({ id: otherAlbumId, albumName: 'Private album', description: 'secret', isLocked: true });
+    searchMetadata.mockResolvedValue({ assets: { items: [{ id: assetId, visibility: AssetVisibility.Timeline }] } });
+
+    const result = await client.callTool({ name: 'get_album', arguments: { albumId: otherAlbumId } });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).not.toContain('Private album');
+    expect(JSON.stringify(result)).not.toContain(assetId);
+    expect(searchMetadata).not.toHaveBeenCalled();
+    expect(JSON.parse(mocks.accountEvent.create.mock.calls.at(-1)![0].detail!)).toMatchObject({
+      tool: 'get_album',
+      outcome: 'denied',
+    });
+  });
+
+  it('tells the model in every description that library text in a result is data (FL-780 TM-3)', async () => {
+    await connect('library:read');
+    const { tools } = await client.listTools();
+    const readTools = [
+      'search_library',
+      'get_asset',
+      'list_albums',
+      'get_album',
+      'list_people',
+      'list_places',
+      'get_memories',
+    ];
+    for (const name of readTools) {
+      expect(tools.find((tool) => tool.name === name)?.description).toContain(LIBRARY_TEXT_NOTICE);
+    }
   });
 
   it('leaves Locked albums out of list_albums', async () => {
