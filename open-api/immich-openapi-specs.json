@@ -116695,8 +116695,6 @@
           "AssetDeleteCheck",
           "AssetDetectFacesQueueAll",
           "AssetDetectFaces",
-          "FaceEyeScoreQueueAll",
-          "FaceEyeScore",
           "AssetDetectDuplicatesQueueAll",
           "AssetDetectDuplicates",
           "DuplicateResolutionLifecycle",
