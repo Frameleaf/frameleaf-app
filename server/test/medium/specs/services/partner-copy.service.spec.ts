@@ -1849,21 +1849,20 @@ describe(PartnerCopyService.name, () => {
       return asset;
     };
 
-    /** The items of `sharedById`'s that `ownerId` holds copies of. */
+    /** The items `ownerId` holds copies of. */
     const copiedFrom = async (ownerId: string) =>
       (
-        await db
-          .selectFrom('asset_origin')
-          .select('sourceAssetId')
-          .where('ownerId', '=', ownerId)
-          .where('sourceAssetId', 'is not', null)
-          .execute()
-      )
-        .map(({ sourceAssetId }) => sourceAssetId!)
+        await sql<{ sourceAssetId: string }>`SELECT "sourceAssetId" FROM public.asset_origin
+          WHERE "ownerId" = ${ownerId}::uuid AND "sourceAssetId" IS NOT NULL`.execute(db)
+      ).rows
+        .map(({ sourceAssetId }) => sourceAssetId)
         .toSorted();
 
     const albumsCopiedFrom = async (ownerId: string) =>
-      (await db.selectFrom('album_origin').select('sourceAlbumId').where('ownerId', '=', ownerId).execute())
+      (
+        await sql<{ sourceAlbumId: string }>`SELECT "sourceAlbumId" FROM public.album_origin
+          WHERE "ownerId" = ${ownerId}::uuid`.execute(db)
+      ).rows
         .map(({ sourceAlbumId }) => sourceAlbumId)
         .toSorted();
 

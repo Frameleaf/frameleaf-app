@@ -13347,6 +13347,21 @@ export type PartnerBackfillDto = {
     /** Items to copy */
     total: number;
 };
+export type PartnerScopeLabelDto = {
+    id: string;
+    name: string;
+};
+export type PartnerScopeDto = {
+    /** Albums whose items are shared */
+    albums: PartnerScopeLabelDto[];
+    /** Folders whose items are shared */
+    folders: string[];
+    mode: PartnerScopeMode;
+    /** People whose photos are shared */
+    people: PartnerScopeLabelDto[];
+    /** Only items taken on or after this day */
+    sinceDate: string | null;
+};
 export type PartnerResponseDto = {
     avatarColor: UserAvatarColor;
     /** Copy progress of the library shared this way; null when it was never copied */
@@ -13361,8 +13376,23 @@ export type PartnerResponseDto = {
     profileChangedAt: string;
     /** Profile image path */
     profileImagePath: string;
+    /** What the library shared this way sends */
+    scope?: PartnerScopeDto;
+};
+export type PartnerScopeUpdateDto = {
+    /** Albums the owner owns whose items are shared; with mode chosen */
+    albumIds?: string[];
+    /** Folders (and the folders inside them) whose items are shared; with mode chosen */
+    folders?: string[];
+    mode: PartnerScopeMode;
+    /** The owner's people whose photos are shared; with mode chosen */
+    personIds?: string[];
+    /** Only items taken on or after this day (YYYY-MM-DD); with mode chosen */
+    sinceDate?: string | null;
 };
 export type PartnerCreateDto = {
+    /** What the partner receives; everything when left out */
+    scope?: PartnerScopeUpdateDto;
     /** User ID to share with */
     sharedWithId: string;
 };
@@ -13372,7 +13402,24 @@ export type PartnerLockedNoticeResponseDto = {
     /** Whether to show the notice: Locked items arrived from a partner, no PIN is set, and it was not dismissed */
     show: boolean;
 };
+export type PartnerScopeEstimateResponseDto = {
+    /** How many items this would send now */
+    count: number;
+};
 export type PartnerUpdateDto = {};
+export type PartnerScopeResponseDto = {
+    /** Albums whose items are shared */
+    albums: PartnerScopeLabelDto[];
+    /** How many items this sends now */
+    count: number;
+    /** Folders whose items are shared */
+    folders: string[];
+    mode: PartnerScopeMode;
+    /** People whose photos are shared */
+    people: PartnerScopeLabelDto[];
+    /** Only items taken on or after this day */
+    sinceDate: string | null;
+};
 export type PeopleListItemDto = {
     /** Number of timeline assets showing this person */
     assetCount: number;
@@ -35216,6 +35263,21 @@ export function dismissPartnerLockedNotice(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Count what a partner would receive
+ */
+export function estimatePartnerScope({ partnerScopeUpdateDto }: {
+    partnerScopeUpdateDto: PartnerScopeUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerScopeEstimateResponseDto;
+    }>("/partners/scope/estimate", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: partnerScopeUpdateDto
+    })));
+}
+/**
  * Remove a partner
  */
 export function removePartner({ id }: {
@@ -35254,6 +35316,35 @@ export function updatePartner({ id, partnerUpdateDto }: {
         ...opts,
         method: "PUT",
         body: partnerUpdateDto
+    })));
+}
+/**
+ * Get what a partner receives
+ */
+export function getPartnerScope({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerScopeResponseDto;
+    }>(`/partners/${encodeURIComponent(id)}/scope`, {
+        ...opts
+    }));
+}
+/**
+ * Change what a partner receives
+ */
+export function updatePartnerScope({ id, partnerScopeUpdateDto }: {
+    id: string;
+    partnerScopeUpdateDto: PartnerScopeUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerScopeResponseDto;
+    }>(`/partners/${encodeURIComponent(id)}/scope`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: partnerScopeUpdateDto
     })));
 }
 /**
@@ -46477,6 +46568,10 @@ export enum State5 {
     Running = "running",
     Done = "done",
     Stopped = "stopped"
+}
+export enum PartnerScopeMode {
+    Everything = "everything",
+    Chosen = "chosen"
 }
 export enum PersonCorrectionAction {
     Reassign = "reassign",

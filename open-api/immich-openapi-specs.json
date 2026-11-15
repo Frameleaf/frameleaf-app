@@ -43885,6 +43885,57 @@
         "x-immich-permission": "partner.update"
       }
     },
+    "/partners/scope/estimate": {
+      "post": {
+        "description": "How many of your items a partner scope would send now, before it is saved (FL-774).",
+        "operationId": "estimatePartnerScope",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerScopeUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerScopeEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count what a partner would receive",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.read"
+      }
+    },
     "/partners/{id}": {
       "delete": {
         "description": "Stop sharing assets with a partner.",
@@ -44064,6 +44115,118 @@
         ],
         "x-immich-permission": "partner.update",
         "x-immich-state": "Stable"
+      }
+    },
+    "/partners/{id}/scope": {
+      "get": {
+        "description": "What your library sends to this partner: everything, or only the albums, people, folders and dates you chose (FL-774).",
+        "operationId": "getPartnerScope",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerScopeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what a partner receives",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.read"
+      },
+      "put": {
+        "description": "Choose everything, or only chosen albums, people, folders and a start date. Only the owner changes it. Widening copies the newly matching items; narrowing stops further copies and the partner keeps what they already received (FL-774).",
+        "operationId": "updatePartnerScope",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerScopeUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerScopeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change what a partner receives",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.update"
       }
     },
     "/people": {
@@ -131410,6 +131573,10 @@
       },
       "PartnerCreateDto": {
         "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/PartnerScopeUpdateDto",
+            "description": "What the partner receives; everything when left out"
+          },
           "sharedWithId": {
             "description": "User ID to share with",
             "format": "uuid",
@@ -131535,6 +131702,10 @@
           "profileImagePath": {
             "description": "Profile image path",
             "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PartnerScopeDto",
+            "description": "What the library shared this way sends"
           }
         },
         "required": [
@@ -131544,6 +131715,189 @@
           "name",
           "profileChangedAt",
           "profileImagePath"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeDto": {
+        "description": "What a partner receives",
+        "properties": {
+          "albums": {
+            "description": "Albums whose items are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "folders": {
+            "description": "Folders whose items are shared",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PartnerScopeMode"
+          },
+          "people": {
+            "description": "People whose photos are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "sinceDate": {
+            "description": "Only items taken on or after this day",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albums",
+          "folders",
+          "mode",
+          "people",
+          "sinceDate"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeEstimateResponseDto": {
+        "properties": {
+          "count": {
+            "description": "How many items this would send now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeLabelDto": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeMode": {
+        "description": "What the partner receives: everything, or only what the owner chose",
+        "enum": [
+          "everything",
+          "chosen"
+        ],
+        "type": "string"
+      },
+      "PartnerScopeResponseDto": {
+        "description": "What a partner receives, and how many items that is",
+        "properties": {
+          "albums": {
+            "description": "Albums whose items are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "count": {
+            "description": "How many items this sends now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "folders": {
+            "description": "Folders whose items are shared",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PartnerScopeMode"
+          },
+          "people": {
+            "description": "People whose photos are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "sinceDate": {
+            "description": "Only items taken on or after this day",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albums",
+          "count",
+          "folders",
+          "mode",
+          "people",
+          "sinceDate"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeUpdateDto": {
+        "description": "What a partner receives",
+        "properties": {
+          "albumIds": {
+            "description": "Albums the owner owns whose items are shared; with mode chosen",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "folders": {
+            "description": "Folders (and the folders inside them) whose items are shared; with mode chosen",
+            "items": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PartnerScopeMode"
+          },
+          "personIds": {
+            "description": "The owner's people whose photos are shared; with mode chosen",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "sinceDate": {
+            "description": "Only items taken on or after this day (YYYY-MM-DD); with mode chosen",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
         ],
         "type": "object"
       },

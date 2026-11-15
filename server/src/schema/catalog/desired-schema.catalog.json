@@ -56463,6 +56463,120 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "partner_scope",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sharedById",
+          "tableName": "partner_scope",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sharedWithId",
+          "tableName": "partner_scope",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "date",
+          "primary": false,
+          "name": "sinceDate",
+          "tableName": "partner_scope",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumIds",
+          "tableName": "partner_scope",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::uuid[]",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "personIds",
+          "tableName": "partner_scope",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::uuid[]",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "folders",
+          "tableName": "partner_scope",
+          "nullable": false,
+          "isArray": true,
+          "default": "'{}'::text[]",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "partner_scope",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "check",
+          "name": "partner_scope_chooses_check",
+          "definition": "CHECK (((\"sinceDate\" IS NOT NULL) OR (cardinality(\"albumIds\") > 0) OR (cardinality(\"personIds\") > 0) OR (cardinality(folders) > 0)))",
+          "tableName": "partner_scope",
+          "expression": "(((\"sinceDate\" IS NOT NULL) OR (cardinality(\"albumIds\") > 0) OR (cardinality(\"personIds\") > 0) OR (cardinality(folders) > 0)))",
+          "synchronize": true
+        },
+        {
+          "type": "primary-key",
+          "name": "partner_scope_pkey",
+          "definition": "PRIMARY KEY (\"sharedById\", \"sharedWithId\")",
+          "tableName": "partner_scope",
+          "columnNames": [
+            "sharedById",
+            "sharedWithId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "partner_scope_sharedById_sharedWithId_fkey",
+          "definition": "FOREIGN KEY (\"sharedById\", \"sharedWithId\") REFERENCES partner(\"sharedById\", \"sharedWithId\") ON DELETE CASCADE",
+          "tableName": "partner_scope",
+          "columnNames": [
+            "sharedById",
+            "sharedWithId"
+          ],
+          "referenceTableName": "partner",
+          "referenceColumnNames": [
+            "sharedById",
+            "sharedWithId"
+          ],
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [
