@@ -833,6 +833,17 @@ values
 returning
   *
 
+-- PersonRepository.updateEyeScores
+begin
+update "asset_face"
+set
+  "eyesOpen" = $1,
+  "eyeSharpness" = $2,
+  "eyeScoreVersion" = $3
+where
+  "asset_face"."id" = $4
+commit
+
 -- PersonRepository.refreshFaces
 with
   "added_embeddings" as (
