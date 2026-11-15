@@ -57459,6 +57459,61 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "shared_link_option",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "sharedLinkId",
+          "tableName": "shared_link_option",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "webSizeOnly",
+          "tableName": "shared_link_option",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "shared_link_option_pkey",
+          "definition": "PRIMARY KEY (\"sharedLinkId\")",
+          "tableName": "shared_link_option",
+          "columnNames": [
+            "sharedLinkId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "shared_link_option_sharedLinkId_fkey",
+          "definition": "FOREIGN KEY (\"sharedLinkId\") REFERENCES shared_link(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "shared_link_option",
+          "columnNames": [
+            "sharedLinkId"
+          ],
+          "referenceTableName": "shared_link",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [

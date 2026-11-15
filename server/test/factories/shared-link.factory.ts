@@ -67,6 +67,8 @@ export class SharedLinkFactory {
   build() {
     return {
       ...this.value,
+      // FL-826: kept in shared_link_option; every read of a link selects it
+      webSizeOnly: false,
       owner: this.#owner.build(),
       album: this.#album?.build() ?? null,
       assets: this.#assets.map((asset) => asset.build()),

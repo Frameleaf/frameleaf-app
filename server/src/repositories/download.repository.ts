@@ -35,6 +35,16 @@ const builder = (db: Kysely<DB>, options: DownloadPrivacyOptions = {}) =>
         WHERE original."assetId" = asset.id
       ), 0)`.as('size'),
     )
+    // FL-826: what a JPEG or web-size download of the item is estimated from
+    .select(['asset.type', 'asset.originalFileName', 'asset.width', 'asset.height', 'asset_exif.fileSizeInByte'])
+    .select(
+      sql<number | null>`(
+        SELECT file."sizeInBytes" FROM public.asset_file derived
+        JOIN public.physical_file file ON file.id = derived."physicalFileId"
+        WHERE derived."assetId" = asset.id AND derived.type = ${AssetFileType.FullSize}
+        ORDER BY derived."isEdited" DESC LIMIT 1
+      )`.as('fullsizeSize'),
+    )
     .where('asset.deletedAt', 'is', null)
     .$call((qb) => withHiddenContentFilter(qb, options));
 
@@ -61,6 +71,27 @@ export class DownloadRepository {
       .orderBy('asset_original.assetId')
       .orderBy('physical_file.id')
       .stream();
+  }
+
+  /**
+   * FL-826: what a photo can be converted from for a JPEG or web-size download: its kind and size, and
+   * the derived full-size and preview files (unedited, and the edited ones).
+   */
+  getConversionSources(ids: string[]) {
+    const derived = (type: AssetFileType, isEdited: boolean) =>
+      sql<string | null>`(
+        SELECT derived.path FROM public.asset_file derived
+        WHERE derived."assetId" = asset.id AND derived.type = ${type} AND derived."isEdited" = ${isEdited}
+        LIMIT 1
+      )`;
+    return this.db
+      .selectFrom('asset')
+      .select(['asset.id', 'asset.type', 'asset.width', 'asset.height', 'asset.originalFileName'])
+      .select(derived(AssetFileType.FullSize, false).as('fullsizePath'))
+      .select(derived(AssetFileType.Preview, false).as('previewPath'))
+      .select(derived(AssetFileType.Preview, true).as('editedPreviewPath'))
+      .where('asset.id', '=', anyUuid(ids))
+      .execute();
   }
 
   downloadAssetIds(ids: string[], options?: DownloadPrivacyOptions) {

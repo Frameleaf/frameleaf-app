@@ -1874,6 +1874,8 @@ export type UserPreferences = {
     includeEmbeddedVideos: boolean;
     /** ACCOUNT-P5: put each photo's details file (XMP sidecar) beside it in a download */
     includeSidecar: boolean;
+    /** FL-826: the format downloads use unless one is chosen */
+    defaultFormat: import('src/enum.js').DownloadFormat;
   };
   /** ACCOUNT-P3: the search screens show archived photos; the client sends the visibility, the server stores it only */
   search: {

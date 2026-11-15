@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { parse } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DownloadRepository } from 'src/repositories/download.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
@@ -15,6 +16,15 @@ import { BaseService } from 'src/services/base.service.js';
 import { AssetDetails, assetDetailsXmp } from 'src/utils/asset-details-xmp.js';
 import { DecimalSize } from 'src/utils/bytes.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
+import {
+  conversionSourcesOf,
+  convertedFileName,
+  downloadConversionFor,
+  downloadFormatFor,
+  estimateDownloadSize,
+  renderDownloadFile,
+  renderedDownloadStream,
+} from 'src/utils/download-format.js';
 import { lockedViewerOf, nextArchiveName } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 import { lockedArchiveInput } from 'src/utils/locked-read.js';
@@ -25,6 +35,8 @@ import { getPreferences } from 'src/utils/preferences.js';
 /** Whether the archive holds the edited file rather than the original. */
 const usesEditedFile = (asset: { editedPath?: string | null }, dto: DownloadArchiveDto) =>
   !!dto.edited && !!asset.editedPath;
+
+type ConversionSourceRow = Awaited<ReturnType<DownloadRepository['getConversionSources']>>[number];
 
 const archiveFileName = (asset: { originalFileName: string; editedPath?: string | null }, dto: DownloadArchiveDto) =>
   usesEditedFile(asset, dto) && asset.editedPath
@@ -66,17 +78,19 @@ export class DownloadService extends BaseService {
     const targetSize = dto.archiveSize || DecimalSize.GB * 4;
     const metadata = await this.userRepository.getMetadata(auth.user.id);
     const preferences = getPreferences(metadata);
+    // FL-826: sizes are those of the files the chosen format downloads (estimates for converted photos)
+    const format = downloadFormatFor(auth, dto.format, preferences.download.defaultFormat);
     const motionIds = new Set<string>();
     const archives: DownloadArchiveInfo[] = [];
     let archive: DownloadArchiveInfo | undefined;
 
-    const addToArchive = ({ id, size }: { id: string; size: number | null }) => {
+    const addToArchive = (item: Parameters<typeof estimateDownloadSize>[0] & { id: string }) => {
       if (!archive || archive.size > targetSize) {
         archive = { size: 0, assetIds: [] };
         archives.push(archive);
       }
-      archive.assetIds.push(id);
-      archive.size += Number(size || 0);
+      archive.assetIds.push(item.id);
+      archive.size += estimateDownloadSize(item, format);
     };
 
     for await (const asset of assets) {
@@ -127,12 +141,35 @@ export class DownloadService extends BaseService {
     }
 
     const dto = await this.withDownloadPreferences(auth, request);
+    const format = dto.format ?? 'original';
     const assets =
       dto.assetIds.length === 0 ? [] : await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
+    const developed = dto.edited ? await this.getShownDevelopMasters(auth, assets) : new Map<string, string>();
+    // FL-826: which photos go as a JPEG or web-size JPEG instead of their file, and what each renders from
+    const sources =
+      format === 'original' || assets.length === 0
+        ? new Map<string, ConversionSourceRow>()
+        : new Map(
+            (await this.downloadRepository.getConversionSources(assets.map(({ id }) => id))).map((row) => [
+              row.id,
+              row,
+            ]),
+          );
+    const conversions = new Map<string, { maxEdge: number | null }>();
+    for (const found of assets) {
+      const source = sources.get(found.id);
+      const asset = { ...found, editedPath: developed.get(found.id) ?? found.editedPath };
+      const shownPath = usesEditedFile(asset, dto) && asset.editedPath ? asset.editedPath : asset.originalPath;
+      const conversion = source && downloadConversionFor(source, shownPath, format);
+      if (conversion) {
+        conversions.set(found.id, conversion);
+      }
+    }
     // FL-54: the archive holds each file's bytes, embedded location included, so apply the same policy
-    // as a single original download before anything is streamed
+    // as a single original download before anything is streamed. A converted photo is a new file whose
+    // metadata is copied in, without location for a link that hides metadata.
     const policyFor = getOriginalLocationPolicies({ auth, assets, purpose: 'download' });
-    if (assets.some((asset) => policyFor(asset) === OriginalLocationPolicy.Refuse)) {
+    if (assets.some((asset) => !conversions.has(asset.id) && policyFor(asset) === OriginalLocationPolicy.Refuse)) {
       throw new ForbiddenException('Downloads are turned off while metadata is hidden');
     }
 
@@ -154,7 +191,6 @@ export class DownloadService extends BaseService {
           assets.filter(({ id }) => !sidecars.has(id)).map(({ id }) => id),
         )
       : new Map<string, AssetDetails>();
-    const developed = dto.edited ? await this.getShownDevelopMasters(auth, assets) : new Map<string, string>();
     const paths = new Map<string, number>();
     const manifestNames = new Map<string, string>();
     if (dto.includeLibraryMetadata) {
@@ -183,9 +219,32 @@ export class DownloadService extends BaseService {
 
         // As shown: the owner's current develop version takes the place of any other edited file.
         const asset = { ...found, editedPath: developed.get(assetId) ?? found.editedPath };
-        const name = manifestNames.get(assetId) ?? nextArchiveName(paths, archiveFileName(asset, dto));
-        // FL-721 (spec §8.1): an encrypted file goes in decrypted, as a stream for this viewer
-        zip.addFile(await lockedArchiveInput(await this.resolveArchivePath(asset, dto), lockedViewerOf(auth)), name);
+        const conversion = conversions.get(assetId);
+        const name =
+          manifestNames.get(assetId) ??
+          nextArchiveName(
+            paths,
+            conversion ? convertedFileName(archiveFileName(asset, dto)) : archiveFileName(asset, dto),
+          );
+        if (conversion) {
+          const source = sources.get(assetId)!;
+          const shownEditedPath = usesEditedFile(asset, dto) ? asset.editedPath : null;
+          zip.addFile(
+            renderedDownloadStream(() =>
+              renderDownloadFile(this.mediaRepository, {
+                sources: conversionSourcesOf({ ...source, originalPath: asset.originalPath, shownEditedPath }),
+                metadataSource: asset.originalPath,
+                maxEdge: conversion.maxEdge,
+                removeLocation: !!auth.sharedLink && !auth.sharedLink.showExif,
+                viewerId: lockedViewerOf(auth),
+              }),
+            ),
+            name,
+          );
+        } else {
+          // FL-721 (spec §8.1): an encrypted file goes in decrypted, as a stream for this viewer
+          zip.addFile(await lockedArchiveInput(await this.resolveArchivePath(asset, dto), lockedViewerOf(auth)), name);
+        }
 
         // ACCOUNT-P5: "IMG_1.HEIC.xmp" beside "IMG_1.HEIC", so a RAW and a JPEG of one shot never share one
         const sidecar = sidecars.get(assetId);
@@ -194,12 +253,14 @@ export class DownloadService extends BaseService {
           zip.addFile(await lockedArchiveInput(sidecar, lockedViewerOf(auth)), nextArchiveName(paths, `${name}.xmp`));
         } else if (generated) {
           // FL-423: a photo without a sidecar gets one made from what this person's asset response shows
-          const xmp = assetDetailsXmp(generated, { orientation: !usesEditedFile(asset, dto) });
+          // a converted photo is already upright, like an edited file
+          const xmp = assetDetailsXmp(generated, { orientation: !usesEditedFile(asset, dto) && !conversion });
           zip.addFile(Buffer.from(xmp, 'utf8'), nextArchiveName(paths, `${name}.xmp`));
         }
       }
 
-      if (!dto.edited && assets.length > 0) {
+      // additional originals are originals: a JPEG or web-size download leaves them out
+      if (!dto.edited && format === 'original' && assets.length > 0) {
         for await (const original of this.downloadRepository.getAdditionalOriginals(assetMap.keys().toArray())) {
           zip.addFile(
             await lockedArchiveInput(await this.resolveArchivePath(original, dto), lockedViewerOf(auth)),
@@ -225,11 +286,18 @@ export class DownloadService extends BaseService {
    * Which version of each item it holds is the request's `edited` (as shown), never a preference.
    */
   private async withDownloadPreferences(auth: AuthDto, dto: DownloadArchiveDto): Promise<DownloadArchiveDto> {
-    if (auth.sharedLink || dto.includeSidecar !== undefined) {
-      return dto;
+    // FL-826: the format follows the request, then the account's download.defaultFormat; a portable
+    // library export is always originals, and a link limited to web size always web
+    const requested = dto.includeLibraryMetadata ? 'original' : dto.format;
+    if (auth.sharedLink || (dto.includeSidecar !== undefined && requested !== undefined)) {
+      return { ...dto, format: downloadFormatFor(auth, requested) };
     }
     const { download } = getPreferences((await this.userRepository.getMetadata(auth.user.id)) ?? []);
-    return { ...dto, includeSidecar: download.includeSidecar };
+    return {
+      ...dto,
+      includeSidecar: dto.includeSidecar ?? download.includeSidecar,
+      format: downloadFormatFor(auth, requested, download.defaultFormat),
+    };
   }
 
   /**

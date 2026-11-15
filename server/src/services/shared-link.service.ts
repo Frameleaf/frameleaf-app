@@ -164,6 +164,7 @@ export class SharedLinkService extends BaseService {
         allowDownload: dto.showMetadata === false ? false : (dto.allowDownload ?? true),
         showExif: dto.showMetadata ?? true,
         slug: dto.slug || null,
+        webSizeOnly: dto.webSizeOnly,
       });
 
       const listed = await this.withAlbumListing(auth, sharedLink);
@@ -215,6 +216,7 @@ export class SharedLinkService extends BaseService {
         allowDownload: showExif ? dto.allowDownload : false,
         showExif: dto.showMetadata,
         slug: dto.slug === undefined ? undefined : dto.slug || null,
+        webSizeOnly: dto.webSizeOnly,
       });
       const sharedLink = nsfwOptions
         ? await this.findOrFail(auth.user.id, id, nsfwOptions)
@@ -415,7 +417,8 @@ export class SharedLinkService extends BaseService {
       throw notFound();
     }
 
-    const wantsFullSize = dto.size === 'fullsize' && (await this.fullSizeAllowed(via));
+    // FL-826: a link limited to web size never hands out the full-size copy
+    const wantsFullSize = dto.size === 'fullsize' && !found.webSizeOnly && (await this.fullSizeAllowed(via));
     const fullSize = wantsFullSize
       ? await this.assetRepository.getForThumbnail(asset.id, AssetFileType.FullSize, true)
       : undefined;

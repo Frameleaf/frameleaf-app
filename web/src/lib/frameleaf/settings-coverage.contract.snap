@@ -1243,6 +1243,14 @@
     "minimum": 1,
     "maximum": 9007199254740991
   },
+  "preferences.download.defaultFormat": {
+    "type": "string",
+    "enum": [
+      "original",
+      "jpeg",
+      "web"
+    ]
+  },
   "preferences.download.includeEmbeddedVideos": {
     "type": "boolean"
   },

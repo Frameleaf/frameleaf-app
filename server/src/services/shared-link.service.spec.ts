@@ -412,6 +412,31 @@ describe(SharedLinkService.name, () => {
     });
   });
 
+  describe('FL-826 web size only', () => {
+    it('stores the option on create and edit, and reports it on every link', async () => {
+      const album = AlbumFactory.from().asset().build();
+      const sharedLink = SharedLinkFactory.from().album(album).build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.sharedLink.create.mockResolvedValue({ ...getForSharedLink(sharedLink), webSizeOnly: true });
+
+      const created = await sut.create(authStub.admin, {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+        webSizeOnly: true,
+      });
+
+      expect(mocks.sharedLink.create).toHaveBeenCalledWith(expect.objectContaining({ webSizeOnly: true }));
+      expect(created.webSizeOnly).toBe(true);
+
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+      const edited = await sut.update(authStub.admin, sharedLink.id, { webSizeOnly: false });
+      expect(mocks.sharedLink.update).toHaveBeenCalledWith(expect.objectContaining({ webSizeOnly: false }));
+      // a link without an option row is not limited
+      expect(edited.webSizeOnly).toBe(false);
+    });
+  });
+
   describe('update', () => {
     it.each([
       { slug: undefined, expected: undefined },
@@ -784,6 +809,18 @@ describe(SharedLinkService.name, () => {
       expect(mocks.asset.getForThumbnail).toHaveBeenCalledWith(link.assets[0].id, AssetFileType.FullSize, true);
       expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/thumbs/fullsize.jpeg');
       expect(file.fileName).toBe(`${link.assets[0].id}_fullsize.jpg`);
+    });
+
+    it('FL-826: answers a full-size request with the preview for a link limited to web size', async () => {
+      const link = singlePhoto();
+      serve(link);
+      mocks.sharedLink.getBySlug.mockResolvedValue({ ...found(link), webSizeOnly: true } as never);
+
+      const file = await sut.getDirectImage({ slug: 'lake-morning' }, { size: 'fullsize' });
+
+      expect(mocks.asset.getForThumbnail).not.toHaveBeenCalledWith(expect.anything(), AssetFileType.FullSize, true);
+      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/thumbs/preview.jpeg');
+      expect(file.fileName).toBe(`${link.assets[0].id}.jpg`);
     });
 
     it('answers a full-size request with the preview when no full-size copy exists', async () => {
