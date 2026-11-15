@@ -105,6 +105,34 @@ describe('coordinator capacity admission', () => {
     expect(visits().toSorted()).toEqual(['deep', 'ml', 'thumbnail']);
   });
 
+  it('takes turns among queues holding front-of-line work, so a deep one cannot take every slot', async () => {
+    // A big batch of arrivals makes every pipeline queue a front queue. Before FL-1600 the visit order never moved
+    // while they all were, so metadata extraction took each freed slot and later steps (thumbnails) never ran.
+    const dispatched: QueueClaim[] = [];
+    fixture.port!.postMessage = (message) => {
+      if (message.type === 'execute') dispatched.push(message.claim);
+    };
+    fixture.store.queuesWithFrontWork.mockResolvedValue(coordinatorData.queues);
+    fixture.store.claim.mockImplementation((queue: string, workerId: string, capacity: number) =>
+      Promise.resolve(
+        Array.from({ length: capacity }, (_, index) => ({
+          id: `${queue}-${dispatched.length + index}`,
+          queue,
+          workerId,
+          deadlineMs: 60_000,
+        })),
+      ),
+    );
+    await coordinate(coordinatorData);
+    expect(dispatched).toHaveLength(QUEUE_EXECUTION_CAPACITY);
+    fixture.port!.emit('message', { type: 'settled', id: dispatched[0].id });
+    await vi.waitFor(() => expect(dispatched).toHaveLength(QUEUE_EXECUTION_CAPACITY + 1));
+    expect(dispatched.at(-1)!.queue).toBe('thumbnail');
+    fixture.port!.emit('message', { type: 'settled', id: dispatched.at(-1)!.id });
+    await vi.waitFor(() => expect(dispatched).toHaveLength(QUEUE_EXECUTION_CAPACITY + 2));
+    expect(dispatched.at(-1)!.queue).toBe('ml');
+  });
+
   it('applies a new capacity to the next claims', async () => {
     await coordinate(coordinatorData);
     fixture.store.claim.mockClear();

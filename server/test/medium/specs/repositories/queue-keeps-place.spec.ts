@@ -92,6 +92,34 @@ describe('a job keeps its place in line', () => {
     expect(rows[0].resumeAt).toBeNull();
   });
 
+  it("runs an item's next step in the same queue in that item's place, not behind work queued after it", async () => {
+    // A folder scan's metadata queue: the sidecar step queues every extraction long before the first one finishes.
+    // The step after extraction (which leads to thumbnails) used to wait for the whole extraction backlog.
+    const scan = await createRun('library');
+    await store.enqueue([intent('extract-1', scan)]);
+    await sql`update job set "availableAt" = "availableAt" - interval '1 minute' where queue = ${queue}`.execute(db);
+    await store.enqueue([intent('extract-2', scan), intent('extract-3', scan)]);
+    const [first] = await store.claim(queue, worker, 1);
+    expect(key(first)).toBe('extract-1');
+    await store.complete(first, [{ ...intent('postprocess-1'), name: 'AssetMetadataPostprocess' }]);
+
+    const [next] = await store.claim(queue, worker, 1);
+    expect(key(next)).toBe('postprocess-1');
+  });
+
+  it('keeps a next step in another queue in line behind the work already there', async () => {
+    const other = `place-${randomUUID()}`;
+    await store.initialize([other]);
+    await store.enqueue([intent('step-1')]);
+    await sql`update job set "availableAt" = "availableAt" - interval '1 minute' where queue = ${queue}`.execute(db);
+    await store.enqueue([{ ...intent('waiting'), queue: other }]);
+    const [first] = await store.claim(queue, worker, 1);
+    await store.complete(first, [{ ...intent('step-2'), queue: other }]);
+
+    const [next] = await store.claim(other, worker, 1);
+    expect(key(next)).toBe('waiting');
+  });
+
   it('runs the next steps of a job started by hand ahead of the backlog, and reports the queue as holding front work', async () => {
     await store.enqueue([intent('backlog'), intent('chosen')]);
     expect(await store.queuesWithFrontWork([queue])).toEqual([]);
