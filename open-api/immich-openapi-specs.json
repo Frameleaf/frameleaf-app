@@ -158617,12 +158617,18 @@
             "type": "boolean"
           },
           "items": {
-            "description": "Photos and videos this run made ready, of those it has: a queue that runs several jobs for each (thumbnails) counts more jobs than photos",
+            "description": "Photos and videos this run has finished (completed or failed, as `processed` counts), of those it has: a queue that runs several jobs for each (thumbnails) counts more jobs than photos",
             "properties": {
               "done": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
                 "type": "integer"
+              },
+              "startedAt": {
+                "description": "When the oldest of them was queued",
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
               },
               "total": {
                 "maximum": 9007199254740991,
@@ -158632,7 +158638,8 @@
             },
             "required": [
               "done",
-              "total"
+              "total",
+              "startedAt"
             ],
             "type": "object"
           },

@@ -112,9 +112,15 @@ export const importProgress = (
   const moving =
     counted && !!queue && !queue.isPaused && !held && (queue.active > 0 || (queue.waiting > 0 && !holding));
   if (moving) {
-    // The pace of the photos, not of every job the queue runs for them.
-    const photos = { ...queue, processed: done, active: 0, waiting: total - done };
-    return { ...base, etaSeconds: workEtaSeconds({ ...summary, queues: [queue.items ? photos : queue] }, now) };
+    // The pace of the photos since the first of them was queued, not of every job the queue runs.
+    const photos = queue.items && {
+      ...queue,
+      processed: done,
+      active: 0,
+      waiting: total - done,
+      startedAt: queue.items.startedAt ?? queue.startedAt,
+    };
+    return { ...base, etaSeconds: workEtaSeconds({ ...summary, queues: [photos ?? queue] }, now) };
   }
   if (run && headline && holding) {
     return {

@@ -364,14 +364,15 @@ it("counts a queue's photos apart from the other jobs it runs for them", async (
   await sql`insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", state, "createdAt", "finishedAt")
     values (${randomUUID()}::uuid, 'test', 'Thumbnail', '{}', true, false, 1000, 'completed', now(), now()),
       (${randomUUID()}::uuid, 'test', 'Colors', '{}', true, false, 1000, 'completed', now(), now()),
-      (${randomUUID()}::uuid, 'test', 'Colors', '{}', true, false, 1000, 'pending', now() - interval '1 minute', null)`.execute(
-    db,
-  );
-  expect(await observeQueueRun(db, 'test', 'Thumbnail')).toMatchObject({
-    processed: 5,
-    waiting: 3,
-    items: { done: 3, total: 5 },
-  });
+      (${randomUUID()}::uuid, 'test', 'Colors', '{}', true, false, 1000, 'pending', now() - interval '1 minute', null),
+      -- A face thumbnail has waited two hours; a photo that finished an hour ago is not one of this import's.
+      (${randomUUID()}::uuid, 'test', 'PersonThumbnail', '{}', true, false, 1000, 'pending', now() - interval '2 hours', null),
+      (${randomUUID()}::uuid, 'test', 'Thumbnail', '{}', true, false, 1000, 'completed', now() - interval '90 minutes',
+        now() - interval '1 hour')`.execute(db);
+  const observed = await observeQueueRun(db, 'test', 'Thumbnail');
+  expect(observed).toMatchObject({ processed: 6, waiting: 4, items: { done: 3, total: 5 } });
+  // The photos' pace is measured from the first of them, not from the oldest job waiting in the queue.
+  expect(observed.items!.startedAt!.getTime()).toBeGreaterThan(observed.startedAt!.getTime() + 60 * 60 * 1000);
   expect((await observeQueueRun(db, 'test')).items).toBeNull();
 });
 
