@@ -527,12 +527,18 @@ order by
   "asset_exif"."city"
 
 -- SearchRepository.getVisitedLandmarks
+begin
+set
+  local enable_presorted_aggregate = off
 with
   "matched" as (
     select
       "asset_landmark"."assetId",
       "asset_landmark"."landmarkId",
       "asset_landmark"."inference",
+      "asset"."localDateTime",
+      "asset"."width",
+      "asset"."height",
       row_number() over (
         partition by
           asset_landmark."assetId"
@@ -1212,17 +1218,17 @@ select
   "landmark"."longitude",
   "landmark"."radiusM",
   count(*) as "assetCount",
-  min("asset"."localDateTime") as "firstTakenAt",
-  max("asset"."localDateTime") as "lastTakenAt",
+  min("matched"."localDateTime") as "firstTakenAt",
+  max("matched"."localDateTime") as "lastTakenAt",
   (
     array_agg(
-      asset.id
+      matched."assetId"
       order by
         asset_best_photo_score.score is not null desc,
-        coalesce(asset.width::float / nullif(asset.height, 0), 1.5) >= 0.9 desc,
+        coalesce(matched.width::float / nullif(matched.height, 0), 1.5) >= 0.9 desc,
         asset_best_photo_score.score desc nulls last,
-        asset."localDateTime" desc,
-        asset.id
+        matched."localDateTime" desc,
+        matched."assetId"
     )
   ) [1] as "coverAssetId",
   mode() within group (
@@ -1249,9 +1255,8 @@ select
 from
   "matched"
   inner join "landmark" on "landmark"."id" = "matched"."landmarkId"
-  inner join "asset" on "asset"."id" = "matched"."assetId"
-  inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
-  left join "asset_best_photo_score" on "asset_best_photo_score"."assetId" = "asset"."id"
+  inner join "asset_exif" on "asset_exif"."assetId" = "matched"."assetId"
+  left join "asset_best_photo_score" on "asset_best_photo_score"."assetId" = "matched"."assetId"
 group by
   "landmark"."id"
 having
@@ -1260,6 +1265,7 @@ having
 order by
   "assetCount" desc,
   "landmark"."id"
+commit
 
 -- SearchRepository.getAssetLandmarks
 select
