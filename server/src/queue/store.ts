@@ -21,6 +21,7 @@ import {
   getRun,
   listRunItems,
   listRuns,
+  markRunCountsStale,
   observeQueueRun,
   ownerJobs,
   reportedQueueJobs,
@@ -1099,7 +1100,7 @@ export class SqlQueueStore {
     return this.runReads({ take, skip, foldNightly });
   }
 
-  /** A run's page polls this; an unfinished run is recounted from its jobs, so it is shared like `listRuns`. */
+  /** A run's page polls this; a run not yet tallied (FL-1656) is counted from its jobs, so it is shared like `listRuns`. */
   private readonly singleRunReads = costReusedRead((runId: string) => getRun(this.db, runId));
 
   getRun(runId: string) {
@@ -1273,6 +1274,8 @@ export class SqlQueueStore {
         sql`and lower(j.data ->> 'id') collate "C" = any(${entityIds.map((id) => id.toLowerCase())}::text[])`
       : sql`and j."availableAt" <> ${HELD}`;
     await this.cancel(queue, states, about);
+    // a whole queue emptied by hand; removing single items leaves the stored tallies to their next turn
+    if (!entityIds) await markRunCountsStale(this.db);
     this.forgetRunReads();
   }
 
@@ -1388,6 +1391,7 @@ export class SqlQueueStore {
         countsPhotos ? { roots: items, exclude } : { jobIds: items, exclude },
       );
       await rewriteFailureCauses(tx, runId);
+      await markRunCountsStale(tx, [runId]);
       return countsPhotos ? photos : jobs;
     });
     if (photos !== undefined) this.forgetRunReads();
@@ -1432,6 +1436,7 @@ export class SqlQueueStore {
         tx,
       );
       await rewriteFailureCauses(tx, runId);
+      await markRunCountsStale(tx, [runId]);
       return stopped.photos;
     });
     if (photos !== undefined) this.forgetRunReads();
@@ -1457,6 +1462,7 @@ export class SqlQueueStore {
         returning 1
       ) select (select count(distinct coalesce(root, "assetId"::text)) from picked)::int photos,
         (select count(*) from written) "written"`.execute(this.db);
+    await markRunCountsStale(this.db);
     this.forgetRunReads();
     return stopped.photos;
   }
@@ -1502,6 +1508,7 @@ export class SqlQueueStore {
         const runIds = [...new Set(rows.flatMap(({ runId }) => (runId ? [runId] : [])))];
         if (runIds.length > 0) {
           await sql`update job_run set "finishedAt" = null where id = any(${runIds}::uuid[])`.execute(tx);
+          await markRunCountsStale(tx, runIds);
         }
         if (rows.length > 0) this.wake();
         return rows.length;
