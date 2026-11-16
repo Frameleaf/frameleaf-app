@@ -158616,6 +158616,26 @@
             "description": "Whether the queue is paused",
             "type": "boolean"
           },
+          "items": {
+            "description": "Photos and videos this run made ready, of those it has: a queue that runs several jobs for each (thumbnails) counts more jobs than photos",
+            "properties": {
+              "done": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "total": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "done",
+              "total"
+            ],
+            "type": "object"
+          },
           "lastProgressAt": {
             "format": "date-time",
             "nullable": true,

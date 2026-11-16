@@ -161,6 +161,7 @@ export class RunningJobService {
         waiting: run.waiting,
         processed: run.processed,
         total: run.processed + run.active + run.waiting,
+        ...(run.items && { items: run.items }),
         startedAt: run.startedAt ? run.startedAt.toISOString() : null,
         unavailable: false,
         state:

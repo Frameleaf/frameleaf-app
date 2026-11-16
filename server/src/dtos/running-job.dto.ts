@@ -35,6 +35,12 @@ const QueueRunSchema = z
     waiting: z.int().min(0).describe('Jobs waiting to start, including those held by a paused queue'),
     processed: z.int().min(0).describe('Jobs finished, completed or failed, since this run started'),
     total: z.int().min(0).describe('processed + active + waiting'),
+    items: z
+      .object({ done: z.int().min(0), total: z.int().min(0) })
+      .optional()
+      .describe(
+        'Photos and videos this run made ready, of those it has: a queue that runs several jobs for each (thumbnails) counts more jobs than photos',
+      ),
     startedAt: z.string().meta({ format: 'date-time' }).nullable().describe('When this run was first seen with work'),
   })
   .meta({ id: 'QueueRunDto' });

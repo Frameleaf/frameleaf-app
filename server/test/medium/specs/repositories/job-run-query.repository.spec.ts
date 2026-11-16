@@ -352,6 +352,29 @@ it('counts jobs outside a run that finished since the oldest waiting one was que
   expect(await observeQueueRun(db, 'test')).toMatchObject({ active: 1, waiting: 1, processed: 2 });
 });
 
+it("counts a queue's photos apart from the other jobs it runs for them", async () => {
+  const id = await run();
+  // Each finished thumbnail queues a colors job in the same queue; a person's face thumbnail is there too.
+  await job(id, 'a', 'Thumbnail', { state: 'completed' });
+  await job(id, 'a', 'Colors', { state: 'completed' });
+  await job(id, 'b', 'Thumbnail', { state: 'failed' });
+  await job(id, 'c', 'Thumbnail', { state: 'active' });
+  await job(id, 'd', 'Thumbnail');
+  await job(id, null, 'PersonThumbnail');
+  await sql`insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", state, "createdAt", "finishedAt")
+    values (${randomUUID()}::uuid, 'test', 'Thumbnail', '{}', true, false, 1000, 'completed', now(), now()),
+      (${randomUUID()}::uuid, 'test', 'Colors', '{}', true, false, 1000, 'completed', now(), now()),
+      (${randomUUID()}::uuid, 'test', 'Colors', '{}', true, false, 1000, 'pending', now() - interval '1 minute', null)`.execute(
+    db,
+  );
+  expect(await observeQueueRun(db, 'test', 'Thumbnail')).toMatchObject({
+    processed: 5,
+    waiting: 3,
+    items: { done: 3, total: 5 },
+  });
+  expect((await observeQueueRun(db, 'test')).items).toBeNull();
+});
+
 it('counts live queue jobs of a run already marked finished', async () => {
   const id = await run();
   await job(id, 'root', 'Thumbnail', { state: 'active' });
