@@ -327,7 +327,10 @@ export const restorePlan = (options: {
   }
   return {
     files: files.toSorted((a, b) => compareCodeUnits(a.fileKey, b.fileKey)),
-    destination: inPlace ? null : (options.folder ?? restoreRoot),
+    // chosen paths put back in place report no folder, unless one of them had to go to the restore folder
+    destination: inPlace
+      ? null
+      : (options.folder ?? (paths && files.every((file) => file.inPlace) ? null : restoreRoot)),
   };
 };
 

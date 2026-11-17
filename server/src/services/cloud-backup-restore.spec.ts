@@ -157,6 +157,7 @@ describe('cloud backup restore (FL-164)', () => {
         // outside the media folder: never written there
         ['/data/frameleaf/restore/op-1/asset-2/original-IMG_2.jpg', false],
       ]);
+      expect(byPath(['/data/library/owner-1/2026']).destination).toBeNull();
       const elsewhere = byPath(['/data/library/owner-1/2026'], '/mnt/photos/back');
       expect(places(elsewhere)).toEqual([
         ['/mnt/photos/back/2026/IMG_1.jpg', false],
