@@ -1541,6 +1541,10 @@ jobs:
             git diff -- packages/locked-crypto/dist
             exit 1
           fi
+      - name: Test and type-check backup-core
+        run: |
+          pnpm --filter @frameleaf/backup-core test
+          pnpm --filter @frameleaf/backup-core check
       - name: Run existing migrations
         run: pnpm --filter frameleaf migrations:run
       - name: Capture exact canonical catalog for reconciliation

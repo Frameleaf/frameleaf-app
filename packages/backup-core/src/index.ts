@@ -1,0 +1,14 @@
+export { backup } from './backup.js';
+export type { BackupOptions, BackupProblem, BackupResult } from './backup.js';
+export { DEFAULT_CHUNKER, chunkStream, cutPoint, gearTable } from './chunker.js';
+export type { ChunkerParams } from './chunker.js';
+export { FORMAT, UnsealError, VERSION, blobId, deriveKeys } from './keys.js';
+export type { RepositoryKeys } from './keys.js';
+export { MissingBlobError, PACK_TARGET, Repository } from './repository.js';
+export type { Location, RepositoryConfig, Snapshot } from './repository.js';
+export { find, listFolder, readFile, restore } from './restore.js';
+export type { RestoreOptions, RestoreResult } from './restore.js';
+export { dirStore, memoryStore } from './store.js';
+export type { ByteRange, Store, StoredObject } from './store.js';
+export { fsSource } from './tree.js';
+export type { Entry, EntryType, Source, SourceEntry } from './tree.js';

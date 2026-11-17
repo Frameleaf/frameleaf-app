@@ -1,0 +1,109 @@
+import { createReadStream } from 'node:fs';
+import { lstat, readdir, readlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { Repository } from './repository.js';
+
+export type EntryType = 'file' | 'dir' | 'symlink';
+
+/** What a source says about one name in a folder. */
+export interface SourceEntry {
+  name: string;
+  type: EntryType;
+  mode: number;
+  uid: number;
+  gid: number;
+  /** Milliseconds since 1970. */
+  mtime: number;
+  size: number;
+  /** Symlinks only. */
+  target?: string;
+  /**
+   * Anything that changes whenever the content might have. When a file's key is the same as last time,
+   * it isn't read again. The photo server passes the checksum it already holds.
+   */
+  key?: string;
+}
+
+/**
+ * Where a backup reads from: a folder on disk, or a tree the caller makes up (the photo server offers
+ * its library, a database dump and a catalog as one tree). Paths are lists of names, never joined strings.
+ */
+export interface Source {
+  list(path: string[]): Promise<SourceEntry[]>;
+  read(path: string[]): AsyncIterable<Uint8Array>;
+}
+
+/** One name in a stored folder. */
+export interface Entry extends Omit<SourceEntry, 'size'> {
+  size: number;
+  /** Files: the ids of the chunks, in order. */
+  chunks?: string[];
+  /** Very large files: ids of blobs that each hold a run of chunk ids, 32 bytes apiece. */
+  lists?: string[];
+  /** Folders: the id of the tree blob. */
+  tree?: string;
+}
+
+export const encodeTree = (entries: Entry[]) =>
+  Buffer.from(
+    JSON.stringify({ v: 1, entries: entries.toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) }),
+  );
+
+export async function readTree(repository: Repository, id: string): Promise<Entry[]> {
+  return (JSON.parse((await repository.readBlob(id)).toString()) as { entries: Entry[] }).entries;
+}
+
+/** The chunk ids of a file, in order. */
+export async function fileChunks(repository: Repository, entry: Entry): Promise<string[]> {
+  if (!entry.lists) {
+    return entry.chunks ?? [];
+  }
+  const ids: string[] = [];
+  for (const list of entry.lists) {
+    const data = await repository.readBlob(list);
+    for (let at = 0; at < data.length; at += 32) {
+      ids.push(data.toString('hex', at, at + 32));
+    }
+  }
+  return ids;
+}
+
+/** A folder on disk. Sockets, devices and pipes are left out: there is nothing in them to keep. */
+export function fsSource(root: string): Source {
+  return {
+    async list(path) {
+      const folder = join(root, ...path);
+      const entries: SourceEntry[] = [];
+      for (const name of await readdir(folder)) {
+        const info = await lstat(join(folder, name));
+        const type: EntryType | null = info.isFile()
+          ? 'file'
+          : info.isDirectory()
+            ? 'dir'
+            : info.isSymbolicLink()
+              ? 'symlink'
+              : null;
+        if (!type) {
+          continue;
+        }
+        entries.push({
+          name,
+          type,
+          mode: info.mode & 0o7777,
+          uid: info.uid,
+          gid: info.gid,
+          mtime: Math.floor(info.mtimeMs),
+          size: type === 'file' ? info.size : 0,
+          ...(type === 'symlink' ? { target: await readlink(join(folder, name)) } : {}),
+          ...(type === 'file'
+            ? { key: `${info.ino}:${info.size}:${Math.floor(info.mtimeMs)}:${Math.floor(info.ctimeMs)}` }
+            : {}),
+        });
+      }
+      return entries;
+    },
+    read(path) {
+      return createReadStream(join(root, ...path), { highWaterMark: 1024 * 1024 });
+    },
+  };
+}
