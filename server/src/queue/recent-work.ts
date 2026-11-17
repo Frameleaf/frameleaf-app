@@ -5,6 +5,7 @@ import {
   type FailureRoot,
   type FailureScope,
   type Header,
+  LIVE_TALLY,
   ORIGIN_COLUMNS,
   RUN_OUTCOMES,
   RUN_OWNER,
@@ -58,7 +59,7 @@ const RUN_SOURCE = sql`job_run r
     and l.id = case when pg_input_is_valid(r.selection->>'libraryId', 'uuid') then (r.selection->>'libraryId')::uuid end
   ${RUN_OWNER}`;
 const HEADER_COLUMNS = sql`r.id, r.kind, r."createdAt", r."finishedAt", r."enumerationDone", r.selection->'holds' holds,
-  r.summary, ${SUMMARIZED} summarized, l.name "libraryName",
+  r.summary, ${SUMMARIZED} summarized, ${LIVE_TALLY} live, l.name "libraryName",
   coalesce(o.status = 'failed' and o."errorCode" = any(${SOURCE_REFUSALS}::text[]), false) refused, ${ORIGIN_COLUMNS}`;
 /** A run that may have left something over: still open, not summed up, or its summary says something failed. */
 const FAILING = sql<boolean>`(r."finishedAt" is null or not ${SUMMARIZED}
