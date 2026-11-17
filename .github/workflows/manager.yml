@@ -42,7 +42,8 @@ concurrency:
 jobs:
   native-windows-bootstrap:
     name: Manager native bootstrap (Windows)
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'pull_request'
+    # Forgejo has no Windows runner (FL-1678).
+    if: github.server_url == 'https://github.com' && github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'pull_request'
     runs-on: windows-latest
     timeout-minutes: 10
     defaults:
@@ -240,7 +241,7 @@ jobs:
         env:
           CANDIDATE_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ inputs.tag }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
         run: |-
           set -euo pipefail
           if [[ ! "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -274,8 +275,8 @@ jobs:
         id: publish
         env:
           SOURCE_SHA: ${{ github.sha }}
-          REGISTRY_TOKEN: ${{ github.token }}
-          ACTOR: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          ACTOR: ${{ vars.GHCR_USERNAME || github.actor }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           RELEASE_TAG: ${{ inputs.tag }}
@@ -354,6 +355,8 @@ jobs:
           cosign verify-attestation --key cosign.pub \
             --type https://frameleaf.net/attestations/manager-release/v1 "$image@$digest" > /dev/null
       - name: Attest published build provenance
+        # GitHub-only attestation store; on Forgejo the cosign signature stands alone (FL-1678).
+        if: github.server_url == 'https://github.com'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/frameleaf/frameleaf-manager
@@ -363,7 +366,7 @@ jobs:
         env:
           DIGEST: ${{ steps.publish.outputs.digest }}
           RELEASE_TAG: ${{ inputs.tag }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
           SOURCE_SHA: ${{ github.sha }}
         run: |-
           set -euo pipefail
@@ -405,3 +408,18 @@ jobs:
           name: manager-publication
           path: ${{ runner.temp }}/manager-manifest.json
           if-no-files-found: error
+
+  # FL-1678: copy the published image to Docker Hub and Forgejo (GHCR keeps it too).
+  mirror:
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' && github.server_url != 'https://github.com' }}
+    uses: ./.github/workflows/mirror-images.yml
+    with:
+      refs: frameleaf-manager:${{ inputs.tag }} frameleaf-manager:latest
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      REGISTRY_PUBLISH_TOKEN: ${{ secrets.REGISTRY_PUBLISH_TOKEN }}
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
