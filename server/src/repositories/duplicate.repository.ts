@@ -133,6 +133,19 @@ export class DuplicateRepository {
     `.execute(this.db);
     return rows.length === sources.length ? rows[0]?.motionId : undefined;
   }
+  /**
+   * FL-1660: the copies whose original cannot be relied on: offline, or with an open missing or corrupt
+   * health finding (the `damaged` predicate of `MediaRecoveryRepository.candidates`).
+   */
+  async getDamagedIds(assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) return new Set();
+    const { rows } = await sql<{ id: string }>`
+      select a.id from asset a where a.id = any(${assetIds}::uuid[]) and (a."isOffline" or exists (
+        select 1 from asset_health h where h."assetId" = a.id and h.category in ('missing', 'corrupt')
+          and h."resolvedAt" is null and h.status not in ('resolved', 'relinked', 'trashed')))
+    `.execute(this.db);
+    return new Set(rows.map(({ id }) => id));
+  }
   /** Read-only owner projection using the same eligibility predicates as getAll. */
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
   getSyncGroups(userId: string, options: DuplicatePrivacyOptions = {}, groupId?: string) {

@@ -100,14 +100,19 @@ export class DuplicateService extends BaseService {
 
     const duplicates = await this.duplicateRepository.getAll(auth.user.id, this.nsfwOptions(auth));
     let history: Set<string> | undefined;
+    let damaged: Set<string> | undefined;
     try {
-      history = await this.assetDevelopRepository.getAssetIdsWithHistory(
-        duplicates.flatMap(({ assets }) => assets.map(({ id }) => id)),
-      );
+      const ids = duplicates.flatMap(({ assets }) => assets.map(({ id }) => id));
+      [history, damaged] = await Promise.all([
+        this.assetDevelopRepository.getAssetIdsWithHistory(ids),
+        // FL-1660: a copy whose file is offline, missing or corrupt is never the suggested keeper
+        this.duplicateRepository.getDamagedIds(ids),
+      ]);
     } catch {
       // Recommendations stay visible, but missing evidence never permits unattended disposal.
+      history = undefined;
     }
-    const keepOptions = await this.getKeepOptions(auth, duplicates, history);
+    const keepOptions = { ...(await this.getKeepOptions(auth, duplicates, history)), damagedIds: damaged };
     return Promise.all(
       duplicates.map(async ({ duplicateId, assets }) => {
         const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
@@ -128,9 +133,10 @@ export class DuplicateService extends BaseService {
         const prospective = mappedAssets.map((asset) =>
           motionId && suggestedKeepAssetIds.includes(asset.id) ? { ...asset, livePhotoVideoId: motionId } : asset,
         );
-        const reviewRequiredReasons = history
-          ? duplicateDisposalReasons(prospective, suggestedKeepAssetIds, history)
-          : ['evidence-unavailable'];
+        const reviewRequiredReasons =
+          history && damaged
+            ? duplicateDisposalReasons(prospective, suggestedKeepAssetIds, history, damaged)
+            : ['evidence-unavailable'];
         return {
           duplicateId,
           assets: mappedAssets,
@@ -328,13 +334,17 @@ export class DuplicateService extends BaseService {
     const prospective = duplicateGroup.assets.map((asset) =>
       motionId && idsToKeep.includes(asset.id) ? { ...asset, livePhotoVideoId: motionId } : asset,
     );
-    const reviewRequiredReasons = duplicateDisposalReasons(prospective, idsToKeep, history);
+    // FL-1660: read under the resolution lock, so a finding recorded since the review still counts
+    const damaged = await this.duplicateRepository.getDamagedIds([...groupAssetIds]);
+    const reviewRequiredReasons = duplicateDisposalReasons(prospective, idsToKeep, history, damaged);
     if (reviewRequiredReasons.length > 0) {
       return {
         id: duplicateId,
         success: false,
         error: BulkIdErrorReason.VALIDATION,
-        errorMessage: 'Keep copies with edits or distinct Live Photo motion; review them before disposal',
+        errorMessage: reviewRequiredReasons.includes('damaged-keeper')
+          ? 'The kept copy is damaged or missing; keep a healthy copy as well'
+          : 'Keep copies with edits or distinct Live Photo motion; review them before disposal',
       };
     }
 
