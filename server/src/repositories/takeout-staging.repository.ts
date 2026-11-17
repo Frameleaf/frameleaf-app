@@ -125,6 +125,53 @@ export class TakeoutStagingRepository {
     await rm(path.join(this.root(), ownerId), { recursive: true, force: true });
   }
 
+  /**
+   * Remove what no import owns any more: the folder of an import whose row is gone (a delete that
+   * stopped before its files were removed), and `.part` files last written before `partBefore`,
+   * which a crash left half-written. Staged copies of an import that still exists are never touched.
+   * `existing` answers which of the import ids it is given still have a row.
+   */
+  async sweep(
+    existing: (importIds: string[]) => Promise<string[]>,
+    partBefore: number,
+  ): Promise<{ imports: number; parts: number }> {
+    const list = (directory: string) => readdir(directory, { withFileTypes: true }).catch(() => [] as Dirent[]);
+    const folders: Array<{ id: string; directory: string }> = [];
+    for (const owner of await list(this.root())) {
+      if (!owner.isDirectory() || !UUID.test(owner.name)) {
+        continue;
+      }
+      for (const entry of await list(path.join(this.root(), owner.name))) {
+        if (entry.isDirectory() && UUID.test(entry.name)) {
+          folders.push({ id: entry.name.toLowerCase(), directory: path.join(this.root(), owner.name, entry.name) });
+        }
+      }
+    }
+    const removed = { imports: 0, parts: 0 };
+    if (folders.length === 0) {
+      return removed;
+    }
+    const known = new Set((await existing(folders.map(({ id }) => id))).map((id) => id.toLowerCase()));
+    for (const { id, directory } of folders) {
+      if (!known.has(id)) {
+        await rm(directory, { recursive: true, force: true });
+        removed.imports++;
+        continue;
+      }
+      for (const entry of await list(directory)) {
+        const filePath = path.join(directory, entry.name);
+        // A file that went away since the listing has no time and is left alone.
+        const written =
+          entry.isFile() && entry.name.endsWith('.part') ? await lstat(filePath).catch(() => {}) : undefined;
+        if (written && written.mtimeMs < partBefore) {
+          await rm(filePath, { force: true });
+          removed.parts++;
+        }
+      }
+    }
+    return removed;
+  }
+
   /** Bytes an unprivileged process may still write to the volume holding `directory`. */
   async freeBytes(directory: string) {
     const stats = await getDiskUsage(directory);

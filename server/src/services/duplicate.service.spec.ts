@@ -45,6 +45,7 @@ describe(DuplicateService.name, () => {
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DuplicateService));
     mocks.assetDevelop.getAssetIdsWithHistory.mockResolvedValue(new Set());
+    mocks.duplicateRepository.getDamagedIds.mockResolvedValue(new Set());
     mocks.duplicateRepository.findMotionTransfer.mockResolvedValue(undefined);
     mocks.duplicateRepository.withResolutionLock.mockImplementation((_id, callback) => callback(undefined as never));
   });
@@ -93,6 +94,49 @@ describe(DuplicateService.name, () => {
       mocks.duplicateRepository.getAll.mockResolvedValue([{ duplicateId: 'group', assets: [getForDuplicate(asset)] }]);
       mocks.assetDevelop.getAssetIdsWithHistory.mockRejectedValue(new Error('unavailable'));
       const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.reviewRequiredReasons).toEqual(['evidence-unavailable']);
+    });
+
+    it('never suggests a damaged copy, and suggests none when every copy is damaged (FL-1660)', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      const raw = AssetFactory.from({ originalFileName: 'capture.DNG' }).exif().build();
+      const jpeg = AssetFactory.from({ originalFileName: 'capture.jpg' }).exif().build();
+      const assets = [getForDuplicate(raw), getForDuplicate(jpeg)];
+      mocks.duplicateRepository.getAll.mockResolvedValue([{ duplicateId: 'group', assets }]);
+
+      mocks.duplicateRepository.getDamagedIds.mockResolvedValue(new Set([raw.id]));
+      let [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.suggestedKeepAssetIds).toEqual([jpeg.id]);
+      expect(group.reviewRequiredReasons).toBeUndefined();
+
+      mocks.duplicateRepository.getDamagedIds.mockResolvedValue(new Set([raw.id, jpeg.id]));
+      [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.suggestedKeepAssetIds).toEqual([]);
+    });
+
+    it('requires review when file health evidence is unavailable (FL-1660)', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      const assets = [AssetFactory.from().exif().build(), AssetFactory.from().exif().build()];
+      mocks.duplicateRepository.getAll.mockResolvedValue([
+        { duplicateId: 'group', assets: assets.map((asset) => getForDuplicate(asset)) },
+      ]);
+      mocks.duplicateRepository.getDamagedIds.mockRejectedValue(new Error('unavailable'));
+      const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.suggestedKeepAssetIds).toEqual([]);
+      expect(group.reviewRequiredReasons).toEqual(['evidence-unavailable']);
+    });
+
+    it('keeps file health evidence when Develop history is unavailable (FL-1660)', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      const raw = AssetFactory.from({ originalFileName: 'capture.DNG' }).exif().build();
+      const jpeg = AssetFactory.from({ originalFileName: 'capture.jpg' }).exif().build();
+      mocks.duplicateRepository.getAll.mockResolvedValue([
+        { duplicateId: 'group', assets: [getForDuplicate(raw), getForDuplicate(jpeg)] },
+      ]);
+      mocks.assetDevelop.getAssetIdsWithHistory.mockRejectedValue(new Error('unavailable'));
+      mocks.duplicateRepository.getDamagedIds.mockResolvedValue(new Set([raw.id]));
+      const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.suggestedKeepAssetIds).toEqual([jpeg.id]);
       expect(group.reviewRequiredReasons).toEqual(['evidence-unavailable']);
     });
 
@@ -469,6 +513,53 @@ describe(DuplicateService.name, () => {
         expect(mocks.album.addAssetIdsToAlbums).not.toHaveBeenCalled();
       },
     );
+
+    it('skips a group whose only healthy copy would be trashed, and resolves the rest (FL-1660)', async () => {
+      const damaged = AssetFactory.create();
+      const healthy = AssetFactory.create();
+      const keeper = AssetFactory.create();
+      const disposable = AssetFactory.create();
+      mocks.access.duplicate.checkOwnerAccess.mockImplementation((_owner, ids) => Promise.resolve(ids));
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_owner, ids) => Promise.resolve(ids));
+      mocks.duplicateRepository.get.mockImplementation((id) =>
+        Promise.resolve({
+          duplicateId: id,
+          assets: (id === 'group-1' ? [damaged, healthy] : [keeper, disposable]) as unknown as MapAsset[],
+        }),
+      );
+      mocks.duplicateRepository.getDamagedIds.mockResolvedValue(new Set([damaged.id]));
+      const results = await sut.resolve(authStub.admin, {
+        groups: [
+          { duplicateId: 'group-1', keepAssetIds: [damaged.id], trashAssetIds: [healthy.id] },
+          { duplicateId: 'group-2', keepAssetIds: [keeper.id], trashAssetIds: [disposable.id] },
+        ],
+      });
+      expect(results).toEqual([
+        expect.objectContaining({ id: 'group-1', success: false, error: BulkIdErrorReason.VALIDATION }),
+        { id: 'group-2', success: true },
+      ]);
+      expect(mocks.asset.updateAll).not.toHaveBeenCalledWith([healthy.id], expect.anything());
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(
+        [disposable.id],
+        expect.objectContaining({ duplicateId: null }),
+      );
+    });
+
+    it('trashes a damaged copy when a healthy one is kept (FL-1660)', async () => {
+      const damaged = AssetFactory.create();
+      const healthy = AssetFactory.create();
+      mocks.access.duplicate.checkOwnerAccess.mockResolvedValue(new Set(['group-1']));
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_owner, ids) => Promise.resolve(ids));
+      mocks.duplicateRepository.get.mockResolvedValue({
+        duplicateId: 'group-1',
+        assets: [damaged, healthy] as unknown as MapAsset[],
+      });
+      mocks.duplicateRepository.getDamagedIds.mockResolvedValue(new Set([damaged.id]));
+      const [result] = await sut.resolve(authStub.admin, {
+        groups: [{ duplicateId: 'group-1', keepAssetIds: [healthy.id], trashAssetIds: [damaged.id] }],
+      });
+      expect(result.success).toBe(true);
+    });
 
     it.each([AssetType.Image, AssetType.Video])('protects historical %s edits even after reset', async (type) => {
       const keeper = AssetFactory.create();

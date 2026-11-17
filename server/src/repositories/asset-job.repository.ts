@@ -57,6 +57,16 @@ const convertsOwnVideo = sql<boolean>`NOT EXISTS (
   WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
 )`;
 /**
+ * A partner copy takes its live source's search embedding and never reads the picture itself, so its job is
+ * only skipped until the source has one; the source's postprocessing then queues the copy.
+ */
+const waitsForSourceEmbedding = sql<boolean>`EXISTS (
+  SELECT 1 FROM public.asset_origin origin
+  JOIN asset source ON source.id = origin."sourceAssetId"
+  WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
+    AND NOT EXISTS (SELECT 1 FROM public.smart_search WHERE smart_search."assetId" = source.id)
+)`;
+/**
  * FL-1287: a partner copy that rendered its own thumbnail or preview before copies shared them, while its live
  * source has one at another path. Its job (the nightly "Missing" scan) links the source's and deletes its own.
  */
@@ -641,7 +651,9 @@ export class AssetJobRepository {
     return this.assetsWithPreviews()
       .select(['asset.id'])
       .$if(!force, (qb) =>
-        qb.where((eb) => eb.not((eb) => eb.exists(eb.selectFrom('smart_search').whereRef('assetId', '=', 'asset.id')))),
+        qb
+          .where((eb) => eb.not((eb) => eb.exists(eb.selectFrom('smart_search').whereRef('assetId', '=', 'asset.id'))))
+          .where(sql<boolean>`NOT ${waitsForSourceEmbedding}`),
       );
   }
 

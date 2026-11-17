@@ -220,59 +220,72 @@ limit
 begin
 set
   local hnsw.ef_search = 100
-select
-  "asset".*,
-  exists (
+set
+  local hnsw.iterative_scan = relaxed_order
+with
+  "candidate" as materialized (
     select
-      1
+      "asset".*,
+      exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) as "isLocked",
+      (smart_search.embedding <=> $1) as "visualDistance"
     from
-      asset_lock
+      "asset"
+      inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+      inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
     where
-      asset_lock."assetId" = "asset"."id"
-  ) as "isLocked",
+      "asset"."libraryScope" in ($2, $3)
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+      and "asset"."fileCreatedAt" >= $4
+      and "asset_exif"."lensModel" = $5
+      and "asset"."ownerId" = any ($6::uuid[])
+      and asset."isFavorite" = $7
+      and "asset"."deletedAt" is null
+    order by
+      (smart_search.embedding <=> $8)
+    limit
+      $9
+  )
+select
+  "candidate".*,
   (
-    (smart_search.embedding <=> $1) - $2 * coalesce(
+    candidate."visualDistance" - $10 * coalesce(
       greatest(
         0,
-        $3 - (
+        $11 - (
           select
-            embedding <=> $4
+            embedding <=> $12
           from
             smart_search_description
           where
-            "assetId" = asset.id
+            "assetId" = candidate.id
         )
       ),
       0
     )
-  ) as "searchDistance",
-  (smart_search.embedding <=> $5) as "visualDistance"
+  ) as "searchDistance"
 from
-  "asset"
-  inner join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
-  inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
-where
-  "asset"."libraryScope" in ($6, $7)
-  and not exists (
-    select
-      1
-    from
-      asset_lock
-    where
-      asset_lock."assetId" = "asset"."id"
-  )
-  and "asset"."fileCreatedAt" >= $8
-  and "asset_exif"."lensModel" = $9
-  and "asset"."ownerId" = any ($10::uuid[])
-  and asset."isFavorite" = $11
-  and "asset"."deletedAt" is null
+  "candidate"
 order by
   "searchDistance",
-  "asset"."id" asc
+  "candidate"."id" asc
 limit
-  $12
-offset
   $13
+offset
+  $14
 commit
 
 -- SearchRepository.getUnrelatedSearchDistance
@@ -527,12 +540,18 @@ order by
   "asset_exif"."city"
 
 -- SearchRepository.getVisitedLandmarks
+begin
+set
+  local enable_presorted_aggregate = off
 with
   "matched" as (
     select
       "asset_landmark"."assetId",
       "asset_landmark"."landmarkId",
       "asset_landmark"."inference",
+      "asset"."localDateTime",
+      "asset"."width",
+      "asset"."height",
       row_number() over (
         partition by
           asset_landmark."assetId"
@@ -1212,17 +1231,17 @@ select
   "landmark"."longitude",
   "landmark"."radiusM",
   count(*) as "assetCount",
-  min("asset"."localDateTime") as "firstTakenAt",
-  max("asset"."localDateTime") as "lastTakenAt",
+  min("matched"."localDateTime") as "firstTakenAt",
+  max("matched"."localDateTime") as "lastTakenAt",
   (
     array_agg(
-      asset.id
+      matched."assetId"
       order by
         asset_best_photo_score.score is not null desc,
-        coalesce(asset.width::float / nullif(asset.height, 0), 1.5) >= 0.9 desc,
+        coalesce(matched.width::float / nullif(matched.height, 0), 1.5) >= 0.9 desc,
         asset_best_photo_score.score desc nulls last,
-        asset."localDateTime" desc,
-        asset.id
+        matched."localDateTime" desc,
+        matched."assetId"
     )
   ) [1] as "coverAssetId",
   mode() within group (
@@ -1249,9 +1268,8 @@ select
 from
   "matched"
   inner join "landmark" on "landmark"."id" = "matched"."landmarkId"
-  inner join "asset" on "asset"."id" = "matched"."assetId"
-  inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
-  left join "asset_best_photo_score" on "asset_best_photo_score"."assetId" = "asset"."id"
+  inner join "asset_exif" on "asset_exif"."assetId" = "matched"."assetId"
+  left join "asset_best_photo_score" on "asset_best_photo_score"."assetId" = "matched"."assetId"
 group by
   "landmark"."id"
 having
@@ -1260,6 +1278,7 @@ having
 order by
   "assetCount" desc,
   "landmark"."id"
+commit
 
 -- SearchRepository.getAssetLandmarks
 select
@@ -5211,306 +5230,345 @@ limit
 begin
 set
   local hnsw.ef_search = 100
-select
-  "asset"."id",
-  "asset"."updateId",
-  "asset"."createdAt",
-  "asset"."updatedAt",
-  "asset"."deletedAt",
-  "asset"."status",
-  "asset"."checksum",
-  "asset"."checksumAlgorithm",
-  "asset"."duplicateId",
-  "asset"."duration",
-  "asset"."fileCreatedAt",
-  "asset"."fileModifiedAt",
-  "asset"."isExternal",
-  "asset"."isFavorite",
-  "asset"."isOffline",
-  "asset"."isEdited",
-  "asset"."visibility",
-  "asset"."libraryId",
-  "asset"."libraryScope",
-  "asset"."livePhotoVideoId",
-  "asset"."localDateTime",
-  "asset"."originalFileName",
-  "asset"."originalPath",
-  "asset"."libraryPath",
-  "asset"."ownerId",
-  "asset"."stackId",
-  "asset"."thumbhash",
-  "asset"."type",
-  "asset"."width",
-  "asset"."height",
-  exists (
+set
+  local hnsw.iterative_scan = relaxed_order
+with
+  "candidate" as materialized (
     select
-      1
+      "asset"."id",
+      "asset"."updateId",
+      "asset"."createdAt",
+      "asset"."updatedAt",
+      "asset"."deletedAt",
+      "asset"."status",
+      "asset"."checksum",
+      "asset"."checksumAlgorithm",
+      "asset"."duplicateId",
+      "asset"."duration",
+      "asset"."fileCreatedAt",
+      "asset"."fileModifiedAt",
+      "asset"."isExternal",
+      "asset"."isFavorite",
+      "asset"."isOffline",
+      "asset"."isEdited",
+      "asset"."visibility",
+      "asset"."libraryId",
+      "asset"."libraryScope",
+      "asset"."livePhotoVideoId",
+      "asset"."localDateTime",
+      "asset"."originalFileName",
+      "asset"."originalPath",
+      "asset"."libraryPath",
+      "asset"."ownerId",
+      "asset"."stackId",
+      "asset"."thumbhash",
+      "asset"."type",
+      "asset"."width",
+      "asset"."height",
+      exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) as "isLocked",
+      (smart_search.embedding <=> $1) as "visualDistance"
     from
-      asset_lock
+      "asset"
+      left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+      inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
     where
-      asset_lock."assetId" = "asset"."id"
-  ) as "isLocked",
+      "asset"."libraryScope" in ($2, $3)
+      and (
+        "asset"."ownerId" = any ($4::uuid[])
+        and (
+          "asset"."ownerId" = $5::uuid
+          or (
+            "asset"."deletedAt" is null
+            and "asset"."visibility" in ('timeline', 'hidden')
+          )
+        )
+      )
+      and (
+        not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        or "asset"."ownerId" = $6::uuid
+      )
+      and (
+        "asset"."ownerId" = $7::uuid
+        or "asset"."deletedAt" is null
+      )
+      and true
+    order by
+      (smart_search.embedding <=> $8)
+    limit
+      $9
+  )
+select
+  "candidate".*,
   (
-    (smart_search.embedding <=> $1) - $2 * coalesce(
+    candidate."visualDistance" - $10 * coalesce(
       greatest(
         0,
-        $3 - (
+        $11 - (
           select
-            embedding <=> $4
+            embedding <=> $12
           from
             smart_search_description
           where
-            "assetId" = asset.id
+            "assetId" = candidate.id
         )
       ),
       0
     )
-  ) as "searchDistance",
-  (smart_search.embedding <=> $5) as "visualDistance"
+  ) as "searchDistance"
 from
-  "asset"
-  left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
-  inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
-where
-  "asset"."libraryScope" in ($6, $7)
-  and (
-    "asset"."ownerId" = any ($8::uuid[])
-    and (
-      "asset"."ownerId" = $9::uuid
-      or (
-        "asset"."deletedAt" is null
-        and "asset"."visibility" in ('timeline', 'hidden')
-      )
-    )
-  )
-  and (
-    not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
-    )
-    or "asset"."ownerId" = $10::uuid
-  )
-  and (
-    "asset"."ownerId" = $11::uuid
-    or "asset"."deletedAt" is null
-  )
-  and true
+  "candidate"
 order by
   "searchDistance",
-  "asset"."id" asc
+  "candidate"."id" asc
 limit
-  $12
-offset
   $13
+offset
+  $14
 commit
 
 -- SearchRepository.searchSmartV3 (with-filter)
 begin
 set
   local hnsw.ef_search = 100
-select
-  "asset"."id",
-  "asset"."updateId",
-  "asset"."createdAt",
-  "asset"."updatedAt",
-  "asset"."deletedAt",
-  "asset"."status",
-  "asset"."checksum",
-  "asset"."checksumAlgorithm",
-  "asset"."duplicateId",
-  "asset"."duration",
-  "asset"."fileCreatedAt",
-  "asset"."fileModifiedAt",
-  "asset"."isExternal",
-  "asset"."isFavorite",
-  "asset"."isOffline",
-  "asset"."isEdited",
-  "asset"."visibility",
-  "asset"."libraryId",
-  "asset"."libraryScope",
-  "asset"."livePhotoVideoId",
-  "asset"."localDateTime",
-  "asset"."originalFileName",
-  "asset"."originalPath",
-  "asset"."libraryPath",
-  "asset"."ownerId",
-  "asset"."stackId",
-  "asset"."thumbhash",
-  "asset"."type",
-  "asset"."width",
-  "asset"."height",
-  exists (
+set
+  local hnsw.iterative_scan = relaxed_order
+with
+  "candidate" as materialized (
     select
-      1
+      "asset"."id",
+      "asset"."updateId",
+      "asset"."createdAt",
+      "asset"."updatedAt",
+      "asset"."deletedAt",
+      "asset"."status",
+      "asset"."checksum",
+      "asset"."checksumAlgorithm",
+      "asset"."duplicateId",
+      "asset"."duration",
+      "asset"."fileCreatedAt",
+      "asset"."fileModifiedAt",
+      "asset"."isExternal",
+      "asset"."isFavorite",
+      "asset"."isOffline",
+      "asset"."isEdited",
+      "asset"."visibility",
+      "asset"."libraryId",
+      "asset"."libraryScope",
+      "asset"."livePhotoVideoId",
+      "asset"."localDateTime",
+      "asset"."originalFileName",
+      "asset"."originalPath",
+      "asset"."libraryPath",
+      "asset"."ownerId",
+      "asset"."stackId",
+      "asset"."thumbhash",
+      "asset"."type",
+      "asset"."width",
+      "asset"."height",
+      exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) as "isLocked",
+      (smart_search.embedding <=> $1) as "visualDistance"
     from
-      asset_lock
+      "asset"
+      left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+      inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
     where
-      asset_lock."assetId" = "asset"."id"
-  ) as "isLocked",
+      "asset"."libraryScope" in ($2, $3)
+      and (
+        "asset"."ownerId" = any ($4::uuid[])
+        and (
+          "asset"."ownerId" = $5::uuid
+          or (
+            "asset"."deletedAt" is null
+            and "asset"."visibility" in ('timeline', 'hidden')
+          )
+        )
+      )
+      and (
+        not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        or "asset"."ownerId" = $6::uuid
+      )
+      and (
+        "asset"."ownerId" = $7::uuid
+        or "asset"."deletedAt" is null
+      )
+      and (
+        "asset"."fileCreatedAt" < $8
+        and "asset"."fileCreatedAt" >= $9
+      )
+    order by
+      (smart_search.embedding <=> $10)
+    limit
+      $11
+  )
+select
+  "candidate".*,
   (
-    (smart_search.embedding <=> $1) - $2 * coalesce(
+    candidate."visualDistance" - $12 * coalesce(
       greatest(
         0,
-        $3 - (
+        $13 - (
           select
-            embedding <=> $4
+            embedding <=> $14
           from
             smart_search_description
           where
-            "assetId" = asset.id
+            "assetId" = candidate.id
         )
       ),
       0
     )
-  ) as "searchDistance",
-  (smart_search.embedding <=> $5) as "visualDistance"
+  ) as "searchDistance"
 from
-  "asset"
-  left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
-  inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
-where
-  "asset"."libraryScope" in ($6, $7)
-  and (
-    "asset"."ownerId" = any ($8::uuid[])
-    and (
-      "asset"."ownerId" = $9::uuid
-      or (
-        "asset"."deletedAt" is null
-        and "asset"."visibility" in ('timeline', 'hidden')
-      )
-    )
-  )
-  and (
-    not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
-    )
-    or "asset"."ownerId" = $10::uuid
-  )
-  and (
-    "asset"."ownerId" = $11::uuid
-    or "asset"."deletedAt" is null
-  )
-  and (
-    "asset"."fileCreatedAt" < $12
-    and "asset"."fileCreatedAt" >= $13
-  )
+  "candidate"
 order by
   "searchDistance",
-  "asset"."id" asc
+  "candidate"."id" asc
 limit
-  $14
-offset
   $15
+offset
+  $16
 commit
 
 -- SearchRepository.searchSmartV3 (cursor-offset)
 begin
 set
   local hnsw.ef_search = 100
-select
-  "asset"."id",
-  "asset"."updateId",
-  "asset"."createdAt",
-  "asset"."updatedAt",
-  "asset"."deletedAt",
-  "asset"."status",
-  "asset"."checksum",
-  "asset"."checksumAlgorithm",
-  "asset"."duplicateId",
-  "asset"."duration",
-  "asset"."fileCreatedAt",
-  "asset"."fileModifiedAt",
-  "asset"."isExternal",
-  "asset"."isFavorite",
-  "asset"."isOffline",
-  "asset"."isEdited",
-  "asset"."visibility",
-  "asset"."libraryId",
-  "asset"."libraryScope",
-  "asset"."livePhotoVideoId",
-  "asset"."localDateTime",
-  "asset"."originalFileName",
-  "asset"."originalPath",
-  "asset"."libraryPath",
-  "asset"."ownerId",
-  "asset"."stackId",
-  "asset"."thumbhash",
-  "asset"."type",
-  "asset"."width",
-  "asset"."height",
-  exists (
+set
+  local hnsw.iterative_scan = relaxed_order
+with
+  "candidate" as materialized (
     select
-      1
+      "asset"."id",
+      "asset"."updateId",
+      "asset"."createdAt",
+      "asset"."updatedAt",
+      "asset"."deletedAt",
+      "asset"."status",
+      "asset"."checksum",
+      "asset"."checksumAlgorithm",
+      "asset"."duplicateId",
+      "asset"."duration",
+      "asset"."fileCreatedAt",
+      "asset"."fileModifiedAt",
+      "asset"."isExternal",
+      "asset"."isFavorite",
+      "asset"."isOffline",
+      "asset"."isEdited",
+      "asset"."visibility",
+      "asset"."libraryId",
+      "asset"."libraryScope",
+      "asset"."livePhotoVideoId",
+      "asset"."localDateTime",
+      "asset"."originalFileName",
+      "asset"."originalPath",
+      "asset"."libraryPath",
+      "asset"."ownerId",
+      "asset"."stackId",
+      "asset"."thumbhash",
+      "asset"."type",
+      "asset"."width",
+      "asset"."height",
+      exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      ) as "isLocked",
+      (smart_search.embedding <=> $1) as "visualDistance"
     from
-      asset_lock
+      "asset"
+      left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+      inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
     where
-      asset_lock."assetId" = "asset"."id"
-  ) as "isLocked",
+      "asset"."libraryScope" in ($2, $3)
+      and (
+        "asset"."ownerId" = any ($4::uuid[])
+        and (
+          "asset"."ownerId" = $5::uuid
+          or (
+            "asset"."deletedAt" is null
+            and "asset"."visibility" in ('timeline', 'hidden')
+          )
+        )
+      )
+      and (
+        not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        or "asset"."ownerId" = $6::uuid
+      )
+      and (
+        "asset"."ownerId" = $7::uuid
+        or "asset"."deletedAt" is null
+      )
+      and true
+    order by
+      (smart_search.embedding <=> $8)
+    limit
+      $9
+  )
+select
+  "candidate".*,
   (
-    (smart_search.embedding <=> $1) - $2 * coalesce(
+    candidate."visualDistance" - $10 * coalesce(
       greatest(
         0,
-        $3 - (
+        $11 - (
           select
-            embedding <=> $4
+            embedding <=> $12
           from
             smart_search_description
           where
-            "assetId" = asset.id
+            "assetId" = candidate.id
         )
       ),
       0
     )
-  ) as "searchDistance",
-  (smart_search.embedding <=> $5) as "visualDistance"
+  ) as "searchDistance"
 from
-  "asset"
-  left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
-  inner join "smart_search" on "asset"."id" = "smart_search"."assetId"
-where
-  "asset"."libraryScope" in ($6, $7)
-  and (
-    "asset"."ownerId" = any ($8::uuid[])
-    and (
-      "asset"."ownerId" = $9::uuid
-      or (
-        "asset"."deletedAt" is null
-        and "asset"."visibility" in ('timeline', 'hidden')
-      )
-    )
-  )
-  and (
-    not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
-    )
-    or "asset"."ownerId" = $10::uuid
-  )
-  and (
-    "asset"."ownerId" = $11::uuid
-    or "asset"."deletedAt" is null
-  )
-  and true
+  "candidate"
 order by
   "searchDistance",
-  "asset"."id" asc
+  "candidate"."id" asc
 limit
-  $12
-offset
   $13
+offset
+  $14
 commit
 
 -- SearchRepository.searchStatisticsV3 (baseline)
