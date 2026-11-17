@@ -405,7 +405,7 @@ export const readManifestSection = <T>(section: unknown, schema: z.ZodType<T>): 
 /** The manifest written to `m/<ISO>.json.gz`: asset id → its files, plus profile images and the dump. */
 export type CloudBackupManifest = {
   format: typeof CLOUD_BACKUP_MANIFEST_FORMAT;
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   instanceId: string;
   createdAt: string;
   database: { key: string; sha256: string; size: number } | null;

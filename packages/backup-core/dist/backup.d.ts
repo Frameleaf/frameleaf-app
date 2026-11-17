@@ -16,6 +16,7 @@ export interface BackupOptions {
     time?: Date;
     packTarget?: number;
     sequence?: number;
+    snapshotId?: string;
     signal?: AbortSignal;
     onProgress?: (progress: {
         files: number;

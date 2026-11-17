@@ -157,6 +157,13 @@ export async function verify(repository: Repository, options: VerifyOptions = {}
 
 export interface PruneOptions {
   policy?: RetentionPolicy;
+  /**
+   * Chooses which backups to keep, in place of `policy`, for a caller with retention rules of its own.
+   * `snapshots` is oldest first. Whatever it answers, the newest backup is kept.
+   */
+  keep?: (snapshots: { key: string; time: string }[]) => Iterable<string>;
+  /** Works out what a prune would remove and changes nothing. */
+  dryRun?: boolean;
   now?: Date;
   /** A pack younger than this is never deleted or rewritten: it is billed for that long anyway. */
   minAgeDays?: number;
@@ -195,7 +202,19 @@ export async function prune(repository: Repository, options: PruneOptions = {}):
     const { time, tree } = await repository.readSnapshot(key);
     snapshots.push({ key, time, tree });
   }
-  const keep = retain(snapshots, options.policy ?? DEFAULT_RETENTION, now);
+  const keep = options.keep
+    ? new Set(options.keep(snapshots.map(({ key, time }) => ({ key, time }))))
+    : retain(snapshots, options.policy ?? DEFAULT_RETENTION, now);
+  // Whoever chooses, a repository is never left without its newest backup.
+  const newest = snapshots.at(-1);
+  if (newest) {
+    keep.add(newest.key);
+  }
+  for (const key of keep) {
+    if (!snapshots.some((snapshot) => snapshot.key === key)) {
+      keep.delete(key);
+    }
+  }
 
   // A kept backup with a missing piece stops the prune here: a damaged repository is never thinned.
   const live = new Set<string>();
@@ -222,6 +241,7 @@ export async function prune(repository: Repository, options: PruneOptions = {}):
   const writer = new PackWriter(repository, options.packTarget ?? PACK_TARGET);
   const remove: StoredObject[] = [];
   let repackedPacks = 0;
+  let copiedBytes = 0;
   const moves: (() => Promise<void>)[] = [];
   for (const pack of await repository.store.list('p/')) {
     if (now.getTime() - pack.modified.getTime() < minAge) {
@@ -234,6 +254,7 @@ export async function prune(repository: Repository, options: PruneOptions = {}):
     } else if (bytes < pack.size * (options.repackBelow ?? 0.5)) {
       remove.push(pack);
       repackedPacks++;
+      copiedBytes += bytes;
       moves.push(async () => {
         for (const { id, location } of blobs) {
           const range = { start: location.offset, end: location.offset + location.length };
@@ -247,6 +268,16 @@ export async function prune(repository: Repository, options: PruneOptions = {}):
   }
 
   const removedSnapshots = snapshots.filter((snapshot) => !keep.has(snapshot.key)).map((snapshot) => snapshot.key);
+  if (options.dryRun) {
+    // Nothing above changed anything. The bytes freed are an estimate: new packs add a few bytes of their own.
+    return {
+      keptSnapshots: keep.size,
+      removedSnapshots,
+      deletedPacks: remove.length,
+      repackedPacks,
+      freedBytes: remove.reduce((sum, pack) => sum + pack.size, 0) - copiedBytes,
+    };
+  }
   for (const key of removedSnapshots) {
     await repository.store.delete(key);
   }
