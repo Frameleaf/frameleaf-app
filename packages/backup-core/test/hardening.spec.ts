@@ -330,8 +330,8 @@ describe('restore', () => {
     const tree = { deep: { er: { 'letter.txt': Buffer.from('dear all') } } };
     const { repository } = await fresh();
     const { snapshot } = await backup(repository, made(tree), { packTarget });
-    // Not there yet: the destination itself is made by the restore, like the folders inside it.
-    const target = join(work, 'out');
+    // Not there yet, two folders deep: the destination is made by the restore, like the folders inside it.
+    const target = join(work, 'new', 'out');
     // New folders would come out without write permission for their owner.
     const before = process.umask(0o277);
     try {
@@ -342,6 +342,7 @@ describe('restore', () => {
     expect((await readDisk(join(target, 'deep', 'er', 'letter.txt'))).toString()).toBe('dear all');
     expect((await lstat(join(target, 'deep'))).mode & 0o777).toBe(0o755);
     expect((await lstat(target)).mode & 0o700).toBe(0o700);
+    expect((await lstat(join(work, 'new'))).mode & 0o700).toBe(0o700);
   });
 
   it('never moves something aside onto something moved aside before', async () => {
