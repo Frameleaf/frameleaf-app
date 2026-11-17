@@ -1,6 +1,7 @@
 import { Kysely } from 'kysely';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -25,16 +26,13 @@ describe('visual search for partner copies', () => {
       await ctx.newJobStatus({ assetId: id });
       await ctx.newAssetFile({ assetId: id, type: 'preview' as never, path: `/thumbs/${id}_preview.jpeg` });
     }
-    await database
-      .insertInto('asset_origin')
-      .values({
-        assetId: copy.id,
-        sourceAssetId: source.id,
-        ownerId: partner.id,
-        rootOwnerId: sharer.id,
-        partnerSharedById: sharer.id,
-      })
-      .execute();
+    await ctx.get(PartnerOriginRepository).createAssetOrigin({
+      id: copy.id,
+      sourceId: source.id,
+      ownerId: partner.id,
+      rootOwnerId: sharer.id,
+      partnerSharedById: sharer.id,
+    });
     const queued = async () =>
       (await jobs.selectionForEncodeClip(false).execute())
         .map(({ id }) => id)
