@@ -106,7 +106,9 @@ export async function restore(repository, snapshot, path, target, options = {}) 
     if (path.length > 0 && !safeName(start.name)) {
         throw new Error('This backup holds a name that cannot be restored safely');
     }
-    await mkdir(target, { recursive: true });
+    if (await mkdir(target, { recursive: true })) {
+        await chmod(target, ((await lstat(target)).mode & 0o7777) | 0o700);
+    }
     await put(start, path.length > 0 ? join(target, start.name) : target);
     return result;
 }
