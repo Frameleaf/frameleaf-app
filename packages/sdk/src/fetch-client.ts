@@ -11483,6 +11483,13 @@ export type QueueRunDto = {
     heldForNight?: boolean;
     /** Whether the queue is paused */
     isPaused: boolean;
+    /** Photos and videos this run has finished (completed or failed, as `processed` counts), of those it has: a queue that runs several jobs for each (thumbnails) counts more jobs than photos */
+    items?: {
+        done: number;
+        /** When the oldest of them was queued */
+        startedAt: string | null;
+        total: number;
+    };
     lastProgressAt?: string | null;
     name: QueueName;
     noDispatchBacklog?: boolean;

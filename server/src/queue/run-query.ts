@@ -1075,7 +1075,7 @@ export async function listRunItems(
 const operationQueue = (name: string) => name === QueueName.Editor || name === QueueName.VideoConversion;
 
 const reportedJobsForRun = (name: string) => {
-  const columns = sql`j.id, j.queue, j."createdAt", j."progressAt", j."startedAt", j."finishedAt", j."runId", j."parentId",
+  const columns = sql`j.id, j.queue, j.name, j."createdAt", j."progressAt", j."startedAt", j."finishedAt", j."runId", j."parentId",
     j."dependencyReason", j.attempt, j."retryBaseAttempt", j."latestPending"`;
   return operationQueue(name)
     ? sql`select ${columns}, r.state, r."availableAt", r."operationPaused"
@@ -1083,18 +1083,36 @@ const reportedJobsForRun = (name: string) => {
     : sql`select ${columns}, j.state, j."availableAt", false "operationPaused" from job j where j.queue = ${name}`;
 };
 
-/** One queue's current work for Background work: its live jobs and the jobs of runs still open. */
-export async function observeQueueRun(db: QueryExecutorProvider, name: string) {
+/**
+ * The job a queue runs once for each photo or video, where it runs others for them too. Thumbnails share their queue
+ * with each photo's colors (queued as its thumbnail finishes) and each person's face thumbnail: the queue's job
+ * count is far more than its photos, and grows as they get ready.
+ */
+const QUEUE_ITEM_JOBS: Partial<Record<string, string>> = {
+  [QueueName.ThumbnailGeneration]: JobName.AssetGenerateThumbnails,
+};
+
+/**
+ * One queue's current work for Background work: its live jobs and the jobs of runs still open. `items` counts only
+ * the queue's once-a-photo job (`QUEUE_ITEM_JOBS`), for a line that says photos; null for a queue that has none.
+ * A photo whose job failed is done, as a failed job is `processed`: it is not coming, and Library care lists it.
+ * `items.startedAt` is when the oldest of those jobs was queued, so their pace is not measured from another job's
+ * start (a face thumbnail that has waited since before the import).
+ */
+export async function observeQueueRun(db: QueryExecutorProvider, name: string, itemJob = QUEUE_ITEM_JOBS[name]) {
   // Passed as values, not a subquery: the planner then reads each open run's own job count. A subquery is
   // planned for an average run, which after a large scan means a pass over the queue's whole history.
   const { rows: open } = await sql<{ id: string }>`select id from job_run where "finishedAt" is null`.execute(db);
   const openRuns = open.map(({ id }) => id);
   const {
-    rows: [row],
+    rows: [{ itemsDone, itemsLeft, ...row }],
   } = await sql<{
     active: number;
     waiting: number;
     processed: number;
+    itemsDone: number;
+    itemsLeft: number;
+    itemsStartedAt: Date | null;
     startedAt: Date | null;
     lastProgressAt: Date | null;
     workerAvailable: boolean;
@@ -1116,17 +1134,24 @@ export async function observeQueueRun(db: QueryExecutorProvider, name: string) {
       where j.state not in ('pending','waiting','active') and j."runId" = any(${openRuns}::uuid[])
     ), loose_start as (
       select min("createdAt") at from current_jobs where "runId" is null
+    ), item_start as (
+      select min("createdAt") at from current_jobs where name = ${itemJob ?? null}
     ), loose_done as (
       -- Jobs outside a run (upload thumbnails, metadata…) leave the live set when they finish: count the ones
       -- finished since the oldest still waiting was queued, or Activity's percentage stays at 0 (FL-588).
       -- With none waiting there is nothing to count, so the kept history is not read at all.
-      select count(*)::int n from reported f where (select at from loose_start) is not null and f."runId" is null
+      select count(*)::int n, count(*) filter (where f.name = ${itemJob ?? null}
+        and f."finishedAt" >= (select at from item_start))::int items from reported f where (select at from loose_start) is not null and f."runId" is null
         and f.state in ('completed','failed','cancelled','blocked') and f."latestPending" is null
         and f."finishedAt" >= (select at from loose_start)
     ) select count(*) filter (where state = 'active')::int active,
       count(*) filter (where state in ('pending','waiting'))::int waiting,
       (count(*) filter (where state in ('completed','failed','needs_attention','blocked','cancelled'))
         + (select n from loose_done))::int processed,
+      (count(*) filter (where name = ${itemJob ?? null} and state in ('completed','failed','needs_attention','blocked','cancelled'))
+        + (select items from loose_done))::int "itemsDone",
+      count(*) filter (where name = ${itemJob ?? null} and state in ('pending','waiting','active'))::int "itemsLeft",
+      (select at from item_start) "itemsStartedAt",
       min("createdAt") "startedAt", max(greatest("progressAt", "startedAt", "finishedAt")) "lastProgressAt",
       ${workerAvailable} "workerAvailable",
       count(*) filter (where state in ('pending','waiting') and not paused
@@ -1141,7 +1166,8 @@ export async function observeQueueRun(db: QueryExecutorProvider, name: string) {
         and count(*) filter (where state = 'active') = 0
         and coalesce(max(greatest("progressAt", "startedAt", "finishedAt")), min("createdAt")) < now() - interval '2 minutes', false) "noDispatchBacklog"
       from current_jobs`.execute(db);
-  return row;
+  const items = { done: itemsDone, total: itemsDone + itemsLeft, startedAt: itemsStartedAt };
+  return { ...row, items: itemJob ? items : null };
 }
 
 /**
