@@ -80,6 +80,10 @@ export type CloudBackupRestoreSnapshot = {
   albumId?: string | null;
   /** `asset` and `album`: how the details of items still in the library come back; `keep` when absent. */
   details?: RestoreDetailsMode;
+  /** FL-1677, `files`: files and folders by their storage paths when backed up, instead of items. */
+  paths?: string[];
+  /** FL-1677: with `paths`, the folder they go under; where they were when null. */
+  folder?: string | null;
 };
 
 /** Where a restore has got to, kept on the operation row as its result. */

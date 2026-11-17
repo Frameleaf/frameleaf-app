@@ -218,7 +218,8 @@ const CloudBackupBrowseEntrySchema = z
   .object({
     name: z.string(),
     type: z.enum(['file', 'folder']).meta({ id: 'CloudBackupBrowseEntryType' }),
-    size: z.int().describe('Bytes; 0 for a folder'),
+    size: z.int().describe('Bytes; for a folder, of every file below it'),
+    files: z.int().describe('Files below a folder, at any depth; 1 for a file'),
     modifiedAt: z.string().describe('When it was last written before the backup'),
   })
   .meta({ id: 'CloudBackupBrowseEntryDto' });

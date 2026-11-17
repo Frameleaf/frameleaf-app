@@ -34,12 +34,12 @@ describe('Cloud Backup browse (FL-1677)', () => {
       'files/data/library/Taylor/2026/c.jpg': 'ccc',
     });
     await expect(browseBackup(repository, snapshots[0].snapshot, '/data/library/Taylor')).resolves.toEqual([
-      { name: '2026', type: 'folder', size: 0, modifiedAt: expect.any(String) },
-      { name: String.raw`a\b.jpg`, type: 'file', size: 1, modifiedAt: expect.any(String) },
-      { name: 'b.jpg', type: 'file', size: 2, modifiedAt: expect.any(String) },
+      { name: '2026', type: 'folder', size: 3, files: 1, modifiedAt: expect.any(String) },
+      { name: String.raw`a\b.jpg`, type: 'file', size: 1, files: 1, modifiedAt: expect.any(String) },
+      { name: 'b.jpg', type: 'file', size: 2, files: 1, modifiedAt: expect.any(String) },
     ]);
     await expect(browseBackup(repository, snapshots[0].snapshot, '/')).resolves.toEqual([
-      expect.objectContaining({ name: 'data', type: 'folder' }),
+      expect.objectContaining({ name: 'data', type: 'folder', size: 6, files: 3 }),
     ]);
     await expect(browseBackup(repository, snapshots[0].snapshot, '/data/nowhere')).rejects.toThrow();
   });

@@ -7,7 +7,7 @@ import {
 import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import AsyncLock from 'async-lock';
-import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { lookup } from 'node:dns';
 import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, readdirSync } from 'node:fs';
@@ -1729,6 +1729,51 @@ describe(CloudBackupService.name, () => {
         ])
         .mockResolvedValue([]);
       index.listProfileImages.mockResolvedValue([{ userId: 'owner-1', path: `${MEDIA.root}/profile/owner-1.jpg` }]);
+    });
+
+    describe('upload hours (FL-1677)', () => {
+      const withHours = (start: string, stop: string) => ({
+        server: { timeZone: 'UTC' },
+        frameleafCloud: {
+          cloudBackup: { ...enabledConfig().frameleafCloud.cloudBackup, uploadHours: { enabled: true, start, stop } },
+        },
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('pauses a run that starts outside them, marked for the hourly check to carry on', async () => {
+        vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-17T12:00:00.000Z') });
+        metadata[SystemMetadataKey.SystemConfig] = withHours('01:00', '07:00');
+        await sut.run(runOperation(), 'claim-1');
+        expect(operations.requestPause).toHaveBeenCalledWith(RUN_ID, expect.any(String), expect.any(Array));
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ uploadHoursPausedRunId: RUN_ID });
+      });
+
+      it('carries on the run it paused once they open, and only that one', async () => {
+        vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-17T02:00:00.000Z') });
+        metadata[SystemMetadataKey.SystemConfig] = withHours('01:00', '07:00');
+        metadata[SystemMetadataKey.FrameleafCloudBackup] = { ...claim(), uploadHoursPausedRunId: RUN_ID };
+        operations.getOfKind.mockResolvedValue(runOperation({ status: MediaOperationStatus.Paused, ownerId: 'admin' }));
+        await sut.handleVerifyCheck();
+        expect(operations.resume).toHaveBeenCalledWith(RUN_ID, 'admin');
+        expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).not.toHaveProperty('uploadHoursPausedRunId');
+
+        operations.resume.mockClear();
+        await sut.handleVerifyCheck();
+        expect(operations.resume).not.toHaveBeenCalled();
+      });
+
+      it('sends no faster than the speed limit set', async () => {
+        metadata[SystemMetadataKey.SystemConfig] = {
+          frameleafCloud: {
+            cloudBackup: { ...enabledConfig().frameleafCloud.cloudBackup, uploadLimit: { enabled: true, mbps: 8 } },
+          },
+        };
+        await sut.run(runOperation(), 'claim-1');
+        const connection = store.store.mock.calls.at(-1)![0] as { uploadLimit?: () => number | null };
+        expect(connection.uploadLimit?.()).toBe(1_000_000);
+      });
     });
 
     it('stores one backup: the dump, every file at its place and a catalog, then records and signs it', async () => {
@@ -4184,6 +4229,106 @@ describe(CloudBackupService.name, () => {
       );
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
         lastRestore: { operationId: 'restore-1', scope: 'files', status: 'completed', files: 1 },
+      });
+    });
+
+    describe('by folder and version (FL-1677)', () => {
+      const SECOND_KEY = `r/v1/${INSTANCE_ID}/s/000000000002-${'0'.repeat(28)}a002`;
+      beforeEach(() => {
+        index.getLibraryState.mockResolvedValue(new Map());
+      });
+
+      it('lists one folder of a backup with each file’s size, and refuses a folder it never held', async () => {
+        const listing = await sut.browse({ manifestKey, path: `${MEDIA.root}/library` });
+        expect(listing).toEqual({
+          path: `${MEDIA.root}/library`,
+          total: 1,
+          entries: [{ name: 'IMG_1.jpg', type: 'file', size: 1, files: 1, modifiedAt: expect.any(String) }],
+          hiddenLocked: 0,
+        });
+        const top = await sut.browse({ manifestKey, path: '/' });
+        expect(top.entries).toEqual([expect.objectContaining({ type: 'folder', size: 1, files: 1 })]);
+        await expect(sut.browse({ manifestKey, path: `${MEDIA.root}/nowhere` })).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+      });
+
+      it('never names a Locked item’s file, and refuses its earlier versions', async () => {
+        // Locked in the library now
+        index.getLibraryState.mockResolvedValue(new Map([['asset-1', { locked: true, status: 'active' }]]));
+        await expect(sut.browse({ manifestKey, path: `${MEDIA.root}/library` })).resolves.toMatchObject({
+          total: 0,
+          entries: [],
+          hiddenLocked: 1,
+        });
+        await expect(sut.getFileVersions({ path: `${MEDIA.root}/library/IMG_1.jpg` })).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+      });
+
+      it('lists each different copy of a file across the kept backups, newest first', async () => {
+        await keep(manifestBody, { name: SECOND_KEY, append: true, contents: { [SHA_A]: 'changed' } });
+        index.listKeptManifests.mockResolvedValue([
+          { ...kept, key: SECOND_KEY, createdAt: new Date('2026-09-27T03:00:00.000Z') },
+          kept,
+        ]);
+        const { versions } = await sut.getFileVersions({ path: `${MEDIA.root}/library/IMG_1.jpg` });
+        expect(versions.map(({ manifestKey: key, size }) => [key, size])).toEqual([
+          [SECOND_KEY, 7],
+          [manifestKey, 1],
+        ]);
+      });
+
+      it('queues chosen files and folders, on their own, back where they were or under another folder', async () => {
+        const paths = [`${MEDIA.root}/library`];
+        await expect(
+          sut.startRestore(authStub.admin, { manifestKey, scope: 'files', paths, assetIds: [randomUUID()] }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          sut.startRestore(authStub.admin, { manifestKey, scope: 'asset', paths, assetIds: [randomUUID()] }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          sut.startRestore(authStub.admin, { manifestKey, scope: 'files', folder: '/mnt/elsewhere' }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await sut.startRestore(authStub.admin, { manifestKey, scope: 'files', paths, folder: '/mnt/elsewhere' });
+        expect(operations.createExclusive).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            snapshot: expect.objectContaining({ scope: 'files', assetIds: null, paths, folder: '/mnt/elsewhere' }),
+          }),
+          DatabaseLock.FrameleafCloudBackup,
+          { alsoKinds: [MediaOperationKind.CloudBackup] },
+        );
+      });
+
+      it('puts a chosen folder’s files back where they were', async () => {
+        await sut.run(
+          operationOf({
+            id: 'restore-1',
+            kind: MediaOperationKind.CloudRestore,
+            snapshot: {
+              version: 1,
+              bucketRef: ref,
+              keyFingerprint: fingerprint,
+              manifestKey,
+              scope: 'files',
+              assetIds: null,
+              paths: [`${MEDIA.root}/library`],
+              folder: null,
+            },
+          }),
+          'claim-1',
+        );
+        expect(link).toHaveBeenCalledWith(
+          expect.stringMatching(/\/library\/\.cloud-restore-[\da-f-]+\.tmp$/),
+          `${MEDIA.root}/library/IMG_1.jpg`,
+        );
+        expect(operations.complete).toHaveBeenCalledWith(
+          'restore-1',
+          'claim-1',
+          { resultAssetId: null },
+          undefined,
+          true,
+        );
       });
     });
 

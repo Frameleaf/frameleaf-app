@@ -161,6 +161,41 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'verifyWeekly',
   },
   {
+    pattern: 'frameleafCloud.cloudBackup.uploadHours.enabled',
+    // FL-1677: the Schedule page's controls come with FL-1666
+    kind: 'api-only',
+    file: '../server/src/dtos/config.dto.ts',
+    evidence: 'Upload only between the start and stop times',
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.uploadHours.start',
+    // FL-1677: the Schedule page's controls come with FL-1666
+    kind: 'api-only',
+    file: '../server/src/dtos/config.dto.ts',
+    evidence: 'Uploads may start (HH:MM)',
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.uploadHours.stop',
+    // FL-1677: the Schedule page's controls come with FL-1666
+    kind: 'api-only',
+    file: '../server/src/dtos/config.dto.ts',
+    evidence: 'Uploads stop (HH:MM)',
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.uploadLimit.enabled',
+    // FL-1677: the Schedule page's controls come with FL-1666
+    kind: 'api-only',
+    file: '../server/src/dtos/config.dto.ts',
+    evidence: 'Limit how fast backups upload',
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.uploadLimit.mbps',
+    // FL-1677: the Schedule page's controls come with FL-1666
+    kind: 'api-only',
+    file: '../server/src/dtos/config.dto.ts',
+    evidence: 'Upload speed limit, Mbit/s',
+  },
+  {
     pattern: 'frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/CloudMlSection.svelte',

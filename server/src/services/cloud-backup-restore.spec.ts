@@ -148,7 +148,8 @@ describe('cloud backup restore (FL-164)', () => {
           paths,
           folder,
         });
-      const places = (result: ReturnType<typeof byPath>) => result.files.map(({ target, inPlace }) => [target, inPlace]);
+      const places = (result: ReturnType<typeof byPath>) =>
+        result.files.map(({ target, inPlace }) => [target, inPlace]);
 
       expect(places(byPath(['/data/library/owner-1/2026/', '/elsewhere/IMG_2.jpg']))).toEqual([
         ['/data/library/owner-1/2026/IMG_1.jpg', true],

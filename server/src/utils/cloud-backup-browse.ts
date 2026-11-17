@@ -5,7 +5,15 @@ import { SNAPSHOT_FILES, decodeTreeName, fileTreePath } from 'src/utils/cloud-ba
  * FL-1677: a backup's files as they were stored, by their place on this server. Every read goes through the
  * engine's trees, so a folder is read without reading the rest of the backup.
  */
-export type CloudBackupBrowseEntry = { name: string; type: 'file' | 'folder'; size: number; modifiedAt: string };
+export type CloudBackupBrowseEntry = {
+  name: string;
+  type: 'file' | 'folder';
+  /** Bytes; a folder's are those of every file below it. */
+  size: number;
+  /** Files below a folder, at any depth; 1 for a file. */
+  files: number;
+  modifiedAt: string;
+};
 
 /** Where a storage path sits in a snapshot; `/` is the top of the stored files. */
 const treePath = (storagePath: string) => (storagePath === '/' ? [SNAPSHOT_FILES] : fileTreePath(storagePath));
@@ -19,10 +27,11 @@ export async function browseBackup(
   const entries = await listFolder(repository, snapshot, treePath(storagePath));
   return entries
     .filter(({ type }) => type !== 'symlink')
-    .map(({ name, type, size, mtime }) => ({
+    .map(({ name, type, size, files, mtime }) => ({
       name: decodeTreeName(name),
       type: type === 'dir' ? ('folder' as const) : ('file' as const),
-      size: type === 'dir' ? 0 : size,
+      size,
+      files: type === 'dir' ? (files ?? 0) : 1,
       modifiedAt: new Date(mtime).toISOString(),
     }))
     .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'folder' ? -1 : 1));
@@ -61,5 +70,5 @@ export async function fileVersions(
       last = content;
     }
   }
-  return versions.reverse();
+  return versions.toReversed();
 }
