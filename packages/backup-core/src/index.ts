@@ -14,5 +14,5 @@ export { S3Error, s3Store, signS3Request } from './s3.js';
 export type { S3Credentials, S3Options } from './s3.js';
 export { ObjectExistsError, dirStore, memoryStore } from './store.js';
 export type { ByteRange, Store, StoredObject } from './store.js';
-export { fsSource } from './tree.js';
+export { filterSource, fsSource, measureSource, mountSource } from './tree.js';
 export type { Entry, EntryType, Source, SourceEntry } from './tree.js';

@@ -181,6 +181,15 @@ const moveRefusals: Record<string, string> = {
 const refusals: Record<string, string> = {
   invalid_storage_path: 'That folder path can’t be used. Use a full path such as /mnt/user/photos, with no comma in it.',
   storage_volume_missing: 'That drive or share isn’t on this server right now. Check that it’s connected, then choose the folder again.',
+  server_backup_busy: 'A backup or restore is already running. Wait for it to finish, or stop it first.',
+  server_backup_off: 'Server Backup is off. Turn it on first.',
+  server_backup_no_folders: 'Choose at least one folder to protect.',
+  server_backup_folder_outside: 'Manager can’t reach that folder. Choose one inside the folders shared with Manager.',
+  server_backup_folders_overlap: 'That folder is inside another protected folder, or holds one. Choose folders that don’t overlap, so nothing is stored twice.',
+  server_backup_key_missing: 'This server’s recovery key file is missing. Server Backup can’t open its backups without it.',
+  server_backup_key_already_saved: 'You’ve confirmed saving the recovery key. Enter your Manager password to see it again.',
+  server_backup_unavailable: 'Server Backup isn’t available on this Manager yet.',
+  server_backup_no_such_folder: 'That folder isn’t in this backup.',
   // FL-1320: named before Docker refuses the whole stack; the detail names the folder.
   thumbnail_folder_missing: 'The thumbnails drive isn’t connected.',
   media_folder_missing: 'The photos drive isn’t connected.',
@@ -405,6 +414,9 @@ export function serviceState(service: { running: boolean; health: string }) {
           ? 'Starting'
           : 'Running';
 }
+/** A time such as "Last night, 2:14 AM" for the middle of a sentence: only the leading everyday word is lowered, never a weekday, a month or AM. */
+export const midSentence = (time: string) => time.replace(/^(Last|Today|Yesterday|Just)/, (word) => word.toLowerCase());
+
 export function formatBytes(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return 'Unavailable';
   const unit = Math.min(4, Math.max(0, Math.floor(Math.log(Math.max(value, 1)) / Math.log(1024))));

@@ -133,3 +133,74 @@ export function fsSource(root: string): Source {
     },
   };
 }
+
+const virtualFolder = (name: string): SourceEntry => ({
+  name,
+  type: 'dir',
+  mode: 0o755,
+  uid: 0,
+  gid: 0,
+  mtime: 0,
+  size: 0,
+});
+const startsWith = (path: string[], start: string[]) => start.every((name, index) => path[index] === name);
+
+/**
+ * Several sources shown as one tree, each at its own path. Manager puts every chosen folder at the path
+ * it has on the server, so a backup knows where each file belongs when it is restored.
+ */
+export function mountSource(mounts: { path: string[]; source: Source }[]): Source {
+  for (const [index, mount] of mounts.entries()) {
+    if (mount.path.length === 0 && mounts.length > 1) {
+      throw new Error('A source at the top leaves no room for others');
+    }
+    if (mounts.some((other, at) => at !== index && startsWith(other.path, mount.path))) {
+      throw new Error('One chosen folder is inside another');
+    }
+  }
+  const owner = (path: string[]) => mounts.find((mount) => startsWith(path, mount.path));
+  return {
+    async list(path) {
+      const mount = owner(path);
+      if (mount) {
+        return mount.source.list(path.slice(mount.path.length));
+      }
+      // Above the chosen folders there are only the folders that lead to them.
+      const names = new Set(
+        mounts.filter((item) => startsWith(item.path, path)).map((item) => item.path[path.length]!),
+      );
+      return [...names].map((name) => virtualFolder(name));
+    },
+    read(path) {
+      const mount = owner(path);
+      if (!mount) {
+        throw new Error('No such file');
+      }
+      return mount.source.read(path.slice(mount.path.length));
+    },
+  };
+}
+
+/** A source without the entries `skip` picks: caches, temporary files, a folder the owner left out. */
+export function filterSource(source: Source, skip: (path: string[], entry: SourceEntry) => boolean): Source {
+  return {
+    list: async (path) => (await source.list(path)).filter((entry) => !skip([...path, entry.name], entry)),
+    read: (path) => source.read(path),
+  };
+}
+
+/** How much a source holds, for showing progress. Folders that can't be listed count as empty. */
+export async function measureSource(source: Source, path: string[] = []): Promise<{ files: number; bytes: number }> {
+  const total = { files: 0, bytes: 0 };
+  for (const entry of await source.list(path).catch(() => [])) {
+    if (entry.type === 'dir') {
+      const inside = await measureSource(source, [...path, entry.name]);
+      total.files += inside.files;
+      total.bytes += inside.bytes;
+    } else if (entry.type === 'file' && entry.unreadable === undefined) {
+      total.files++;
+      total.bytes += entry.size;
+    }
+  }
+  return total;
+}

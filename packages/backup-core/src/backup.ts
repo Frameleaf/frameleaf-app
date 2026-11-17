@@ -33,6 +33,8 @@ export interface BackupOptions {
   sequence?: number;
   /** Stops the run, for a window that closes or a user who presses Stop. What was stored is kept for the next run. */
   signal?: AbortSignal;
+  /** Called as the run goes: after every file, and after every chunk of a file being read. */
+  onProgress?: (progress: { files: number; bytes: number; storedBytes: number }) => void;
 }
 
 /** The source could not give a file's content. */
@@ -83,6 +85,9 @@ export async function backup(
     return id.toString('hex');
   };
 
+  const report = (reading = 0) =>
+    options.onProgress?.({ files: stats.files, bytes: stats.bytes + reading, storedBytes: data.storedBytes });
+
   const readFile = async (path: string[]) => {
     const ids: string[] = [];
     let bytes = 0;
@@ -94,6 +99,7 @@ export async function backup(
       options.signal?.throwIfAborted();
       ids.push(await store(data, chunk));
       bytes += chunk.length;
+      report(bytes);
     }
     return { ids, bytes };
   };
@@ -189,6 +195,7 @@ export async function backup(
           entries.push(stored);
           stats.files++;
           stats.bytes += stored.size;
+          report();
         }
       }
     }
