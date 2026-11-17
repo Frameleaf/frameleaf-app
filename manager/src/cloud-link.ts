@@ -394,6 +394,50 @@ export class Cloud {
     return this.call(identity, 'DELETE', `/v4/backup/lease?leaseId=${encodeURIComponent(leaseId)}`);
   }
 
+  /** The newest entry of this machine's signed history for a vault, or null when there is none yet. */
+  async snapshotHead(identity: Identity, vaultId: string) {
+    const answer = await this.call(identity, 'GET', `/v2/backup/snapshots?vaultId=${encodeURIComponent(vaultId)}&afterSequence=0&limit=1`);
+    return z.object({ head: z.object({ sequence: z.number().int().min(1), digest: z.string().regex(/^[0-9a-f]{64}$/) }).nullable() }).parse(answer).head;
+  }
+
+  /**
+   * Adds a finished backup to the signed history Cloud keeps: which stored object, which exact version, and
+   * the hash of its bytes, signed by this machine and chained to the entry before it. A restore later checks
+   * this history, so a snapshot that was swapped or rolled back is noticed.
+   * `snapshotId` is chosen and saved by the caller before sending: sending the same one again is answered
+   * with the first record, which is how a lost answer is recovered.
+   */
+  async recordSnapshot(
+    identity: Identity,
+    entry: { snapshotId: string; vaultId: string; sequence: number; previousDigest: string | null; objectKey: string; versionId: string; ciphertextSha256: string; keyVersion: number; createdAt: string },
+  ) {
+    const descriptor = {
+      version: 2,
+      instanceId: identity.instanceId,
+      vaultId: entry.vaultId,
+      snapshotId: entry.snapshotId,
+      sequence: entry.sequence,
+      previousDigest: entry.previousDigest,
+      createdAt: entry.createdAt,
+      manifest: { format: 'frameleaf-repository', formatVersion: 1, keyVersion: entry.keyVersion, objectKey: entry.objectKey, versionId: entry.versionId, ciphertextSha256: entry.ciphertextSha256 },
+      signerKid: identity.kid,
+    };
+    // Exactly these fields in exactly this order are what is signed.
+    const transcript = `frameleaf-backup-snapshot-v2\n${JSON.stringify(descriptor)}`;
+    const digest = createHash('sha256').update(transcript).digest('hex');
+    const record = z.object({ digest: z.string(), receivedAt: z.string() }).parse(await this.call(identity, 'POST', '/v2/backup/snapshots', { descriptor, signature: signText(identity, transcript) }));
+    if (record.digest !== digest) throw new CloudError('cloud_answer_unreadable', null);
+    return { sequence: entry.sequence, digest };
+  }
+
+  /** Tells Cloud how a run went, for the account site. The newest report for a run replaces earlier ones. */
+  reportRun(
+    identity: Identity,
+    report: { runId: string; status: 'running' | 'succeeded' | 'partial' | 'failed' | 'cancelled'; startedAt: string; finishedAt: string | null; bytesUploaded: number; objectsUploaded: number; objectsSkipped: number; manifestKey: string | null; errorCode: string | null },
+  ) {
+    return this.call(identity, 'POST', '/v1/backup/runs', report);
+  }
+
   usage(identity: Identity) {
     return this.call(identity, 'GET', '/v1/backup/usage') as Promise<{ bytesCurrent: number; accountBytesCurrent: number; allowanceBytes: number; readOnly: boolean; readOnlyReason: string | null }>;
   }

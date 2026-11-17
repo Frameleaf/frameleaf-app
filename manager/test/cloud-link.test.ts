@@ -32,6 +32,7 @@ function standIn(options: { old?: boolean } = {}) {
     tokens: new Map<string, { instanceId: string; jkt: string }>(),
     lease: null as { leaseId: string; operation: string; holder: string } | null,
     entitled: true,
+    chain: [] as { snapshotId: string; sequence: number; digest: string; record: unknown }[],
     grant: null as Record<string, any> | null,
     discovery: { version: 1, validFor: 3600, issuer: ISSUER, api: API, ml: {} } as Record<string, unknown>,
   };
@@ -194,6 +195,33 @@ function standIn(options: { old?: boolean } = {}) {
       state.grant.capability = { ...state.grant.capability, operation: json.operation };
       return answer(created ? 201 : 200, state.grant);
     }
+    if (route === 'POST api/v2/backup/snapshots') {
+      const { descriptor, signature } = json;
+      const signed = `frameleaf-backup-snapshot-v2\n${JSON.stringify({ version: descriptor.version, instanceId: descriptor.instanceId, vaultId: descriptor.vaultId, snapshotId: descriptor.snapshotId, sequence: descriptor.sequence, previousDigest: descriptor.previousDigest, createdAt: descriptor.createdAt, manifest: { format: descriptor.manifest.format, formatVersion: descriptor.manifest.formatVersion, keyVersion: descriptor.manifest.keyVersion, objectKey: descriptor.manifest.objectKey, versionId: descriptor.manifest.versionId, ciphertextSha256: descriptor.manifest.ciphertextSha256 }, signerKid: descriptor.signerKid })}`;
+      const sound =
+        descriptor.instanceId === held.instanceId &&
+        descriptor.signerKid === held.jkt &&
+        descriptor.manifest.format === 'frameleaf-repository' &&
+        descriptor.manifest.objectKey === `r/v1/${descriptor.vaultId}/s/${String(descriptor.sequence).padStart(12, '0')}-${descriptor.manifest.objectKey.split('-').at(-1)}` &&
+        /^[0-9a-f]{16,64}$/.test(descriptor.manifest.objectKey.split('-').at(-1)) &&
+        descriptor.manifest.versionId !== 'null' &&
+        verify(null, Buffer.from(signed), createPublicKey({ key: instance.jwk, format: 'jwk' }), Buffer.from(signature, 'base64url'));
+      if (!sound) return envelope(422, 'request-invalid');
+      const replay = state.chain.find((item) => item.snapshotId === descriptor.snapshotId);
+      if (replay) return answer(200, replay.record);
+      const head = state.chain.at(-1);
+      if (descriptor.sequence !== (head?.sequence ?? 0) + 1 || descriptor.previousDigest !== (head?.digest ?? null)) return envelope(409, 'snapshot-conflict');
+      const digest = createHash('sha256').update(signed).digest('hex');
+      const record = { descriptor, signature, digest, signerJwk: { ...instance.jwk, kid: held.jkt }, receivedAt: new Date(state.now).toISOString() };
+      state.chain.push({ snapshotId: descriptor.snapshotId, sequence: descriptor.sequence, digest, record });
+      return answer(200, record);
+    }
+    if (route === 'GET api/v2/backup/snapshots') {
+      const head = state.chain.at(-1);
+      return answer(200, { snapshots: [], head: head ? { sequence: head.sequence, digest: head.digest } : null, nextAfterSequence: null });
+    }
+    if (route === 'POST api/v1/backup/runs')
+      return /^r\/v1\/[0-9a-f-]{36}\/s\/\d{12}-[0-9a-f]{16,64}$/.test(json.manifestKey ?? '') || json.manifestKey === null ? answer(200, { ...json, receivedAt: new Date(state.now).toISOString() }) : envelope(422, 'request-invalid');
     return envelope(404, 'not-found');
   };
   return { state, fetch: handle as typeof fetch };
@@ -295,6 +323,39 @@ test('credentials come only under a lease, and one run holds it at a time', asyn
 
   state.entitled = false;
   await assert.rejects(client.rotate(identity, { operation: 'restore' }), (error: unknown) => refused('entitlement-missing', 402)(error) && (error as CloudError).data?.missing === 'licence');
+});
+
+test('finished backups are added to a signed history, in order, and a lost answer is safe to send again', async () => {
+  const { state, client, identity } = await linked();
+  const vaultId = randomUUID();
+  const entry = (sequence: number, previousDigest: string | null) => ({
+    snapshotId: randomUUID(),
+    vaultId,
+    sequence,
+    previousDigest,
+    objectKey: `r/v1/${vaultId}/s/${String(sequence).padStart(12, '0')}-0123456789abcdef`,
+    versionId: `version-${sequence}`,
+    ciphertextSha256: 'a'.repeat(64),
+    keyVersion: 1,
+    createdAt: new Date(state.now).toISOString(),
+  });
+  assert.equal(await client.snapshotHead(identity, vaultId), null);
+
+  const first = entry(1, null);
+  const recorded = await client.recordSnapshot(identity, first);
+  assert.match(recorded.digest, /^[0-9a-f]{64}$/);
+  // The same entry again is answered with the first record; nothing is added twice.
+  assert.deepEqual(await client.recordSnapshot(identity, first), recorded);
+  assert.deepEqual(await client.snapshotHead(identity, vaultId), recorded);
+
+  // The next entry must name the one before it.
+  await assert.rejects(client.recordSnapshot(identity, entry(2, 'b'.repeat(64))), refused('snapshot-conflict', 409));
+  await assert.rejects(client.recordSnapshot(identity, entry(3, recorded.digest)), refused('snapshot-conflict', 409));
+  assert.equal((await client.recordSnapshot(identity, entry(2, recorded.digest))).sequence, 2);
+
+  const report = { runId: randomUUID(), status: 'succeeded' as const, startedAt: new Date(state.now - 60_000).toISOString(), finishedAt: new Date(state.now).toISOString(), bytesUploaded: 10, objectsUploaded: 2, objectsSkipped: 0, manifestKey: first.objectKey, errorCode: null };
+  await client.reportRun(identity, report);
+  await assert.rejects(client.reportRun(identity, { ...report, manifestKey: 'm/v1/old-style' }), refused('request-invalid', 422));
 });
 
 test('an address Cloud hands over must be on Cloud', async () => {
