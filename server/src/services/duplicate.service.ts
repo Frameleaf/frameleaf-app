@@ -99,25 +99,24 @@ export class DuplicateService extends BaseService {
     await this.duplicateRepository.cleanupSingletonGroups(auth.user.id);
 
     const duplicates = await this.duplicateRepository.getAll(auth.user.id, this.nsfwOptions(auth));
-    let history: Set<string> | undefined;
-    let damaged: Set<string> | undefined;
-    try {
-      const ids = duplicates.flatMap(({ assets }) => assets.map(({ id }) => id));
-      [history, damaged] = await Promise.all([
-        this.assetDevelopRepository.getAssetIdsWithHistory(ids),
-        // FL-1660: a copy whose file is offline, missing or corrupt is never the suggested keeper
-        this.duplicateRepository.getDamagedIds(ids),
-      ]);
-    } catch {
-      // Recommendations stay visible, but missing evidence never permits unattended disposal.
-      history = undefined;
-    }
+    const ids = duplicates.flatMap(({ assets }) => assets.map(({ id }) => id));
+    // Each lookup stands on its own: missing evidence never permits unattended disposal.
+    const [historyResult, damagedResult] = await Promise.allSettled([
+      this.assetDevelopRepository.getAssetIdsWithHistory(ids),
+      // FL-1660: a copy whose file is offline, missing or corrupt is never the suggested keeper
+      this.duplicateRepository.getDamagedIds(ids),
+    ]);
+    const history = historyResult.status === 'fulfilled' ? historyResult.value : undefined;
+    const damaged = damagedResult.status === 'fulfilled' ? damagedResult.value : undefined;
     const keepOptions = { ...(await this.getKeepOptions(auth, duplicates, history)), damagedIds: damaged };
     return Promise.all(
       duplicates.map(async ({ duplicateId, assets }) => {
         const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
+        // without file health evidence no copy is suggested: the best-ranked one may be the broken one
         const suggestedKeepAssetIds =
-          reviewKindOf(mappedAssets) === 'copies' ? suggestDuplicateKeepAssetIds(mappedAssets, keepOptions) : [];
+          damaged && reviewKindOf(mappedAssets) === 'copies'
+            ? suggestDuplicateKeepAssetIds(mappedAssets, keepOptions)
+            : [];
         let motionId: string | undefined;
         if (suggestedKeepAssetIds.length === 1 && assets.some((asset) => asset.livePhotoVideoId)) {
           try {

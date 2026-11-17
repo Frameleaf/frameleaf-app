@@ -122,6 +122,21 @@ describe(DuplicateService.name, () => {
       ]);
       mocks.duplicateRepository.getDamagedIds.mockRejectedValue(new Error('unavailable'));
       const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.suggestedKeepAssetIds).toEqual([]);
+      expect(group.reviewRequiredReasons).toEqual(['evidence-unavailable']);
+    });
+
+    it('keeps file health evidence when Develop history is unavailable (FL-1660)', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      const raw = AssetFactory.from({ originalFileName: 'capture.DNG' }).exif().build();
+      const jpeg = AssetFactory.from({ originalFileName: 'capture.jpg' }).exif().build();
+      mocks.duplicateRepository.getAll.mockResolvedValue([
+        { duplicateId: 'group', assets: [getForDuplicate(raw), getForDuplicate(jpeg)] },
+      ]);
+      mocks.assetDevelop.getAssetIdsWithHistory.mockRejectedValue(new Error('unavailable'));
+      mocks.duplicateRepository.getDamagedIds.mockResolvedValue(new Set([raw.id]));
+      const [group] = await sut.getDuplicates(authStub.admin);
+      expect(group.suggestedKeepAssetIds).toEqual([jpeg.id]);
       expect(group.reviewRequiredReasons).toEqual(['evidence-unavailable']);
     });
 
