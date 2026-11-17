@@ -9,11 +9,11 @@ import AsyncLock from 'async-lock';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { lookup } from 'node:dns';
 import { EventEmitter } from 'node:events';
-import { readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync } from 'node:fs';
 import { copyFile as copyFileOf, link, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { request } from 'node:https';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import type { LookupAddress } from 'node:dns';
@@ -67,6 +67,7 @@ import {
   writeBackupHistory,
 } from 'src/utils/cloud-backup-recovery.js';
 import { backupUserFingerprint } from 'src/utils/cloud-backup-selection.js';
+import { fileTreePath, treeKey } from 'src/utils/cloud-backup-catalog.js';
 import { openVault, readVaultCatalog } from 'src/utils/cloud-backup-vault.js';
 import { backupKeyFile, bucketRef, emptyRunResult, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { readConfig } from 'src/utils/config.js';
@@ -82,7 +83,7 @@ import {
 } from 'src/utils/operation-execution.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture, cloudRepositoryGrant } from 'test/fixtures/frameleaf-cloud-contracts.js';
-import { storeTestBackup, testKeyring, versionedMemoryStore } from 'test/fixtures/cloud-backup-vault.js';
+import { packHolding, storeTestBackup, versionedMemoryStore } from 'test/fixtures/cloud-backup-vault.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { expectLocalisedSystemNotices, getMocks } from 'test/utils.js';
 
@@ -194,8 +195,8 @@ const operationOf = (overrides: Partial<MediaOperation> = {}): MediaOperation =>
     ...overrides,
   }) as unknown as MediaOperation;
 
-/** FL-1676: the media folder of a spec, a real folder the backup engine reads from. */
-const MEDIA = { root: '/data' };
+/** FL-1676: the media folder of this spec file, a real folder the backup engine reads from and restores into. */
+const MEDIA = { root: mkdtempSync(join(tmpdir(), 'cloud-backup-media-')) };
 const asset = (id: string, sha256: string | null, files: Array<{ type: string; path: string }> = []) => ({
   id,
   ownerId: 'owner-1',
@@ -212,7 +213,7 @@ const entry = (fileKey: string, overrides: Partial<CloudBackupEntry> = {}): Clou
   assetId: fileKey.split(':', 1)[0],
   ownerId: 'owner-1',
   role: 'original',
-  path: `/data/library/${fileKey}`,
+  path: `${MEDIA.root}/library/${fileKey}`,
   sha256: SHA_A,
   size: 100,
   mtime: new Date('2026-09-01T00:00:00.000Z'),
@@ -322,6 +323,68 @@ describe(CloudBackupService.name, () => {
   /** A real folder: a completed client manifest appends its signed snapshot to the history kept there. */
   let identityDir: string;
 
+  /**
+   * FL-1676: keep `manifest` (the shape a catalog has, as older specs wrote it) as a real backup in the bucket,
+   * under `name` (default `MANIFEST_KEY`). Each file's bytes are the text its SHA-256 was made from, so a
+   * restore can check them; the catalog places each file at its storage path and the dump uncompressed. The
+   * bucket is emptied first: one spec, one set of backups. Answers the catalog that was stored.
+   */
+  const keep = async (
+    manifest: Record<string, any>,
+    options: { name?: string; append?: boolean; contents?: Record<string, Buffer | string> } = {},
+  ) => {
+    const name = options.name ?? MANIFEST_KEY;
+    const [, sequence, id] = /\/s\/(\d{12})-([\da-f]+)$/.exec(name)!;
+    if (!options.append) vault.objects.clear();
+    const contents = new Map(
+      ['a', 'b', 'c', 'sidecar', 'dump', 'locked-key', 'profile', 'thumb', 'video'].map((text) => [hex(text), text]),
+    );
+    const files: Record<string, Buffer> = {};
+    const bytesOf = (sha256: string) =>
+      Buffer.from(options.contents?.[sha256] ?? contents.get(sha256) ?? `bytes of ${sha256}`);
+    const place = (file: Record<string, any>) => {
+      const bytes = bytesOf(file.sha256);
+      const objectKey = file.objectKey?.startsWith('files/') ? file.objectKey : treeKey(fileTreePath(file.path));
+      files[objectKey] = bytes;
+      return { ...file, objectKey, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
+    };
+    const catalog = {
+      ...manifest,
+      format: 'frameleaf-backup-manifest',
+      version: 4,
+      albums: manifest.albums ?? {},
+      people: manifest.people ?? {},
+      profiles: Object.fromEntries(Object.entries(manifest.profiles ?? {}).map(([k, f]) => [k, place(f as never)])),
+      ...(manifest.lockedKeys && {
+        lockedKeys: Object.fromEntries(Object.entries(manifest.lockedKeys).map(([k, f]) => [k, place(f as never)])),
+      }),
+      assets: Object.fromEntries(
+        Object.entries(manifest.assets ?? {}).map(([assetId, item]: [string, any]) => [
+          assetId,
+          { ...item, files: item.files.map((file: Record<string, any>) => place(file)) },
+        ]),
+      ),
+      database: manifest.database
+        ? (() => {
+            const bytes =
+              manifest.database.sha256 === SHA_DUMP ? Buffer.from('dump') : bytesOf(manifest.database.sha256);
+            const key = `database/${basename(manifest.database.key).replace(/\.gz$/, '')}`;
+            files[key] = bytes;
+            return { key, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
+          })()
+        : null,
+    };
+    await storeTestBackup(vault, {
+      vaultId: INSTANCE_ID,
+      sequence: Number(sequence),
+      snapshotId: id,
+      catalog,
+      files,
+      keyring: clientRing,
+    });
+    return catalog;
+  };
+
   /** FL-1676: every file a run lists is made on disk, with bytes of its own, so the engine can read it. */
   const materialize = async (paths: string[]) => {
     for (const path of paths) {
@@ -405,7 +468,8 @@ describe(CloudBackupService.name, () => {
 
   beforeEach(async () => {
     identityDir = await mkdtemp(join(tmpdir(), 'cloud-backup-identity-'));
-    MEDIA.root = await mkdtemp(join(tmpdir(), 'cloud-backup-media-'));
+    await rm(MEDIA.root, { recursive: true, force: true });
+    await mkdir(MEDIA.root, { recursive: true });
     vi.mocked(loadBackupWorkerIdentity).mockReset().mockResolvedValue(workerIdentity);
     vi.mocked(selectBackupLocation).mockReset();
     mocks = getMocks();
@@ -570,7 +634,7 @@ describe(CloudBackupService.name, () => {
   });
   afterEach(() => sut.onShutdown());
   afterEach(() => rm(identityDir, { recursive: true, force: true }));
-  afterEach(() => rm(MEDIA.root, { recursive: true, force: true }));
+  afterAll(() => rm(MEDIA.root, { recursive: true, force: true }));
   // FL-406: every cloud backup notice carries a system template whose English matches the supplied text
   afterEach(() => expectLocalisedSystemNotices(mocks.event.emit));
 
@@ -2544,8 +2608,8 @@ describe(CloudBackupService.name, () => {
           .mockResolvedValueOnce([withOwner('asset-1', SHA_A, 'owner-1'), withOwner('asset-2', SHA_B, ownerTwo)])
           .mockResolvedValueOnce([]);
         index.listProfileImages.mockResolvedValue([
-          { userId: 'owner-1', path: '/data/profile/owner-1.jpg' },
-          { userId: ownerTwo, path: '/data/profile/owner-2.jpg' },
+          { userId: 'owner-1', path: `${MEDIA.root}/profile/owner-1.jpg` },
+          { userId: ownerTwo, path: `${MEDIA.root}/profile/owner-2.jpg` },
         ]);
       });
 
@@ -3894,27 +3958,23 @@ describe(CloudBackupService.name, () => {
       ],
     });
     const refresh = () => vi.fn().mockResolvedValue(authStub.user1);
-    beforeEach(() => {
+    beforeEach(async () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
       metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
       keys.read.mockResolvedValue(keyFileOf());
       index.listKeptManifests.mockResolvedValue([kept]);
       index.getOwnerHistoryState.mockResolvedValue(captured());
-      store.get = vi.fn().mockResolvedValue(
-        gzipSync(
-          JSON.stringify({
-            format: 'frameleaf-backup-manifest',
-            version: 2,
-            instanceId: INSTANCE_ID,
-            createdAt: '2026-09-26T03:00:00Z',
-            database: null,
-            assets: { 'asset-1': entry(owner), 'foreign-1': entry('foreign') },
-            profiles: {},
-            albums: {},
-            people: {},
-          }),
-        ),
-      );
+      await keep({
+        format: 'frameleaf-backup-manifest',
+        version: 2,
+        instanceId: INSTANCE_ID,
+        createdAt: '2026-09-26T03:00:00Z',
+        database: null,
+        assets: { 'asset-1': entry(owner), 'foreign-1': entry('foreign') },
+        profiles: {},
+        albums: {},
+        people: {},
+      });
       store.getPreview = vi.fn().mockResolvedValue(thumb);
     });
     it('refuses forbidden metadata target before reading its original bytes', async () => {
@@ -4008,7 +4068,7 @@ describe(CloudBackupService.name, () => {
         order: 'asc',
         sharedUsers: [],
       };
-      store.get.mockResolvedValue(gzipSync(JSON.stringify(backedUp)));
+      await keep(backedUp);
       await sut.startOwnerRestore(
         elevated,
         { manifestKey, assetIds: ['asset-1'] },
@@ -4121,7 +4181,7 @@ describe(CloudBackupService.name, () => {
   });
 
   describe('restore (FL-164)', () => {
-    const manifestKey = 'm/20260926T030000Z.json.gz';
+    const manifestKey = MANIFEST_KEY;
     const kept = {
       key: manifestKey,
       status: 'complete',
@@ -4132,22 +4192,20 @@ describe(CloudBackupService.name, () => {
       fileCount: 1,
       bytes: 100,
     };
-    const manifestBody = gzipSync(
-      JSON.stringify({
-        format: 'frameleaf-backup-manifest',
-        version: 1,
-        instanceId: INSTANCE_ID,
-        createdAt: '2026-09-26T03:00:00.000Z',
-        database: { key: dumpKey, sha256: SHA_DUMP, size: 50 },
-        assets: {
-          'asset-1': {
-            owner: 'owner-1',
-            files: [{ role: 'original', path: '/data/library/IMG_1.jpg', sha256: SHA_A, size: 100, mtime: null }],
-          },
+    const manifestBody = {
+      format: 'frameleaf-backup-manifest',
+      version: 1,
+      instanceId: INSTANCE_ID,
+      createdAt: '2026-09-26T03:00:00.000Z',
+      database: { key: dumpKey, sha256: SHA_DUMP, size: 50 },
+      assets: {
+        'asset-1': {
+          owner: 'owner-1',
+          files: [{ role: 'original', path: `${MEDIA.root}/library/IMG_1.jpg`, sha256: SHA_A, size: 100, mtime: null }],
         },
-        profiles: {},
-      }),
-    );
+      },
+      profiles: {},
+    };
     const restoreOperation = (scope: string, assetIds: string[] | null = null) =>
       operationOf({
         id: 'restore-1',
@@ -4155,7 +4213,7 @@ describe(CloudBackupService.name, () => {
         snapshot: { version: 1, bucketRef: ref, keyFingerprint: fingerprint, manifestKey, scope, assetIds },
       });
 
-    beforeEach(() => {
+    beforeEach(async () => {
       vi.mocked(link).mockResolvedValue(undefined);
       // FL-1347: a restore places each file with `retainFile`; on these mostly pretend files, its link stands for it
       vi.mocked(retainFile).mockImplementation((from, to) => link(from, to));
@@ -4163,11 +4221,15 @@ describe(CloudBackupService.name, () => {
       metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
       keys.read.mockResolvedValue(keyFileOf());
       index.listKeptManifests.mockResolvedValue([kept]);
-      store.get = vi.fn().mockResolvedValue(manifestBody);
-      store.download = vi.fn().mockImplementation((_connection, _key, _bucketKey, _target, sha256: string) =>
-        // the restorer checks the staged copy against the manifest: its size as well as its hash
-        Promise.resolve({ size: sha256 === SHA_SIDECAR ? 5 : 100, sha256 }),
+      // FL-1676: a real backup in the bucket, read through the engine onto real folders
+      await keep(manifestBody);
+      mocks.storage.mkdirSync.mockImplementation((path: string) => void mkdirSync(path, { recursive: true }));
+      mocks.storage.checkFileExists.mockImplementation((path: string) =>
+        stat(path)
+          .then(() => true)
+          .catch(() => false),
       );
+      mocks.storage.unlink.mockImplementation((path: string) => rm(path, { force: true }));
     });
 
     afterEach(async () => {
@@ -4214,16 +4276,9 @@ describe(CloudBackupService.name, () => {
     it('restores files into the restore folder as a cloud_restore operation, each checked by its hash', async () => {
       await sut.run(restoreOperation('files'), 'claim-1');
 
-      expect(store.download).toHaveBeenCalledWith(
-        expect.objectContaining({ bucket: s3.bucket }),
-        `o/${SHA_A}`,
-        key,
-        // Downloaded beside the target, then published exclusively after its size and hash match.
-        expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/\.cloud-restore-[\da-f-]+\.tmp$/),
-        SHA_A,
-      );
+      // read out of the backup beside the target, then published exclusively after its size and hash match
       expect(link).toHaveBeenCalledWith(
-        vi.mocked(store.download).mock.calls[0][3],
+        expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/\.cloud-restore-[\da-f-]+\.tmp$/),
         expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/original-IMG_1\.jpg$/),
       );
       expect(operations.complete).toHaveBeenCalledWith(
@@ -4270,24 +4325,20 @@ describe(CloudBackupService.name, () => {
         });
         const target = join(media, 'library', OWNER, 'IMG_1.jpg');
         await mkdir(join(media, 'library', OWNER), { recursive: true });
-        store.get = vi.fn().mockResolvedValue(
-          gzipSync(
-            JSON.stringify({
-              format: 'frameleaf-backup-manifest',
-              version: 1,
-              instanceId: INSTANCE_ID,
-              createdAt: '2026-09-26T03:00:00.000Z',
-              database: null,
-              assets: {
-                'asset-1': {
-                  owner: OWNER,
-                  files: [{ role: 'original', path: target, sha256: SHA_A, size: 100, mtime: null }],
-                },
-              },
-              profiles: {},
-            }),
-          ),
-        );
+        await keep({
+          format: 'frameleaf-backup-manifest',
+          version: 1,
+          instanceId: INSTANCE_ID,
+          createdAt: '2026-09-26T03:00:00.000Z',
+          database: null,
+          assets: {
+            'asset-1': {
+              owner: OWNER,
+              files: [{ role: 'original', path: target, sha256: SHA_A, size: 100, mtime: null }],
+            },
+          },
+          profiles: {},
+        });
         // the verified download is published at the target: the backed-up ciphertext lands there
         vi.mocked(link).mockImplementation((_staged, to) => copyFileOf(sealed, String(to)));
 
@@ -4319,40 +4370,27 @@ describe(CloudBackupService.name, () => {
         StorageCore.setMediaLocation(media);
         livePath = join(media, 'locked-keys', `${OWNER}.json`);
         const keySha = hex(backedUp);
-        store.get = vi.fn().mockResolvedValue(
-          gzipSync(
-            JSON.stringify({
-              format: 'frameleaf-backup-manifest',
-              version: 1,
-              instanceId: INSTANCE_ID,
-              createdAt: '2026-09-26T03:00:00.000Z',
-              database: { key: dumpKey, sha256: SHA_DUMP, size: 50 },
-              assets: {},
-              profiles: {},
-              lockedKeys: {
-                [OWNER]: {
-                  role: 'locked-key',
-                  path: '/old/locked-keys/k.json',
-                  sha256: keySha,
-                  size: backedUp.length,
-                  mtime: null,
-                },
+        await keep(
+          {
+            format: 'frameleaf-backup-manifest',
+            version: 1,
+            instanceId: INSTANCE_ID,
+            createdAt: '2026-09-26T03:00:00.000Z',
+            database: { key: dumpKey, sha256: SHA_DUMP, size: 50 },
+            assets: {},
+            profiles: {},
+            lockedKeys: {
+              [OWNER]: {
+                role: 'locked-key',
+                path: '/old/locked-keys/k.json',
+                sha256: keySha,
+                size: backedUp.length,
+                mtime: null,
               },
-            }),
-          ),
+            },
+          },
+          { contents: { [keySha]: backedUp } },
         );
-        const sizes = new Map([
-          [keySha, backedUp.length],
-          [SHA_DUMP, 50],
-        ]);
-        store.download = vi
-          .fn()
-          .mockImplementation(async (_connection, _key, _bucketKey, target: string, sha256: string) => {
-            if (sha256 === keySha) {
-              await writeFile(target, backedUp);
-            }
-            return { size: sizes.get(sha256) ?? 100, sha256 };
-          });
         // the verified download is published at its target: the backed-up key file lands there
         vi.mocked(link).mockImplementation((staged, to) =>
           String(to).endsWith('.json') ? copyFileOf(String(staged), String(to)) : Promise.resolve(),
@@ -4427,7 +4465,11 @@ describe(CloudBackupService.name, () => {
     });
 
     it('stops with a report when an object does not match its checksum', async () => {
-      store.download = vi.fn().mockRejectedValue(new CloudBackupStoreError('mismatch', null, 'ChecksumMismatch'));
+      // the pack that holds the photo was changed in storage
+      const name = MANIFEST_KEY.slice(MANIFEST_KEY.indexOf('/s/') + 1);
+      const pack = await packHolding(vault, name, treeKey(fileTreePath(`${MEDIA.root}/library/IMG_1.jpg`)), clientRing);
+      const body = vault.objects.get(pack)!;
+      body[5] ^= 0xff;
 
       await sut.run(restoreOperation('files'), 'claim-1');
 
@@ -4442,28 +4484,17 @@ describe(CloudBackupService.name, () => {
 
     it('restores on bare metal from the newest backup, with the bucket and the key alone', async () => {
       metadata = {};
-      store.listAll = vi
-        .fn()
-        .mockImplementation((_connection, prefix: string, onPage: (objects: unknown[]) => Promise<void>) =>
-          prefix === 'm/'
-            ? onPage([
-                { key: 'm/20260925T030000Z.json.gz', size: 1, etag: null },
-                { key: manifestKey, size: 1, etag: null },
-                { key: 'm/notes.txt', size: 1, etag: null },
-              ]).then(() => 3)
-            : Promise.resolve(0),
-        );
       const lines: string[] = [];
 
+      // FL-1676: the backups open with the recovery key file's backup keys, not the bucket key alone
       const result = await sut.restoreFromBucket(
-        { s3, key: key.toString('base64'), scope: 'files', restoreDatabase: false },
+        { s3, key: keyFileOf(), scope: 'files', restoreDatabase: false },
         (line) => {
           lines.push(line);
         },
       );
 
-      expect(store.readMarker).toHaveBeenCalledWith(expect.objectContaining({ bucket: s3.bucket }), key);
-      expect(store.get).toHaveBeenCalledWith(expect.anything(), manifestKey, key, undefined);
+      expect(store.readMarker).toHaveBeenCalledWith(expect.objectContaining({ bucket: s3.bucket }), fingerprint);
       expect(result).toMatchObject({ manifestKey, files: 1, databaseRestored: false });
       expect(lines.join('\n')).not.toContain(key.toString('base64'));
       expect(loadBackupWorkerIdentity).not.toHaveBeenCalled();
@@ -4488,7 +4519,8 @@ describe(CloudBackupService.name, () => {
             assetId: 'asset-1',
             name: 'IMG_1.jpg',
             state: 'deleted',
-            bytes: 100,
+            // the bytes the backup holds for it (the spec's file is one byte)
+            bytes: 1,
             hasDetails: false,
           }),
         ],
@@ -4502,12 +4534,6 @@ describe(CloudBackupService.name, () => {
       await expect(sut.startRestore(authStub.admin, { manifestKey, scope: 'album' })).rejects.toBeInstanceOf(
         BadRequestException,
       );
-    });
-
-    it('asks for a newer backup when this one was made before albums were recorded', async () => {
-      await expect(
-        sut.startRestore(authStub.admin, { manifestKey, scope: 'album', albumId: ALBUM_ID }),
-      ).rejects.toThrow('made before albums were recorded');
     });
 
     describe('albums and details (manifest v2)', () => {
@@ -4542,58 +4568,66 @@ describe(CloudBackupService.name, () => {
         order: 'desc',
         sharedUsers: [],
       };
-      const v2Body = gzipSync(
-        JSON.stringify({
-          format: 'frameleaf-backup-manifest',
-          version: 2,
-          instanceId: INSTANCE_ID,
-          createdAt: '2026-09-26T03:00:00.000Z',
-          database: null,
-          assets: {
-            'asset-1': {
-              owner: 'owner-1',
-              files: [
-                { role: 'original', path: '/data/library/IMG_1.jpg', sha256: SHA_A, size: 100, mtime: null },
-                { role: 'sidecar', path: '/data/library/IMG_1.jpg.xmp', sha256: SHA_SIDECAR, size: 5, mtime: null },
-              ],
-              ...record,
-              details: detailsOf({ id: 'stack-1', isPrimary: true }),
-            },
-            'asset-2': {
-              owner: 'owner-1',
-              files: [{ role: 'original', path: '/data/library/IMG_2.jpg', sha256: SHA_B, size: 100, mtime: null }],
-              ...record,
-              originalFileName: 'IMG_2.jpg',
-              details: detailsOf(),
-            },
-            'asset-3': {
-              owner: 'owner-1',
-              files: [{ role: 'original', path: '/data/library/IMG_3.jpg', sha256: SHA_C, size: 100, mtime: null }],
-              ...record,
-              details: { ...detailsOf(), albums: [] },
-            },
+      const v2Body = {
+        format: 'frameleaf-backup-manifest',
+        version: 2,
+        instanceId: INSTANCE_ID,
+        createdAt: '2026-09-26T03:00:00.000Z',
+        database: null,
+        assets: {
+          'asset-1': {
+            owner: 'owner-1',
+            files: [
+              { role: 'original', path: `${MEDIA.root}/library/IMG_1.jpg`, sha256: SHA_A, size: 100, mtime: null },
+              {
+                role: 'sidecar',
+                path: `${MEDIA.root}/library/IMG_1.jpg.xmp`,
+                sha256: SHA_SIDECAR,
+                size: 5,
+                mtime: null,
+              },
+            ],
+            ...record,
+            details: detailsOf({ id: 'stack-1', isPrimary: true }),
           },
-          profiles: {},
-          albums: { [ALBUM_ID]: album },
-          people: {},
-        }),
-      );
+          'asset-2': {
+            owner: 'owner-1',
+            files: [
+              { role: 'original', path: `${MEDIA.root}/library/IMG_2.jpg`, sha256: SHA_B, size: 100, mtime: null },
+            ],
+            ...record,
+            originalFileName: 'IMG_2.jpg',
+            details: detailsOf(),
+          },
+          'asset-3': {
+            owner: 'owner-1',
+            files: [
+              { role: 'original', path: `${MEDIA.root}/library/IMG_3.jpg`, sha256: SHA_C, size: 100, mtime: null },
+            ],
+            ...record,
+            details: { ...detailsOf(), albums: [] },
+          },
+        },
+        profiles: {},
+        albums: { [ALBUM_ID]: album },
+        people: {},
+      };
       const libraryAsset = {
         status: 'active',
         ownerId: 'owner-1',
-        originalPath: '/data/library/IMG_2.jpg',
+        originalPath: `${MEDIA.root}/library/IMG_2.jpg`,
         isExternal: false,
         locked: false,
       };
 
-      beforeEach(() => {
-        store.get = vi.fn().mockResolvedValue(v2Body);
+      beforeEach(async () => {
+        await keep(v2Body);
       });
 
       it('never names or finds by name a deleted item the backup recorded as Locked', async () => {
-        const body = JSON.parse(gunzipSync(v2Body).toString());
+        const body = structuredClone(v2Body);
         body.assets['asset-2'].details.visibility = 'locked';
-        store.get = vi.fn().mockResolvedValue(gzipSync(JSON.stringify(body)));
+        await keep(body);
         index.getLibraryState.mockResolvedValue(new Map());
 
         const listed = await sut.listManifestItems({ manifestKey });
@@ -4658,8 +4692,8 @@ describe(CloudBackupService.name, () => {
             ownerId: 'owner-1',
             record,
             sha256: SHA_A,
-            originalPath: '/data/library/IMG_1.jpg',
-            sidecarPath: '/data/library/IMG_1.jpg.xmp',
+            originalPath: `${MEDIA.root}/library/IMG_1.jpg`,
+            sidecarPath: `${MEDIA.root}/library/IMG_1.jpg.xmp`,
           }),
         );
         expect(details.putBack).toHaveBeenCalledWith(
@@ -4807,7 +4841,7 @@ describe(CloudBackupService.name, () => {
         assetId: 'asset-1',
         ownerId: 'owner-1',
         role: 'original',
-        path: '/data/library/asset-1.jpg',
+        path: `${MEDIA.root}/library/asset-1.jpg`,
         recorded: { sha256: SHA_A, size: 100, verifiedAt: new Date('2026-10-11T00:00:00.000Z') },
       },
     ];

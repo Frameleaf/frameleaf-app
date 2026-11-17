@@ -62,6 +62,8 @@ export async function storeTestBackup(
     files: Record<string, Buffer>;
     keyring?: VaultKeyring;
     time?: Date;
+    /** The random part of the backup's name (16 to 64 hex), when a spec needs to know the name before. */
+    snapshotId?: string;
   },
 ) {
   const repository = await openVault(store, options.keyring ?? testKeyring(), { create: true });
@@ -70,7 +72,7 @@ export async function storeTestBackup(
     repository,
     treeSource({ ...options.files, [CATALOG_PATH.join('/')]: Buffer.from(JSON.stringify(options.catalog)) }),
     // one blob per pack, so a spec can break the one pack that holds one file
-    { sequence: options.sequence, time: options.time, packTarget: 1 },
+    { sequence: options.sequence, time: options.time, packTarget: 1, snapshotId: options.snapshotId },
   );
   return {
     key: snapshotObjectKey(options.vaultId, stored.key),
