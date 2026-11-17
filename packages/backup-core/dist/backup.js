@@ -111,6 +111,13 @@ export async function backup(repository, source, options = {}) {
                 continue;
             }
             const earlier = before.get(now.name);
+            if (now.unreadable !== undefined) {
+                problems.push({ path: child, message: now.unreadable });
+                if (earlier) {
+                    entries.push(earlier);
+                }
+                continue;
+            }
             if (now.type === 'dir') {
                 const { size: _, ...rest } = now;
                 entries.push({
@@ -149,6 +156,7 @@ export async function backup(repository, source, options = {}) {
     await data.flush();
     await trees.flush();
     await repository.writeIndex([...data.written, ...trees.written]);
+    options.signal?.throwIfAborted();
     stats.storedBytes = data.storedBytes + trees.storedBytes;
     const written = await repository.writeSnapshot({
         time: (options.time ?? new Date()).toISOString(),

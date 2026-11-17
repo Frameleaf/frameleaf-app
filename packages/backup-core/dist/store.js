@@ -44,6 +44,7 @@ export function memoryStore() {
         },
     };
 }
+const NO_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
 export function dirStore(root) {
     const path = (key) => {
         if (!/^[\w-]+(\/[\w-]+)*$/.test(key)) {
@@ -69,7 +70,16 @@ export function dirStore(root) {
                     if (error.code === 'EEXIST') {
                         throw new ObjectExistsError(key);
                     }
-                    if (await stat(target).catch(() => null)) {
+                    if (!NO_LINKS.has(error.code ?? '')) {
+                        throw error;
+                    }
+                    const taken = await stat(target).catch((failure) => {
+                        if (failure.code === 'ENOENT') {
+                            return null;
+                        }
+                        throw failure;
+                    });
+                    if (taken) {
                         throw new ObjectExistsError(key);
                     }
                     await rename(temporary, target);
@@ -104,7 +114,10 @@ export function dirStore(root) {
                 }
                 throw error;
             };
-            const names = (await readdir(root, { recursive: true }).catch(missing)) ?? [];
+            if (!(await stat(root).catch(missing))) {
+                return [];
+            }
+            const names = await readdir(root, { recursive: true });
             const found = [];
             for (const name of names) {
                 const key = name.split(sep).join('/');
