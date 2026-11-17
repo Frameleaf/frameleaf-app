@@ -169,7 +169,7 @@ const isFile = (name: string) => {
 @Injectable()
 export class TakeoutWorkerService {
   private tickHandle?: ReturnType<typeof setInterval>;
-  private sweepHandle?: ReturnType<typeof setInterval>;
+  private sweptAt = 0;
   private active?: Promise<void>;
   private running?: AbortController;
   private stopping = false;
@@ -197,8 +197,6 @@ export class TakeoutWorkerService {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), TAKEOUT_TICK_MS);
     this.tick();
-    this.sweepHandle ??= setInterval(() => void this.sweep(), TAKEOUT_SWEEP_MS);
-    void this.sweep();
   }
 
   /**
@@ -229,8 +227,6 @@ export class TakeoutWorkerService {
       clearInterval(this.tickHandle);
       this.tickHandle = undefined;
     }
-    clearInterval(this.sweepHandle);
-    this.sweepHandle = undefined;
     this.running?.abort(new Error('The server is restarting'));
     await this.active;
   }
@@ -255,6 +251,11 @@ export class TakeoutWorkerService {
         leaseMs: TAKEOUT_LEASE_MS,
       });
       if (!claim) {
+        // Swept when idle, never beside a job: a resumed scan reopens the `.part` files a sweep removes.
+        if (Date.now() - this.sweptAt >= TAKEOUT_SWEEP_MS) {
+          this.sweptAt = Date.now();
+          await this.sweep();
+        }
         return;
       }
       await this.run(claim.operation, claim.claimToken);
