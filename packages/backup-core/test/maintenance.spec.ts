@@ -211,19 +211,21 @@ describe('verify', () => {
       packsRead: (await store.list('p/')).length,
     });
 
-    const packs = (await store.list('p/')).map((object) => object.key).sort();
-    const damaged = store.objects.get(packs[0]!)!;
-    damaged[100] = damaged[100]! ^ 1;
-    await store.delete(packs[1]!);
+    // Remove a pack the newer backup needs, and change one byte in another pack.
+    const newer = await repository.readSnapshot(b.key);
+    const gone = repository.index.get((await find(repository, newer, ['d-new.bin']))!.chunks![0]!)!.pack;
+    const hurt = (await store.list('p/')).map((object) => object.key).find((key) => key !== gone)!;
+    await store.delete(gone);
+    const damaged = store.objects.get(hurt)!;
+    damaged[5] = damaged[5]! ^ 1;
     const sealed = store.objects.get(a.key)!;
     sealed[20] = sealed[20]! ^ 1;
 
     const report = await verify(repository, { readPack: () => true });
-    expect(report.damagedPacks).toEqual([packs[0]]);
+    expect(report.damagedPacks).toEqual([hurt]);
     expect(report.missing.length).toBeGreaterThan(0);
     expect(report.damagedSnapshots).toEqual([a.key]);
     expect(report.snapshots).toBe(1);
-    expect(b.key).not.toBe(a.key);
   });
 });
 
