@@ -190,6 +190,8 @@
   let viewportTopMonthScrollPercent = $state(0);
   let timelineScrollPercent = $state(0);
   let rangePending = $state(false);
+  /** The tile clicked last without ticking it: where a shift-click ranges from, as in a file manager. */
+  let clickedId: string | undefined;
 
   const maxMd = $derived(mediaQueryManager.maxMd);
   const coarsePointer = $derived(mediaQueryManager.pointerCoarse);
@@ -1419,7 +1421,8 @@
    * all range from the same original anchor.
    */
   const selectRange = async (asset: TimelineAsset) => {
-    const start = session.session.anchorId ? { id: session.session.anchorId } : undefined;
+    const anchorId = clickedId ?? session.session.anchorId;
+    const start = anchorId ? { id: anchorId } : undefined;
     if (!start) {
       // No anchor: a plain toggle, which sets one. An anchor that is no longer in the timeline adds
       // just the clicked item and stays the anchor (prototype `selectRange` outside visible order).
@@ -1445,6 +1448,7 @@
 
   /** A pick in single-select mode is the whole selection, so the previous one is replaced. */
   const pick = (asset: TimelineAsset) => {
+    clickedId = undefined;
     if (singleSelect) {
       session.dispatch({ type: 'selection', ids: [asset.id] });
     } else {
@@ -1463,10 +1467,13 @@
       pick(asset);
       return;
     }
+    // A tick is the newer anchor.
+    clickedId = undefined;
     session.select(asset.id);
   };
 
   const handleOpen = (asset: TimelineAsset, event?: MouseEvent | KeyboardEvent) => {
+    clickedId = selectionMode ? undefined : asset.id;
     // The page may claim a plain click for itself before anything else happens.
     if (onTileClick?.(asset, event)) {
       session.setScrollAnchor(asset.id);
