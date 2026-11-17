@@ -408,19 +408,19 @@ export class CloudBackupSelectionRepository {
   }
 
   /**
-   * Each account's originals in the run's committed manifest, counted from the manifest's recorded
-   * originals of the run's included items, before those records are removed. Counted once.
+   * Each account's originals in the run's committed backup, counted from the backup's recorded originals
+   * of the run's included items. Counted once.
    */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   async recordIncluded(runId: string, manifestId: string): Promise<void> {
     await sql`
       UPDATE public.cloud_backup_decision_account account
       SET "includedOriginals" = (
-        SELECT count(*)::int FROM public.cloud_backup_manifest_entry entry
+        SELECT count(*)::int FROM public.cloud_backup_manifest_original original
         JOIN public.cloud_backup_decision_asset decision
-          ON decision."runId" = account."runId" AND decision."assetId" = entry."assetId"
+          ON decision."runId" = account."runId" AND decision."assetId" = original."assetId"
           AND decision.reason = 'included'
-        WHERE entry."manifestId" = ${manifestId}::uuid AND entry.role = 'original'
+        WHERE original."manifestId" = ${manifestId}::uuid
           AND decision."ownerId" = account."userId")
       WHERE account."runId" = ${runId}::uuid AND account."includedOriginals" IS NULL
     `.execute(this.db);

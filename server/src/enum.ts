@@ -1573,8 +1573,8 @@ export enum MediaOperationKind {
   /**
    * A restore from a cloud backup manifest (FL-164): files to `<media>/frameleaf/restore/<id>` for Library
    * Care, one asset back to its place, the database dump into `<media>/backups` for the maintenance
-   * restore, or the whole library. Every object is fetched with the bucket key (SSE-C) and checked against
-   * its SHA-256 before it is written; a mismatch stops the restore with a report.
+   * restore, or the whole library. Every file is read out of the backup (FL-1676: the backup engine's snapshot)
+   * and checked against its SHA-256 before it is written; a mismatch stops the restore with a report.
    */
   CloudRestore = 'cloud_restore',
   BuddyBackup = 'buddy_backup',

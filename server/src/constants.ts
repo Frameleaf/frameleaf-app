@@ -305,7 +305,7 @@ export const endpointTags: Record<ApiTag, string> = {
   [ApiTag.FrameleafLicense]:
     'Frameleaf licence certificates: activation by key or offline file, refresh with a grace period, and the entitlements cloud-connected features read. Self-hosted features never depend on a licence.',
   [ApiTag.FrameleafCloudBackup]:
-    'Cloud backup to one bucket per server: the claim, the SSE-C bucket key in one of three key modes (never returned after the recovery kit) and content-addressed runs that upload each unique file once.',
+    'Cloud backup to one bucket per server: the claim, the bucket key in one of three key modes (never returned after the recovery kit) and chunked, deduplicated runs encrypted on this server that store each unchanged piece once.',
   [ApiTag.FrameleafCloudMl]:
     'Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback.',
   [ApiTag.FrameleafCloudJobs]:

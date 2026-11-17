@@ -22,16 +22,10 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
-import { CloudBackupVerificationMethod, CloudBackupVerificationResult } from 'src/schema/tables/safety-proof.table.js';
 import { bucketRef } from 'src/utils/cloud-backup.js';
 import { isMotionOfLockedStill, withHiddenContentFilter } from 'src/utils/database.js';
 import { effectiveVisibilityOf, isLocked, isNotLocked } from 'src/utils/locked.js';
 
-export type CloudBackupIndexedObject = {
-  sha256: string;
-  size: number;
-  etag: string | null;
-};
 export type CloudBackupManifestRow = {
   id: string;
   bucket: string;
@@ -39,16 +33,6 @@ export type CloudBackupManifestRow = {
   operationId: string | null;
   status: string;
   createdAt: Date;
-};
-export type CloudBackupEntry = {
-  fileKey: string;
-  assetId: string | null;
-  ownerId: string | null;
-  role: string;
-  path: string;
-  sha256: string;
-  size: number;
-  mtime: Date | null;
 };
 /** One asset a run backs up: its original with the checksum on record, and its other files by type. */
 export type CloudBackupAsset = {
@@ -69,7 +53,6 @@ export type CloudBackupAsset = {
 const MANIFEST_COLUMNS = ['id', 'bucket', 'key', 'operationId', 'status', 'createdAt'] as const;
 /** Originals recorded per insert when a backup completes. */
 const MEMBERSHIP_BATCH = 5000;
-const ENTRY_COLUMNS = ['fileKey', 'assetId', 'ownerId', 'role', 'path', 'sha256', 'size', 'mtime'] as const;
 /** FL-164: manifests that are in the bucket and kept: complete ones, and ones a verification marked degraded. */
 const KEPT_MANIFEST_STATUSES = ['complete', 'degraded'] as const;
 /** FL-164: an asset a manifest names, as the library holds it now. */
@@ -143,7 +126,6 @@ export class CloudBackupIndexRepository {
         SELECT min(m."finishedAt") AS "backedUpSince", max(m."finishedAt") AS "lastCompletedAt"
         FROM cloud_backup_manifest_original membership
         JOIN cloud_backup_manifest m ON m.id = membership."manifestId"
-        JOIN cloud_backup_object object ON object.bucket = m.bucket AND object.sha256 = membership.sha256
         JOIN media_operation operation ON operation.id = m."operationId"
         WHERE membership."assetId" = assets.id AND membership.sha256 = assets.sha256
           AND m.bucket = ${bucket} AND m.status = 'complete' AND m."finishedAt" IS NOT NULL
@@ -153,19 +135,16 @@ export class CloudBackupIndexRepository {
           AND operation.snapshot ->> 'bucketRef' = m.bucket
       ) backup ON true
       LEFT JOIN LATERAL (
-        SELECT CASE WHEN proof.result = 'passed' THEN operation."finishedAt" END AS "lastVerifiedAt"
-        FROM cloud_backup_object_verification proof
-        JOIN cloud_backup_object object ON object.bucket = proof.bucket AND object.sha256 = proof.sha256
-        JOIN media_operation operation ON operation.id = proof."operationId"
-        WHERE backup."backedUpSince" IS NOT NULL AND proof.bucket = ${bucket} AND proof.sha256 = assets.sha256
-          AND proof.method = 'sha256-get' AND proof."checkedAt" >= object."uploadedAt"
+        -- FL-1676: a check of the whole backup that found nothing missing or damaged, since the item was backed up
+        SELECT max(operation."finishedAt") AS "lastVerifiedAt"
+        FROM media_operation operation
+        WHERE backup."backedUpSince" IS NOT NULL
           AND operation.kind = 'cloud_backup' AND operation.status = 'completed'
-          AND operation."finishedAt" IS NOT NULL AND operation.snapshot ->> 'bucketRef' = proof.bucket
+          AND operation."finishedAt" IS NOT NULL AND operation."finishedAt" >= backup."backedUpSince"
+          AND operation.snapshot ->> 'bucketRef' = ${bucket}
           AND operation.snapshot ->> 'task' = 'verify' AND operation.result ->> 'task' = 'verify'
           AND operation.result ->> 'done' = 'true'
-          AND COALESCE(operation.snapshot ->> 'depth', 'sample') = 'sample'
-          AND operation.result ->> 'depth' = 'sample'
-        ORDER BY proof."checkedAt" DESC LIMIT 1
+          AND operation.result ->> 'missing' = '0' AND operation.result ->> 'mismatched' = '0'
       ) verification ON true`;
   }
   async getSafetyAssets(assets: ReturnType<IntegrityRepository['getSafetyQuery']>, bucket: string | null) {
@@ -191,68 +170,6 @@ export class CloudBackupIndexRepository {
     @InjectKysely()
     private db: Kysely<DB>,
   ) {}
-  /** The hashes of these that are already in the bucket. */
-  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
-  async getExisting(bucket: string, hashes: string[]): Promise<Set<string>> {
-    if (hashes.length === 0) {
-      return new Set();
-    }
-    const rows = await this.db
-      .selectFrom('cloud_backup_object')
-      .select('sha256')
-      .where('bucket', '=', bucket)
-      .where('sha256', 'in', [...new Set(hashes)])
-      .execute();
-    return new Set(rows.map(({ sha256 }) => sha256));
-  }
-  /** The size and ETag recorded for each of these hashes that the index knows. */
-  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
-  async getRecorded(bucket: string, hashes: string[]): Promise<Map<string, { size: number; etag: string | null }>> {
-    if (hashes.length === 0) {
-      return new Map();
-    }
-    const rows = await this.db
-      .selectFrom('cloud_backup_object')
-      .select(['sha256', 'size', 'etag'])
-      .where('bucket', '=', bucket)
-      .where('sha256', 'in', [...new Set(hashes)])
-      .execute();
-    return new Map(rows.map(({ sha256, size, etag }) => [sha256, { size: Number(size), etag }]));
-  }
-  /** Record objects that are in the bucket (uploaded, or found by the listing). Recording twice is harmless. */
-  @GenerateSql({
-    params: [DummyValue.STRING, [{ sha256: DummyValue.STRING, size: DummyValue.NUMBER, etag: DummyValue.STRING }]],
-  })
-  async record(bucket: string, objects: CloudBackupIndexedObject[]): Promise<void> {
-    if (objects.length === 0) {
-      return;
-    }
-    const unique = new Map(objects.map((object) => [object.sha256, object])).values().toArray();
-    await this.db
-      .insertInto('cloud_backup_object')
-      .values(unique.map(({ sha256, size, etag }) => ({ bucket, sha256, size, etag })))
-      .onConflict((oc) =>
-        oc.columns(['bucket', 'sha256']).doUpdateSet((eb) => ({
-          size: eb.ref('excluded.size'),
-          etag: sql<string | null>`coalesce(excluded."etag", "cloud_backup_object"."etag")`,
-          lastSeenAt: sql<Date>`now()`,
-        })),
-      )
-      .execute();
-  }
-  /** Mark objects as referenced by the run in hand. */
-  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
-  async touch(bucket: string, hashes: string[]): Promise<void> {
-    if (hashes.length === 0) {
-      return;
-    }
-    await this.db
-      .updateTable('cloud_backup_object')
-      .set({ lastSeenAt: sql<Date>`now()` })
-      .where('bucket', '=', bucket)
-      .where('sha256', 'in', [...new Set(hashes)])
-      .execute();
-  }
   /**
    * Forget everything recorded for a bucket: a new claim starts from the bucket as it is now. Its
    * manifests go too (their original memberships cascade), or prune, the restore lists and the safety
@@ -260,54 +177,7 @@ export class CloudBackupIndexRepository {
    */
   @GenerateSql({ params: [DummyValue.STRING] })
   async deleteBucket(bucket: string): Promise<void> {
-    await this.db.transaction().execute(async (trx) => {
-      // the bucket's own rows and its client upload receipts (`<bucket>#client-v<n>`)
-      await trx
-        .deleteFrom('cloud_backup_object')
-        .where((eb) => eb.or([eb('bucket', '=', bucket), sql<boolean>`starts_with(bucket, ${`${bucket}#`})`]))
-        .execute();
-      await trx.deleteFrom('cloud_backup_object_verification').where('bucket', '=', bucket).execute();
-      await trx
-        .deleteFrom('cloud_backup_manifest_entry')
-        .where('manifestId', 'in', (eb) =>
-          eb.selectFrom('cloud_backup_manifest').select('id').where('bucket', '=', bucket),
-        )
-        .execute();
-      await trx.deleteFrom('cloud_backup_manifest').where('bucket', '=', bucket).execute();
-    });
-  }
-  /**
-   * The database's clock, which stamps `lastSeenAt`, as ISO 8601 text with its microseconds. A `Date`
-   * keeps only milliseconds, so a row stamped earlier in the same millisecond would not compare as
-   * before it and would survive `pruneUnseen`.
-   */
-  @GenerateSql()
-  async currentTime(): Promise<string> {
-    const row = await this.db.selectNoFrom(sql<string>`to_json(now())`.as('now')).executeTakeFirstOrThrow();
-    return row.now;
-  }
-  /** Forget objects the bucket listing no longer holds: every row the listing did not touch since `since`. */
-  @GenerateSql({ params: [DummyValue.STRING, DummyValue.DATE] })
-  async pruneUnseen(bucket: string, since: string): Promise<number> {
-    const result = await this.db
-      .deleteFrom('cloud_backup_object')
-      .where('bucket', '=', bucket)
-      .where('lastSeenAt', '<', sql<Date>`${since}::timestamptz`)
-      .executeTakeFirst();
-    return Number(result.numDeletedRows);
-  }
-  /** How many unique files the bucket holds for this server, and their size. */
-  @GenerateSql({ params: [DummyValue.STRING] })
-  async getUsage(bucket: string): Promise<{
-    objects: number;
-    bytes: number;
-  }> {
-    const row = await this.db
-      .selectFrom('cloud_backup_object')
-      .select((eb) => [eb.fn.countAll<string>().as('objects'), sql<string>`coalesce(sum("size"), 0)`.as('bytes')])
-      .where('bucket', '=', bucket)
-      .executeTakeFirst();
-    return { objects: Number(row?.objects ?? 0), bytes: Number(row?.bytes ?? 0) };
+    await this.db.deleteFrom('cloud_backup_manifest').where('bucket', '=', bucket).execute();
   }
   @GenerateSql({ params: [{ bucket: DummyValue.STRING, key: DummyValue.STRING, operationId: DummyValue.UUID }] })
   async createManifest(values: { bucket: string; key: string; operationId: string }): Promise<CloudBackupManifestRow> {
@@ -373,127 +243,6 @@ export class CloudBackupIndexRepository {
         .where('id', '=', id)
         .execute();
     });
-  }
-  /** Persist the actual check under its current worker claim, never as a completed-run assertion. */
-  @GenerateSql({
-    params: [
-      {
-        bucket: DummyValue.STRING,
-        sha256: DummyValue.STRING,
-        operationId: DummyValue.UUID,
-        claimToken: DummyValue.UUID_1,
-        method: 'sha256-get',
-        result: 'passed',
-      },
-    ],
-  })
-  async recordObjectVerification(input: {
-    bucket: string;
-    sha256: string;
-    operationId: string;
-    claimToken: string;
-    method: CloudBackupVerificationMethod;
-    result: CloudBackupVerificationResult;
-  }): Promise<void> {
-    const { claimToken, ...proof } = input;
-    const write = async (trx: Kysely<DB>) => {
-      await trx
-        .selectFrom('media_operation')
-        .select('id')
-        .where('id', '=', proof.operationId)
-        .where('claimToken', '=', claimToken)
-        .forShare()
-        .execute();
-      // Recheck the clock and control requests after any operation-row lock wait.
-      await trx
-        .insertInto('cloud_backup_object_verification')
-        .columns(['bucket', 'sha256', 'operationId', 'method', 'result'])
-        .expression(
-          trx
-            .selectFrom('media_operation')
-            .select([
-              sql<string>`${proof.bucket}`.as('bucket'),
-              sql<string>`${proof.sha256}`.as('sha256'),
-              'id as operationId',
-              sql<CloudBackupVerificationMethod>`${proof.method}`.as('method'),
-              sql<CloudBackupVerificationResult>`${proof.result}`.as('result'),
-            ])
-            .where('id', '=', proof.operationId)
-            .where('claimToken', '=', claimToken)
-            .where('kind', '=', MediaOperationKind.CloudBackup)
-            .where('status', 'in', [
-              MediaOperationStatus.Preparing,
-              MediaOperationStatus.Rendering,
-              MediaOperationStatus.Validating,
-            ])
-            .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
-            .where('cancelRequestedAt', 'is', null)
-            .where('pauseRequestedAt', 'is', null)
-            .where(sql<string>`snapshot ->> 'bucketRef'`, '=', proof.bucket)
-            .where(sql<string>`snapshot ->> 'task'`, '=', 'verify')
-            .where(
-              sql<string>`COALESCE(snapshot ->> 'depth', 'sample')`,
-              '=',
-              proof.method === 'size-head' ? 'full' : 'sample',
-            ),
-        )
-        .onConflict((oc) =>
-          oc
-            .columns(['bucket', 'sha256', 'operationId'])
-            .doUpdateSet({ method: proof.method, result: proof.result, checkedAt: sql<Date>`clock_timestamp()` }),
-        )
-        .execute();
-    };
-    return this.db.isTransaction ? write(this.db) : this.db.transaction().execute(write);
-  }
-  /** Internal facts only: completion qualifies the run, not current asset access or backup eligibility. */
-  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
-  async getCompletedObjectVerifications(bucket: string, hashes: string[]) {
-    if (hashes.length === 0) {
-      return [];
-    }
-    return this.db
-      .selectFrom('cloud_backup_object_verification as proof')
-      .innerJoin('media_operation as operation', 'operation.id', 'proof.operationId')
-      .selectAll('proof')
-      .where('proof.bucket', '=', bucket)
-      .where('proof.sha256', 'in', hashes)
-      .where('operation.kind', '=', MediaOperationKind.CloudBackup)
-      .where('operation.status', '=', MediaOperationStatus.Completed)
-      .where(sql<string>`operation.snapshot ->> 'bucketRef'`, '=', bucket)
-      .where(sql<string>`operation.snapshot ->> 'task'`, '=', 'verify')
-      .where(sql<string>`operation.result ->> 'task'`, '=', 'verify')
-      .where(sql<string>`operation.result ->> 'done'`, '=', 'true')
-      .where(
-        sql<string>`operation.result ->> 'depth'`,
-        '=',
-        sql<string>`COALESCE(operation.snapshot ->> 'depth', 'sample')`,
-      )
-      .where(
-        sql<boolean>`proof.method = CASE WHEN operation.snapshot ->> 'depth' = 'full' THEN 'size-head' ELSE 'sha256-get' END`,
-      )
-      .orderBy('proof.checkedAt', 'desc')
-      .execute();
-  }
-  /** The database dump a manifest names, so no complete manifest ever loses its dump to pruning. */
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
-  async setManifestDatabase(id: string, databaseKey: string): Promise<void> {
-    await this.db.updateTable('cloud_backup_manifest').set({ databaseKey }).where('id', '=', id).execute();
-  }
-  /**
-   * FL-164: the database dumps named by this bucket's manifests that are still kept (complete, or complete
-   * and degraded by a verification), so no kept manifest ever loses its dump to pruning.
-   */
-  @GenerateSql({ params: [DummyValue.STRING] })
-  async getKeptDatabaseKeys(bucket: string): Promise<Set<string>> {
-    const rows = await this.db
-      .selectFrom('cloud_backup_manifest')
-      .select('databaseKey')
-      .where('bucket', '=', bucket)
-      .where('status', 'in', [...KEPT_MANIFEST_STATUSES])
-      .where('databaseKey', 'is not', null)
-      .execute();
-    return new Set(rows.map(({ databaseKey }) => databaseKey!));
   }
   /** FL-164: which of these manifest keys this server has a record of, in any state. */
   @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
@@ -705,23 +454,6 @@ export class CloudBackupIndexRepository {
     return Number(result.numUpdatedRows);
   }
   /**
-   * FL-164: forget objects that are no longer in the bucket (removed by retention, or found missing or
-   * damaged by a verification), so the next run uploads them again from this server's files. Forgetting
-   * one that is still there costs one upload of the same bytes; remembering one that is gone would skip it.
-   */
-  @GenerateSql({ params: [DummyValue.STRING, [DummyValue.STRING]] })
-  async forget(bucket: string, hashes: string[]): Promise<void> {
-    if (hashes.length === 0) {
-      return;
-    }
-    // a client upload receipt (`<bucket>#client-v<n>`) for a bad object goes too, or the next run skips it
-    await this.db
-      .deleteFrom('cloud_backup_object')
-      .where((eb) => eb.or([eb('bucket', '=', bucket), sql<boolean>`starts_with(bucket, ${`${bucket}#`})`]))
-      .where('sha256', 'in', [...new Set(hashes)])
-      .execute();
-  }
-  /**
    * FL-164: which of these assets are in the library now, for the restore list: active, trashed, or gone.
    * Backend work that sees Locked assets too; the caller is an administrator's restore of the whole server.
    */
@@ -750,41 +482,6 @@ export class CloudBackupIndexRepository {
         },
       ]),
     );
-  }
-  /** Cloud backup and restore operations that ended still holding a transfer receipt (FL-525). */
-  @GenerateSql()
-  async getEndedTransfers(): Promise<Array<{ id: string; transfer: unknown }>> {
-    return this.db
-      .selectFrom('media_operation')
-      .select(['id', sql<unknown>`result -> 'backupTransfer'`.as('transfer')])
-      .where('kind', 'in', [MediaOperationKind.CloudBackup, MediaOperationKind.CloudRestore])
-      .where('status', 'in', FINISHED_OPERATIONS)
-      .where(sql<boolean>`jsonb_typeof(result -> 'backupTransfer') = 'object'`)
-      .execute();
-  }
-  /** Drop an ended operation's transfer receipt once its partial file is gone. */
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async clearEndedTransfer(id: string): Promise<void> {
-    await this.db
-      .updateTable('media_operation')
-      .set({ result: sql`result - 'backupTransfer'` })
-      .where('id', '=', id)
-      .where('status', 'in', FINISHED_OPERATIONS)
-      .execute();
-  }
-  /** Which of these operations have not ended: their transfer folders are still in use. */
-  @GenerateSql({ params: [[DummyValue.UUID]] })
-  async getUnfinishedOperationIds(ids: string[]): Promise<Set<string>> {
-    if (ids.length === 0) {
-      return new Set();
-    }
-    const rows = await this.db
-      .selectFrom('media_operation')
-      .select('id')
-      .where('id', '=', sql<string>`any(${ids}::uuid[])`)
-      .where('status', 'not in', FINISHED_OPERATIONS)
-      .execute();
-    return new Set(rows.map(({ id }) => id));
   }
   /** Which of `paths` an asset other than `except` holds now, as its original or one of its files. */
   @GenerateSql({ params: [[DummyValue.STRING], [DummyValue.UUID]] })
@@ -1080,77 +777,7 @@ export class CloudBackupIndexRepository {
       )
       .returning('id')
       .execute();
-    if (ended.length > 0) {
-      await this.db
-        .deleteFrom('cloud_backup_manifest_entry')
-        .where(
-          'manifestId',
-          'in',
-          ended.map(({ id }) => id),
-        )
-        .execute();
-    }
     return ended.length;
-  }
-  /** Record files of a running manifest; a file recorded again is replaced. */
-  @GenerateSql({
-    params: [
-      DummyValue.UUID,
-      [
-        {
-          fileKey: DummyValue.STRING,
-          assetId: DummyValue.UUID,
-          ownerId: DummyValue.UUID,
-          role: DummyValue.STRING,
-          path: DummyValue.STRING,
-          sha256: DummyValue.STRING,
-          size: DummyValue.NUMBER,
-          mtime: DummyValue.DATE,
-        },
-      ],
-    ],
-  })
-  async upsertEntries(manifestId: string, entries: CloudBackupEntry[]): Promise<void> {
-    if (entries.length === 0) {
-      return;
-    }
-    const unique = new Map(entries.map((entry) => [entry.fileKey, entry])).values().toArray();
-    await this.db
-      .insertInto('cloud_backup_manifest_entry')
-      .values(unique.map((entry) => ({ ...entry, manifestId })))
-      .onConflict((oc) =>
-        oc.columns(['manifestId', 'fileKey']).doUpdateSet((eb) => ({
-          assetId: eb.ref('excluded.assetId'),
-          ownerId: eb.ref('excluded.ownerId'),
-          role: eb.ref('excluded.role'),
-          path: eb.ref('excluded.path'),
-          sha256: eb.ref('excluded.sha256'),
-          size: eb.ref('excluded.size'),
-          mtime: eb.ref('excluded.mtime'),
-        })),
-      )
-      .execute();
-  }
-  /** A page of a manifest's files in `fileKey` order, after `afterFileKey`: an asset's files are adjacent. */
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, DummyValue.NUMBER] })
-  async getEntriesPage(manifestId: string, afterFileKey: string | null, limit: number): Promise<CloudBackupEntry[]> {
-    const rows = await this.db
-      .selectFrom('cloud_backup_manifest_entry')
-      .select(ENTRY_COLUMNS)
-      .where('manifestId', '=', manifestId)
-      .$if(afterFileKey !== null, (qb) => qb.where('fileKey', '>', afterFileKey!))
-      .orderBy('fileKey')
-      .limit(limit)
-      .execute();
-    return rows.map((row) => ({
-      ...row,
-      size: Number(row.size),
-      mtime: row.mtime ? new Date(row.mtime as unknown as string) : null,
-    }));
-  }
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async deleteEntries(manifestId: string): Promise<void> {
-    await this.db.deleteFrom('cloud_backup_manifest_entry').where('manifestId', '=', manifestId).execute();
   }
   /** How many assets a run backs up: with a run's inventory (FL-362), the ones it keeps. */
   @GenerateSql({ name: 'everything', params: [] }, { name: 'with decision', params: [DummyValue.UUID] })

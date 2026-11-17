@@ -146,11 +146,11 @@ const CloudBackupItemFilterSchema = z
   .describe('all items; only items no longer in the library; only items still in the library (or its trash)')
   .meta({ id: 'CloudBackupItemFilter' });
 
-/** A manifest key as runs write it: `m/20260926T030000Z.json.gz`. */
+/** FL-1676: a backup's name in storage: `r/v1/<vault id>/s/<its number in the signed history>-<id>`. */
 export const ManifestKeySchema = z
   .string()
-  .regex(/^m\/(?:v1\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\/[1-9]\d{0,8}\/)?\d{8}T\d{6}Z\.json\.gz$/)
-  .describe('The backup run’s manifest in the bucket');
+  .regex(/^r\/v1\/[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\/s\/\d{12}-[\da-f]{16,64}$/)
+  .describe('The backup, by its name in the bucket');
 
 const CloudBackupVerifySchema = z.object({ depth: CloudBackupVerifyDepthSchema }).meta({ id: 'CloudBackupVerifyDto' });
 
@@ -210,7 +210,7 @@ const CloudBackupManifestSchema = z
     assets: z.int(),
     files: z.int(),
     bytes: z.int(),
-    databaseKey: z.string().nullable().describe('The database dump this backup pairs with'),
+    databaseKey: z.string().nullable().describe('The database dump this backup holds'),
   })
   .meta({ id: 'CloudBackupManifestDto' });
 
@@ -382,7 +382,7 @@ const CloudBackupLastRunSchema = z
     startedAt: z.string(),
     finishedAt: z.string().nullable(),
     uploaded: z.int().describe('New or changed files uploaded'),
-    skipped: z.int().describe('Files already in the bucket'),
+    skipped: z.int().describe('Files unchanged since the previous backup, which were not read again'),
     missing: z.int().describe('Files that were not on disk'),
     bytesUploaded: z.int(),
     error: z.string().nullable(),
@@ -493,7 +493,7 @@ const CloudBackupStatusSchema = z
     usage: z
       .object({ objects: z.int(), bytes: z.int() })
       .nullable()
-      .describe('Unique files this server has in the bucket and their size'),
+      .describe('What the newest backup holds: its files and their size (managed storage: what is stored)'),
     activeRun: CloudBackupActiveRunSchema.nullable(),
     activeRestore: CloudBackupActiveRestoreSchema.nullable(),
     lastRestore: CloudBackupLastRestoreSchema.nullable(),

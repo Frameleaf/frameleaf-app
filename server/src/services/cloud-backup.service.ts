@@ -562,7 +562,7 @@ export class CloudBackupService {
       usage: usage
         ? { objects: usage.objects, bytes: usage.bytesCurrent }
         : metadata
-          ? await this.index.getUsage(metadata.bucketRef)
+          ? await this.ownBucketUsage(metadata.bucketRef)
           : null,
       activeRun: activeRow ? this.mapActiveRun(activeRow) : null,
       activeRestore: restoreRow ? this.mapActiveRestore(restoreRow) : null,
@@ -594,6 +594,15 @@ export class CloudBackupService {
           (metadata.escrow.keyVersion ?? 1) < (this.clientKeys.get(metadata.keyFingerprint)?.current ?? 1),
       },
     };
+  }
+
+  /**
+   * FL-1676: your own bucket's size as this server last saw it: the files and bytes the newest kept backup
+   * holds. Stored data is shared between backups, so this is what one restore brings back, not what is billed.
+   */
+  private async ownBucketUsage(bucket: string) {
+    const [newest] = await this.index.listKeptManifests(bucket);
+    return { objects: newest?.fileCount ?? 0, bytes: newest?.bytes ?? 0 };
   }
 
   /**
@@ -740,8 +749,8 @@ export class CloudBackupService {
   }
 
   /**
-   * "Check bucket": the credentials can list the bucket and the provider encrypts with a customer key
-   * (SSE-C). A throwaway test file is written and deleted; nothing is claimed and nothing is saved.
+   * "Check bucket": the credentials can list and write the bucket and it keeps versions. A throwaway test file
+   * is written and deleted; nothing is claimed and nothing is saved.
    */
   async check(dto: CloudBackupCheckDto): Promise<CloudBackupCheckResponseDto> {
     const connection = await this.connectionFor(dto.s3);
@@ -1347,7 +1356,7 @@ export class CloudBackupService {
       throw new Error('Cloud backup to your own bucket needs a storage address and a bucket name.');
     }
     if (!backup.s3.endpoint.startsWith('https://')) {
-      throw new Error('Encrypted uploads with your key (SSE-C) need an HTTPS storage address.');
+      throw new Error('Use an HTTPS storage address.');
     }
   }
 

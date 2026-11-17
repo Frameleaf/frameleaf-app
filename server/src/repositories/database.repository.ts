@@ -72,7 +72,6 @@ const MEDIA_PATH_COLUMNS: ReadonlyArray<readonly [string, readonly string[]]> = 
   ['preservation_package', ['path']],
   ['memory_export', ['path']],
   ['buddy_backup_reference', ['path']],
-  ['cloud_backup_manifest_entry', ['path']],
   ['icloud_resource', ['path', 'stagingPath', 'promotedPath']],
   ['takeout_source', ['path']],
   ['takeout_file', ['path']],
