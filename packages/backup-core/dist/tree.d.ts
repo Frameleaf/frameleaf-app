@@ -9,6 +9,7 @@ export interface SourceEntry {
     mtime: number;
     size: number;
     target?: string;
+    unreadable?: string;
     key?: string;
 }
 export interface Source {

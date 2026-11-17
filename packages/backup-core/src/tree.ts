@@ -197,7 +197,7 @@ export async function measureSource(source: Source, path: string[] = []): Promis
       const inside = await measureSource(source, [...path, entry.name]);
       total.files += inside.files;
       total.bytes += inside.bytes;
-    } else if (entry.type === 'file') {
+    } else if (entry.type === 'file' && entry.unreadable === undefined) {
       total.files++;
       total.bytes += entry.size;
     }

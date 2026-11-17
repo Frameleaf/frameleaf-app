@@ -95,7 +95,11 @@ export class Repository {
             try {
                 data = zstdDecompressSync(unseal(this.keys.meta, Buffer.from(object.key), sealed));
             }
-            catch {
+            catch (error) {
+                const unpack = String(error.code ?? '').startsWith('ZSTD_');
+                if (!(error instanceof UnsealError) && !unpack) {
+                    throw error;
+                }
                 this.damagedIndexes.push(object.key);
                 continue;
             }
