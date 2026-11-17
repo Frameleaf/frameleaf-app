@@ -339,6 +339,29 @@ export class Operations {
     return this.serverRequest(method, `library-move/manager${path}`, body) as Promise<ServerPauseStatus>;
   }
   /**
+   * FL-1673: the photo server's signed word that the Manager with this Frameleaf Cloud id manages it, which
+   * lets Server Backup share its licence and plan. Null when it can't be had: no photo server running here,
+   * it isn't linked to Frameleaf Cloud, or it is from before it could be asked.
+   */
+  async backupMachineStatement(machineInstanceId: string): Promise<{ statement: unknown; signature: string } | null> {
+    const installation = this.installation();
+    if (!installation) return null;
+    const server = (await this.docker.inventory()).find(
+      (c) =>
+        c.Config.Labels?.['app.frameleaf.manager'] === installation.id &&
+        !c.Config.Labels?.['app.frameleaf.manager.import'] &&
+        c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
+    );
+    if (!server?.State.Running) return null;
+    try {
+      const printed = await this.docker.admin(server.Id, ['backup-machine-statement', machineInstanceId]);
+      const answer = JSON.parse(printed.trim().split('\n').findLast((line) => line.startsWith('{')) ?? '');
+      return typeof answer?.signature === 'string' && answer.statement ? { statement: answer.statement, signature: answer.signature } : null;
+    } catch {
+      return null;
+    }
+  }
+  /**
    * Call a machine-authenticated `/api/server/...` endpoint from inside the server container, with the
    * mounted Manager token. A refusal surfaces as `server_refused_<status>`; the token is never echoed.
    */

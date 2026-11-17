@@ -146,7 +146,7 @@ const serverBackupCloud =
     ? new CloudBackup(store, new Cloud(process.env.FRAMELEAF_CLOUD_URL ?? 'https://api.frameleaf.cloud'), {
         version: JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version,
         platform: `manager/${process.platform}`,
-      })
+      }, (machineInstanceId) => operations.backupMachineStatement(machineInstanceId))
     : null;
 /** Server Backup's link to Cloud, or a refusal where this Manager has none. Cloud's own refusals are passed on in words the screens know. */
 const cloudly = async <T>(work: (cloud: CloudBackup) => Promise<T>): Promise<T> => {

@@ -47,6 +47,8 @@ interface Saved {
   unrecorded: Entry | null;
   /** The older machine whose backups this one has asked to take over. */
   takeover: { fromInstanceId: string } | null;
+  /** The Cloud id under which the photo server has vouched for this Manager, once Cloud has taken that. */
+  attached?: string | null;
 }
 
 const KEY = 'server-backup-cloud';
@@ -68,6 +70,8 @@ export class CloudBackup {
     private store: Store,
     private cloud: Cloud,
     private machine: { version: string; platform: string },
+    /** Asks the photo server on this machine to vouch for the Manager with this Cloud id. Null when it can't. */
+    private vouch: (machineInstanceId: string) => Promise<{ statement: unknown; signature: string } | null> = async () => null,
   ) {}
 
   private saved(): Saved {
@@ -186,6 +190,19 @@ export class CloudBackup {
     return answer;
   }
 
+  /**
+   * Shares the photo server's licence and plan: its signed word that this Manager manages it goes to Cloud
+   * once per Cloud id (a takeover changes the id, and Cloud then wants it again). Without a photo server
+   * that can vouch, this Manager stands on its own and Cloud says what it lacks.
+   */
+  private async attach(identity: Identity) {
+    if (this.saved().attached === identity.instanceId) return;
+    const vouched = await this.vouch(identity.instanceId);
+    if (!vouched) return;
+    await this.cloud.attach(identity, vouched);
+    this.save({ attached: identity.instanceId });
+  }
+
   /** Sends a record Cloud has not confirmed. Sending the same one twice is answered with the first. */
   private async flush(identity: Identity) {
     const entry = this.saved().unrecorded;
@@ -236,6 +253,8 @@ export class CloudBackup {
       try {
         return await this.cloud.rotate(identity, { operation, ...under });
       } catch (error) {
+        // Cloud no longer counts the photo server's licence for us: it is asked to vouch again next time.
+        if (error instanceof CloudError && error.code === 'entitlement-missing') this.save({ attached: null });
         // No storage yet: this is the first backup, and its storage is made where the owner chose.
         if (!(error instanceof CloudError) || error.status !== 404) throw error;
         const { locationId } = this.saved();
@@ -251,6 +270,9 @@ export class CloudBackup {
     };
 
     try {
+      // Before the first credentials are asked for, so a licence shared by the photo server counts at once.
+      // A photo server that can't vouch right now doesn't stop a Manager that has what it needs anyway.
+      if (kind === 'backup') await this.attach(identity).catch(() => undefined);
       const first = await take(kind === 'backup' ? 'upload' : 'restore');
       let sequence: number | null = null;
       let previousDigest: string | null = null;

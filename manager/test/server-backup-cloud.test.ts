@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,11 +7,11 @@ import { join, sep } from 'node:path';
 import test, { after, before } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { standIn as storageStandIn } from '../../packages/backup-core/test/s3-stand-in.js';
-import { Cloud, CloudError } from '../src/cloud-link.js';
+import { Cloud, CloudError, uuidv7 } from '../src/cloud-link.js';
 import { CloudBackup } from '../src/server-backup-cloud.js';
 import { DEFAULT_SETTINGS, ServerBackup, vaultOf, type Run } from '../src/server-backup.js';
 import { Store } from '../src/store.js';
-import { API, fixture, machine, standIn } from './cloud-stand-in.js';
+import { API, fixture, machine, standIn, thumbprint } from './cloud-stand-in.js';
 
 // Two Managers, one Frameleaf Cloud account, one bucket: the first backs up, the second replaces it.
 let root: string;
@@ -23,10 +23,24 @@ const at = (...names: string[]) => join(root, ...names);
 const parts = (path: string) => path.split(sep).filter(Boolean);
 const taxReturn = () => [...parts(at('server', 'documents', 'Tax')), 'Return 2025.xlsx'];
 
+// The photo server on the same machine, linked to the same account, which vouches for its Manager.
+const photoServer = { instanceId: uuidv7(), key: generateKeyPairSync('ed25519') };
+const photoJwk = () => {
+  const { x } = photoServer.key.publicKey.export({ format: 'jwk' });
+  return { kty: 'OKP', crv: 'Ed25519', x: x! };
+};
+let vouched = 0;
+async function vouch(machineInstanceId: string) {
+  vouched++;
+  const statement = { version: 1, parentInstanceId: photoServer.instanceId, machineInstanceId, issuedAt: new Date(cloud.state.now).toISOString(), signerKid: thumbprint(photoJwk()) };
+  return { statement, signature: sign(null, Buffer.from(`frameleaf-backup-machine-attach-v1\n${JSON.stringify(statement)}`), photoServer.key.privateKey).toString('base64url') };
+}
+const machineIds = () => [...cloud.state.instances].filter(([, item]) => item.kind === 'backup-machine').map(([id]) => id);
+
 function manager(name: string) {
   const store = new Store(at(name));
   stores.push(store);
-  const link = new CloudBackup(store, new Cloud(API, { fetch: cloud.fetch, now: () => cloud.state.now }), { version: machine.version, platform: machine.platform });
+  const link = new CloudBackup(store, new Cloud(API, { fetch: cloud.fetch, now: () => cloud.state.now }), { version: machine.version, platform: machine.platform }, vouch);
   const service = new ServerBackup(store, { target: null, cloud: link, inside: (path) => path === at('server') || path.startsWith(at('server') + sep), always: [] });
   return { link, service };
 }
@@ -66,6 +80,7 @@ before(async () => {
   storage.server.listen(0, '127.0.0.1');
   await once(storage.server, 'listening');
   cloud = standIn();
+  cloud.state.instances.set(photoServer.instanceId, { jwk: photoJwk(), kind: 'server', linked: true, name: 'Family library' });
   cloud.state.storage = { endpoint: `http://127.0.0.1:${(storage.server.address() as { port: number }).port}` };
   first = manager('first');
   second = manager('second');
@@ -115,6 +130,9 @@ test('a backup goes to Cloud storage under the run lease and joins the signed hi
   assert.equal(record.descriptor.manifest.objectKey, `r/v1/${vault}/${snapshot}`);
   assert.equal(record.descriptor.manifest.versionId, `version-of-r/v1/${vault}/${snapshot}`);
   assert.ok(cloud.state.calls.includes('POST api/v1/backup/runs'));
+  // The photo server vouched for this Manager before the first credentials were asked for.
+  assert.equal(cloud.state.parents.get(machineIds()[0]!), photoServer.instanceId);
+  assert.ok(cloud.state.calls.indexOf('PUT api/v1/backup-machine/parent') < cloud.state.calls.indexOf('POST api/v4/backup/grant'));
 });
 
 test('a file comes back from Cloud storage, with no lease needed', async () => {
@@ -216,6 +234,11 @@ test('a replacement server takes the backups over once the owner approves, with 
   await second.service.backUp();
   assert.equal((await finished(second.service)).state, 'done');
   assert.deepEqual(sequences(), [1, 2, 3, 4, 5]);
+  // Vouched for once per Cloud id: once for the first Manager through all its backups, then again for the
+  // replacement under the id it took over. (The one lost scheduled run asked too, after Cloud said no licence.)
+  assert.equal(cloud.state.parents.get(older!.instanceId), photoServer.instanceId);
+  assert.equal(cloud.state.calls.filter((call) => call === 'PUT api/v1/backup-machine/parent').length, vouched);
+  assert.ok(vouched <= 3, String(vouched));
   assert.equal((cloud.state.chain[4]!.record as { descriptor: { instanceId: string } }).descriptor.instanceId, older!.instanceId);
   await until(() => cloud.state.lease === null);
 });
