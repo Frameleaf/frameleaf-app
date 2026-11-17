@@ -26,6 +26,7 @@ import {
   restore,
   verify,
 } from '../src/index.js';
+import { seal } from '../src/keys.js';
 
 const chunker: ChunkerParams = { min: 1024, avg: 4096, max: 16_384 };
 const packTarget = 64 * 1024;
@@ -205,6 +206,29 @@ describe('backup', () => {
     expect((await repository.listSnapshots()).length).toBe(1);
   });
 
+  it('writes no snapshot when the stop arrives during the last look at what is stored', async () => {
+    const inner = memoryStore();
+    const stopped = new AbortController();
+    let looks = 0;
+    const store: Store = {
+      ...inner,
+      list(prefix) {
+        // The first look finds the backup to build on; the second is the one right before the snapshot is stored.
+        if (prefix === 's/' && ++looks === 2) {
+          stopped.abort();
+        }
+        return inner.list(prefix);
+      },
+    };
+    const repository = await Repository.init(store, { rootKey, chunker });
+    const source = made({ 'a.bin': randomBytes(5000) });
+    await expect(backup(repository, source, { packTarget, signal: stopped.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(looks).toBe(2);
+    expect(await inner.list('s/')).toEqual([]);
+  });
+
   it('leaves out a name that would not restore inside its folder, and says so', async () => {
     const inner = made({ 'fine.txt': Buffer.from('fine'), victim: Buffer.from('evil') });
     const source: Source = {
@@ -306,8 +330,8 @@ describe('restore', () => {
     const tree = { deep: { er: { 'letter.txt': Buffer.from('dear all') } } };
     const { repository } = await fresh();
     const { snapshot } = await backup(repository, made(tree), { packTarget });
+    // Not there yet: the destination itself is made by the restore, like the folders inside it.
     const target = join(work, 'out');
-    await mkdir(target);
     // New folders would come out without write permission for their owner.
     const before = process.umask(0o277);
     try {
@@ -317,6 +341,7 @@ describe('restore', () => {
     }
     expect((await readDisk(join(target, 'deep', 'er', 'letter.txt'))).toString()).toBe('dear all');
     expect((await lstat(join(target, 'deep'))).mode & 0o777).toBe(0o755);
+    expect((await lstat(target)).mode & 0o700).toBe(0o700);
   });
 
   it('never moves something aside onto something moved aside before', async () => {
@@ -337,6 +362,18 @@ describe('restore', () => {
     expect((await readDisk(join(target, 'notes.txt.kept'))).toString()).toBe('mine, first');
     expect((await readDisk(join(target, 'notes.txt.kept-2'))).toString()).toBe('mine, second');
     expect((await readDisk(join(target, 'notes.txt'))).toString()).toBe('from the backup');
+  });
+});
+
+describe('index', () => {
+  it('passes on a failure to unpack an index that passed its seal, instead of calling it damaged', async () => {
+    const { store, repository } = await fresh();
+    await backup(repository, made({ 'a.bin': randomBytes(3000) }), { packTarget });
+    // Sealed with the right key, so it is not damage in storage; what it holds simply does not unpack.
+    const key = `i/${randomBytes(16).toString('hex')}`;
+    await store.put(key, seal(repository.keys.meta, Buffer.from(key), Buffer.from('not what an index holds')));
+    await expect(repository.loadIndex()).rejects.toMatchObject({ code: expect.stringMatching(/^ZSTD_/) });
+    expect(repository.damagedIndexes).toEqual([]);
   });
 });
 

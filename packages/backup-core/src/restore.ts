@@ -148,7 +148,10 @@ export async function restore(
   if (path.length > 0 && !safeName(start.name)) {
     throw new Error('This backup holds a name that cannot be restored safely');
   }
-  await mkdir(target, { recursive: true });
+  // A destination made here is made usable by the one restoring, whatever the process umask.
+  if (await mkdir(target, { recursive: true })) {
+    await chmod(target, ((await lstat(target)).mode & 0o7777) | 0o700);
+  }
   // Everything goes straight into `target`; one file or folder keeps its own name inside it.
   await put(start, path.length > 0 ? join(target, start.name) : target);
   return result;
