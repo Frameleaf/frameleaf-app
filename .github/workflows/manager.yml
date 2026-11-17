@@ -144,7 +144,7 @@ jobs:
         run: docker build --build-arg POSTGRES_IMAGE="$FRAMELEAF_CI_POSTGRES_IMAGE" --build-arg TARGETARCH=${{ matrix.architecture }} --tag frameleaf-postgres:manager-test docker/postgres
       - name: Real disk PostgreSQL, encrypted Restic recovery and logical restore
         run: node manager/test/postgres-container.mjs
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         if: always()
         with:
           name: manager-evidence-${{ matrix.architecture }}
@@ -212,7 +212,7 @@ jobs:
               digest:$digest,configDigest:$config,rootfsDiffIds:$rootfs[0],archiveSha256:$archiveSha,smoke:"passed"}' > receipt.json
           rm -rf layout
       - name: Retain tested Manager archives
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: manager-tested-${{ matrix.architecture }}
           path: ${{ runner.temp }}/manager/
@@ -262,7 +262,7 @@ jobs:
             exit 1
           fi
       - name: Download both qualified archives
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         with:
           pattern: manager-tested-*
           path: ${{ runner.temp }}/manager-archives
@@ -403,7 +403,7 @@ jobs:
           settles "$SOURCE_SHA" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/latest" --jq .object.sha
           oras logout ghcr.io
       - name: Retain publication binding
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: manager-publication
           path: ${{ runner.temp }}/manager-manifest.json

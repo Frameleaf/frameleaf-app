@@ -148,7 +148,7 @@ jobs:
               digest:$digest,configDigest:$config,rootfsDiffIds:$rootfs[0],archiveSha256:$archiveSha,smoke:"passed"}' > receipt.json
           rm -rf layout runtime-layout
       - name: Retain tested archives and receipt
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: cli-tested-${{ matrix.architecture }}
           path: ${{ runner.temp }}/cli/
@@ -192,7 +192,7 @@ jobs:
             exit 1
           fi
       - name: Download both qualified archives
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         with:
           pattern: cli-tested-*
           path: ${{ runner.temp }}/cli-archives
@@ -295,7 +295,7 @@ jobs:
           [[ "$(oras resolve ghcr.io/frameleaf/frameleaf-cli:latest)" == "$DIGEST" ]]
           oras logout ghcr.io
       - name: Retain publication binding
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: cli-publication
           path: ${{ runner.temp }}/cli-publication.json

@@ -118,7 +118,7 @@ jobs:
           docker rm -f frameleaf-postgres-ci > /dev/null
       - name: Keep the tested image for publication
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: frameleaf-postgres-${{ matrix.runner }}
           path: ${{ runner.temp }}/frameleaf-postgres/
@@ -171,7 +171,7 @@ jobs:
             exit 1
           fi
       - name: Download the tested images
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         with:
           pattern: frameleaf-postgres-*
           path: ${{ runner.temp }}/tested
@@ -246,7 +246,7 @@ jobs:
             > "$RUNNER_TEMP/frameleaf-postgres-digest.json"
           echo "Published $IMAGE:$VERSION_TAG@$index"
       - name: Record the published digest
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: frameleaf-postgres-digest
           path: ${{ runner.temp }}/frameleaf-postgres-digest.json

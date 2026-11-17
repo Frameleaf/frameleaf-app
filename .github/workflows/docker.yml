@@ -134,7 +134,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         with:
           name: frameleaf-machine-learning${{ needs.changes.outputs.assistant-variant == 'openvino' && '-openvino' || '' }}-archive-amd64
           path: ${{ runner.temp }}/ml
@@ -155,7 +155,7 @@ jobs:
         id: qualify
         run: node .github/assistant-deploy-gate.mjs qualify
       - name: Retain verified Assistant qualification evidence
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: assistant-qualification-${{ github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/assistant-qualification-evidence.json
@@ -192,12 +192,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         if: needs.changes.outputs.server == 'true'
         with:
           name: frameleaf-server-archive-${{ matrix.architecture }}
           path: ${{ runner.temp }}/server
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         if: needs.changes.outputs['machine-learning'] == 'true'
         with:
           name: frameleaf-machine-learning-archive-${{ matrix.architecture }}

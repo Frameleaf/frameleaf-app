@@ -115,7 +115,7 @@ test("failed checks preserve diagnostics but cannot produce a successful develop
     );
   }
   const upload = steps.find(({ uses }) =>
-    uses?.startsWith("actions/upload-artifact@"),
+    /\/upload-artifact@/.test(uses ?? ""),
   );
   assert.equal(upload.if, "${{ always() }}");
   assert.match(upload.with.path, /runner\.temp.*frameleaf-development/);
