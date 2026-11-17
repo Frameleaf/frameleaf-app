@@ -69,6 +69,8 @@ export const TAKEOUT_LEASE_MS = 2 * 60_000;
 export const TAKEOUT_HEARTBEAT_MS = 30_000;
 /** Progress is written at least this often, and at every step boundary. */
 export const TAKEOUT_PROGRESS_INTERVAL_MS = 2000;
+/** How often staging is swept, and how long a `.part` file must lie unwritten before it counts as left behind. */
+export const TAKEOUT_SWEEP_MS = 24 * 60 * 60_000;
 /** Items read per query while importing. */
 export const TAKEOUT_BATCH = 50;
 /** A folder with more photo × video combinations under one name than this is not offered as Live Photos. */
@@ -167,6 +169,7 @@ const isFile = (name: string) => {
 @Injectable()
 export class TakeoutWorkerService {
   private tickHandle?: ReturnType<typeof setInterval>;
+  private sweepHandle?: ReturnType<typeof setInterval>;
   private active?: Promise<void>;
   private running?: AbortController;
   private stopping = false;
@@ -194,6 +197,28 @@ export class TakeoutWorkerService {
     this.stopping = false;
     this.tickHandle ??= setInterval(() => this.tick(), TAKEOUT_TICK_MS);
     this.tick();
+    this.sweepHandle ??= setInterval(() => void this.sweep(), TAKEOUT_SWEEP_MS);
+    void this.sweep();
+  }
+
+  /**
+   * Clear staging of what no import owns: folders of imports that were deleted, and half-written
+   * files a crash left. Copies an existing import still holds stay until the import is deleted.
+   */
+  async sweep(): Promise<void> {
+    try {
+      const removed = await this.staging.sweep(
+        (ids) => this.repository.existingImports(ids),
+        Date.now() - TAKEOUT_SWEEP_MS,
+      );
+      if (removed.imports > 0 || removed.parts > 0) {
+        this.logger.log(
+          `Google Photos import staging: removed ${removed.imports} deleted imports’ folders and ${removed.parts} unfinished files`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(`Google Photos import staging could not be swept: ${errorMessage(error)}`);
+    }
   }
 
   /** Stop taking work and hand the job in hand back to the queue at the point it reached. */
@@ -204,6 +229,8 @@ export class TakeoutWorkerService {
       clearInterval(this.tickHandle);
       this.tickHandle = undefined;
     }
+    clearInterval(this.sweepHandle);
+    this.sweepHandle = undefined;
     this.running?.abort(new Error('The server is restarting'));
     await this.active;
   }
