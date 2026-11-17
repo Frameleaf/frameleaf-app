@@ -166,6 +166,25 @@
     }, 10_000);
     return () => clearInterval(timer);
   });
+  // Choose what to restore: what the chosen backup protected, each folder going back where it was.
+  type Kept = { path: string; kind: 'manager' | 'folder'; files: number; bytes: number; reachable: boolean };
+  let kept = $state<Kept[] | null>(null);
+  let keptFor = '';
+  let wanted = $state<string[]>([]);
+  let byFile = $state(false);
+  $effect(() => {
+    if (step !== 'restore' || !snapshot || keptFor === snapshot) return;
+    keptFor = snapshot;
+    untrack(
+      () =>
+        void api('server-backup-contents', { snapshot })
+          .then((answer) => ((kept = answer.folders), (wanted = (answer.folders ?? []).filter((folder: Kept) => folder.reachable).map((folder: Kept) => folder.path))))
+          .catch(() => (kept = null)),
+    );
+  });
+  const wantedBytes = $derived((kept ?? []).filter((folder) => wanted.includes(folder.path)).reduce((sum, folder) => sum + folder.bytes, 0));
+  const want = (path: string) => (wanted = wanted.includes(path) ? wanted.filter((item) => item !== path) : [...wanted, path]);
+  const restoreWhole = () => run(async () => change(await api('server-backup-restore', { snapshot, items: wanted.map((path) => path.split('/').filter(Boolean)), into: null })));
   let oldKey = $state('');
   const adoptKey = () =>
     run(async () => {
@@ -430,7 +449,27 @@
     </section>
   {:else if step === 'restore'}
     {@render restoringNow()}
-    {@render restoreBody()}
+    {#if kept && !byFile}
+      <section class="card">
+        <div class="list-row sb-first sb-pick-row"><Icon name="clock" /><div class="grow"><strong>As it was on</strong><p>The newest backup is chosen. Earlier dates keep earlier versions of every file.</p></div><select class="sb-pick" aria-label="Backup date" bind:value={snapshot}>{#each data.snapshots as item}<option value={item.key}>{when(item.time)}</option>{/each}</select></div>
+      </section>
+      <section class="card mt16">
+        <div class="card-header"><h2>What to restore</h2><span class="sb-size">{formatBytes(wantedBytes)}</span></div>
+        {#each kept as folder, index}
+          <label class="list-row sb-check" class:sb-first={index === 0}>
+            <input type="checkbox" aria-label="Restore {folder.path}" checked={wanted.includes(folder.path)} disabled={!folder.reachable} onchange={() => want(folder.path)} />
+            <Icon name={folder.kind === 'manager' ? 'settings' : 'folder'} />
+            <div class="grow"><strong>{folder.kind === 'manager' ? 'Manager’s photo recovery points' : folder.path}</strong><p>{!folder.reachable ? `Manager can’t reach ${folder.path} on this server. Share that folder with Manager, then come back.` : folder.kind === 'manager' ? 'What Manager needs to bring back your photo library’s albums, people and settings.' : `Back to ${folder.path}`}</p></div>
+            <span class="sb-size">{formatBytes(folder.bytes)}</span>
+          </label>
+        {/each}
+        <div class="card-footer"><span class="muted sb-lock"><Icon name="shield" />Files already in a folder are kept and renamed, never deleted.</span><button class="button primary" disabled={busy || !!running || wanted.length === 0} onclick={restoreWhole}>Restore {formatBytes(wantedBytes)}</button></div>
+      </section>
+      <p class="mt16"><button class="text-button sb-plain" onclick={() => (byFile = true)}>Choose individual files instead</button></p>
+    {:else}
+      {#if kept}<p class="mb16"><button class="text-button sb-plain" onclick={() => (byFile = false)}>Back to the whole server</button></p>{/if}
+      {@render restoreBody()}
+    {/if}
     <div class="wizard-footer"><button class="button quiet" onclick={() => (step = '')}><Icon name="back" />Done</button><button class="button" disabled={busy} onclick={() => begin('setup', 'folders')}>Set up backups on this server</button></div>
   {:else if step === 'folders'}
     <section class="card">
@@ -601,6 +640,7 @@
   .sb-place { border-top: 1px solid var(--border); }
   .sb-narrow { max-width: 420px; }
   .sb-connect .sb-note { font-size: 14px; margin-top: 6px; max-width: 62ch; }
+  .sb-pick { width: auto; max-width: 260px; flex-shrink: 0; }
   .sb-keyfield { font: 500 15px/1.7 ui-monospace, SFMono-Regular, monospace; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--raised); color: var(--text); width: 100%; resize: vertical; }
   .button :global(svg) { width: 15px; height: 15px; }
   @media (max-width: 640px) {
@@ -610,6 +650,8 @@
     .sb-toolbar { flex-direction: column; align-items: stretch; }
     .sb-intro { flex-direction: column; }
     .sb-connect { flex-direction: column; align-items: flex-start; }
+    .sb-pick-row { flex-wrap: wrap; row-gap: 10px; }
+    .sb-pick { width: 100%; max-width: none; }
     .sb-run, .sb-reveal { flex-wrap: wrap; row-gap: 8px; }
     /* The description gets the full width; what sat beside it (a size, a badge, a button) goes on a line of its own under it. */
     .sb-stack { flex-wrap: wrap; row-gap: 10px; }
