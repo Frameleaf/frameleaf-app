@@ -16,6 +16,7 @@ export interface VerifyReport {
     missing: string[];
     packsRead: number;
     damagedPacks: string[];
+    damagedIndexes: string[];
 }
 export interface VerifyOptions {
     readPack?: (pack: string, index: number) => boolean;

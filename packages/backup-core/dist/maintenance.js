@@ -18,10 +18,11 @@ export function retain(snapshots, policy, now) {
     }
     return keep;
 }
-async function mark(repository, tree, live, missing) {
-    if (live.has(tree)) {
+async function mark(repository, tree, live, visited, missing) {
+    if (visited.has(tree)) {
         return;
     }
+    visited.add(tree);
     live.add(tree);
     const read = async (id) => {
         try {
@@ -41,7 +42,7 @@ async function mark(repository, tree, live, missing) {
     }
     for (const entry of JSON.parse(data.toString()).entries) {
         if (entry.tree) {
-            await mark(repository, entry.tree, live, missing);
+            await mark(repository, entry.tree, live, visited, missing);
         }
         for (const id of entry.chunks ?? []) {
             live.add(id);
@@ -58,6 +59,7 @@ async function mark(repository, tree, live, missing) {
 export async function verify(repository, options = {}) {
     await repository.loadIndex();
     const live = new Set();
+    const visited = new Set();
     const missing = new Set();
     const report = {
         snapshots: 0,
@@ -66,10 +68,11 @@ export async function verify(repository, options = {}) {
         missing: [],
         packsRead: 0,
         damagedPacks: [],
+        damagedIndexes: [...repository.damagedIndexes],
     };
     for (const { key } of await repository.listSnapshots()) {
         try {
-            await mark(repository, (await repository.readSnapshot(key)).tree, live, missing);
+            await mark(repository, (await repository.readSnapshot(key)).tree, live, visited, missing);
             report.snapshots++;
         }
         catch (error) {
@@ -119,8 +122,9 @@ export async function prune(repository, options = {}) {
     }
     const keep = retain(snapshots, options.policy ?? DEFAULT_RETENTION, now);
     const live = new Set();
+    const visited = new Set();
     for (const snapshot of snapshots.filter((item) => keep.has(item.key))) {
-        await mark(repository, snapshot.tree, live);
+        await mark(repository, snapshot.tree, live, visited);
     }
     for (const id of live) {
         if (!repository.index.has(id)) {
@@ -175,7 +179,7 @@ export async function prune(repository, options = {}) {
             repository.index.delete(id);
         }
     }
-    if (remove.length > 0 || (await repository.store.list('i/')).length > 8) {
+    if (remove.length > 0 || repository.damagedIndexes.length > 0 || (await repository.store.list('i/')).length > 8) {
         await repository.rewriteIndex();
     }
     for (const pack of remove) {

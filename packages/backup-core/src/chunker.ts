@@ -68,10 +68,7 @@ export async function* chunkStream(
   let held: Uint8Array[] = [];
   let size = 0;
   const drain = function* (last: boolean) {
-    const data =
-      held.length === 1
-        ? Buffer.from(held[0]!.buffer, held[0]!.byteOffset, held[0]!.byteLength)
-        : Buffer.concat(held, size);
+    const data = held.length === 1 ? (held[0] as Buffer) : Buffer.concat(held, size);
     let offset = 0;
     while (offset < data.length) {
       const rest = data.subarray(offset);
@@ -89,7 +86,8 @@ export async function* chunkStream(
     if (part.byteLength === 0) {
       continue;
     }
-    held.push(part);
+    // Copied: a source may hand over the same buffer again with new bytes in it.
+    held.push(Buffer.from(part));
     size += part.byteLength;
     // Deciding a cut never needs more than `max` bytes, so wait until that much is in hand.
     if (size >= params.max) {

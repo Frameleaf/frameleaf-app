@@ -262,7 +262,8 @@ describe('repository', () => {
 
     const sealed = await store.get(key);
     sealed[20] = sealed[20]! ^ 1;
-    await store.put(key, sealed);
+    // Changed behind the store's back: the store itself never replaces an object.
+    await writeFile(join(work, 'storage', key), sealed);
     await expect(repository.readSnapshot(key)).rejects.toBeInstanceOf(UnsealError);
   });
 

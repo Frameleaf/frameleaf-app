@@ -33,7 +33,8 @@ named in each section.
 | `i/<32 hex>` | an index object |
 | `s/<12 digits>-<16 hex>` | a snapshot; the digits are its sequence number. A reader accepts 16 to 64 hex characters |
 
-Pack and index names are random. They carry no meaning.
+Pack and index names are random. They carry no meaning. Every object is written once: storing under a
+name that is taken is refused.
 
 ## Chunks
 
@@ -160,3 +161,5 @@ repository needs.
 - A pack is built in memory before it is written.
 - Extended attributes, ACLs and hard links are not recorded.
 - A change in a file is noticed while reading only if its size changes.
+- Restore works by path. It must run where nothing else is writing to the destination: a process that can
+  swap a destination folder for a link while a restore runs could send files elsewhere.

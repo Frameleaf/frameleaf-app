@@ -49,6 +49,7 @@ export declare class Repository {
     readonly keys: RepositoryKeys;
     readonly gear: Uint32Array;
     readonly index: Map<string, Location>;
+    readonly damagedIndexes: string[];
     private constructor();
     static init(store: Store, options: {
         rootKey: Buffer;

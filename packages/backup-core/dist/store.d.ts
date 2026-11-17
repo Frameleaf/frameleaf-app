@@ -9,6 +9,11 @@ export type ByteRange = {
 } | {
     suffix: number;
 };
+export declare class ObjectExistsError extends Error {
+    readonly key: string;
+    name: string;
+    constructor(key: string);
+}
 export interface Store {
     put(key: string, body: Buffer): Promise<{
         versionId: string | null;

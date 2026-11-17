@@ -36,9 +36,7 @@ export async function* chunkStream(source, params, gear) {
     let held = [];
     let size = 0;
     const drain = function* (last) {
-        const data = held.length === 1
-            ? Buffer.from(held[0].buffer, held[0].byteOffset, held[0].byteLength)
-            : Buffer.concat(held, size);
+        const data = held.length === 1 ? held[0] : Buffer.concat(held, size);
         let offset = 0;
         while (offset < data.length) {
             const rest = data.subarray(offset);
@@ -56,7 +54,7 @@ export async function* chunkStream(source, params, gear) {
         if (part.byteLength === 0) {
             continue;
         }
-        held.push(part);
+        held.push(Buffer.from(part));
         size += part.byteLength;
         if (size >= params.max) {
             yield* drain(false);
