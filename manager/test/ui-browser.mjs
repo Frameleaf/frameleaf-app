@@ -179,8 +179,8 @@ await page.route('**/manager-api/**', async (route) => {
   requests.push({ path, body, headers: req.headers() });
   let value;
   if (path === 'status') value = { claimed: true };
-  // FL-1664 (mock): this Manager has no Server Backup, so the workspace switch stays hidden.
-  else if (path === 'server-backup') return route.fulfill({ contentType: 'application/json', body: 'null' });
+  // This Manager has nowhere to back up to, so the workspace switch stays hidden.
+  else if (path === 'server-backup') value = { state: 'unavailable' };
   else if (path === 'dashboard') {
     if (failDashboard) {
       failDashboard = false;

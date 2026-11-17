@@ -19,7 +19,7 @@
   import { encodeQr, qrPath } from './qr.mjs';
   import { fastFolderIssue, onSuggested, type DriveReport, type Suggestion } from './drives';
   import { regenerationPresentation } from './regeneration';
-  import { operationNames, operationProgress, canCancel, serviceState, readable, formatBytes, hasGpu, processorName, plural, newerReleases, releaseNotesText, navSection, CONTAINERS, emptyContainers, parseContainerSettings, containerSummary, containerOverrides, containerText, photoAppName, photoAppDetail, photoAppReason, untestedNotice, lossText, restrictionText, ownerEmailProblems, isPhotoAppCapture, isFolderImport, sourceVersion, type PhotoAppSource } from './presentation';
+  import { operationNames, operationProgress, canCancel, serviceState, readable, formatBytes, midSentence, hasGpu, processorName, plural, newerReleases, releaseNotesText, navSection, CONTAINERS, emptyContainers, parseContainerSettings, containerSummary, containerOverrides, containerText, photoAppName, photoAppDetail, photoAppReason, untestedNotice, lossText, restrictionText, ownerEmailProblems, isPhotoAppCapture, isFolderImport, sourceVersion, type PhotoAppSource } from './presentation';
 
   let httpSession = '';
   let csrf = '',
@@ -183,20 +183,12 @@
   const backupNav = $derived(
     serverBackup?.state === 'on'
       ? backupNavigation
-      : [{ title: 'Server Backup', entries: [['overview', 'shield', serverBackup?.state === 'setup' ? 'Set up' : 'Get started']] }],
+      : [{ title: 'Server Backup', entries: [['overview', 'shield', 'Get started']] }],
   );
-  const backupSection = $derived(serverBackup?.state !== 'on' ? (sbPage === 'restore-server' ? '' : 'overview') : sbPage === 'restore-server' ? 'restore' : sbPage);
+  const backupSection = $derived(serverBackup?.state === 'on' ? sbPage : 'overview');
   const workspaceName = $derived(workspace === 'backup' ? 'Server Backup' : 'Photos');
   const pageLabel = $derived(
-    workspace !== 'backup' || !serverBackup
-      ? labels[screen]
-      : sbPage === 'restore-server'
-        ? 'Restore this server'
-        : serverBackup.state === 'on'
-          ? (backupLabels[sbPage] ?? 'Overview')
-          : serverBackup.state === 'setup'
-            ? 'Set up'
-            : 'Get started',
+    workspace !== 'backup' || !serverBackup ? labels[screen] : serverBackup.state === 'on' ? (backupLabels[sbPage] ?? 'Overview') : 'Get started',
   );
   function sbGo(value: string) {
     sbPage = value;
@@ -209,9 +201,9 @@
     menu = false;
   }
   async function loadServerBackup() {
-    serverBackup = await fetch('/manager-api/server-backup', { credentials: 'same-origin' })
-      .then((response) => (response.ok ? response.json() : null))
-      .catch(() => null);
+    // A Manager with nowhere to back up to answers 'unavailable': the workspace switch then stays hidden.
+    const view = await api('server-backup').catch(() => null);
+    serverBackup = view && view.state !== 'unavailable' ? view : null;
   }
   const labels: Record<string, string> = {
     welcome: 'Setup',
@@ -1054,7 +1046,7 @@
     <aside class="sidebar">
       {#if signedIn && serverBackup}<div class="ws-switch" role="group" aria-label="Workspace">
         <button class="ws-item ws-photos" class:active={workspace === 'photos'} aria-pressed={workspace === 'photos'} onclick={() => openWorkspace('photos')}><span class="ws-icon"><Icon name="images"/></span><span><strong>Photos</strong><small>{installation ? (running ? 'Frameleaf is running' : 'Frameleaf is stopped') : 'Not set up yet'}</small></span></button>
-        <button class="ws-item ws-backup" class:active={workspace === 'backup'} aria-pressed={workspace === 'backup'} onclick={() => openWorkspace('backup')}><span class="ws-icon"><Icon name="shield"/></span><span><strong>Server Backup</strong><small>{serverBackup.state === 'on' ? (serverBackup.run ? 'Backing up now' : serverBackup.last?.result === 'failed' ? 'Needs a look' : 'On') : serverBackup.state === 'setup' ? 'Setting up' : 'Off'}</small></span></button>
+        <button class="ws-item ws-backup" class:active={workspace === 'backup'} aria-pressed={workspace === 'backup'} onclick={() => openWorkspace('backup')}><span class="ws-icon"><Icon name="shield"/></span><span><strong>Server Backup</strong><small>{serverBackup.state !== 'on' ? 'Off' : serverBackup.running ? (serverBackup.running.kind === 'restore' ? 'Restoring now' : 'Backing up now') : serverBackup.last?.state === 'failed' ? 'Needs a look' : 'On'}</small></span></button>
       </div>{/if}
       {#if workspace === 'photos' || !serverBackup}<div class="install-switch"><button class="server-select" disabled={!signedIn} onclick={() => installMenu = !installMenu} aria-expanded={installMenu} aria-haspopup="menu" aria-label="Switch installation"><Icon name="server"/><div><strong>{installation?.name ?? dashboard?.host?.name ?? 'This server'}</strong><small>{installation ? `${dashboard?.host?.name ?? 'This server'} · ` : ''}{dashboard?.host?.platform ?? 'Local Docker'}</small></div><Icon name="chevron"/></button>
       {#if installMenu}<div class="install-menu" role="menu" aria-label="Frameleaf installations"><p class="nav-caption">On {dashboard?.host?.name ?? 'this server'}</p>
@@ -1069,7 +1061,7 @@
       </main></div>
     </div>
     <aside class="inspector" aria-label="Context and installation details">
-      {#if workspace === 'backup' && serverBackup}<section class="inspector-section"><div class="spread"><h2>Server Backup</h2><Icon name="shield"/></div><dl class="definition"><div><dt>Server</dt><dd>{dashboard?.host?.name ?? 'This server'}</dd></div><div><dt>Status</dt><dd class:green={serverBackup.state === 'on'}>{serverBackup.state === 'on' ? 'On' : serverBackup.state === 'setup' ? 'Setting up' : 'Off'}</dd></div><div><dt>Stored in</dt><dd>Frameleaf Cloud</dd></div><div><dt>Encrypted</dt><dd>On this server</dd></div><div><dt>Key held by</dt><dd>You only</dd></div></dl></section>
+      {#if workspace === 'backup' && serverBackup}<section class="inspector-section"><div class="spread"><h2>Server Backup</h2><Icon name="shield"/></div><dl class="definition"><div><dt>Server</dt><dd>{dashboard?.host?.name ?? 'This server'}</dd></div><div><dt>Status</dt><dd class:green={serverBackup.state === 'on'}>{serverBackup.state === 'on' ? 'On' : 'Off'}</dd></div><div><dt>Encrypted</dt><dd>On this server</dd></div><div><dt>Key held by</dt><dd>You only</dd></div></dl></section>
       <section class="inspector-section"><h3>Separate from your photos</h3><p>Server Backup protects the other folders on this server. Your photo library has its own Cloud Backup, set in Frameleaf.</p></section>
       {:else if screen === 'import' && source}<section class="inspector-section"><h2>Import summary</h2><dl class="definition"><div><dt>Source</dt><dd>{source.project ?? 'Selected installation'}</dd></div><div><dt>Version</dt><dd>{source.product} {source.version}</dd></div><div><dt>Photos & videos</dt><dd>{source.summary.assets.toLocaleString()}</dd></div><div><dt>Users</dt><dd>{source.summary.users}</dd></div><div><dt>Albums</dt><dd>{source.summary.albums}</dd></div></dl></section><section class="inspector-section"><h3>What stays in place</h3><p>Your media and external libraries keep the same paths and access modes. The original database is retained separately.</p></section>
       {:else if installation}<section class="inspector-section"><h2>Your library</h2><dl class="definition"><div><dt>Frameleaf</dt><dd>{installation.release}</dd></div><div><dt>Status</dt><dd class:green={running}>{running ? 'Running' : 'Stopped'}</dd></div><div><dt>Address</dt><dd>{dashboard?.appUrl?.replace(/^https?:\/\//, '')}</dd></div><div><dt>Stack</dt><dd>{installation.project}</dd></div></dl></section><section class="inspector-section"><div class="spread"><h3>This server</h3><Icon name="server"/></div><dl class="definition"><div><dt>Name</dt><dd>{dashboard?.host?.name ?? location.hostname}</dd></div><div><dt>Processor</dt><dd>{dashboard?.host?.processors ? dashboard.host.processors + ' cores' : 'Unknown'}</dd></div><div><dt>Memory</dt><dd>{formatBytes(dashboard?.host?.memory)}</dd></div><div><dt>Graphics</dt><dd>{hasGpu(dashboard?.host?.acceleration) ? processorName(dashboard?.host?.acceleration) : 'None found'}</dd></div><div><dt>Docker</dt><dd>{dashboard?.host?.version ?? 'Unknown'}</dd></div></dl></section>
@@ -1101,7 +1093,7 @@
 
         {#if !loading && signedIn}
         {#if workspace === 'backup' && serverBackup}
-          <ServerBackup data={serverBackup} page={sbPage} go={sbGo} openPhotos={() => openWorkspace('photos')}/>
+          <ServerBackup data={serverBackup} page={sbPage} go={sbGo} openPhotos={() => openWorkspace('photos')} {api} {run} {busy} change={(view: any) => (serverBackup = view)} refresh={loadServerBackup} photos={installation ? { name: installation.name ?? 'Your library', running } : null} photosPath={storage.find((place: any) => place.uses.includes('media'))?.path ?? null}/>
         {:else if screen === 'welcome'}
           {@render heading('Choose how to begin', 'Set up and look after Frameleaf from one place.')}
           {#if installation}{@render notice('Frameleaf is already installed', 'Manage this installation from Overview, or review a database recovery point in Recovery points.')}
@@ -1112,7 +1104,6 @@
             {#if refused.length}<div class="notice warning mt16"><Icon name="warning"/><div><strong>Some installations need attention</strong>{#each refused as item}<p>{readable(item.code)}</p>{/each}</div></div>{/if}
             {@render photoAppPicker()}
             <p class="section-label">Or start another way</p><div class="two-cols"><section class="card option-card"><div class="card-body"><div class="icon-tile"><Icon name="plus"/></div><h2>Set up a new library</h2><p>Choose your storage and let Manager prepare a fresh Frameleaf installation.</p><button class="text-button" disabled={busy || !!activeOperation} onclick={() => run(() => choose('install'))}>Set up Frameleaf</button></div></section><section class="card option-card"><div class="card-body"><div class="icon-tile"><Icon name="restore"/></div><h2>Restore a backup</h2><p>Restore your database and reconnect media that already exists on your server.</p><button class="text-button" disabled={busy || !!activeOperation} onclick={() => run(() => startRestore())}>Choose a backup</button></div></section></div>
-            {#if serverBackup}<div class="notice mt16 ws-link"><Icon name="shield"/><div class="grow"><strong>Restoring a whole server?</strong><p>Bring back this server’s folders and Manager’s settings from Server Backup first, then your photo library.</p></div><button class="button quiet" onclick={() => openWorkspace('backup', 'restore-server')}>Restore this server</button></div>{/if}
             <p class="quiet-note"><Icon name="info"/>You can review every change before setup or import begins.</p>
           {/if}
         {:else if screen === 'import'}
@@ -1200,7 +1191,7 @@
         {:else if screen === 'overview'}
           {@render heading(installation.name ?? 'Your library', 'Your library at a glance, and anything that needs you.')}<div class="actions mb16"><a class="button primary" href={dashboard.appUrl} target="_blank" rel="noreferrer">Open Frameleaf <Icon name="arrow"/></a>{#if !dashboard.onboardingFinished}<button class="button quiet" onclick={() => run(() => go(dashboard.profile ? 'downloads' : 'profile'))}>Continue setup</button>{/if}{#if dashboard.librarySetup?.dismissed}<button class="button quiet" disabled={busy} onclick={() => run(async () => { await api('retry-setup', {}); await refresh(); notify('Library setup is back. Frameleaf shows its progress until it finishes.'); })}>Check the library again</button>{/if}</div>
           <OverviewPage {dashboard} {installation} {storage} {snapshots} updates={{ loaded: releasesLoaded, available: availableUpdates }} {running} {healthy} {api} go={(value: string, tab?: ContainerId) => run(async () => { if (tab) containerTab = tab; await go(value); })}/>{@render regeneration()}
-          {#if serverBackup}<div class="notice mt16 ws-link"><Icon name="shield"/><div class="grow"><strong>Server Backup</strong><p>{serverBackup.state === 'on' ? `Protecting this server’s other folders. Last backup ${when(serverBackup.last.at).toLowerCase()}.` : 'Off. Keep an encrypted copy of this server’s other folders in Frameleaf Cloud.'}</p></div><button class="button quiet" onclick={() => openWorkspace('backup')}>Open Server Backup</button></div>{/if}
+          {#if serverBackup}<div class="notice mt16 ws-link"><Icon name="shield"/><div class="grow"><strong>Server Backup</strong><p>{serverBackup.state !== 'on' ? 'Off. Keep an encrypted copy of this server’s other folders.' : serverBackup.last ? `Protecting this server’s other folders. Last backup ${midSentence(when(serverBackup.last.at))}.` : 'On. The first backup hasn’t run yet.'}</p></div><button class="button quiet" onclick={() => openWorkspace('backup')}>Open Server Backup</button></div>{/if}
         {:else if screen === 'containers'}
           {@render heading('Containers', 'Settings Manager adds to each Frameleaf container. They’re kept through every update, restore and library move; changes made in Docker or Unraid are not.')}
           <ContainersPage {api} {installation} host={dashboard.host} bind:tab={containerTab} disabled={busy || !!activeOperation} openPage={(page) => run(() => go(page))} save={(services) => run(() => start('container-settings', { services }))}/>

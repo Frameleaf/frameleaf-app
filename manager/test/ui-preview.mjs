@@ -1,9 +1,9 @@
 // FL-1664: opens manager/ui with sample data, for design review. No Manager, Docker or network is involved.
 //   node test/ui-preview.mjs [port]
 // The page address picks the sample (read here from the Referer):
-//   ?sb=off|unlicensed|setup|on|running|warning|restoring   Server Backup's state (default on)
-//   &ws=backup&page=folders|schedule|restore|activity|key|settings|restore-server   open a Server Backup screen
-//   &step=1..4   the set-up step      &fresh=1   a server with no Frameleaf installed yet
+//   ?sb=off|on|running|warning|restoring   Server Backup's state (default on)
+//   &ws=backup&page=folders|schedule|restore|activity|key|settings   open a Server Backup screen
+//   &fresh=1   a server with no Frameleaf installed yet
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,71 +51,92 @@ const storage = [
   { path: '/mnt/user/backups/frameleaf', uses: ['backups'], device: '3', totalBytes: 2 * TB, freeBytes: TB, availableBytes: TB, lowOnSpace: false, measurable: true },
 ];
 
-const folders = [
-  { kind: 'manager', label: 'Manager settings and photo recovery points', note: 'What Manager needs to bring Frameleaf back', state: 'included', bytes: 2 * GB, files: 318 },
-  { kind: 'folder', path: '/mnt/user/documents', state: 'included', bytes: 38 * GB, files: 21840 },
-  { kind: 'folder', path: '/mnt/user/appdata', state: 'included', bytes: 59 * GB, files: 184210 },
-  { kind: 'folder', path: '/mnt/user/shares/family', state: 'included', bytes: 212 * GB, files: 9655 },
-  { kind: 'photos', label: 'Frameleaf photo library', note: '/mnt/user/media/photos · already protected by Cloud Backup in Frameleaf. Adding it here stores it twice.', state: 'left-out', bytes: 1.85 * TB, files: 24860 },
-];
+const settings = {
+  folders: ['/mnt/user/documents', '/mnt/user/appdata', '/mnt/user/shares/family'],
+  exclusions: ['*.tmp', 'cache/', 'Cache/', '.Trash-*/', 'node_modules/'],
+  schedule: { time: '02:00', stop: '07:00' },
+  limitMbps: null,
+  retention: { keepLast: 3, keepDays: 90, keepMonthly: 12 },
+};
+const ms = (daysAgo, hour, minute = 0) => Date.parse(at(daysAgo, hour, minute));
+let runId = 100;
+const ran = (kind, state, daysAgo, hour, minute, outcome, error = null, took = 14) => ({
+  id: runId--,
+  kind,
+  trigger: kind === 'restore' ? 'you' : 'schedule',
+  state,
+  startedAt: ms(daysAgo, hour, minute) - took * 60_000,
+  finishedAt: ms(daysAgo, hour, minute),
+  outcome,
+  error,
+});
+const backed = (storedBytes, files) => ({ kind: 'backup', files, bytes: 311 * GB, storedBytes, problems: 0 });
 const runs = [
-  { result: 'ok', at: at(0, 2, 14), title: 'Backed up', detail: '1.8 GB new · 412 files changed · took 14 minutes' },
-  { result: 'ok', at: at(1, 2, 9), title: 'Backed up', detail: '640 MB new · 96 files changed · took 9 minutes' },
-  { result: 'check', at: at(2, 4, 0), title: 'Monthly check passed', detail: 'Every stored file could be read back.' },
-  { result: 'restore', at: at(3, 16, 20), title: 'Restored 2 items', detail: 'Tax 2025.xlsx and Receipts, back where they were' },
-  { result: 'failed', at: at(4, 2, 0), title: 'Backup didn’t finish', detail: 'Frameleaf Cloud couldn’t be reached for 40 minutes. The next run carried on.' },
-  { result: 'ok', at: at(5, 2, 11), title: 'Backed up', detail: '2.4 GB new · 1,204 files changed · took 19 minutes' },
+  ran('backup', 'done', 0, 2, 14, backed(1.8 * GB, 215_813)),
+  ran('backup', 'done', 1, 2, 9, backed(640 * 1024 ** 2, 215_790), null, 9),
+  ran('restore', 'done', 3, 16, 20, { kind: 'restore', files: 863, bytes: 1.1 * GB, movedAside: 2 }, null, 3),
+  ran('backup', 'failed', 4, 2, 40, null, 'The storage could not be reached.', 40),
+  ran('backup', 'done', 5, 2, 11, backed(2.4 * GB, 215_512), null, 19),
 ];
 const on = {
   state: 'on',
-  machine: { name: 'home-server', account: 'you@example.com' },
-  key: { saved: true, savedOn: '14 November' },
-  folders,
-  exclusions: ['*.tmp', '*.log', 'cache/', 'Cache/', '.Trash-*/', 'node_modules/'],
-  schedule: { time: '2:00 AM', stop: '7:00 AM', limit: null, keep: '90 days, then one a month for a year' },
-  storage: { usedBytes: 412 * GB, planBytes: 1024 * GB, serverBytes: 311 * GB, photosBytes: 101 * GB },
-  run: null,
-  restore: null,
-  last: { result: 'ok', at: at(0, 2, 14) },
-  next: 'tonight at 2:00 AM',
+  settings,
+  key: { saved: true, savedAt: ms(3, 10) },
+  folders: [
+    { kind: 'manager', path: '/mnt/user/backups/frameleaf/frameleaf-database', files: 318, bytes: 2 * GB },
+    { kind: 'folder', path: '/mnt/user/documents', files: 21_840, bytes: 38 * GB },
+    { kind: 'folder', path: '/mnt/user/appdata', files: 184_210, bytes: 59 * GB },
+    { kind: 'folder', path: '/mnt/user/shares/family', files: 9655, bytes: 212 * GB },
+  ],
+  running: null,
+  last: { state: 'done', at: ms(0, 2, 14), error: null, completeAt: ms(0, 2, 14) },
+  next: ms(-1, 2, 0),
   runs,
-  snapshots: [0, 1, 2, 3, 5, 6, 7].map((days) => ({ id: `s${days}`, at: at(days, 2, days ? 9 + days : 14) })),
-  browse: {
-    path: ['This server', 'mnt', 'user', 'documents'],
-    entries: [
-      { type: 'folder', name: 'Household', files: 1240, bytes: 3.2 * GB },
-      { type: 'folder', name: 'Receipts', files: 862, bytes: 1.1 * GB, selected: true },
-      { type: 'folder', name: 'School', files: 418, bytes: 640 * 1024 ** 2 },
-      { type: 'file', name: 'Tax 2025.xlsx', bytes: 84 * 1024, modified: at(3, 15, 42), versions: 4, selected: true },
-      { type: 'file', name: 'House insurance.pdf', bytes: 2.4 * 1024 ** 2, modified: at(40, 10, 5), versions: 1 },
-      { type: 'file', name: 'Passwords export.kdbx', bytes: 310 * 1024, modified: at(1, 21, 30), versions: 12 },
-    ],
-    versions: [
-      { at: at(3, 2, 13), bytes: 84 * 1024 },
-      { at: at(12, 2, 10), bytes: 81 * 1024 },
-      { at: at(31, 2, 12), bytes: 77 * 1024 },
-    ],
-  },
-  photos: { name: 'Family library', running: true },
+  snapshots: [0, 1, 2, 3, 5, 6, 7].map((days) => ({ key: `s/${String(40 - days).padStart(12, '0')}-0123456789abcdef`, time: at(days, 2, days ? 9 + days : 14) })),
 };
 const samples = {
   on,
-  running: { ...on, run: { percent: 42, doneBytes: 131 * GB, totalBytes: 311 * GB, mbps: 38, left: '9 hours' }, last: null, runs: [] },
-  warning: { ...on, key: { saved: false }, last: { result: 'failed', at: at(0, 2, 0), completeAt: at(1, 2, 9), message: 'Frameleaf Cloud couldn’t be reached for 40 minutes. The next run picks up where this one stopped.' }, runs: [{ ...runs[4], at: at(0, 2, 0) }, ...runs.slice(1, 4)] },
-  restoring: { ...on, restore: { items: 2, percent: 64, doneBytes: 0.7 * GB, totalBytes: 1.1 * GB, target: '/mnt/user/documents' } },
-  off: { state: 'off', requirements: { licence: true, plan: true }, machine: on.machine, folders, snapshots: on.snapshots },
-  unlicensed: { state: 'off', requirements: { licence: false, plan: false }, machine: on.machine, folders, snapshots: on.snapshots },
+  running: {
+    ...on,
+    running: { kind: 'backup', trigger: 'schedule', startedAt: Date.now() - 3 * 3_600_000, files: 91_204, bytes: 131 * GB, totalBytes: 311 * GB, bytesPerSecond: 4.75 * 1024 ** 2, secondsLeft: 9 * 3600 },
+    last: null,
+    runs: [],
+    snapshots: [],
+  },
+  warning: {
+    ...on,
+    key: { saved: false, savedAt: null },
+    last: { state: 'failed', at: ms(0, 2, 40), error: 'The storage could not be reached.', completeAt: ms(1, 2, 9) },
+    runs: [{ ...runs[3], finishedAt: ms(0, 2, 40), startedAt: ms(0, 2, 0) }, ...runs.slice(1, 3)],
+  },
+  restoring: { ...on, running: { kind: 'restore', trigger: 'you', startedAt: Date.now() - 60_000, files: 412, bytes: 0.7 * GB, totalBytes: 0, bytesPerSecond: 0, secondsLeft: null } },
+  off: { ...on, state: 'off', settings: { ...settings, folders: [] }, key: { saved: false, savedAt: null }, folders: [on.folders[0]].map(({ kind, path }) => ({ kind, path })), last: null, next: null, runs: [], snapshots: [] },
 };
-const setup = (step) => ({ ...on, state: 'setup', setup: { step, code: 'KMQD-7T2P', key: 'FLRK-7Q2D-K9MX-4THP-W3NV-8RCB-J6YF-2GZA' } });
+const tree = {
+  '': [{ name: 'mnt', type: 'folder', bytes: 0, modified: 0 }],
+  mnt: [{ name: 'user', type: 'folder', bytes: 0, modified: 0 }],
+  'mnt/user': ['appdata', 'backups', 'documents', 'shares'].map((name) => ({ name, type: 'folder', bytes: 0, modified: 0 })),
+  'mnt/user/documents': [
+    { name: 'Household', type: 'folder', bytes: 0, modified: ms(9, 12) },
+    { name: 'Receipts', type: 'folder', bytes: 0, modified: ms(3, 12) },
+    { name: 'School', type: 'folder', bytes: 0, modified: ms(20, 12) },
+    { name: 'House insurance.pdf', type: 'file', bytes: 2.4 * 1024 ** 2, modified: ms(40, 10, 5) },
+    { name: 'Passwords export.kdbx', type: 'file', bytes: 310 * 1024, modified: ms(1, 21, 30) },
+    { name: 'Tax 2025.xlsx', type: 'file', bytes: 84 * 1024, modified: ms(3, 15, 42) },
+  ],
+};
 
-const api = (path, page) => {
+const api = (path, page, body) => {
   const fresh = page.get('fresh') === '1';
+  const sample = samples[page.get('sb') ?? (fresh ? 'off' : 'on')] ?? on;
   if (path === 'status') return { claimed: true };
   if (path === 'dashboard') return dashboard(fresh);
-  if (path === 'server-backup') {
-    const sample = page.get('sb') ?? (fresh ? 'off' : 'on');
-    return sample === 'setup' ? setup(Number(page.get('step') ?? 1)) : (samples[sample] ?? on);
-  }
+  if (path === 'server-backup') return sample;
+  if (path === 'server-backup-browse') return { path: body.path, entries: tree[body.path.join('/')] ?? [] };
+  if (path === 'server-backup-first-key' || path === 'server-backup-key') return { key: '7c1e9a40b2d85f63e0a71c4d9b3f6e25a8d04c7f1b9e3a62d5f08c4b7e1a9d30' };
+  if (path === 'server-backup-turn-on' || path === 'server-backup-run') return { ...on, ...samples.running, snapshots: [] };
+  if (path.startsWith('server-backup-')) return sample;
+  if (path === 'folders') return { path: '/mnt/user', parent: null, folders: ['appdata', 'documents', 'media', 'shares'].map((name) => ({ name, path: `/mnt/user/${name}` })), truncated: false };
   if (path === 'storage') return storage;
   if (path === 'backup-status' || path === 'backups') return { configured: true, unlocked: true, keyAvailable: true, snapshots: [{ id: 'd'.repeat(64), time: at(3, 14, 5) }, { id: 'e'.repeat(64), time: at(11, 9, 30) }] };
   if (path === 'releases') return [{ tag: 'frameleaf-v3.2.0-1', publishedAt: at(20, 1), notes: 'Current release' }];
@@ -134,11 +155,13 @@ const server = await createServer({
     {
       name: 'manager-sample-api',
       configureServer(vite) {
-        vite.middlewares.use('/manager-api', (request, response) => {
+        vite.middlewares.use('/manager-api', async (request, response) => {
           const page = new URL(request.headers.referer ?? 'http://localhost/').searchParams;
           const path = new URL(request.url, 'http://localhost').pathname.split('/').filter(Boolean).at(-1);
+          let sent = '';
+          for await (const part of request) sent += part;
           response.setHeader('Content-Type', 'application/json');
-          response.end(JSON.stringify(api(path, page)));
+          response.end(JSON.stringify(api(path, page, sent ? JSON.parse(sent) : {})));
         });
       },
     },
