@@ -293,7 +293,7 @@ export class Security {
       if (!req.path.startsWith('/manager-api/')) return next();
       const write = !['GET', 'HEAD'].includes(req.method);
       const publicRoute = ['/manager-api/status', '/manager-api/claim', '/manager-api/login'].includes(req.path);
-      const credential = ['administrator', 'backup-key', 'export'].some((path) => req.path === `/manager-api/${path}`);
+      const credential = ['administrator', 'backup-key', 'export', 'server-backup-key'].some((path) => req.path === `/manager-api/${path}`);
       const client = this.clientAddress(req);
       const signedIn = this.signedIn(req);
       // A signed-in session's own calls (the UI polls dashboard every 10 s) never spend the anonymous budget;

@@ -145,6 +145,15 @@ export class ServerBackup {
   setSettings(input: unknown) {
     this.save({ settings: this.checked(Settings.parse(input)) });
   }
+  /** Shown during set-up, until the owner confirms it is saved. After that Manager asks for the password first. */
+  firstKey() {
+    if (this.saved().keySavedAt !== null) throw new Refusal('server_backup_key_already_saved');
+    this.target();
+    return this.rootKey(true);
+  }
+  key() {
+    return this.rootKey(false);
+  }
   confirmKeySaved() {
     this.save({ keySavedAt: Date.now() });
   }
