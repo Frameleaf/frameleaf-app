@@ -284,6 +284,29 @@ describe('duplicate utils', () => {
     });
   });
 
+  describe('damaged copies (FL-1660)', () => {
+    it('prefers a healthy copy over a damaged one before any rule runs', () => {
+      const damagedRaw = createAsset('damaged', 9000, {}, 'capture.DNG');
+      const healthyJpg = createAsset('healthy', 10);
+      const damagedIds = new Set(['damaged']);
+      expect(suggestDuplicateKeepAssetIds([damagedRaw, healthyJpg], { damagedIds })).toEqual(['healthy']);
+      expect(suggestDuplicateKeepAssetIds([healthyJpg, damagedRaw], { damagedIds, rules: ['raw', 'largest'] })).toEqual(
+        ['healthy'],
+      );
+    });
+
+    it('still ranks the healthy copies by the rules', () => {
+      const damagedIds = new Set(['damaged']);
+      const assets = [createAsset('damaged', 9000), createAsset('small', 10), createAsset('large', 500)];
+      expect(suggestDuplicateKeepAssetIds(assets, { damagedIds })).toEqual(['large']);
+    });
+
+    it('suggests none when every copy is damaged', () => {
+      const assets = [createAsset('a', 10), createAsset('b', 20)];
+      expect(suggestDuplicateKeepAssetIds(assets, { damagedIds: new Set(['a', 'b']) })).toEqual([]);
+    });
+  });
+
   describe('suggestDuplicateKeepAssetIds', () => {
     it('should return empty array for empty list', () => {
       expect(suggestDuplicateKeepAssetIds([])).toEqual([]);

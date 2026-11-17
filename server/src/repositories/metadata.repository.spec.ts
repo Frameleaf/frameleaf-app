@@ -27,6 +27,26 @@ describe('metadata reads', () => {
       await expect(sut.readTags('original.jpg')).rejects.toThrow(/corrupt metadata|truncated file/);
     },
   );
+  it('reads a video again without its embedded tracks when that read times out', async () => {
+    // batch-cluster's error, as exiftool-vendored rejects with it
+    class TaskTimeoutError extends Error {
+      override name = 'TaskTimeoutError';
+    }
+    const timeout = new TaskTimeoutError('timeout: waited 120000ms');
+    const read = vi
+      .spyOn(ExifTool.prototype, 'read')
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce({ FileType: 'MP4', errors: [] } as Tags);
+    await expect(sut.readTags('long-clip.mp4')).resolves.toMatchObject({ FileType: 'MP4' });
+    expect(read).toHaveBeenNthCalledWith(1, 'long-clip.mp4', { readArgs: ['-ee'] });
+    expect(read).toHaveBeenNthCalledWith(2, 'long-clip.mp4');
+  });
+  it('still rejects a video whose read fails for another reason', async () => {
+    const failure = new Error('unreadable');
+    const read = vi.spyOn(ExifTool.prototype, 'read').mockRejectedValue(failure);
+    await expect(sut.readTags('clip.mp4')).rejects.toBe(failure);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
   it('permits a successful metadata-free image', async () => {
     vi.spyOn(ExifTool.prototype, 'read').mockResolvedValue({ FileType: 'JPEG', errors: [] } as Tags);
     await expect(sut.readTags('original.jpg')).resolves.toMatchObject({ FileType: 'JPEG' });

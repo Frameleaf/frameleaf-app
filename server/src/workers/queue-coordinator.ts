@@ -7,7 +7,7 @@ import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import { coalescedTask } from 'src/queue/coalesced-task.js';
 import { queueNotifications } from 'src/queue/notifications.js';
 import { pruneQueueHistoryPage } from 'src/queue/retention.js';
-import { finishRuns } from 'src/queue/run-summary.js';
+import { finishRuns, refreshRunCounts } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_EXECUTION_CAPACITY, QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
 import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
@@ -145,6 +145,8 @@ export async function coordinate({
         });
         // FL-1265: runs whose work has ended are finished, their counts written once.
         await step(() => finishRuns(maintenanceDb, 10));
+        // FL-1656: large runs still open keep a stored tally, so reading Activity never counts their jobs.
+        await step(() => refreshRunCounts(maintenanceDb));
         await step(() => maintenanceStore.settleTerminalLibrarySources());
       } finally {
         lastSweep = performance.now();

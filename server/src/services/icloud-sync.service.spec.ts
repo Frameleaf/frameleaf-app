@@ -546,6 +546,49 @@ describe(ICloudSyncService.name, () => {
       );
     });
 
+    it('gives the automatic retry back on a step that did work, not on a wait (FL-1662)', async () => {
+      await sut.run(operation({ autoRetries: 1 }), 'token');
+      expect(operations.setBulkResult).toHaveBeenCalledWith(
+        'run',
+        'token',
+        expect.objectContaining({ resetAutoRetries: true }),
+      );
+
+      operations.setBulkResult.mockClear();
+      repository.get.mockResolvedValue({ ...connection, state: 'authenticating' });
+      await sut.run(operation({ autoRetries: 1 }), 'token');
+      expect(operations.setBulkResult).toHaveBeenCalledTimes(1);
+      expect(operations.setBulkResult).toHaveBeenCalledWith(
+        'run',
+        'token',
+        expect.objectContaining({ resetAutoRetries: false }),
+      );
+    });
+
+    it.each([
+      ['finds the claim gone', () => operations.heartbeat.mockResolvedValue(false), 'no live claim'],
+      ['fails', () => operations.heartbeat.mockRejectedValue(new Error('database went away')), 'database went away'],
+    ])('warns with the run id when a heartbeat %s (FL-1662)', async (_name, arrange, expected) => {
+      vi.useFakeTimers();
+      try {
+        arrange();
+        // Hold the step open so the heartbeat timer fires while the run is in hand.
+        let release!: () => void;
+        repository.claim.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve(undefined))));
+        const run = sut.run(operation(), 'token');
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        expect(operations.heartbeat).toHaveBeenCalledWith('run', 'token', expect.any(Number));
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('iCloud sync run run: heartbeat'));
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(expected));
+
+        release();
+        await run;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('avoids transfer only after verified reuse and preserves intentionally trashed mappings', async () => {
       recovery.verifyMapped.mockResolvedValue({ outcome: 'reused', assetId: 'same-asset' });
       await sut.run(operation(), 'token');

@@ -158616,6 +158616,33 @@
             "description": "Whether the queue is paused",
             "type": "boolean"
           },
+          "items": {
+            "description": "Photos and videos this run has finished (completed or failed, as `processed` counts), of those it has: a queue that runs several jobs for each (thumbnails) counts more jobs than photos",
+            "properties": {
+              "done": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "startedAt": {
+                "description": "When the oldest of them was queued",
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "total": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "done",
+              "total",
+              "startedAt"
+            ],
+            "type": "object"
+          },
           "lastProgressAt": {
             "format": "date-time",
             "nullable": true,
@@ -168492,6 +168519,17 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "cursor": {
+            "description": "Cursor for the next page of results",
+            "minLength": 1,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
           },
           "filter": {
             "$ref": "#/components/schemas/SearchFilter",
