@@ -163,6 +163,6 @@ export async function backup(repository, source, options = {}) {
         tree,
         parent: parentKey,
         stats,
-    }, options.sequence);
+    }, options.sequence, options.signal);
     return { ...written, problems, unchanged };
 }
