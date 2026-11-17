@@ -70,6 +70,9 @@ export function memoryStore(): Store & { objects: Map<string, Buffer> } {
   };
 }
 
+/** What a drive answers when it cannot make hard links. */
+const NO_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
+
 /** A folder on disk: for tests, and for backing up to a local drive. */
 export function dirStore(root: string): Store {
   const path = (key: string) => {
@@ -98,8 +101,20 @@ export function dirStore(root: string): Store {
           if (error.code === 'EEXIST') {
             throw new ObjectExistsError(key);
           }
-          // A drive that can't make links (exFAT, some network shares): look first, then rename.
-          if (await stat(target).catch(() => null)) {
+          // Only a drive that can't make links at all (exFAT, some network shares) gets the fallback; any
+          // other failure is passed on. There is no rename that refuses to replace, so it looks first, and
+          // only "not there" counts as free. This leans on the format's rule of one writer per repository;
+          // it was chosen over writing straight to the name, which a power cut could leave half written.
+          if (!NO_LINKS.has(error.code ?? '')) {
+            throw error;
+          }
+          const taken = await stat(target).catch((failure: NodeJS.ErrnoException) => {
+            if (failure.code === 'ENOENT') {
+              return null;
+            }
+            throw failure;
+          });
+          if (taken) {
             throw new ObjectExistsError(key);
           }
           await rename(temporary, target);
@@ -134,7 +149,11 @@ export function dirStore(root: string): Store {
         }
         throw error;
       };
-      const names = (await readdir(root, { recursive: true }).catch(missing)) ?? [];
+      // "Not there" is asked of the root alone. The same answer from deeper down, while walking, is a failure.
+      if (!(await stat(root).catch(missing))) {
+        return [];
+      }
+      const names = await readdir(root, { recursive: true });
       const found: StoredObject[] = [];
       for (const name of names) {
         const key = name.split(sep).join('/');

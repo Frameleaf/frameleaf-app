@@ -106,7 +106,9 @@ export async function restore(
       const made = !existing?.isDirectory();
       if (made) {
         // Made writable for the one restoring, whatever its stored mode, so a read-only folder can be filled.
+        // Set after it is made: the mode given to mkdir is cut down by the process's umask, chmod's is not.
         await mkdir(place, { mode: 0o700 });
+        await chmod(place, 0o700);
       }
       for (const child of entry.tree ? await readTree(repository, entry.tree) : []) {
         if (!safeName(child.name)) {
