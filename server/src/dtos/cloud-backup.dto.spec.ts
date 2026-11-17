@@ -6,12 +6,8 @@ import {
   CloudBackupManifestItemsDto,
   CloudBackupRestoreDto,
 } from 'src/dtos/cloud-backup.dto.js';
-import { clientBackupContext, clientBackupManifestKey } from 'src/utils/cloud-backup-crypto.js';
-import { manifestKey } from 'src/utils/cloud-backup.js';
 
 const vault = '8bfb42bc-4df2-41da-bb1f-1a3354ea60a2';
-const legacy = manifestKey(new Date('2026-10-11T03:00:00Z'));
-const encrypted = clientBackupManifestKey(vault, 1, legacy);
 const admin = [
   { name: 'albums', schema: CloudBackupManifestAlbumsDto.schema, body: {} },
   { name: 'items', schema: CloudBackupManifestItemsDto.schema, body: {} },
@@ -38,43 +34,31 @@ describe('backup manifest request contracts', () => {
     }
   });
 
-  it.each([legacy, encrypted, clientBackupManifestKey(vault, 999_999_999, legacy)])('accepts written key %s', (key) => {
+  // FL-1676: a backup is named by its snapshot in the repository
+  const snapshot = `r/v1/${vault}/s/000000000001-${'a'.repeat(16)}`;
+  it.each([snapshot, `r/v1/${vault}/s/999999999999-${'f'.repeat(64)}`])('accepts a backup name %s', (key) => {
     for (const request of [...admin, ...owner]) {
       expect(request.schema.safeParse({ ...request.body, manifestKey: key }).success, request.name).toBe(true);
     }
   });
 
   it.each([
-    `../${legacy}`,
-    `${legacy}/../other`,
-    `prefix/${legacy}`,
-    `${legacy}?version=1`,
-    encrypted.replace('/1/', '/0/'),
-    encrypted.replace('/1/', '/1000000000/'),
-    encrypted.replace('/v1/', '/v2/'),
-    encrypted.replace(vault, 'invalid-vault'),
-    encrypted.replace('m/', 'o/'),
-    encrypted.replace('m/', 'db/'),
-    encrypted.replace(legacy.slice(2), () => `../${legacy.slice(2)}`),
-    encrypted.replace(legacy.slice(2), () => `%2e%2e/${legacy.slice(2)}`),
-    `m/${'a'.repeat(301)}.json.gz`,
+    `../${snapshot}`,
+    `${snapshot}/../other`,
+    `prefix/${snapshot}`,
+    `${snapshot}?version=1`,
+    snapshot.replace('/v1/', '/v2/'),
+    snapshot.replace(vault, 'invalid-vault'),
+    snapshot.replace('/s/', '/p/'),
+    snapshot.replace('000000000001', '1'),
+    `${snapshot.slice(0, -16)}${'a'.repeat(15)}`,
+    `${snapshot.slice(0, -16)}${'A'.repeat(16)}`,
+    'm/20261011T030000Z.json.gz',
+    `m/v1/${vault}/1/20261011T030000Z.json.gz`,
     '',
   ])('rejects invalid manifest key %s', (key) => {
     for (const request of [...admin, ...owner]) {
       expect(request.schema.safeParse({ ...request.body, manifestKey: key }).success, request.name).toBe(false);
     }
-  });
-
-  it('retains downstream format and vault binding', () => {
-    expect(clientBackupContext('bucket', legacy, vault)).toBeNull();
-    expect(clientBackupContext('bucket', encrypted, vault)).toMatchObject({
-      kind: 'manifest',
-      vaultId: vault,
-      keyVersion: 1,
-    });
-    expect(() => clientBackupContext('bucket', encrypted, 'another-vault')).toThrow('Backup vault mismatch');
-    expect(() => clientBackupContext('bucket', encrypted.replace('/v1/', '/v2/'), vault)).toThrow(
-      'Unsupported client backup object format',
-    );
   });
 });

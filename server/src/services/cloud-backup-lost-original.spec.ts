@@ -2,17 +2,17 @@ import { createHash } from 'node:crypto';
 import { access, link, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { gzipSync } from 'node:zlib';
 import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { ChecksumAlgorithm, DatabaseLock, MediaOperationKind, StorageFolder, SystemMetadataKey } from 'src/enum.js';
-import { CloudBackupStoreError } from 'src/repositories/cloud-backup-store.repository.js';
+import { S3Error } from '@frameleaf/backup-core';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
 import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
 import { cloudContractFixture, cloudRepositoryGrant } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { packHolding, storeTestBackup, versionedMemoryStore } from 'test/fixtures/cloud-backup-vault.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
@@ -62,8 +62,10 @@ const keyFile = JSON.stringify({
 const PHOTO = Buffer.from('the photo, exactly as it was uploaded');
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest();
 const sha1 = (bytes: Buffer) => createHash('sha1').update(bytes).digest();
-const NEWEST = 'm/20261101T030000Z.json.gz';
-const OLDEST = 'm/20261001T030000Z.json.gz';
+const NEWEST = `r/v1/${INSTANCE_ID}/s/000000000002-${'0'.repeat(16)}`;
+const OLDEST = `r/v1/${INSTANCE_ID}/s/000000000001-${'0'.repeat(16)}`;
+/** Where the photo sits in a backup. */
+const PHOTO_KEY = 'files/data/upload/IMG_2041.jpg';
 
 describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   let sut: CloudBackupService;
@@ -78,41 +80,52 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   let identityDir: string;
   let previousMedia: string | undefined;
   let originalPath: string;
-  /** What the bucket answers for the original's object: the backed-up bytes. */
+  /** What the backup holds as the original: the backed-up bytes. */
   let backedUp: Buffer;
+  /** The bucket, its newest backup, and the stored pack that holds the photo's bytes. */
+  let vault: ReturnType<typeof versionedMemoryStore>;
+  let newest: string;
+  let photoPack: string;
   let target: Record<string, unknown>;
 
-  const manifestWith = (bytes: Buffer) =>
-    gzipSync(
-      JSON.stringify({
-        format: 'frameleaf-backup-manifest',
-        version: 1,
-        instanceId: INSTANCE_ID,
-        createdAt: '2026-11-01T03:00:00.000Z',
-        database: null,
-        assets: {
-          [ASSET_ID]: {
-            owner: OWNER_ID,
-            files: [
-              {
-                role: 'original',
-                path: originalPath,
-                sha256: sha256(bytes).toString('hex'),
-                size: bytes.length,
-                mtime: null,
-              },
-            ],
+  const catalogWith = (bytes: Buffer) => ({
+    format: 'frameleaf-backup-manifest',
+    version: 4,
+    instanceId: INSTANCE_ID,
+    createdAt: '2026-11-01T03:00:00.000Z',
+    database: null,
+    assets: {
+      [ASSET_ID]: {
+        owner: OWNER_ID,
+        files: [
+          {
+            role: 'original',
+            path: originalPath,
+            objectKey: PHOTO_KEY,
+            sha256: sha256(bytes).toString('hex'),
+            size: bytes.length,
+            mtime: null,
           },
-        },
-        profiles: {},
-      }),
-    );
-  /** The bucket holds `bytes` as the asset's original, in the newest kept backup. */
-  const backup = (bytes: Buffer) => {
+        ],
+      },
+    },
+    profiles: {},
+    albums: {},
+    people: {},
+  });
+  /** The bucket holds `bytes` as the asset's original, in the newest kept backup (a real one, FL-1676). */
+  const backup = async (bytes: Buffer) => {
     backedUp = bytes;
-    store.get.mockResolvedValue(manifestWith(bytes));
+    const stored = await storeTestBackup(vault, {
+      vaultId: INSTANCE_ID,
+      sequence: 1,
+      catalog: catalogWith(bytes),
+      files: { [PHOTO_KEY]: bytes },
+    });
+    newest = stored.key;
+    photoPack = await packHolding(vault, stored.snapshotKey, PHOTO_KEY);
     index.getKeptOriginals.mockResolvedValue([
-      { key: NEWEST, createdAt: new Date('2026-11-01T03:00:00.000Z'), sha256: sha256(bytes).toString('hex') },
+      { key: newest, createdAt: new Date('2026-11-01T03:00:00.000Z'), sha256: sha256(bytes).toString('hex') },
     ]);
   };
   const exists = (path: string) =>
@@ -176,16 +189,17 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
       getKeptOriginals: vi.fn().mockResolvedValue([]),
     };
     cloudBackup = { rotate: vi.fn(), listSnapshots: vi.fn().mockResolvedValue([]) };
+    vault = versionedMemoryStore();
     store = {
-      get: vi.fn(),
-      // the store checks what arrives against the manifest's SHA-256 and moves it to `destination` only then
-      download: vi.fn().mockImplementation(async (_connection, _object, _bucketKey, destination: string, expected) => {
-        if (sha256(backedUp).toString('hex') !== expected) {
-          throw new CloudBackupStoreError('The backup copy does not match its checksum', null, 'ChecksumMismatch');
-        }
-        await writeFile(destination, backedUp, { flag: 'wx', mode: 0o600 });
-        return { size: backedUp.length, sha256: expected };
-      }),
+      // the engine's view of the bucket, for one connection; `download` sees every read of the photo's bytes
+      store: vi.fn((connection: unknown) => ({
+        ...vault,
+        get: async (object: string, range?: never) => {
+          if (object === photoPack) await store.download(connection, object);
+          return vault.get(object, range);
+        },
+      })),
+      download: vi.fn().mockResolvedValue(undefined),
     };
     sut = new CloudBackupService(
       mocks.logger as never,
@@ -226,7 +240,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   });
 
   it('restores a missing original and verifies it', async () => {
-    backup(PHOTO);
+    await backup(PHOTO);
 
     await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({
       outcome: 'restored',
@@ -235,16 +249,14 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
 
     // the photo's own bytes are back at its path, fetched from the newest backup that holds them
     await expect(readFile(originalPath)).resolves.toEqual(PHOTO);
-    expect(store.get).toHaveBeenCalledWith(expect.objectContaining({ bucket: s3.bucket }), NEWEST, key);
-    expect(store.download).toHaveBeenCalledWith(
-      expect.objectContaining({ bucket: s3.bucket }),
-      `o/${sha256(PHOTO).toString('hex')}`,
-      key,
-      // a private file beside the original's path
+    // read from the claimed bucket, under this server's vault
+    expect(store.store).toHaveBeenCalledWith(expect.objectContaining({ bucket: s3.bucket }), INSTANCE_ID);
+    expect(store.download).toHaveBeenCalled();
+    // checked against the photo's own checksum in a private file beside the original's path
+    expect(mocks.crypto.hashFileMatching).toHaveBeenCalledWith(
       expect.stringMatching(new RegExp(String.raw`^${dirname(originalPath)}/\.cloud-restore-[\da-f-]+\.tmp$`)),
-      sha256(PHOTO).toString('hex'),
+      sha256(PHOTO),
     );
-    expect(mocks.crypto.hashFileMatching).toHaveBeenCalledWith(store.download.mock.calls[0][3], sha256(PHOTO));
     expect(await leftovers()).toEqual([]);
     // checked under the bucket lock, without waiting for it
     expect(mocks.database.holdLock).toHaveBeenCalledWith(DatabaseLock.FrameleafCloudBackup);
@@ -255,7 +267,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   it("refuses a download whose bytes don't match", async () => {
     // an older upload's SHA-1: only the bytes themselves can tell, and these are some other file's
     target = { ...target, checksum: sha1(PHOTO), checksumAlgorithm: ChecksumAlgorithm.sha1File };
-    backup(Buffer.from('another photo that was backed up under this item'));
+    await backup(Buffer.from('another photo that was backed up under this item'));
 
     await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({
       outcome: 'not-in-backup',
@@ -271,7 +283,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   it('moves a changed file aside instead of replacing it', async () => {
     const changed = Buffer.from('a file that is no longer the photo');
     await writeFile(originalPath, changed);
-    backup(PHOTO);
+    await backup(PHOTO);
 
     const result = await sut.restoreLostOriginal(ASSET_ID);
 
@@ -292,7 +304,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   it('puts a changed file back where it was when the copy cannot be placed', async () => {
     const changed = Buffer.from('a file that is no longer the photo');
     await writeFile(originalPath, changed);
-    backup(PHOTO);
+    await backup(PHOTO);
     // the disk fails while the copy is written next to the original's path
     const crypto = new CryptoRepository();
     mocks.crypto.hashFileDigests.mockImplementation((file) =>
@@ -319,7 +331,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
     });
     const changed = Buffer.from('a file that is no longer the photo');
     await writeFile(originalPath, changed);
-    backup(PHOTO);
+    await backup(PHOTO);
 
     const result = await sut.restoreLostOriginal(ASSET_ID);
 
@@ -337,7 +349,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
     target = { ...target, originalPath };
     const changed = Buffer.from('a file that is no longer the photo');
     await writeFile(originalPath, changed);
-    backup(PHOTO);
+    await backup(PHOTO);
     await rm(join(StorageCore.getBaseFolder(StorageFolder.Upload), '.frameleaf'));
 
     await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome: 'busy' });
@@ -353,15 +365,15 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   });
 
   it.each([
-    ['refused credentials', 'not-set-up', new CloudBackupStoreError('Access denied', 403, 'AccessDenied')],
-    ['an unsigned request', 'not-set-up', new CloudBackupStoreError('Unauthorized', 401, null)],
-    ['a bad request', 'not-set-up', new CloudBackupStoreError('Bad request', 400, null)],
-    ['a bucket that is gone', 'not-set-up', new CloudBackupStoreError('No such bucket', 404, 'NoSuchBucket')],
-    ['a provider error', 'busy', new CloudBackupStoreError('Unavailable', 503, null)],
-    ['a rate limit', 'busy', new CloudBackupStoreError('Slow down', 429, 'SlowDown')],
-    ['an unreachable provider', 'busy', new CloudBackupStoreError('could not be reached', null, null)],
+    ['refused credentials', 'not-set-up', new S3Error('Access denied', 403, 'AccessDenied')],
+    ['an unsigned request', 'not-set-up', new S3Error('Unauthorized', 401, null)],
+    ['a bad request', 'not-set-up', new S3Error('Bad request', 400, null)],
+    ['a bucket that is gone', 'not-set-up', new S3Error('No such bucket', 404, 'NoSuchBucket')],
+    ['a provider error', 'busy', new S3Error('Unavailable', 503, null)],
+    ['a rate limit', 'busy', new S3Error('Slow down', 429, 'SlowDown')],
+    ['an unreachable provider', 'busy', new S3Error('could not be reached', null, null)],
   ] as const)('answers %s with %s, never as a backup without the photo', async (_name, outcome, error) => {
-    backup(PHOTO);
+    await backup(PHOTO);
     store.download.mockRejectedValueOnce(error);
 
     await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome });
@@ -371,7 +383,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
 
   it('leaves the photo’s own bytes where they are, fetching nothing', async () => {
     await writeFile(originalPath, PHOTO);
-    backup(PHOTO);
+    await backup(PHOTO);
 
     await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({
       outcome: 'restored',
@@ -381,7 +393,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   });
 
   it('waits while a backup runs', async () => {
-    backup(PHOTO);
+    await backup(PHOTO);
     operations.getActiveOfKind.mockImplementation((kind) =>
       Promise.resolve(kind === MediaOperationKind.CloudBackup ? { id: 'run-1' } : undefined),
     );
@@ -390,13 +402,13 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
 
     // the lock is let go at once, and the bucket is not read
     expect(held.release).toHaveBeenCalled();
-    expect(store.get).not.toHaveBeenCalled();
+    expect(store.store).not.toHaveBeenCalled();
     expect(store.download).not.toHaveBeenCalled();
     await expect(exists(originalPath)).resolves.toBe(false);
   });
 
   it('waits, without waiting on it, while another backup operation is being started', async () => {
-    backup(PHOTO);
+    await backup(PHOTO);
     mocks.database.holdLock.mockResolvedValue(null);
 
     await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome: 'busy' });
@@ -404,7 +416,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   });
 
   it('waits while the drive the original belongs on is unplugged, writing nothing there', async () => {
-    backup(PHOTO);
+    await backup(PHOTO);
     await rm(join(StorageCore.getBaseFolder(StorageFolder.Upload), '.frameleaf'));
 
     await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome: 'busy' });
@@ -418,15 +430,15 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
       since: '2026-10-01T03:00:00.000Z',
     });
     expect(index.getKeptOriginals).toHaveBeenCalledWith(ref, ASSET_ID);
-    expect(store.get).not.toHaveBeenCalled();
+    expect(store.store).not.toHaveBeenCalled();
   });
 
   it('is not set up without Cloud Backup', async () => {
     delete metadata[SystemMetadataKey.FrameleafCloudBackup];
-    backup(PHOTO);
+    await backup(PHOTO);
 
     await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome: 'not-set-up' });
-    expect(store.get).not.toHaveBeenCalled();
+    expect(store.store).not.toHaveBeenCalled();
   });
 
   describe('on Frameleaf-managed storage', () => {
@@ -457,7 +469,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
     });
 
     it('restores with a restore key asked for while nothing holds the bucket', async () => {
-      backup(PHOTO);
+      await backup(PHOTO);
 
       await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toMatchObject({ outcome: 'restored' });
 
@@ -467,14 +479,14 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
       expect(operations.getActiveOfKind.mock.invocationCallOrder[0]).toBeLessThan(
         cloudBackup.rotate.mock.invocationCallOrder[0],
       );
-      expect(store.download.mock.calls[0][0]).toMatchObject({
+      expect(store.store.mock.calls[0][0]).toMatchObject({
         bucket: grant.bucket,
         accessKeyId: grant.capability.credentials.accessKeyId,
       });
     });
 
     it('never renews its key while a backup holds the bucket: a new key would revoke the backup’s', async () => {
-      backup(PHOTO);
+      await backup(PHOTO);
       store.download.mockImplementationOnce(async (connection) => {
         // a backup started meanwhile, and the key ran out
         operations.getActiveOfKind.mockResolvedValue({ id: 'run-1' });
@@ -489,7 +501,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
     });
 
     it('waits while managed storage asks to wait, as for an unlinked server', async () => {
-      backup(PHOTO);
+      await backup(PHOTO);
       delete metadata[SystemMetadataKey.FrameleafCloudLink];
 
       await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome: 'busy' });
@@ -499,7 +511,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
     });
 
     it('is not set up while managed storage refuses this server for good', async () => {
-      backup(PHOTO);
+      await backup(PHOTO);
       metadata[SystemMetadataKey.FrameleafCloudLink] = {
         status: 'linked',
         cloudUrl,
@@ -514,7 +526,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
     });
 
     it('treats a key refused for now as busy, and one refused for good as not set up', async () => {
-      backup(PHOTO);
+      await backup(PHOTO);
       store.download.mockRejectedValueOnce(new ManagedBackupAuthorizationError(undefined, 60_000));
       await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome: 'busy' });
 
@@ -523,7 +535,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
     });
 
     it('reads for one photo at a time: each new restore key revokes the one before', async () => {
-      backup(PHOTO);
+      await backup(PHOTO);
       const events: string[] = [];
       cloudBackup.rotate.mockImplementation(() => {
         events.push('rotate');
@@ -563,7 +575,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
     ['a photo in the trash', { active: false }],
   ])('skips %s', async (_name, change) => {
     target = { ...target, ...change };
-    backup(PHOTO);
+    await backup(PHOTO);
 
     await expect(sut.restoreLostOriginal(ASSET_ID)).resolves.toEqual({ outcome: 'skipped' });
     expect(index.getKeptOriginals).not.toHaveBeenCalled();
