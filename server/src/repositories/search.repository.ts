@@ -391,10 +391,10 @@ const mostSpecificLandmark = sql`(landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}
  * then the latest.
  */
 const bestCover = sql`asset_best_photo_score.score is not null desc,
-  coalesce(asset.width::float / nullif(asset.height, 0), 1.5) >= 0.9 desc,
+  coalesce(matched.width::float / nullif(matched.height, 0), 1.5) >= 0.9 desc,
   asset_best_photo_score.score desc nulls last,
-  asset."localDateTime" desc,
-  asset.id`;
+  matched."localDateTime" desc,
+  matched."assetId"`;
 
 @Injectable()
 export class SearchRepository {
@@ -849,58 +849,63 @@ export class SearchRepository {
    */
   @GenerateSql({ params: [[DummyValue.UUID]] })
   getVisitedLandmarks(userIds: string[], options: SearchSuggestionPrivacyOptions = {}) {
-    return this.db
-      .with('matched', (qb) =>
-        qb
-          .selectFrom('asset_landmark')
-          .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
-          .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
-          .where(validLandmarkMatch())
-          .select(['asset_landmark.assetId', 'asset_landmark.landmarkId', 'asset_landmark.inference'])
-          .select(
-            sql<number>`row_number() over (partition by asset_landmark."assetId" order by asset_landmark.inference is not null, ${mostSpecificLandmark})`.as(
-              'position',
-            ),
-          )
-          .where('asset.ownerId', '=', anyUuid(userIds))
-          .where(isTimelineVisible('asset', options.revealLockedOwnerId))
-          .where(libraryScopePredicate(LibraryScope.Personal))
-          .where('asset.deletedAt', 'is', null)
-          .$call((qb) => withHiddenContentFilter(qb, options)),
-      )
-      .selectFrom('matched')
-      .innerJoin('landmark', 'landmark.id', 'matched.landmarkId')
-      .innerJoin('asset', 'asset.id', 'matched.assetId')
-      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .leftJoin('asset_best_photo_score', 'asset_best_photo_score.assetId', 'asset.id')
-      .select([
-        'landmark.id',
-        'landmark.name',
-        'landmark.kind',
-        'landmark.latitude',
-        'landmark.longitude',
-        'landmark.radiusM',
-      ])
-      .select((eb) => [
-        eb.fn.countAll<number>().as('assetCount'),
-        eb.fn.min('asset.localDateTime').as('firstTakenAt'),
-        eb.fn.max('asset.localDateTime').as('lastTakenAt'),
-        sql<string>`(array_agg(asset.id order by ${bestCover}))[1]`.as('coverAssetId'),
-        sql<string | null>`mode() within group (order by asset_exif.city) filter (where matched.inference is null)`.as(
-          'city',
-        ),
-        sql<string | null>`mode() within group (order by asset_exif.state) filter (where matched.inference is null)`.as(
-          'state',
-        ),
-        sql<
-          string | null
-        >`mode() within group (order by asset_exif.country) filter (where matched.inference is null)`.as('country'),
-      ])
-      .groupBy('landmark.id')
-      .having(sql<boolean>`bool_or(matched.position = 1) or landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}`)
-      .orderBy('assetCount', 'desc')
-      .orderBy('landmark.id')
-      .execute();
+    return this.db.transaction().execute(async (trx) => {
+      // The cover's order would otherwise be sorted in with every joined column: 300 MB on disk for two million items.
+      await sql`set local enable_presorted_aggregate = off`.execute(trx);
+      return trx
+        .with('matched', (qb) =>
+          qb
+            .selectFrom('asset_landmark')
+            .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
+            .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
+            .where(validLandmarkMatch())
+            .select(['asset_landmark.assetId', 'asset_landmark.landmarkId', 'asset_landmark.inference'])
+            // read here, where the item is joined for the privacy rules anyway, not by a second pass over every item
+            .select(['asset.localDateTime', 'asset.width', 'asset.height'])
+            .select(
+              sql<number>`row_number() over (partition by asset_landmark."assetId" order by asset_landmark.inference is not null, ${mostSpecificLandmark})`.as(
+                'position',
+              ),
+            )
+            .where('asset.ownerId', '=', anyUuid(userIds))
+            .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+            .where(libraryScopePredicate(LibraryScope.Personal))
+            .where('asset.deletedAt', 'is', null)
+            .$call((qb) => withHiddenContentFilter(qb, options)),
+        )
+        .selectFrom('matched')
+        .innerJoin('landmark', 'landmark.id', 'matched.landmarkId')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'matched.assetId')
+        .leftJoin('asset_best_photo_score', 'asset_best_photo_score.assetId', 'matched.assetId')
+        .select([
+          'landmark.id',
+          'landmark.name',
+          'landmark.kind',
+          'landmark.latitude',
+          'landmark.longitude',
+          'landmark.radiusM',
+        ])
+        .select((eb) => [
+          eb.fn.countAll<number>().as('assetCount'),
+          eb.fn.min('matched.localDateTime').as('firstTakenAt'),
+          eb.fn.max('matched.localDateTime').as('lastTakenAt'),
+          sql<string>`(array_agg(matched."assetId" order by ${bestCover}))[1]`.as('coverAssetId'),
+          sql<
+            string | null
+          >`mode() within group (order by asset_exif.city) filter (where matched.inference is null)`.as('city'),
+          sql<
+            string | null
+          >`mode() within group (order by asset_exif.state) filter (where matched.inference is null)`.as('state'),
+          sql<
+            string | null
+          >`mode() within group (order by asset_exif.country) filter (where matched.inference is null)`.as('country'),
+        ])
+        .groupBy('landmark.id')
+        .having(sql<boolean>`bool_or(matched.position = 1) or landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}`)
+        .orderBy('assetCount', 'desc')
+        .orderBy('landmark.id')
+        .execute();
+    });
   }
 
   /** Recorded locations first, then labelled inferences about nearby photos or the scene. */
