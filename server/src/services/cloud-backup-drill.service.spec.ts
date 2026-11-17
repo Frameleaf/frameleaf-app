@@ -8,9 +8,6 @@ import { pipeline } from 'node:stream/promises';
 import type { CloudBackupBucket } from 'src/services/cloud-backup-maintenance.js';
 import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import type { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
-import { CATALOG_PATH, fileTreePath, treeKey } from 'src/utils/cloud-backup-catalog.js';
-import { BackupSource, type BackupSourceFile } from 'src/utils/cloud-backup-source.js';
-import { openVault, snapshotObjectKey } from 'src/utils/cloud-backup-vault.js';
 import {
   DRILL_SAMPLE_SIZE,
   type DrillDeps,
@@ -20,6 +17,9 @@ import {
   runRestoreDrill,
 } from 'src/services/cloud-backup-drill.js';
 import { DRILL_DATABASE_NAME, createSqlCommandGuard } from 'src/services/database-backup.service.js';
+import { CATALOG_PATH, fileTreePath, treeKey } from 'src/utils/cloud-backup-catalog.js';
+import { BackupSource, type BackupSourceFile } from 'src/utils/cloud-backup-source.js';
+import { openVault, snapshotObjectKey } from 'src/utils/cloud-backup-vault.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import { canonicalJson, drillReportOf, signDrillReport, verifyDrillReport } from 'src/utils/restore-drill-report.js';
 

@@ -1,9 +1,9 @@
+import { dirStore, find } from '@frameleaf/backup-core';
 import {
   encryptFile as encryptLockedFile,
   generateKeyPair as generateLockedKeyPair,
   isLockedFile,
 } from '@frameleaf/locked-crypto';
-import { dirStore, find } from '@frameleaf/backup-core';
 import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import AsyncLock from 'async-lock';
@@ -44,6 +44,7 @@ import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { emptyRestoreResult } from 'src/services/cloud-backup-restore.js';
 import { CLOUD_BACKUP_VERIFY_CRON, CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { selectBackupLocation } from 'src/utils/backup-location-selection.js';
+import { fileTreePath, treeKey } from 'src/utils/cloud-backup-catalog.js';
 import { addClientBackupKeys, rotateClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
 import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
@@ -62,7 +63,6 @@ import {
   writeBackupHistory,
 } from 'src/utils/cloud-backup-recovery.js';
 import { backupUserFingerprint } from 'src/utils/cloud-backup-selection.js';
-import { fileTreePath, treeKey } from 'src/utils/cloud-backup-catalog.js';
 import { BackupSource } from 'src/utils/cloud-backup-source.js';
 import { openVault, readVaultCatalog } from 'src/utils/cloud-backup-vault.js';
 import { backupKeyFile, bucketRef, emptyRunResult, keyFingerprint } from 'src/utils/cloud-backup.js';
@@ -70,13 +70,13 @@ import { readConfig } from 'src/utils/config.js';
 import { executionSignal, operationExecution } from 'src/utils/execution-signal.js';
 import { keyEscrowBlobSchema, managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
 import { FrameleafCloudError, ed25519Thumbprint, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
-import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
 import { lockedKeyBackupFiles } from 'src/utils/locked-backup.js';
+import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
 import { retainFile } from 'src/utils/media-health-roots.js';
 import { OperationDeadlineError, withOperationExecution } from 'src/utils/operation-execution.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { cloudContractFixture, cloudRepositoryGrant } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { packHolding, storeTestBackup, versionedMemoryStore } from 'test/fixtures/cloud-backup-vault.js';
+import { cloudContractFixture, cloudRepositoryGrant } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { expectLocalisedSystemNotices, getMocks } from 'test/utils.js';
 
@@ -170,7 +170,6 @@ const legacyKeyFileOf = (mode: 'server' | 'own-stored' | 'own-memory' = 'server'
   JSON.stringify(backupKeyFile({ key, instanceId: INSTANCE_ID, bucket: s3.bucket, mode, createdAt: new Date() }));
 /** The same client root every time, so a key file read again matches the ring this server already loaded. */
 const clientRing = { vaultId: INSTANCE_ID, current: 1, keys: { 1: Buffer.alloc(32, 42).toString('base64') } };
-const clientRoot = Buffer.from(clientRing.keys[1], 'base64');
 const keyFileOf = (mode: 'server' | 'own-stored' | 'own-memory' = 'server') =>
   JSON.stringify({ ...JSON.parse(legacyKeyFileOf(mode)), client: clientRing });
 
@@ -1329,7 +1328,7 @@ describe(CloudBackupService.name, () => {
         expect(active.connection.recoveryKeys).toEqual(oldFile.client.keys);
         expect(active.bucketKey).toEqual(key);
         // the active run keeps writing with the root it started with
-        expect(active.clientKeys.current).toBe(1);
+        expect(active.clientKeys?.current).toBe(1);
 
         await restarted.onBootstrapAskForKey();
         const bootstrap = keyRequest();
@@ -1944,7 +1943,7 @@ describe(CloudBackupService.name, () => {
       // FL-819: workflows hear of the failure once, with counts only
       const events = mocks.job.queue.mock.calls.filter(([item]) => item.name === JobName.WorkflowEventDispatch);
       expect(events).toHaveLength(1);
-      expect(events[0][0].data.event).toMatchObject({
+      expect((events[0][0] as { data: { event: unknown } }).data.event).toMatchObject({
         trigger: WorkflowTrigger.CloudBackupFailed,
         deliveryId: `cloud-backup:${RUN_ID}:failed`,
       });

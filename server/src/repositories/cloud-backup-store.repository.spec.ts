@@ -48,7 +48,7 @@ class FakeS3 {
     }
     expect(headers.get('authorization')).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE\//);
     // Nothing this server sends asks the provider to encrypt: everything is encrypted before it leaves.
-    expect([...headers.keys()].some((name) => name.startsWith('x-amz-server-side-encryption'))).toBe(false);
+    expect(headers.keys().some((name) => name.startsWith('x-amz-server-side-encryption'))).toBe(false);
 
     if (key === '' && method === 'GET') {
       const prefix = url.searchParams.get('prefix') ?? '';

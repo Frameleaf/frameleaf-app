@@ -363,7 +363,7 @@ export class CloudBackupRunner {
         outcome[source.missing.has(file.tree) ? 'missing' : 'changed']++;
         return null;
       }
-      let read: { sha256: string; size: number } | undefined = source.hashed.get(file.tree);
+      let read: { sha256: string; size: number };
       let sealed: string | null;
       if (source.opened.has(file.tree)) {
         const hashed = source.hashed.get(file.tree);
@@ -371,6 +371,7 @@ export class CloudBackupRunner {
           outcome.changed++;
           return null;
         }
+        read = hashed;
         // FL-738: encrypted or not as stored, whatever the file on disk is by now
         sealed =
           file.role !== LOCKED_KEY_BACKUP_ROLE && hashed.sealed ? await sealedOwnerKeyIdOrUnreadable(file.path) : null;

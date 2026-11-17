@@ -41,7 +41,7 @@ describe(FrameleafCloudBackupRepository.name, () => {
     });
   });
 
-  it('refuses upload and prune credentials without a run lease, and restore credentials with one', async () => {
+  it('refuses upload and prune credentials without a run lease, and restore credentials with one', () => {
     expect(() => sut.rotate(target, 'upload')).toThrow();
     expect(() => sut.rotate(target, 'prune')).toThrow();
     expect(() => sut.rotate(target, 'restore', LEASE)).toThrow();
