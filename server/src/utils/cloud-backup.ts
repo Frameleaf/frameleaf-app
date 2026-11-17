@@ -1,3 +1,4 @@
+import { parseRecoveryCode } from '@frameleaf/backup-core';
 import { createHash } from 'node:crypto';
 import z from 'zod';
 import type { CloudBackupKeyMode } from 'src/types.js';
@@ -92,54 +93,8 @@ export const sseCustomerHeaders = (key: Buffer): Record<string, string> => {
   };
 };
 
-// Crockford base32: no I, L, O or U, so a written-down code is hard to misread.
-const RECOVERY_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-const RECOVERY_PREFIX = 'FLRK';
-
 /** The bucket key as a recovery code for the recovery kit: `FLRK-XXXX-…` (52 symbols in 13 groups). */
-export const recoveryCode = (key: Buffer) => {
-  let bits = 0;
-  let value = 0;
-  let output = '';
-  for (const byte of key) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      output += RECOVERY_ALPHABET[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-    value &= (1 << bits) - 1;
-  }
-  if (bits > 0) {
-    output += RECOVERY_ALPHABET[(value << (5 - bits)) & 31];
-  }
-  return [RECOVERY_PREFIX, ...(output.match(/.{1,4}/g) ?? [])].join('-');
-};
-
-const decodeRecoveryCode = (code: string): Buffer | null => {
-  const symbols = code
-    .toUpperCase()
-    .replaceAll(/[\s-]/g, '')
-    .replace(/^FLRK/, '')
-    .replaceAll('O', '0')
-    .replaceAll(/[IL]/g, '1');
-  let bits = 0;
-  let value = 0;
-  const bytes: number[] = [];
-  for (const symbol of symbols) {
-    const index = RECOVERY_ALPHABET.indexOf(symbol);
-    if (index === -1) {
-      return null;
-    }
-    value = ((value << 5) | index) & 0xff_ff;
-    bits += 5;
-    if (bits >= 8) {
-      bytes.push((value >>> (bits - 8)) & 0xff);
-      bits -= 8;
-    }
-  }
-  return bytes.length === CLOUD_BACKUP_KEY_BYTES ? Buffer.from(bytes) : null;
-};
+export { recoveryCode } from '@frameleaf/backup-core';
 
 /**
  * A bucket key as an administrator can give it: the key file's JSON, the base64 key, or the recovery
@@ -162,7 +117,7 @@ export const parseBackupKey = (input: string): Buffer => {
   }
 
   if (/^flrk[\s-]/i.test(text)) {
-    const decoded = decodeRecoveryCode(text);
+    const decoded = parseRecoveryCode(text);
     if (!decoded) {
       throw new Error('This recovery code is not complete. Check it against the recovery kit.');
     }

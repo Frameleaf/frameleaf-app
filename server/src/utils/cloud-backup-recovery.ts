@@ -1,4 +1,5 @@
-import { createCipheriv, createDecipheriv, createHash, createPublicKey, randomBytes, verify } from 'node:crypto';
+import { signSnapshotDescriptor, snapshotSignatureHolds, snapshotSigningInput } from '@frameleaf/backup-core';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import z from 'zod';
 import type { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
@@ -7,7 +8,6 @@ import { parseClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
 import { ESCROW_SCRYPT, escrowPassphraseProblem, scryptDerive } from 'src/utils/cloud-backup-escrow.js';
 import { parseBackupKey } from 'src/utils/cloud-backup.js';
 import { keyEscrowBlobSchema } from 'src/utils/frameleaf-cloud-backup.js';
-import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 
 const digest = z.string().regex(/^[\da-f]{64}$/);
 const publicKey = z.strictObject({
@@ -66,48 +66,19 @@ export const backupRecoveryHistorySchema = z.strictObject({
 });
 export type BackupRecoveryHistory = z.infer<typeof backupRecoveryHistorySchema>;
 
-/** FC recovery metadata v2 canonical bytes; keep this order identical to the published contract. */
-export const backupSnapshotSigningInput = (input: BackupSnapshotDescriptor): Buffer => {
-  const d = backupSnapshotDescriptorSchema.parse(input);
-  const m = d.manifest;
-  return Buffer.from(
-    'frameleaf-backup-snapshot-v2\n' +
-      JSON.stringify({
-        version: d.version,
-        instanceId: d.instanceId,
-        vaultId: d.vaultId,
-        snapshotId: d.snapshotId,
-        sequence: d.sequence,
-        previousDigest: d.previousDigest,
-        createdAt: d.createdAt,
-        manifest: {
-          format: m.format,
-          formatVersion: m.formatVersion,
-          keyVersion: m.keyVersion,
-          objectKey: m.objectKey,
-          versionId: m.versionId,
-          ciphertextSha256: m.ciphertextSha256,
-        },
-        signerKid: d.signerKid,
-      }),
-  );
-};
+/** FC recovery metadata v2 canonical bytes, shared with Manager's Server Backup; the descriptor is checked first. */
+export const backupSnapshotSigningInput = (input: BackupSnapshotDescriptor): Buffer =>
+  snapshotSigningInput(backupSnapshotDescriptorSchema.parse(input));
 
 export const signBackupSnapshot = (
   descriptor: BackupSnapshotDescriptor,
   signer: FrameleafKeySigner,
-): BackupSnapshotRecord => {
-  if (!signer.signBytes || descriptor.signerKid !== signer.kid)
-    throw new Error('Backup requires the current instance signing identity');
-  const bytes = backupSnapshotSigningInput(descriptor);
-  return backupSnapshotRecordSchema.parse({
+): BackupSnapshotRecord =>
+  backupSnapshotRecordSchema.parse({
     descriptor,
-    signature: signer.signBytes(bytes).toString('base64url'),
-    digest: createHash('sha256').update(bytes).digest('hex'),
-    signerJwk: { ...signer.publicJwk, kid: signer.kid },
+    ...signSnapshotDescriptor(backupSnapshotDescriptorSchema.parse(descriptor), signer),
     receivedAt: new Date().toISOString(),
   });
-};
 
 export const verifyBackupSnapshot = (
   input: unknown,
@@ -115,15 +86,7 @@ export const verifyBackupSnapshot = (
 ): BackupSnapshotRecord => {
   const record = backupSnapshotRecordSchema.parse(input);
   const pinned = pinnedKeys.find((key) => key.kid === record.descriptor.signerKid && key.x === record.signerJwk.x);
-  const bytes = backupSnapshotSigningInput(record.descriptor);
-  if (
-    !pinned ||
-    ed25519Thumbprint(pinned) !== pinned.kid ||
-    record.signerJwk.kid !== pinned.kid ||
-    createHash('sha256').update(bytes).digest('hex') !== record.digest ||
-    !verify(null, bytes, createPublicKey({ key: pinned, format: 'jwk' }), Buffer.from(record.signature, 'base64url'))
-  )
-    throw new Error('Untrusted backup snapshot');
+  if (!snapshotSignatureHolds(record, pinned)) throw new Error('Untrusted backup snapshot');
   return record;
 };
 
