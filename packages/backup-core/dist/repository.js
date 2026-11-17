@@ -36,7 +36,7 @@ function* decodeEntries(data) {
     }
 }
 const wrapInfo = (repoId) => Buffer.from(`${FORMAT}/${VERSION} ${repoId}`);
-const SNAPSHOT_KEY = /^s\/(\d{12})-[0-9a-f]{8}$/;
+const SNAPSHOT_KEY = /^s\/(\d{12})-[0-9a-f]{16,64}$/;
 export class Repository {
     store;
     config;
@@ -176,7 +176,7 @@ export class Repository {
     }
     async writeSnapshot(body) {
         const seq = ((await this.listSnapshots()).at(-1)?.seq ?? 0) + 1;
-        const key = `s/${String(seq).padStart(12, '0')}-${randomBytes(4).toString('hex')}`;
+        const key = `s/${String(seq).padStart(12, '0')}-${randomBytes(8).toString('hex')}`;
         const snapshot = { v: 1, repoId: this.config.repoId, seq, ...body };
         const sealed = seal(this.keys.meta, Buffer.from(key), Buffer.from(JSON.stringify(snapshot)));
         await this.store.put(key, sealed);
