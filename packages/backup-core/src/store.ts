@@ -160,8 +160,11 @@ export function dirStore(root: string): Store {
         if (!key.startsWith(prefix) || key.endsWith('.part')) {
           continue;
         }
-        const info = await stat(join(root, name)).catch(missing);
-        if (info?.isFile()) {
+        // A name that was just listed and cannot be looked at is a failure, not an absence: leaving a
+        // snapshot out of a listing would let a prune remove what that snapshot needs. A reader that
+        // lists while a prune is deleting can meet this, and reads again.
+        const info = await stat(join(root, name));
+        if (info.isFile()) {
           found.push({ key, size: info.size, modified: info.mtime });
         }
       }

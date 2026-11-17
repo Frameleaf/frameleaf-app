@@ -56,4 +56,16 @@ describe('listing storage', () => {
     await expect(store.list('')).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await store.list('')).map((object) => object.key)).toEqual(['p/aa']);
   });
+
+  it('fails when an object it has just listed cannot be looked at, instead of leaving it out', async () => {
+    const store = dirStore(work);
+    await store.put('s/aa', Buffer.from('a snapshot'));
+    await store.put('p/bb', Buffer.from('a pack'));
+    const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    vi.mocked(stat).mockImplementation(((path: string) =>
+      String(path).endsWith('aa') ? Promise.reject(failure('ENOENT')) : real.stat(path)) as typeof stat);
+    await expect(store.list('')).rejects.toMatchObject({ code: 'ENOENT' });
+    // A listing that does not include it is not affected.
+    expect((await store.list('p/')).map((object) => object.key)).toEqual(['p/bb']);
+  });
 });
