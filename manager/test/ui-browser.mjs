@@ -179,6 +179,8 @@ await page.route('**/manager-api/**', async (route) => {
   requests.push({ path, body, headers: req.headers() });
   let value;
   if (path === 'status') value = { claimed: true };
+  // This Manager has nowhere to back up to, so the workspace switch stays hidden.
+  else if (path === 'server-backup') value = { state: 'unavailable' };
   else if (path === 'dashboard') {
     if (failDashboard) {
       failDashboard = false;
@@ -306,6 +308,20 @@ await page.route('**/manager-api/**', async (route) => {
     dashboard.operations[0].canCancel = true;
     dashboard.operations[0].canStop = false;
     value = { requested: true };
+  } else if (path === 'review-rollback')
+    value = {
+      id: '019aa111-1111-7111-8111-111111111120',
+      from: dashboard.rollback.from,
+      to: dashboard.rollback.to,
+      updatedAt: dashboard.rollback.updatedAt,
+      since: { uploads: 6, libraryFiles: 0, albums: 2, names: 1 },
+    };
+  else if (path === 'rollback') {
+    dashboard.rollback = null;
+    dashboard.operations = [
+      { id: 'rollback-operation', kind: 'rollback', state: 'running', step: 'restore-database', completed: ['download-images', 'stop-application'], error: null, createdAt: Date.now(), canCancel: false },
+    ];
+    value = { id: 'rollback-operation' };
   } else if (path === 'review-update')
     value = { id: 'update-review', from: installation.release, to: body.tag, recovery: 'Database only' };
   else if (path === 'review-restore' && restoreThumbnailsGone && !body.thumbnailFallback)
@@ -675,7 +691,7 @@ try {
     await nav('Containers');
     await mainButton('Edit as text').click();
     await page.getByLabel('Settings as text').fill('POSTGRES_DB=nope');
-    await nav('Backups');
+    await nav('Recovery points');
     await page.getByText('Last recovery point', { exact: true }).waitFor();
     await mainButton('Export key').click();
     await page.getByLabel('Current Manager password').fill('fixture proof password');
@@ -695,7 +711,7 @@ try {
     await page.getByText('Thumbnails go back in the photos folder', { exact: true }).waitFor();
     // Another recovery point's missing thumbnails folder is checked again, never kept with the photos unasked.
     snapshots = [snapshot, { id: 'e'.repeat(64), time: '2026-10-06T02:00:00Z' }];
-    await nav('Backups');
+    await nav('Recovery points');
     await mainButton('Restore…').first().click();
     await mainButton('Choose a recovery point').click();
     await page.getByRole('radio').last().check();
@@ -716,7 +732,32 @@ try {
     await page.getByRole('checkbox').check();
     assert.equal(await mainButton('Restore database').isEnabled(), true);
     await screenshot('restore-review');
-    assert.equal(await page.locator('.nav-item.active > span').first().innerText(), 'Backups');
+    assert.equal(await page.locator('.nav-item.active > span').first().innerText(), 'Recovery points');
+  });
+  await check('going back to the version before the last update reviews what is undone and asks to type go back', async () => {
+    // FL-973: offered for 14 days after an update.
+    dashboard.rollback = { from: installation.release, to: 'frameleaf-v3.1.9', updatedAt: Date.now() - 86_400_000, until: Date.now() + 13 * 86_400_000 };
+    await nav('Updates');
+    await page.getByText('Go back to 3.1.9', { exact: true }).waitFor();
+    await screenshot('rollback-offer');
+    await mainButton('Go back to 3.1.9…').click();
+    const sheet = page.locator('dialog.rollback-sheet');
+    await sheet.getByRole('heading', { name: 'Go back to Frameleaf 3.1.9?' }).waitFor();
+    const text = await sheet.innerText();
+    assert.ok(text.includes('6 photos and videos uploaded since the update'), text);
+    assert.ok(text.includes('2 albums made and 1 name given to a face since the update'), text);
+    assert.ok(!/immich/i.test(text));
+    const go = sheet.getByRole('button', { name: 'Go back to 3.1.9', exact: true });
+    assert.equal(await go.isDisabled(), true);
+    await page.waitForTimeout(500); // the sheet's opening animation
+    await screenshot('rollback-review');
+    await sheet.getByRole('textbox').fill('go back');
+    assert.equal(await go.isEnabled(), true);
+    await go.click();
+    await page.getByText('Put back the database from before the update').first().waitFor();
+    assert.ok(requests.some((r) => r.path === 'rollback' && r.body.id === '019aa111-1111-7111-8111-111111111120'));
+    await screenshot('rollback-running');
+    dashboard.operations = [];
   });
   await check('eligible update notes, confirmation, interrupted operation, resume and activity', async () => {
     await nav('Updates');

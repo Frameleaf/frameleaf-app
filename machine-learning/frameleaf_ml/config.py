@@ -123,6 +123,9 @@ class Settings(BaseSettings):
     # PCM plus normalized samples; one four-hour clip needs 1,382,400,000 bytes, excluding model/runtime memory.
     transcription_max_memory_mb: int = Field(default=1536, gt=0)
     openvino_precision: ModelPrecision = ModelPrecision.FP32
+    # FL-984 (MACHINE_LEARNING_OPENVINO_DEVICE): AUTO (an Intel NPU when present, else a GPU, else the processor),
+    # NPU, GPU or CPU.
+    openvino_device: str = "AUTO"
     rocm_precision: ModelPrecision = ModelPrecision.FP32
 
     @property

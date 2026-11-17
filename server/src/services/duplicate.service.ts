@@ -31,10 +31,11 @@ import { lockDuplicateOwner } from 'src/repositories/duplicate.repository.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { duplicateDisposalReasons, reviewKindOf } from 'src/utils/duplicate-review.js';
-import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
+import { SuggestDuplicateOptions, suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { isDuplicateDetectionEnabled } from 'src/utils/misc.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import { compareVideoFingerprints, middleFrameHashes } from 'src/utils/video-fingerprint.js';
 
 type ResolveRequest = {
@@ -98,19 +99,24 @@ export class DuplicateService extends BaseService {
     await this.duplicateRepository.cleanupSingletonGroups(auth.user.id);
 
     const duplicates = await this.duplicateRepository.getAll(auth.user.id, this.nsfwOptions(auth));
-    let history: Set<string> | undefined;
-    try {
-      history = await this.assetDevelopRepository.getAssetIdsWithHistory(
-        duplicates.flatMap(({ assets }) => assets.map(({ id }) => id)),
-      );
-    } catch {
-      // Recommendations stay visible, but missing evidence never permits unattended disposal.
-    }
+    const ids = duplicates.flatMap(({ assets }) => assets.map(({ id }) => id));
+    // Each lookup stands on its own: missing evidence never permits unattended disposal.
+    const [historyResult, damagedResult] = await Promise.allSettled([
+      this.assetDevelopRepository.getAssetIdsWithHistory(ids),
+      // FL-1660: a copy whose file is offline, missing or corrupt is never the suggested keeper
+      this.duplicateRepository.getDamagedIds(ids),
+    ]);
+    const history = historyResult.status === 'fulfilled' ? historyResult.value : undefined;
+    const damaged = damagedResult.status === 'fulfilled' ? damagedResult.value : undefined;
+    const keepOptions = { ...(await this.getKeepOptions(auth, duplicates, history)), damagedIds: damaged };
     return Promise.all(
       duplicates.map(async ({ duplicateId, assets }) => {
         const mappedAssets = assets.map((asset) => mapAsset(asset, { auth }));
+        // without file health evidence no copy is suggested: the best-ranked one may be the broken one
         const suggestedKeepAssetIds =
-          reviewKindOf(mappedAssets) === 'copies' ? suggestDuplicateKeepAssetIds(mappedAssets) : [];
+          damaged && reviewKindOf(mappedAssets) === 'copies'
+            ? suggestDuplicateKeepAssetIds(mappedAssets, keepOptions)
+            : [];
         let motionId: string | undefined;
         if (suggestedKeepAssetIds.length === 1 && assets.some((asset) => asset.livePhotoVideoId)) {
           try {
@@ -126,9 +132,10 @@ export class DuplicateService extends BaseService {
         const prospective = mappedAssets.map((asset) =>
           motionId && suggestedKeepAssetIds.includes(asset.id) ? { ...asset, livePhotoVideoId: motionId } : asset,
         );
-        const reviewRequiredReasons = history
-          ? duplicateDisposalReasons(prospective, suggestedKeepAssetIds, history)
-          : ['evidence-unavailable'];
+        const reviewRequiredReasons =
+          history && damaged
+            ? duplicateDisposalReasons(prospective, suggestedKeepAssetIds, history, damaged)
+            : ['evidence-unavailable'];
         return {
           duplicateId,
           assets: mappedAssets,
@@ -137,6 +144,31 @@ export class DuplicateService extends BaseService {
         };
       }),
     );
+  }
+
+  /**
+   * FL-832: the owner's own rules for which copy is suggested as the keeper, with what those rules need
+   * to know about the copies. Album membership is read in one query for every group, and only when a
+   * rule asks for it; edits come from the develop history already read for the review.
+   */
+  private async getKeepOptions(
+    auth: AuthDto,
+    duplicates: Array<{ assets: MapAsset[] }>,
+    history: Set<string> | undefined,
+  ): Promise<SuggestDuplicateOptions> {
+    if (duplicates.length === 0) {
+      return {};
+    }
+    const rules = getPreferences((await this.userRepository.getMetadata(auth.user.id)) ?? []).duplicates.keepRules;
+    const options: SuggestDuplicateOptions = { rules, editedIds: history };
+    if (rules.includes('inAlbum')) {
+      const albums = await this.albumRepository.getByAssetIds(
+        auth.user.id,
+        duplicates.flatMap(({ assets }) => assets.map(({ id }) => id)),
+      );
+      options.inAlbumIds = new Set([...albums].filter(([, albumIds]) => albumIds.length > 0).map(([id]) => id));
+    }
+    return options;
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
@@ -301,13 +333,17 @@ export class DuplicateService extends BaseService {
     const prospective = duplicateGroup.assets.map((asset) =>
       motionId && idsToKeep.includes(asset.id) ? { ...asset, livePhotoVideoId: motionId } : asset,
     );
-    const reviewRequiredReasons = duplicateDisposalReasons(prospective, idsToKeep, history);
+    // FL-1660: read under the resolution lock, so a finding recorded since the review still counts
+    const damaged = await this.duplicateRepository.getDamagedIds([...groupAssetIds]);
+    const reviewRequiredReasons = duplicateDisposalReasons(prospective, idsToKeep, history, damaged);
     if (reviewRequiredReasons.length > 0) {
       return {
         id: duplicateId,
         success: false,
         error: BulkIdErrorReason.VALIDATION,
-        errorMessage: 'Keep copies with edits or distinct Live Photo motion; review them before disposal',
+        errorMessage: reviewRequiredReasons.includes('damaged-keeper')
+          ? 'The kept copy is damaged or missing; keep a healthy copy as well'
+          : 'Keep copies with edits or distinct Live Photo motion; review them before disposal',
       };
     }
 

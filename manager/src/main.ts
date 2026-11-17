@@ -28,7 +28,8 @@ import { Docker, command } from './docker.js';
 import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
 import { findDrives, suggestFolders } from './drives.js';
 import { storageSuggestions } from './storage-suggestions.js';
-import { adoptMappedFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, externalRoots, listFolders, newLibraryFolders } from './folders.js';
+import { adoptMappedFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, externalRoots, insideMappedFolders, listFolders, newLibraryFolders } from './folders.js';
+import { ServerBackup } from './server-backup.js';
 import { thumbnailMount } from './mounts.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
@@ -133,6 +134,14 @@ if (autostartStat?.isDirectory()) console.error(`manager: ${autostart} is a dire
 if (autostartStat?.isFile()) process.env.MANAGER_UNRAID_AUTOSTART = autostart;
 else delete process.env.MANAGER_UNRAID_AUTOSTART;
 const databaseStorage = new PostgresStorage(docker, directory, defaults.roots, defaults.platform === 'unraid');
+// FL-1668: Server Backup stores to a folder until Manager can link to Frameleaf Cloud. The folder is named
+// only for testing before release; without it Server Backup reports nothing and its screens stay hidden.
+const serverBackupFolder = runtime === 'docker' ? process.env.MANAGER_SERVER_BACKUP_FOLDER : undefined;
+const serverBackup = new ServerBackup(store, {
+  target: serverBackupFolder ? { kind: 'folder', path: serverBackupFolder } : null,
+  inside: insideMappedFolders,
+  always: [join(backupRoot, 'frameleaf-database')],
+});
 const operations = new Operations(
   store,
   docker,
@@ -312,6 +321,8 @@ class Api {
       installation,
       operations: operations.history(),
       autoUpdate: store.get<boolean>('auto-update') !== false,
+      /** FL-973: the last update can be undone until `until`. */
+      rollback: operations.rollbackOffer(),
       /** Why the last automatic update check could not start an update, until a later check does. */
       autoUpdateFailure: store.get<{ code: string; at: string }>('auto-update-failure'),
       profile: store.get('profile'),
@@ -479,6 +490,14 @@ class Api {
   @Post('update') update(@Body() input: unknown) {
     const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
     return { id: operations.update(id, key).id };
+  }
+  // FL-973: go back to the release before the last update, with the database as it was just before it.
+  @Post('review-rollback') reviewRollback() {
+    return operations.reviewRollback();
+  }
+  @Post('rollback') rollback(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.rollback(id, key).id };
   }
   @Post('auto-update') autoUpdate(@Body() input: unknown) {
     const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(input);
@@ -697,6 +716,51 @@ class Api {
     z.object({}).strict().parse(input);
     return operations.libraryStatus(true);
   }
+  @Get('server-backup') serverBackupView() {
+    return serverBackup.view() ?? { state: 'unavailable' };
+  }
+  @Post('server-backup-turn-on') async serverBackupTurnOn(@Body() input: unknown) {
+    await serverBackup.turnOn(input);
+    return serverBackup.view();
+  }
+  @Post('server-backup-settings') serverBackupSettings(@Body() input: unknown) {
+    serverBackup.setSettings(input);
+    return serverBackup.view();
+  }
+  @Post('server-backup-turn-off') serverBackupTurnOff() {
+    serverBackup.turnOff();
+    return serverBackup.view();
+  }
+  @Post('server-backup-first-key') async serverBackupFirstKey() {
+    return { key: await serverBackup.firstKey() };
+  }
+  @Post('server-backup-key') async serverBackupKey(@Body() input: unknown) {
+    const { password } = z
+      .object({ password: z.string().max(256) })
+      .strict()
+      .parse(input);
+    await security.confirm(password);
+    return { key: await serverBackup.key() };
+  }
+  @Post('server-backup-key-saved') serverBackupKeySaved() {
+    serverBackup.confirmKeySaved();
+    return serverBackup.view();
+  }
+  @Post('server-backup-run') async serverBackupRun() {
+    await serverBackup.backUp();
+    return serverBackup.view();
+  }
+  @Post('server-backup-stop') serverBackupStop() {
+    serverBackup.stop();
+    return serverBackup.view();
+  }
+  @Post('server-backup-browse') serverBackupBrowse(@Body() input: unknown) {
+    return serverBackup.browse(input);
+  }
+  @Post('server-backup-restore') async serverBackupRestore(@Body() input: unknown) {
+    await serverBackup.restore(input);
+    return serverBackup.view();
+  }
   @Post('export') async configuration(@Body() input: unknown, @Res() response: Response) {
     const { password } = z
       .object({ password: z.string().max(256) })
@@ -806,7 +870,10 @@ async function main() {
   log(`ready, listening on port ${native ? nativeAddress!.port : 9443} (${http ? 'http' : 'https'})`);
   if (native) process.stdout.write(JSON.stringify(native.ready(origin!)) + '\n');
   // ponytail: fixed 6-hour check; add quiet-hours scheduling if owners ask for updates at a set time.
-  else setInterval(() => operations.autoUpdate().catch((error) => console.error(`manager: automatic update skipped: ${error?.code ?? error}`)), 6 * 3_600_000).unref();
+  else {
+    setInterval(() => serverBackup.tick().catch((error) => console.error(`manager: scheduled server backup skipped: ${error?.code ?? error}`)), 60_000).unref();
+    setInterval(() => operations.autoUpdate().catch((error) => console.error(`manager: automatic update skipped: ${error?.code ?? error}`)), 6 * 3_600_000).unref();
+  }
 }
 main().catch(() => {
   process.stderr.write('Frameleaf Manager could not start; check its mounted configuration.\n');

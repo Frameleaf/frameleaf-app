@@ -54,6 +54,7 @@ import {
   AssetFaceOutfitTable,
 } from 'src/schema/tables/album-suggestion.table.js';
 import { AlbumSummaryTable } from 'src/schema/tables/album-summary.table.js';
+import { AlbumTextCardTable } from 'src/schema/tables/album-text-card.table.js';
 import { AlbumUserAuditTable } from 'src/schema/tables/album-user-audit.table.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -70,6 +71,7 @@ import { AssetEditTable } from 'src/schema/tables/asset-edit.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceAuditTable } from 'src/schema/tables/asset-face-audit.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
+import { AssetFavoriteTable } from 'src/schema/tables/asset-favorite.table.js';
 import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetFontTable } from 'src/schema/tables/asset-font.table.js';
 import {
@@ -169,6 +171,7 @@ import {
 import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-change.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
+import { LibraryFolderAlbumTable } from 'src/schema/tables/library-folder-album.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import {
@@ -205,11 +208,18 @@ import {
 import { OcrSearchTable } from 'src/schema/tables/ocr-search.table.js';
 import { OperationalMetricSampleTable } from 'src/schema/tables/operational-metric-sample.table.js';
 import { PartnerAuditTable } from 'src/schema/tables/partner-audit.table.js';
+import { PartnerScopeTable } from 'src/schema/tables/partner-scope.table.js';
 import { PartnerTable } from 'src/schema/tables/partner.table.js';
 import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
+import {
+  PersonCategoryMemberTable,
+  PersonCategorySeedTable,
+  PersonCategoryTable,
+} from 'src/schema/tables/person-category.table.js';
 import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonMergeCandidateTable } from 'src/schema/tables/person-merge-candidate.table.js';
+import { PersonProfileTable } from 'src/schema/tables/person-profile.table.js';
 import { PersonSplitCandidateTable } from 'src/schema/tables/person-split-candidate.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
@@ -264,6 +274,7 @@ import {
 import { SessionSignInTable } from 'src/schema/tables/session-sign-in.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { SharedLinkAssetTable } from 'src/schema/tables/shared-link-asset.table.js';
+import { SharedLinkOptionTable } from 'src/schema/tables/shared-link-option.table.js';
 import { SharedLinkTable } from 'src/schema/tables/shared-link.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
 import { SharedSpaceCommentThreadTable } from 'src/schema/tables/shared-space-comment-thread.table.js';
@@ -448,6 +459,7 @@ export class ImmichDatabase {
     AlbumUserAuditTable,
     AlbumUserTable,
     AlbumTable,
+    AlbumTextCardTable,
     ApiKeyTable,
     AssetAuditTable,
     AssetAudioTable,
@@ -468,6 +480,7 @@ export class ImmichDatabase {
     AssetOcrAuditTable,
     AssetRestorationTable,
     AssetTable,
+    AssetFavoriteTable,
     AssetFileTable,
     AssetOriginalTable,
     AssetHealthRunTable,
@@ -501,6 +514,7 @@ export class ImmichDatabase {
     IntegrityReportTable,
     BackupRestoreReportTable,
     LibraryTable,
+    LibraryFolderAlbumTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
     RenderWorkerTable,
@@ -522,6 +536,7 @@ export class ImmichDatabase {
     OcrSearchTable,
     OperationalMetricSampleTable,
     PartnerAuditTable,
+    PartnerScopeTable,
     PartnerTable,
     PersonTable,
     PersonAuditTable,
@@ -529,6 +544,10 @@ export class ImmichDatabase {
     PhysicalFileTable,
     PersonGroupTable,
     PersonMergeCandidateTable,
+    PersonCategoryTable,
+    PersonCategoryMemberTable,
+    PersonCategorySeedTable,
+    PersonProfileTable,
     PersonSplitCandidateTable,
     PersonGroupAuditTable,
     PetAuditTable,
@@ -545,6 +564,7 @@ export class ImmichDatabase {
     SessionSignInTable,
     SharedLinkAssetTable,
     SharedLinkTable,
+    SharedLinkOptionTable,
     SharedSpaceAlbumTable,
     SharedSpaceCommentThreadTable,
     SharedSpaceEventTable,
@@ -722,6 +742,7 @@ export interface DB extends QueueDatabase {
   album: AlbumTable;
   album_audit: AlbumAuditTable;
   album_asset: AlbumAssetTable;
+  album_text_card: AlbumTextCardTable;
   album_asset_audit: AlbumAssetAuditTable;
   album_summary: AlbumSummaryTable;
   album_closure: AlbumClosureTable;
@@ -738,6 +759,7 @@ export interface DB extends QueueDatabase {
   asset_exif: AssetExifTable;
   asset_face: AssetFaceTable;
   asset_face_audit: AssetFaceAuditTable;
+  asset_favorite: AssetFavoriteTable;
   asset_file: AssetFileTable;
   asset_original: AssetOriginalTable;
   asset_health_run: AssetHealthRunTable;
@@ -812,6 +834,7 @@ export interface DB extends QueueDatabase {
   cloud_backup_object_verification: CloudBackupObjectVerificationTable;
 
   library: LibraryTable;
+  library_folder_album: LibraryFolderAlbumTable;
 
   media_operation: MediaOperationTable;
   media_operation_checkpoint: MediaOperationCheckpointTable;
@@ -839,11 +862,16 @@ export interface DB extends QueueDatabase {
   operational_metric_sample: OperationalMetricSampleTable;
   partner: PartnerTable;
   partner_audit: PartnerAuditTable;
+  partner_scope: PartnerScopeTable;
 
   person: PersonTable;
   person_audit: PersonAuditTable;
   person_group: PersonGroupTable;
   person_merge_candidate: PersonMergeCandidateTable;
+  person_category: PersonCategoryTable;
+  person_category_member: PersonCategoryMemberTable;
+  person_category_seed: PersonCategorySeedTable;
+  person_profile: PersonProfileTable;
   person_split_candidate: PersonSplitCandidateTable;
   person_group_audit: PersonGroupAuditTable;
 
@@ -886,6 +914,7 @@ export interface DB extends QueueDatabase {
 
   shared_link: SharedLinkTable;
   shared_link_asset: SharedLinkAssetTable;
+  shared_link_option: SharedLinkOptionTable;
   shared_space_album: SharedSpaceAlbumTable;
   shared_space_comment_thread: SharedSpaceCommentThreadTable;
   shared_space_event: SharedSpaceEventTable;

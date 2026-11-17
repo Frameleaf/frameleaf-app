@@ -98,6 +98,17 @@ select
           and "user"."deletedAt" is null
       ) as obj
   ) as "owner",
+  coalesce(
+    (
+      select
+        "shared_link_option"."webSizeOnly"
+      from
+        "shared_link_option"
+      where
+        "shared_link_option"."sharedLinkId" = "shared_link"."id"
+    ),
+    false
+  ) as "webSizeOnly",
   to_json("album") as "album"
 from
   "shared_link"
@@ -263,6 +274,17 @@ select
           $1
       ) as agg
   ) as "assets",
+  coalesce(
+    (
+      select
+        "shared_link_option"."webSizeOnly"
+      from
+        "shared_link_option"
+      where
+        "shared_link_option"."sharedLinkId" = "shared_link"."id"
+    ),
+    false
+  ) as "webSizeOnly",
   case
     when "shared_link"."type" = $2 then (
       select
@@ -385,6 +407,17 @@ select
   "shared_link"."allowUpload",
   "shared_link"."allowDownload",
   "shared_link"."password",
+  coalesce(
+    (
+      select
+        "shared_link_option"."webSizeOnly"
+      from
+        "shared_link_option"
+      where
+        "shared_link_option"."sharedLinkId" = "shared_link"."id"
+    ),
+    false
+  ) as "webSizeOnly",
   (
     select
       to_json(obj)
@@ -434,6 +467,17 @@ select
   "shared_link"."allowUpload",
   "shared_link"."allowDownload",
   "shared_link"."password",
+  coalesce(
+    (
+      select
+        "shared_link_option"."webSizeOnly"
+      from
+        "shared_link_option"
+      where
+        "shared_link_option"."sharedLinkId" = "shared_link"."id"
+    ),
+    false
+  ) as "webSizeOnly",
   (
     select
       to_json(obj)
@@ -482,7 +526,18 @@ select
         "assets"."id" is not null
     ),
     '[]'
-  ) as "assets"
+  ) as "assets",
+  coalesce(
+    (
+      select
+        "shared_link_option"."webSizeOnly"
+      from
+        "shared_link_option"
+      where
+        "shared_link_option"."sharedLinkId" = "shared_link"."id"
+    ),
+    false
+  ) as "webSizeOnly"
 from
   "shared_link"
   left join "shared_link_asset" on "shared_link_asset"."sharedLinkId" = "shared_link"."id"

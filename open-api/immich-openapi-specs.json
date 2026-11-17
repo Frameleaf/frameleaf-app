@@ -8132,9 +8132,21 @@
     },
     "/admin/ledger/summary": {
       "get": {
-        "description": "How many of the originals the server accepted, for every account, are kept, in the Trash, removed, sharing an identical file, or missing, and which accounts have originals the server cannot account for. No file is named.",
+        "description": "How many of the originals the server accepted, for every account (or for one, with userId), are kept, in the Trash, removed, sharing an identical file, or missing, per account and per month added, and which accounts have originals the server cannot account for. No file is named.",
         "operationId": "getLedgerAdminSummary",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Only this account’s totals and months",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -8447,6 +8459,56 @@
           }
         ],
         "x-immich-permission": "job.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/library-progress/best-photos": {
+      "post": {
+        "description": "Score every photo again for Best Photos, now or in the next overnight run: after an update brings a better score for the Visual search model.",
+        "operationId": "redoBestPhotos",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryBestPhotosRedoDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Score Best Photos again",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "job.create",
         "x-immich-state": "Alpha"
       }
     },
@@ -10432,6 +10494,98 @@
         ],
         "x-immich-permission": "job.create",
         "x-immich-state": "Deprecated"
+      }
+    },
+    "/admin/playback-self-test": {
+      "get": {
+        "description": "The latest check of the hardware video path: each kind of reference video (SDR, HLG, Dolby Vision 8.4, HDR10 and hev1-tagged HEVC) converted with the configured hardware acceleration, whether it came out right, and the kinds now converted without hardware acceleration because it did not.",
+        "operationId": "getPlaybackSelfTest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackSelfTestResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the latest playback self-test",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Starts the check of the hardware video path (or joins the one already running) and answers at once with it running. It takes under a minute; read the result with the GET.",
+        "operationId": "startPlaybackSelfTest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackSelfTestResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run the playback self-test",
+        "tags": [
+          "Jobs"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/admin/render-workers": {
@@ -14142,6 +14296,61 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/albums/{id}/assets/order": {
+      "put": {
+        "description": "Places the photos, in the order given, after a photo (afterAssetId), after a text card (afterTextCardId) or at the start (afterAssetId null), and turns on custom order for the album. Owners and editors only; one request moves up to 10,000 photos.",
+        "operationId": "setAlbumAssetOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumAssetOrderDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Move photos in an album's custom order",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      }
+    },
     "/albums/{id}/bookmarks": {
       "delete": {
         "operationId": "removeBookmarksFromAlbum",
@@ -15101,6 +15310,266 @@
           }
         ],
         "x-immich-permission": "albumAsset.create"
+      }
+    },
+    "/albums/{id}/text-cards": {
+      "get": {
+        "description": "Cards in album order. Plain text: show heading and body as text, never as HTML.",
+        "operationId": "getAlbumTextCards",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "slug",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlbumTextCardResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the text cards in an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.read"
+      },
+      "post": {
+        "description": "A heading and a short paragraph between photos. Adding a card turns on custom order for the album. Owners and editors only.",
+        "operationId": "createAlbumTextCard",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumTextCardCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumTextCardResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add a text card to an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      }
+    },
+    "/albums/{id}/text-cards/{cardId}": {
+      "delete": {
+        "description": "Removes the card only; the album's photos are never touched. Owners and editors only.",
+        "operationId": "deleteAlbumTextCard",
+        "parameters": [
+          {
+            "name": "cardId",
+            "required": true,
+            "in": "path",
+            "description": "Text card ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Album ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a text card",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
+      },
+      "put": {
+        "description": "Change the heading or text, or move the card. Owners and editors only.",
+        "operationId": "updateAlbumTextCard",
+        "parameters": [
+          {
+            "name": "cardId",
+            "required": true,
+            "in": "path",
+            "description": "Text card ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Album ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumTextCardUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumTextCardResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Edit or move a text card",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "album.update"
       }
     },
     "/albums/{id}/transfer": {
@@ -16819,6 +17288,57 @@
         ],
         "x-immich-permission": "asset.copy",
         "x-immich-state": "Stable"
+      }
+    },
+    "/assets/copy-to-library": {
+      "post": {
+        "description": "Add items you can see through a shared album, space or link to your own library, as your own copies of the same stored files. A link must allow downloads. Locked items are never added (FL-837).",
+        "operationId": "copyAssetsToLibrary",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetCopyToLibraryDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetCopyToLibraryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add shared items to your library",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.upload"
       }
     },
     "/assets/info": {
@@ -21145,14 +21665,17 @@
             "name": "format",
             "required": false,
             "in": "query",
-            "description": "Explicit still-image export or read-only document PDF; omission returns the original or selected edit",
+            "description": "Explicit still-image export or read-only document PDF; omission returns the original or selected edit. FL-826: original, jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge) download a photo in that format, of the version `edited` names; videos stay original. A shared link limited to web size always gets web for photos",
             "schema": {
               "type": "string",
               "enum": [
                 "sdr-jpeg",
                 "hdr-jpeg",
                 "hdr-heic",
-                "document-pdf"
+                "document-pdf",
+                "original",
+                "jpeg",
+                "web"
               ]
             }
           },
@@ -44015,6 +44538,57 @@
         "x-immich-permission": "partner.update"
       }
     },
+    "/partners/scope/estimate": {
+      "post": {
+        "description": "How many of your items a partner scope would send now, before it is saved (FL-774).",
+        "operationId": "estimatePartnerScope",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerScopeUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerScopeEstimateResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count what a partner would receive",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.read"
+      }
+    },
     "/partners/{id}": {
       "delete": {
         "description": "Stop sharing assets with a partner.",
@@ -44194,6 +44768,118 @@
         ],
         "x-immich-permission": "partner.update",
         "x-immich-state": "Stable"
+      }
+    },
+    "/partners/{id}/scope": {
+      "get": {
+        "description": "What your library sends to this partner: everything, or only the albums, people, folders and dates you chose (FL-774).",
+        "operationId": "getPartnerScope",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerScopeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get what a partner receives",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.read"
+      },
+      "put": {
+        "description": "Choose everything, or only chosen albums, people, folders and a start date. Only the owner changes it. Widening copies the newly matching items; narrowing stops further copies and the partner keeps what they already received (FL-774).",
+        "operationId": "updatePartnerScope",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerScopeUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerScopeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change what a partner receives",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.update"
       }
     },
     "/people": {
@@ -44470,6 +45156,224 @@
         ],
         "x-immich-permission": "person.update",
         "x-immich-state": "Stable"
+      }
+    },
+    "/people/categories": {
+      "get": {
+        "description": "Retrieve the caller's categories for their people, such as Family, Friends and Work, in their order. An account starts with Family, Friends and Work, made the first time its categories are read; once deleted, they are not made again. Categories are per account: a partner never sees them.",
+        "operationId": "getPersonCategories",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PersonCategoryResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get person categories",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Add a category for the caller's people. It comes after the caller's other categories.",
+        "operationId": "createPersonCategory",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonCategoryCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonCategoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create a person category",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/people/categories/{id}": {
+      "delete": {
+        "description": "Delete one of the caller's categories. The people in it are not changed.",
+        "operationId": "deletePersonCategory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a person category",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      },
+      "patch": {
+        "description": "Rename, recolor or reorder one of the caller's categories.",
+        "operationId": "updatePersonCategory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonCategoryUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonCategoryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update a person category",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/people/corrections/{id}/undo": {
@@ -45073,6 +45977,73 @@
         ],
         "x-immich-permission": "person.update",
         "x-immich-state": "Deprecated"
+      }
+    },
+    "/people/{id}/categories": {
+      "put": {
+        "description": "Put one of the caller's own people in exactly these of the caller's categories, replacing the ones they were in. An empty list takes them out of all of them. A category that is not the caller's answers 400.",
+        "operationId": "setPersonCategories",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonCategoriesSetDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonCategoriesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set a person's categories",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/people/{id}/corrections": {
@@ -46504,6 +47475,73 @@
           }
         ],
         "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/photo-sources/{id}/catalog-metadata": {
+      "post": {
+        "description": "Turns what Frameleaf Desktop reads from a Lightroom Classic, Capture One or Apple Photos catalog into ratings, tags, descriptions and albums on the photos this source copied. Additive and repeatable: tags and albums are only added, sending the same batch again changes nothing, and a field changed in Frameleaf since the last read-in is kept. Items whose copy is not verified yet come back as notReady without failing the batch.",
+        "operationId": "applyPhotoSourceCatalogMetadata",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotoSourceCatalogMetadataDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoSourceCatalogMetadataResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply ratings, flags, labels, keywords, captions and collections read from a photo catalog",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
         "x-immich-state": "Alpha"
       }
     },
@@ -57030,7 +58068,7 @@
             "name": "name",
             "required": true,
             "in": "query",
-            "description": "Person name to search for",
+            "description": "Person name to search for; the caller's own notes about a person match too (FL-941)",
             "schema": {
               "type": "string"
             }
@@ -62753,6 +63791,295 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/editor-imports": {
+      "post": {
+        "description": "Queues a job that reads the uploaded project and finds each file it uses in your library: exact bytes for media carried in the archive, then the file name with its length and picture size. The result lists the timelines, what will come over differently, and each file as found, a likely match to confirm, or not in your library.",
+        "operationId": "createStudioEditorImport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioEditorImportCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioEditorImportQueuedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check a project from another editor",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/studio/editor-imports/projects/{id}": {
+      "get": {
+        "description": "Owner only. For a project imported from another editor: the editor, the file, and each note about what came over differently, with where on the timeline. A project that was not imported answers `404`.",
+        "operationId": "getStudioEditorImportNotes",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioEditorImportProjectNotesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the import notes of a project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/studio/editor-imports/uploads": {
+      "post": {
+        "description": "Keeps a Final Cut Pro XML (.fcpxml, or a .fcpxmld bundle as a ZIP archive), Final Cut Pro 7 XML (.xml, which Premiere Pro and DaVinci Resolve also export), OpenTimelineIO (.otio, .otioz, or .otiod as a ZIP archive) or EDL (.edl) file for an import, or a CDL (.cdl, .cc, .ccc) or LUT (.cube) file to apply to the clips it names. Uploads are kept for 24 hours.",
+        "operationId": "uploadStudioEditorImportFile",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioBundleUploadCreateDto"
+              }
+            }
+          },
+          "description": "A project file, or a CDL or LUT file to go with it",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioEditorImportUploadDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Upload a project file from another editor",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/studio/editor-imports/{id}": {
+      "get": {
+        "description": "Owner only. The job status, step and progress, and once it has completed the check or the project it built.",
+        "operationId": "getStudioEditorImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioEditorImportDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get an import from another editor",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
+    "/studio/editor-imports/{id}/import": {
+      "post": {
+        "description": "From a completed check: queues one job per timeline picked, each saving a new Studio project. Each file uses the library item chosen for it, or what the check found; a file with none keeps its clips as placeholders to relink. Files sent from your folder and media carried in the archive land in an album named after the project.",
+        "operationId": "startStudioEditorImport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioEditorImportStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioEditorImportStartedDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Import the checked project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-state": "Beta"
+      }
+    },
     "/studio/exports/{id}": {
       "get": {
         "description": "One export version, with where its result lives and what it inherited.",
@@ -65006,6 +66333,128 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/studio/projects/{id}/fonts": {
+      "get": {
+        "description": "Every font kept with one of your projects, with the family, weight and style read from the file. Its bytes are read like any kept file, through GET /studio/projects/{id}/imports/{importId}/file.",
+        "operationId": "getStudioProjectFonts",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StudioProjectFontDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the fonts kept with a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Keeps a TrueType (.ttf), OpenType (.otf) or WOFF2 font with the project, for its titles. The file must be one font, at most 32 MB, with a well-formed table directory; collections and WOFF 1 are refused. The answer gives the family, weight and style the file names. A title uses it once the graph lists it in metadata.fonts. The same id and file again answers the stored font.",
+        "operationId": "importStudioProjectFont",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/StudioProjectFontCreateDto"
+              }
+            }
+          },
+          "description": "A font to keep with the project",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioProjectFontDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Keep a font with a Studio project",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/studio/projects/{id}/framing": {
       "get": {
         "description": "Owner only. For a vertical (9:16) or square (1:1) export of the head revision: where the subject is through each video and still on the main timeline, from the faces found in the source and in a few frames sampled through each video clip on this server or a computer on your home network. Shots without a face are centred. Nothing is stored and the project is not changed; send the framing back with `POST /studio/projects/{id}/exports`.",
@@ -65064,7 +66513,7 @@
     },
     "/studio/projects/{id}/imports": {
       "get": {
-        "description": "Every file kept with one of your projects, with its type, size and checksum.",
+        "description": "Every file kept with one of your projects, with its type, size and checksum. Fonts are listed by GET /studio/projects/{id}/fonts.",
         "operationId": "getStudioProjectImports",
         "parameters": [
           {
@@ -65121,7 +66570,7 @@
         "x-immich-state": "Alpha"
       },
       "post": {
-        "description": "Keeps a recording, sound, image, short video, SVG or Lottie graphic, caption file (.srt or .vtt) or .cube LUT with the project rather than the library. The type is read from the bytes; an SVG with scripts is refused, external subresources of a graphic are counted, and a caption file or LUT must be well formed throughout. The same id and file again answers the stored import.",
+        "description": "Keeps a recording, sound, image, short video, SVG or Lottie graphic, caption file (.srt or .vtt) or .cube LUT with the project rather than the library. The type is read from the bytes; an SVG with scripts is refused, external subresources of a graphic are counted, and a caption file or LUT must be well formed throughout. A font is refused here and kept with POST /studio/projects/{id}/fonts. The same id and file again answers the stored import.",
         "operationId": "importStudioProjectFile",
         "parameters": [
           {
@@ -71231,7 +72680,8 @@
               "enum": [
                 "filename",
                 "rating",
-                "quality"
+                "quality",
+                "custom"
               ]
             }
           },
@@ -78130,6 +79580,12 @@
           "server": {
             "$ref": "#/components/schemas/AdminConfigServerDto"
           },
+          "sharedLinks": {
+            "$ref": "#/components/schemas/AdminConfigSharedLinksDto",
+            "default": {
+              "defaultExpiryDays": null
+            }
+          },
           "signInPolicy": {
             "$ref": "#/components/schemas/AdminConfigSignInPolicyDto"
           },
@@ -78307,6 +79763,32 @@
         ],
         "type": "object"
       },
+      "AdminConfigEyeScoresDto": {
+        "properties": {
+          "closedBelow": {
+            "default": 0.35,
+            "description": "Eyes-open score below which a face counts as having closed eyes",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "enabled": {
+            "default": true,
+            "description": "Whether eyes open and eye sharpness are measured for each face",
+            "type": "boolean"
+          },
+          "softBelow": {
+            "default": 0.3,
+            "description": "Eye sharpness below which a face counts as having soft eyes",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
       "AdminConfigFFmpegDto": {
         "properties": {
           "accel": {
@@ -78378,6 +79860,13 @@
             "maximum": 6,
             "minimum": 0,
             "type": "integer"
+          },
+          "softwareFallback": {
+            "description": "Kinds of video converted without hardware acceleration even when it is on: the kinds the playback self-test found it gets wrong. Written by the server; a settings save keeps the stored list (a configuration file may set it)",
+            "items": {
+              "$ref": "#/components/schemas/PlaybackSelfTestCase"
+            },
+            "type": "array"
           },
           "targetAudioCodec": {
             "$ref": "#/components/schemas/AudioCodec"
@@ -79683,6 +81172,14 @@
             "description": "Enabled",
             "type": "boolean"
           },
+          "eyeScores": {
+            "$ref": "#/components/schemas/AdminConfigEyeScoresDto",
+            "default": {
+              "closedBelow": 0.35,
+              "enabled": true,
+              "softBelow": 0.3
+            }
+          },
           "facialRecognition": {
             "$ref": "#/components/schemas/AdminConfigFacialRecognitionDto"
           },
@@ -80301,6 +81798,21 @@
         ],
         "type": "object"
       },
+      "AdminConfigSharedLinksDto": {
+        "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire",
+            "maximum": 3650,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "defaultExpiryDays"
+        ],
+        "type": "object"
+      },
       "AdminConfigSignInPolicyDto": {
         "properties": {
           "applyToOlderApps": {
@@ -80671,6 +82183,38 @@
         },
         "required": [
           "isOnboarded"
+        ],
+        "type": "object"
+      },
+      "AlbumAssetOrderDto": {
+        "properties": {
+          "afterAssetId": {
+            "description": "Place after this photo in the album; null places at the start of the album",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "afterTextCardId": {
+            "description": "Place after this text card instead of after a photo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "assetIds": {
+            "description": "Photos to move, in the order they should appear. Ids not in the album are ignored.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds"
         ],
         "type": "object"
       },
@@ -81474,6 +83018,25 @@
         ],
         "type": "object"
       },
+      "AlbumFolderSourceDto": {
+        "properties": {
+          "folderPath": {
+            "description": "The folder on the server the album shows",
+            "type": "string"
+          },
+          "libraryId": {
+            "description": "External library ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "folderPath",
+          "libraryId"
+        ],
+        "type": "object"
+      },
       "AlbumHierarchyNode": {
         "properties": {
           "album": {
@@ -82038,6 +83601,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "folderAlbum": {
+            "$ref": "#/components/schemas/AlbumFolderSourceDto",
+            "description": "Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}."
+          },
           "hasSharedLink": {
             "description": "Has shared link",
             "type": "boolean"
@@ -82055,6 +83622,10 @@
           },
           "isActivityEnabled": {
             "description": "Activity feed enabled",
+            "type": "boolean"
+          },
+          "isCustomOrder": {
+            "description": "True when the album shows its own order (GET /timeline/ordered?sort=custom&albumId=…) instead of the date order in order",
             "type": "boolean"
           },
           "isLocked": {
@@ -82124,6 +83695,13 @@
           "statsPending": {
             "description": "True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by the album lists: GET /albums, GET /albums/tree and GET /albums/hierarchy.",
             "type": "boolean"
+          },
+          "textCards": {
+            "description": "Text cards between the photos, in album order. Populated by GET /albums/{id} for a custom-order album.",
+            "items": {
+              "$ref": "#/components/schemas/AlbumTextCardResponseDto"
+            },
+            "type": "array"
           },
           "updatedAt": {
             "description": "Last update date",
@@ -82591,6 +84169,123 @@
           "tripEnd",
           "tripStart"
         ],
+        "type": "object"
+      },
+      "AlbumTextCardCreateDto": {
+        "description": "Leave out afterAssetId and afterTextCardId to add the card at the end of the album",
+        "properties": {
+          "afterAssetId": {
+            "description": "Place after this photo in the album; null places at the start of the album",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "afterTextCardId": {
+            "description": "Place after this text card instead of after a photo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "body": {
+            "default": "",
+            "description": "Short paragraph, plain text; new lines are kept",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "heading": {
+            "default": "",
+            "description": "Heading, plain text",
+            "maxLength": 120,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AlbumTextCardResponseDto": {
+        "properties": {
+          "afterAssetId": {
+            "description": "The photo just before the card in the album, or null when the card comes first",
+            "nullable": true,
+            "type": "string"
+          },
+          "albumId": {
+            "description": "Album ID",
+            "type": "string"
+          },
+          "body": {
+            "description": "Short paragraph, plain text with new lines; show it as text, never as HTML",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "Creation date",
+            "format": "date-time",
+            "type": "string"
+          },
+          "createdById": {
+            "description": "Who wrote the card, or null when that account was removed",
+            "nullable": true,
+            "type": "string"
+          },
+          "heading": {
+            "description": "Heading, plain text; show it as text, never as HTML",
+            "type": "string"
+          },
+          "id": {
+            "description": "Text card ID",
+            "type": "string"
+          },
+          "position": {
+            "description": "Place in the album's custom order; compare with the photos' positions from sort=custom",
+            "format": "double",
+            "type": "number"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "afterAssetId",
+          "albumId",
+          "body",
+          "createdAt",
+          "createdById",
+          "heading",
+          "id",
+          "position",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "AlbumTextCardUpdateDto": {
+        "description": "Leave out afterAssetId and afterTextCardId to keep the card where it is",
+        "properties": {
+          "afterAssetId": {
+            "description": "Place after this photo in the album; null places at the start of the album",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "afterTextCardId": {
+            "description": "Place after this text card instead of after a photo",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "body": {
+            "description": "Short paragraph, plain text; new lines are kept",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "heading": {
+            "description": "Heading, plain text",
+            "maxLength": 120,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AlbumTransferDto": {
@@ -85103,6 +86798,10 @@
       "ApplePhotosSourceCreateDto": {
         "additionalProperties": false,
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "deviceId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -85147,6 +86846,10 @@
       },
       "ApplePhotosSourceResponseDto": {
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "createdAt": {
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
@@ -86906,6 +88609,93 @@
         ],
         "type": "object"
       },
+      "AssetCopyToLibraryDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Items to add to your library",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "sharedLinkKey": {
+            "description": "The shared link the items were seen through",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sharedLinkSlug": {
+            "description": "The shared link the items were seen through",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "AssetCopyToLibraryItemDto": {
+        "properties": {
+          "assetId": {
+            "description": "Your own copy of it",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "sourceId": {
+            "description": "The item that was added",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "sourceId"
+        ],
+        "type": "object"
+      },
+      "AssetCopyToLibraryResponseDto": {
+        "properties": {
+          "added": {
+            "description": "Items now in your library",
+            "items": {
+              "$ref": "#/components/schemas/AssetCopyToLibraryItemDto"
+            },
+            "type": "array"
+          },
+          "alreadyInLibrary": {
+            "description": "Items your library already holds",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "notAdded": {
+            "description": "Items that cannot be added, such as Locked ones",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "added",
+          "alreadyInLibrary",
+          "notAdded"
+        ],
+        "type": "object"
+      },
       "AssetDevelopArtifactKind": {
         "description": "What a develop artifact is used for",
         "enum": [
@@ -88189,12 +89979,15 @@
             "type": "boolean"
           },
           "format": {
-            "description": "Explicit still-image export or read-only document PDF; omission returns the original or selected edit",
+            "description": "Explicit still-image export or read-only document PDF; omission returns the original or selected edit. FL-826: original, jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge) download a photo in that format, of the version `edited` names; videos stay original. A shared link limited to web size always gets web for photos",
             "enum": [
               "sdr-jpeg",
               "hdr-jpeg",
               "hdr-heic",
-              "document-pdf"
+              "document-pdf",
+              "original",
+              "jpeg",
+              "web"
             ],
             "type": "string"
           }
@@ -88669,6 +90462,22 @@
                 "state": "Added"
               }
             ]
+          },
+          "eyeSharpness": {
+            "description": "How sharp the face's eyes are (0 soft, 1 sharp); null when the eyes can't be seen or aren't scored yet",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
+          "eyesOpen": {
+            "description": "How open the face's eyes are (0 closed, 1 open); null when the eyes can't be seen or aren't scored yet",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
           },
           "hiddenAt": {
             "description": "When the owner hid this face, or null. Hidden faces are only listed with withHidden",
@@ -89429,12 +91238,37 @@
         ],
         "type": "object"
       },
+      "AssetLedgerAdminQueryDto": {
+        "properties": {
+          "userId": {
+            "description": "Only this account’s totals and months",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AssetLedgerAdminSummaryResponseDto": {
         "properties": {
+          "byOwner": {
+            "description": "Every account’s totals, most originals first; empty when the summary is for one account. No file is named.",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerOwnerTotalsDto"
+            },
+            "type": "array"
+          },
           "missingByOwner": {
             "description": "The accounts with originals the server cannot account for, most first. No file is named.",
             "items": {
               "$ref": "#/components/schemas/AssetLedgerMissingOwnerDto"
+            },
+            "type": "array"
+          },
+          "months": {
+            "description": "Per month the originals were added, where they are now; newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerMonthDto"
             },
             "type": "array"
           },
@@ -89449,7 +91283,9 @@
           }
         },
         "required": [
+          "byOwner",
           "missingByOwner",
+          "months",
           "states",
           "total"
         ],
@@ -89598,6 +91434,50 @@
         ],
         "type": "object"
       },
+      "AssetLedgerMonthDto": {
+        "properties": {
+          "month": {
+            "description": "The month the originals were added, as YYYY-MM (UTC)",
+            "type": "string"
+          },
+          "states": {
+            "$ref": "#/components/schemas/AssetLedgerCountsDto"
+          },
+          "total": {
+            "description": "Originals added that month",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "states",
+          "total"
+        ],
+        "type": "object"
+      },
+      "AssetLedgerOwnerTotalsDto": {
+        "properties": {
+          "ownerId": {
+            "type": "string"
+          },
+          "states": {
+            "$ref": "#/components/schemas/AssetLedgerCountsDto"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ownerId",
+          "states",
+          "total"
+        ],
+        "type": "object"
+      },
       "AssetLedgerQueryDto": {
         "properties": {
           "cursor": {
@@ -89632,6 +91512,13 @@
       },
       "AssetLedgerSummaryResponseDto": {
         "properties": {
+          "months": {
+            "description": "Per month the originals were added, where they are now; newest first",
+            "items": {
+              "$ref": "#/components/schemas/AssetLedgerMonthDto"
+            },
+            "type": "array"
+          },
           "states": {
             "$ref": "#/components/schemas/AssetLedgerCountsDto"
           },
@@ -89643,6 +91530,7 @@
           }
         },
         "required": [
+          "months",
           "states",
           "total"
         ],
@@ -93794,6 +95682,14 @@
           "date": {
             "description": "The birthday this year, 'yyyy-MM-dd'",
             "type": "string"
+          },
+          "deathAnniversary": {
+            "description": "True when the memory marks the anniversary of the date of passing rather than the birthday (FL-864); `date` is then that anniversary. Always comes with `inMemoriam`",
+            "type": "boolean"
+          },
+          "inMemoriam": {
+            "description": "True for a \"Remembering {name}\" memory (FL-864): the person has passed, so the memory shows no age. Absent or false for an ordinary birthday",
+            "type": "boolean"
           },
           "kind": {
             "description": "Discriminator for a birthday",
@@ -106735,6 +108631,10 @@
             "description": "Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals",
             "type": "boolean"
           },
+          "format": {
+            "$ref": "#/components/schemas/DownloadFormat",
+            "description": "FL-826: photos as the original, a full-size JPEG or a web-size JPEG (converted files end in .jpg); videos stay original. Left out: the account's download.defaultFormat (shared links: original). A link limited to web size always gets web"
+          },
           "includeLibraryMetadata": {
             "description": "Include frameleaf-library.json with owned albums, tags, bookmarks and Boards annotations alongside originals; signed-in accounts only",
             "type": "boolean"
@@ -106777,6 +108677,15 @@
         ],
         "type": "object"
       },
+      "DownloadFormat": {
+        "description": "FL-826: original (the file as uploaded), jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge). Videos are always original",
+        "enum": [
+          "original",
+          "jpeg",
+          "web"
+        ],
+        "type": "string"
+      },
       "DownloadInfoDto": {
         "properties": {
           "albumId": {
@@ -106800,6 +108709,10 @@
             },
             "type": "array"
           },
+          "format": {
+            "$ref": "#/components/schemas/DownloadFormat",
+            "description": "FL-826: the format the sizes are for. Left out: the account's download.defaultFormat (shared links: original). A link limited to web size always gets web"
+          },
           "userId": {
             "description": "User ID to download assets from",
             "format": "uuid",
@@ -106816,6 +108729,16 @@
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
+          },
+          "defaultFormat": {
+            "description": "FL-826: the format downloads use unless one is chosen: original, jpeg or web (always sent)",
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           },
           "includeEmbeddedVideos": {
             "description": "Whether to include embedded videos in downloads",
@@ -106868,6 +108791,16 @@
             "maximum": 9007199254740991,
             "minimum": 1,
             "type": "integer"
+          },
+          "defaultFormat": {
+            "$ref": "#/components/schemas/DownloadFormat",
+            "description": "FL-826: the format downloads use unless one is chosen: original, jpeg (high-quality JPEG, full size) or web (2048 px JPEG). Archive downloads that name no format follow it",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           },
           "includeEmbeddedVideos": {
             "description": "Whether to include embedded videos in downloads",
@@ -107161,6 +109094,22 @@
         ],
         "type": "string"
       },
+      "DuplicateKeepRule": {
+        "description": "FL-832: a rule for which duplicate copy to keep. raw and heic prefer that format; largest the biggest file; highestResolution the most pixels; oldest and newest the capture date; inAlbum a copy in one of your albums; hasEdits an edited copy; favorite a favourite; mostMetadata the most details",
+        "enum": [
+          "raw",
+          "heic",
+          "largest",
+          "highestResolution",
+          "oldest",
+          "newest",
+          "inAlbum",
+          "hasEdits",
+          "favorite",
+          "mostMetadata"
+        ],
+        "type": "string"
+      },
       "DuplicateQualityReason": {
         "description": "Evidence behind a duplicate keeper suggestion",
         "enum": [
@@ -107418,6 +109367,46 @@
           "assetId",
           "reasons"
         ],
+        "type": "object"
+      },
+      "DuplicatesResponse": {
+        "properties": {
+          "keepRules": {
+            "description": "FL-832: rules for which duplicate copy is suggested as the keeper, most important first (values of DuplicateKeepRule). Empty uses the default order",
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          }
+        },
+        "required": [
+          "keepRules"
+        ],
+        "type": "object"
+      },
+      "DuplicatesUpdate": {
+        "properties": {
+          "keepRules": {
+            "description": "Rules for which duplicate copy is suggested as the keeper, most important first; a tie goes to the next rule. Empty uses the default order (raw, heic, largest, mostMetadata). Repeats are dropped",
+            "items": {
+              "$ref": "#/components/schemas/DuplicateKeepRule"
+            },
+            "maxItems": 10,
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "EagleFolderDto": {
@@ -119042,6 +121031,36 @@
         ],
         "type": "string"
       },
+      "LibraryBestPhotosProgressDto": {
+        "properties": {
+          "outdated": {
+            "description": "FL-1597: photos Best Photos scored before the learned score of the current Visual search model; 0 when the model has none",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tonight": {
+            "description": "Best Photos scores the library again in the next overnight run",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "outdated",
+          "tonight"
+        ],
+        "type": "object"
+      },
+      "LibraryBestPhotosRedoDto": {
+        "properties": {
+          "when": {
+            "$ref": "#/components/schemas/LibraryRedoWhen"
+          }
+        },
+        "required": [
+          "when"
+        ],
+        "type": "object"
+      },
       "LibraryBookmarkItemKind": {
         "enum": [
           "bookmark"
@@ -119570,6 +121589,9 @@
       },
       "LibraryProgressResponseDto": {
         "properties": {
+          "bestPhotos": {
+            "$ref": "#/components/schemas/LibraryBestPhotosProgressDto"
+          },
           "features": {
             "items": {
               "$ref": "#/components/schemas/LibraryFeatureProgressDto"
@@ -119584,6 +121606,7 @@
           }
         },
         "required": [
+          "bestPhotos",
           "features",
           "measuredSince"
         ],
@@ -119785,6 +121808,10 @@
             },
             "type": "array"
           },
+          "folderAlbums": {
+            "description": "The library keeps an album for each of its folders, in sync after every scan",
+            "type": "boolean"
+          },
           "id": {
             "description": "Library ID",
             "format": "uuid",
@@ -119842,6 +121869,7 @@
           "createdAt",
           "deletedAt",
           "exclusionPatterns",
+          "folderAlbums",
           "id",
           "importPaths",
           "name",
@@ -126580,6 +128608,7 @@
           "studio_reverse_conform",
           "studio_transcription",
           "studio_movie",
+          "studio_editor_import",
           "studio_preview_stream",
           "restoration",
           "restoration_preview",
@@ -131583,6 +133612,10 @@
       },
       "PartnerCreateDto": {
         "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/PartnerScopeUpdateDto",
+            "description": "What the partner receives; everything when left out"
+          },
           "sharedWithId": {
             "description": "User ID to share with",
             "format": "uuid",
@@ -131708,6 +133741,10 @@
           "profileImagePath": {
             "description": "Profile image path",
             "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PartnerScopeDto",
+            "description": "What the library shared this way sends"
           }
         },
         "required": [
@@ -131717,6 +133754,189 @@
           "name",
           "profileChangedAt",
           "profileImagePath"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeDto": {
+        "description": "What a partner receives",
+        "properties": {
+          "albums": {
+            "description": "Albums whose items are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "folders": {
+            "description": "Folders whose items are shared",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PartnerScopeMode"
+          },
+          "people": {
+            "description": "People whose photos are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "sinceDate": {
+            "description": "Only items taken on or after this day",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albums",
+          "folders",
+          "mode",
+          "people",
+          "sinceDate"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeEstimateResponseDto": {
+        "properties": {
+          "count": {
+            "description": "How many items this would send now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeLabelDto": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeMode": {
+        "description": "What the partner receives: everything, or only what the owner chose",
+        "enum": [
+          "everything",
+          "chosen"
+        ],
+        "type": "string"
+      },
+      "PartnerScopeResponseDto": {
+        "description": "What a partner receives, and how many items that is",
+        "properties": {
+          "albums": {
+            "description": "Albums whose items are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "count": {
+            "description": "How many items this sends now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "folders": {
+            "description": "Folders whose items are shared",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PartnerScopeMode"
+          },
+          "people": {
+            "description": "People whose photos are shared",
+            "items": {
+              "$ref": "#/components/schemas/PartnerScopeLabelDto"
+            },
+            "type": "array"
+          },
+          "sinceDate": {
+            "description": "Only items taken on or after this day",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albums",
+          "count",
+          "folders",
+          "mode",
+          "people",
+          "sinceDate"
+        ],
+        "type": "object"
+      },
+      "PartnerScopeUpdateDto": {
+        "description": "What a partner receives",
+        "properties": {
+          "albumIds": {
+            "description": "Albums the owner owns whose items are shared; with mode chosen",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "folders": {
+            "description": "Folders (and the folders inside them) whose items are shared; with mode chosen",
+            "items": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PartnerScopeMode"
+          },
+          "personIds": {
+            "description": "The owner's people whose photos are shared; with mode chosen",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "sinceDate": {
+            "description": "Only items taken on or after this day (YYYY-MM-DD); with mode chosen",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
         ],
         "type": "object"
       },
@@ -131982,6 +134202,26 @@
             "nullable": true,
             "type": "string"
           },
+          "categoryIds": {
+            "description": "The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.1",
+                "state": "Alpha"
+              }
+            ],
+            "x-immich-state": "Alpha"
+          },
           "color": {
             "description": "Person color (hex)",
             "type": "string",
@@ -131996,6 +134236,12 @@
               }
             ],
             "x-immich-state": "Stable"
+          },
+          "deathDate": {
+            "description": "Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
           },
           "featuredAssetId": {
             "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)",
@@ -132048,6 +134294,11 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner",
+            "nullable": true,
             "type": "string"
           },
           "thumbnailPath": {
@@ -132243,6 +134494,12 @@
             "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
+          "deathDate": {
+            "description": "Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one)",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "featureFaceAssetId": {
             "description": "Asset ID used for feature face thumbnail",
             "format": "uuid",
@@ -132265,6 +134522,12 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them",
+            "maxLength": 2000,
+            "nullable": true,
             "type": "string"
           }
         },
@@ -132474,6 +134737,128 @@
           "adminAuth.unlinkAll"
         ],
         "type": "string"
+      },
+      "PersonCategoriesResponseDto": {
+        "properties": {
+          "categoryIds": {
+            "description": "The caller's categories the person is in",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "categoryIds"
+        ],
+        "type": "object"
+      },
+      "PersonCategoriesSetDto": {
+        "properties": {
+          "categoryIds": {
+            "description": "The caller's categories the person is in from now on; an empty list takes them out of all",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          }
+        },
+        "required": [
+          "categoryIds"
+        ],
+        "type": "object"
+      },
+      "PersonCategoryCreateDto": {
+        "properties": {
+          "color": {
+            "description": "Category color (hex)",
+            "nullable": true,
+            "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Category name",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "PersonCategoryResponseDto": {
+        "properties": {
+          "color": {
+            "description": "Category color (hex)",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "Creation date",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Category ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Category name",
+            "type": "string"
+          },
+          "order": {
+            "description": "Position among the categories, lowest first",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "color",
+          "createdAt",
+          "id",
+          "name",
+          "order",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PersonCategoryUpdateDto": {
+        "properties": {
+          "color": {
+            "description": "Category color (hex); null clears it",
+            "nullable": true,
+            "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Category name",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "order": {
+            "description": "Position among the categories, lowest first",
+            "maximum": 100000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
       },
       "PersonCorrectionAction": {
         "description": "What the decision did",
@@ -132840,6 +135225,26 @@
             "nullable": true,
             "type": "string"
           },
+          "categoryIds": {
+            "description": "The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.1",
+                "state": "Alpha"
+              }
+            ],
+            "x-immich-state": "Alpha"
+          },
           "color": {
             "description": "Person color (hex)",
             "type": "string",
@@ -132854,6 +135259,12 @@
               }
             ],
             "x-immich-state": "Stable"
+          },
+          "deathDate": {
+            "description": "Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
           },
           "featuredAssetId": {
             "description": "The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW)",
@@ -132900,6 +135311,11 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner",
+            "nullable": true,
             "type": "string"
           },
           "thumbnailPath": {
@@ -133132,6 +135548,12 @@
             "pattern": "^#?([0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
+          "deathDate": {
+            "description": "Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one)",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
           "featureFaceAssetId": {
             "description": "Asset ID used for feature face thumbnail",
             "format": "uuid",
@@ -133148,6 +135570,12 @@
           },
           "name": {
             "description": "Person name",
+            "type": "string"
+          },
+          "notes": {
+            "description": "Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them",
+            "maxLength": 2000,
+            "nullable": true,
             "type": "string"
           }
         },
@@ -133943,6 +136371,253 @@
         },
         "type": "object"
       },
+      "PhotoSourceCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "app": {
+            "description": "The catalog app, as the desktop names it, for example \"lightroom-classic\"",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "catalogId": {
+            "description": "The desktop's stable identifier for the catalog",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "description": "The catalog's name, shown to the person",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "catalogId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogField": {
+        "enum": [
+          "rating",
+          "description",
+          "tags",
+          "albums"
+        ],
+        "type": "string"
+      },
+      "PhotoSourceCatalogFlag": {
+        "description": "Pick or reject flag; null when the item has neither",
+        "enum": [
+          "pick",
+          "reject",
+          null
+        ],
+        "nullable": true,
+        "type": "string"
+      },
+      "PhotoSourceCatalogItemResult": {
+        "properties": {
+          "applied": {
+            "description": "Fields written for this item",
+            "items": {
+              "$ref": "#/components/schemas/PhotoSourceCatalogField"
+            },
+            "type": "array"
+          },
+          "itemId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "keptEdits": {
+            "description": "Fields left alone because the person's own change wins",
+            "items": {
+              "$ref": "#/components/schemas/PhotoSourceCatalogField"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PhotoSourceCatalogItemStatus"
+          }
+        },
+        "required": [
+          "applied",
+          "itemId",
+          "keptEdits",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogItemStatus": {
+        "enum": [
+          "applied",
+          "unchanged",
+          "keptEdits",
+          "notReady",
+          "notFound"
+        ],
+        "type": "string"
+      },
+      "PhotoSourceCatalogMetadataDto": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "Up to 500 catalog entries",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "caption": {
+                  "description": "Caption",
+                  "maxLength": 10000,
+                  "type": "string"
+                },
+                "collections": {
+                  "description": "Collections (albums) the item is in",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "description": "The collection name",
+                        "maxLength": 255,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "path": {
+                        "description": "The collection sets the collection sits in, outermost first",
+                        "items": {
+                          "maxLength": 255,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 16,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 200,
+                  "type": "array"
+                },
+                "colorLabel": {
+                  "description": "Colour label name, for example \"Red\"",
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "flag": {
+                  "$ref": "#/components/schemas/PhotoSourceCatalogFlag"
+                },
+                "itemId": {
+                  "description": "The source item (as planned for a copy run) the catalog entry describes",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "keywords": {
+                  "description": "Keywords; a hierarchy is separated by \"|\", for example \"Places|France|Paris\"",
+                  "items": {
+                    "maxLength": 1024,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 500,
+                  "type": "array"
+                },
+                "rating": {
+                  "description": "Star rating, 0 (unrated) to 5",
+                  "maximum": 5,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "title": {
+                  "description": "Title",
+                  "maxLength": 2000,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "itemId"
+              ],
+              "type": "object"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogMetadataResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PhotoSourceCatalogItemResult"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PhotoSourceCatalogSummary"
+          }
+        },
+        "required": [
+          "items",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "PhotoSourceCatalogSummary": {
+        "properties": {
+          "applied": {
+            "description": "Items where at least one field was written",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "keptEdits": {
+            "description": "Items left as they are because the person changed a field in Frameleaf since the last read-in",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "notFound": {
+            "description": "Items unknown to this source, or whose photo is gone or not available to change",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "notReady": {
+            "description": "Items whose copy is not verified yet; send them again after verification",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "unchanged": {
+            "description": "Items already as the catalog says",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "applied",
+          "keptEdits",
+          "notFound",
+          "notReady",
+          "unchanged"
+        ],
+        "type": "object"
+      },
       "PhotoSourceCopyMode": {
         "enum": [
           "copy"
@@ -133952,6 +136627,10 @@
       "PhotoSourceCreateDto": {
         "additionalProperties": false,
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "deviceId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
@@ -134157,6 +136836,10 @@
       },
       "PhotoSourceResponseDto": {
         "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/PhotoSourceCatalog",
+            "description": "The photo catalog this source reads, when it reads one"
+          },
           "createdAt": {
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
@@ -143152,6 +145835,77 @@
         ],
         "type": "string"
       },
+      "PhotographyPhotoEyesDto": {
+        "properties": {
+          "closedCount": {
+            "description": "Faces whose eyes are closed",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faceCount": {
+            "description": "Faces found in the photo",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "faces": {
+            "description": "Each face, left to right",
+            "items": {
+              "properties": {
+                "checked": {
+                  "description": "The eyes have been checked",
+                  "type": "boolean"
+                },
+                "closed": {
+                  "description": "The eyes are closed",
+                  "type": "boolean"
+                },
+                "soft": {
+                  "description": "The eyes are soft (out of focus)",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "closed",
+                "soft",
+                "checked"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "quality": {
+            "description": "The worst checked face's eye quality (open and sharp), for sorting; null until one is checked",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "nullable": true,
+            "type": "number"
+          },
+          "softCount": {
+            "description": "Faces whose eyes are soft (out of focus)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unscoredCount": {
+            "description": "Faces whose eyes aren't checked yet",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "closedCount",
+          "faceCount",
+          "faces",
+          "quality",
+          "softCount",
+          "unscoredCount"
+        ],
+        "type": "object"
+      },
       "PhotographyPhotosDto": {
         "properties": {
           "nextCursor": {
@@ -143183,6 +145937,9 @@
                 "exclusion": {
                   "nullable": true,
                   "type": "string"
+                },
+                "eyes": {
+                  "$ref": "#/components/schemas/PhotographyPhotoEyesDto"
                 },
                 "fileName": {
                   "type": "string"
@@ -152913,6 +155670,133 @@
         ],
         "type": "object"
       },
+      "PlaybackSelfTestCase": {
+        "description": "A kind of video the playback self-test checks",
+        "enum": [
+          "sdr-h264",
+          "hlg-hevc",
+          "dolby-vision-8.4",
+          "hdr10-pq",
+          "hev1-hevc"
+        ],
+        "type": "string"
+      },
+      "PlaybackSelfTestCaseDto": {
+        "properties": {
+          "codecTag": {
+            "description": "The sample-entry tag of the copy, for example hvc1",
+            "nullable": true,
+            "type": "string"
+          },
+          "colorTransfer": {
+            "description": "The transfer characteristics the copy is tagged with",
+            "nullable": true,
+            "type": "string"
+          },
+          "hardware": {
+            "description": "Whether the copy was made with hardware acceleration",
+            "type": "boolean"
+          },
+          "id": {
+            "$ref": "#/components/schemas/PlaybackSelfTestCase"
+          },
+          "meanLuma": {
+            "description": "How bright the copy is: mean Rec. 709 luma, 0 to 255",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "passed": {
+            "description": "Whether the copy came out right",
+            "type": "boolean"
+          },
+          "problems": {
+            "description": "What was wrong: convert-failed, codec, codec-tag, colour-tags, too-dark, too-bright or brightness-differs",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "referenceMeanLuma": {
+            "description": "How bright the same clip is when converted without hardware acceleration",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "codecTag",
+          "colorTransfer",
+          "hardware",
+          "id",
+          "meanLuma",
+          "passed",
+          "problems",
+          "referenceMeanLuma"
+        ],
+        "type": "object"
+      },
+      "PlaybackSelfTestResponseDto": {
+        "properties": {
+          "accel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TranscodeHWAccel"
+              }
+            ],
+            "description": "The hardware acceleration it checked",
+            "nullable": true
+          },
+          "cases": {
+            "description": "Each kind of video, in the order it was checked",
+            "items": {
+              "$ref": "#/components/schemas/PlaybackSelfTestCaseDto"
+            },
+            "type": "array"
+          },
+          "finishedAt": {
+            "description": "When it finished",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "softwareFallback": {
+            "description": "The kinds now converted without hardware acceleration because the check found them wrong",
+            "items": {
+              "$ref": "#/components/schemas/PlaybackSelfTestCase"
+            },
+            "type": "array"
+          },
+          "startedAt": {
+            "description": "When the latest check started",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PlaybackSelfTestStatus"
+          }
+        },
+        "required": [
+          "accel",
+          "cases",
+          "finishedAt",
+          "softwareFallback",
+          "startedAt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PlaybackSelfTestStatus": {
+        "description": "Where the latest check is: none before the first, running, done, or failed when it could not finish",
+        "enum": [
+          "none",
+          "running",
+          "done",
+          "failed"
+        ],
+        "type": "string"
+      },
       "PluginMethodResponseDto": {
         "properties": {
           "allowedHosts": {
@@ -155731,6 +158615,33 @@
           "isPaused": {
             "description": "Whether the queue is paused",
             "type": "boolean"
+          },
+          "items": {
+            "description": "Photos and videos this run has finished (completed or failed, as `processed` counts), of those it has: a queue that runs several jobs for each (thumbnails) counts more jobs than photos",
+            "properties": {
+              "done": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "startedAt": {
+                "description": "When the oldest of them was queued",
+                "format": "date-time",
+                "nullable": true,
+                "type": "string"
+              },
+              "total": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "done",
+              "total",
+              "startedAt"
+            ],
+            "type": "object"
           },
           "lastProgressAt": {
             "format": "date-time",
@@ -161879,6 +164790,10 @@
           "originalPath": {
             "$ref": "#/components/schemas/StringPatternFilter"
           },
+          "personCategoryIds": {
+            "$ref": "#/components/schemas/IdsFilter",
+            "description": "The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them"
+          },
           "personIds": {
             "$ref": "#/components/schemas/IdsFilter"
           },
@@ -162043,6 +164958,10 @@
           },
           "originalPath": {
             "$ref": "#/components/schemas/StringPatternFilter"
+          },
+          "personCategoryIds": {
+            "$ref": "#/components/schemas/IdsFilter",
+            "description": "The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them"
           },
           "personIds": {
             "$ref": "#/components/schemas/IdsFilter"
@@ -162941,7 +165860,7 @@
       "SearchPeopleDto": {
         "properties": {
           "name": {
-            "description": "Person name to search for",
+            "description": "Person name to search for; the caller's own notes about a person match too (FL-941)",
             "type": "string"
           },
           "withHidden": {
@@ -164229,6 +167148,20 @@
           },
           "type": {
             "$ref": "#/components/schemas/SharedLinkType"
+          },
+          "useDefaultExpiry": {
+            "description": "Without expiresAt, expire after the default number of days: the creator's preference, else the server's (none: never)",
+            "type": "boolean"
+          },
+          "webSizeOnly": {
+            "description": "FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Left out: off",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "required": [
@@ -164288,6 +167221,16 @@
             "description": "Custom URL slug",
             "nullable": true,
             "type": "string"
+          },
+          "webSizeOnly": {
+            "description": "FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Left out: unchanged",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "type": "object"
@@ -164425,6 +167368,16 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "webSizeOnly": {
+            "description": "FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Always sent",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           }
         },
         "required": [
@@ -164481,6 +167434,19 @@
       },
       "SharedLinksResponse": {
         "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires)",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "enabled": {
             "description": "Whether shared links are enabled",
             "type": "boolean"
@@ -164498,6 +167464,19 @@
       },
       "SharedLinksUpdate": {
         "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires)",
+            "maximum": 3650,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "enabled": {
             "description": "Whether shared links are enabled",
             "type": "boolean"
@@ -165540,6 +168519,17 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "cursor": {
+            "description": "Cursor for the next page of results",
+            "minLength": 1,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
           },
           "filter": {
             "$ref": "#/components/schemas/SearchFilter",
@@ -168615,6 +171605,628 @@
         ],
         "type": "string"
       },
+      "StudioEditorImportBuildDto": {
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "media": {
+            "$ref": "#/components/schemas/StudioEditorImportMediaTotals"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "description": "What came over differently or could not come over",
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNote"
+            },
+            "type": "array"
+          },
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNotice"
+            },
+            "type": "array"
+          },
+          "projectId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudioEditorImportSource"
+          },
+          "timeline": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileName",
+          "media",
+          "name",
+          "notes",
+          "notices",
+          "projectId",
+          "source",
+          "timeline"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportCheckDto": {
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "media": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportMedia"
+            },
+            "type": "array"
+          },
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNotice"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudioEditorImportSource"
+          },
+          "sourceVersion": {
+            "nullable": true,
+            "type": "string"
+          },
+          "timelines": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportTimeline"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "fileName",
+          "media",
+          "notices",
+          "source",
+          "sourceVersion",
+          "timelines"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportCreateDto": {
+        "properties": {
+          "frameRate": {
+            "description": "For an edit decision list, which does not state its frame rate: frames a second, e.g. 23.976",
+            "exclusiveMinimum": true,
+            "format": "double",
+            "maximum": 240,
+            "minimum": 0,
+            "type": "number"
+          },
+          "sidecarUploadIds": {
+            "description": "CDL (.cdl, .cc, .ccc) and LUT (.cube) files to apply to the clips they name",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 6,
+            "type": "array"
+          },
+          "uploadId": {
+            "description": "The project file, uploaded with `POST /studio/editor-imports/uploads`",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uploadId"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportDto": {
+        "properties": {
+          "build": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioEditorImportBuildDto"
+              }
+            ],
+            "description": "Once a `build` job has completed",
+            "nullable": true
+          },
+          "check": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioEditorImportCheckDto"
+              }
+            ],
+            "description": "Once a `check` job has completed",
+            "nullable": true
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/StudioEditorImportStage"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "step": {
+            "$ref": "#/components/schemas/StudioEditorImportStep"
+          }
+        },
+        "required": [
+          "build",
+          "check",
+          "error",
+          "id",
+          "progress",
+          "stage",
+          "status",
+          "step"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportJob": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          },
+          "timeline": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "timeline"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportMatch": {
+        "description": "`found`: the file is in the library and is used; `very-likely`, `likely`, `possible`: a match to confirm; `missing`: not in the library",
+        "enum": [
+          "found",
+          "very-likely",
+          "likely",
+          "possible",
+          "missing"
+        ],
+        "type": "string"
+      },
+      "StudioEditorImportMedia": {
+        "properties": {
+          "assetId": {
+            "description": "The library item found or suggested",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "assetName": {
+            "description": "That item’s file name",
+            "nullable": true,
+            "type": "string"
+          },
+          "carried": {
+            "description": "The file came inside the uploaded archive and is added to the library if needed",
+            "type": "boolean"
+          },
+          "clips": {
+            "description": "How many clips use it",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "confidence": {
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "key": {
+            "description": "The file as the project names it; send it back in `media` when importing",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StudioEditorImportMediaKind"
+          },
+          "match": {
+            "$ref": "#/components/schemas/StudioEditorImportMatch"
+          },
+          "name": {
+            "description": "The file name alone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "assetName",
+          "carried",
+          "clips",
+          "confidence",
+          "key",
+          "kind",
+          "match",
+          "name"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportMediaKind": {
+        "enum": [
+          "video",
+          "audio",
+          "image",
+          null
+        ],
+        "nullable": true,
+        "type": "string"
+      },
+      "StudioEditorImportMediaTotals": {
+        "properties": {
+          "added": {
+            "description": "Added to the library: sent from a folder or carried in the archive",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "found": {
+            "description": "Found in the library without asking",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "matched": {
+            "description": "Matches the person chose",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "placeholders": {
+            "description": "Still missing; the clip keeps its place until it is relinked",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added",
+          "found",
+          "matched",
+          "placeholders",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportNote": {
+        "properties": {
+          "atSeconds": {
+            "description": "Where on the timeline",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "became": {
+            "description": "What it became in Studio",
+            "type": "string"
+          },
+          "clip": {
+            "description": "The clip, transition or marker it is about",
+            "type": "string"
+          },
+          "code": {
+            "description": "What kind of difference, e.g. `transition-unmatched`",
+            "type": "string"
+          },
+          "what": {
+            "description": "What it was in the other editor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "atSeconds",
+          "became",
+          "clip",
+          "code",
+          "what"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportNotice": {
+        "properties": {
+          "became": {
+            "description": "In English, for reference",
+            "type": "string"
+          },
+          "code": {
+            "description": "`version-untested`, `clips-disabled`, `items-unknown`, `edl-limits`, `edl-frame-rate`, `lut-resampled`, `sidecar-unused` or `sidecar-unreadable`",
+            "type": "string"
+          },
+          "subject": {
+            "description": "What it is about: a version, a count, a file name or a frame rate",
+            "type": "string"
+          },
+          "what": {
+            "description": "In English, for reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "became",
+          "code",
+          "what"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportProjectNotesDto": {
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "notes": {
+            "description": "What came over differently or could not come over, with where on the timeline",
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNote"
+            },
+            "type": "array"
+          },
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNotice"
+            },
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudioEditorImportSource"
+          }
+        },
+        "required": [
+          "fileName",
+          "notes",
+          "notices",
+          "source"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportQueuedDto": {
+        "properties": {
+          "id": {
+            "description": "The job id; it also shows in Activity (`/media-operations/{id}`)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MediaOperationStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportSource": {
+        "description": "The editor or interchange format the project came from",
+        "enum": [
+          "premiere",
+          "resolve",
+          "finalcut",
+          "imovie",
+          "otio",
+          "fcp7",
+          "edl",
+          "aaf"
+        ],
+        "type": "string"
+      },
+      "StudioEditorImportStage": {
+        "description": "`check`: reading the file and finding media; `build`: making one Studio project",
+        "enum": [
+          "check",
+          "build"
+        ],
+        "type": "string"
+      },
+      "StudioEditorImportStartDto": {
+        "properties": {
+          "albumName": {
+            "description": "The album that added files go into, in the person’s language; defaults to the project name",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "media": {
+            "description": "The person’s choice for each file; a file left out keeps what the check found",
+            "items": {
+              "properties": {
+                "added": {
+                  "description": "The person sent this file from their folder just now",
+                  "type": "boolean"
+                },
+                "assetId": {
+                  "description": "The library item to use, or null to leave a placeholder",
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "key": {
+                  "maxLength": 4096,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "assetId"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5000,
+            "type": "array"
+          },
+          "timelines": {
+            "description": "The timelines to bring; each becomes a project",
+            "items": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "media",
+          "timelines"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportStartedDto": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportJob"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportStep": {
+        "description": "What the job is doing: reading the file, finding media, building the project, checking it",
+        "enum": [
+          "reading",
+          "media",
+          "building",
+          "checking",
+          "done"
+        ],
+        "type": "string"
+      },
+      "StudioEditorImportTimeline": {
+        "properties": {
+          "clips": {
+            "description": "Video clips and stills",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "durationSeconds": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "index": {
+            "description": "Name it in `timelines` when importing",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "markers": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "description": "What will come over differently, media aside",
+            "items": {
+              "$ref": "#/components/schemas/StudioEditorImportNote"
+            },
+            "type": "array"
+          },
+          "sound": {
+            "description": "Sound clips",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "titles": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "transitions": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clips",
+          "durationSeconds",
+          "index",
+          "markers",
+          "name",
+          "notes",
+          "sound",
+          "titles",
+          "transitions"
+        ],
+        "type": "object"
+      },
+      "StudioEditorImportUploadDto": {
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "id": {
+            "description": "The upload; name it when starting the import",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileName",
+          "id",
+          "sizeBytes"
+        ],
+        "type": "object"
+      },
       "StudioExportAudio": {
         "description": "Audio of the result: `preserve` keeps the widest source channel layout at its sample rate; `stereo` is an explicit downmix",
         "enum": [
@@ -170693,6 +174305,15 @@
             "description": "The project was read in from a portable bundle; always false for a reviewer",
             "type": "boolean"
           },
+          "importedFromEditor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioEditorImportSource"
+              }
+            ],
+            "description": "The editor the project was imported from (Beta); null otherwise and for a reviewer",
+            "nullable": true
+          },
           "lastOpenedAt": {
             "description": "When an editor last opened it; null for a reviewer",
             "format": "date-time",
@@ -170901,6 +174522,15 @@
             "description": "The project was read in from a portable bundle; always false for a reviewer",
             "type": "boolean"
           },
+          "importedFromEditor": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudioEditorImportSource"
+              }
+            ],
+            "description": "The editor the project was imported from (Beta); null otherwise and for a reviewer",
+            "nullable": true
+          },
           "lastOpenedAt": {
             "description": "When an editor last opened it; null for a reviewer",
             "format": "date-time",
@@ -171016,6 +174646,111 @@
           "schemaVersion"
         ],
         "type": "object"
+      },
+      "StudioProjectFontCreateDto": {
+        "properties": {
+          "file": {
+            "description": "The .ttf, .otf or .woff2 font file",
+            "format": "binary",
+            "type": "string"
+          },
+          "id": {
+            "description": "The import id the editor gave this font; retrying the same file with it is idempotent",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "publicationId": {
+            "description": "Already registered publication id",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "id"
+        ],
+        "type": "object"
+      },
+      "StudioProjectFontDto": {
+        "properties": {
+          "checksum": {
+            "description": "SHA-256 of the bytes, hex",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When it was uploaded",
+            "format": "date-time",
+            "type": "string"
+          },
+          "family": {
+            "description": "The family name the file gives itself",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "The name the file was uploaded with",
+            "type": "string"
+          },
+          "format": {
+            "$ref": "#/components/schemas/StudioProjectFontFormat"
+          },
+          "id": {
+            "description": "Import id; the graph names it as `importId` in `metadata.fonts`",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "description": "Size in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "style": {
+            "$ref": "#/components/schemas/StudioProjectFontStyle"
+          },
+          "subfamily": {
+            "description": "The style name the file gives itself, such as Bold Italic; may be empty",
+            "type": "string"
+          },
+          "weight": {
+            "description": "The file's weight, 100 to 900",
+            "maximum": 900,
+            "minimum": 100,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checksum",
+          "createdAt",
+          "family",
+          "fileName",
+          "format",
+          "id",
+          "sizeBytes",
+          "style",
+          "subfamily",
+          "weight"
+        ],
+        "type": "object"
+      },
+      "StudioProjectFontFormat": {
+        "description": "TrueType, OpenType (CFF) or WOFF2, read from the bytes",
+        "enum": [
+          "ttf",
+          "otf",
+          "woff2"
+        ],
+        "type": "string"
+      },
+      "StudioProjectFontStyle": {
+        "description": "Upright or italic",
+        "enum": [
+          "normal",
+          "italic"
+        ],
+        "type": "string"
       },
       "StudioProjectHistoryResponseDto": {
         "properties": {
@@ -171154,6 +174889,13 @@
             },
             "type": "array"
           },
+          "keptFonts": {
+            "description": "Fonts kept with the project (FL-1562)",
+            "items": {
+              "$ref": "#/components/schemas/StudioProjectFontDto"
+            },
+            "type": "array"
+          },
           "luts": {
             "description": "Bundled LUTs the head graph names",
             "items": {
@@ -171183,6 +174925,7 @@
         "required": [
           "fonts",
           "keptFiles",
+          "keptFonts",
           "luts",
           "models",
           "projectId",
@@ -178682,6 +182425,14 @@
             },
             "type": "array"
           },
+          "position": {
+            "description": "Each asset's place in the album's custom order (lowest first), aligned with id. Returned only for sort=custom; place an album's text cards by comparing their position",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": "array"
+          },
           "projectionType": {
             "description": "Array of projection types for 360° content (e.g., \"EQUIRECTANGULAR\", \"CUBEFACE\", \"CYLINDRICAL\")",
             "items": {
@@ -178884,7 +182635,8 @@
             "enum": [
               "filename",
               "rating",
-              "quality"
+              "quality",
+              "custom"
             ],
             "type": "string"
           },
@@ -179524,11 +183276,12 @@
         "type": "object"
       },
       "TimelineOrderedSort": {
-        "description": "filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture; quality: highest Best Photos score first (assets without a score of yours last), then newest capture. Use quality with bestPhotos=true",
+        "description": "filename: by original file name (locale-aware), then newest capture; rating: highest star rating first (unrated counts as 0), then newest capture; quality: highest Best Photos score first (assets without a score of yours last), then newest capture. Use quality with bestPhotos=true; custom: the album's own order (requires albumId; see the album's isCustomOrder), returned with each asset's position",
         "enum": [
           "filename",
           "rating",
-          "quality"
+          "quality",
+          "custom"
         ],
         "type": "string"
       },
@@ -180143,6 +183896,10 @@
             "description": "Enable activity feed",
             "type": "boolean"
           },
+          "isCustomOrder": {
+            "description": "Show the album in its own order instead of by date. Turning it on the first time orders the photos by the current date order; turning it off keeps the custom order for next time. Read the custom order with GET /timeline/ordered?sort=custom&albumId=…",
+            "type": "boolean"
+          },
           "isLocked": {
             "description": "Lock the album: the owner's items in it (photos, videos and any other files) are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. The owner's items added later through the album's add actions are locked as they are added (if that fails, the hourly check retries); any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album stops locking new items and leaves the locked ones locked. While the item, or any other part of its stack or Live Photo, is in a locked album its owner owns, unlocking that item alone does not last: the hourly check locks it again. To keep an item unlocked, remove it and its stack and Live Photo parts from every locked album of the item's owner, or unlock those albums, first. Locked albums of other people don't lock it. Only the album owner may send this field; other members must leave it out, or the whole update is refused (403).",
             "type": "boolean"
@@ -180295,6 +184052,10 @@
             "maxItems": 128,
             "type": "array"
           },
+          "folderAlbums": {
+            "description": "Keep an album for each folder of the library, in sync after every scan. Albums belong to the library's owner.",
+            "type": "boolean"
+          },
           "importPaths": {
             "description": "Import paths (max 128)",
             "items": {
@@ -180309,6 +184070,10 @@
             "maxLength": 160,
             "minLength": 1,
             "type": "string"
+          },
+          "removeFolderAlbums": {
+            "description": "When folderAlbums is turned off: true deletes the folder albums (their photos stay in the library); left out or false keeps them as ordinary albums.",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -181192,6 +184957,9 @@
           "server": {
             "$ref": "#/components/schemas/UserConfigServerDto"
           },
+          "sharedLinks": {
+            "$ref": "#/components/schemas/UserConfigSharedLinksDto"
+          },
           "theme": {
             "$ref": "#/components/schemas/UserConfigThemeDto"
           },
@@ -181213,6 +184981,7 @@
           "passwordLogin",
           "reverseGeocoding",
           "server",
+          "sharedLinks",
           "theme",
           "trash",
           "user"
@@ -181566,6 +185335,21 @@
           "loginPageMessage",
           "name",
           "publicUsers"
+        ],
+        "type": "object"
+      },
+      "UserConfigSharedLinksDto": {
+        "properties": {
+          "defaultExpiryDays": {
+            "description": "Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire",
+            "maximum": 3650,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "defaultExpiryDays"
         ],
         "type": "object"
       },
@@ -181937,6 +185721,9 @@
           "download": {
             "$ref": "#/components/schemas/DownloadResponse"
           },
+          "duplicates": {
+            "$ref": "#/components/schemas/DuplicatesResponse"
+          },
           "emailNotifications": {
             "$ref": "#/components/schemas/EmailNotificationsResponse"
           },
@@ -182095,6 +185882,9 @@
           },
           "download": {
             "$ref": "#/components/schemas/DownloadUpdate"
+          },
+          "duplicates": {
+            "$ref": "#/components/schemas/DuplicatesUpdate"
           },
           "emailNotifications": {
             "$ref": "#/components/schemas/EmailNotificationsUpdate"

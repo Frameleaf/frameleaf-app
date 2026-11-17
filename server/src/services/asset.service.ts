@@ -24,6 +24,8 @@ import {
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
   AssetCopyDto,
+  AssetCopyToLibraryDto,
+  AssetCopyToLibraryResponseDto,
   AssetInfoBatchDto,
   AssetInfoBatchResponseDto,
   AssetJobName,
@@ -69,7 +71,7 @@ import { MediaHealthRepository } from 'src/repositories/media-health.repository.
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
-import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
+import { PartnerCopyService, getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { collectAllMetadata } from 'src/utils/all-metadata.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
@@ -143,6 +145,11 @@ const withVideoVersionErrors = async <T>(call: () => Promise<T>): Promise<T> => 
     throw error;
   }
 };
+
+/** FL-786: an update that only sets or clears a heart. */
+const isFavoriteOnly = (dto: object & { isFavorite?: boolean }) =>
+  dto.isFavorite !== undefined &&
+  Object.entries(dto).every(([key, value]) => key === 'isFavorite' || key === 'ids' || value === undefined);
 
 @Injectable()
 export class AssetService extends BaseService {
@@ -239,7 +246,10 @@ export class AssetService extends BaseService {
       return mapAsset(asset, { stripMetadata: true, withStack: true, auth });
     }
 
-    const data = mapAsset(asset, { withStack: true, auth });
+    // FL-786: on an item someone else owns, the heart shown is the viewer's own
+    const sharedFavorite =
+      asset.ownerId !== auth.user.id && (await this.assetRepository.getSharedFavoriteIds(auth.user.id, [id])).size > 0;
+    const data = mapAsset(asset, { withStack: true, auth, sharedFavorite });
 
     if (auth.sharedLink) {
       delete data.owner;
@@ -291,6 +301,14 @@ export class AssetService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
+    // FL-786: a heart on an item shared with the caller is theirs alone and changes nothing of the owner's
+    if (isFavoriteOnly(dto) && (await this.setSharedFavorites(auth, [id], dto.isFavorite!)).length === 0) {
+      const data = await this.readAsset(auth, id);
+      if (!data) {
+        throw new BadRequestException('Asset not found');
+      }
+      return data as AssetResponseDto;
+    }
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
     const { libraryScope, ...editDto } = dto;
@@ -618,7 +636,78 @@ export class AssetService extends BaseService {
     return result;
   }
 
-  async updateAll(auth: AuthDto, dto: AssetBulkUpdateDto): Promise<void> {
+  /**
+   * FL-786: set the caller's own heart on the items they can see but do not own (a shared album or space), and answer
+   * the ids they own, which keep the owner's mark. A shared link's visitor has no hearts; an item the caller can
+   * neither change nor see is refused as before.
+   */
+  private async setSharedFavorites(auth: AuthDto, ids: string[], isFavorite: boolean): Promise<string[]> {
+    if (auth.sharedLink) {
+      throw new ForbiddenException('Favourites are only for signed-in people');
+    }
+    const unique = [...new Set(ids.map((id) => id.toLowerCase()))];
+    const owned = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids: unique });
+    const others = unique.filter((id) => !owned.has(id));
+    if (others.length > 0) {
+      await this.requireAccess({ auth, permission: Permission.AssetRead, ids: others });
+      await this.assetRepository.setSharedFavorites(auth.user.id, others, isFavorite);
+    }
+    return unique.filter((id) => owned.has(id));
+  }
+
+  /**
+   * FL-837: add items the caller can see through a shared album, space or link to their own library, as their own
+   * copies of the same stored files. Only a signed-in person can; a link must allow downloads. Every item is checked
+   * first and the space they need is checked once, so either the copies are made or nothing is.
+   */
+  async copyToLibrary(auth: AuthDto, dto: AssetCopyToLibraryDto): Promise<AssetCopyToLibraryResponseDto> {
+    if (auth.sharedLink) {
+      throw new ForbiddenException('Sign in to add items to your library');
+    }
+    const ids = [...new Set(dto.assetIds.map((id) => id.toLowerCase()))];
+    let allowed: Set<string>;
+    if (dto.sharedLinkKey || dto.sharedLinkSlug) {
+      const link = dto.sharedLinkKey
+        ? await this.sharedLinkRepository.getByKey(
+            Buffer.from(dto.sharedLinkKey, dto.sharedLinkKey.length === 100 ? 'hex' : 'base64url'),
+          )
+        : await this.sharedLinkRepository.getBySlug(dto.sharedLinkSlug!);
+      const live = !!link && (!link.expiresAt || new Date(link.expiresAt) > new Date());
+      if (!live) {
+        throw new BadRequestException('This link is no longer shared');
+      }
+      // a link with a password proves it through its own session, never by its key alone
+      if (!link.allowDownload || link.password) {
+        throw new ForbiddenException('This link does not allow saving its items');
+      }
+      allowed = await this.accessRepository.asset.checkSharedLinkAccess(link.id, new Set(ids));
+    } else {
+      allowed = await this.checkAccess({ auth, permission: Permission.AssetDownload, ids });
+    }
+    if (ids.some((id) => !allowed.has(id))) {
+      throw new BadRequestException('Not found or no access');
+    }
+    const needed = await this.assetRepository.getOriginalBytes(ids, auth.user.id);
+    if (auth.user.quotaSizeInBytes !== null && auth.user.quotaSizeInBytes < auth.user.quotaUsageInBytes + needed) {
+      throw new BadRequestException('There is not enough space in your library for these items');
+    }
+
+    const copies = BaseService.create(PartnerCopyService, this);
+    const response: AssetCopyToLibraryResponseDto = { added: [], alreadyInLibrary: [], notAdded: [] };
+    for (const id of ids) {
+      const result = await copies.copyToLibrary(id, auth.user.id);
+      if (result.status === 'added') {
+        response.added.push({ sourceId: id, assetId: result.copyId });
+      } else if (result.status === 'exists') {
+        response.alreadyInLibrary.push(id);
+      } else {
+        response.notAdded.push(id);
+      }
+    }
+    return response;
+  }
+
+  async updateAll(auth: AuthDto, dto: AssetBulkUpdateDto, sharedFavoritesSet = false): Promise<void> {
     const {
       ids,
       isFavorite,
@@ -636,6 +725,11 @@ export class AssetService extends BaseService {
       dateTimeRelative,
       timeZone,
     } = dto;
+    // FL-786: hearts on items shared with the caller are theirs; their own items keep the owner's mark
+    if (!sharedFavoritesSet && isFavoriteOnly(dto)) {
+      const owned = await this.setSharedFavorites(auth, ids, isFavorite!);
+      return owned.length === 0 ? undefined : this.updateAll(auth, { ids: owned, isFavorite }, true);
+    }
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
     const originIds = visibility === AssetVisibility.Locked ? await this.assetRepository.findLockGroupIds(ids) : ids;

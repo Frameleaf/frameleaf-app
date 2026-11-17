@@ -230,6 +230,7 @@ describe('capture application boundary', () => {
       maxSize: 1024,
       maxAppendSize: 1024,
       maxAge: 86_400,
+      activeMaxAge: 7 * 86_400,
       maxActive: 4,
       maxParallelParts: 6,
     });

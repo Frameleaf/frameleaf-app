@@ -10,6 +10,10 @@
 // with the current platform glyph atlas as input, independently checked against Canvas 2D. The canonical backend is the software
 // WebGPU of FREECUT_CHROME_ARGS_REPLACE (CI's); GOLDENS_CROSS_CHECK_ARGS names a second
 // backend whose differences set the tolerances (render-goldens.mjs, deriveTolerance).
+// `--write --only=<token>,<token>` renders and writes only the selected cases (a new or changed
+// operator) and keeps every other committed case, the progress curve and the keyframe, HDR,
+// layer and text goldens as they are. A token is an id (every case of it) or an id and a path
+// prefix such as `gpu-curves/hdr` (only its linear HDR cases).
 import assert from 'node:assert/strict';
 import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -21,7 +25,7 @@ import { runLayerGoldens } from './layer-goldens.browser.mjs';
 import { runTextGoldens } from './text-goldens.browser.mjs';
 import {
   GOLDENS_FORMAT, GOLDENS_VERSION, EFFECT_SIZE, TRANSITION_SIZE, GPU_TRANSITIONS, PROGRESS_CURVE_CASES,
-  effectCases, transitionCases, buildIndex, renderIndexMarkdown, replaceIndexMarkdown, effectSdrInput, effectHdrInput, transitionInputs,
+  effectCases, transitionCases, buildIndex, renderIndexMarkdown, replaceIndexMarkdown, effectSdrInput, effectHdrInput, transitionInputs, transitionHdrInputs,
   encodeBuffer, decodeBuffer, roundHalf, sha256, deriveTolerance, compareCase, validateGoldens,
 } from './render-goldens.mjs';
 import { runHdrGoldens } from './hdr-goldens.browser.mjs';
@@ -31,6 +35,8 @@ const require = createRequire(path.join(studio, 'engine/package.json'));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
 const write = process.argv.includes('--write');
+const only = process.argv.find((arg) => arg.startsWith('--only='))?.slice('--only='.length).split(',').filter(Boolean);
+assert.ok(!only || write, '--only needs --write');
 const catalogue = JSON.parse(await readFile(path.join(studio, 'graph-parameters-v1.json'), 'utf8'));
 const engineBuild = JSON.parse(await readFile(path.join(studio, 'engine-build.json'), 'utf8'));
 
@@ -75,7 +81,7 @@ async function renderAll(args) {
     await page.route(`${origin}/render-goldens`, (route) => route.fulfill({ contentType: 'text/html', body: PAGE }));
     await page.goto(`${origin}/render-goldens`);
     await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__ === true);
-    return await page.evaluate(async ({ E, T, effects, atlasSpecs, transitions, sdrInput, hdrInput, tA, tB, curveCases, gpuIds, temporalIds }) => {
+    return await page.evaluate(async ({ E, T, effects, atlasSpecs, transitions, sdrInput, hdrInput, tA, tB, hA, hB, curveCases, gpuIds, temporalIds }) => {
       const { EffectsPipeline, EFFECT_CLOCK_PARAM } = await import('/src/infrastructure/gpu-effects/index.ts');
       const { ascii } = await import('/src/infrastructure/gpu-effects/effects/stylize.ts');
       const { getGpuEffect } = await import('/src/infrastructure/gpu-effects/registry.ts');
@@ -175,6 +181,9 @@ async function renderAll(args) {
       transitionPipeline.setWorkingRange('sdr');
       const left = upload(tA, T.width, T.height);
       const right = upload(tB, T.width, T.height);
+      // Linear HDR cases: the same GPU route in the HDR working range, on the linear inputs.
+      const hdrLeft = upload(hA, T.width, T.height);
+      const hdrRight = upload(hB, T.width, T.height);
       const canvasOf = (values) => {
         const canvas = new OffscreenCanvas(T.width, T.height);
         const ctx = canvas.getContext('2d');
@@ -193,16 +202,25 @@ async function renderAll(args) {
       for (const c of transitions) {
         if (c.route === 'gpu') {
           const gpuId = transitionRegistry.getRenderer(c.id).gpuTransitionId;
+          const hdr = c.domain === 'hdr';
+          transitionPipeline.setWorkingRange(hdr ? 'hdr' : 'sdr');
           const output = device.createTexture({ size: [T.width, T.height], format: 'rgba16float', usage });
           try {
             device.pushErrorScope('validation');
-            const accepted = transitionPipeline.renderTexturesToTexture(gpuId, left, right, output, c.progress, T.width, T.height,
-              c.direction ?? undefined, c.properties ?? undefined, 'straight', 'straight');
+            let accepted;
+            try {
+              accepted = transitionPipeline.renderTexturesToTexture(gpuId, hdr ? hdrLeft : left, hdr ? hdrRight : right, output,
+                c.progress, T.width, T.height, c.direction ?? undefined, c.properties ?? undefined, 'straight', 'straight');
+            } catch (error) {
+              await device.popErrorScope();
+              if (error instanceof HdrRenderUnavailableError && hdr) { transitionResults.push({ outcome: 'refused', error: error.name }); continue; }
+              throw error;
+            }
             const pixels = await readback(output, T.width, T.height);
             const validation = await device.popErrorScope();
             if (!accepted || validation) throw new Error(`${c.name}: ${validation?.message ?? 'rejected'}`);
             transitionResults.push({ outcome: 'rendered', pixels });
-          } finally { output.destroy(); }
+          } finally { output.destroy(); transitionPipeline.setWorkingRange('sdr'); }
         } else {
           const out = new OffscreenCanvas(T.width, T.height);
           const ctx = out.getContext('2d');
@@ -216,21 +234,26 @@ async function renderAll(args) {
         }
       }
       const curve = curveCases.map((c) => calculateTransitionProgress(c.localFrame, c.duration, c.timing, c.bezierPoints ?? undefined));
-      for (const texture of [inputs.sdr, inputs.hdr, left, right]) texture.destroy();
+      for (const texture of [inputs.sdr, inputs.hdr, left, right, hdrLeft, hdrRight]) texture.destroy();
       transitionPipeline.destroy();
       return { environment, effectResults, transitionResults, curve };
     }, {
       E: EFFECT_SIZE, T: TRANSITION_SIZE,
-      effects: effectCases(catalogue), transitions: transitionCases(catalogue),
-      atlasSpecs: effectCases(catalogue).map((c) => c.id === 'gpu-ascii' && c.domain === 'sdr' ? asciiAtlasSpec(c.params) : null),
+      effects: selected(effectCases(catalogue)), transitions: selected(transitionCases(catalogue)),
+      atlasSpecs: selected(effectCases(catalogue)).map((c) => c.id === 'gpu-ascii' && c.domain === 'sdr' ? asciiAtlasSpec(c.params) : null),
       sdrInput: effectSdrInput(), hdrInput: effectHdrInput(),
-      tA: transitionInputs().a, tB: transitionInputs().b,
+      tA: transitionInputs().a, tB: transitionInputs().b, hA: transitionHdrInputs().a, hB: transitionHdrInputs().b,
       curveCases: PROGRESS_CURVE_CASES, gpuIds: GPU_TRANSITIONS,
       temporalIds: catalogue.effects.filter((e) => e.temporal).map((e) => e.id),
     });
   } finally {
     await browser.close();
   }
+}
+
+/** The cases this run renders: all of them, or those the `--only` tokens select. */
+function selected(cases) {
+  return only ? cases.filter((c) => only.some((token) => c.id === token || c.name.startsWith(`${token}/`))) : cases;
 }
 
 const SWIFTSHADER = '--enable-unsafe-webgpu --use-angle=swiftshader --use-vulkan=swiftshader --enable-features=Vulkan --disable-accelerated-2d-canvas';
@@ -296,6 +319,36 @@ for (const [label, a, b] of [['effects', canonical.effectResults, again.effectRe
   a.forEach((r, i) => assert.deepEqual(r, b[i], `${label} case ${i} is not deterministic`));
 }
 
+if (only) {
+  // Keep every case that was not rendered exactly as committed; index the rendered results by name.
+  // Case names can repeat (a select option and an extra case), so the key counts occurrences.
+  const keyed = (cases) => {
+    const seen = new Map();
+    return cases.map((c) => {
+      seen.set(c.name, (seen.get(c.name) ?? 0) + 1);
+      return `${c.name}#${seen.get(c.name)}`;
+    });
+  };
+  const stored = {};
+  for (const kind of ['effects', 'transitions']) {
+    const cases = JSON.parse(await readFile(path.join(studio, `spec/goldens/${kind}.json`), 'utf8')).cases;
+    const keys = keyed(cases);
+    stored[kind] = new Map(cases.map((c, i) => [keys[i], c]));
+  }
+  const expand = (cases, kind, results) => {
+    const keys = keyed(cases);
+    const chosen = new Set(selected(cases));
+    let next = 0;
+    return cases.map((c, i) => (chosen.has(c) ? results[next++]
+      : { kept: stored[kind].get(keys[i]) ?? assert.fail(`${c.name} has no stored golden`) }));
+  };
+  for (const run of [canonical, again, cross].filter(Boolean)) {
+    run.effectResults = expand(eCases, 'effects', run.effectResults);
+    run.transitionResults = expand(tCases, 'transitions', run.transitionResults);
+  }
+  console.log(`rendered ${selected(eCases).length} effect and ${selected(tCases).length} transition cases of ${only.join(', ')}`);
+}
+
 const digest = await sourceDigest();
 const header = (kind) => ({
   format: GOLDENS_FORMAT, version: GOLDENS_VERSION, kind,
@@ -322,6 +375,7 @@ const effectDoc = {
   },
   cases: eCases.map((c, i) => {
     const r = canonical.effectResults[i];
+    if (r.kept) return r.kept;
     const base = { name: c.name, id: c.id, domain: c.domain, params: c.params, clock: c.clock };
     if (r.outcome === 'refused') return { ...base, outcome: 'refused' };
     const crossPixels = cross?.effectResults[i]?.pixels;
@@ -330,24 +384,32 @@ const effectDoc = {
   }),
 };
 const ta = transitionInputs();
+const th = transitionHdrInputs();
 const transitionDoc = {
   ...header('transitions'),
   size: TRANSITION_SIZE,
   inputs: {
     a: { description: 'render-goldens.mjs transitionInputs().a: outgoing clip, opaque, sRGB-encoded', encoding: 'rgba8-deflate-base64', data: encodeBuffer(ta.a, 'rgba8-deflate-base64') },
     b: { description: 'render-goldens.mjs transitionInputs().b: incoming clip, opaque, sRGB-encoded', encoding: 'rgba8-deflate-base64', data: encodeBuffer(ta.b, 'rgba8-deflate-base64') },
+    hdrA: { description: 'render-goldens.mjs transitionHdrInputs().a: outgoing clip, linear display-referred BT.709 (1.0 = 203 cd/m2), straight alpha, binary16', encoding: 'f16le-deflate-base64', data: encodeBuffer(th.a, 'f16le-deflate-base64') },
+    hdrB: { description: 'render-goldens.mjs transitionHdrInputs().b: incoming clip, linear display-referred BT.709 (1.0 = 203 cd/m2), straight alpha, binary16', encoding: 'f16le-deflate-base64', data: encodeBuffer(th.b, 'f16le-deflate-base64') },
   },
   progressCurve: PROGRESS_CURVE_CASES.map((c, i) => ({ ...c, progress: canonical.curve[i] })),
   cases: tCases.map((c, i) => {
     const r = canonical.transitionResults[i];
-    // Values inside [0, 1] are stored as 8-bit (well inside the 2/255 floor); others keep binary16.
-    const inRange = r.pixels.every((v) => v >= 0 && v <= 1);
+    if (r.kept) return r.kept;
+    const base = { name: c.name, id: c.id, route: c.route, ...(c.domain ? { domain: c.domain } : {}),
+      direction: c.direction, progress: c.progress, properties: c.properties };
+    if (r.outcome === 'refused') return { ...base, outcome: 'refused' };
+    // SDR values inside [0, 1] are stored as 8-bit (well inside the 2/255 floor); others, and
+    // every linear HDR case, keep binary16.
+    const hdr = c.domain === 'hdr';
+    const inRange = !hdr && r.pixels.every((v) => v >= 0 && v <= 1);
     const encoding = inRange ? 'rgba8-deflate-base64' : 'f16le-deflate-base64';
     const stored = decodeBuffer(encodeBuffer(r.pixels, encoding), encoding);
     const crossPixels = cross?.transitionResults[i]?.pixels;
-    const tolerance = deriveTolerance('sdr', stored, crossPixels, c.id);
-    return { name: c.name, id: c.id, route: c.route, direction: c.direction, progress: c.progress, properties: c.properties,
-      outcome: 'rendered', tolerance, output: { encoding, data: encodeBuffer(r.pixels, encoding) } };
+    const tolerance = deriveTolerance(hdr ? 'hdr' : 'sdr', stored, hdr ? crossPixels?.map(roundHalf) : crossPixels, c.id);
+    return { ...base, outcome: 'rendered', tolerance, output: { encoding, data: encodeBuffer(r.pixels, encoding) } };
   }),
 };
 for (const doc of [effectDoc, transitionDoc]) for (const input of Object.values(doc.inputs)) input.sha256 = sha256(input.data);
@@ -360,6 +422,10 @@ const index = buildIndex(catalogue, effectDoc, transitionDoc, previousIndex);
 await writeFile(indexPath, `${JSON.stringify(index, null, 2)}\n`);
 const readmePath = path.join(studio, 'spec/README.md');
 await writeFile(readmePath, replaceIndexMarkdown(await readFile(readmePath, 'utf8'), renderIndexMarkdown(index, transitionDoc.progressCurve.length)));
+if (only) {
+  console.log(`wrote the ${only.join(', ')} cases of studio/spec/goldens/{effects,transitions}.json, index.json and the README index`);
+  process.exit(0);
+}
 // The glyph atlas strips the font-atlas ASCII goldens were rendered with (gpu-ascii, Glyph atlas):
 // the platform input of those cases, published so that a native client can meet them.
 const atlases = new Map();

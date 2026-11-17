@@ -3,6 +3,7 @@ import { type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { PhotographyBrand, StoredShoot } from 'src/dtos/photography-workspace.dto.js';
 import type { UserMetadata } from 'src/types.js';
+import { defaults } from 'src/dtos/config.dto.js';
 import { AlbumUserRole, UserMetadataKey } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { isNotLocked } from 'src/utils/locked.js';
@@ -121,5 +122,50 @@ export class PhotographyWorkspaceRepository {
       WHERE "ownerId" = ${userId}::uuid AND "assetId" = ANY(${assetIds}::uuid[]) AND "isCurrent"
     `.execute(this.db);
     return new Map(rows.map(({ assetId, id }) => [assetId, id]));
+  }
+
+  /**
+   * FL-863: each photo's faces for culling: how many, how many have closed or soft eyes by the admin's
+   * thresholds (`machineLearning.eyeScores`), and how many aren't scored yet. Photos with no face are left out.
+   * ponytail: the thresholds are read from the stored settings with the built-in defaults, so a config file's
+   * values don't apply here; read them through the config service if that's ever needed.
+   */
+  async eyeSummaries(assetIds: string[]) {
+    type Face = { closed: boolean; soft: boolean; checked: boolean };
+    type Summary = {
+      faceCount: number;
+      closedCount: number;
+      softCount: number;
+      unscoredCount: number;
+      quality: number | null;
+      faces: Face[];
+    };
+    if (assetIds.length === 0) {
+      return new Map<string, Summary>();
+    }
+    const { closedBelow, softBelow } = defaults.machineLearning.eyeScores;
+    const { rows } = await sql<Summary & { assetId: string }>`
+      WITH limits AS (
+        SELECT coalesce((value->'machineLearning'->'eyeScores'->>'closedBelow')::real, ${closedBelow}) AS closed,
+          coalesce((value->'machineLearning'->'eyeScores'->>'softBelow')::real, ${softBelow}) AS soft
+        FROM (SELECT (SELECT value FROM public.system_metadata WHERE key = 'system-config') AS value) config
+      ), faces AS (
+        SELECT face."assetId", face."boundingBoxX1", face."eyeScoreVersion" IS NOT NULL AS checked,
+          coalesce(face."eyesOpen" < limits.closed, false) AS closed,
+          coalesce(face."eyeSharpness" < limits.soft, false) AS soft,
+          0.6 * face."eyesOpen" + 0.4 * face."eyeSharpness" AS quality
+        FROM public.asset_face face CROSS JOIN limits
+        WHERE face."assetId" = ANY(${assetIds}::uuid[]) AND face."deletedAt" IS NULL AND face."isVisible"
+      )
+      SELECT "assetId", count(*)::int AS "faceCount",
+        count(*) FILTER (WHERE closed)::int AS "closedCount",
+        count(*) FILTER (WHERE soft)::int AS "softCount",
+        count(*) FILTER (WHERE NOT checked)::int AS "unscoredCount",
+        min(quality)::float8 AS quality,
+        jsonb_agg(jsonb_build_object('closed', closed, 'soft', soft, 'checked', checked) ORDER BY "boundingBoxX1") AS faces
+      FROM faces
+      GROUP BY "assetId"
+    `.execute(this.db);
+    return new Map(rows.map(({ assetId, ...summary }) => [assetId, summary]));
   }
 }

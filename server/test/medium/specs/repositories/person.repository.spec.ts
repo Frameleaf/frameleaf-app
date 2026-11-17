@@ -1213,4 +1213,185 @@ describe(PersonRepository.name, () => {
       await expect(suggest(ctx, sut, user.id, { maxDistance: 0.5 })).resolves.toHaveLength(1);
     });
   });
+
+  describe('person categories (FL-874)', () => {
+    const defaults = [
+      { name: 'Family', color: null },
+      { name: 'Friends', color: null },
+      { name: 'Work', color: null },
+    ];
+
+    it('makes the starting categories once per account, never again after they are deleted', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+
+      await expect(
+        Promise.all([sut.seedCategories(user.id, defaults), sut.seedCategories(user.id, defaults)]),
+      ).resolves.toEqual(expect.arrayContaining([true, false]));
+      const categories = await sut.getCategories(user.id);
+      expect(categories.map(({ name, order }) => [name, order])).toEqual([
+        ['Family', 0],
+        ['Friends', 1],
+        ['Work', 2],
+      ]);
+      await expect(sut.getCategories(other.id)).resolves.toEqual([]);
+
+      for (const { id } of categories) {
+        await expect(sut.deleteCategory(user.id, id)).resolves.toBe(true);
+      }
+      await expect(sut.seedCategories(user.id, defaults)).resolves.toBe(false);
+      await expect(sut.getCategories(user.id)).resolves.toEqual([]);
+    });
+
+    it("appends, updates and deletes only the owner's own categories", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const first = await sut.createCategory({ ownerId: user.id, name: 'Family', color: null });
+      const second = await sut.createCategory({ ownerId: user.id, name: 'Climbing', color: '#00ff00' });
+      expect([first.order, second.order]).toEqual([0, 1]);
+
+      await expect(sut.updateCategory(other.id, first.id, { name: 'Mine' })).resolves.toBeUndefined();
+      await expect(sut.deleteCategory(other.id, first.id)).resolves.toBe(false);
+      await expect(sut.getOwnCategoryIds(other.id, [first.id])).resolves.toEqual([]);
+
+      await expect(sut.updateCategory(user.id, first.id, { order: 5, color: '#123456' })).resolves.toMatchObject({
+        name: 'Family',
+        order: 5,
+        color: '#123456',
+      });
+      await expect(sut.getCategories(user.id)).resolves.toEqual([
+        expect.objectContaining({ id: second.id }),
+        expect.objectContaining({ id: first.id }),
+      ]);
+    });
+
+    it('replaces a person’s categories, lists them with the people, and deleting a category leaves the person', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Sam' });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      const family = await sut.createCategory({ ownerId: user.id, name: 'Family', color: null });
+      const work = await sut.createCategory({ ownerId: user.id, name: 'Work', color: null });
+      const id = { ownerId: user.id, personGroupId: person.personGroupId };
+
+      await sut.setPersonCategories(id, [family.id, work.id]);
+      await expect(sut.getPersonCategoryIds(id)).resolves.toEqual([family.id, work.id].toSorted());
+      await sut.setPersonCategories(id, [work.id]);
+      await expect(sut.getPersonCategoryIds(id)).resolves.toEqual([work.id]);
+
+      const { items } = await sut.getAllForUser({ take: 10, skip: 0 }, user.id);
+      expect(items).toEqual([expect.objectContaining({ personGroupId: person.personGroupId, categoryIds: [work.id] })]);
+
+      await sut.deleteCategory(user.id, work.id);
+      await expect(sut.getPersonCategoryIds(id)).resolves.toEqual([]);
+      await expect(sut.getByGroupId(id)).resolves.toMatchObject({ name: 'Sam' });
+
+      await sut.setPersonCategories(id, [family.id]);
+      await sut.delete([person.personGroupId], user.id);
+      await expect(sut.getCategories(user.id)).resolves.toEqual([expect.objectContaining({ id: family.id })]);
+    });
+
+    it("never puts a person in another account's category", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const foreign = await sut.createCategory({ ownerId: other.id, name: 'Family', color: null });
+
+      await expect(
+        sut.setPersonCategories({ ownerId: user.id, personGroupId: person.personGroupId }, [foreign.id]),
+      ).rejects.toThrow();
+    });
+
+    it("copies the merged-away person's categories onto the person who stays", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { person: survivor } = await ctx.newPerson({ ownerId: user.id });
+      const { person: removed } = await ctx.newPerson({ ownerId: user.id });
+      const family = await sut.createCategory({ ownerId: user.id, name: 'Family', color: null });
+      const work = await sut.createCategory({ ownerId: user.id, name: 'Work', color: null });
+      await sut.setPersonCategories({ ownerId: user.id, personGroupId: survivor.personGroupId }, [family.id]);
+      await sut.setPersonCategories({ ownerId: user.id, personGroupId: removed.personGroupId }, [family.id, work.id]);
+
+      await sut.copyCategoryMembers(user.id, removed.personGroupId, survivor.personGroupId);
+      await expect(
+        sut.getPersonCategoryIds({ ownerId: user.id, personGroupId: survivor.personGroupId }),
+      ).resolves.toEqual([family.id, work.id].toSorted());
+    });
+  });
+
+  // FL-864: date of passing; FL-941: private notes
+  describe('person profile', () => {
+    const personWithPhoto = async (ctx: ReturnType<typeof setup>['ctx'], ownerId: string, name: string) => {
+      const { person } = await ctx.newPerson({ ownerId, name });
+      const { asset } = await ctx.newAsset({ ownerId });
+      await ctx.newAssetFace({ assetId: asset.id, personGroupId: person.personGroupId });
+      return person;
+    };
+
+    it('keeps the date of passing and notes, updating only what is given', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const person = await personWithPhoto(ctx, user.id, 'Rose');
+
+      await expect(sut.getProfile(person)).resolves.toBeUndefined();
+      await sut.upsertProfile(person, { deathDate: '2020-05-06' });
+      await sut.upsertProfile(person, { notes: 'Grandma, loved gardens' });
+      await expect(sut.getProfile(person)).resolves.toEqual({
+        deathDate: expect.any(Date),
+        notes: 'Grandma, loved gardens',
+      });
+      await sut.upsertProfile(person, { deathDate: null });
+      await expect(sut.getProfile(person)).resolves.toEqual({ deathDate: null, notes: 'Grandma, loved gardens' });
+    });
+
+    it('reads the profile with the People page, one row per person', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const rose = await personWithPhoto(ctx, user.id, 'Rose');
+      const sam = await personWithPhoto(ctx, user.id, 'Sam');
+      await sut.upsertProfile(rose, { notes: 'Grandma' });
+
+      const { items } = await sut.getAllForUser({ take: 10, skip: 0 }, user.id);
+
+      expect(items).toHaveLength(2);
+      expect(items.find((item) => item.personGroupId === rose.personGroupId)).toMatchObject({ notes: 'Grandma' });
+      expect(items.find((item) => item.personGroupId === sam.personGroupId)).toMatchObject({
+        notes: null,
+        deathDate: null,
+      });
+    });
+
+    it("finds people by the owner's notes only when asked, and never by another owner's notes", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const rose = await personWithPhoto(ctx, user.id, 'Rose');
+      const theirs = await personWithPhoto(ctx, other.id, 'Pat');
+      await sut.upsertProfile(rose, { notes: 'Loved the 100% wool jumpers' });
+      await sut.upsertProfile(theirs, { notes: 'Loved the 100% wool jumpers' });
+
+      await expect(sut.getByName(user.id, 'wool', { withHidden: false })).resolves.toEqual([]);
+      await expect(sut.getByName(user.id, 'wool', { withHidden: false, matchNotes: true })).resolves.toEqual([
+        expect.objectContaining({ personGroupId: rose.personGroupId, notes: 'Loved the 100% wool jumpers' }),
+      ]);
+      // LIKE wildcards in the search stand for themselves
+      await expect(sut.getByName(user.id, '100%', { withHidden: false, matchNotes: true })).resolves.toHaveLength(1);
+      await expect(sut.getByName(user.id, '1_0', { withHidden: false, matchNotes: true })).resolves.toEqual([]);
+    });
+
+    it('drops the profile with the person', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const rose = await personWithPhoto(ctx, user.id, 'Rose');
+      await sut.upsertProfile(rose, { notes: 'Grandma', deathDate: '2020-05-06' });
+
+      await sut.delete([rose.personGroupId], user.id);
+
+      await expect(sut.getProfile(rose)).resolves.toBeUndefined();
+    });
+  });
 });

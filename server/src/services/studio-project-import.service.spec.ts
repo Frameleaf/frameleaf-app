@@ -19,6 +19,7 @@ import { CacheControl } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioProjectImportService, studioImportProjectFolder } from 'src/services/studio-project-import.service.js';
+import { makeStudioFont, makeStudioWoff2 } from 'test/fixtures/studio-font.stub.js';
 import { KEY, LINEAGE } from 'test/fixtures/studio-import-retention.js';
 
 const OWNER = '0198a1c2-0000-7000-8000-00000000000a';
@@ -325,6 +326,7 @@ describe(StudioProjectImportService.name, () => {
       ['a SubRip file', srt, 'application/x-subrip', 'captions', '.srt'],
       ['a WebVTT file', vtt, 'text/vtt', 'captions', '.vtt'],
       ['a .cube LUT', cube, 'text/x-cube-lut', 'lut', '.cube'],
+      ['a 1D .cube LUT', 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n', 'text/x-cube-lut', 'lut', '.cube'],
     ])('keeps %s under the type read from its bytes, not its name', async (_name, body, contentType, kind, ext) => {
       const bytes = Buffer.from(body);
       const file = await upload(bytes, 'video/mp4', '../../etc/clip.mp4');
@@ -355,7 +357,7 @@ describe(StudioProjectImportService.name, () => {
         'x.vtt',
       ],
       ['a LUT with the wrong number of rows', `LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(5)}`, 'x.cube'],
-      ['a 1D LUT', 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n', 'x.cube'],
+      ['a 1D LUT with the wrong number of rows', 'LUT_1D_SIZE 3\n0 0 0\n1 1 1\n', 'x.cube'],
       ['plain text called a caption file', 'These are my notes.\n', 'x.srt'],
       ['plain text called a LUT', 'These are my notes.\n', 'x.cube'],
     ])('refuses %s and removes the upload', async (_name, body, name) => {
@@ -594,6 +596,123 @@ describe(StudioProjectImportService.name, () => {
 
     it('answers a stranger as if the project did not exist', async () => {
       await expect(sut.inventory(auth(STRANGER), PROJECT)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('fonts kept with the project (FL-1562)', () => {
+    const FONT = '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e02';
+    const MISSING = '4b0f4b2e-5d3a-4c55-9e0e-6b9f4c7d8e03';
+
+    const kept = async (bytes: Buffer, overrides: Partial<StudioProjectImport> = {}): Promise<StudioProjectImport> => {
+      const path = join(directory, `kept-${Math.random()}`);
+      await writeFile(path, bytes);
+      return {
+        projectId: PROJECT,
+        id: FONT,
+        ownerId: OWNER,
+        contentType: 'font/woff2',
+        checksum: createHash('sha256').update(bytes).digest('hex'),
+        sizeBytes: bytes.length,
+        path,
+        fileName: 'Brand-Bold.woff2',
+        externalReferences: null,
+        createdAt: new Date(0),
+        ...overrides,
+      };
+    };
+
+    it('keeps a font and answers the family, weight and style read from it', async () => {
+      const bytes = makeStudioWoff2({ family: 'Brand Sans', subfamily: 'Bold', weight: 700 });
+      const result = await sut.uploadFont(auth(), PROJECT, FONT, await upload(bytes, 'font/woff2', 'Brand-Bold.woff2'));
+      expect(publications.retain).toHaveBeenLastCalledWith(
+        auth(),
+        expect.objectContaining({
+          declaration: expect.objectContaining({
+            contentType: 'font/woff2',
+            extension: '.woff2',
+            externalReferences: null,
+          }),
+        }),
+      );
+      expect(result).toEqual({
+        id: FONT,
+        family: 'Brand Sans',
+        subfamily: 'Bold',
+        weight: 700,
+        style: 'normal',
+        format: 'woff2',
+        fileName: 'Brand-Bold.woff2',
+        sizeBytes: bytes.length,
+        checksum: createHash('sha256').update(bytes).digest('hex'),
+        createdAt: new Date(0).toISOString(),
+      });
+    });
+
+    it('refuses a font on the file route and anything but a font on the font route, keeping nothing', async () => {
+      const font = await upload(makeStudioFont(), 'font/ttf', 'Brand.ttf');
+      await expect(sut.upload(auth(), PROJECT, FONT, font)).rejects.toThrow(/POST \/studio\/projects\/\{id\}\/fonts/);
+      await expect(readFile(font.path)).rejects.toThrow();
+      const sound = await upload(wav());
+      await expect(sut.uploadFont(auth(), PROJECT, FONT, sound)).rejects.toThrow(/\.ttf, \.otf or \.woff2/);
+      await expect(readFile(sound.path)).rejects.toThrow();
+      expect(publications.retain).not.toHaveBeenCalled();
+    });
+
+    it('refuses a malformed or oversized font before anything is kept', async () => {
+      const malformed = await upload(makeStudioFont({ omit: 'cmap' }), 'font/ttf', 'Broken.ttf');
+      await expect(sut.uploadFont(auth(), PROJECT, FONT, malformed)).rejects.toBeInstanceOf(BadRequestException);
+      const big = await upload(makeStudioFont(), 'font/ttf', 'Big.ttf');
+      big.size = 32 * 1024 * 1024 + 1;
+      await expect(sut.uploadFont(auth(), PROJECT, FONT, big)).rejects.toBeInstanceOf(PayloadTooLargeException);
+      expect(publications.retain).not.toHaveBeenCalled();
+    });
+
+    it('lists fonts apart from the project files, which keep the six kinds', async () => {
+      const font = await kept(makeStudioFont({ family: 'Brand Serif', weight: 300, italic: true }), {
+        contentType: 'font/ttf',
+        fileName: 'Brand-LightItalic.ttf',
+      });
+      const take = await kept(wav(), { id: IMPORT, contentType: 'audio/wav', fileName: 'take.wav' });
+      projects.listImports.mockResolvedValue([take, font]);
+      expect((await sut.list(auth(), PROJECT)).map((item) => item.id)).toEqual([IMPORT]);
+      expect(await sut.listFonts(auth(), PROJECT)).toEqual([
+        expect.objectContaining({ id: FONT, family: 'Brand Serif', weight: 300, style: 'italic', format: 'ttf' }),
+      ]);
+      await expect(sut.listFonts(auth(STRANGER), PROJECT)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('lists kept fonts in the inventory and reports a family whose file is gone', async () => {
+      const font = await kept(makeStudioWoff2({ family: 'Brand Sans' }));
+      projects.listImports.mockResolvedValue([font]);
+      projects.getById.mockResolvedValue({ id: PROJECT, ownerId: OWNER, currentRevision: 2, deletedAt: null });
+      projects.getRevision = vi.fn().mockResolvedValue({
+        envelope: {
+          graph: {
+            id: 'g',
+            metadata: {
+              fonts: [
+                { importId: FONT, family: 'Brand Sans', weight: 400, style: 'normal' },
+                { importId: MISSING, family: 'Gone Sans', weight: 400, style: 'normal' },
+              ],
+            },
+            timeline: {
+              tracks: [{ id: 'v1', items: [] }],
+              items: [
+                { id: 't1', type: 'text', trackId: 'v1', fontFamily: 'Brand Sans' },
+                { id: 't2', type: 'text', trackId: 'v1', fontFamily: 'Gone Sans' },
+              ],
+            },
+          },
+        },
+      });
+      (sut as unknown as { projects: typeof projects }).projects = projects;
+
+      const inventory = await sut.inventory(auth(), PROJECT);
+      expect(inventory.keptFiles).toEqual([]);
+      expect(inventory.keptFonts).toEqual([expect.objectContaining({ id: FONT, family: 'Brand Sans' })]);
+      expect(inventory.fonts).toEqual([
+        expect.objectContaining({ name: 'Gone Sans', allowed: false, detail: expect.stringMatching(/no longer kept/) }),
+      ]);
     });
   });
 });

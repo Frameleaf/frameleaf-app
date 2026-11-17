@@ -6,6 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { DateTime } from 'luxon';
 import { PostgresError } from 'postgres';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { LoginDetails } from 'src/services/auth.service.js';
@@ -37,6 +38,7 @@ import {
 } from 'src/utils/hidden-content.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { OpenGraphTags, findOrFail, getExternalDomain } from 'src/utils/misc.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import { getSharedLinkToken, requireSharedLinkUnlocked, sharedLinkSecretEqual } from 'src/utils/shared-link.js';
 
 /** FL-788: how a direct image address names its link (`/direct/s/<slug>.jpg` or `/direct/key/<key>.jpg`). */
@@ -157,11 +159,12 @@ export class SharedLinkService extends BaseService {
         assetIds: dto.assetIds,
         description: dto.description || null,
         password: await this.hashPassword(dto.password),
-        expiresAt: dto.expiresAt || null,
+        expiresAt: dto.expiresAt || (dto.useDefaultExpiry ? await this.defaultExpiresAt(auth) : null),
         allowUpload: dto.allowUpload ?? true,
         allowDownload: dto.showMetadata === false ? false : (dto.allowDownload ?? true),
         showExif: dto.showMetadata ?? true,
         slug: dto.slug || null,
+        webSizeOnly: dto.webSizeOnly,
       });
 
       const listed = await this.withAlbumListing(auth, sharedLink);
@@ -173,6 +176,17 @@ export class SharedLinkService extends BaseService {
     } catch (error) {
       this.handleError(error);
     }
+  }
+
+  /**
+   * FL-922: when a new link that asks for the default expiry ends: the creator's own default wins over the
+   * administrator's; with neither, it never expires.
+   */
+  private async defaultExpiresAt(auth: AuthDto): Promise<Date | null> {
+    const days =
+      getPreferences(await this.userRepository.getMetadata(auth.user.id)).sharedLinks.defaultExpiryDays ??
+      (await this.getConfig({ withCache: true })).sharedLinks.defaultExpiryDays;
+    return days ? DateTime.now().plus({ days }).toJSDate() : null;
   }
 
   private handleError(error: unknown): never {
@@ -202,6 +216,7 @@ export class SharedLinkService extends BaseService {
         allowDownload: showExif ? dto.allowDownload : false,
         showExif: dto.showMetadata,
         slug: dto.slug === undefined ? undefined : dto.slug || null,
+        webSizeOnly: dto.webSizeOnly,
       });
       const sharedLink = nsfwOptions
         ? await this.findOrFail(auth.user.id, id, nsfwOptions)
@@ -402,7 +417,8 @@ export class SharedLinkService extends BaseService {
       throw notFound();
     }
 
-    const wantsFullSize = dto.size === 'fullsize' && (await this.fullSizeAllowed(via));
+    // FL-826: a link limited to web size never hands out the full-size copy
+    const wantsFullSize = dto.size === 'fullsize' && !found.webSizeOnly && (await this.fullSizeAllowed(via));
     const fullSize = wantsFullSize
       ? await this.assetRepository.getForThumbnail(asset.id, AssetFileType.FullSize, true)
       : undefined;

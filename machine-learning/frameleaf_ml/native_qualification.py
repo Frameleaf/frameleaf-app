@@ -145,6 +145,9 @@ def accelerator_present(provider: str, facts: dict[str, Any]) -> bool:
         return bool(facts["gpus"])
     if provider == "OpenVINOExecutionProvider":
         return any(str(device).upper().startswith("GPU") for device in facts.get("openvinoDevices", []))
+    if provider == "DmlExecutionProvider":
+        # A hardware DirectX 12 adapter; Windows' software renderer is excluded when the facts are taken.
+        return bool(facts.get("directxAdapters"))
     return False
 
 

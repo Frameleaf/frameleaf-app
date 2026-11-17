@@ -6,6 +6,7 @@ import {
   deriveClaimFonts,
   facesFor,
   verifyFontBytes,
+  weightRangeFor,
 } from "./render-worker-font-inputs.mjs";
 
 const fontDirectory = new URL("../../server/resources/studio-fonts/", import.meta.url);
@@ -64,6 +65,7 @@ test("a font resource of the old one-file shape is one regular face read through
       weight: 400,
       style: "normal",
       subset: "latin",
+      format: "ttf",
       file: null,
       inputId: "font:Anton",
       checksum: prepared.inputs[0].checksum,
@@ -116,4 +118,68 @@ test("faces for a title: nearest weight, asked style or normal, latin before lat
   assert.deepEqual(facesFor(faces, "Inter", 700, "italic"), [faces[3]]);
   assert.deepEqual(facesFor(faces, "Anton", 700, "italic"), [faces[4]]);
   assert.deepEqual(facesFor(faces, "Roboto"), []);
+});
+
+// FL-1562: a family the project keeps with it is one resource whose files are its imports.
+const REGULAR = "6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c6";
+const BLACK = "6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c7";
+const projectClaim = () => {
+  const regular = read("inter-latin-400-italic.ttf");
+  const black = Buffer.concat([Buffer.from("wOF2"), Buffer.alloc(60)]);
+  const files = [
+    { inputId: `font:Brand#${REGULAR}.ttf`, file: `${REGULAR}.ttf`, weight: 400, style: "normal", subset: "full", format: "ttf", checksum: sha(regular) },
+    { inputId: `font:Brand#${BLACK}.woff2`, file: `${BLACK}.woff2`, weight: 900, style: "normal", subset: "full", format: "woff2", checksum: sha(black) },
+  ];
+  return {
+    bytes: { [files[0].inputId]: regular, [files[1].inputId]: black },
+    prepared: {
+      snapshot: {
+        studio: {
+          resources: [{ key: "font:Brand", kind: "font", id: "Brand", grant: "render", sourceAccess: "project", checksum: files[0].checksum, files }],
+        },
+      },
+      inputs: [
+        { inputId: "font:Brand", kind: "font", resourceId: "Brand", checksum: files[0].checksum },
+        ...files.map((entry) => ({ inputId: entry.inputId, kind: "font", resourceId: "Brand", checksum: entry.checksum })),
+      ],
+    },
+  };
+};
+
+test("a family kept with the project gives a face per import, any weight 100 to 900, in its own format", () => {
+  const { prepared, bytes } = projectClaim();
+  const faces = deriveClaimFonts(prepared);
+  assert.deepEqual(
+    faces.map((face) => [face.family, face.weight, face.subset, face.format]),
+    [
+      ["Brand", 400, "full", "ttf"],
+      ["Brand", 900, "full", "woff2"],
+    ],
+  );
+  for (const face of faces) assert.equal(verifyFontBytes(face, bytes[face.inputId]), bytes[face.inputId]);
+  // The format the claim names is the one the bytes must be.
+  assert.throws(() => verifyFontBytes({ ...faces[1], format: "otf" }, bytes[faces[1].inputId]), { message: "FONT_FORMAT_REFUSED" });
+  assert.deepEqual(facesFor(faces, "Brand", 700), [faces[1]]);
+  assert.deepEqual(facesFor(faces, "Brand", 600), [faces[0]]);
+});
+
+test("a project font file must be an import id with its format, and a weight from 100 to 900", () => {
+  const cases = [
+    (prepared) => (prepared.snapshot.studio.resources[0].files[0].weight = 950),
+    (prepared) => (prepared.snapshot.studio.resources[0].files[0].weight = 400.5),
+    (prepared) => (prepared.snapshot.studio.resources[0].files[0].format = "otf"),
+    (prepared) => Object.assign(prepared.snapshot.studio.resources[0].files[0], { file: "brand.ttf", inputId: "font:Brand#brand.ttf" }),
+    (prepared) => (prepared.snapshot.studio.resources[0].files[1].subset = "latin"),
+  ];
+  for (const change of cases) {
+    const { prepared } = projectClaim();
+    change(prepared);
+    assert.throws(() => deriveClaimFonts(prepared), { message: "INVALID_FONT_FILE" });
+  }
+});
+
+test("a project face answers for the weights nearest it, the lighter of two equally near", () => {
+  const face = (weight, style = "normal") => ({ family: "Brand", weight, style });
+  const faces = [face(300), face(800), face(900), face(400, "italic")];
+  assert.deepEqual(faces.map((item) => weightRangeFor(faces, item)), ["1 550", "551 850", "851 1000", "1 1000"]);
 });

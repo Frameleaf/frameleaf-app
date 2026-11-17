@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { mkdirSync } from 'node:fs';
 import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -1766,6 +1766,98 @@ describe(AssetService.name, () => {
         expect(mocks.job.queueAll).not.toHaveBeenCalled();
       },
     );
+  });
+
+  describe('personal favourites on shared items (FL-786)', () => {
+    it("writes the caller's own heart on a shared item and the owner's mark on their own, in one bulk update", async () => {
+      const owned = AssetFactory.create({ ownerId: authStub.user1.user.id });
+      const shared = AssetFactory.create();
+      const only = (allowed: string) => (_userId: string, ids: Set<string>) =>
+        Promise.resolve(new Set([...ids].filter((id) => id === allowed)));
+      mocks.access.asset.checkOwnerAccess.mockImplementation(only(owned.id));
+      mocks.access.asset.checkAlbumAccess.mockImplementation(only(shared.id));
+
+      await sut.updateAll(authStub.user1, { ids: [owned.id, shared.id], isFavorite: true });
+
+      expect(mocks.asset.setSharedFavorites).toHaveBeenCalledWith(authStub.user1.user.id, [shared.id], true);
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith([owned.id], { isFavorite: true });
+      expect(mocks.asset.updateAll).not.toHaveBeenCalledWith(expect.arrayContaining([shared.id]), expect.anything());
+    });
+
+    it("never changes the owner's mark when the caller hearts an item shared with them", async () => {
+      const shared = AssetFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([shared.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset({ ...shared, isFavorite: false }));
+      mocks.asset.getSharedFavoriteIds.mockResolvedValue(new Set([shared.id]));
+
+      const response = await sut.update(authStub.user1, shared.id, { isFavorite: true });
+
+      expect(mocks.asset.setSharedFavorites).toHaveBeenCalledWith(authStub.user1.user.id, [shared.id], true);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(response).toMatchObject({ id: shared.id, isFavorite: true });
+    });
+
+    it("shows a member the owner's item without the owner's heart", async () => {
+      const shared = AssetFactory.create({ isFavorite: true });
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([shared.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(shared));
+
+      await expect(sut.get(authStub.user1, shared.id)).resolves.toMatchObject({ isFavorite: false });
+    });
+
+    it('refuses a shared link visitor, and an item the caller can neither change nor see', async () => {
+      const asset = AssetFactory.create();
+      await expect(
+        sut.updateAll(authStub.adminSharedLink, { ids: [asset.id], isFavorite: true }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.updateAll(authStub.user1, { ids: [asset.id], isFavorite: true })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.setSharedFavorites).not.toHaveBeenCalled();
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('copyToLibrary (FL-837)', () => {
+    it('refuses a shared link visitor', async () => {
+      await expect(
+        sut.copyToLibrary(authStub.adminSharedLink, { assetIds: [AssetFactory.create().id] }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.asset.getOriginalBytes).not.toHaveBeenCalled();
+    });
+
+    it('refuses a link that does not allow downloads, or that has a password', async () => {
+      const asset = AssetFactory.create();
+      for (const link of [
+        { allowDownload: false, password: null },
+        { allowDownload: true, password: 'secret' },
+      ]) {
+        mocks.sharedLink.getBySlug.mockResolvedValue({ id: 'link-1', expiresAt: null, ...link } as never);
+        await expect(
+          sut.copyToLibrary(authStub.user1, { assetIds: [asset.id], sharedLinkSlug: 'trip' }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+      expect(mocks.access.asset.checkSharedLinkAccess).not.toHaveBeenCalled();
+      expect(mocks.asset.getOriginalBytes).not.toHaveBeenCalled();
+    });
+
+    it('refuses items the caller cannot see, and copies nothing over their space', async () => {
+      const asset = AssetFactory.create();
+      await expect(sut.copyToLibrary(authStub.user1, { assetIds: [asset.id] })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getOriginalBytes.mockResolvedValue(600);
+      const full = {
+        ...authStub.user1,
+        user: { ...authStub.user1.user, quotaSizeInBytes: 1000, quotaUsageInBytes: 500 },
+      };
+      await expect(sut.copyToLibrary(full, { assetIds: [asset.id] })).rejects.toThrow('not enough space');
+      expect(mocks.asset.getOriginalBytes).toHaveBeenCalledWith([asset.id], authStub.user1.user.id);
+      expect(mocks.asset.getById).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateAll', () => {

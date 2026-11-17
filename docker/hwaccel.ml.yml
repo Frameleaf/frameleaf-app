@@ -46,6 +46,14 @@ services:
     devices:
       - /dev/dri:/dev/dri
 
+  # An Intel Core Ultra with an NPU (/dev/accel exists): the NPU runs smart search and faces, the GPU the rest.
+  openvino-npu:
+    device_cgroup_rules:
+      - 'c 189:* rmw'
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/accel:/dev/accel
+
   openvino-wsl:
     devices:
       - /dev/dxg:/dev/dxg

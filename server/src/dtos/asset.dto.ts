@@ -339,10 +339,10 @@ const AssetDownloadOriginalSchema = z
         "Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original",
       ),
     format: z
-      .enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'document-pdf'])
+      .enum(['sdr-jpeg', 'hdr-jpeg', 'hdr-heic', 'document-pdf', 'original', 'jpeg', 'web'])
       .optional()
       .describe(
-        'Explicit still-image export or read-only document PDF; omission returns the original or selected edit',
+        'Explicit still-image export or read-only document PDF; omission returns the original or selected edit. FL-826: original, jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge) download a photo in that format, of the version `edited` names; videos stay original. A shared link limited to web size always gets web for photos',
       ),
   })
   .meta({ id: 'AssetDownloadOriginalDto' });
@@ -398,3 +398,30 @@ const AssetInfoBatchResponseSchema = z
 
 export class AssetInfoBatchDto extends createZodDto(AssetInfoBatchSchema) {}
 export class AssetInfoBatchResponseDto extends createZodDto(AssetInfoBatchResponseSchema) {}
+
+// FL-837: "Add to my library" from a shared album, space or link
+const AssetCopyToLibrarySchema = z
+  .object({
+    assetIds: z.array(z.uuidv4()).min(1).max(1000).describe('Items to add to your library'),
+    sharedLinkKey: z.string().min(1).max(200).optional().describe('The shared link the items were seen through'),
+    sharedLinkSlug: z.string().min(1).max(200).optional().describe('The shared link the items were seen through'),
+  })
+  .meta({ id: 'AssetCopyToLibraryDto' });
+
+const AssetCopyToLibraryItemSchema = z
+  .object({
+    sourceId: z.uuidv4().describe('The item that was added'),
+    assetId: z.uuidv4().describe('Your own copy of it'),
+  })
+  .meta({ id: 'AssetCopyToLibraryItemDto' });
+
+const AssetCopyToLibraryResponseSchema = z
+  .object({
+    added: z.array(AssetCopyToLibraryItemSchema).describe('Items now in your library'),
+    alreadyInLibrary: z.array(z.uuidv4()).describe('Items your library already holds'),
+    notAdded: z.array(z.uuidv4()).describe('Items that cannot be added, such as Locked ones'),
+  })
+  .meta({ id: 'AssetCopyToLibraryResponseDto' });
+
+export class AssetCopyToLibraryDto extends createZodDto(AssetCopyToLibrarySchema) {}
+export class AssetCopyToLibraryResponseDto extends createZodDto(AssetCopyToLibraryResponseSchema) {}

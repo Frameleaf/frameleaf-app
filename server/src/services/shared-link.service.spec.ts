@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, NotFoundException, Unauthorize
 import { randomBytes } from 'node:crypto';
 import { AssetIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { SHARED_LINK_PASSWORD_MASK, mapSharedLink } from 'src/dtos/shared-link.dto.js';
-import { AssetFileType, AssetType, CacheControl, SharedLinkType } from 'src/enum.js';
+import { AssetFileType, AssetType, CacheControl, SharedLinkType, UserMetadataKey } from 'src/enum.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -241,6 +241,67 @@ describe(SharedLinkService.name, () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    describe('default expiry (FL-922)', () => {
+      const now = new Date('2026-11-15T12:00:00.000Z');
+      const inDays = (days: number) => new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+      const preferDays = (defaultExpiryDays: number | null) =>
+        mocks.user.getMetadata.mockResolvedValue([
+          { key: UserMetadataKey.Preferences, value: { sharedLinks: { defaultExpiryDays } } },
+        ]);
+      const adminDays = (defaultExpiryDays: number | null) =>
+        mocks.systemMetadata.get.mockResolvedValue({ sharedLinks: { defaultExpiryDays } });
+      const createAlbumLink = async (dto: { useDefaultExpiry?: boolean; expiresAt?: Date | null } = {}) => {
+        const album = AlbumFactory.from().asset().build();
+        mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+        mocks.sharedLink.create.mockResolvedValue(getForSharedLink(SharedLinkFactory.from().album(album).build()));
+        await sut.create(authStub.admin, { type: SharedLinkType.Album, albumId: album.id, ...dto });
+        return mocks.sharedLink.create.mock.calls.at(-1)![0].expiresAt;
+      };
+
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(now);
+        mocks.user.getMetadata.mockResolvedValue([]);
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("uses the creator's own default over the server's", async () => {
+        preferDays(7);
+        adminDays(30);
+        await expect(createAlbumLink({ useDefaultExpiry: true })).resolves.toEqual(inDays(7));
+        expect(mocks.user.getMetadata).toHaveBeenCalledWith(authStub.admin.user.id);
+      });
+
+      it("falls back to the server's default when the creator has none", async () => {
+        preferDays(null);
+        adminDays(30);
+        await expect(createAlbumLink({ useDefaultExpiry: true })).resolves.toEqual(inDays(30));
+      });
+
+      it('never expires when neither the creator nor the server sets a default', async () => {
+        adminDays(null);
+        await expect(createAlbumLink({ useDefaultExpiry: true })).resolves.toBeNull();
+      });
+
+      it('keeps an explicit expiry the request names', async () => {
+        preferDays(7);
+        const expiresAt = inDays(2);
+        await expect(createAlbumLink({ useDefaultExpiry: true, expiresAt })).resolves.toEqual(expiresAt);
+        expect(mocks.user.getMetadata).not.toHaveBeenCalled();
+      });
+
+      it('leaves links without the flag as before, never expiring', async () => {
+        preferDays(7);
+        adminDays(30);
+        await expect(createAlbumLink()).resolves.toBeNull();
+        await expect(createAlbumLink({ useDefaultExpiry: false })).resolves.toBeNull();
+        expect(mocks.user.getMetadata).not.toHaveBeenCalled();
+      });
+    });
+
     it('should create an album shared link', async () => {
       const album = AlbumFactory.from().asset().build();
       const sharedLink = SharedLinkFactory.from().album(album).build();
@@ -348,6 +409,31 @@ describe(SharedLinkService.name, () => {
       await expect(
         sut.create(authStub.admin, { type: SharedLinkType.Album, albumId: album.id, slug: 'summer-trip' }),
       ).rejects.toThrow(new BadRequestException('Shared link slug is already in use'));
+    });
+  });
+
+  describe('FL-826 web size only', () => {
+    it('stores the option on create and edit, and reports it on every link', async () => {
+      const album = AlbumFactory.from().asset().build();
+      const sharedLink = SharedLinkFactory.from().album(album).build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.sharedLink.create.mockResolvedValue({ ...getForSharedLink(sharedLink), webSizeOnly: true });
+
+      const created = await sut.create(authStub.admin, {
+        type: SharedLinkType.Album,
+        albumId: album.id,
+        webSizeOnly: true,
+      });
+
+      expect(mocks.sharedLink.create).toHaveBeenCalledWith(expect.objectContaining({ webSizeOnly: true }));
+      expect(created.webSizeOnly).toBe(true);
+
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+      const edited = await sut.update(authStub.admin, sharedLink.id, { webSizeOnly: false });
+      expect(mocks.sharedLink.update).toHaveBeenCalledWith(expect.objectContaining({ webSizeOnly: false }));
+      // a link without an option row is not limited
+      expect(edited.webSizeOnly).toBe(false);
     });
   });
 
@@ -723,6 +809,18 @@ describe(SharedLinkService.name, () => {
       expect(mocks.asset.getForThumbnail).toHaveBeenCalledWith(link.assets[0].id, AssetFileType.FullSize, true);
       expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/thumbs/fullsize.jpeg');
       expect(file.fileName).toBe(`${link.assets[0].id}_fullsize.jpg`);
+    });
+
+    it('FL-826: answers a full-size request with the preview for a link limited to web size', async () => {
+      const link = singlePhoto();
+      serve(link);
+      mocks.sharedLink.getBySlug.mockResolvedValue({ ...found(link), webSizeOnly: true } as never);
+
+      const file = await sut.getDirectImage({ slug: 'lake-morning' }, { size: 'fullsize' });
+
+      expect(mocks.asset.getForThumbnail).not.toHaveBeenCalledWith(expect.anything(), AssetFileType.FullSize, true);
+      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/thumbs/preview.jpeg');
+      expect(file.fileName).toBe(`${link.assets[0].id}.jpg`);
     });
 
     it('answers a full-size request with the preview when no full-size copy exists', async () => {

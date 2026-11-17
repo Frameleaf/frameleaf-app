@@ -22,6 +22,7 @@ on:
         'server/test/medium/specs/services/frameleaf-library-setup*',
         'open-api/**',
         'packages/sdk/**',
+        'packages/backup-core/**',
       ]
   workflow_dispatch:
     inputs:

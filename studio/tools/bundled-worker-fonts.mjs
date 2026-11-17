@@ -1,7 +1,7 @@
 // Register claim-granted font bytes so installed fonts cannot choose the title face.
 import path from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
-import { deriveClaimFonts, verifyFontBytes } from './render-worker-font-inputs.mjs';
+import { deriveClaimFonts, verifyFontBytes, weightRangeFor } from './render-worker-font-inputs.mjs';
 import { BundledRefusal } from './bundled-worker-recipe.mjs';
 
 export async function prepareClaimFonts(claim, downloaded, signal) {
@@ -26,7 +26,8 @@ export async function prepareClaimFonts(claim, downloaded, signal) {
       verified.push({ ...face, inputId: input.inputId, legacyAlias: true });
       granted.add(input.inputId);
     }
-    let remaining = 16 * 1024 * 1024;
+    // Room for the bundled families and a few fonts kept with the project (FL-1562, 32 MiB each).
+    let remaining = 64 * 1024 * 1024;
     const fonts = [];
     for (const face of verified) {
       signal?.throwIfAborted();
@@ -38,7 +39,8 @@ export async function prepareClaimFonts(claim, downloaded, signal) {
       if (!face.legacyAlias)
         fonts.push({
           family: face.family,
-          weight: face.weight,
+          // A project face answers for a range, so the nearest listed weight is drawn (FL-1562).
+          weight: face.subset === 'full' ? weightRangeFor(faces, face) : face.weight,
           style: face.style,
           subset: face.subset,
           base64: bytes.toString('base64'),

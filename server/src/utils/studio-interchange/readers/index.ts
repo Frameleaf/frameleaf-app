@@ -5,28 +5,30 @@
  * its limits; the entries other than the project are returned so the job can add the carried media.
  */
 import type { InterchangeProject } from 'src/utils/studio-interchange/model.js';
-import { ZipByteSource, ZipEntry, ZipReadLimits, readZipDirectory, readZipEntry } from 'src/utils/studio-bundle.js';
+import { ZipByteSource, ZipEntry, readZipDirectory, readZipEntry } from 'src/utils/studio-bundle.js';
+import { readAaf } from 'src/utils/studio-interchange/readers/aaf.js';
 import { InterchangeReadError } from 'src/utils/studio-interchange/readers/common.js';
 import { readEdl } from 'src/utils/studio-interchange/readers/edl.js';
 import { readFcp7Xml } from 'src/utils/studio-interchange/readers/fcp7.js';
 import { readFcpxml } from 'src/utils/studio-interchange/readers/fcpxml.js';
 import { readOtio } from 'src/utils/studio-interchange/readers/otio.js';
+import { readPrproj } from 'src/utils/studio-interchange/readers/prproj.js';
+import { readResolve } from 'src/utils/studio-interchange/readers/resolve.js';
 import { InterchangeSidecar, applySidecars } from 'src/utils/studio-interchange/readers/sidecars.js';
-
-const MAX_DOCUMENT_BYTES = 128 * 1024 * 1024;
-
-/** Archives that carry media can be large; the project document inside is bounded. */
-export const INTERCHANGE_ZIP_LIMITS: ZipReadLimits = Object.freeze({
-  maxBytes: 64 * 1024 * 1024 * 1024,
-  maxEntries: 20_000,
-  maxDirectoryBytes: 16 * 1024 * 1024,
-  maxUncompressedBytes: 128 * 1024 * 1024 * 1024,
-  documentLimit: (name: string) => (/\.(?:fcpxml|otio|xml)$/i.test(name) ? MAX_DOCUMENT_BYTES : null),
-  allowZip64: true,
-});
+import { INTERCHANGE_ZIP_LIMITS, MAX_DOCUMENT_BYTES } from 'src/utils/studio-interchange/readers/zip-limits.js';
 
 /** The file kinds the import accepts, by extension. */
-export const INTERCHANGE_EXTENSIONS = ['fcpxml', 'fcpxmld', 'xml', 'otio', 'otioz', 'otiod', 'edl'] as const;
+export const INTERCHANGE_EXTENSIONS = [
+  'fcpxml',
+  'fcpxmld',
+  'xml',
+  'otio',
+  'otioz',
+  'otiod',
+  'edl',
+  'prproj',
+  'aaf',
+] as const;
 export const INTERCHANGE_SIDECAR_EXTENSIONS = ['cdl', 'cc', 'ccc', 'cube'] as const;
 
 export type InterchangeReadResult = {
@@ -126,6 +128,19 @@ export const readInterchangeFile = async (
     case 'otioz':
     case 'otiod': {
       result = await readArchive(zip, (entry) => /(^|\/)content\.otio$/i.test(entry), readOtio);
+      break;
+    }
+    case 'drp':
+    case 'drt': {
+      result = { project: await readResolve(zip), carried: new Map() };
+      break;
+    }
+    case 'aaf': {
+      result = { project: readAaf(await whole()), carried: new Map() };
+      break;
+    }
+    case 'prproj': {
+      result = { project: readPrproj(await whole()), carried: new Map() };
       break;
     }
     case 'edl': {

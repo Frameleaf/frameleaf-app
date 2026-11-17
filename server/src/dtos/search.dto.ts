@@ -125,7 +125,7 @@ const SearchPlacesSchema = z
 
 const SearchPeopleSchema = z
   .object({
-    name: z.string().describe('Person name to search for'),
+    name: z.string().describe("Person name to search for; the caller's own notes about a person match too (FL-941)"),
     withHidden: stringToBool.optional().describe('Include hidden people'),
   })
   .meta({ id: 'SearchPeopleDto' });
@@ -402,6 +402,11 @@ const searchFilterBranchShape = {
   updatedAt: DateFilterSchema,
   trashedAt: DateFilterNullableSchema,
   personIds: IdsFilterSchema,
+  // FL-874: items with a face of someone in any (all, none) of the viewer's own person categories; categories are
+  // per viewer, so another account's category matches nothing, and through a shared link none does
+  personCategoryIds: IdsFilterSchema.describe(
+    "The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them",
+  ),
   // FL-58: matches the caller's own confirmed pet observations; another account's pet id matches nothing
   petIds: IdsFilterSchema,
   tagIds: IdsFilterSchema,
@@ -536,6 +541,7 @@ const SmartSearchSchema = withShapeExclusivity(
     language: z.string().optional().describe('Search language code'),
     page: z.int().min(1).optional().describe('Page number').meta(DEPRECATED_FLAT_FIELD),
     filter: filterField,
+    cursor: cursorField,
   }),
 ).meta({ id: 'SmartSearchDto' });
 

@@ -735,6 +735,9 @@ export type JobItem =
       /** `onThisServer` (FL-455): a Frameleaf Cloud result was refused, so this run never goes to the cloud. */
       data: IEntityJob & { preserveImportedFaces?: boolean; onThisServer?: boolean };
     }
+  // FL-863: eyes open and eye sharpness for faces already found
+  | { name: JobName.FaceEyeScoreQueueAll; data: IBaseJob }
+  | { name: JobName.FaceEyeScore; data: IEntityJob }
   | { name: JobName.FacialRecognitionQueueAll; data: INightlyJob }
   | { name: JobName.FacialRecognition; data: IDeferrableJob & { force?: boolean } }
   | { name: JobName.ProfileImageRepair; data: Record<string, never> }
@@ -812,6 +815,8 @@ export type JobItem =
   | { name: JobName.LibraryDelete; data: IEntityJob }
   | { name: JobName.LibraryScanQueueAll; data?: IBaseJob }
   | { name: JobName.LibraryScanRun; data?: IBaseJob }
+  // FL-838: `id` is the library
+  | { name: JobName.LibraryFolderAlbumSync; data: IEntityJob }
   | { name: JobName.LibraryDeleteCheck; data: IBaseJob }
 
   // Notification
@@ -1742,7 +1747,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.LibraryProgressSamples]: { samples: { at: string; done: Record<string, number> }[] };
-  [SystemMetadataKey.OvernightRedo]: { queues: string[] };
+  [SystemMetadataKey.OvernightRedo]: { queues: string[]; bestPhotos?: boolean };
   [SystemMetadataKey.VideoCardState]: VideoCardState;
   [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
   [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };
@@ -1851,6 +1856,8 @@ export type UserPreferences = {
   sharedLinks: {
     enabled: boolean;
     sidebarWeb: boolean;
+    /** FL-922: days a new link lasts when its form asks for the default expiry; null falls back to the server's */
+    defaultExpiryDays: number | null;
   };
   tags: {
     enabled: boolean;
@@ -1867,6 +1874,8 @@ export type UserPreferences = {
     includeEmbeddedVideos: boolean;
     /** ACCOUNT-P5: put each photo's details file (XMP sidecar) beside it in a download */
     includeSidecar: boolean;
+    /** FL-826: the format downloads use unless one is chosen */
+    defaultFormat: import('src/enum.js').DownloadFormat;
   };
   /** ACCOUNT-P3: the search screens show archived photos; the client sends the visibility, the server stores it only */
   search: {
@@ -1937,6 +1946,13 @@ export type UserPreferences = {
   };
   /** FL-49: named searches from the search palette; `query` is the client's own search body */
   savedSearches: SavedSearch[];
+  /**
+   * FL-832: the person's ordered rules for which copy in a duplicate group is suggested as the keeper.
+   * Empty is Frameleaf's own order (RAW, HEIC, largest file, most details).
+   */
+  duplicates: {
+    keepRules: import('src/utils/duplicate-keep-rules.js').DuplicateKeepRule[];
+  };
 };
 
 export type SavedSearch = { name: string; query: Record<string, unknown> };

@@ -173,7 +173,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [cpu, cuda]
+        device: [cpu, cuda, openvino]
         runner: [ubuntu-24.04]
         include:
           # FL-997: the CUDA image for arm64 hosts with an NVIDIA GPU (Grace, arm64 servers), built on arm.

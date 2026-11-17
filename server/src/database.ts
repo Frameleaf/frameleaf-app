@@ -47,6 +47,8 @@ export type AssetFile = {
 
 export type Library = {
   readOnly: boolean;
+  /** FL-838: the library keeps an album for each of its folders. */
+  folderAlbums: boolean;
   id: string;
   ownerId: string;
   createdAt: Date;
@@ -213,6 +215,8 @@ export type AuthSharedLink = {
   allowUpload: boolean;
   allowDownload: boolean;
   password: string | null;
+  /** FL-826: downloads through the link are web size only (`shared_link_option`; absent is off). */
+  webSizeOnly?: boolean;
 };
 
 export type SharedLink = {
@@ -236,6 +240,8 @@ export type SharedLink = {
   /** Loaded by `SharedLinkRepository.getAll`, which does not load a link's contents. */
   assetCount?: number | null;
   coverAssets?: { id: string }[];
+  /** FL-826: downloads through the link are web size only (`shared_link_option`; absent is off). */
+  webSizeOnly?: boolean;
 };
 
 export type Album = Selectable<AlbumTable> & {
@@ -338,6 +344,10 @@ export type AssetFace = {
   isVisible: boolean;
   /** FL-57 correction stamp; optional because not every face query selects it. */
   correctedAt?: Date | null;
+  /** FL-863 eye scores; optional because not every face query selects them. */
+  eyesOpen?: number | null;
+  eyeSharpness?: number | null;
+  eyeScoreVersion?: number | null;
 };
 
 export type Plugin = Selectable<PluginTable>;

@@ -4,6 +4,7 @@ import { AlbumActionsController } from 'src/controllers/album-actions.controller
 import { AlbumCleanupController } from 'src/controllers/album-cleanup.controller.js';
 import { AlbumItemsController } from 'src/controllers/album-items.controller.js';
 import { AlbumMergeController } from 'src/controllers/album-merge.controller.js';
+import { AlbumOrderController } from 'src/controllers/album-order.controller.js';
 import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
 import { AlbumSuggestionController } from 'src/controllers/album-suggestion.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
@@ -116,6 +117,7 @@ import {
   AssetLocationInsightController,
   PhotoLocationsController,
 } from 'src/controllers/photo-locations.controller.js';
+import { PhotoSourceCatalogController } from 'src/controllers/photo-source-catalog.controller.js';
 import { PhotoSourceController } from 'src/controllers/photo-source.controller.js';
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
 import { PhotographyBookingController } from 'src/controllers/photography-booking.controller.js';
@@ -127,6 +129,7 @@ import { PhotographyWorkflowController } from 'src/controllers/photography-workf
 import { PhotographyWorkspaceController } from 'src/controllers/photography-workspace.controller.js';
 import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
 import { PhysicalFileTrashController } from 'src/controllers/physical-file-trash.controller.js';
+import { PlaybackSelfTestController } from 'src/controllers/playback-self-test.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { PreservationController } from 'src/controllers/preservation.controller.js';
 import { PrivateLogsController } from 'src/controllers/private-logs.controller.js';
@@ -149,6 +152,7 @@ import { StudioBundleController } from 'src/controllers/studio-bundle.controller
 import { StudioCaptionTranslationController } from 'src/controllers/studio-caption-translation.controller.js';
 import { StudioCatalogController } from 'src/controllers/studio-catalog.controller.js';
 import { StudioCutoutController } from 'src/controllers/studio-cutout.controller.js';
+import { StudioEditorImportController } from 'src/controllers/studio-editor-import.controller.js';
 import { StudioExportController } from 'src/controllers/studio-export.controller.js';
 import { StudioMediaController } from 'src/controllers/studio-media.controller.js';
 import { StudioMovieController } from 'src/controllers/studio-movie.controller.js';
@@ -206,6 +210,7 @@ export const controllers = [
   OAuthAppWellKnownController,
   AlbumActionsController,
   AlbumItemsController,
+  AlbumOrderController,
   AssetSourceController,
   BookmarkController,
   DevelopBatchController,
@@ -213,6 +218,7 @@ export const controllers = [
   DesktopDeviceController,
   DesktopOfflineAlbumController,
   PhotoSourceController,
+  PhotoSourceCatalogController,
   SourceResourceController,
   DesktopWorkerController,
   FrameleafLibraryMoveAdminController,
@@ -262,6 +268,7 @@ export const controllers = [
   AttentionController,
   UpgradeCheckController,
   LibraryProgressController,
+  PlaybackSelfTestController,
   OvernightController,
   AuthController,
   AuthAdminController,
@@ -330,6 +337,7 @@ export const controllers = [
   StudioMediaController,
   StudioCaptionTranslationController,
   StudioMovieController,
+  StudioEditorImportController,
   StudioVoiceCleanupController,
   StudioBundleController,
   StudioExportController,

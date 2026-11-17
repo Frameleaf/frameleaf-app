@@ -742,7 +742,17 @@ export class ICloudSyncService {
 
     await this.repository.startRun(connection);
     const heartbeat = setInterval(() => {
-      void this.operations.heartbeat(id, claimToken, ICLOUD_LEASE_MS).catch(() => {});
+      // FL-1662: a heartbeat that did not renew the lease is the trace a later lapse needs.
+      void this.operations
+        .heartbeat(id, claimToken, ICLOUD_LEASE_MS)
+        .then((renewed) => {
+          if (!renewed) {
+            this.logger.warn(`iCloud sync run ${id}: heartbeat found no live claim, lease not renewed`);
+          }
+        })
+        .catch((error) =>
+          this.logger.warn(`iCloud sync run ${id}: heartbeat failed, lease not renewed: ${message(error)}`),
+        );
     }, ICLOUD_HEARTBEAT_MS);
     try {
       for (;;) {
@@ -792,7 +802,7 @@ export class ICloudSyncService {
         }
 
         idleWaits = 0;
-        const written = await this.record(claim, connectionId, outcome === 'done' ? 'complete' : 'syncing', 0);
+        const written = await this.record(claim, connectionId, outcome === 'done' ? 'complete' : 'syncing', 0, true);
         if (!(await this.proceed(claim, connectionId, written))) {
           return;
         }
@@ -843,8 +853,11 @@ export class ICloudSyncService {
     return (await this.repository.hasPending(id)) ? 'idle' : 'done';
   }
 
-  /** Real counts onto the run's row, and the lease renewed. The answer says whether to carry on. */
-  private async record(claim: Claim, connectionId: string, phase: string, idleWaits: number) {
+  /**
+   * Real counts onto the run's row, and the lease renewed. The answer says whether to carry on.
+   * `progressed` is a step that did work: it gives back the automatic retry an earlier lost claim spent (FL-1662).
+   */
+  private async record(claim: Claim, connectionId: string, phase: string, idleWaits: number, progressed = false) {
     const counts = await this.repository.counts(connectionId);
     const total = counts.resources ?? 0;
     const open = OPEN_RESOURCE_STATUSES.reduce((sum, status) => sum + (counts[status] ?? 0), 0);
@@ -855,6 +868,7 @@ export class ICloudSyncService {
       totalUnits: total,
       progress: total > 0 ? (processed / total) * 100 : 0,
       leaseMs: ICLOUD_LEASE_MS,
+      resetAutoRetries: progressed,
     });
   }
 

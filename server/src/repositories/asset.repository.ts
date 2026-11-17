@@ -101,6 +101,7 @@ import {
 } from 'src/utils/database.js';
 import { TimelineDatesToCheck, hasDateToCheck, hasGoodDate } from 'src/utils/date-sanity.js';
 import { lockDerivedResults, releaseDerivedResults } from 'src/utils/derivative-locks.js';
+import { favoriteFor } from 'src/utils/favorite.js';
 import { normalizeImportPath } from 'src/utils/library-paths.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { encryptsFilesOf } from 'src/utils/locked-encryption-set.js';
@@ -345,7 +346,21 @@ const timelineFilterExample: TimeBucketOptions = {
  * FL-30 (S-15): the flat Browse/Work orders the time buckets cannot give. LIB-P3: `quality` is the
  * viewer's own Best Photos score, highest first; an asset without a score of theirs sorts last.
  */
-export type TimelineOrderedSort = 'filename' | 'rating' | 'quality';
+export type TimelineOrderedSort = 'filename' | 'rating' | 'quality' | 'custom';
+/**
+ * FL-869: `custom` is an album's own order (album_asset.position, lowest first); it needs an albumId. A
+ * photo without a position yet (added by a path that did not place it) sorts after every placed one.
+ */
+export const CUSTOM_ORDER_UNPLACED = 1e15;
+const customOrderKey = sql`coalesce(album_order.position, ${sql.lit(CUSTOM_ORDER_UNPLACED)})`;
+const joinCustomOrder = <QB extends SelectQueryBuilder<DB, 'asset', any>>(qb: QB, albumId: string | undefined): QB => {
+  if (!albumId) {
+    throw new Error('Custom order needs an album');
+  }
+  return qb.innerJoin('album_asset as album_order', (join) =>
+    join.onRef('album_order.assetId', '=', 'asset.id').on('album_order.albumId', '=', asUuid(albumId)),
+  ) as QB;
+};
 export interface TimelineOrderedPage {
   sort: TimelineOrderedSort;
   cursor?: { key: string | number; date: string; id: string };
@@ -492,6 +507,14 @@ const timelineVisibility = (options: AssetBuilderOptions) => {
 /** FL-1410: the timeline request's `datesToCheck`, as the shared rule's SQL. */
 const datesToCheckPredicate = (datesToCheck: TimelineDatesToCheck) =>
   datesToCheck === TimelineDatesToCheck.Only ? hasDateToCheck() : hasGoodDate();
+/**
+ * FL-786: the Favourites filter as the viewer sees it: their own hearts only. A shared link's visitor has none, and
+ * without a viewer (system reads) it is the owner's mark.
+ */
+const isFavoriteFilter = (auth: AuthDto | undefined, isFavorite: boolean) =>
+  auth && !auth.sharedLink
+    ? sql<boolean>`(${favoriteFor(auth.user.id)}) = ${isFavorite}`
+    : sql<boolean>`(${auth?.sharedLink ? sql`false` : sql`asset."isFavorite"`}) = ${isFavorite}`;
 const widensToSharedAlbums = (options: TimeBucketOptions) =>
   (!!options.personId || filterNamesPeople(options.filter)) && options.visibility !== AssetVisibility.Locked;
 /**
@@ -1199,6 +1222,16 @@ export class AssetRepository {
       .orderBy(sql`("localDateTime" at time zone 'UTC')::date`, 'desc')
       .execute();
   }
+  /** FL-837: the original bytes of these assets that `excludeOwnerId` does not own (what copying them would add). */
+  async getOriginalBytes(ids: string[], excludeOwnerId: string): Promise<number> {
+    const { rows } = await sql<{ bytes: string | null }>`
+      SELECT sum(coalesce(exif."fileSizeInByte", 0))::bigint AS bytes FROM public.asset
+      LEFT JOIN public.asset_exif exif ON exif."assetId" = asset.id
+      WHERE asset.id = ANY(${ids}::uuid[]) AND asset."ownerId" <> ${excludeOwnerId}::uuid
+    `.execute(this.db);
+    return Number(rows[0]?.bytes ?? 0);
+  }
+
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
   getByIds(ids: string[]) {
@@ -2853,6 +2886,40 @@ export class AssetRepository {
       .executeTakeFirstOrThrow();
     return { photos: Number(row.photos), videos: Number(row.videos) };
   }
+  /** FL-786: of `assetIds`, the ones `userId` gave their own heart (items someone else owns). */
+  async getSharedFavoriteIds(userId: string, assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('asset_favorite')
+      .select('assetId')
+      .where('userId', '=', asUuid(userId))
+      .where('assetId', '=', anyUuid(assetIds))
+      .execute();
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
+
+  /** FL-786: set or clear `userId`'s own heart on items someone else owns. */
+  async setSharedFavorites(userId: string, assetIds: string[], isFavorite: boolean): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+    if (isFavorite) {
+      await this.db
+        .insertInto('asset_favorite')
+        .values(assetIds.map((assetId) => ({ userId, assetId })))
+        .onConflict((oc) => oc.columns(['userId', 'assetId']).doNothing())
+        .execute();
+      return;
+    }
+    await this.db
+      .deleteFrom('asset_favorite')
+      .where('userId', '=', asUuid(userId))
+      .where('assetId', '=', anyUuid(assetIds))
+      .execute();
+  }
+
   getStatistics(ownerId: string, options: AssetStatsOptions): Promise<AssetStats> {
     const { visibility, isFavorite, isTrashed } = options;
     return (
@@ -2991,10 +3058,16 @@ export class AssetRepository {
               options.userIds!.length === 1 ? asUuid(options.userIds![0]) : anyUuid(options.userIds!),
             );
             // the people's shared-album media widens the owner scope (`widensToSharedAlbums`)
-            return auth && widensToSharedAlbums(options) ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
+            if (auth && widensToSharedAlbums(options)) {
+              return eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]);
+            }
+            // FL-786: Favourites also lists the viewer's own hearts on items shared with them, while still shared
+            return auth && !auth.sharedLink && options.isFavorite === true
+              ? eb.or([isOwner, eb.and([favoriteFor(auth.user.id), inSharedAlbum(eb, auth.user.id)])])
+              : isOwner;
           }),
         )
-        .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+        .$if(options.isFavorite !== undefined, (qb) => qb.where(isFavoriteFilter(auth, options.isFavorite!)))
         .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
         .$if(options.isDuplicate !== undefined, (qb) =>
           qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
@@ -3043,7 +3116,9 @@ export class AssetRepository {
         filename: sql`asset."originalFileName" collate "und-x-icu"`,
         rating: sql`coalesce(asset_exif.rating, 0)`,
         quality: sql`coalesce(best_photo_score.score, -1)`,
+        custom: customOrderKey,
       };
+      const ascending = pages.sort === 'filename' || pages.sort === 'custom';
       const selection = this.timelineAssets(options, auth, this.timelineBucketDate(options))
         .$if(!options.bbox && !options.filter, (qb) => qb.innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId'))
         .$if(pages.sort === 'quality', (qb) =>
@@ -3053,9 +3128,10 @@ export class AssetRepository {
               .on('best_photo_score.ownerId', '=', asUuid(auth.user.id)),
           ),
         )
+        .$if(pages.sort === 'custom', (qb) => joinCustomOrder(qb, options.albumId))
         .select([
           'asset.id',
-          sql<number>`row_number() over (order by ${sortKeys[pages.sort]} ${sql.raw(pages.sort === 'filename' ? 'asc' : 'desc')}, asset."fileCreatedAt" desc, asset.id asc)`.as(
+          sql<number>`row_number() over (order by ${sortKeys[pages.sort]} ${sql.raw(ascending ? 'asc' : 'desc')}, asset."fileCreatedAt" desc, asset.id asc)`.as(
             'position',
           ),
           sql<number>`count(*) over ()`.as('total'),
@@ -3356,9 +3432,10 @@ export class AssetRepository {
       rating: sql`coalesce(asset_exif.rating, 0)`,
       // LIB-P3: never null, so the keyset seek holds; scores are 0 to 1, so -1 puts the unscored last
       quality: sql`coalesce(best_photo_score.score, -1)`,
+      custom: customOrderKey,
     };
     const sortKey = sortKeys[page?.sort ?? 'rating'];
-    const keyAscending = page?.sort === 'filename';
+    const keyAscending = page?.sort === 'filename' || page?.sort === 'custom';
     const reverse = !!page?.reverse;
     const order = options.order ?? 'desc';
     const calendarOrder = calendarPage?.before ? (order === 'asc' ? 'desc' : 'asc') : order;
@@ -3401,14 +3478,13 @@ export class AssetRepository {
                 .on('best_photo_score.ownerId', '=', asUuid(auth.user.id)),
             ),
           )
+          .$if(page?.sort === 'custom', (qb) => joinCustomOrder(qb, options.albumId))
           .select((eb) => [
             'asset.duration',
             'asset.id',
             effectiveVisibility('asset').as('visibility'),
             // the viewer's own mark; a shared link's visitor never sees its owner's favorites
-            (auth.sharedLink ? sql`false` : sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`).as(
-              'isFavorite',
-            ),
+            (auth.sharedLink ? sql<boolean>`false` : favoriteFor(auth.user.id)).as('isFavorite'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
@@ -3522,10 +3598,16 @@ export class AssetRepository {
                 options.userIds!.length === 1 ? asUuid(options.userIds![0]) : anyUuid(options.userIds!),
               );
               // as getTimeBuckets: the people's shared-album media widens the owner scope, never a Locked request
-              return widensToSharedAlbums(options) ? eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]) : isOwner;
+              if (widensToSharedAlbums(options)) {
+                return eb.or([isOwner, inSharedAlbum(eb, auth.user.id)]);
+              }
+              // FL-786: as getTimeBuckets, Favourites also lists the viewer's hearts on items shared with them
+              return !auth.sharedLink && options.isFavorite === true
+                ? eb.or([isOwner, eb.and([favoriteFor(auth.user.id), inSharedAlbum(eb, auth.user.id)])])
+                : isOwner;
             }),
           )
-          .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+          .$if(options.isFavorite !== undefined, (qb) => qb.where(isFavoriteFilter(auth, options.isFavorite!)))
           .$if(!!options.withStacked, (qb) =>
             qb
               .where((eb) =>
@@ -3662,6 +3744,10 @@ export class AssetRepository {
               sql<string | null>`(array_agg(cursor))[1]`.as('startCursor'),
               sql<string | null>`(array_agg(cursor))[count(*)::int]`.as('endCursor'),
             ]),
+          )
+          // FL-869/FL-881: each photo's place in the album's custom order, so text cards can sit between them
+          .$if(page?.sort === 'custom', (qb) =>
+            qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['sortKey']), sql.lit('{}')).as('position')),
           )
           .$if(options.visibility === AssetVisibility.Locked || !!options.revealLockedOwnerId, (qb) =>
             qb.select((eb) => eb.fn.coalesce(eb.fn('array_agg', ['lockReason']), sql.lit('{}')).as('lockReason')),

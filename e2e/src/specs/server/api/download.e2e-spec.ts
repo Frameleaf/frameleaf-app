@@ -4,6 +4,9 @@ import { app, tempDir, utils } from 'src/utils.js';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+/** FL-826: whether these bytes start like a JPEG. */
+const isJpeg = (bytes: Buffer) => bytes[0] === 0xff && bytes[1] === 0xd8;
+
 describe('/download', () => {
   let admin: LoginResponseDto;
   let asset1: AssetMediaResponseDto;
@@ -254,6 +257,58 @@ describe('/download', () => {
         const expected = asset.checksum.length === 44 ? utils.sha256(bytes) : utils.sha1(bytes);
         expect(expected).toBe(asset.checksum);
       }
+    });
+  });
+  // FL-826: photos as a high-quality JPEG or a web-size JPEG; a link limited to web size always gets web
+  describe('download formats (FL-826)', () => {
+    it('converts photos in an archive to JPEGs with unique .jpg names', async () => {
+      const { status, body } = await request(app)
+        .post('/download/archive')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ assetIds: [asset1.id, asset2.id], format: 'jpeg' });
+
+      expect(status).toBe(200);
+      await writeFile(`${tempDir}/archive-jpeg.zip`, body);
+      await utils.unzip(`${tempDir}/archive-jpeg.zip`, `${tempDir}/archive-jpeg`);
+      for (const filename of ['example.jpg', 'example+1.jpg']) {
+        expect(isJpeg(await readFile(`${tempDir}/archive-jpeg/${filename}`))).toBe(true);
+      }
+    });
+
+    it('downloads a single photo as a web-size JPEG', async () => {
+      const { status, headers, body } = await request(app)
+        .get(`/assets/${asset1.id}/original?format=web`)
+        .set('Authorization', `Bearer ${admin.accessToken}`);
+
+      expect(status).toBe(200);
+      expect(headers['content-type']).toBe('image/jpeg');
+      expect(isJpeg(body as Buffer)).toBe(true);
+    });
+
+    it('rejects an unknown format', async () => {
+      const { status } = await request(app)
+        .post('/download/info')
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ assetIds: [asset1.id], format: 'tiff' });
+      expect(status).toBe(400);
+    });
+
+    it('keeps a web-size-only link to web-size JPEGs whatever it asks for', async () => {
+      const link = await utils.createSharedLink(admin.accessToken, {
+        type: SharedLinkType.Individual,
+        assetIds: [asset1.id],
+        webSizeOnly: true,
+      });
+      expect(link.webSizeOnly).toBe(true);
+
+      const { status, body } = await request(app)
+        .post(`/download/archive?key=${link.key}`)
+        .send({ assetIds: [asset1.id], format: 'original' });
+
+      expect(status).toBe(200);
+      await writeFile(`${tempDir}/archive-web.zip`, body);
+      await utils.unzip(`${tempDir}/archive-web.zip`, `${tempDir}/archive-web`);
+      expect(isJpeg(await readFile(`${tempDir}/archive-web/example.jpg`))).toBe(true);
     });
   });
 });

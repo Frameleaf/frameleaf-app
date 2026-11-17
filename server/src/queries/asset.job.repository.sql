@@ -654,6 +654,25 @@ where
     where
       "assetId" = "asset"."id"
   )
+  and NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.asset_origin origin
+      JOIN asset source ON source.id = origin."sourceAssetId"
+    WHERE
+      origin."assetId" = asset.id
+      AND source."deletedAt" IS NULL
+      AND source.status = 'active'
+      AND NOT EXISTS (
+        SELECT
+          1
+        FROM
+          public.smart_search
+        WHERE
+          smart_search."assetId" = source.id
+      )
+  )
 
 -- AssetJobRepository.getForClipEncoding
 select
@@ -823,6 +842,18 @@ where
         and "asset_best_photo_score"."scoreVersion" < $3
     )
   )
+
+-- AssetJobRepository.countBestPhotosWithoutLearnedScore
+select
+  count(*) as "count"
+from
+  "asset_best_photo_score"
+  inner join "asset" on "asset"."id" = "asset_best_photo_score"."assetId"
+  inner join "smart_search" on "smart_search"."assetId" = "asset_best_photo_score"."assetId"
+where
+  "asset"."type" = 'IMAGE'
+  and "asset"."deletedAt" is null
+  and "asset_best_photo_score"."metadata" ->> 'aestheticModel' is distinct from $1
 
 -- AssetJobRepository.getForBestPhotoScoring
 select

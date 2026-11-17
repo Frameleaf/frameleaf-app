@@ -4,6 +4,12 @@
 manager/node_modules/
 manager/build/
 manager/ui/dist/
+!packages/
+packages/*
+!packages/backup-core/
+packages/backup-core/*
+!packages/backup-core/package.json
+!packages/backup-core/dist/
 !cosign.pub
 !.github/
 !.github/frameleaf-release.cjs

@@ -1657,6 +1657,8 @@ export type AdminConfigFFmpegDto = {
     realtime: AdminConfigFFmpegRealtimeDto;
     /** References */
     refs: number;
+    /** Kinds of video converted without hardware acceleration even when it is on: the kinds the playback self-test found it gets wrong. Written by the server; a settings save keeps the stored list (a configuration file may set it) */
+    softwareFallback?: PlaybackSelfTestCase[];
     targetAudioCodec: AudioCodec;
     /** Target resolution */
     targetResolution: string;
@@ -1987,6 +1989,14 @@ export type AdminConfigDuplicateDetectionDto = {
     /** Deprecated compatibility setting. RAW, then HEIC/HEIF/HIF, are always preferred over other formats regardless of size */
     preferOriginalFormat: boolean;
 };
+export type AdminConfigEyeScoresDto = {
+    /** Eyes-open score below which a face counts as having closed eyes */
+    closedBelow?: number;
+    /** Whether eyes open and eye sharpness are measured for each face */
+    enabled?: boolean;
+    /** Eye sharpness below which a face counts as having soft eyes */
+    softBelow?: number;
+};
 export type AdminConfigFacialRecognitionDto = {
     /** Whether the task is enabled */
     enabled: boolean;
@@ -2088,6 +2098,7 @@ export type AdminConfigMachineLearningDto = {
     duplicateDetection: AdminConfigDuplicateDetectionDto;
     /** Enabled */
     enabled: boolean;
+    eyeScores?: AdminConfigEyeScoresDto;
     facialRecognition: AdminConfigFacialRecognitionDto;
     imageDescription?: AdminConfigImageDescriptionDto;
     nsfwDetection?: AdminConfigNsfwDetectionDto;
@@ -2263,6 +2274,10 @@ export type AdminConfigServerDto = {
     /** Time zone the server's schedules and calendar day follow, as an IANA name such as America/Edmonton; empty uses the time zone of the computer the server runs on */
     timeZone?: string;
 };
+export type AdminConfigSharedLinksDto = {
+    /** Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire */
+    defaultExpiryDays: number | null;
+};
 export type AdminConfigSignInPolicyDto = {
     /** Older apps and sessions that predate this setting follow it too (default off) */
     applyToOlderApps?: boolean;
@@ -2373,6 +2388,7 @@ export type AdminConfigDto = {
     passwordLogin: AdminConfigPasswordLoginDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
+    sharedLinks?: AdminConfigSharedLinksDto;
     signInPolicy?: AdminConfigSignInPolicyDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
     storageTemplate: AdminConfigStorageTemplateDto;
@@ -2409,6 +2425,7 @@ export type AdminConfigDtoRead = {
     passwordLogin: AdminConfigPasswordLoginDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
+    sharedLinks?: AdminConfigSharedLinksDto;
     signInPolicy?: AdminConfigSignInPolicyDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
     storageTemplate: AdminConfigStorageTemplateDto;
@@ -3004,14 +3021,6 @@ export type IntegrityReportSummaryResponseDto = {
     missing_file: number;
     untracked_file: number;
 };
-export type AssetLedgerMissingOwnerDto = {
-    /** Originals of that account that are missing */
-    count: number;
-    /** The account the originals belonged to */
-    ownerId: string;
-    /** When the first of them was found missing */
-    since: string;
-};
 export type AssetLedgerCountsDto = {
     /** Originals in the library */
     kept: number;
@@ -3024,9 +3033,33 @@ export type AssetLedgerCountsDto = {
     /** Originals in the Trash */
     trashed: number;
 };
+export type AssetLedgerOwnerTotalsDto = {
+    ownerId: string;
+    states: AssetLedgerCountsDto;
+    total: number;
+};
+export type AssetLedgerMissingOwnerDto = {
+    /** Originals of that account that are missing */
+    count: number;
+    /** The account the originals belonged to */
+    ownerId: string;
+    /** When the first of them was found missing */
+    since: string;
+};
+export type AssetLedgerMonthDto = {
+    /** The month the originals were added, as YYYY-MM (UTC) */
+    month: string;
+    states: AssetLedgerCountsDto;
+    /** Originals added that month */
+    total: number;
+};
 export type AssetLedgerAdminSummaryResponseDto = {
+    /** Every account’s totals, most originals first; empty when the summary is for one account. No file is named. */
+    byOwner: AssetLedgerOwnerTotalsDto[];
     /** The accounts with originals the server cannot account for, most first. No file is named. */
     missingByOwner: AssetLedgerMissingOwnerDto[];
+    /** Per month the originals were added, where they are now; newest first */
+    months: AssetLedgerMonthDto[];
     states: AssetLedgerCountsDto;
     /** Every original the server has accepted, for every account */
     total: number;
@@ -3081,6 +3114,12 @@ export type LibraryMovePauseStatusDto = {
     /** Write requests still being answered */
     writesInFlight: number;
 };
+export type LibraryBestPhotosProgressDto = {
+    /** FL-1597: photos Best Photos scored before the learned score of the current Visual search model; 0 when the model has none */
+    outdated: number;
+    /** Best Photos scores the library again in the next overnight run */
+    tonight: boolean;
+};
 export type LibraryFeatureProgressDto = {
     /** Photos and videos this feature has read */
     done: number;
@@ -3093,9 +3132,13 @@ export type LibraryFeatureProgressDto = {
     total: number;
 };
 export type LibraryProgressResponseDto = {
+    bestPhotos: LibraryBestPhotosProgressDto;
     features: LibraryFeatureProgressDto[];
     /** The start of the period the rate is measured over */
     measuredSince: string | null;
+};
+export type LibraryBestPhotosRedoDto = {
+    when: LibraryRedoWhen;
 };
 export type VideoCardTestDto = {
     /** When it was tested */
@@ -3813,6 +3856,36 @@ export type PhysicalDeduplicationPreviewRequestDto = {
     /** Limit the review to copies owned by this account */
     scopeUserId?: string;
 };
+export type PlaybackSelfTestCaseDto = {
+    /** The sample-entry tag of the copy, for example hvc1 */
+    codecTag: string | null;
+    /** The transfer characteristics the copy is tagged with */
+    colorTransfer: string | null;
+    /** Whether the copy was made with hardware acceleration */
+    hardware: boolean;
+    id: PlaybackSelfTestCase;
+    /** How bright the copy is: mean Rec. 709 luma, 0 to 255 */
+    meanLuma: number | null;
+    /** Whether the copy came out right */
+    passed: boolean;
+    /** What was wrong: convert-failed, codec, codec-tag, colour-tags, too-dark, too-bright or brightness-differs */
+    problems: string[];
+    /** How bright the same clip is when converted without hardware acceleration */
+    referenceMeanLuma: number | null;
+};
+export type PlaybackSelfTestResponseDto = {
+    /** The hardware acceleration it checked */
+    accel: (TranscodeHWAccel) | null;
+    /** Each kind of video, in the order it was checked */
+    cases: PlaybackSelfTestCaseDto[];
+    /** When it finished */
+    finishedAt: string | null;
+    /** The kinds now converted without hardware acceleration because the check found them wrong */
+    softwareFallback: PlaybackSelfTestCase[];
+    /** When the latest check started */
+    startedAt: string | null;
+    status: PlaybackSelfTestStatus;
+};
 export type RenderWorkerDto = {
     /** Operations the worker currently holds */
     activeOperations: number;
@@ -4337,10 +4410,16 @@ export type DisplayPreferencesResponse = {
 export type DownloadResponse = {
     /** Maximum archive size in bytes */
     archiveSize: number;
+    /** FL-826: the format downloads use unless one is chosen: original, jpeg or web (always sent) */
+    defaultFormat?: string;
     /** Whether to include embedded videos in downloads */
     includeEmbeddedVideos: boolean;
     /** Whether an archive download puts each photo's details file (XMP sidecar) beside it */
     includeSidecar: boolean;
+};
+export type DuplicatesResponse = {
+    /** FL-832: rules for which duplicate copy is suggested as the keeper, most important first (values of DuplicateKeepRule). Empty uses the default order */
+    keepRules: string[];
 };
 export type EmailNotificationsResponse = {
     /** Whether to receive email notifications for album invites */
@@ -4460,6 +4539,8 @@ export type SearchPreferencesResponse = {
     includeArchived: boolean;
 };
 export type SharedLinksResponse = {
+    /** Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires) */
+    defaultExpiryDays?: number | null;
     /** Whether shared links are enabled */
     enabled: boolean;
     /** Whether shared links appear in web sidebar */
@@ -4486,6 +4567,7 @@ export type UserPreferencesResponseDto = {
     };
     display?: DisplayPreferencesResponse;
     download: DownloadResponse;
+    duplicates?: DuplicatesResponse;
     emailNotifications: EmailNotificationsResponse;
     folders: FoldersResponse;
     libraryView?: LibraryViewResponse;
@@ -4553,10 +4635,16 @@ export type DisplayPreferencesUpdate = {
 export type DownloadUpdate = {
     /** Maximum archive size in bytes */
     archiveSize?: number;
+    /** FL-826: the format downloads use unless one is chosen: original, jpeg (high-quality JPEG, full size) or web (2048 px JPEG). Archive downloads that name no format follow it */
+    defaultFormat?: DownloadFormat;
     /** Whether to include embedded videos in downloads */
     includeEmbeddedVideos?: boolean;
     /** Whether an archive download puts each photo's details file (XMP sidecar) beside it */
     includeSidecar?: boolean;
+};
+export type DuplicatesUpdate = {
+    /** Rules for which duplicate copy is suggested as the keeper, most important first; a tie goes to the next rule. Empty uses the default order (raw, heic, largest, mostMetadata). Repeats are dropped */
+    keepRules?: DuplicateKeepRule[];
 };
 export type EmailNotificationsUpdate = {
     /** Whether to receive email notifications for album invites */
@@ -4668,6 +4756,8 @@ export type SearchPreferencesUpdate = {
     includeArchived?: boolean;
 };
 export type SharedLinksUpdate = {
+    /** Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires) */
+    defaultExpiryDays?: number | null;
     /** Whether shared links are enabled */
     enabled?: boolean;
     /** Whether shared links appear in web sidebar */
@@ -4695,6 +4785,7 @@ export type UserPreferencesUpdateDto = {
     };
     display?: DisplayPreferencesUpdate;
     download?: DownloadUpdate;
+    duplicates?: DuplicatesUpdate;
     emailNotifications?: EmailNotificationsUpdate;
     /** The revision these changes were made against. When it no longer matches the stored preferences the update is rejected with 409 and nothing is changed */
     expectedRevision?: string;
@@ -4966,11 +5057,37 @@ export type ContributorCountResponseDto = {
     /** User ID */
     userId: string;
 };
+export type AlbumFolderSourceDto = {
+    /** The folder on the server the album shows */
+    folderPath: string;
+    /** External library ID */
+    libraryId: string;
+};
 export type PartnerOriginDto = {
     /** The account that originally uploaded or created it */
     rootOwnerId: string;
     /** That account's name */
     rootOwnerName: string;
+};
+export type AlbumTextCardResponseDto = {
+    /** The photo just before the card in the album, or null when the card comes first */
+    afterAssetId: string | null;
+    /** Album ID */
+    albumId: string;
+    /** Short paragraph, plain text with new lines; show it as text, never as HTML */
+    body: string;
+    /** Creation date */
+    createdAt: string;
+    /** Who wrote the card, or null when that account was removed */
+    createdById: string | null;
+    /** Heading, plain text; show it as text, never as HTML */
+    heading: string;
+    /** Text card ID */
+    id: string;
+    /** Place in the album's custom order; compare with the photos' positions from sort=custom */
+    position: number;
+    /** Last update date */
+    updatedAt: string;
 };
 export type AlbumResponseDto = {
     /** Album name */
@@ -4994,6 +5111,8 @@ export type AlbumResponseDto = {
     description: string;
     /** End date (latest asset) */
     endDate?: string;
+    /** Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}. */
+    folderAlbum?: AlbumFolderSourceDto;
     /** Has shared link */
     hasSharedLink: boolean;
     /** Icon: a Material Design Icons name or legacy key (null = default icon) */
@@ -5002,6 +5121,8 @@ export type AlbumResponseDto = {
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
+    /** True when the album shows its own order (GET /timeline/ordered?sort=custom&albumId=…) instead of the date order in order */
+    isCustomOrder?: boolean;
     /** The owner chose to lock this album: their items in it are locked as they are added, or by the hourly check. Unlocking stops that; items already locked stay locked. It does not prove that every item is locked yet. */
     isLocked?: boolean;
     /** True when the album is filled by smart album rules. Populated by GET /albums/tree and GET /albums/{id}. */
@@ -5029,6 +5150,8 @@ export type AlbumResponseDto = {
     startDate?: string;
     /** True while this album's count and dates are still being worked out for this viewer; assetCount is 0 until then. Populated by the album lists: GET /albums, GET /albums/tree and GET /albums/hierarchy. */
     statsPending?: boolean;
+    /** Text cards between the photos, in album order. Populated by GET /albums/{id} for a custom-order album. */
+    textCards?: AlbumTextCardResponseDto[];
     /** Last update date */
     updatedAt: string;
 };
@@ -5379,6 +5502,8 @@ export type UpdateAlbumDto = {
     icon?: string | null;
     /** Enable activity feed */
     isActivityEnabled?: boolean;
+    /** Show the album in its own order instead of by date. Turning it on the first time orders the photos by the current date order; turning it off keeps the custom order for next time. Read the custom order with GET /timeline/ordered?sort=custom&albumId=… */
+    isCustomOrder?: boolean;
     /** Lock the album: the owner's items in it (photos, videos and any other files) are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. The owner's items added later through the album's add actions are locked as they are added (if that fails, the hourly check retries); any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album stops locking new items and leaves the locked ones locked. While the item, or any other part of its stack or Live Photo, is in a locked album its owner owns, unlocking that item alone does not last: the hourly check locks it again. To keep an item unlocked, remove it and its stack and Live Photo parts from every locked album of the item's owner, or unlock those albums, first. Locked albums of other people don't lock it. Only the album owner may send this field; other members must leave it out, or the whole update is refused (403). */
     isLocked?: boolean;
     libraryScope?: LibraryScope;
@@ -5393,6 +5518,14 @@ export type AlbumMoveAssetsDto = {
     assetIds: string[];
     /** The album the photos and videos move to. It must be an album, not a collection or shared space. */
     targetAlbumId: string;
+};
+export type AlbumAssetOrderDto = {
+    /** Place after this photo in the album; null places at the start of the album */
+    afterAssetId?: string | null;
+    /** Place after this text card instead of after a photo */
+    afterTextCardId?: string;
+    /** Photos to move, in the order they should appear. Ids not in the album are ignored. */
+    assetIds: string[];
 };
 export type BookmarkIdsDto = {
     ids: string[];
@@ -5548,8 +5681,12 @@ export type PartnerLockedEncryptionDto = {
 export type PersonResponseDto = {
     /** Person date of birth */
     birthDate: string | null;
+    /** The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else */
+    categoryIds?: string[];
     /** Person color (hex) */
     color?: string;
+    /** Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller */
+    deathDate?: string | null;
     /** The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW) */
     featuredAssetId?: string | null;
     /** Person ID */
@@ -5560,6 +5697,8 @@ export type PersonResponseDto = {
     isHidden: boolean;
     /** Person name */
     name: string;
+    /** The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner */
+    notes?: string | null;
     /** Thumbnail path */
     thumbnailPath: string;
     /** Last update date */
@@ -5872,6 +6011,26 @@ export type AlbumSuggestionsResponseDto = {
 export type AlbumSuggestionAutoAddDto = {
     /** Add new very likely photos from this trip automatically */
     enabled: boolean;
+};
+export type AlbumTextCardCreateDto = {
+    /** Place after this photo in the album; null places at the start of the album */
+    afterAssetId?: string | null;
+    /** Place after this text card instead of after a photo */
+    afterTextCardId?: string;
+    /** Short paragraph, plain text; new lines are kept */
+    body?: string;
+    /** Heading, plain text */
+    heading?: string;
+};
+export type AlbumTextCardUpdateDto = {
+    /** Place after this photo in the album; null places at the start of the album */
+    afterAssetId?: string | null;
+    /** Place after this text card instead of after a photo */
+    afterTextCardId?: string;
+    /** Short paragraph, plain text; new lines are kept */
+    body?: string;
+    /** Heading, plain text */
+    heading?: string;
 };
 export type AlbumTransferDto = {
     /** The new owner: someone already in the album, or a partner you share your library with */
@@ -6536,6 +6695,28 @@ export type AssetCopyDto = {
     stack?: boolean;
     /** Target asset ID */
     targetId: string;
+};
+export type AssetCopyToLibraryDto = {
+    /** Items to add to your library */
+    assetIds: string[];
+    /** The shared link the items were seen through */
+    sharedLinkKey?: string;
+    /** The shared link the items were seen through */
+    sharedLinkSlug?: string;
+};
+export type AssetCopyToLibraryItemDto = {
+    /** Your own copy of it */
+    assetId: string;
+    /** The item that was added */
+    sourceId: string;
+};
+export type AssetCopyToLibraryResponseDto = {
+    /** Items now in your library */
+    added: AssetCopyToLibraryItemDto[];
+    /** Items your library already holds */
+    alreadyInLibrary: string[];
+    /** Items that cannot be added, such as Locked ones */
+    notAdded: string[];
 };
 export type AssetInfoBatchDto = {
     /** Asset IDs to read, at most 200 */
@@ -8532,6 +8713,8 @@ export type SearchFilterBranch = {
     ocr?: StringSimilarityFilter;
     originalFileName?: StringPatternFilter;
     originalPath?: StringPatternFilter;
+    /** The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them */
+    personCategoryIds?: IdsFilter;
     personIds?: IdsFilter;
     petIds?: IdsFilter;
     rating?: NumberFilterNullable;
@@ -8593,6 +8776,8 @@ export type SearchFilter = {
     or?: SearchFilterBranch[];
     originalFileName?: StringPatternFilter;
     originalPath?: StringPatternFilter;
+    /** The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them */
+    personCategoryIds?: IdsFilter;
     personIds?: IdsFilter;
     petIds?: IdsFilter;
     rating?: NumberFilterNullable;
@@ -9096,6 +9281,10 @@ export type UserConfigServerDto = {
     /** Public users */
     publicUsers: boolean;
 };
+export type UserConfigSharedLinksDto = {
+    /** Days a new shared link lasts when created with the default expiry, unless the person sharing set their own; null: links never expire */
+    defaultExpiryDays: number | null;
+};
 export type UserConfigThemeDto = {
     /** Custom CSS for theming */
     customCss: string;
@@ -9121,6 +9310,7 @@ export type UserConfigDto = {
     passwordLogin: UserConfigPasswordLoginDto;
     reverseGeocoding: UserConfigReverseGeocodingDto;
     server: UserConfigServerDto;
+    sharedLinks: UserConfigSharedLinksDto;
     theme: UserConfigThemeDto;
     trash: UserConfigTrashDto;
     user: UserConfigUserDto;
@@ -9972,6 +10162,8 @@ export type DownloadArchiveDto = {
     bookmarkIds?: string[];
     /** Download each asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original. Left out: the originals */
     edited?: boolean;
+    /** FL-826: photos as the original, a full-size JPEG or a web-size JPEG (converted files end in .jpg); videos stay original. Left out: the account's download.defaultFormat (shared links: original). A link limited to web size always gets web */
+    format?: DownloadFormat;
     /** Include frameleaf-library.json with owned albums, tags, bookmarks and Boards annotations alongside originals; signed-in accounts only */
     includeLibraryMetadata?: boolean;
     /** Put each photo's details file beside it as <file name>.xmp: its XMP sidecar, or one made from what the asset response shows the requester when it has none. Left out, the account's download.includeSidecar preference decides (shared links: no) */
@@ -9986,6 +10178,8 @@ export type DownloadInfoDto = {
     archiveSize?: number;
     /** Asset IDs to download */
     assetIds?: string[];
+    /** FL-826: the format the sizes are for. Left out: the account's download.defaultFormat (shared links: original). A link limited to web size always gets web */
+    format?: DownloadFormat;
     /** User ID to download assets from */
     userId?: string;
 };
@@ -10437,6 +10631,10 @@ export type AssetFaceResponseDto = {
     boundingBoxY2: number;
     /** When a person last corrected this face (moved, resized, reassigned or unassigned it), or null */
     correctedAt: string | null;
+    /** How sharp the face's eyes are (0 soft, 1 sharp); null when the eyes can't be seen or aren't scored yet */
+    eyeSharpness?: number | null;
+    /** How open the face's eyes are (0 closed, 1 open); null when the eyes can't be seen or aren't scored yet */
+    eyesOpen?: number | null;
     /** When the owner hid this face, or null. Hidden faces are only listed with withHidden */
     hiddenAt: string | null;
     /** Face ID */
@@ -11285,6 +11483,13 @@ export type QueueRunDto = {
     heldForNight?: boolean;
     /** Whether the queue is paused */
     isPaused: boolean;
+    /** Photos and videos this run has finished (completed or failed, as `processed` counts), of those it has: a queue that runs several jobs for each (thumbnails) counts more jobs than photos */
+    items?: {
+        done: number;
+        /** When the oldest of them was queued */
+        startedAt: string | null;
+        total: number;
+    };
     lastProgressAt?: string | null;
     name: QueueName;
     noDispatchBacklog?: boolean;
@@ -11458,6 +11663,8 @@ export type LibraryResponseDto = {
     deletedAt: string | null;
     /** Exclusion patterns */
     exclusionPatterns: string[];
+    /** The library keeps an album for each of its folders, in sync after every scan */
+    folderAlbums: boolean;
     /** Library ID */
     id: string;
     /** Import paths */
@@ -11506,10 +11713,14 @@ export type ManagedUploadsStatsResponseDto = {
 export type UpdateLibraryDto = {
     /** Exclusion patterns (max 128) */
     exclusionPatterns?: string[];
+    /** Keep an album for each folder of the library, in sync after every scan. Albums belong to the library's owner. */
+    folderAlbums?: boolean;
     /** Import paths (max 128) */
     importPaths?: string[];
     /** Library name */
     name?: string;
+    /** When folderAlbums is turned off: true deletes the folder albums (their photos stay in the library); left out or false keeps them as ordinary albums. */
+    removeFolderAlbums?: boolean;
 };
 export type LibraryRemovalReviewDto = {
     /** Albums that lose items */
@@ -12697,6 +12908,10 @@ export type BirthdayMemoryDto = {
     age: number | null;
     /** The birthday this year, 'yyyy-MM-dd' */
     date: string;
+    /** True when the memory marks the anniversary of the date of passing rather than the birthday (FL-864); `date` is then that anniversary. Always comes with `inMemoriam` */
+    deathAnniversary?: boolean;
+    /** True for a "Remembering {name}" memory (FL-864): the person has passed, so the memory shows no age. Absent or false for an ordinary birthday */
+    inMemoriam?: boolean;
     /** Discriminator for a birthday */
     kind: Kind7;
     /** Their name when the memory was made */
@@ -13359,6 +13574,21 @@ export type PartnerBackfillDto = {
     /** Items to copy */
     total: number;
 };
+export type PartnerScopeLabelDto = {
+    id: string;
+    name: string;
+};
+export type PartnerScopeDto = {
+    /** Albums whose items are shared */
+    albums: PartnerScopeLabelDto[];
+    /** Folders whose items are shared */
+    folders: string[];
+    mode: PartnerScopeMode;
+    /** People whose photos are shared */
+    people: PartnerScopeLabelDto[];
+    /** Only items taken on or after this day */
+    sinceDate: string | null;
+};
 export type PartnerResponseDto = {
     avatarColor: UserAvatarColor;
     /** Copy progress of the library shared this way; null when it was never copied */
@@ -13373,8 +13603,23 @@ export type PartnerResponseDto = {
     profileChangedAt: string;
     /** Profile image path */
     profileImagePath: string;
+    /** What the library shared this way sends */
+    scope?: PartnerScopeDto;
+};
+export type PartnerScopeUpdateDto = {
+    /** Albums the owner owns whose items are shared; with mode chosen */
+    albumIds?: string[];
+    /** Folders (and the folders inside them) whose items are shared; with mode chosen */
+    folders?: string[];
+    mode: PartnerScopeMode;
+    /** The owner's people whose photos are shared; with mode chosen */
+    personIds?: string[];
+    /** Only items taken on or after this day (YYYY-MM-DD); with mode chosen */
+    sinceDate?: string | null;
 };
 export type PartnerCreateDto = {
+    /** What the partner receives; everything when left out */
+    scope?: PartnerScopeUpdateDto;
     /** User ID to share with */
     sharedWithId: string;
 };
@@ -13384,14 +13629,35 @@ export type PartnerLockedNoticeResponseDto = {
     /** Whether to show the notice: Locked items arrived from a partner, no PIN is set, and it was not dismissed */
     show: boolean;
 };
+export type PartnerScopeEstimateResponseDto = {
+    /** How many items this would send now */
+    count: number;
+};
 export type PartnerUpdateDto = {};
+export type PartnerScopeResponseDto = {
+    /** Albums whose items are shared */
+    albums: PartnerScopeLabelDto[];
+    /** How many items this sends now */
+    count: number;
+    /** Folders whose items are shared */
+    folders: string[];
+    mode: PartnerScopeMode;
+    /** People whose photos are shared */
+    people: PartnerScopeLabelDto[];
+    /** Only items taken on or after this day */
+    sinceDate: string | null;
+};
 export type PeopleListItemDto = {
     /** Number of timeline assets showing this person */
     assetCount: number;
     /** Person date of birth */
     birthDate: string | null;
+    /** The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else */
+    categoryIds?: string[];
     /** Person color (hex) */
     color?: string;
+    /** Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller */
+    deathDate?: string | null;
     /** The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW) */
     featuredAssetId?: string | null;
     /** Person ID */
@@ -13404,6 +13670,8 @@ export type PeopleListItemDto = {
     lastSeenAt: string | null;
     /** Person name */
     name: string;
+    /** The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner */
+    notes?: string | null;
     /** Thumbnail path */
     thumbnailPath: string;
     /** Last update date */
@@ -13437,6 +13705,8 @@ export type PeopleUpdateItem = {
     birthDate?: string | null;
     /** Person color (hex) */
     color?: string | null;
+    /** Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one) */
+    deathDate?: string | null;
     /** Asset ID used for feature face thumbnail */
     featureFaceAssetId?: string;
     /** Person ID */
@@ -13447,10 +13717,40 @@ export type PeopleUpdateItem = {
     isHidden?: boolean;
     /** Person name */
     name?: string;
+    /** Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them */
+    notes?: string | null;
 };
 export type PeopleUpdateDto = {
     /** People to update */
     people: PeopleUpdateItem[];
+};
+export type PersonCategoryResponseDto = {
+    /** Category color (hex) */
+    color: string | null;
+    /** Creation date */
+    createdAt: string;
+    /** Category ID */
+    id: string;
+    /** Category name */
+    name: string;
+    /** Position among the categories, lowest first */
+    order: number;
+    /** Last update date */
+    updatedAt: string;
+};
+export type PersonCategoryCreateDto = {
+    /** Category color (hex) */
+    color?: string | null;
+    /** Category name */
+    name: string;
+};
+export type PersonCategoryUpdateDto = {
+    /** Category color (hex); null clears it */
+    color?: string | null;
+    /** Category name */
+    name?: string;
+    /** Position among the categories, lowest first */
+    order?: number;
 };
 export type FaceEvidenceDto = {
     /** The complete photo the face is in */
@@ -13579,6 +13879,8 @@ export type PersonUpdateDto = {
     birthDate?: string | null;
     /** Person color (hex) */
     color?: string | null;
+    /** Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one) */
+    deathDate?: string | null;
     /** Asset ID used for feature face thumbnail */
     featureFaceAssetId?: string;
     /** Mark as favorite */
@@ -13587,6 +13889,16 @@ export type PersonUpdateDto = {
     isHidden?: boolean;
     /** Person name */
     name?: string;
+    /** Private plain-text notes about the person (FL-941), at most 2000 characters. An empty string or null clears them */
+    notes?: string | null;
+};
+export type PersonCategoriesSetDto = {
+    /** The caller's categories the person is in from now on; an empty list takes them out of all */
+    categoryIds: string[];
+};
+export type PersonCategoriesResponseDto = {
+    /** The caller's categories the person is in */
+    categoryIds: string[];
 };
 export type PersonCorrectionsResponseDto = {
     /** Manual face decisions for this person, most recent first */
@@ -13797,7 +14109,17 @@ export type PetObservationCreateDto = {
     /** Width of the image the region was drawn on */
     imageWidth?: number;
 };
+export type PhotoSourceCatalog = {
+    /** The catalog app, as the desktop names it, for example "lightroom-classic" */
+    app: string;
+    /** The desktop's stable identifier for the catalog */
+    catalogId: string;
+    /** The catalog's name, shown to the person */
+    name: string;
+};
 export type PhotoSourceCreateDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     deviceId: string;
     id: string;
     kind: PhotoSourceKind;
@@ -13806,6 +14128,8 @@ export type PhotoSourceCreateDto = {
     scopeFingerprint: string;
 };
 export type PhotoSourceResponseDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     createdAt: string;
     deviceId: string;
     id: string;
@@ -13816,6 +14140,8 @@ export type PhotoSourceResponseDto = {
     scopeFingerprint: string;
 };
 export type ApplePhotosSourceCreateDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     deviceId: string;
     id: string;
     kind: ApplePhotosSourceKind;
@@ -13824,6 +14150,8 @@ export type ApplePhotosSourceCreateDto = {
     scopeFingerprint: string;
 };
 export type ApplePhotosSourceResponseDto = {
+    /** The photo catalog this source reads, when it reads one */
+    catalog?: PhotoSourceCatalog;
     createdAt: string;
     deviceId: string;
     id: string;
@@ -13832,6 +14160,55 @@ export type ApplePhotosSourceResponseDto = {
     name: string;
     revokedAt: string | null;
     scopeFingerprint: string;
+};
+export type PhotoSourceCatalogMetadataDto = {
+    /** Up to 500 catalog entries */
+    items: {
+        /** Caption */
+        caption?: string;
+        /** Collections (albums) the item is in */
+        collections?: {
+            /** The collection name */
+            name: string;
+            /** The collection sets the collection sits in, outermost first */
+            path: string[];
+        }[];
+        /** Colour label name, for example "Red" */
+        colorLabel?: string;
+        flag?: PhotoSourceCatalogFlag | null;
+        /** The source item (as planned for a copy run) the catalog entry describes */
+        itemId: string;
+        /** Keywords; a hierarchy is separated by "|", for example "Places|France|Paris" */
+        keywords?: string[];
+        /** Star rating, 0 (unrated) to 5 */
+        rating?: number;
+        /** Title */
+        title?: string;
+    }[];
+};
+export type PhotoSourceCatalogItemResult = {
+    /** Fields written for this item */
+    applied: PhotoSourceCatalogField[];
+    itemId: string;
+    /** Fields left alone because the person's own change wins */
+    keptEdits: PhotoSourceCatalogField[];
+    status: PhotoSourceCatalogItemStatus;
+};
+export type PhotoSourceCatalogSummary = {
+    /** Items where at least one field was written */
+    applied: number;
+    /** Items left as they are because the person changed a field in Frameleaf since the last read-in */
+    keptEdits: number;
+    /** Items unknown to this source, or whose photo is gone or not available to change */
+    notFound: number;
+    /** Items whose copy is not verified yet; send them again after verification */
+    notReady: number;
+    /** Items already as the catalog says */
+    unchanged: number;
+};
+export type PhotoSourceCatalogMetadataResponseDto = {
+    items: PhotoSourceCatalogItemResult[];
+    summary: PhotoSourceCatalogSummary;
 };
 export type PhotoSourceRunDto = {
     id: string;
@@ -15112,6 +15489,27 @@ export type PhotographyBulkDto = {
         title: string;
     }[];
 };
+export type PhotographyPhotoEyesDto = {
+    /** Faces whose eyes are closed */
+    closedCount: number;
+    /** Faces found in the photo */
+    faceCount: number;
+    /** Each face, left to right */
+    faces: {
+        /** The eyes have been checked */
+        checked: boolean;
+        /** The eyes are closed */
+        closed: boolean;
+        /** The eyes are soft (out of focus) */
+        soft: boolean;
+    }[];
+    /** The worst checked face's eye quality (open and sharp), for sorting; null until one is checked */
+    quality: number | null;
+    /** Faces whose eyes are soft (out of focus) */
+    softCount: number;
+    /** Faces whose eyes aren't checked yet */
+    unscoredCount: number;
+};
 export type PhotographyPhotosDto = {
     nextCursor: string | null;
     photos: {
@@ -15121,6 +15519,7 @@ export type PhotographyPhotosDto = {
         currentRevisionId: string | null;
         eligible: boolean;
         exclusion: string | null;
+        eyes?: PhotographyPhotoEyesDto;
         fileName: string;
         height: number | null;
         id: string;
@@ -18213,6 +18612,8 @@ export type SmartSearchDto = {
     createdAfter?: string;
     /** Filter by creation date (before) */
     createdBefore?: string;
+    /** Cursor for the next page of results */
+    cursor?: string;
     filter?: SearchFilter;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by encoded status */
@@ -18901,6 +19302,8 @@ export type SharedLinkResponseDto = {
     url: string | null;
     /** Owner user ID */
     userId: string;
+    /** FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Always sent */
+    webSizeOnly?: boolean;
 };
 export type SharedLinkCreateDto = {
     /** Album ID (for album sharing) */
@@ -18922,6 +19325,10 @@ export type SharedLinkCreateDto = {
     /** Custom URL slug */
     slug?: string | null;
     "type": SharedLinkType;
+    /** Without expiresAt, expire after the default number of days: the creator's preference, else the server's (none: never) */
+    useDefaultExpiry?: boolean;
+    /** FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Left out: off */
+    webSizeOnly?: boolean;
 };
 export type SharedLinkLoginDto = {
     /** Shared link password */
@@ -18942,6 +19349,8 @@ export type SharedLinkEditDto = {
     showMetadata?: boolean;
     /** Custom URL slug */
     slug?: string | null;
+    /** FL-826: downloads through the link are web size only (a 2048 px JPEG of each photo; videos stay original), whatever format a visitor asks for. Left out: unchanged */
+    webSizeOnly?: boolean;
 };
 export type AssetIdsDto = {
     /** Asset IDs */
@@ -19406,6 +19815,150 @@ export type StudioBundleUploadDto = {
     sizeBytes: string;
     sources: StudioBundleSourceDto[];
 };
+export type StudioEditorImportCreateDto = {
+    /** For an edit decision list, which does not state its frame rate: frames a second, e.g. 23.976 */
+    frameRate?: number;
+    /** CDL (.cdl, .cc, .ccc) and LUT (.cube) files to apply to the clips they name */
+    sidecarUploadIds?: string[];
+    /** The project file, uploaded with `POST /studio/editor-imports/uploads` */
+    uploadId: string;
+};
+export type StudioEditorImportQueuedDto = {
+    /** The job id; it also shows in Activity (`/media-operations/{id}`) */
+    id: string;
+    status: MediaOperationStatus;
+};
+export type StudioEditorImportNote = {
+    /** Where on the timeline */
+    atSeconds: number;
+    /** What it became in Studio */
+    became: string;
+    /** The clip, transition or marker it is about */
+    clip: string;
+    /** What kind of difference, e.g. `transition-unmatched` */
+    code: string;
+    /** What it was in the other editor */
+    what: string;
+};
+export type StudioEditorImportNotice = {
+    /** In English, for reference */
+    became: string;
+    /** `version-untested`, `clips-disabled`, `items-unknown`, `edl-limits`, `edl-frame-rate`, `lut-resampled`, `sidecar-unused` or `sidecar-unreadable` */
+    code: string;
+    /** What it is about: a version, a count, a file name or a frame rate */
+    subject?: string;
+    /** In English, for reference */
+    what: string;
+};
+export type StudioEditorImportProjectNotesDto = {
+    fileName: string;
+    /** What came over differently or could not come over, with where on the timeline */
+    notes: StudioEditorImportNote[];
+    notices: StudioEditorImportNotice[];
+    source: StudioEditorImportSource;
+};
+export type StudioEditorImportUploadDto = {
+    fileName: string;
+    /** The upload; name it when starting the import */
+    id: string;
+    sizeBytes: number;
+};
+export type StudioEditorImportMediaTotals = {
+    /** Added to the library: sent from a folder or carried in the archive */
+    added: number;
+    /** Found in the library without asking */
+    found: number;
+    /** Matches the person chose */
+    matched: number;
+    /** Still missing; the clip keeps its place until it is relinked */
+    placeholders: number;
+    total: number;
+};
+export type StudioEditorImportBuildDto = {
+    fileName: string;
+    media: StudioEditorImportMediaTotals;
+    name: string;
+    /** What came over differently or could not come over */
+    notes: StudioEditorImportNote[];
+    notices: StudioEditorImportNotice[];
+    projectId: string;
+    source: StudioEditorImportSource;
+    timeline: number;
+};
+export type StudioEditorImportMedia = {
+    /** The library item found or suggested */
+    assetId: string | null;
+    /** That item’s file name */
+    assetName: string | null;
+    /** The file came inside the uploaded archive and is added to the library if needed */
+    carried: boolean;
+    /** How many clips use it */
+    clips: number;
+    confidence: number;
+    /** The file as the project names it; send it back in `media` when importing */
+    key: string;
+    kind: StudioEditorImportMediaKind | null;
+    match: StudioEditorImportMatch;
+    /** The file name alone */
+    name: string;
+};
+export type StudioEditorImportTimeline = {
+    /** Video clips and stills */
+    clips: number;
+    durationSeconds: number;
+    /** Name it in `timelines` when importing */
+    index: number;
+    markers: number;
+    name: string;
+    /** What will come over differently, media aside */
+    notes: StudioEditorImportNote[];
+    /** Sound clips */
+    sound: number;
+    titles: number;
+    transitions: number;
+};
+export type StudioEditorImportCheckDto = {
+    fileName: string;
+    media: StudioEditorImportMedia[];
+    notices: StudioEditorImportNotice[];
+    source: StudioEditorImportSource;
+    sourceVersion: string | null;
+    timelines: StudioEditorImportTimeline[];
+};
+export type StudioEditorImportDto = {
+    /** Once a `build` job has completed */
+    build: (StudioEditorImportBuildDto) | null;
+    /** Once a `check` job has completed */
+    check: (StudioEditorImportCheckDto) | null;
+    error: string | null;
+    id: string;
+    progress: number;
+    stage: StudioEditorImportStage;
+    status: MediaOperationStatus;
+    step: StudioEditorImportStep;
+};
+export type StudioEditorImportStartDto = {
+    /** The album that added files go into, in the person’s language; defaults to the project name */
+    albumName?: string;
+    /** The person’s choice for each file; a file left out keeps what the check found */
+    media: {
+        /** The person sent this file from their folder just now */
+        added?: boolean;
+        /** The library item to use, or null to leave a placeholder */
+        assetId: string | null;
+        key: string;
+    }[];
+    /** The timelines to bring; each becomes a project */
+    timelines: number[];
+};
+export type StudioEditorImportJob = {
+    id: string;
+    status: MediaOperationStatus;
+    timeline: number;
+};
+export type StudioEditorImportStartedDto = {
+    jobs: StudioEditorImportJob[];
+};
 export type StudioExportMastering = {
     maxNits: number;
     minNits: number;
@@ -19714,6 +20267,8 @@ export type StudioProjectDto = {
     id: string;
     /** The project was read in from a portable bundle; always false for a reviewer */
     importedFromBundle: boolean;
+    /** The editor the project was imported from (Beta); null otherwise and for a reviewer */
+    importedFromEditor?: (StudioEditorImportSource) | null;
     /** When an editor last opened it; null for a reviewer */
     lastOpenedAt: string | null;
     lease: StudioProjectLeaseDto;
@@ -19802,6 +20357,8 @@ export type StudioProjectDetailDto = {
     id: string;
     /** The project was read in from a portable bundle; always false for a reviewer */
     importedFromBundle: boolean;
+    /** The editor the project was imported from (Beta); null otherwise and for a reviewer */
+    importedFromEditor?: (StudioEditorImportSource) | null;
     /** When an editor last opened it; null for a reviewer */
     lastOpenedAt: string | null;
     lease: StudioProjectLeaseDto;
@@ -20059,6 +20616,34 @@ export type StudioExportCreateDto = {
     /** Defaults to `burn` */
     subtitleMode?: StudioExportSubtitleMode;
 };
+export type StudioProjectFontDto = {
+    /** SHA-256 of the bytes, hex */
+    checksum: string;
+    /** When it was uploaded */
+    createdAt: string;
+    /** The family name the file gives itself */
+    family: string;
+    /** The name the file was uploaded with */
+    fileName: string;
+    format: StudioProjectFontFormat;
+    /** Import id; the graph names it as `importId` in `metadata.fonts` */
+    id: string;
+    /** Size in bytes */
+    sizeBytes: number;
+    style: StudioProjectFontStyle;
+    /** The style name the file gives itself, such as Bold Italic; may be empty */
+    subfamily: string;
+    /** The file's weight, 100 to 900 */
+    weight: number;
+};
+export type StudioProjectFontCreateDto = {
+    /** The .ttf, .otf or .woff2 font file */
+    file: Blob;
+    /** The import id the editor gave this font; retrying the same file with it is idempotent */
+    id: string;
+    /** Already registered publication id */
+    publicationId?: string;
+};
 export type StudioReframeShotDto = {
     /** The library asset it shows, when this session may read it */
     assetId: string | null;
@@ -20176,6 +20761,8 @@ export type StudioProjectInventoryDto = {
     fonts: StudioProjectResourceUseDto[];
     /** Files kept with the project (FL-103, FL-105) */
     keptFiles: StudioProjectImportDto[];
+    /** Fonts kept with the project (FL-1562) */
+    keptFonts: StudioProjectFontDto[];
     /** Bundled LUTs the head graph names */
     luts: StudioProjectResourceUseDto[];
     /** Models the head graph names */
@@ -21191,6 +21778,8 @@ export type TimeBucketAssetResponseDto = {
     originalFileName?: string[];
     /** Array of owner IDs for each asset */
     ownerId: string[];
+    /** Each asset's place in the album's custom order (lowest first), aligned with id. Returned only for sort=custom; place an album's text cards by comparing their position */
+    position?: number[];
     /** Array of projection types for 360° content (e.g., "EQUIRECTANGULAR", "CUBEFACE", "CYLINDRICAL") */
     projectionType: (string | null)[];
     /** Array of star ratings from EXIF (-1 rejected, 0 unrated, 1-5 stars; null when unknown). Omitted for shared links that hide EXIF */
@@ -21600,6 +22189,8 @@ export type AssetLedgerListResponseDto = {
     nextCursor: string | null;
 };
 export type AssetLedgerSummaryResponseDto = {
+    /** Per month the originals were added, where they are now; newest first */
+    months: AssetLedgerMonthDto[];
     states: AssetLedgerCountsDto;
     /** Every original the server has accepted for this account */
     total: number;
@@ -22264,7 +22855,7 @@ export type AssetDevelopRevisionParamDto = {
 export type AssetDownloadOriginalDto = {
     /** Return the asset as it is shown: the owner's current develop version or the edited file when there is one, otherwise the original */
     edited?: boolean;
-    /** Explicit still-image export or read-only document PDF; omission returns the original or selected edit */
+    /** Explicit still-image export or read-only document PDF; omission returns the original or selected edit. FL-826: original, jpeg (high-quality JPEG, full size) or web (JPEG, 2048 px on the long edge) download a photo in that format, of the version `edited` names; videos stay original. A shared link limited to web size always gets web for photos */
     format?: Format3;
 };
 export type AssetFileSearchDto = {
@@ -22294,6 +22885,10 @@ export type AssetFilmstripSpriteOptionsDto = {
     height?: number;
     /** The `version` from the filmstrip index. When given and the video changed since, 404 is returned */
     version?: string;
+};
+export type AssetLedgerAdminQueryDto = {
+    /** Only this account’s totals and months */
+    userId?: string;
 };
 export type AssetLedgerQueryDto = {
     /** The nextCursor of the previous page */
@@ -23312,7 +23907,7 @@ export type RenderWorkerAuditSearchDto = {
     workerId?: string;
 };
 export type SearchPeopleDto = {
-    /** Person name to search for */
+    /** Person name to search for; the caller's own notes about a person match too (FL-941) */
     name: string;
     /** Include hidden people */
     withHidden?: boolean;
@@ -26436,11 +27031,15 @@ export function getIntegrityReportSummary(opts?: Oazapfts.RequestOpts) {
 /**
  * Get the server’s nothing-lost totals
  */
-export function getLedgerAdminSummary(opts?: Oazapfts.RequestOpts) {
+export function getLedgerAdminSummary({ userId }: {
+    userId?: string;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetLedgerAdminSummaryResponseDto;
-    }>("/admin/ledger/summary", {
+    }>(`/admin/ledger/summary${QS.query(QS.explode({
+        userId
+    }))}`, {
         ...opts
     }));
 }
@@ -26509,6 +27108,18 @@ export function getLibraryProgress(opts?: Oazapfts.RequestOpts) {
     }>("/admin/library-progress", {
         ...opts
     }));
+}
+/**
+ * Score Best Photos again
+ */
+export function redoBestPhotos({ libraryBestPhotosRedoDto }: {
+    libraryBestPhotosRedoDto: LibraryBestPhotosRedoDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/library-progress/best-photos", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryBestPhotosRedoDto
+    })));
 }
 /**
  * Get the previews and playback copies
@@ -26997,6 +27608,29 @@ export function requestPhysicalDeduplicationPreview({ physicalDeduplicationPrevi
         method: "POST",
         body: physicalDeduplicationPreviewRequestDto
     })));
+}
+/**
+ * Get the latest playback self-test
+ */
+export function getPlaybackSelfTest(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PlaybackSelfTestResponseDto;
+    }>("/admin/playback-self-test", {
+        ...opts
+    }));
+}
+/**
+ * Run the playback self-test
+ */
+export function startPlaybackSelfTest(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PlaybackSelfTestResponseDto;
+    }>("/admin/playback-self-test", {
+        ...opts,
+        method: "POST"
+    }));
 }
 /**
  * List render workers
@@ -27870,6 +28504,19 @@ export function moveAlbumAssets({ id, albumMoveAssetsDto }: {
     })));
 }
 /**
+ * Move photos in an album's custom order
+ */
+export function setAlbumAssetOrder({ id, albumAssetOrderDto }: {
+    id: string;
+    albumAssetOrderDto: AlbumAssetOrderDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/albums/${encodeURIComponent(id)}/assets/order`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: albumAssetOrderDto
+    })));
+}
+/**
  * Remove bookmark memberships without deleting bookmarks
  */
 export function removeBookmarksFromAlbum({ id, bookmarkIdsDto }: {
@@ -28098,6 +28745,69 @@ export function dismissAlbumSuggestions({ id, bulkIdsDto }: {
         ...opts,
         method: "POST",
         body: bulkIdsDto
+    })));
+}
+/**
+ * List the text cards in an album
+ */
+export function getAlbumTextCards({ id, key, slug }: {
+    id: string;
+    key?: string;
+    slug?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumTextCardResponseDto[];
+    }>(`/albums/${encodeURIComponent(id)}/text-cards${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Add a text card to an album
+ */
+export function createAlbumTextCard({ id, albumTextCardCreateDto }: {
+    id: string;
+    albumTextCardCreateDto: AlbumTextCardCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AlbumTextCardResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/text-cards`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumTextCardCreateDto
+    })));
+}
+/**
+ * Delete a text card
+ */
+export function deleteAlbumTextCard({ cardId, id }: {
+    cardId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/albums/${encodeURIComponent(id)}/text-cards/${encodeURIComponent(cardId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Edit or move a text card
+ */
+export function updateAlbumTextCard({ cardId, id, albumTextCardUpdateDto }: {
+    cardId: string;
+    id: string;
+    albumTextCardUpdateDto: AlbumTextCardUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumTextCardResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/text-cards/${encodeURIComponent(cardId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: albumTextCardUpdateDto
     })));
 }
 /**
@@ -28496,6 +29206,21 @@ export function copyAsset({ assetCopyDto }: {
         ...opts,
         method: "PUT",
         body: assetCopyDto
+    })));
+}
+/**
+ * Add shared items to your library
+ */
+export function copyAssetsToLibrary({ assetCopyToLibraryDto }: {
+    assetCopyToLibraryDto: AssetCopyToLibraryDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetCopyToLibraryResponseDto;
+    }>("/assets/copy-to-library", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetCopyToLibraryDto
     })));
 }
 /**
@@ -29526,7 +30251,7 @@ export function getAssetOcr({ id }: {
  */
 export function downloadAsset({ edited, format, id, key, slug }: {
     edited?: boolean;
-    format?: "sdr-jpeg" | "hdr-jpeg" | "hdr-heic" | "document-pdf";
+    format?: "sdr-jpeg" | "hdr-jpeg" | "hdr-heic" | "document-pdf" | "original" | "jpeg" | "web";
     id: string;
     key?: string;
     slug?: string;
@@ -35257,6 +35982,21 @@ export function dismissPartnerLockedNotice(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Count what a partner would receive
+ */
+export function estimatePartnerScope({ partnerScopeUpdateDto }: {
+    partnerScopeUpdateDto: PartnerScopeUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerScopeEstimateResponseDto;
+    }>("/partners/scope/estimate", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: partnerScopeUpdateDto
+    })));
+}
+/**
  * Remove a partner
  */
 export function removePartner({ id }: {
@@ -35295,6 +36035,35 @@ export function updatePartner({ id, partnerUpdateDto }: {
         ...opts,
         method: "PUT",
         body: partnerUpdateDto
+    })));
+}
+/**
+ * Get what a partner receives
+ */
+export function getPartnerScope({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerScopeResponseDto;
+    }>(`/partners/${encodeURIComponent(id)}/scope`, {
+        ...opts
+    }));
+}
+/**
+ * Change what a partner receives
+ */
+export function updatePartnerScope({ id, partnerScopeUpdateDto }: {
+    id: string;
+    partnerScopeUpdateDto: PartnerScopeUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerScopeResponseDto;
+    }>(`/partners/${encodeURIComponent(id)}/scope`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: partnerScopeUpdateDto
     })));
 }
 /**
@@ -35360,6 +36129,59 @@ export function updatePeople({ peopleUpdateDto }: {
         ...opts,
         method: "PUT",
         body: peopleUpdateDto
+    })));
+}
+/**
+ * Get person categories
+ */
+export function getPersonCategories(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonCategoryResponseDto[];
+    }>("/people/categories", {
+        ...opts
+    }));
+}
+/**
+ * Create a person category
+ */
+export function createPersonCategory({ personCategoryCreateDto }: {
+    personCategoryCreateDto: PersonCategoryCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PersonCategoryResponseDto;
+    }>("/people/categories", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: personCategoryCreateDto
+    })));
+}
+/**
+ * Delete a person category
+ */
+export function deletePersonCategory({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/people/categories/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Update a person category
+ */
+export function updatePersonCategory({ id, personCategoryUpdateDto }: {
+    id: string;
+    personCategoryUpdateDto: PersonCategoryUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonCategoryResponseDto;
+    }>(`/people/categories/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: personCategoryUpdateDto
     })));
 }
 /**
@@ -35505,6 +36327,22 @@ export function updatePerson({ id, personUpdateDto }: {
         ...opts,
         method: "PUT",
         body: personUpdateDto
+    })));
+}
+/**
+ * Set a person's categories
+ */
+export function setPersonCategories({ id, personCategoriesSetDto }: {
+    id: string;
+    personCategoriesSetDto: PersonCategoriesSetDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonCategoriesResponseDto;
+    }>(`/people/${encodeURIComponent(id)}/categories`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: personCategoriesSetDto
     })));
 }
 /**
@@ -35849,6 +36687,22 @@ export function revokePhotoSource({ id }: {
         ...opts,
         method: "DELETE"
     }));
+}
+/**
+ * Apply ratings, flags, labels, keywords, captions and collections read from a photo catalog
+ */
+export function applyPhotoSourceCatalogMetadata({ id, photoSourceCatalogMetadataDto }: {
+    id: string;
+    photoSourceCatalogMetadataDto: PhotoSourceCatalogMetadataDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotoSourceCatalogMetadataResponseDto;
+    }>(`/photo-sources/${encodeURIComponent(id)}/catalog-metadata`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photoSourceCatalogMetadataDto
+    })));
 }
 /**
  * Start or recover a bounded photo-copy run
@@ -39966,6 +40820,78 @@ export function getStudioBundleUpload({ id }: {
     }));
 }
 /**
+ * Check a project from another editor
+ */
+export function createStudioEditorImport({ studioEditorImportCreateDto }: {
+    studioEditorImportCreateDto: StudioEditorImportCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioEditorImportQueuedDto;
+    }>("/studio/editor-imports", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioEditorImportCreateDto
+    })));
+}
+/**
+ * Get the import notes of a project
+ */
+export function getStudioEditorImportNotes({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioEditorImportProjectNotesDto;
+    }>(`/studio/editor-imports/projects/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Upload a project file from another editor
+ */
+export function uploadStudioEditorImportFile({ studioBundleUploadCreateDto }: {
+    studioBundleUploadCreateDto: StudioBundleUploadCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioEditorImportUploadDto;
+    }>("/studio/editor-imports/uploads", oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: studioBundleUploadCreateDto
+    })));
+}
+/**
+ * Get an import from another editor
+ */
+export function getStudioEditorImport({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioEditorImportDto;
+    }>(`/studio/editor-imports/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Import the checked project
+ */
+export function startStudioEditorImport({ id, studioEditorImportStartDto }: {
+    id: string;
+    studioEditorImportStartDto: StudioEditorImportStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioEditorImportStartedDto;
+    }>(`/studio/editor-imports/${encodeURIComponent(id)}/import`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: studioEditorImportStartDto
+    })));
+}
+/**
  * Get a Studio export
  */
 export function getStudioExport({ id }: {
@@ -40507,6 +41433,35 @@ export function createStudioExport({ id, studioExportCreateDto }: {
         ...opts,
         method: "POST",
         body: studioExportCreateDto
+    })));
+}
+/**
+ * List the fonts kept with a Studio project
+ */
+export function getStudioProjectFonts({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StudioProjectFontDto[];
+    }>(`/studio/projects/${encodeURIComponent(id)}/fonts`, {
+        ...opts
+    }));
+}
+/**
+ * Keep a font with a Studio project
+ */
+export function importStudioProjectFont({ id, studioProjectFontCreateDto }: {
+    id: string;
+    studioProjectFontCreateDto: StudioProjectFontCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StudioProjectFontDto;
+    }>(`/studio/projects/${encodeURIComponent(id)}/fonts`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: studioProjectFontCreateDto
     })));
 }
 /**
@@ -41927,7 +42882,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
     personId?: string;
     petId?: string;
     slug?: string;
-    sort?: "filename" | "rating" | "quality";
+    sort?: "filename" | "rating" | "quality" | "custom";
     suppressedOnly?: boolean;
     tagId?: string;
     userId?: string;
@@ -43942,6 +44897,13 @@ export enum HlsVideoResolution {
     $1440 = 1440,
     $2160 = 2160
 }
+export enum PlaybackSelfTestCase {
+    SdrH264 = "sdr-h264",
+    HlgHevc = "hlg-hevc",
+    DolbyVision84 = "dolby-vision-8.4",
+    Hdr10Pq = "hdr10-pq",
+    Hev1Hevc = "hev1-hevc"
+}
 export enum ToneMapping {
     Hable = "hable",
     Mobius = "mobius",
@@ -44185,15 +45147,15 @@ export enum LibraryProgressFeature {
     Captions = "captions",
     Locked = "locked"
 }
+export enum LibraryRedoWhen {
+    Now = "now",
+    Tonight = "tonight"
+}
 export enum LibraryRedoQueue {
     SmartSearch = "smartSearch",
     FacialRecognition = "facialRecognition",
     ThumbnailGeneration = "thumbnailGeneration",
     VideoConversion = "videoConversion"
-}
-export enum LibraryRedoWhen {
-    Now = "now",
-    Tonight = "tonight"
 }
 export enum LicenseKind {
     Server = "server",
@@ -44388,6 +45350,7 @@ export enum MediaOperationKind {
     StudioReverseConform = "studio_reverse_conform",
     StudioTranscription = "studio_transcription",
     StudioMovie = "studio_movie",
+    StudioEditorImport = "studio_editor_import",
     StudioPreviewStream = "studio_preview_stream",
     Restoration = "restoration",
     RestorationPreview = "restoration_preview",
@@ -44464,6 +45427,12 @@ export enum PhysicalDeduplicationSkipReason {
 export enum PhysicalDeduplicationPlanMode {
     DryRun = "dry-run",
     Apply = "apply"
+}
+export enum PlaybackSelfTestStatus {
+    None = "none",
+    Running = "running",
+    Done = "done",
+    Failed = "failed"
 }
 export enum GpuWorkingBudgetBindingMethod {
     SameExportDevice = "same-export-device"
@@ -44570,6 +45539,23 @@ export enum DisplayHourCycle {
 export enum SuppressionScope {
     Owned = "owned",
     Visible = "visible"
+}
+export enum DownloadFormat {
+    Original = "original",
+    Jpeg = "jpeg",
+    Web = "web"
+}
+export enum DuplicateKeepRule {
+    Raw = "raw",
+    Heic = "heic",
+    Largest = "largest",
+    HighestResolution = "highestResolution",
+    Oldest = "oldest",
+    Newest = "newest",
+    InAlbum = "inAlbum",
+    HasEdits = "hasEdits",
+    Favorite = "favorite",
+    MostMetadata = "mostMetadata"
 }
 export enum LibraryViewScope {
     Personal = "personal",
@@ -46519,6 +47505,10 @@ export enum State5 {
     Done = "done",
     Stopped = "stopped"
 }
+export enum PartnerScopeMode {
+    Everything = "everything",
+    Chosen = "chosen"
+}
 export enum PersonCorrectionAction {
     Reassign = "reassign",
     NewPerson = "new-person",
@@ -46595,6 +47585,23 @@ export enum PhotoSourceCopyMode {
 }
 export enum ApplePhotosSourceKind {
     ApplePhotos = "apple-photos"
+}
+export enum PhotoSourceCatalogFlag {
+    Pick = "pick",
+    Reject = "reject"
+}
+export enum PhotoSourceCatalogField {
+    Rating = "rating",
+    Description = "description",
+    Tags = "tags",
+    Albums = "albums"
+}
+export enum PhotoSourceCatalogItemStatus {
+    Applied = "applied",
+    Unchanged = "unchanged",
+    KeptEdits = "keptEdits",
+    NotReady = "notReady",
+    NotFound = "notFound"
 }
 export enum PhotoSourceRunState {
     Open = "open",
@@ -47724,6 +48731,39 @@ export enum StudioBundleSourceResolution {
     Suggested = "suggested",
     Missing = "missing"
 }
+export enum StudioEditorImportSource {
+    Premiere = "premiere",
+    Resolve = "resolve",
+    Finalcut = "finalcut",
+    Imovie = "imovie",
+    Otio = "otio",
+    Fcp7 = "fcp7",
+    Edl = "edl",
+    Aaf = "aaf"
+}
+export enum StudioEditorImportMediaKind {
+    Video = "video",
+    Audio = "audio",
+    Image = "image"
+}
+export enum StudioEditorImportMatch {
+    Found = "found",
+    VeryLikely = "very-likely",
+    Likely = "likely",
+    Possible = "possible",
+    Missing = "missing"
+}
+export enum StudioEditorImportStage {
+    Check = "check",
+    Build = "build"
+}
+export enum StudioEditorImportStep {
+    Reading = "reading",
+    Media = "media",
+    Building = "building",
+    Checking = "checking",
+    Done = "done"
+}
 export enum StudioExportScope {
     Library = "library",
     Project = "project"
@@ -47867,6 +48907,15 @@ export enum StudioDeliveryShape {
     Landscape = "landscape",
     Vertical = "vertical",
     Square = "square"
+}
+export enum StudioProjectFontFormat {
+    Ttf = "ttf",
+    Otf = "otf",
+    Woff2 = "woff2"
+}
+export enum StudioProjectFontStyle {
+    Normal = "normal",
+    Italic = "italic"
 }
 export enum StudioReframeSubject {
     Face = "face",
@@ -48313,7 +49362,8 @@ export enum TimelineHighlightGrouping {
 export enum TimelineOrderedSort {
     Filename = "filename",
     Rating = "rating",
-    Quality = "quality"
+    Quality = "quality",
+    Custom = "custom"
 }
 export enum UtilityActivityTool {
     LargeFiles = "large-files"
@@ -48483,7 +49533,10 @@ export enum Format3 {
     SdrJpeg = "sdr-jpeg",
     HdrJpeg = "hdr-jpeg",
     HdrHeic = "hdr-heic",
-    DocumentPdf = "document-pdf"
+    DocumentPdf = "document-pdf",
+    Original = "original",
+    Jpeg = "jpeg",
+    Web = "web"
 }
 export enum Intent {
     Preserve = "preserve"
@@ -48598,5 +49651,6 @@ export enum UserMetadataKey {
 export enum Sort {
     Filename = "filename",
     Rating = "rating",
-    Quality = "quality"
+    Quality = "quality",
+    Custom = "custom"
 }

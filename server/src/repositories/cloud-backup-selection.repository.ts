@@ -48,9 +48,10 @@ const WALK_STATUSES = [AssetStatus.Active, AssetStatus.Trashed];
 
 /**
  * FL-362: whether the asset `a` matches the choice `s` (any of its parts). `inventoryAt` anchors "the last
- * N months". Collections are albums that hold albums; a tag also chooses the tags inside it.
+ * N months". Collections are albums that hold albums; a tag also chooses the tags inside it. Partner scope
+ * (FL-774) matches the same way.
  */
-const matchesChoice = (inventoryAt: RawBuilder<Date> | Date) => sql<boolean>`(
+export const matchesChoice = (inventoryAt: RawBuilder<Date> | Date) => sql<boolean>`(
   (s.favorites AND a."isFavorite")
   OR EXISTS (
     SELECT 1 FROM public.album_asset aa

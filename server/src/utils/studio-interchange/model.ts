@@ -141,7 +141,22 @@ export type InterchangeProject = {
   sourceVersion?: string;
   timelines: Timeline[];
   /** Notes about the whole file for the import report: an untested version, what the format cannot carry. */
-  notices?: { code: 'version-untested' | 'format-limits' | 'sidecar-unused'; what: string; became: string }[];
+  notices?: {
+    code:
+      | 'version-untested'
+      | 'clips-disabled'
+      | 'items-unknown'
+      | 'edl-limits'
+      | 'edl-frame-rate'
+      | 'lut-resampled'
+      | 'sidecar-unused'
+      | 'sidecar-unreadable';
+    /** What the notice is about, for the web to phrase it: a version, a count, a file name, a frame rate. */
+    subject?: string;
+    /** English, for API callers; the web phrases notices from `code` and `subject`. */
+    what: string;
+    became: string;
+  }[];
 };
 
 export const seconds = (time: RationalTime) => (time.rate > 0 ? time.value / time.rate : 0);

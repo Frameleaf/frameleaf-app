@@ -1,0 +1,5 @@
+{
+  "description": "Effects and transitions Frameleaf adds through engine patches. They have no row in the pinned upstream feature manifest or the conformance overlay; their evidence is studio/spec (pages and goldens) and the effect and transition matrices.",
+  "effects": ["gpu-cdl", "gpu-hue-curves", "gpu-lift-gamma-gain"],
+  "transitions": ["crossZoom", "cubeSpin", "filmDissolve", "pagePeel"]
+}

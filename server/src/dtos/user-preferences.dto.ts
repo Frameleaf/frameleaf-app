@@ -1,7 +1,8 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
-import { AssetOrderSchema, UserAvatarColorSchema } from 'src/enum.js';
+import { AssetOrderSchema, DownloadFormatSchema, UserAvatarColorSchema } from 'src/enum.js';
+import { DUPLICATE_KEEP_RULES } from 'src/utils/duplicate-keep-rules.js';
 import { NotificationLocalePreferencesSchema } from 'src/utils/notification-locale.js';
 import {
   type FrameleafUserPreferences,
@@ -112,6 +113,17 @@ const SharedLinksUpdateSchema = z
   .object({
     enabled: z.boolean().optional().describe('Whether shared links are enabled'),
     sidebarWeb: z.boolean().optional().describe('Whether shared links appear in web sidebar'),
+    // FL-922: positive whole days (at most ten years); null clears it, so new links follow the server's default
+    defaultExpiryDays: z
+      .int()
+      .min(1)
+      .max(3650)
+      .nullable()
+      .optional()
+      .describe(
+        "Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires)",
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .optional()
   .meta({ id: 'SharedLinksUpdate' });
@@ -143,9 +155,36 @@ const DownloadUpdateSchema = z
       .optional()
       .describe("Whether an archive download puts each photo's details file (XMP sidecar) beside it")
       .meta(new HistoryBuilder().added('v3').getExtensions()),
+    defaultFormat: DownloadFormatSchema.optional()
+      .describe(
+        'FL-826: the format downloads use unless one is chosen: original, jpeg (high-quality JPEG, full size) or web (2048 px JPEG). Archive downloads that name no format follow it',
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .optional()
   .meta({ id: 'DownloadUpdate' });
+
+const DuplicateKeepRuleSchema = z
+  .enum(DUPLICATE_KEEP_RULES)
+  .describe(
+    'FL-832: a rule for which duplicate copy to keep. raw and heic prefer that format; largest the biggest file; highestResolution the most pixels; oldest and newest the capture date; inAlbum a copy in one of your albums; hasEdits an edited copy; favorite a favourite; mostMetadata the most details',
+  )
+  .meta({ id: 'DuplicateKeepRule' });
+
+const DuplicatesUpdateSchema = z
+  .object({
+    keepRules: z
+      .array(DuplicateKeepRuleSchema)
+      .max(DUPLICATE_KEEP_RULES.length)
+      .transform((rules) => [...new Set(rules)])
+      .optional()
+      .describe(
+        'Rules for which duplicate copy is suggested as the keeper, most important first; a tie goes to the next rule. Empty uses the default order (raw, heic, largest, mostMetadata). Repeats are dropped',
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
+  })
+  .optional()
+  .meta({ id: 'DuplicatesUpdate' });
 
 const DateFormatSchema = z
   .enum(['auto', 'iso', 'dmy', 'mdy'])
@@ -376,6 +415,7 @@ const UserPreferencesUpdateSchema = z
     pets: PetsUpdateSchema,
     lockedPin: LockedPinUpdateSchema,
     savedSearches: SavedSearchesUpdateSchema.meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
+    duplicates: DuplicatesUpdateSchema,
     expectedRevision: z
       .string()
       .optional()
@@ -448,6 +488,15 @@ const SharedLinksResponseSchema = z
   .object({
     enabled: z.boolean().describe('Whether shared links are enabled'),
     sidebarWeb: z.boolean().describe('Whether shared links appear in web sidebar'),
+    // always sent; optional in the schema so clients built before it existed keep compiling
+    defaultExpiryDays: z
+      .int()
+      .nullable()
+      .optional()
+      .describe(
+        "Days a new shared link lasts when created with the default expiry; null uses the server's default (none: never expires)",
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'SharedLinksResponse' });
 
@@ -475,8 +524,26 @@ const DownloadResponseSchema = z
       .boolean()
       .describe("Whether an archive download puts each photo's details file (XMP sidecar) beside it")
       .meta(new HistoryBuilder().added('v3').getExtensions()),
+    // a plain string, not an enum: a response enum can never gain a value without breaking the native apps
+    defaultFormat: z
+      .string()
+      .optional()
+      .describe('FL-826: the format downloads use unless one is chosen: original, jpeg or web (always sent)')
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'DownloadResponse' });
+
+const DuplicatesResponseSchema = z
+  .object({
+    // plain strings, not an enum: a response enum can never gain a value without breaking the native apps
+    keepRules: z
+      .array(z.string())
+      .describe(
+        'FL-832: rules for which duplicate copy is suggested as the keeper, most important first (values of DuplicateKeepRule). Empty uses the default order',
+      )
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
+  })
+  .meta({ id: 'DuplicatesResponse' });
 
 const DisplayPreferencesResponseSchema = z
   .object({
@@ -636,6 +703,8 @@ const UserPreferencesResponseSchema = z
         'Saved searches (always present). Empty for an administrator, and without any that names a Locked person, pet or tag while the session is locked',
       )
       .meta(new HistoryBuilder().added('v3.2.0').getExtensions()),
+    // always sent; optional in the schema so clients built before FL-832 keep compiling
+    duplicates: DuplicatesResponseSchema.optional(),
     revision: z
       .string()
       .describe(

@@ -1174,8 +1174,21 @@ with
           else "asset"."visibility"
         end
       ) as "visibility",
-      asset."isFavorite"
-      and asset."ownerId" = $1 as "isFavorite",
+      (
+        (
+          "asset"."ownerId" = $1::uuid
+          AND "asset"."isFavorite"
+        )
+        OR EXISTS (
+          SELECT
+            1
+          FROM
+            public.asset_favorite af
+          WHERE
+            af."assetId" = "asset"."id"
+            AND af."userId" = $2::uuid
+        )
+      ) as "isFavorite",
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
       "asset"."isOffline",
@@ -1223,7 +1236,7 @@ with
         where
           "stacked"."stackId" = "asset"."stackId"
           and "stacked"."deletedAt" is null
-          and "stacked"."visibility" = $2
+          and "stacked"."visibility" = $3
           and exists (
             select
               1
@@ -1243,7 +1256,7 @@ with
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
-      "asset"."libraryScope" in ($3, $4)
+      "asset"."libraryScope" in ($4, $5)
       and "asset"."deletedAt" is null
       and (
         "asset"."visibility" in ('archive', 'timeline')
@@ -1256,7 +1269,7 @@ with
             asset_lock."assetId" = "asset"."id"
         )
       )
-      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $5
+      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $6
       and not exists (
         select
         from
@@ -1330,8 +1343,21 @@ with
           else "asset"."visibility"
         end
       ) as "visibility",
-      asset."isFavorite"
-      and asset."ownerId" = $1 as "isFavorite",
+      (
+        (
+          "asset"."ownerId" = $1::uuid
+          AND "asset"."isFavorite"
+        )
+        OR EXISTS (
+          SELECT
+            1
+          FROM
+            public.asset_favorite af
+          WHERE
+            af."assetId" = "asset"."id"
+            AND af."userId" = $2::uuid
+        )
+      ) as "isFavorite",
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
       "asset"."isOffline",
@@ -1379,7 +1405,7 @@ with
         where
           "stacked"."stackId" = "asset"."stackId"
           and "stacked"."deletedAt" is null
-          and "stacked"."visibility" = $2
+          and "stacked"."visibility" = $3
           and exists (
             select
               1
@@ -1399,7 +1425,7 @@ with
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
-      "asset"."libraryScope" in ($3, $4)
+      "asset"."libraryScope" in ($4, $5)
       and "asset"."deletedAt" is null
       and (
         "asset"."visibility" in ('archive', 'timeline')
@@ -1414,9 +1440,9 @@ with
       )
       and (
         f_unaccent ("asset_exif"."make") ilike (
-          '%' || regexp_replace(f_unaccent ($5), $6, $7, 'g') || '%'
+          '%' || regexp_replace(f_unaccent ($6), $7, $8, 'g') || '%'
         )
-        and "asset"."fileCreatedAt" >= $8
+        and "asset"."fileCreatedAt" >= $9
         and exists (
           select
             "asset_face"."assetId"
@@ -1425,19 +1451,19 @@ with
           where
             "asset_face"."assetId" = "asset"."id"
             and "asset_face"."deletedAt" is null
-            and "asset_face"."isVisible" = $9
-            and "asset_face"."personGroupId" = any ($10::uuid[])
+            and "asset_face"."isVisible" = $10
+            and "asset_face"."personGroupId" = any ($11::uuid[])
           group by
             "asset_face"."assetId"
           having
-            count(distinct "asset_face"."personGroupId") = $11
+            count(distinct "asset_face"."personGroupId") = $12
         )
         and (
-          "asset_exif"."city" = $12
-          or "asset_exif"."rating" >= $13
+          "asset_exif"."city" = $13
+          or "asset_exif"."rating" >= $14
         )
       )
-      and "asset"."type" = $14
+      and "asset"."type" = $15
       and not exists (
         select
           1
@@ -1445,10 +1471,10 @@ with
           asset_metadata
         where
           asset_metadata."assetId" = "asset"."id"
-          and asset_metadata.key = $15
+          and asset_metadata.key = $16
           and asset_metadata.value #>> '{description,status}' = 'success'
       )
-      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $16
+      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $17
       and not exists (
         select
         from
@@ -1522,8 +1548,21 @@ with
           else "asset"."visibility"
         end
       ) as "visibility",
-      asset."isFavorite"
-      and asset."ownerId" = $1 as "isFavorite",
+      (
+        (
+          "asset"."ownerId" = $1::uuid
+          AND "asset"."isFavorite"
+        )
+        OR EXISTS (
+          SELECT
+            1
+          FROM
+            public.asset_favorite af
+          WHERE
+            af."assetId" = "asset"."id"
+            AND af."userId" = $2::uuid
+        )
+      ) as "isFavorite",
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
       "asset"."isOffline",
@@ -1578,7 +1617,7 @@ with
         where
           "stacked"."stackId" = "asset"."stackId"
           and "stacked"."deletedAt" is null
-          and "stacked"."visibility" = $2
+          and "stacked"."visibility" = $3
           and exists (
             select
               1
@@ -1598,7 +1637,7 @@ with
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
-      "asset"."libraryScope" in ($3, $4)
+      "asset"."libraryScope" in ($4, $5)
       and "asset"."deletedAt" is null
       and (
         "asset"."visibility" in ('archive', 'timeline')
@@ -1624,9 +1663,9 @@ with
       "asset"."fileCreatedAt" desc,
       "asset"."id" asc
     limit
-      $5
-    offset
       $6
+    offset
+      $7
   ),
   "cte" as (
     select

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   STUDIO_IMPORT_CAPTIONS_MAX_BYTES,
+  STUDIO_IMPORT_FONT_MAX_BYTES,
+  STUDIO_IMPORT_LUT_1D_MAX_SIZE,
   STUDIO_IMPORT_LUT_MAX_BYTES,
   STUDIO_IMPORT_LUT_MAX_SIZE,
   StudioImportRefusal,
@@ -10,10 +12,12 @@ import {
   sniffStudioImport,
   studioImportKind,
   validateStudioCubeLut,
+  validateStudioFontImport,
   validateStudioImportText,
   validateStudioSubRip,
   validateStudioWebVtt,
 } from 'src/utils/studio-imports.js';
+import { makeStudioFont, makeStudioWoff2 } from 'test/fixtures/studio-font.stub.js';
 
 const bytes = (...parts: Array<string | number[]>) => {
   const out: number[] = [];
@@ -274,9 +278,33 @@ describe('caption files and LUTs (FL-105)', () => {
     expect(() => validateStudioCubeLut(cube(STUDIO_IMPORT_LUT_MAX_SIZE))).not.toThrow();
   });
 
+  it('accepts a well-formed 1D LUT and says it is one', () => {
+    expect(validateStudioCubeLut('TITLE "Lift"\nLUT_1D_SIZE 3\n0 0 0\n0.6 0.5 0.4\n1 1 1\n')).toEqual({
+      dimensions: 1,
+      size: 3,
+      domainMin: [0, 0, 0],
+      domainMax: [1, 1, 1],
+    });
+    expect(validateStudioCubeLut(`LUT_1D_SIZE 2\nLUT_1D_INPUT_RANGE -0.5 1.5\n0 0 0\n1 1 1\n`)).toEqual({
+      dimensions: 1,
+      size: 2,
+      domainMin: [-0.5, -0.5, -0.5],
+      domainMax: [1.5, 1.5, 1.5],
+    });
+    const longest = `LUT_1D_SIZE ${STUDIO_IMPORT_LUT_1D_MAX_SIZE}\n${'0.5 0.5 0.5\n'.repeat(STUDIO_IMPORT_LUT_1D_MAX_SIZE)}`;
+    expect(validateStudioCubeLut(longest).size).toBe(STUDIO_IMPORT_LUT_1D_MAX_SIZE);
+    expect(validateStudioCubeLut(cube(2)).dimensions).toBe(3);
+  });
+
   it.each([
     ['no size', '# empty\nTITLE "x"\n'],
-    ['a 1D LUT', 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n'],
+    ['a 1D LUT with too few rows', 'LUT_1D_SIZE 3\n0 0 0\n1 1 1\n'],
+    ['a 1D LUT with too many rows', 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n1 1 1\n'],
+    ['a 1D LUT of one row', 'LUT_1D_SIZE 1\n0 0 0\n'],
+    ['a 1D LUT past the limit', `LUT_1D_SIZE ${STUDIO_IMPORT_LUT_1D_MAX_SIZE + 1}\n`],
+    ['both a 1D and a 3D size', 'LUT_1D_SIZE 2\nLUT_3D_SIZE 2\n' + '0 0 0\n'.repeat(8)],
+    ['a 3D input range on a 1D LUT', 'LUT_1D_SIZE 2\nLUT_3D_INPUT_RANGE 0 1\n0 0 0\n1 1 1\n'],
+    ['a 1D input range on a 3D LUT', cube(2, 8, 'LUT_1D_INPUT_RANGE 0 1\n')],
     ['too few rows', cube(2, 7)],
     ['too many rows', cube(2, 9)],
     ['a grid of one', cube(1)],
@@ -317,16 +345,19 @@ describe('Cube file input-domain admission', () => {
   const body = (headers: string) => `LUT_3D_SIZE 2\n${headers}\n${'-1 2 .5\n'.repeat(8)}`;
   it('retains common input range and independent per-axis domains', () => {
     expect(validateStudioCubeLut(body('LUT_3D_INPUT_RANGE -2 2'))).toEqual({
+      dimensions: 3,
       size: 2,
       domainMin: [-2, -2, -2],
       domainMax: [2, 2, 2],
     });
     expect(validateStudioCubeLut(body('DOMAIN_MIN -2 -1 0\nDOMAIN_MAX 2 3 4'))).toEqual({
+      dimensions: 3,
       size: 2,
       domainMin: [-2, -1, 0],
       domainMax: [2, 3, 4],
     });
     expect(validateStudioCubeLut(body('LUT_3D_INPUT_RANGE -2 2\nDOMAIN_MIN -2 -2 -2'))).toEqual({
+      dimensions: 3,
       size: 2,
       domainMin: [-2, -2, -2],
       domainMax: [2, 2, 2],
@@ -340,5 +371,34 @@ describe('Cube file input-domain admission', () => {
     'LUT_3D_INPUT_RANGE 0 1e-40',
   ])('refuses ambiguous or unrepresentable input domains %s', (headers) => {
     expect(() => validateStudioCubeLut(body(headers))).toThrow(StudioImportRefusal);
+  });
+});
+
+describe('font imports (FL-1562)', () => {
+  it('reads the three font formats from their signature, whatever the declared type', () => {
+    expect(sniffStudioImport(makeStudioFont().subarray(0, 64), 'application/octet-stream')).toEqual({
+      contentType: 'font/ttf',
+      kind: 'font',
+      extension: '.ttf',
+    });
+    expect(sniffStudioImport(makeStudioFont({ flavor: 'otf' }).subarray(0, 64), undefined).contentType).toBe(
+      'font/otf',
+    );
+    expect(sniffStudioImport(makeStudioWoff2().subarray(0, 64), 'font/ttf').contentType).toBe('font/woff2');
+    expect(studioImportKind('font/woff2')).toBe('font');
+  });
+
+  it('refuses collections and WOFF 1 as imports', () => {
+    expect(() => sniffStudioImport(bytes('ttcf'), undefined)).toThrow(StudioImportRefusal);
+    expect(() => sniffStudioImport(bytes('wOFF'), 'font/woff')).toThrow(/WOFF 1/);
+  });
+
+  it('checks a font whole and refuses a malformed one as an import refusal', () => {
+    expect(validateStudioFontImport(makeStudioWoff2({ family: 'Brand', weight: 300 }))).toMatchObject({
+      family: 'Brand',
+      weight: 300,
+    });
+    expect(() => validateStudioFontImport(makeStudioFont({ omit: 'head' }))).toThrow(StudioImportRefusal);
+    expect(STUDIO_IMPORT_FONT_MAX_BYTES).toBe(32 * 1024 * 1024);
   });
 });

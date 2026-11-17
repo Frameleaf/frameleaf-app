@@ -159,6 +159,8 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
     sharedLinks: {
       enabled: true,
       sidebarWeb: true,
+      // FL-922: no personal default; a new link follows the server's default expiry, if any
+      defaultExpiryDays: null,
     },
     // D6 (owner, 2026-10-16): star ratings are on by default.
     ratings: {
@@ -185,6 +187,8 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       // ACCOUNT-P5, prototype `preferences.jsx` Downloads: a details file beside each photo. There is no
       // original-or-edited choice: a download is the version on screen (owner, 2026-10-16).
       includeSidecar: true,
+      // FL-826: the file as it was uploaded, as before the choice existed
+      defaultFormat: 'original',
     },
     // ACCOUNT-P3, prototype `preferences.jsx` Look: the search screens leave archived photos out unless asked
     // for. Applied by the client (it sends the visibility); search with no visibility is unchanged.
@@ -247,6 +251,10 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       relockMinutes: LOCKED_RELOCK_MINUTES_DEFAULT,
     },
     savedSearches: [],
+    // FL-832: no rules of the person's own; duplicates suggest the keeper in Frameleaf's order
+    duplicates: {
+      keepRules: [],
+    },
   };
 };
 

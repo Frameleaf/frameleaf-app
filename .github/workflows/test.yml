@@ -1541,6 +1541,18 @@ jobs:
             git diff -- packages/locked-crypto/dist
             exit 1
           fi
+      - name: Test backup-core and check its committed build is current
+        run: |
+          pnpm --filter @frameleaf/backup-core test
+          pnpm --filter @frameleaf/backup-core build
+          # Manager installs this package from the repository, so its build is committed like locked-crypto's.
+          changed="$(git status --porcelain -- packages/backup-core/dist)"
+          if [ -n "$changed" ]; then
+            echo "::error::packages/backup-core/dist is not the committed build:"
+            echo "$changed"
+            git diff -- packages/backup-core/dist
+            exit 1
+          fi
       - name: Run existing migrations
         run: pnpm --filter frameleaf migrations:run
       - name: Capture exact canonical catalog for reconciliation
