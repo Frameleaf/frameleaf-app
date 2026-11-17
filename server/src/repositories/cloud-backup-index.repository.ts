@@ -67,6 +67,8 @@ export type CloudBackupAsset = {
   }>;
 };
 const MANIFEST_COLUMNS = ['id', 'bucket', 'key', 'operationId', 'status', 'createdAt'] as const;
+/** Originals recorded per insert when a backup completes. */
+const MEMBERSHIP_BATCH = 5000;
 const ENTRY_COLUMNS = ['fileKey', 'assetId', 'ownerId', 'role', 'path', 'sha256', 'size', 'mtime'] as const;
 /** FL-164: manifests that are in the bucket and kept: complete ones, and ones a verification marked degraded. */
 const KEPT_MANIFEST_STATUSES = ['complete', 'degraded'] as const;
@@ -331,11 +333,18 @@ export class CloudBackupIndexRepository {
   })
   async finishManifest(
     id: string,
-    values: {
+    {
+      originals = [],
+      ...values
+    }: {
       status: 'complete' | 'cancelled' | 'failed';
       assetCount?: number;
       fileCount?: number;
       bytes?: number;
+      /** The database dump the backup holds, by its place in the backup. */
+      databaseKey?: string | null;
+      /** FL-1676: every item whose original the backup holds, with the hash of what was stored. */
+      originals?: Array<{ assetId: string; sha256: string }>;
     },
   ): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
@@ -350,19 +359,13 @@ export class CloudBackupIndexRepository {
         return;
       }
       if (values.status === 'complete') {
-        await tx
-          .insertInto('cloud_backup_manifest_original')
-          .columns(['manifestId', 'assetId', 'sha256'])
-          .expression(
-            tx
-              .selectFrom('cloud_backup_manifest_entry')
-              .select(['manifestId', sql<string>`"assetId"`.as('assetId'), 'sha256'])
-              .where('manifestId', '=', id)
-              .where('role', '=', 'original')
-              .where('assetId', 'is not', null),
-          )
-          .onConflict((oc) => oc.columns(['manifestId', 'assetId']).doNothing())
-          .execute();
+        for (let at = 0; at < originals.length; at += MEMBERSHIP_BATCH) {
+          await tx
+            .insertInto('cloud_backup_manifest_original')
+            .values(originals.slice(at, at + MEMBERSHIP_BATCH).map((original) => ({ manifestId: id, ...original })))
+            .onConflict((oc) => oc.columns(['manifestId', 'assetId']).doNothing())
+            .execute();
+        }
       }
       await tx
         .updateTable('cloud_backup_manifest')

@@ -20,9 +20,12 @@ import {
   backupRunCoverageStateSchema,
 } from 'src/utils/frameleaf-cloud-backup-coverage.js';
 import {
+  BACKUP_REPOSITORY_FORMAT,
   BackupAgentSettings,
   BackupGrantMetadata,
   BackupGrantResponse,
+  BackupLease,
+  BackupLeaseOperation,
   BackupOperation,
   BackupRunReport,
   BackupUsage,
@@ -34,6 +37,8 @@ import {
   backupGrantMetadataSchema,
   backupGrantRequestSchema,
   backupGrantResponseSchema,
+  backupLeaseRequestSchema,
+  backupLeaseSchema,
   backupLocationsSchema,
   backupRunReportSchema,
   backupUsageSchema,
@@ -53,7 +58,8 @@ const backupSnapshotListSchema = z.object({
 
 /**
  * Frameleaf Cloud's managed backup routes (FL-164, CLD-302; FC-33 BAK-001 and FC-38 BAK-002): the bucket
- * grant and its rotation, usage, run telemetry, the agent's settings and key escrow. Every body is checked
+ * grant and its rotation, the run lease (FL-1676, FC-284), usage, run telemetry, the agent's settings and key
+ * escrow. Every grant asks for the chunked repository by name. Every body is checked
  * against the contract before it is sent and every answer after it arrives. The grant's secret is handed
  * to the caller and never kept here, logged or written anywhere.
  */
@@ -72,7 +78,7 @@ export class FrameleafCloudBackupRepository {
   async metadata(target: ManagedBackupApi): Promise<BackupGrantMetadata | null> {
     try {
       return await this.cloud.requestJson(backupGrantMetadataSchema, {
-        url: backupEndpoints(target).grant,
+        url: backupEndpoints(target).grantMetadata,
         dpop: target.token,
       });
     } catch (error) {
@@ -88,6 +94,7 @@ export class FrameleafCloudBackupRepository {
     target: ManagedBackupApi,
     locationId: string,
     operation: BackupOperation,
+    leaseId?: string,
   ): Promise<BackupGrantMetadata | BackupGrantResponse> {
     return this.issue(z.union([backupGrantResponseSchema, backupGrantMetadataSchema]), {
       method: 'POST',
@@ -95,20 +102,61 @@ export class FrameleafCloudBackupRepository {
       dpop: target.token,
       // First setup also installs the account's isolated roles and storage binding.
       timeoutMs: 120_000,
-      body: backupGrantRequestSchema.parse({ locationId, operation }),
+      body: backupGrantRequestSchema.parse({
+        locationId,
+        operation,
+        objectFormat: BACKUP_REPOSITORY_FORMAT,
+        ...(leaseId && { leaseId }),
+      }),
     });
   }
 
   /**
    * `POST /v4/backup/grant/rotate`: an independent temporary session for the same operation.
-   * Existing sessions and multipart state survive renewal.
+   * Existing sessions and multipart state survive renewal. Upload and prune name the run lease they hold.
    */
-  rotate(target: ManagedBackupApi, operation: BackupOperation): Promise<BackupGrantResponse> {
+  rotate(target: ManagedBackupApi, operation: BackupOperation, leaseId?: string): Promise<BackupGrantResponse> {
     return this.issue(backupGrantResponseSchema, {
       method: 'POST',
       url: backupEndpoints(target).rotate,
       dpop: target.token,
-      body: backupCapabilityRequestSchema.parse({ operation }),
+      body: backupCapabilityRequestSchema.parse({
+        operation,
+        objectFormat: BACKUP_REPOSITORY_FORMAT,
+        ...(leaseId && { leaseId }),
+      }),
+    });
+  }
+
+  /**
+   * `POST /v4/backup/lease`: take the run lease. This server picks `leaseId`, so asking again after a lost
+   * answer is the same lease. While another run holds it, Frameleaf Cloud answers 409 `lease-held`.
+   */
+  acquireLease(target: ManagedBackupApi, leaseId: string, operation: BackupLeaseOperation): Promise<BackupLease> {
+    return this.cloud.requestJson(backupLeaseSchema, {
+      method: 'POST',
+      url: backupEndpoints(target).lease,
+      dpop: target.token,
+      body: backupLeaseRequestSchema.parse({ leaseId, operation }),
+    });
+  }
+
+  /** `POST /v4/backup/lease/heartbeat`: keep the lease. 409 `lease-lost` once it is gone. */
+  heartbeatLease(target: ManagedBackupApi, leaseId: string): Promise<BackupLease> {
+    return this.cloud.requestJson(backupLeaseSchema, {
+      method: 'POST',
+      url: backupEndpoints(target).leaseHeartbeat,
+      dpop: target.token,
+      body: { leaseId: z.uuid().parse(leaseId) },
+    });
+  }
+
+  /** `DELETE /v4/backup/lease`: give the lease back, so the next run need not wait for it to run out. */
+  async releaseLease(target: ManagedBackupApi, leaseId: string): Promise<void> {
+    await this.cloud.requestJson(z.unknown(), {
+      method: 'DELETE',
+      url: `${backupEndpoints(target).lease}?leaseId=${encodeURIComponent(z.uuid().parse(leaseId))}`,
+      dpop: target.token,
     });
   }
 

@@ -7,14 +7,14 @@ import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { StorageRepository } from 'src/repositories/storage.repository.js';
 import type { RestoreDetailsMode } from 'src/utils/cloud-backup-details.js';
 import { StorageFolder } from 'src/enum.js';
-import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
-import { CloudBackupBucket, CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
+import { CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
 import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
 import {
   assertOwnerRestoreFile,
   assertOwnerRestorePublished,
   captureOwnerRestoreFile,
 } from 'src/utils/cloud-backup-owner-path.js';
+import { VaultFileError } from 'src/utils/cloud-backup-vault.js';
 import { CloudBackupManifest, manifestFileObjectKey } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
@@ -296,23 +296,23 @@ export const restorePlan = (options: {
 };
 
 /**
- * Restores from a manifest (FL-164). Every object is fetched with the bucket key (SSE-C), streamed to a
- * partial file and moved into place only when it hashes to its name; a missing or mismatched object stops
- * the restore, names the object, and leaves everything already restored as it is. A file that is already
- * in place with the backed-up content is left alone. Used by the `cloud_restore` worker and by the
- * `frameleaf-admin cloud-backup restore` command, which has no web app to report to.
+ * Restores from a backup's catalog (FL-164). Every file is read through `read` (Cloud Backup reads it out
+ * of the backup engine's snapshot, Buddy Backup from its vault), written to a partial file and moved into
+ * place only when it hashes to what the catalog says; a missing or mismatched file stops the restore, names
+ * it, and leaves everything already restored as it is. A file that is already in place with the backed-up
+ * content is left alone. Used by the `cloud_restore` worker and by the `frameleaf-admin cloud-backup restore`
+ * command, which has no web app to report to.
  */
 export class CloudBackupRestorer {
   constructor(
-    private store: Pick<CloudBackupStoreRepository, 'download'> | null,
     private storage: StorageRepository,
     private crypto: CryptoRepository,
     private logger: LoggingRepository,
   ) {}
 
   async restore(options: {
-    bucket?: CloudBackupBucket;
-    read?: BackupObjectReader;
+    /** Brings one backed-up file, named by its catalog key, to a path that does not exist yet. */
+    read: BackupObjectReader;
     /** Stage on the target volume so external-library publication remains an atomic rename. */
     stageBesideTarget?: boolean;
     manifest: CloudBackupManifest;
@@ -331,7 +331,7 @@ export class CloudBackupRestorer {
     /** Persist verified file evidence before advancing a destination-specific cursor. */
     completedFile?: (file: CloudBackupRestoreFile, outcome: 'written' | 'skipped' | 'replaced') => Promise<void>;
   }): Promise<CloudBackupRestoreResult | null> {
-    const { bucket, manifest, scope, files, checkpoint } = options;
+    const { manifest, scope, files, checkpoint } = options;
     const database = scope === 'database' || scope === 'library' ? manifest.database : null;
     if ((scope === 'database' || scope === 'library') && !database) {
       throw new Error('This backup has no database dump to restore.');
@@ -352,7 +352,7 @@ export class CloudBackupRestorer {
           const earlier = result.publishing?.fileKey === file.fileKey ? result.publishing.outcome : undefined;
           let outcome: 'written' | 'skipped' | 'replaced';
           try {
-            outcome = await this.restoreFile(bucket, manifestFileObjectKey(file), file, {
+            outcome = await this.restoreFile(manifestFileObjectKey(file), file, {
               ...options,
               publishedEarlier: earlier,
               // FL-1333: saved before an owner publication, so a resume knows this restore put the file there
@@ -406,7 +406,6 @@ export class CloudBackupRestorer {
       const name = restoredDumpName(database.key);
       const target = join(options.backupsFolder, name);
       const outcome = await this.restoreFile(
-        bucket,
         database.key,
         {
           fileKey: '~database',
@@ -466,14 +465,13 @@ export class CloudBackupRestorer {
    * is moved aside only after the object has been downloaded and verified beside the target.
    */
   private async restoreFile(
-    bucket: CloudBackupBucket | undefined,
     key: string,
     file: CloudBackupRestoreFile,
     options: {
       mediaLocation: string;
       operationId: string;
       publish?: OwnerRestorePublisher;
-      read?: BackupObjectReader;
+      read: BackupObjectReader;
       stageBesideTarget?: boolean;
       /** FL-1333: how an earlier attempt of this restore counted its publication of this file, if it began one. */
       publishedEarlier?: 'written' | 'replaced';
@@ -481,12 +479,7 @@ export class CloudBackupRestorer {
       beforePublish?: (outcome: 'written' | 'replaced') => Promise<void>;
     },
   ): Promise<'written' | 'skipped' | 'replaced'> {
-    const download: BackupObjectReader =
-      options.read ??
-      ((object, destination, sha256) => {
-        if (!this.store || !bucket) throw new Error('Backup reader unavailable');
-        return this.store.download(bucket.connection, object, bucket.bucketKey, destination, sha256);
-      });
+    const download = options.read;
     if (options.publish) {
       if (options.stageBesideTarget) await options.publish(file, '', () => Promise.resolve('skipped'), 'inspect');
       // FL-1320: the thumbnails folder can be a drive of its own, and a rename cannot cross drives, so a
@@ -589,12 +582,12 @@ export class CloudBackupRestorer {
         await chmod(file.target, 0o600);
       }
     } catch (error) {
-      if (error instanceof CloudBackupStoreError && error.status === 404) {
+      if (error instanceof VaultFileError && error.reason === 'missing') {
         throw new Error(`The backup copy of ${key} is missing from the bucket. The restore stopped before it.`, {
           cause: error,
         });
       }
-      if (error instanceof CloudBackupStoreError && error.code === 'ChecksumMismatch') {
+      if (error instanceof VaultFileError && error.reason === 'damaged') {
         throw new Error(`The backup copy of ${key} does not match its checksum. The restore stopped before it.`, {
           cause: error,
         });

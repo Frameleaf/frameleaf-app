@@ -445,6 +445,8 @@ export type CloudBackupRunResult = {
   lockedKeyOwners: string[];
   lockedKeyIds: string[];
   sealedKeyIds: string[];
+  /** FL-1676: what storage answered for the stored backup, which its signed record names. */
+  stored?: { versionId: string | null; ciphertextSha256: string };
 };
 
 export const emptyRunResult = (): CloudBackupRunResult => ({
@@ -494,6 +496,11 @@ export const parseRunResult = (value: unknown): CloudBackupRunResult => {
     ? (result.phase as CloudBackupRunResult['phase'])
     : 'database';
   const database = result.database as Record<string, unknown> | null | undefined;
+  const receipt = result.stored as { versionId?: unknown; ciphertextSha256?: unknown } | null | undefined;
+  const stored =
+    receipt && typeof receipt.ciphertextSha256 === 'string' && /^[\da-f]{64}$/.test(receipt.ciphertextSha256)
+      ? { versionId: text(receipt.versionId), ciphertextSha256: receipt.ciphertextSha256 }
+      : undefined;
   const databaseKey = database ? text(database.key) : null;
   const databaseHash = database ? text(database.sha256) : null;
   return {
@@ -515,6 +522,7 @@ export const parseRunResult = (value: unknown): CloudBackupRunResult => {
     lockedKeyOwners: ids(result.lockedKeyOwners),
     lockedKeyIds: ids(result.lockedKeyIds),
     sealedKeyIds: ids(result.sealedKeyIds),
+    ...(stored && { stored }),
   };
 };
 

@@ -1,11 +1,14 @@
 import { randomInt } from 'node:crypto';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import type { Repository, Snapshot } from '@frameleaf/backup-core';
 import type { CloudBackupBucket } from 'src/services/cloud-backup-maintenance.js';
 import {
-  CloudBackupStoreError,
-  type CloudBackupStoreRepository,
-} from 'src/repositories/cloud-backup-store.repository.js';
-import { readManifest } from 'src/utils/cloud-backup-retention.js';
+  VaultFileError,
+  parseSnapshotObjectKey,
+  readVaultCatalog,
+  readVaultSnapshot,
+  restoreVaultFile,
+} from 'src/utils/cloud-backup-vault.js';
 import { type CloudBackupManifest, manifestFileObjectKey } from 'src/utils/cloud-backup.js';
 import { assertExecutionActive } from 'src/utils/execution-signal.js';
 
@@ -65,7 +68,8 @@ export class DrillStepError extends Error {
 }
 
 export type DrillDeps = {
-  store: Pick<CloudBackupStoreRepository, 'exportObject' | 'get' | 'download'>;
+  /** The bucket's repository, opened with this server's recovery keys and its index loaded. */
+  open: () => Promise<Repository>;
   makeDirectory: (path: string) => Promise<void>;
   removeDirectory: (path: string) => Promise<void>;
   /** Rebuild the dump in a scratch database: what it holds, and which of `assetIds` it has. */
@@ -82,8 +86,8 @@ export type DrillDeps = {
   random?: (max: number) => number;
 };
 
-const isMissing = (error: unknown) => error instanceof CloudBackupStoreError && error.status === 404;
-const isMismatch = (error: unknown) => error instanceof CloudBackupStoreError && error.code === 'ChecksumMismatch';
+const isMissing = (error: unknown) => error instanceof VaultFileError && error.reason === 'missing';
+const isMismatch = (error: unknown) => error instanceof VaultFileError && error.reason === 'damaged';
 
 /** A random sample of `size` from `items` (all of them when there are fewer), without repeats. */
 export const drillSample = <T>(items: T[], size: number, random: (max: number) => number = randomInt): T[] => {
@@ -137,19 +141,28 @@ export async function runRestoreDrill(
     if (!manifestKey) {
       throw new DrillStepError('fetch', 'No finished backup is recorded in the signed snapshot history');
     }
+    const named = parseSnapshotObjectKey(manifestKey);
+    if (!named) {
+      throw new DrillStepError('fetch', 'The signed snapshot history names something that is not a backup');
+    }
+    // (b) unlock first, as far as storage allows: the repository opens only with this server's recovery key
+    let repository: Repository;
     try {
-      await deps.store.exportObject(bucket.connection, manifestKey, bucket.bucketKey, join(scratch, 'manifest'));
+      repository = await deps.open();
     } catch (error) {
-      throw new DrillStepError('fetch', `The newest backup’s list of files could not be fetched intact`, {
-        cause: error,
-      });
+      throw new DrillStepError('unlock', 'The recovery key on this server did not open the backup', { cause: error });
+    }
+    let snapshot: Snapshot;
+    try {
+      snapshot = await readVaultSnapshot(repository, named.key, bucket.connection.trustedManifests?.[manifestKey]);
+    } catch (error) {
+      throw new DrillStepError('fetch', `The newest backup could not be fetched intact`, { cause: error });
     }
     if (!(await deps.progress(10, 0))) return null;
 
-    // (b) unlock: the list of files with the recovery key, then the library data it names
     let manifest: CloudBackupManifest;
     try {
-      manifest = readManifest(await deps.store.get(bucket.connection, manifestKey, bucket.bucketKey));
+      manifest = await readVaultCatalog(repository, snapshot);
     } catch (error) {
       throw new DrillStepError('unlock', 'The newest backup could not be unlocked', { cause: error });
     }
@@ -158,15 +171,13 @@ export async function runRestoreDrill(
     if (!manifest.database) {
       throw new DrillStepError('rebuild', 'The newest backup holds no library data');
     }
-    const dumpPath = join(scratch, 'library-data.sql.gz');
+    // stored uncompressed; the rebuild reads a plain dump as it reads a gzipped one
+    const dumpPath = join(scratch, basename(manifest.database.key));
     try {
-      await deps.store.download(
-        bucket.connection,
-        manifest.database.key,
-        bucket.bucketKey,
-        dumpPath,
-        manifest.database.sha256,
-      );
+      const written = await restoreVaultFile(repository, snapshot, manifest.database.key, dumpPath);
+      if (written.sha256 !== manifest.database.sha256) {
+        throw new VaultFileError('damaged', manifest.database.key);
+      }
     } catch (error) {
       if (isMissing(error))
         throw new DrillStepError('fetch', 'The library data is missing from the backup', { cause: error });
@@ -225,13 +236,10 @@ export async function runRestoreDrill(
     const target = join(scratch, 'original');
     for (const [index, { assetId, file }] of sample.entries()) {
       try {
-        await deps.store.download(
-          bucket.connection,
-          manifestFileObjectKey(file),
-          bucket.bucketKey,
-          target,
-          file.sha256,
-        );
+        const written = await restoreVaultFile(repository, snapshot, manifestFileObjectKey(file), target);
+        if (written.sha256 !== file.sha256 || written.size !== file.size) {
+          throw new VaultFileError('damaged', manifestFileObjectKey(file));
+        }
         outcome.matched++;
       } catch (error) {
         if (isMissing(error)) outcome.mismatches.push({ assetId, problem: 'missing' });
@@ -240,6 +248,7 @@ export async function runRestoreDrill(
       } finally {
         await deps.removeDirectory(target);
       }
+      assertExecutionActive();
       outcome.checked = index + 1;
       if (!(await deps.progress(50 + (outcome.checked / Math.max(1, sample.length)) * 50, outcome.checked)))
         return null;

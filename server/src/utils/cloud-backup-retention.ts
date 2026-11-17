@@ -1,36 +1,19 @@
-import { gunzipSync } from 'node:zlib';
-import { clientBackupContext } from 'src/utils/cloud-backup-crypto.js';
-import {
-  CLOUD_BACKUP_DB_PREFIX,
-  CLOUD_BACKUP_MANIFEST_FORMAT,
-  CLOUD_BACKUP_OBJECT_PREFIX,
-  CloudBackupManifest,
-  CloudBackupManifestFile,
-  cloudBackupAlbumSchema,
-  cloudBackupPersonSchema,
-  isSha256Hex,
-  manifestFileObjectKey,
-  readManifestAsset,
-  readManifestSection,
-} from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
-import { isLockedKeyUserId } from 'src/utils/locked-backup.js';
 
 /**
- * Cloud backup retention, verification sampling and manifest reading (FL-164, CLD-302). Pure functions:
- * nothing here reads a file or talks to a provider, so the rules that decide what may be deleted can be
- * tested on their own.
+ * Cloud backup retention and verification sampling (FL-164, CLD-302). Pure functions: nothing here reads a
+ * file or talks to a provider, so the rules that decide what may be deleted can be tested on their own.
  *
- * - **Retention** keeps the newest manifest, then the newest manifest of each of the last `keepDaily`
- *   days, `keepWeekly` ISO weeks and `keepMonthly` months that have one (UTC). Every other manifest is
- *   removed, and with it only the objects that no kept manifest names.
- * - **Weekly verification** checks the objects whose SHA-256 falls in this week's 1/52 slice, so every
- *   object is fetched and checked once a year; the monthly pass HEADs every referenced object.
+ * - **Retention** keeps the newest backup, then the newest backup of each of the last `keepDaily` days,
+ *   `keepWeekly` ISO weeks and `keepMonthly` months that have one (UTC). Every other backup is removed by
+ *   the backup engine, and with it only the stored data that no kept backup needs.
+ * - **Weekly verification** reads the stored objects whose name falls in this week's 1/52 slice, so every
+ *   object is fetched and checked once a year; the monthly pass checks that every needed piece is stored.
  */
 
 export type CloudBackupRetention = { keepDaily: number; keepWeekly: number; keepMonthly: number };
 
-/** One manifest a retention pass decides about: its bucket key and when its run made it. */
+/** One backup a retention pass decides about: its name in storage and when its run made it. */
 export type CloudBackupRetentionCandidate = { key: string; createdAt: Date };
 
 /** Weeks in the verification cycle: each week checks 1/52 of the objects. */
@@ -39,25 +22,8 @@ export const CLOUD_BACKUP_VERIFY_SLICES = 52;
 export const CLOUD_BACKUP_FULL_VERIFY_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
 /** How long after a sampled verification the next one is due. */
 export const CLOUD_BACKUP_SAMPLE_VERIFY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
-/** A manifest larger than this once decompressed is refused rather than read into memory. */
-export const CLOUD_BACKUP_MANIFEST_MAX_BYTES = 1024 * 1024 * 1024;
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
-
-/** When a run made its manifest, read from the name `m/20260926T030000Z.json.gz`; null for any other name. */
-export const manifestTime = (key: string): Date | null => {
-  const match = /^m\/(?:v1\/[\da-f-]{36}\/[1-9]\d{0,8}\/)?(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.json\.gz$/.exec(
-    key,
-  );
-  if (!match) {
-    return null;
-  }
-  const [, year, month, day, hour, minute, second] = match;
-  const iso = `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`;
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) || date.toISOString() !== iso ? null : date;
-};
 
 const dayOf = (date: Date) => date.toISOString().slice(0, 10);
 
@@ -74,7 +40,7 @@ export const isoWeekOf = (date: Date) => {
 };
 
 /**
- * Which manifests to keep and which to remove. The newest is always kept, whatever the settings say, so
+ * Which backups to keep and which to remove. The newest is always kept, whatever the settings say, so
  * a bucket is never left without a restore point. Ties on time are broken by key, so the answer is the
  * same however the list arrives.
  */
@@ -113,31 +79,12 @@ export const retentionPlan = <T extends CloudBackupRetentionCandidate>(
   };
 };
 
-/** Objects under `o/` that no kept manifest names. Anything else in the bucket is never offered for deletion. */
-export const unreferencedObjects = <T extends { key: string }>(
-  objects: readonly T[],
-  referenced: ReadonlySet<string>,
-): T[] => {
-  return objects.filter(({ key }) => {
-    if (!key.startsWith(CLOUD_BACKUP_OBJECT_PREFIX)) {
-      return false;
-    }
-    const sha256 = key.slice(CLOUD_BACKUP_OBJECT_PREFIX.length);
-    if (key.startsWith('o/v1/')) return !!clientBackupContext('validation', key) && !referenced.has(key);
-    return isSha256Hex(sha256) && !referenced.has(sha256);
-  });
-};
-
-/** Database dumps under `db/` that no kept manifest names. */
-export const unreferencedDumps = <T extends { key: string }>(objects: readonly T[], referenced: ReadonlySet<string>) =>
-  objects.filter(({ key }) => key.startsWith(CLOUD_BACKUP_DB_PREFIX) && !referenced.has(key));
-
 /** This week's verification slice, 0 to 51, counted in whole weeks since the epoch. */
 export const verifySliceOf = (date: Date) => Math.floor(date.getTime() / WEEK_MS) % CLOUD_BACKUP_VERIFY_SLICES;
 
-/** Whether an object falls in a week's slice: the first 32 bits of its SHA-256, modulo 52. */
-export const inVerifySlice = (sha256: string, slice: number) =>
-  Number.parseInt(sha256.slice(0, 8), 16) % CLOUD_BACKUP_VERIFY_SLICES === slice;
+/** Whether a stored object falls in a week's slice: the first 32 bits of its (random, hex) name, modulo 52. */
+export const inVerifySlice = (name: string, slice: number) =>
+  Number.parseInt(name.slice(0, 8), 16) % CLOUD_BACKUP_VERIFY_SLICES === slice;
 
 /** Which verification is due now, if any: the monthly full pass first, else the weekly sample. */
 export const verificationDue = (
@@ -158,132 +105,4 @@ export const verificationDue = (
     return 'sample';
   }
   return null;
-};
-
-const isFile = (value: unknown): value is CloudBackupManifestFile => {
-  const file = value as Partial<CloudBackupManifestFile> | null;
-  return (
-    !!file &&
-    typeof file === 'object' &&
-    typeof file.role === 'string' &&
-    typeof file.path === 'string' &&
-    typeof file.sha256 === 'string' &&
-    isSha256Hex(file.sha256) &&
-    typeof file.size === 'number' &&
-    Number.isFinite(file.size) &&
-    // `file` is untrusted manifest data, not a Map or Set: its `size` can be negative
-    // eslint-disable-next-line unicorn/no-impossible-length-comparison
-    file.size >= 0
-  );
-};
-
-/**
- * A manifest as a run wrote it (`m/<ISO>.json.gz`), decompressed and checked. Anything that is not a
- * Frameleaf manifest, or names an object by anything but a SHA-256, is refused: retention must never
- * compute what to keep from a manifest it could not read in full.
- */
-export const readManifest = (body: Buffer): CloudBackupManifest => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(gunzipSync(body, { maxOutputLength: CLOUD_BACKUP_MANIFEST_MAX_BYTES }).toString('utf8'));
-  } catch {
-    throw new Error('This backup manifest could not be read.');
-  }
-  const manifest = parsed as Partial<CloudBackupManifest> | null;
-  if (
-    !manifest ||
-    typeof manifest !== 'object' ||
-    manifest.format !== CLOUD_BACKUP_MANIFEST_FORMAT ||
-    (manifest.version !== 1 && manifest.version !== 2 && manifest.version !== 3) ||
-    typeof manifest.instanceId !== 'string' ||
-    !manifest.assets ||
-    typeof manifest.assets !== 'object' ||
-    Array.isArray(manifest.assets)
-  ) {
-    throw new Error('This is not a Frameleaf backup manifest.');
-  }
-  for (const asset of Object.values(manifest.assets)) {
-    if (!asset || !Array.isArray(asset.files) || asset.files.some((file) => !isFile(file))) {
-      throw new Error('This backup manifest names a file without a valid checksum.');
-    }
-  }
-  const profiles = manifest.profiles ?? {};
-  if (
-    typeof profiles !== 'object' ||
-    Array.isArray(profiles) ||
-    Object.values(profiles).some((file) => !isFile(file))
-  ) {
-    throw new Error('This backup manifest names a file without a valid checksum.');
-  }
-  // FL-721: the key files, checked as the profile images are; a key file names its owner's user id
-  const lockedKeys = manifest.lockedKeys ?? {};
-  if (
-    typeof lockedKeys !== 'object' ||
-    Array.isArray(lockedKeys) ||
-    Object.entries(lockedKeys).some(([userId, file]) => !isLockedKeyUserId(userId) || !isFile(file))
-  ) {
-    throw new Error('This backup manifest names a file without a valid checksum.');
-  }
-  const database = manifest.database ?? null;
-  if (database && (typeof database.key !== 'string' || !isSha256Hex(database.sha256))) {
-    throw new Error('This backup manifest names a database dump without a valid checksum.');
-  }
-  if (manifest.version === 3) {
-    for (const file of [
-      ...Object.values(manifest.assets).flatMap((asset) => asset.files),
-      ...Object.values(profiles),
-      ...Object.values(lockedKeys),
-    ]) {
-      if (!file.objectKey || clientBackupContext('validation', file.objectKey, manifest.instanceId)?.kind !== 'object')
-        throw new Error('Invalid encrypted backup manifest reference');
-    }
-    if (database && clientBackupContext('validation', database.key, manifest.instanceId)?.kind !== 'database')
-      throw new Error('Invalid encrypted backup database reference');
-  } else if (
-    [
-      ...Object.values(manifest.assets).flatMap((asset) => asset.files),
-      ...Object.values(profiles),
-      ...Object.values(lockedKeys),
-    ].some((file) => file.objectKey !== undefined)
-  ) {
-    throw new Error('Legacy manifest contains client-format references');
-  }
-  const v2 = manifest.version !== 1;
-  return {
-    format: CLOUD_BACKUP_MANIFEST_FORMAT,
-    version: manifest.version,
-    instanceId: manifest.instanceId,
-    createdAt: typeof manifest.createdAt === 'string' ? manifest.createdAt : '',
-    database,
-    assets: v2
-      ? Object.fromEntries(Object.entries(manifest.assets).map(([id, asset]) => [id, readManifestAsset(asset)]))
-      : Object.fromEntries(
-          Object.entries(manifest.assets).map(([id, asset]) => [id, { owner: asset.owner, files: asset.files }]),
-        ),
-    profiles,
-    ...(Object.keys(lockedKeys).length > 0 && { lockedKeys }),
-    albums: v2 ? readManifestSection(manifest.albums, cloudBackupAlbumSchema) : {},
-    people: v2 ? readManifestSection(manifest.people, cloudBackupPersonSchema) : {},
-  };
-};
-
-/** Every object a manifest names (by SHA-256) with its size, and the database dump it names. */
-export const manifestReferences = (manifest: CloudBackupManifest) => {
-  const objects = new Map<string, number>();
-  const storageKeys = new Map<string, Set<string>>();
-  for (const asset of Object.values(manifest.assets)) {
-    for (const file of asset.files) {
-      objects.set(file.sha256, file.size);
-      const keys = storageKeys.get(file.sha256) ?? new Set<string>();
-      keys.add(manifestFileObjectKey(file));
-      storageKeys.set(file.sha256, keys);
-    }
-  }
-  for (const file of [...Object.values(manifest.profiles), ...Object.values(manifest.lockedKeys ?? {})]) {
-    objects.set(file.sha256, file.size);
-    const keys = storageKeys.get(file.sha256) ?? new Set<string>();
-    keys.add(manifestFileObjectKey(file));
-    storageKeys.set(file.sha256, keys);
-  }
-  return { objects, storageKeys, database: manifest.database?.key ?? null };
 };
