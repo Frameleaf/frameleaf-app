@@ -13,7 +13,7 @@ vi.mock('src/utils/media-health-roots.js', async (original) => ({
   ...(await original<typeof import('src/utils/media-health-roots.js')>()),
   retainFile,
 }));
-import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
+import { VaultFileError } from 'src/utils/cloud-backup-vault.js';
 import { CloudBackupBucket } from 'src/services/cloud-backup-maintenance.js';
 import {
   CloudBackupRestoreScope,
@@ -149,7 +149,15 @@ describe('cloud backup restore (FL-164)', () => {
   });
 
   describe(CloudBackupRestorer.name, () => {
-    let store: { download: ReturnType<typeof vi.fn<CloudBackupStoreRepository['download']>> };
+    /** Stands in for reading a file out of the backup: (connection, key, bucket key, target, sha256). */
+    type Download = (
+      connection: unknown,
+      key: string,
+      bucketKey: Buffer,
+      target: string,
+      sha256: string | null,
+    ) => Promise<{ size: number; sha256: string }>;
+    let store: { download: ReturnType<typeof vi.fn<Download>> };
     let storage: Record<string, ReturnType<typeof vi.fn>>;
     let crypto: { hashFile: ReturnType<typeof vi.fn<(path: string) => Promise<Buffer>>> };
     let sut: CloudBackupRestorer;
@@ -158,7 +166,8 @@ describe('cloud backup restore (FL-164)', () => {
     const restore = (scope: CloudBackupRestoreScope, assetIds: string[] | null = null) => {
       const { files, destination } = plan(scope, assetIds);
       return sut.restore({
-        bucket,
+        read: (key: string, target: string, sha256: string) =>
+          store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
         manifest,
         scope,
         files,
@@ -228,7 +237,7 @@ describe('cloud backup restore (FL-164)', () => {
         hashFile: vi.fn().mockImplementation((path: string) => Promise.resolve(Buffer.from(present.get(path)!, 'hex'))),
       };
       const logger = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
-      sut = new CloudBackupRestorer(store as never, storage as never, crypto as never, logger as never);
+      sut = new CloudBackupRestorer(storage as never, crypto as never, logger as never);
     });
 
     it('keeps an occupied owner destination untouched when authorization is revoked during download', async () => {
@@ -242,7 +251,8 @@ describe('cloud backup restore (FL-164)', () => {
       const publish = vi.fn().mockRejectedValue(new Error('Owner restore authorization changed'));
       await expect(
         sut.restore({
-          bucket,
+          read: (key: string, target: string, sha256: string) =>
+            store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
           manifest,
           scope: 'asset',
           files: [original],
@@ -291,7 +301,8 @@ describe('cloud backup restore (FL-164)', () => {
         }
         await expect(
           sut.restore({
-            bucket,
+            read: (key: string, target: string, sha256: string) =>
+              store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
             manifest,
             scope: 'asset',
             files: [original],
@@ -320,7 +331,8 @@ describe('cloud backup restore (FL-164)', () => {
       let guardCalls = 0;
       await expect(
         sut.restore({
-          bucket,
+          read: (key: string, target: string, sha256: string) =>
+            store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
           manifest,
           scope: 'asset',
           files: [original],
@@ -347,7 +359,8 @@ describe('cloud backup restore (FL-164)', () => {
       store.download.mockResolvedValueOnce({ size: 1, sha256: files[0].sha256 });
       await expect(
         sut.restore({
-          bucket,
+          read: (key: string, target: string, sha256: string) =>
+            store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
           manifest,
           scope: 'asset',
           files: [files[0]],
@@ -381,7 +394,8 @@ describe('cloud backup restore (FL-164)', () => {
         return commit();
       });
       const result = await sut.restore({
-        bucket,
+        read: (key: string, target: string, sha256: string) =>
+          store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
         manifest,
         scope: 'asset',
         files: [original],
@@ -412,7 +426,8 @@ describe('cloud backup restore (FL-164)', () => {
         return Promise.resolve({ size: original.size, sha256: sha256! });
       });
       await sut.restore({
-        bucket,
+        read: (key: string, target: string, sha256: string) =>
+          store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
         manifest,
         scope: 'asset',
         files: [original],
@@ -447,7 +462,8 @@ describe('cloud backup restore (FL-164)', () => {
         });
         await expect(
           sut.restore({
-            bucket,
+            read: (key: string, target: string, sha256: string) =>
+              store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
             manifest,
             scope: 'asset',
             files: [original],
@@ -478,7 +494,8 @@ describe('cloud backup restore (FL-164)', () => {
       const publish = (_file: unknown, _staged: string, commit: () => Promise<'written' | 'skipped' | 'replaced'>) =>
         commit();
       const options = {
-        bucket,
+        read: (key: string, target: string, sha256: string) =>
+          store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
         manifest,
         scope: 'asset' as const,
         files: [original],
@@ -510,7 +527,8 @@ describe('cloud backup restore (FL-164)', () => {
       const checkpoint = vi.fn().mockResolvedValue(true);
       await expect(
         sut.restore({
-          bucket,
+          read: (key: string, target: string, sha256: string) =>
+            store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
           manifest,
           scope: 'asset',
           files,
@@ -570,7 +588,8 @@ describe('cloud backup restore (FL-164)', () => {
       });
       await expect(
         sut.restore({
-          bucket,
+          read: (key: string, target: string, sha256: string) =>
+            store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
           manifest,
           scope: 'asset',
           files: [original],
@@ -603,15 +622,15 @@ describe('cloud backup restore (FL-164)', () => {
     });
 
     it('stops at an object that does not match its checksum, and says which', async () => {
-      store.download.mockRejectedValueOnce(new CloudBackupStoreError('mismatch', null, 'ChecksumMismatch'));
+      store.download.mockRejectedValueOnce(new VaultFileError('damaged', 'o/mismatch'));
 
       await expect(restore('files', ['asset-1'])).rejects.toThrow(`o/${hex('one')} does not match its checksum`);
       expect(store.download).toHaveBeenCalledTimes(1);
     });
 
     it.each([
-      new CloudBackupStoreError('missing', 404, 'NoSuchKey'),
-      new CloudBackupStoreError('mismatch', null, 'ChecksumMismatch'),
+      new VaultFileError('missing', 'o/missing'),
+      new VaultFileError('damaged', 'o/mismatch'),
       new Error('cancelled'),
     ])('preserves the occupied admin target when download fails: %s', async (error) => {
       const target = '/data/library/owner-1/2026/IMG_1.jpg';
@@ -623,7 +642,7 @@ describe('cloud backup restore (FL-164)', () => {
     });
 
     it('stops at an object that is missing from the bucket', async () => {
-      store.download.mockRejectedValueOnce(new CloudBackupStoreError('missing', 404, 'NoSuchKey'));
+      store.download.mockRejectedValueOnce(new VaultFileError('missing', 'o/missing'));
 
       await expect(restore('files', ['asset-1'])).rejects.toThrow('missing from the bucket');
     });
@@ -631,7 +650,8 @@ describe('cloud backup restore (FL-164)', () => {
     it('carries on after its cursor when it resumes', async () => {
       const { files, destination } = plan('files', ['asset-1']);
       const result = await sut.restore({
-        bucket,
+        read: (key: string, target: string, sha256: string) =>
+          store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
         manifest,
         scope: 'files',
         files,
@@ -668,7 +688,8 @@ describe('cloud backup restore (FL-164)', () => {
         return Promise.resolve({ ...result, recreated: 1 });
       });
       const options = {
-        bucket,
+        read: (key: string, target: string, sha256: string) =>
+          store.download(bucket.connection, key, bucket.bucketKey, target, sha256),
         manifest,
         scope: 'library' as const,
         files,
