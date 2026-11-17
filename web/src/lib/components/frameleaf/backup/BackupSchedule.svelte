@@ -8,14 +8,19 @@
    * It is an ordinary setting: a change is kept in the settings draft and saved with the settings bar.
    * A schedule the controls cannot express (set in the configuration file or through the API) is
    * "Custom": it keeps running untouched until a choice here replaces it.
+   *
+   * FL-1666: "Cloud Backup uploads" holds Cloud Backup's own upload speed limit and upload hours, both
+   * off by default and saved with the settings bar like the schedule.
    */
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import { BACKUP_PLACE_COPY } from '$lib/components/frameleaf/backup/backup-places';
+  import Amount from '$lib/components/frameleaf/settings/kit/Amount.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Steps from '$lib/components/frameleaf/settings/kit/Steps.svelte';
+  import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import {
     clockTime,
     cronToSchedule,
@@ -31,7 +36,12 @@
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { getBackupSchedule, type BackupScheduleResponseDto } from '@frameleaf/sdk';
+  import {
+    getBackupSchedule,
+    type AdminConfigFrameleafCloudBackupUploadHoursDto,
+    type AdminConfigFrameleafCloudBackupUploadLimitDto,
+    type BackupScheduleResponseDto,
+  } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -75,6 +85,40 @@
       cloud.schedule.cronExpression = expression;
     }
   };
+
+  // FL-1666: Cloud Backup's own upload limits. A configuration saved before they existed has neither,
+  // and reads as the server's defaults: both off.
+  const cloudDraft = $derived(settingsDraft?.draft.frameleafCloud?.cloudBackup);
+  const uploadLimit = $derived<AdminConfigFrameleafCloudBackupUploadLimitDto>(
+    cloudDraft?.uploadLimit ?? { enabled: false, mbps: 20 },
+  );
+  const uploadHours = $derived<AdminConfigFrameleafCloudBackupUploadHoursDto>(
+    cloudDraft?.uploadHours ?? { enabled: false, start: '01:00', stop: '07:00' },
+  );
+  const setLimit = (patch: Partial<AdminConfigFrameleafCloudBackupUploadLimitDto>) => {
+    if (cloudDraft) {
+      cloudDraft.uploadLimit = { ...uploadLimit, ...patch };
+    }
+  };
+  const setHours = (patch: Partial<AdminConfigFrameleafCloudBackupUploadHoursDto>) => {
+    if (cloudDraft) {
+      cloudDraft.uploadHours = { ...uploadHours, ...patch };
+    }
+  };
+  const uploadsSentence = $derived.by(() => {
+    const values = {
+      start: clockTime(uploadHours.start, $locale),
+      stop: clockTime(uploadHours.stop, $locale),
+      mbps: uploadLimit.mbps,
+    };
+    if (uploadHours.enabled && uploadLimit.enabled) {
+      return $t('frameleaf_backup_schedule_uploads_both', { values });
+    }
+    if (uploadHours.enabled) {
+      return $t('frameleaf_backup_schedule_uploads_hours_only', { values });
+    }
+    return uploadLimit.enabled ? $t('frameleaf_backup_schedule_uploads_limit_only', { values }) : '';
+  });
 
   const FREQUENCIES = ['day', 'days', 'hours'] as const;
   const setEvery = (every: string) => {
@@ -131,85 +175,159 @@
 </script>
 
 <div class="columns">
-  <Section title={$t('frameleaf_backup_schedule_title')} description={$t('frameleaf_backup_schedule_description')}>
-    {#if failed}
-      <div class="pad"><InlineError compact message={$t('frameleaf_backup_schedule_failed')} onRetry={load} /></div>
-    {/if}
-    {#if custom && cron}
-      <div class="pad">
-        <Notice title={$t('frameleaf_backup_schedule_custom_title')}>
-          {$t('frameleaf_backup_schedule_custom_body')}
-        </Notice>
-      </div>
-    {/if}
-    <Row label={$t('frameleaf_backup_schedule_every')}>
-      <SegmentedControl
-        label={$t('frameleaf_backup_schedule_every_label')}
-        options={FREQUENCIES.map((value) => ({ value, label: $t(`frameleaf_backup_schedule_option_${value}`) }))}
-        value={custom ? undefined : schedule.every}
-        {disabled}
-        onChange={setEvery}
-      />
-    </Row>
-    {#if schedule.every === 'days'}
-      <Row label={$t('frameleaf_backup_schedule_days')} help={$t('frameleaf_backup_schedule_days_help')}>
-        <div class="days" role="group" aria-label={$t('frameleaf_backup_schedule_days_label')}>
-          {#each WEEK_DAYS as day (day)}
-            <button
-              type="button"
-              class="fl-control"
-              aria-pressed={schedule.days.includes(day)}
-              aria-label={dayName(day, $locale)}
-              title={dayName(day, $locale)}
-              {disabled}
-              onclick={() => toggleDay(day)}>{dayName(day, $locale, 'short')}</button
-            >
-          {/each}
+  <div class="stack">
+    <Section title={$t('frameleaf_backup_schedule_title')} description={$t('frameleaf_backup_schedule_description')}>
+      {#if failed}
+        <div class="pad"><InlineError compact message={$t('frameleaf_backup_schedule_failed')} onRetry={load} /></div>
+      {/if}
+      {#if custom && cron}
+        <div class="pad">
+          <Notice title={$t('frameleaf_backup_schedule_custom_title')}>
+            {$t('frameleaf_backup_schedule_custom_body')}
+          </Notice>
         </div>
-      </Row>
-    {/if}
-    {#if schedule.every === 'hours'}
-      <Row label={$t('frameleaf_backup_schedule_gap')} help={$t('frameleaf_backup_schedule_gap_help')}>
-        <select
-          aria-label={$t('frameleaf_backup_schedule_gap_label')}
-          value={String(schedule.hours)}
+      {/if}
+      <Row label={$t('frameleaf_backup_schedule_every')}>
+        <SegmentedControl
+          label={$t('frameleaf_backup_schedule_every_label')}
+          options={FREQUENCIES.map((value) => ({ value, label: $t(`frameleaf_backup_schedule_option_${value}`) }))}
+          value={custom ? undefined : schedule.every}
           {disabled}
-          onchange={(event) => choose({ every: 'hours', hours: Number(event.currentTarget.value) })}
-        >
-          {#each HOUR_STEPS as hours (hours)}
-            <option value={String(hours)}>{$t('frameleaf_backup_schedule_every_hours', { values: { hours } })}</option>
-          {/each}
-        </select>
-      </Row>
-    {:else if !custom}
-      <Row
-        label={$t('frameleaf_backup_schedule_start')}
-        help={[
-          zone ? $t('frameleaf_backup_schedule_start_zone', { values: { zone } }) : '',
-          yourTime
-            ? $t('frameleaf_backup_schedule_start_yours', { values: { time: clockTime(yourTime, $locale) } })
-            : '',
-          $t('frameleaf_backup_schedule_start_help'),
-        ]
-          .filter(Boolean)
-          .join(' ')}
-      >
-        <input
-          type="time"
-          aria-label={$t('frameleaf_backup_schedule_start_label')}
-          value={time}
-          {disabled}
-          onchange={(event) => {
-            const value = event.currentTarget.value;
-            if (/^\d{2}:\d{2}/.test(value) && 'time' in schedule) {
-              choose({ ...schedule, time: value.slice(0, 5) });
-            }
-          }}
+          onChange={setEvery}
         />
       </Row>
+      {#if schedule.every === 'days'}
+        <Row label={$t('frameleaf_backup_schedule_days')} help={$t('frameleaf_backup_schedule_days_help')}>
+          <div class="days" role="group" aria-label={$t('frameleaf_backup_schedule_days_label')}>
+            {#each WEEK_DAYS as day (day)}
+              <button
+                type="button"
+                class="fl-control"
+                aria-pressed={schedule.days.includes(day)}
+                aria-label={dayName(day, $locale)}
+                title={dayName(day, $locale)}
+                {disabled}
+                onclick={() => toggleDay(day)}>{dayName(day, $locale, 'short')}</button
+              >
+            {/each}
+          </div>
+        </Row>
+      {/if}
+      {#if schedule.every === 'hours'}
+        <Row label={$t('frameleaf_backup_schedule_gap')} help={$t('frameleaf_backup_schedule_gap_help')}>
+          <select
+            aria-label={$t('frameleaf_backup_schedule_gap_label')}
+            value={String(schedule.hours)}
+            {disabled}
+            onchange={(event) => choose({ every: 'hours', hours: Number(event.currentTarget.value) })}
+          >
+            {#each HOUR_STEPS as hours (hours)}
+              <option value={String(hours)}>{$t('frameleaf_backup_schedule_every_hours', { values: { hours } })}</option
+              >
+            {/each}
+          </select>
+        </Row>
+      {:else if !custom}
+        <Row
+          label={$t('frameleaf_backup_schedule_start')}
+          help={[
+            zone ? $t('frameleaf_backup_schedule_start_zone', { values: { zone } }) : '',
+            yourTime
+              ? $t('frameleaf_backup_schedule_start_yours', { values: { time: clockTime(yourTime, $locale) } })
+              : '',
+            $t('frameleaf_backup_schedule_start_help'),
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          <input
+            type="time"
+            aria-label={$t('frameleaf_backup_schedule_start_label')}
+            value={time}
+            {disabled}
+            onchange={(event) => {
+              const value = event.currentTarget.value;
+              if (/^\d{2}:\d{2}/.test(value) && 'time' in schedule) {
+                choose({ ...schedule, time: value.slice(0, 5) });
+              }
+            }}
+          />
+        </Row>
+      {/if}
+      <p class="note">{$t('frameleaf_backup_schedule_no_stop')}</p>
+    </Section>
+
+    {#if cloudDraft}
+      <Section
+        title={$t('frameleaf_backup_schedule_uploads_title')}
+        description={$t('frameleaf_backup_schedule_uploads_description')}
+      >
+        <Row
+          label={$t('frameleaf_backup_schedule_upload_limit')}
+          help={$t('frameleaf_backup_schedule_upload_limit_help')}
+        >
+          {#if uploadLimit.enabled}
+            <Amount
+              label={$t('frameleaf_backup_schedule_upload_limit')}
+              unit={$t('frameleaf_backup_schedule_upload_limit_unit')}
+              min={1}
+              max={10_000}
+              value={uploadLimit.mbps}
+              disabled={featureFlagsManager.value.configFile}
+              onChange={(mbps) => setLimit({ mbps })}
+            />
+          {/if}
+          <Switch
+            label={$t('frameleaf_backup_schedule_upload_limit_switch')}
+            checked={uploadLimit.enabled}
+            held={featureFlagsManager.value.configFile}
+            onChange={(enabled) => setLimit({ enabled })}
+          />
+        </Row>
+        <Row
+          label={$t('frameleaf_backup_schedule_upload_hours')}
+          help={$t('frameleaf_backup_schedule_upload_hours_help')}
+        >
+          {#if uploadHours.enabled}
+            <span class="hours">
+              <input
+                type="time"
+                aria-label={$t('frameleaf_backup_schedule_upload_hours_start')}
+                value={uploadHours.start}
+                disabled={featureFlagsManager.value.configFile}
+                onchange={(event) => {
+                  const value = event.currentTarget.value;
+                  if (/^\d{2}:\d{2}/.test(value)) {
+                    setHours({ start: value.slice(0, 5) });
+                  }
+                }}
+              />
+              <span class="to">{$t('frameleaf_backup_schedule_upload_hours_to')}</span>
+              <input
+                type="time"
+                aria-label={$t('frameleaf_backup_schedule_upload_hours_stop')}
+                value={uploadHours.stop}
+                disabled={featureFlagsManager.value.configFile}
+                onchange={(event) => {
+                  const value = event.currentTarget.value;
+                  if (/^\d{2}:\d{2}/.test(value)) {
+                    setHours({ stop: value.slice(0, 5) });
+                  }
+                }}
+              />
+            </span>
+          {/if}
+          <Switch
+            label={$t('frameleaf_backup_schedule_upload_hours_switch')}
+            checked={uploadHours.enabled}
+            held={featureFlagsManager.value.configFile}
+            onChange={(enabled) => setHours({ enabled })}
+          />
+        </Row>
+        <div class="foot"></div>
+      </Section>
     {/if}
-    <p class="note">{$t('frameleaf_backup_schedule_no_stop')}</p>
-  </Section>
+  </div>
 
   <aside class="preview fl-continuous-corners" aria-label={$t('frameleaf_backup_schedule_preview_label')}>
     <h2>{$t('frameleaf_backup_schedule_preview')}</h2>
@@ -219,6 +337,9 @@
       <p class="hint">{$t('frameleaf_backup_schedule_one_after')}</p>
     {:else if server}
       <p class="hint">{$t('frameleaf_backup_schedule_nothing_on')}</p>
+    {/if}
+    {#if uploadsSentence}
+      <p class="hint">{uploadsSentence}</p>
     {/if}
     <p class="hint">{$t('frameleaf_backup_schedule_first_longer')}</p>
   </aside>
@@ -231,8 +352,26 @@
     align-items: start;
     gap: var(--fl-space-6);
   }
+  .stack {
+    display: grid;
+    gap: var(--fl-space-6);
+    min-width: 0;
+  }
   .pad {
     padding: 0 0 var(--fl-space-4);
+  }
+  .hours {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--fl-space-2);
+  }
+  .to {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+  }
+  .foot {
+    padding-bottom: var(--fl-space-2);
   }
   .days {
     display: flex;
