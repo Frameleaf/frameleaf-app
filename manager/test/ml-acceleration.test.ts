@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { configureUnraidCompose, detectAcceleration, detectNpu, detectTranscoding, releaseImages, renderCompose } from '../src/compose.js';
+import { configureUnraidCompose, detectAcceleration, detectNpu, detectTranscoding, mlVariant, releaseImages, renderCompose } from '../src/compose.js';
 import { checkHost, detectPlatform } from '../src/server-check.js';
 import type { Installation } from '../src/contracts.js';
 import type { VerifiedRelease } from '../src/releases.js';
@@ -45,8 +45,16 @@ test('Manager picks the ML variant from host GPUs and Docker runtimes', async ()
     assert.equal(await detectAcceleration(amdNoKfd, none, 'x64'), 'cpu');
     assert.equal(await detectAcceleration(intel, nvidia, 'x64'), 'cuda');
     assert.equal(await detectAcceleration(intel, async () => Promise.reject(new Error('no docker')), 'x64'), 'openvino');
-    // The accelerated images are amd64 only.
-    assert.equal(await detectAcceleration(intel, nvidia, 'arm64'), 'cpu');
+    // FL-997: arm64 gets the CUDA image with the NVIDIA runtime; the other accelerated images are amd64 only.
+    assert.equal(await detectAcceleration(intel, nvidia, 'arm64'), 'cuda');
+    assert.equal(await detectAcceleration(intel, none, 'arm64'), 'cpu');
+    assert.equal(await detectAcceleration(amd, none, 'arm64'), 'cpu');
+    assert.equal(await detectAcceleration(intel, nvidia, 'arm'), 'cpu');
+    // A Jetson's Tegra GPU needs NVIDIA's L4T base, which the CUDA image isn't.
+    const jetson = join(folder, 'jetson');
+    await mkdir(join(jetson, 'firmware/devicetree/base'), { recursive: true });
+    await writeFile(join(jetson, 'firmware/devicetree/base/compatible'), 'nvidia,p3768-0000\0nvidia,tegra234\0');
+    assert.equal(await detectAcceleration(jetson, nvidia, 'arm64'), 'cpu');
     process.env.MANAGER_ML_ACCELERATION = 'cpu';
     assert.equal(await detectAcceleration(intel, nvidia, 'x64'), 'cpu');
   } finally {
@@ -86,6 +94,8 @@ test('the ML service uses the attested variant digest with its device passthroug
           server: digest('a'),
           machineLearning: digest('b'),
           machineLearningVariants: { openvino: digest('c'), cuda: digest('d'), rocm: digest('e') },
+          // Declared for both, so these tests pick the same variant on an arm64 or x64 test host.
+          machineLearningVariantPlatforms: { openvino: ['linux/amd64', 'linux/arm64'], cuda: ['linux/amd64', 'linux/arm64'], rocm: ['linux/amd64', 'linux/arm64'] },
           postgres: digest('f'),
         },
       },
@@ -190,6 +200,7 @@ test('the download step pulls exactly the images the compose file runs', async (
     server: digest('a'),
     machineLearning: digest('b'),
     machineLearningVariants: { openvino: digest('c') },
+    machineLearningVariantPlatforms: { openvino: ['linux/amd64', 'linux/arm64'] },
     postgres: digest('f'),
   };
   // FL-475: a GPU variant replaces the CPU image rather than being pulled beside it.
@@ -220,6 +231,7 @@ test('the pull list matches the images in the rendered compose file, with ML on 
           server: digest('a'),
           machineLearning: digest('b'),
           machineLearningVariants: { cuda: digest('d') },
+          machineLearningVariantPlatforms: { cuda: ['linux/amd64', 'linux/arm64'] },
           postgres: digest('f'),
         },
       },
@@ -243,4 +255,16 @@ test('the pull list matches the images in the rendered compose file, with ML on 
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
+});
+
+test('an arm64 host gets a GPU variant only when the release built it for arm64 (FL-997)', () => {
+  const cuda = 'ghcr.io/frameleaf/frameleaf-machine-learning@sha256:' + 'd'.repeat(64);
+  const older = { server: 's', machineLearning: 'm', postgres: 'p', machineLearningVariants: { cuda } };
+  const amd64Only = { ...older, machineLearningVariantPlatforms: { cuda: ['linux/amd64'] } };
+  const both = { ...older, machineLearningVariantPlatforms: { cuda: ['linux/amd64', 'linux/arm64'] } };
+  assert.equal(mlVariant(older, 'cuda', 'x64'), cuda);
+  assert.equal(mlVariant(older, 'cuda', 'arm64'), undefined);
+  assert.equal(mlVariant(amd64Only, 'cuda', 'arm64'), undefined);
+  assert.equal(mlVariant(both, 'cuda', 'arm64'), cuda);
+  assert.equal(mlVariant(both, 'cpu', 'arm64'), undefined);
 });

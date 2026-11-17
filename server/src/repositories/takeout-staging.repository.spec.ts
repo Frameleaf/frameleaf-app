@@ -1,7 +1,19 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, mkdtemp, open, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
@@ -46,6 +58,27 @@ describe(TakeoutStagingRepository.name, () => {
     });
     await handle.close();
   };
+
+  it('sweeps deleted imports’ folders and old unfinished files, and nothing an import still holds', async () => {
+    vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(directory);
+    const owner = '11111111-1111-4111-8111-111111111111';
+    const kept = '22222222-2222-4222-8222-222222222222';
+    const gone = '33333333-3333-4333-8333-333333333333';
+    const keptDirectory = await sut.prepare(owner, kept);
+    const goneDirectory = await sut.prepare(owner, gone);
+    await writeFile(join(keptDirectory, 'staged'), 'photo');
+    await writeFile(join(keptDirectory, 'old.part'), 'half');
+    await utimes(join(keptDirectory, 'old.part'), 1, 1);
+    await writeFile(join(keptDirectory, 'new.part'), 'half');
+    await writeFile(join(goneDirectory, 'staged'), 'photo');
+    const existing = vi.fn().mockResolvedValue([kept]);
+
+    await expect(sut.sweep(existing, Date.now() - 60_000)).resolves.toEqual({ imports: 1, parts: 1 });
+
+    expect(existing).toHaveBeenCalledWith(expect.arrayContaining([kept, gone]));
+    await expect(readdir(join(directory, 'takeout', owner))).resolves.toEqual([kept]);
+    await expect(readdir(keptDirectory).then((names) => names.sort())).resolves.toEqual(['new.part', 'staged']);
+  });
 
   it('preserves an existing destination when exclusive creation fails', async () => {
     const staged = join(directory, 'staged'),

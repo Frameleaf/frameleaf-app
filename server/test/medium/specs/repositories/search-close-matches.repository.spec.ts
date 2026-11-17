@@ -82,6 +82,26 @@ describe('close matches of a search by meaning (FL-1393)', () => {
     expect(distances).toEqual([...distances].sort((a, b) => a - b));
   });
 
+  it('pages through the ranking, a described photo keeping the place its words earn (FL-1655)', async () => {
+    const { repository, userId, ctx } = await library([0.9, 0.91, 0.92, 0.93]);
+    // farthest by look (0.95), first once its description names the search
+    const { asset: named } = await ctx.newAsset({ ownerId: userId });
+    await ctx.newExif({ assetId: named.id, description: 'lake house' });
+    await repository.upsert(named.id, atDistance(0.95, 700));
+
+    const scope = { userIds: [userId], lockedOwnerId: userId, viewingUserId: userId };
+    const page = (skip: number) =>
+      repository.searchSmartV3({ take: 2, skip }, { filter: {}, embedding: query, query: 'lake house' }, scope);
+    const pages = [await page(0), await page(2), await page(4)];
+
+    expect(pages.map(({ hasNextPage }) => hasNextPage)).toEqual([true, true, false]);
+    const items = pages.flatMap(({ items }) => items);
+    expect(new Set(items.map(({ id }) => id)).size).toBe(5);
+    expect(items[0].id).toBe(named.id);
+    const distances = items.map(({ searchDistance }) => Number(searchDistance));
+    expect(distances).toEqual([...distances].sort((a, b) => a - b));
+  });
+
   it('measures what an unrelated photo scores, and that splits the lakes from the rest', async () => {
     const { repository, userId } = await library([...others, ...lakes]);
 

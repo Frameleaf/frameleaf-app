@@ -69,6 +69,9 @@ export const createSharedServicePool = (config: ConfigRepository, name: string, 
     statement_timeout: SHARED_SERVICE_TIMEOUT_MS,
     lock_timeout: SHARED_SERVICE_TIMEOUT_MS,
     idleTimeoutMillis: 30_000,
+    // These tables hold seconds-lived state that a restore truncates, so a commit need not wait for the disk.
+    // A stalled WAL flush otherwise outlives statement_timeout, and the next heartbeat queues behind its own row.
+    options: '-c synchronous_commit=off',
   });
   // An idle-client error is otherwise an uncaught EventEmitter error. Commands still reject.
   pool.on('error', () => {

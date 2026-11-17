@@ -26,13 +26,18 @@ test("package credentials never reach repository checkout or consumer execution"
     retrieval.if,
     /github\.repository == 'Frameleaf\/frameleaf-app'/,
   );
-  assert.equal(workflow.on.workflow_call, null);
+  assert.deepEqual(workflow.on.workflow_call, {
+    secrets: { GH_PACKAGES_TOKEN: { required: false } },
+  });
   assert.doesNotMatch(retrieval.if, /inputs\.|workflow_dispatch|github\.ref/);
   assert.ok(
     retrieval.steps.every((step) => !step.uses?.startsWith("actions/checkout")),
   );
   const fetch = retrieval.steps.find((step) => step.id === "fetch");
-  assert.equal(fetch.env.NODE_AUTH_TOKEN, "${{ github.token }}");
+  assert.equal(
+    fetch.env.NODE_AUTH_TOKEN,
+    "${{ secrets.GH_PACKAGES_TOKEN || github.token }}",
+  );
   assert.match(
     fetch.run,
     /npm pack @frameleaf\/cloud-contracts@0\.0\.5 .*--ignore-scripts/,
@@ -85,7 +90,10 @@ test("package credentials never reach repository checkout or consumer execution"
   );
   assert.equal(entry.on.workflow_dispatch.inputs.candidate_sha, undefined);
   assert.equal(call.uses, "./.github/workflows/frameleaf-cloud-consumers.yml");
-  assert.equal(call.secrets, undefined);
+  // Only the read-only packages token for Forgejo runners; never `secrets: inherit`.
+  assert.deepEqual(call.secrets, {
+    GH_PACKAGES_TOKEN: "${{ secrets.GH_PACKAGES_TOKEN }}",
+  });
   for (const job of Object.values(entry.jobs)) {
     assert.doesNotMatch(job.if ?? "", /inputs\.candidate_sha/);
   }

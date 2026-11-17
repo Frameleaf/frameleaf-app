@@ -1739,6 +1739,73 @@ describe(MediaOperationRepository.name, () => {
       expect(outcomes).toEqual(['queued:1:lease_expired', 'failed:1:lease_expired']);
     });
 
+    it('returns an iCloud sync run whose claim lapsed to the queue, but not an identity audit (FL-1662)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      // A sync run resumes from its checkpoints; audits share the kind and keep settling as failed.
+      const sync = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.ICloudSync,
+        snapshot: { connectionId: randomUUID() },
+      });
+      const audit = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.ICloudSync,
+        snapshot: { task: 'identity-audit', connectionId: randomUUID(), auditIds: [] },
+      });
+      const weekly = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.ICloudSync,
+        snapshot: { connectionId: randomUUID(), grantId: randomUUID() },
+      });
+      for (const worker of ['a', 'b', 'c']) {
+        await claimKind(sut, MediaOperationKind.ICloudSync, `worker-${worker}`);
+      }
+      for (const { id } of [sync, audit, weekly]) {
+        await lapse(ctx, id);
+      }
+
+      await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+
+      await expect(sut.getForOwner(sync.id, user.id)).resolves.toMatchObject({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 1,
+        errorCode: 'lease_expired',
+        claimToken: null,
+      });
+      await expect(sut.getForOwner(audit.id, user.id)).resolves.toMatchObject({ status: MediaOperationStatus.Failed });
+      await expect(sut.getForOwner(weekly.id, user.id)).resolves.toMatchObject({ status: MediaOperationStatus.Failed });
+    });
+
+    it('keeps retrying an iCloud sync run that moved forward since its last lost claim (FL-1662)', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id, {
+        kind: MediaOperationKind.ICloudSync,
+        snapshot: { connectionId: randomUUID() },
+      });
+      const outcomes: string[] = [];
+
+      // Lost after a recorded step, twice: each loss is retried. Lost again with nothing recorded: reported.
+      for (const progressed of [true, true, false]) {
+        await skipRetryDelay(ctx, operation.id);
+        const claim = await claimKind(sut, MediaOperationKind.ICloudSync, 'worker');
+        if (progressed) {
+          await sut.setBulkResult(operation.id, claim!.claimToken, {
+            result: { phase: 'syncing' },
+            processedUnits: 1,
+            totalUnits: 2,
+            progress: 50,
+            leaseMs: LEASE_MS,
+            resetAutoRetries: true,
+          });
+        }
+        await lapse(ctx, operation.id);
+        await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
+        const after = await sut.getForOwner(operation.id, user.id);
+        outcomes.push(`${after!.status}:${after!.autoRetries}`);
+      }
+
+      expect(outcomes).toEqual(['queued:1', 'queued:1', 'failed:1']);
+    });
+
     it('does not count a claim handed back on purpose as a lost one after a restart', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

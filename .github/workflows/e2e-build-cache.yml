@@ -57,8 +57,9 @@ jobs:
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          # Off GitHub (Forgejo), github.token cannot write to GHCR.
+          username: ${{ vars.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
       - name: Build the end-to-end server image and write its cache
         working-directory: ./e2e
         env:

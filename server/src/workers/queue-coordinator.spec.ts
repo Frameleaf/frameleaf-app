@@ -40,7 +40,10 @@ vi.mock('src/queue/store.js', () => ({
 vi.mock('src/queue/retention.js', () => ({
   pruneQueueHistoryPage: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('src/queue/run-summary.js', () => ({ finishRuns: vi.fn().mockResolvedValue(0) }));
+vi.mock('src/queue/run-summary.js', () => ({
+  finishRuns: vi.fn().mockResolvedValue(0),
+  refreshRunCounts: vi.fn().mockResolvedValue([]),
+}));
 vi.mock('src/queue/notifications.js', () => ({
   queueNotifications: (_client: unknown, wake: () => void) => {
     fixture.wake = wake;

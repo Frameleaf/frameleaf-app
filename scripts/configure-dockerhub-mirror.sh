@@ -8,6 +8,11 @@ if [[ -n "${NSC_CONTAINER_REGISTRY:-}" ]]; then
   exit 0
 fi
 
+# A self-hosted runner that already routes Docker Hub through the public mirror needs no daemon restart.
+if docker info --format '{{json .RegistryConfig.Mirrors}}' 2>/dev/null | grep -q 'https://mirror.gcr.io'; then
+  exit 0
+fi
+
 sudo python3 - /etc/docker/daemon.json <<'PY'
 import json
 import os
