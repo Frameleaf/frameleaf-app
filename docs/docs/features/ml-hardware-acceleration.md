@@ -21,7 +21,8 @@ You do not need to redo any machine learning jobs after enabling hardware accele
 
 - The instructions and configurations here are specific to Docker Compose. Other container engines may require different configuration.
 - Only Linux and Windows (through WSL2) servers are supported.
-- ARM NN is only supported on devices with Mali GPUs. Other Arm devices are not supported.
+- ARM NN is only supported on devices with Mali GPUs.
+- The CUDA image also runs on arm64 servers with an NVIDIA GPU, such as NVIDIA Grace. NVIDIA Jetson boards are not supported yet and use the processor.
 - Some models may not be compatible with certain backends. CUDA is the most reliable.
 - Search latency isn't improved by ARM NN due to model compatibility issues preventing its use. However, smart search jobs do make use of ARM NN.
 

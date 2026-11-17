@@ -160,6 +160,8 @@ export type NasManifest = {
     server: string;
     machineLearning: string;
     machineLearningVariants: Record<string, string>;
+    /** FL-997: the platforms each variant was built for; absent from releases before arm64 CUDA. */
+    machineLearningVariantPlatforms?: Record<string, string[]>;
     postgres: string;
   };
   platforms: string[];
