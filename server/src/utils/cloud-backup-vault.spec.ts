@@ -148,6 +148,7 @@ describe('cloud backup in the backup engine (FL-1676)', () => {
     expect(source.hashed.get(treeKey(fileTreePath(lib.original)))).toEqual({
       sha256: sha256(lib.bodies[lib.original]),
       size: 70_000,
+      sealed: false,
     });
 
     const opened = await openVault(store, ring);

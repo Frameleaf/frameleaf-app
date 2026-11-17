@@ -241,9 +241,10 @@ import {
   reportExecutionProgress,
 } from 'src/utils/execution-signal.js';
 import { FIX_WAIT_MS } from 'src/utils/file-fix.js';
-import { type BackupCoverageSnapshot, LEGACY_MANIFEST_KEY } from 'src/utils/frameleaf-cloud-backup-coverage.js';
+import { type BackupCoverageSnapshot } from 'src/utils/frameleaf-cloud-backup-coverage.js';
 import {
   BackupGrantResponse,
+  BACKUP_SNAPSHOT_KEY,
   BackupOperation,
   type BackupRunReport,
   MANAGED_ENTITLEMENT_MISSING_REFUSAL,
@@ -2370,9 +2371,9 @@ export class CloudBackupService {
       bytesUploaded: result.bytesUploaded,
       objectsUploaded: result.uploaded,
       objectsSkipped: result.skipped,
-      // a client-encrypted manifest is named by its signed snapshot receipt, never here
+      // FL-1676: the name of the backup a finished run stored
       manifestKey:
-        status === 'succeeded' && result.manifestKey && LEGACY_MANIFEST_KEY.test(result.manifestKey)
+        status === 'succeeded' && result.manifestKey && BACKUP_SNAPSHOT_KEY.test(result.manifestKey)
           ? result.manifestKey
           : null,
       errorCode: status === 'failed' ? 'cloud_backup_failed' : null,
@@ -2416,12 +2417,9 @@ export class CloudBackupService {
       }
       const managed = metadata.target === 'managed';
       let snapshot: BackupCoverageSnapshot = null;
-      if (committed && result.manifestKey) {
-        if (result.manifestKey.startsWith('m/v1/')) {
-          snapshot = await this.receiptReference(metadata, result.manifestId);
-        } else if (LEGACY_MANIFEST_KEY.test(result.manifestKey) && reported.outcome !== 'reported-without-key') {
-          snapshot = { kind: 'legacy', manifestKey: result.manifestKey };
-        }
+      // FL-1676: every backup is a signed snapshot, so coverage names its receipt
+      if (committed && result.manifestKey && BACKUP_SNAPSHOT_KEY.test(result.manifestKey)) {
+        snapshot = await this.receiptReference(metadata, result.manifestId);
       }
       const written = await this.coverage.write({
         runId: operation.id,

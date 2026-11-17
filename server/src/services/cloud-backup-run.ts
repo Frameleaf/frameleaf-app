@@ -37,6 +37,7 @@ import {
   lockedKeyOwners,
   pathsBeingReplaced,
   sealedFileOwnerKeyId,
+  sealedOwnerKeyIdOrUnreadable,
 } from 'src/utils/locked-backup.js';
 
 /** Assets read from the library per query while the run's list of files is made. */
@@ -362,13 +363,17 @@ export class CloudBackupRunner {
         outcome[source.missing.has(file.tree) ? 'missing' : 'changed']++;
         return null;
       }
-      let read = source.hashed.get(file.tree);
-      const sealed = file.role === LOCKED_KEY_BACKUP_ROLE ? null : await sealedFileOwnerKeyId(file.path);
+      let read: { sha256: string; size: number } | undefined = source.hashed.get(file.tree);
+      let sealed: string | null;
       if (source.opened.has(file.tree)) {
-        if (!read) {
+        const hashed = source.hashed.get(file.tree);
+        if (!hashed) {
           outcome.changed++;
           return null;
         }
+        // FL-738: encrypted or not as stored, whatever the file on disk is by now
+        sealed =
+          file.role !== LOCKED_KEY_BACKUP_ROLE && hashed.sealed ? await sealedOwnerKeyIdOrUnreadable(file.path) : null;
         outcome.uploaded++;
         // FL-721: an encrypted Locked file is copied as it is; its recorded checksum is the plaintext's, so
         // a difference is not a change.
@@ -376,6 +381,8 @@ export class CloudBackupRunner {
           outcome.changed++;
         }
       } else {
+        // not read this run: the file is as the last backup stored it, so it is what the disk holds
+        sealed = file.role === LOCKED_KEY_BACKUP_ROLE ? null : await sealedFileOwnerKeyId(file.path);
         const before = await earlier(file.tree);
         read = before?.size === listed.size ? before : { sha256: await this.hashFile(file.path), size: listed.size };
         outcome.skipped++;

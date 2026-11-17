@@ -1,3 +1,4 @@
+import { LOCKED_MAGIC } from '@frameleaf/locked-crypto';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -33,6 +34,7 @@ type Folder = { folders: Set<string>; files: Map<string, BackupSourceFile> };
 
 /** Files looked at together when a folder is listed. */
 const STAT_BATCH = 32;
+const LOCKED_HEAD = Buffer.from(LOCKED_MAGIC, 'latin1');
 
 /**
  * What a cloud backup run gives the engine to back up (FL-1676): not a folder on disk but the files the
@@ -51,7 +53,7 @@ export class BackupSource implements Source {
   /** Size and modification time (ms) of every file that was there when its folder was listed, by tree key. */
   readonly listed = new Map<string, { size: number; mtime: number }>();
   /** What each file that was read to its end hashed to, by tree key. */
-  readonly hashed = new Map<string, { sha256: string; size: number }>();
+  readonly hashed = new Map<string, { sha256: string; size: number; sealed: boolean }>();
   /** Files the engine started to read. One of these without a hash could not be read to its end. */
   readonly opened = new Set<string>();
   /** Files that were gone when their folder was listed, by tree key. */
@@ -183,9 +185,14 @@ export class BackupSource implements Source {
     return (async function* () {
       const hash = createHash('sha256');
       let size = 0;
+      // FL-738: whether what was stored is an encrypted Locked file, from the bytes read, not the file later
+      let head = Buffer.alloc(0);
       try {
         for await (const part of content()) {
           hash.update(part);
+          if (head.length < LOCKED_HEAD.length) {
+            head = Buffer.concat([head, Buffer.from(part).subarray(0, LOCKED_HEAD.length - head.length)]);
+          }
           size += part.length;
           yield part;
         }
@@ -195,7 +202,7 @@ export class BackupSource implements Source {
         }
         throw error;
       }
-      hashed.set(key, { sha256: hash.digest('hex'), size });
+      hashed.set(key, { sha256: hash.digest('hex'), size, sealed: head.equals(LOCKED_HEAD) });
     })();
   }
 }

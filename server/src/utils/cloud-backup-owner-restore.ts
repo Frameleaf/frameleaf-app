@@ -60,7 +60,7 @@ export const checkOwnerRestoreItems = async (
     !owner ||
     auth.user.id !== owner.ownerId ||
     !auth.session?.hasElevatedPermission ||
-    (manifest.version !== 2 && manifest.version !== 3)
+    manifest.version < 2
   )
     throw new ForbiddenException('Owner restore unavailable');
   if (motionParent) {

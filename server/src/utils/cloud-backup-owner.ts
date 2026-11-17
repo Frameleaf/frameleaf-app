@@ -49,7 +49,7 @@ export const ownerBackupHistoryPage = (
     .filter(([id, item]) => {
       if (
         item.owner !== auth.user.id ||
-        (manifest.version !== 2 && manifest.version !== 3) ||
+        manifest.version < 2 ||
         !item.details ||
         !item.originalFileName
       )
