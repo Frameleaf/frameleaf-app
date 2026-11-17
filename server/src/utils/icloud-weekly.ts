@@ -14,10 +14,16 @@ export function scheduledAuditClaimHolder(
 }
 
 /** Reserved scheduled bindings cannot become an ordinary run or a manual verification. */
+export const ICLOUD_WEEKLY_AUTHORITY_KEYS = ['grantId', 'grantGeneration', 'cohortId', 'memberOrdinal', 'batchOrdinal'];
+
 export const hasWeeklyAuthorityInput = (snapshot: Record<string, unknown>): boolean =>
-  ['grantId', 'grantGeneration', 'cohortId', 'memberOrdinal', 'batchOrdinal'].some((key) =>
-    Object.hasOwn(snapshot, key),
-  );
+  ICLOUD_WEEKLY_AUTHORITY_KEYS.some((key) => Object.hasOwn(snapshot, key));
+
+/**
+ * Snapshot keys an ordinary sync run never carries: `ICloudSyncService.run` hands a snapshot with any of
+ * them to an identity audit (manual or weekly) or refuses it.
+ */
+export const ICLOUD_NON_SYNC_SNAPSHOT_KEYS = ['task', 'purpose', ...ICLOUD_WEEKLY_AUTHORITY_KEYS];
 
 /** Generic operation surfaces carry no private scheduled authority or resource evidence. */
 export const isPrivateICloudOperation = (operation: { kind: string; snapshot: Record<string, unknown> }): boolean =>

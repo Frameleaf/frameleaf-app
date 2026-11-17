@@ -27,6 +27,7 @@ import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/t
 import { assertCloudProcessingAllowed } from 'src/utils/cloud-processing-choice.js';
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
 import { JOB_QUEUE_CLAIMANT, JOB_QUEUE_EXECUTOR, notJobQueueExecuted } from 'src/utils/edit-operation.js';
+import { ICLOUD_NON_SYNC_SNAPSHOT_KEYS } from 'src/utils/icloud-weekly.js';
 import {
   CLAIMED_MEDIA_OPERATION_STATUSES,
   MEDIA_OPERATION_AUTO_RETRIES,
@@ -112,9 +113,13 @@ const safeAutomaticReplay = () => sql<boolean>`("kind" = any(${[...SAFE_MEDIA_OP
  * of `safeAutomaticReplay`, which also decides a failure's retry, where a scan's own failure is reported.
  * FL-1603: a bulk edit likewise applies its in-flight batch again from its cursor (every action is safe to repeat,
  * owner decision 2026-09-22), so a worker that died mid-job gets its one retry instead of a lease-expired failure.
+ * FL-1662: an iCloud sync run resumes from its checkpoints, leased resources and staged files (every step is safe
+ * to repeat), so a lapsed claim hands it to the next worker as `ICloudSyncService` says it does. Only the ordinary
+ * sync run: identity audits (manual and weekly) share the kind and still settle as failed, as before.
  */
 const sweepReplay = () =>
-  sql<boolean>`(${safeAutomaticReplay()} or "kind" = any(${[MediaOperationKind.LibraryScan, MediaOperationKind.Bulk]}::text[]))`;
+  sql<boolean>`(${safeAutomaticReplay()} or "kind" = any(${[MediaOperationKind.LibraryScan, MediaOperationKind.Bulk]}::text[])
+  or ("kind" = ${MediaOperationKind.ICloudSync} and not jsonb_exists_any("snapshot", ${ICLOUD_NON_SYNC_SNAPSHOT_KEYS}::text[])))`;
 
 /** Queue-owned operations cannot recover before their execution owner has been fenced. */
 const executionOwnerSettled = () => sql<boolean>`("claimedBy" is distinct from 'job-queue' or not exists (
@@ -1198,6 +1203,11 @@ export class MediaOperationRepository {
       totalUnits: number;
       progress: number;
       leaseMs: number;
+      /**
+       * FL-1662: this write records work done since the claim was taken, so a claim lost earlier no longer counts
+       * against the job: a run that lasts days gets its automatic retry back each time it moves forward.
+       */
+      resetAutoRetries?: boolean;
     },
     executor?: Kysely<DB>,
     requireActiveClaim = false,
@@ -1213,6 +1223,7 @@ export class MediaOperationRepository {
           heartbeatAt: sql<Date>`now()`,
           // FL-1590: a batch's closing write runs late in its transaction; now() would date the lease from its start.
           claimExpiresAt: sql<Date>`clock_timestamp() + ${sql.lit(patch.leaseMs)} * interval '1 millisecond'`,
+          ...(patch.resetAutoRetries ? { autoRetries: 0 } : {}),
         })
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
