@@ -155,6 +155,16 @@ Object names are used as they are, after a prefix the caller chooses (Frameleaf 
 depends on object versions, tags or metadata; a listing, ranged reads, writes and deletes are all a
 repository needs.
 
+Manager's Server Backup derives its vault id from the recovery key, so the key alone finds a server's
+backups from a replacement server: HKDF-SHA256 over the 32-byte key, empty salt, info
+`frameleaf-server-backup vault`, 16 bytes, shaped as a version 8 UUID (version nibble `8`, variant
+bits `10`). The id reveals nothing about the key.
+
+In Frameleaf Cloud each finished backup is also added to a signed history (a chain of records naming
+the snapshot object, its exact stored version and the hash of its bytes). The snapshot's 12-digit
+number is its place in that chain. A snapshot that is stored but never made it into the chain is still
+a complete backup; it is only not vouched for.
+
 ## Known limits of version 1
 
 - The index is held in memory (about 200 MB per million blobs).

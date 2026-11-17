@@ -1,15 +1,16 @@
 // Server Backup: Manager's second job. It keeps an encrypted copy of chosen folders, runs on a schedule,
 // and restores a file, a folder or everything. The work happens in a separate process
 // (server-backup-worker.ts); this file owns the settings, the history and what the screens show.
-import { DEFAULT_RETENTION, Repository, dirStore, listFolder, type RetentionPolicy } from '@frameleaf/backup-core';
+import { DEFAULT_RETENTION, Repository, dirStore, listFolder, s3Store, type RetentionPolicy } from '@frameleaf/backup-core';
 import { fork, type ChildProcess } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { hkdfSync, randomBytes } from 'node:crypto';
 import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { Refusal } from './contracts.js';
-import type { Job, Message, Outcome, Progress, Target } from './server-backup-worker.js';
+import type { CloudBackup, Session } from './server-backup-cloud.js';
+import type { Job, Message, Outcome, Progress, Reply, Target } from './server-backup-worker.js';
 import type { Store } from './store.js';
 
 const Time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -61,12 +62,28 @@ interface Saved {
 const KEY = 'server-backup';
 const day = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const clock = (date: Date) => `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+/**
+ * Where a server's backups sit in its Cloud storage. It follows from the recovery key alone, so a
+ * replacement server that is given the key finds them without being told anything else. It says nothing about the key.
+ */
+export function vaultOf(rootKey: string): string {
+  const bytes = Buffer.from(hkdfSync('sha256', Buffer.from(rootKey, 'hex'), Buffer.alloc(0), 'frameleaf-server-backup vault', 16));
+  // Shaped as a version 8 UUID (RFC 9562: a vendor's own scheme), which is what Cloud takes as a vault id.
+  bytes[6] = (bytes[6]! & 0x0f) | 0x80;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 const within = (folder: string, other: string) => folder === other || folder.startsWith(other.endsWith(sep) ? other : other + sep);
 
 export class ServerBackup {
   private child: ChildProcess | null = null;
   private current: Run | null = null;
   private stopping = false;
+  /** True while a run is being set up with Cloud, before its worker exists. */
+  private starting = false;
+  /** Why Manager itself ended the run in flight, when it did. */
+  private cause: string | null = null;
   private repository: Repository | null = null;
   /** For the speed shown while a backup runs. */
   private pace: { at: number; bytes: number; perSecond: number } | null = null;
@@ -74,8 +91,10 @@ export class ServerBackup {
   constructor(
     private store: Store,
     private options: {
-      /** Where backups go. Null until this Manager has somewhere to put them: Server Backup then stays hidden. */
+      /** A folder to keep backups in, for tests and pre-release. When set, it is used and Cloud is not. */
       target: Target | null;
+      /** This Manager's link to Frameleaf Cloud, where backups go. With neither, Server Backup stays hidden. */
+      cloud?: CloudBackup | null;
       /** Whether Manager may read and restore this path: inside the folders mapped into it. */
       inside: (path: string) => boolean;
       /** Protected whatever the owner chooses: Manager's own recovery points. */
@@ -119,9 +138,17 @@ export class ServerBackup {
     return key;
   }
 
-  private target(): Target {
-    if (!this.options.target) throw new Refusal('server_backup_unavailable');
-    return this.options.target;
+  private available() {
+    if (!this.options.target && !this.options.cloud) throw new Refusal('server_backup_unavailable');
+  }
+  /** Where a run reads and writes, and what it holds in Cloud while it goes (nothing, for a folder). */
+  private async place(kind: 'backup' | 'restore', rootKey: string, onLost?: () => void): Promise<{ target: Target; session: Session | null }> {
+    this.available();
+    if (this.options.target) return { target: this.options.target, session: null };
+    const cloud = this.options.cloud!;
+    if (!cloud.linked) throw new Refusal('server_backup_cloud_not_linked');
+    const session = await cloud.begin(kind, vaultOf(rootKey), onLost);
+    return { target: { kind: 'cloud', ...session.place, limitMbps: this.saved().settings.limitMbps }, session };
   }
 
   /** Every folder must be one Manager can read, and none may sit inside another: that would store files twice. */
@@ -136,7 +163,7 @@ export class ServerBackup {
   }
 
   async turnOn(input: unknown) {
-    this.target();
+    this.available();
     const settings = this.checked(Settings.parse(input));
     if (settings.folders.length === 0) throw new Refusal('server_backup_no_folders');
     await this.rootKey(true);
@@ -148,11 +175,25 @@ export class ServerBackup {
   /** Shown during set-up, until the owner confirms it is saved. After that Manager asks for the password first. */
   firstKey() {
     if (this.saved().keySavedAt !== null) throw new Refusal('server_backup_key_already_saved');
-    this.target();
+    this.available();
     return this.rootKey(true);
   }
   key() {
     return this.rootKey(false);
+  }
+  /**
+   * On a server that replaces another: the recovery key saved from the old one, so its backups open here.
+   * Only before this Manager has a key of its own; a key in use is never swapped.
+   */
+  async adoptKey(input: unknown) {
+    const key = z.string().regex(/^[0-9a-f]{64}$/).parse(input);
+    this.available();
+    await writeFile(this.keyFile(), key, { mode: 0o600, flag: 'wx' }).catch(() => {
+      throw new Refusal('server_backup_key_exists');
+    });
+    await chmod(this.keyFile(), 0o600);
+    this.save({ keySavedAt: Date.now() });
+    await this.refreshSnapshots().catch(() => undefined);
   }
   confirmKeySaved() {
     this.save({ keySavedAt: Date.now() });
@@ -163,8 +204,21 @@ export class ServerBackup {
     this.save({ on: false });
   }
 
-  private async launch(kind: RunKind, trigger: Run['trigger'], job: Job): Promise<Run> {
-    if (this.child) throw new Refusal('server_backup_busy');
+  private async launch(kind: RunKind, trigger: Run['trigger'], rootKey: string, work: (target: Target, session: Session | null) => Job): Promise<Run> {
+    if (this.child || this.starting) throw new Refusal('server_backup_busy');
+    this.starting = true;
+    let placed: Awaited<ReturnType<ServerBackup['place']>>;
+    try {
+      // Cloud's lease is lost: stop at once, without the tidy ending a stop by hand gets.
+      placed = await this.place(kind === 'backup' ? 'backup' : 'restore', rootKey, () => {
+        this.cause = 'cloud_lease_lost';
+        this.child?.kill('SIGKILL');
+      });
+    } finally {
+      this.starting = false;
+    }
+    const { session } = placed;
+    const job = work(placed.target, session);
     const value: Omit<Run, 'id'> = { kind, trigger, state: 'running', startedAt: Date.now(), finishedAt: null, progress: null, outcome: null, error: null };
     const { lastInsertRowid } = this.store.db.prepare('INSERT INTO server_backup_runs (value) VALUES (?)').run(JSON.stringify(value));
     const run: Run = { ...value, id: Number(lastInsertRowid) };
@@ -175,6 +229,7 @@ export class ServerBackup {
     this.child = child;
     this.current = run;
     this.stopping = false;
+    this.cause = null;
     this.pace = null;
     let saved = 0;
     const settle = (change: Partial<Run>) => {
@@ -184,7 +239,15 @@ export class ServerBackup {
       this.child = null;
       this.current = null;
       this.repository = null;
+      const done = run.outcome?.kind === 'backup' ? run.outcome : null;
+      void session?.end(
+        kind === 'backup'
+          ? { startedAt: run.startedAt, state: run.state === 'running' ? 'failed' : run.state, bytes: done?.storedBytes ?? 0, files: done?.files ?? 0, snapshot: done?.snapshot ?? null, error: run.error }
+          : undefined,
+      );
     };
+    const failure = (message: string): Partial<Run> =>
+      this.cause ? { state: 'failed', error: this.cause } : this.stopping || message === 'stopped' ? { state: 'stopped' } : { state: 'failed', error: message };
     child.on('message', (message: Message) => {
       if (message.type === 'progress') {
         const now = Date.now();
@@ -206,9 +269,17 @@ export class ServerBackup {
           if (message.outcome.removed > 0) void this.refreshSnapshots().catch(() => undefined);
         }
         settle({ state: 'done', outcome: message.outcome });
-      } else settle(this.stopping || message.message === 'stopped' ? { state: 'stopped' } : { state: 'failed', error: message.message });
+      } else if (message.type === 'ask') {
+        const { id, ask } = message;
+        const reply = (answer: Omit<Reply, 'type' | 'id'>) => child.connected && child.send({ type: 'answer', id, ...answer } satisfies Reply);
+        // Only a run on Cloud storage asks, and it always has a session.
+        (ask.what === 'credentials' ? session!.credentials(ask.operation, ask.renew) : session!.record(ask.stored)).then(
+          (value) => reply({ value }),
+          (error: Error & { code?: string }) => reply({ error: ask.what === 'record' ? 'cloud_record_failed' : (error.code ?? error.message) }),
+        );
+      } else settle(failure(message.message));
     });
-    child.on('exit', () => settle(this.stopping ? { state: 'stopped' } : { state: 'failed', error: 'worker_exited' }));
+    child.on('exit', () => settle(failure('worker_exited')));
     child.send(job);
     return run;
   }
@@ -217,15 +288,17 @@ export class ServerBackup {
     const saved = this.saved();
     if (!saved.on) throw new Refusal('server_backup_off');
     // ponytail: thinning old backups rides along once a week (Sunday's run); give it its own schedule if owners ask.
-    return this.launch('backup', trigger, {
+    const rootKey = await this.rootKey(false);
+    return this.launch('backup', trigger, rootKey, (target, session) => ({
       kind: 'backup',
-      target: this.target(),
-      rootKey: await this.rootKey(false),
+      target,
+      rootKey,
       folders: [...this.options.always, ...saved.settings.folders],
       exclusions: saved.settings.exclusions,
       retention: saved.settings.retention,
       prune: trigger === 'schedule' && now.getDay() === 0,
-    });
+      ...(session?.sequence ? { sequence: session.sequence } : {}),
+    }));
   }
 
   async restore(input: unknown): Promise<Run> {
@@ -241,7 +314,8 @@ export class ServerBackup {
       const place = into === null ? sep + item.join(sep) : resolve(into);
       if (item.includes('..') || item.includes('.') || !this.options.inside(place)) throw new Refusal('server_backup_folder_outside', 409, place);
     }
-    return this.launch('restore', 'you', { kind: 'restore', target: this.target(), rootKey: await this.rootKey(false), snapshot, items, into: into === null ? null : resolve(into) });
+    const rootKey = await this.rootKey(false);
+    return this.launch('restore', 'you', rootKey, (target) => ({ kind: 'restore', target, rootKey, snapshot, items, into: into === null ? null : resolve(into) }));
   }
 
   stop() {
@@ -253,7 +327,7 @@ export class ServerBackup {
   /** Called every minute. Starts the day's backup at its time, and stops a scheduled one when its window closes. */
   async tick(now = new Date()): Promise<void> {
     const saved = this.saved();
-    if (!saved.on || !this.options.target) return;
+    if (!saved.on || (!this.options.target && !this.options.cloud?.linked)) return;
     const { time, stop } = saved.settings.schedule;
     if (this.current?.trigger === 'schedule' && this.current.kind === 'backup' && stop && clock(now) === stop) return this.stop();
     if (this.child || clock(now) !== time || saved.scheduledOn === day(now)) return;
@@ -263,7 +337,13 @@ export class ServerBackup {
 
   private async opened(): Promise<Repository> {
     if (!this.repository) {
-      const repository = await Repository.open(dirStore(this.target().path), { rootKey: Buffer.from(await this.rootKey(false), 'hex') });
+      const rootKey = await this.rootKey(false);
+      const { target, session } = await this.place('restore', rootKey);
+      const store =
+        target.kind === 'folder'
+          ? dirStore(target.path)
+          : s3Store({ endpoint: target.endpoint, region: target.region, bucket: target.bucket, prefix: target.prefix, credentials: (renew) => session!.credentials('restore', renew) });
+      const repository = await Repository.open(store, { rootKey: Buffer.from(rootKey, 'hex') });
       await repository.loadIndex();
       this.repository = repository;
     }
@@ -296,7 +376,7 @@ export class ServerBackup {
 
   /** Everything the Server Backup screens show, or null when this Manager has nowhere to back up to. */
   view(now = new Date()) {
-    if (!this.options.target) return null;
+    if (!this.options.target && !this.options.cloud) return null;
     const saved = this.saved();
     const runs = this.runs();
     const lastBackup = runs.find((run) => run.kind === 'backup' && run.state !== 'running');

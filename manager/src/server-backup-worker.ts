@@ -10,6 +10,7 @@ import {
   mountSource,
   prune,
   restore,
+  s3Store,
   verify,
   type RetentionPolicy,
   type Source,
@@ -17,11 +18,13 @@ import {
 } from '@frameleaf/backup-core';
 import { sep } from 'node:path';
 
-/** Where the repository lives. Frameleaf Cloud joins this list when Manager can link to it. */
-export type Target = { kind: 'folder'; path: string };
+/** Where the repository lives: a folder (tests and pre-release), or storage that Frameleaf Cloud gives out credentials for. */
+export type Target =
+  | { kind: 'folder'; path: string }
+  | { kind: 'cloud'; endpoint: string; region: string; bucket: string; prefix: string; limitMbps: number | null };
 
 export type Job = { target: Target; rootKey: string } & (
-  | { kind: 'backup'; folders: string[]; exclusions: string[]; retention: RetentionPolicy; prune: boolean }
+  | { kind: 'backup'; folders: string[]; exclusions: string[]; retention: RetentionPolicy; prune: boolean; /** The backup's number in Cloud's signed history. */ sequence?: number }
   | { kind: 'restore'; snapshot: string; items: string[][]; into: string | null }
   | { kind: 'verify' }
 );
@@ -31,7 +34,17 @@ export type Outcome =
   | { kind: 'backup'; snapshot: string; time: string; files: number; bytes: number; storedBytes: number; problems: number; sizes: Record<string, { files: number; bytes: number }>; removed: number }
   | { kind: 'restore'; files: number; bytes: number; movedAside: number }
   | { kind: 'verify'; snapshots: number; missing: number; damaged: number };
-export type Message = { type: 'progress'; progress: Progress } | { type: 'done'; outcome: Outcome } | { type: 'failed'; message: string };
+/** What only Manager can do for a run on Cloud storage: it holds the machine's key, the worker never does. */
+export type Ask =
+  | { what: 'credentials'; operation: 'upload' | 'restore' | 'prune'; renew: boolean }
+  | { what: 'record'; stored: { key: string; versionId: string | null; ciphertextSha256: string; time: string } };
+export type Message =
+  | { type: 'progress'; progress: Progress }
+  | { type: 'done'; outcome: Outcome }
+  | { type: 'failed'; message: string }
+  | { type: 'ask'; id: number; ask: Ask };
+export type Reply = { type: 'answer'; id: number; value?: unknown; error?: string };
+type Asker = (ask: Ask) => Promise<unknown>;
 
 const segments = (path: string) => path.split(sep).filter(Boolean);
 
@@ -44,10 +57,20 @@ export function skips(patterns: string[]) {
   return (name: string, folder: boolean) => (folder ? folders : files).some((pattern) => pattern.test(name));
 }
 
-const open = (target: Target): Store => dirStore(target.path);
+const open = (target: Target, operation: 'upload' | 'restore' | 'prune', ask: Asker): Store =>
+  target.kind === 'folder'
+    ? dirStore(target.path)
+    : s3Store({
+        endpoint: target.endpoint,
+        region: target.region,
+        bucket: target.bucket,
+        prefix: target.prefix,
+        uploadLimit: () => (target.limitMbps === null ? null : target.limitMbps * 125_000),
+        credentials: (renew) => ask({ what: 'credentials', operation, renew }) as Promise<{ accessKeyId: string; secretAccessKey: string; sessionToken: string }>,
+      });
 
-async function run(job: Job, report: (progress: Progress) => void, signal: AbortSignal): Promise<Outcome> {
-  const store = open(job.target);
+async function run(job: Job, report: (progress: Progress) => void, signal: AbortSignal, ask: Asker): Promise<Outcome> {
+  const store = open(job.target, job.kind === 'backup' ? 'upload' : 'restore', ask);
   const rootKey = Buffer.from(job.rootKey, 'hex');
   const started = (await store.list('config')).length > 0;
   if (!started && job.kind !== 'backup') throw new Error('Nothing has been backed up yet');
@@ -71,8 +94,13 @@ async function run(job: Job, report: (progress: Progress) => void, signal: Abort
     const done = await backup(repository, source, {
       signal,
       onProgress: (progress) => report({ ...progress, totalFiles: total.files, totalBytes: total.bytes }),
+      ...(job.sequence === undefined ? {} : { sequence: job.sequence }),
     });
-    const removed = job.prune ? (await prune(repository, { policy: job.retention })).removedSnapshots.length : 0;
+    // Before anything is thinned, the new backup joins Cloud's signed history.
+    if (job.target.kind === 'cloud') await ask({ what: 'record', stored: { key: done.key, versionId: done.versionId, ciphertextSha256: done.ciphertextSha256, time: done.snapshot.time } });
+    // Removing needs credentials of its own, which uploading ones don't carry.
+    const thinned = job.prune && job.target.kind === 'cloud' ? await Repository.open(open(job.target, 'prune', ask), { rootKey }) : repository;
+    const removed = job.prune ? (await prune(thinned, { policy: job.retention })).removedSnapshots.length : 0;
     return {
       kind: 'backup',
       snapshot: done.key,
@@ -112,6 +140,20 @@ if (process.send) {
   process.on('SIGTERM', () => stop.abort());
   const send = (message: Message) => process.send!(message);
   let last = 0;
+  let asked = 0;
+  const waiting = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  const ask: Asker = (question) =>
+    new Promise((resolve, reject) => {
+      waiting.set(++asked, { resolve, reject });
+      send({ type: 'ask', id: asked, ask: question });
+    });
+  process.on('message', (reply: Reply) => {
+    if (reply.type !== 'answer') return;
+    const { resolve, reject } = waiting.get(reply.id) ?? {};
+    waiting.delete(reply.id);
+    if (reply.error === undefined) resolve?.(reply.value);
+    else reject?.(new Error(reply.error));
+  });
   process.once('message', (job: Job) => {
     run(
       job,
@@ -123,6 +165,7 @@ if (process.send) {
         }
       },
       stop.signal,
+      ask,
     )
       .then((outcome) => send({ type: 'done', outcome }))
       .catch((error: Error) => send({ type: 'failed', message: stop.signal.aborted ? 'stopped' : error.message }))
