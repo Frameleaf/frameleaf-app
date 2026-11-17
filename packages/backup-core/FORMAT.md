@@ -110,9 +110,37 @@ ordered by `seq`; `time` is information only, so a wrong clock cannot reorder hi
    (locally, and a lease in Frameleaf Cloud).
 6. **Restore never deletes**: a file in the way is renamed first.
 
-Prune and verify are not part of this document yet. The rules they will follow: the superseding
-index is written before any delete, a pack younger than 90 days is never deleted, and the newest
-snapshots are always kept.
+## Prune
+
+Prune removes snapshots the retention policy no longer keeps, and the data only they needed. It
+changes nothing in the format; it only deletes objects and writes new packs and one new index.
+
+Retention keeps: the newest few snapshots whatever their age (never fewer than one), every snapshot
+younger than a number of days, and beyond that the newest snapshot of each calendar month (UTC) for a
+number of months. The defaults are 3, 90 days and 12 months.
+
+A blob is **needed** if a kept snapshot reaches it through its trees. Prune stops before changing
+anything if a needed blob is not stored: a damaged repository is never thinned.
+
+Each pack older than the minimum age (90 days by default, because storage is billed that long
+anyway) is deleted if it holds nothing needed, or rewritten if less than half of its bytes are
+needed: the needed blobs are opened to check them and copied, as stored, into new packs.
+
+The order makes every stopping point safe:
+
+1. snapshots that are no longer kept are deleted, so nothing points at what goes next;
+2. new packs are written;
+3. one new index object is written, then the old index objects are deleted;
+4. unneeded packs are deleted last.
+
+After a stop at any step, every remaining snapshot is whole and a second prune finishes the job.
+A blob that ends up in two packs is harmless; the next prune removes the spare.
+
+## Verify
+
+Verify changes nothing. It walks every snapshot and reports snapshots that cannot be opened and
+needed blobs that are not stored. For the packs it is asked to read, it downloads each one, opens
+every blob and checks that the blob's id matches its content.
 
 ## Known limits of version 1
 

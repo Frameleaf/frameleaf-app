@@ -27,6 +27,21 @@ export interface BackupOptions {
   time?: Date;
   /** Bytes per pack. Tests make it small. */
   packTarget?: number;
+  /** Stops the run, for a window that closes or a user who presses Stop. What was stored is kept for the next run. */
+  signal?: AbortSignal;
+}
+
+/** The source could not give a file's content. */
+class SourceError extends Error {}
+
+async function* guarded(stream: AsyncIterable<Uint8Array>) {
+  try {
+    for await (const part of stream) {
+      yield part;
+    }
+  } catch (error) {
+    throw new SourceError(error instanceof Error ? error.message : String(error));
+  }
 }
 
 const same = (before: Entry, now: SourceEntry) =>
@@ -65,7 +80,8 @@ export async function backup(
   const readFile = async (path: string[]) => {
     const ids: string[] = [];
     let bytes = 0;
-    for await (const chunk of chunkStream(source.read(path), repository.config.chunker, repository.gear)) {
+    for await (const chunk of chunkStream(guarded(source.read(path)), repository.config.chunker, repository.gear)) {
+      options.signal?.throwIfAborted();
       ids.push(await store(data, chunk));
       bytes += chunk.length;
     }
@@ -97,7 +113,11 @@ export async function backup(
         }
       }
     } catch (error) {
-      problems.push({ path, message: error instanceof Error ? error.message : String(error) });
+      // Only a file that can't be read is skipped. A storage failure or a stop ends the run.
+      if (!(error instanceof SourceError)) {
+        throw error;
+      }
+      problems.push({ path, message: error.message });
       return null;
     }
     if (read.ids.length <= INLINE_CHUNKS) {
@@ -149,7 +169,16 @@ export async function backup(
     return store(trees, encodeTree(entries));
   };
 
-  const tree = await folder([], parent?.tree);
+  let tree: string;
+  try {
+    tree = await folder([], parent?.tree);
+  } catch (error) {
+    // A stopped run keeps what it has: the next run adopts these packs and sends none of it again.
+    if (options.signal?.aborted) {
+      await data.flush();
+    }
+    throw error;
+  }
   await data.flush();
   await trees.flush();
   await repository.writeIndex([...data.written, ...trees.written]);

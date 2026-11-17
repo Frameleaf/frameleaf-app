@@ -32,10 +32,12 @@ const slice = (body: Buffer, range?: ByteRange) =>
 
 export function memoryStore(): Store & { objects: Map<string, Buffer> } {
   const objects = new Map<string, Buffer>();
+  const written = new Map<string, Date>();
   return {
     objects,
     async put(key, body) {
       objects.set(key, Buffer.from(body));
+      written.set(key, new Date());
     },
     async get(key, range) {
       const body = objects.get(key);
@@ -47,7 +49,7 @@ export function memoryStore(): Store & { objects: Map<string, Buffer> } {
     async list(prefix) {
       return [...objects]
         .filter(([key]) => key.startsWith(prefix))
-        .map(([key, body]) => ({ key, size: body.length, modified: new Date() }));
+        .map(([key, body]) => ({ key, size: body.length, modified: written.get(key) ?? new Date(0) }));
     },
     async delete(key) {
       objects.delete(key);

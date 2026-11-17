@@ -4,6 +4,8 @@ export { DEFAULT_CHUNKER, chunkStream, cutPoint, gearTable } from './chunker.js'
 export type { ChunkerParams } from './chunker.js';
 export { FORMAT, UnsealError, VERSION, blobId, deriveKeys } from './keys.js';
 export type { RepositoryKeys } from './keys.js';
+export { DEFAULT_RETENTION, prune, retain, verify } from './maintenance.js';
+export type { PruneOptions, PruneReport, RetentionPolicy, VerifyOptions, VerifyReport } from './maintenance.js';
 export { MissingBlobError, PACK_TARGET, Repository } from './repository.js';
 export type { Location, RepositoryConfig, Snapshot } from './repository.js';
 export { find, listFolder, readFile, restore } from './restore.js';

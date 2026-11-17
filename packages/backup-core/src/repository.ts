@@ -223,6 +223,21 @@ export class Repository {
     await this.store.put(key, seal(this.keys.meta, Buffer.from(key), zstdCompressSync(Buffer.concat(parts))));
   }
 
+  /** Replaces every index object with one that lists exactly what the index holds now. The new one is written first. */
+  async rewriteIndex(): Promise<void> {
+    const old = await this.store.list('i/');
+    const packs = new Map<string, PackEntry[]>();
+    for (const [id, location] of this.index) {
+      const entries = packs.get(location.pack) ?? [];
+      entries.push({ id: Buffer.from(id, 'hex'), offset: location.offset, length: location.length });
+      packs.set(location.pack, entries);
+    }
+    await this.writeIndex([...packs].map(([pack, entries]) => ({ pack, entries })));
+    for (const object of old) {
+      await this.store.delete(object.key);
+    }
+  }
+
   /** Snapshots oldest first. */
   async listSnapshots(): Promise<{ key: string; seq: number }[]> {
     return (await this.store.list('s/'))
@@ -278,15 +293,19 @@ export class PackWriter {
     if (this.has(hex)) {
       return false;
     }
-    const blob = sealBlob(this.repository.keys, id, plain);
+    await this.addSealed(id, sealBlob(this.repository.keys, id, plain));
+    return true;
+  }
+
+  /** A blob already in its stored form, as copied out of another pack. Stored even if the index knows it. */
+  async addSealed(id: Buffer, blob: Buffer): Promise<void> {
     this.entries.push({ id, offset: this.size, length: blob.length });
     this.parts.push(blob);
-    this.pending.add(hex);
+    this.pending.add(id.toString('hex'));
     this.size += blob.length;
     if (this.size >= this.target) {
       await this.flush();
     }
-    return true;
   }
 
   async flush(): Promise<void> {
