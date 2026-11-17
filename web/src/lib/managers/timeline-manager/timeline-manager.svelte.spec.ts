@@ -138,42 +138,64 @@ describe('TimelineManager', () => {
     }
   });
 
-  it('a refresh keeps the month on screen, not the pixel offset', async () => {
-    const buckets = [
-      { count: 40, timeBucket: '2026-09-01' },
-      { count: 40, timeBucket: '2019-11-01' },
-    ];
-    sdkMock.getTimeBuckets.mockResolvedValue(buckets);
-    const manager = new TimelineManager();
-    try {
+  describe('a refresh keeps the month on screen, not the pixel offset (FL-1681)', () => {
+    const setup = async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue([
+        { count: 40, timeBucket: '2026-09-01' },
+        { count: 40, timeBucket: '2019-11-01' },
+      ]);
+      const manager = new TimelineManager();
       manager.viewportWidth = 1000;
       manager.viewportHeight = 800;
       await manager.updateOptions({});
+      // A scroller that moves where it is told, so the manager reads its own position back.
+      let position = 0;
       const scroller = document.createElement('div');
-      Object.defineProperty(scroller, 'scrollTop', { value: 0, configurable: true });
-      // Where 2019-11 starts and how tall it is at the moment the refresh scrolls (it is re-estimated after).
-      const targets: { top: number; monthMiddle: number }[] = [];
-      scroller.scrollTo = (({ top }: { top: number }) => {
-        const month = manager.months[1];
-        targets.push({ top, monthMiddle: month.top + month.height * 0.5 });
-      }) as never;
+      Object.defineProperty(scroller, 'scrollTop', {
+        configurable: true,
+        get: () => position,
+        set: (top: number) => (position = top),
+      });
+      scroller.scrollTo = (({ top }: { top: number }) => (position = top)) as never;
       manager.scrollableElement = scroller;
-      manager.viewportTopMonthIntersection = {
-        month: manager.months[1],
-        viewportTopRatioInMonth: 0.5,
-        monthBottomViewportRatio: 1,
-      };
+      return { manager, position: () => position };
+    };
 
-      await manager.refresh();
+    it('returns to the same point in a later month', async () => {
+      const { manager, position } = await setup();
+      try {
+        const before = manager.months[1];
+        manager.scrollTo(before.top + before.height * 0.5);
+        expect(manager.viewportTopMonthIntersection?.month?.yearMonth).toEqual({ year: 2019, month: 11 });
+        // The old pixel offset would also land here unless the month moves; make the month above taller.
+        manager.months[0].height += 3000;
+        expect(position()).toBe(before.top + before.height * 0.5);
 
-      expect(manager.months[1].yearMonth).toEqual({ year: 2019, month: 11 });
-      const last = targets.at(-1)!;
-      // The old pixel offset (0) would have put 2026 on screen.
-      expect(last.top).toBeGreaterThan(0);
-      expect(last.top).toBe(last.monthMiddle);
-    } finally {
-      manager.destroy();
-    }
+        await manager.refresh();
+
+        const after = manager.months[1];
+        expect(after).not.toBe(before);
+        expect(after.yearMonth).toEqual({ year: 2019, month: 11 });
+        expect(position()).toBe(after.top + after.height * 0.5);
+      } finally {
+        manager.destroy();
+      }
+    });
+
+    it('holds the same point in the first month when its height changes under the viewport', async () => {
+      const { manager, position } = await setup();
+      try {
+        // After a refresh the first month is back at its estimate; its loaded height returns later.
+        const first = manager.months[0];
+        const estimate = first.height;
+        manager.scrollTo(estimate * 0.5);
+        expect(manager.viewportTopMonthIntersection?.month).toBe(first);
+        first.height = estimate * 2;
+        expect(position()).toBe(estimate);
+      } finally {
+        manager.destroy();
+      }
+    });
   });
 
   it('re-reads album membership after assets are added only to its album (FL-40)', async () => {
