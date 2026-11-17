@@ -17,6 +17,11 @@ export type SuggestDuplicateOptions = {
   inAlbumIds?: ReadonlySet<string>;
   /** Ids of the copies with develop history; `isEdited` counts as well (only read by `hasEdits`). */
   editedIds?: ReadonlySet<string>;
+  /**
+   * FL-1660: ids of the copies whose file is offline, missing or corrupt. They are never suggested,
+   * whatever the rules say; a group with no healthy copy gets no suggestion.
+   */
+  damagedIds?: ReadonlySet<string>;
 };
 
 /**
@@ -122,6 +127,7 @@ export const resolveKeepRules = (rules: readonly string[] | undefined = []): Dup
 /**
  * The copy to suggest keeping: the owner's rules in order (by default RAW, then HEIC/HEIF/HIF, then
  * size, then EXIF coverage), a tie on one rule going to the next, then the lowest stable asset ID.
+ * Damaged copies (`damagedIds`) are left out before any rule runs.
  */
 export const suggestDuplicate = (
   assets: AssetResponseDto[],
@@ -142,7 +148,7 @@ export const suggestDuplicate = (
   };
   let best: AssetResponseDto | undefined;
   for (const asset of assets) {
-    if (asset === undefined) {
+    if (asset === undefined || options.damagedIds?.has(asset.id)) {
       continue;
     }
     if (best === undefined) {

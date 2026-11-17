@@ -150,6 +150,7 @@ describe(TakeoutWorkerService.name, () => {
       setAlbumFor: vi.fn((_owner: string, _folder: string, id: string) => Promise.resolve(id)),
     };
     staging = {
+      sweep: vi.fn().mockResolvedValue({ imports: 0, parts: 0 }),
       prepare: vi.fn().mockResolvedValue('/data/takeout/owner/import'),
       freeBytes: vi.fn().mockResolvedValue(10 * 1024 ** 4),
       openArchive: vi.fn(),
@@ -227,6 +228,13 @@ describe(TakeoutWorkerService.name, () => {
     afterEach(async () => {
       await sut.onShutdown();
       vi.restoreAllMocks();
+    });
+
+    it('sweeps staging when it is idle, once a day', async () => {
+      operations.claimNext.mockResolvedValue(undefined);
+      await sut.drain();
+      await sut.drain();
+      expect(staging.sweep).toHaveBeenCalledOnce();
     });
 
     it('returns a claim delivered after shutdown without starting the import', async () => {

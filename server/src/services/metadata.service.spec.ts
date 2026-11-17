@@ -149,6 +149,15 @@ describe(MetadataService.name, () => {
       expect(mocks.map.setPlacesRestoring).toHaveBeenCalledWith(false);
     });
 
+    it('should resume the queue when the place data step fails', async () => {
+      mocks.map.init.mockRejectedValue(new Error('canceling statement due to statement timeout'));
+
+      await expect(sut.onBootstrap()).rejects.toThrow('Metadata service init failed');
+
+      expect(mocks.job.pause).toHaveBeenCalledTimes(1);
+      expect(mocks.job.resume).toHaveBeenCalledTimes(1);
+    });
+
     it('should re-match landmarks after a geodata import', async () => {
       mocks.map.init.mockResolvedValue(true);
 
