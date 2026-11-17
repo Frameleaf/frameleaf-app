@@ -17,7 +17,8 @@ export type ByteRange = { start: number; end: number } | { suffix: number };
  * multipart parts; widen this to a stream when that lands.
  */
 export interface Store {
-  put(key: string, body: Buffer): Promise<void>;
+  /** Storage that keeps versions says which one this write made; a signed record of a backup names it. */
+  put(key: string, body: Buffer): Promise<{ versionId: string | null }>;
   get(key: string, range?: ByteRange): Promise<Buffer>;
   list(prefix: string): Promise<StoredObject[]>;
   delete(key: string): Promise<void>;
@@ -38,6 +39,7 @@ export function memoryStore(): Store & { objects: Map<string, Buffer> } {
     async put(key, body) {
       objects.set(key, Buffer.from(body));
       written.set(key, new Date());
+      return { versionId: null };
     },
     async get(key, range) {
       const body = objects.get(key);
@@ -73,6 +75,7 @@ export function dirStore(root: string): Store {
       const temporary = `${target}.${randomBytes(6).toString('hex')}.part`;
       await writeFile(temporary, body);
       await rename(temporary, target);
+      return { versionId: null };
     },
     async get(key, range) {
       const file = await open(path(key), 'r');
