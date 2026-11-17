@@ -260,13 +260,17 @@ export class Repository {
   }
 
   /** The last step of a backup. Returns what a signed receipt needs: the object's name and the hash of what was stored. */
-  async writeSnapshot(body: Pick<Snapshot, 'time' | 'tree' | 'parent' | 'stats'>) {
-    const seq = ((await this.listSnapshots()).at(-1)?.seq ?? 0) + 1;
+  async writeSnapshot(body: Pick<Snapshot, 'time' | 'tree' | 'parent' | 'stats'>, sequence?: number) {
+    // Where a signed history is kept (Frameleaf Cloud), its next number is used, so the two never drift apart.
+    const seq = sequence ?? ((await this.listSnapshots()).at(-1)?.seq ?? 0) + 1;
+    if (!Number.isInteger(seq) || seq < 1 || seq > 999_999_999_999) {
+      throw new RangeError('A snapshot number must be a whole number from 1 to 999999999999');
+    }
     const key = `s/${String(seq).padStart(12, '0')}-${randomBytes(8).toString('hex')}`;
     const snapshot: Snapshot = { v: 1, repoId: this.config.repoId, seq, ...body };
     const sealed = seal(this.keys.meta, Buffer.from(key), Buffer.from(JSON.stringify(snapshot)));
-    await this.store.put(key, sealed);
-    return { key, snapshot, ciphertextSha256: createHash('sha256').update(sealed).digest('hex') };
+    const { versionId } = await this.store.put(key, sealed);
+    return { key, snapshot, versionId, ciphertextSha256: createHash('sha256').update(sealed).digest('hex') };
   }
 }
 
