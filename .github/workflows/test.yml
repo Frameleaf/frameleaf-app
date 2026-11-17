@@ -233,7 +233,8 @@ jobs:
     timeout-minutes: 60
   cli-unit-tests-win:
     name: Unit Test CLI (Windows)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
+    # Forgejo has no Windows runner; the release gate drops this lane there (FL-1678).
+    if: ${{ github.server_url == 'https://github.com' && github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: windows-latest
     permissions:
       contents: read

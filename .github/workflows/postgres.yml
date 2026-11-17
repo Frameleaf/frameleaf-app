@@ -139,6 +139,7 @@ jobs:
       attestations: write
     outputs:
       digest: ${{ steps.publish.outputs.digest }}
+      tag: ${{ steps.publish.outputs.tag }}
     env:
       IMAGE: ghcr.io/frameleaf/frameleaf-postgres
       VERSION_TAG: 19rc1-pgvector0.8.7
@@ -180,8 +181,8 @@ jobs:
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          username: ${{ vars.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
       - name: Publish the tested images without overwriting a version
         id: publish
         env:
@@ -239,6 +240,7 @@ jobs:
           fi
           [[ "$index" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::Unreadable published digest"; exit 1; }
           echo "digest=$index" >> "$GITHUB_OUTPUT"
+          echo "tag=$VERSION_TAG" >> "$GITHUB_OUTPUT"
           jq -n --arg image "$IMAGE" --arg tag "$VERSION_TAG" --arg digest "$index" --arg source "$SOURCE_SHA" \
             '{image: $image, tag: $tag, digest: $digest, sourceCommit: $source, reference: "\($image):\($tag)@\($digest)"}' \
             > "$RUNNER_TEMP/frameleaf-postgres-digest.json"
@@ -254,13 +256,15 @@ jobs:
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ env.IMAGE }}@${{ steps.publish.outputs.digest-amd64 }}
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ github.token }}
+          registry-username: ${{ vars.GHCR_USERNAME || github.actor }}
+          registry-password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
           format: spdx-json
           output-file: ${{ runner.temp }}/frameleaf-postgres-amd64.spdx.json
           upload-artifact: false
           upload-release-assets: false
       - name: Attest the amd64 SBOM
+        # GitHub-only attestation store; on Forgejo the cosign signature stands alone (FL-1678).
+        if: github.server_url == 'https://github.com'
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ env.IMAGE }}
@@ -271,13 +275,15 @@ jobs:
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ env.IMAGE }}@${{ steps.publish.outputs.digest-arm64 }}
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ github.token }}
+          registry-username: ${{ vars.GHCR_USERNAME || github.actor }}
+          registry-password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
           format: spdx-json
           output-file: ${{ runner.temp }}/frameleaf-postgres-arm64.spdx.json
           upload-artifact: false
           upload-release-assets: false
       - name: Attest the arm64 SBOM
+        # GitHub-only attestation store; on Forgejo the cosign signature stands alone (FL-1678).
+        if: github.server_url == 'https://github.com'
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ${{ env.IMAGE }}
@@ -285,8 +291,25 @@ jobs:
           sbom-path: ${{ runner.temp }}/frameleaf-postgres-arm64.spdx.json
           push-to-registry: true
       - name: Attest build provenance
+        # GitHub-only attestation store; on Forgejo the cosign signature stands alone (FL-1678).
+        if: github.server_url == 'https://github.com'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.publish.outputs.digest }}
           push-to-registry: true
+
+  # FL-1678: copy the published image to Docker Hub and Forgejo (GHCR keeps it too).
+  mirror:
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' && github.server_url != 'https://github.com' }}
+    uses: ./.github/workflows/mirror-images.yml
+    with:
+      refs: frameleaf-postgres:${{ needs.publish.outputs.tag }}
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      REGISTRY_PUBLISH_TOKEN: ${{ secrets.REGISTRY_PUBLISH_TOKEN }}
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}

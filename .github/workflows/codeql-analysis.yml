@@ -50,7 +50,8 @@ jobs:
           name: codeql-${{ matrix.language }}
           path: codeql-results
           retention-days: 7
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    # CodeQL's actions and results only work on GitHub (FL-1678).
+    if: ${{ github.server_url == 'https://github.com' && github.repository == 'Frameleaf/frameleaf-app' }}
     timeout-minutes: 60
   publish-results:
     name: Publish mainline CodeQL findings

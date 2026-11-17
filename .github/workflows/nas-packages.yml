@@ -26,8 +26,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      GH_TOKEN: ${{ github.token }}
-      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+      GITHUB_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+      FORGEJO_TOKEN: ${{ github.token }}
       MANAGER_TAG: ${{ inputs['manager-tag'] }}
       APPLICATION_TAG: ${{ inputs['application-tag'] }}
       NODE_PATH: ${{ github.workspace }}/manager/node_modules

@@ -205,8 +205,8 @@ jobs:
         id: publish
         env:
           SOURCE_SHA: ${{ github.sha }}
-          REGISTRY_TOKEN: ${{ github.token }}
-          ACTOR: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          ACTOR: ${{ vars.GHCR_USERNAME || github.actor }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |-
@@ -276,6 +276,8 @@ jobs:
               architectures:[$amd64[0],$arm64[0]]}' \
             > "$RUNNER_TEMP/cli-publication.json"
       - name: Attest published build provenance
+        # GitHub-only attestation store; on Forgejo the cosign signature stands alone (FL-1678).
+        if: github.server_url == 'https://github.com'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/frameleaf/frameleaf-cli
@@ -298,3 +300,18 @@ jobs:
           name: cli-publication
           path: ${{ runner.temp }}/cli-publication.json
           if-no-files-found: error
+
+  # FL-1678: copy the published image to Docker Hub and Forgejo (GHCR keeps it too).
+  mirror:
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' && github.server_url != 'https://github.com' }}
+    uses: ./.github/workflows/mirror-images.yml
+    with:
+      refs: frameleaf-cli:latest
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      REGISTRY_PUBLISH_TOKEN: ${{ secrets.REGISTRY_PUBLISH_TOKEN }}
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
