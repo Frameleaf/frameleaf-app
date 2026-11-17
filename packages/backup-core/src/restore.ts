@@ -1,5 +1,5 @@
 import { chmod, chown, lstat, mkdir, open, rename, symlink, utimes } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { Repository, Snapshot } from './repository.js';
 import { type Entry, fileChunks, readTree, safeName } from './tree.js';
 
@@ -148,9 +148,16 @@ export async function restore(
   if (path.length > 0 && !safeName(start.name)) {
     throw new Error('This backup holds a name that cannot be restored safely');
   }
-  // A destination made here is made usable by the one restoring, whatever the process umask.
-  if (await mkdir(target, { recursive: true })) {
-    await chmod(target, ((await lstat(target)).mode & 0o7777) | 0o700);
+  // A destination made here is made usable by the one restoring, whatever the process umask. Its missing
+  // folders are made one at a time for that reason: the next one could not be made inside a folder the
+  // umask had left without write permission.
+  const missing: string[] = [];
+  for (let at = resolve(target); !(await lstat(at).catch(() => null)); at = dirname(at)) {
+    missing.unshift(at);
+  }
+  for (const folder of missing) {
+    await mkdir(folder);
+    await chmod(folder, ((await lstat(folder)).mode & 0o7777) | 0o700);
   }
   // Everything goes straight into `target`; one file or folder keeps its own name inside it.
   await put(start, path.length > 0 ? join(target, start.name) : target);
