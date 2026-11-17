@@ -53,7 +53,7 @@ export const withoutTrailingSlashes = (value: string) => {
   return value.slice(0, end);
 };
 
-/** The claimed bucket's address, the index key in `cloud_backup_object`. */
+/** The claimed bucket's address, the index key in `cloud_backup_manifest`. */
 export const bucketRef = (endpoint: string, bucket: string) => `${withoutTrailingSlashes(endpoint)}/${bucket}`;
 
 /**
