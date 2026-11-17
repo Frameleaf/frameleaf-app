@@ -26,7 +26,7 @@ const taxReturn = () => [...parts(at('server', 'documents', 'Tax')), 'Return 202
 function manager(name: string) {
   const store = new Store(at(name));
   stores.push(store);
-  const link = new CloudBackup(store, new Cloud(API, { fetch: cloud.fetch, now: () => cloud.state.now }), () => machine);
+  const link = new CloudBackup(store, new Cloud(API, { fetch: cloud.fetch, now: () => cloud.state.now }), { version: machine.version, platform: machine.platform });
   const service = new ServerBackup(store, { target: null, cloud: link, inside: (path) => path === at('server') || path.startsWith(at('server') + sep), always: [] });
   return { link, service };
 }
@@ -45,7 +45,7 @@ async function until(what: () => boolean) {
   assert.ok(what());
 }
 async function link({ link }: ReturnType<typeof manager>) {
-  const started = await link.startLink();
+  const started = await link.startLink(machine.name);
   assert.equal(started.userCode, 'BCDF-GHJK');
   assert.equal(link.view().state, 'linking');
   assert.equal(await link.checkLink(), 'waiting');
@@ -86,7 +86,10 @@ test('nothing runs until this Manager is linked and knows where to store', async
   await assert.rejects(first.service.backUp(), refused('server_backup_cloud_no_location'));
   assert.equal(cloud.state.lease, null);
   assert.deepEqual((await first.link.locations()).map((place) => place.locationId), ['loc-01']);
-  first.link.setLocation('loc-01');
+  await assert.rejects(first.link.setLocation('somewhere-else'), refused('server_backup_cloud_no_location'));
+  // One place on offer: there is nothing to choose.
+  await first.link.setLocation();
+  assert.equal(first.link.view().locationId, 'loc-01');
 });
 
 test('a backup goes to Cloud storage under the run lease and joins the signed history', async () => {
@@ -140,6 +143,19 @@ test('a backup Cloud could not record is kept and recorded before the next one s
   await until(() => cloud.state.lease === null);
 });
 
+test('a scheduled backup that cannot start is in the history with its reason', async () => {
+  cloud.state.entitled = false;
+  const due = new Date(2026, 10, 18, 2, 0);
+  await first.service.tick(due);
+  const missed = first.service.runs(1)[0]!;
+  assert.deepEqual([missed.state, missed.trigger, missed.error], ['failed', 'schedule', 'cloud_entitlement_missing_licence']);
+  assert.equal(cloud.state.lease, null);
+  cloud.state.entitled = true;
+  // Once a day: the same minute does not start it again.
+  await first.service.tick(due);
+  assert.equal(first.service.view()?.running, null);
+});
+
 test('one run holds the lease at a time, and losing it is noticed within a beat', async () => {
   cloud.state.heartbeatAfterSec = 1;
   let lost = false;
@@ -181,6 +197,8 @@ test('a replacement server takes the backups over once the owner approves, with 
   assert.equal(second.link.view().takeover, null);
 
   await assert.rejects(second.service.adoptKey('not a key'));
+  // A well-formed key that is not the old server's opens nothing, and is not kept.
+  await assert.rejects(second.service.adoptKey('ab'.repeat(32)), refused('server_backup_key_wrong'));
   await second.service.adoptKey(key);
   await assert.rejects(second.service.adoptKey(key), refused('server_backup_key_exists'));
   const snapshots = second.service.view()!.snapshots;
