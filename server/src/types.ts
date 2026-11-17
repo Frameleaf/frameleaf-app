@@ -534,6 +534,8 @@ export interface IMediaHealthFixAssetJob extends IEntityJob {
   message?: string;
   /** How many busy checks it has had; it stops after three. */
   attempt?: number;
+  /** Undo a repair an older repair engine made, then fix the kept file again (`REPAIR_ENGINE`). */
+  redoRepair?: boolean;
   /** Milliseconds before it may run (an `availableAt` in the future). */
   delay?: number;
   /** How many times this fix has put itself back. Its key changes with it, so the store never drops it. */
