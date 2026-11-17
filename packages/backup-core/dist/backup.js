@@ -1,14 +1,14 @@
 import { chunkStream } from './chunker.js';
 import { blobId } from './keys.js';
 import { PackWriter } from './repository.js';
-import { encodeTree, fileChunks, readTree } from './tree.js';
+import { encodeTree, fileChunks, readTree, safeName } from './tree.js';
 const INLINE_CHUNKS = 1024;
 const LIST_CHUNKS = 32_768;
 class SourceError extends Error {
 }
-async function* guarded(stream) {
+async function* guarded(open) {
     try {
-        for await (const part of stream) {
+        for await (const part of open()) {
             yield part;
         }
     }
@@ -21,6 +21,7 @@ const same = (before, now) => before.type === 'file' &&
         ? before.key === now.key
         : before.size === now.size && before.mtime === now.mtime);
 export async function backup(repository, source, options = {}) {
+    options.signal?.throwIfAborted();
     await repository.loadIndex();
     const data = new PackWriter(repository, options.packTarget);
     const trees = new PackWriter(repository, options.packTarget);
@@ -38,7 +39,7 @@ export async function backup(repository, source, options = {}) {
     const readFile = async (path) => {
         const ids = [];
         let bytes = 0;
-        for await (const chunk of chunkStream(guarded(source.read(path)), repository.config.chunker, repository.gear)) {
+        for await (const chunk of chunkStream(guarded(() => source.read(path)), repository.config.chunker, repository.gear)) {
             options.signal?.throwIfAborted();
             ids.push(await store(data, chunk));
             bytes += chunk.length;
@@ -87,10 +88,9 @@ export async function backup(repository, source, options = {}) {
     };
     const folder = async (path, beforeTree) => {
         const before = new Map();
-        if (beforeTree) {
-            for (const entry of await readTree(repository, beforeTree).catch(() => [])) {
-                before.set(entry.name, entry);
-            }
+        const earlierTree = beforeTree ? await readTree(repository, beforeTree).catch(() => null) : null;
+        for (const entry of earlierTree ?? []) {
+            before.set(entry.name, entry);
         }
         const entries = [];
         let listed = [];
@@ -99,9 +99,17 @@ export async function backup(repository, source, options = {}) {
         }
         catch (error) {
             problems.push({ path, message: error instanceof Error ? error.message : String(error) });
+            if (beforeTree && earlierTree) {
+                return beforeTree;
+            }
         }
         for (const now of listed) {
+            options.signal?.throwIfAborted();
             const child = [...path, now.name];
+            if (!safeName(now.name)) {
+                problems.push({ path: child, message: 'This name can’t be stored: it would not restore inside its folder' });
+                continue;
+            }
             const earlier = before.get(now.name);
             if (now.type === 'dir') {
                 const { size: _, ...rest } = now;
@@ -130,6 +138,7 @@ export async function backup(repository, source, options = {}) {
     let tree;
     try {
         tree = await folder([], parent?.tree);
+        options.signal?.throwIfAborted();
     }
     catch (error) {
         if (options.signal?.aborted) {

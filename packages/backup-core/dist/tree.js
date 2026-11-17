@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { lstat, readdir, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
+export const safeName = (name) => name !== '' && name !== '.' && name !== '..' && !/[/\\\0]/.test(name);
 export const encodeTree = (entries) => Buffer.from(JSON.stringify({ v: 1, entries: entries.toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) }));
 export async function readTree(repository, id) {
     return JSON.parse((await repository.readBlob(id)).toString()).entries;
@@ -24,7 +25,15 @@ export function fsSource(root) {
             const folder = join(root, ...path);
             const entries = [];
             for (const name of await readdir(folder)) {
-                const info = await lstat(join(folder, name));
+                const info = await lstat(join(folder, name)).catch((error) => {
+                    if (error.code === 'ENOENT') {
+                        return null;
+                    }
+                    throw error;
+                });
+                if (!info) {
+                    continue;
+                }
                 const type = info.isFile()
                     ? 'file'
                     : info.isDirectory()

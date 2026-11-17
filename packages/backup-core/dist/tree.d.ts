@@ -21,6 +21,7 @@ export interface Entry extends Omit<SourceEntry, 'size'> {
     lists?: string[];
     tree?: string;
 }
+export declare const safeName: (name: string) => boolean;
 export declare const encodeTree: (entries: Entry[]) => Buffer<ArrayBuffer>;
 export declare function readTree(repository: Repository, id: string): Promise<Entry[]>;
 export declare function fileChunks(repository: Repository, entry: Entry): Promise<string[]>;

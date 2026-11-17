@@ -1,8 +1,7 @@
-import { chown, lstat, mkdir, open, rename, symlink, utimes } from 'node:fs/promises';
+import { chmod, chown, lstat, mkdir, open, rename, symlink, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileChunks, readTree } from './tree.js';
-const stamp = (milliseconds) => (milliseconds + 0.5) / 1000;
-const safeName = (name) => name !== '' && name !== '.' && name !== '..' && !/[/\\\0]/.test(name);
+import { fileChunks, readTree, safeName } from './tree.js';
+const stamp = (milliseconds) => String((milliseconds + 0.5) / 1000);
 export async function find(repository, snapshot, path) {
     let tree = snapshot.tree;
     let found = {
@@ -50,7 +49,11 @@ export async function restore(repository, snapshot, path, target, options = {}) 
     }
     const clear = async (place) => {
         if (await lstat(place).catch(() => null)) {
-            const to = aside(place);
+            const wanted = aside(place);
+            let to = wanted;
+            for (let attempt = 2; await lstat(to).catch(() => null); attempt++) {
+                to = `${wanted}-${attempt}`;
+            }
             await rename(place, to);
             result.movedAside.push({ from: place, to });
         }
@@ -62,7 +65,10 @@ export async function restore(repository, snapshot, path, target, options = {}) 
             if (existing && !existing.isDirectory()) {
                 await clear(place);
             }
-            await mkdir(place, { recursive: true, mode: entry.mode });
+            const made = !existing?.isDirectory();
+            if (made) {
+                await mkdir(place, { mode: 0o700 });
+            }
             for (const child of entry.tree ? await readTree(repository, entry.tree) : []) {
                 if (!safeName(child.name)) {
                     throw new Error('This backup holds a name that cannot be restored safely');
@@ -70,6 +76,9 @@ export async function restore(repository, snapshot, path, target, options = {}) 
                 await put(child, join(place, child.name));
             }
             await own(place, entry);
+            if (made) {
+                await chmod(place, entry.mode);
+            }
             await utimes(place, stamp(entry.mtime), stamp(entry.mtime)).catch(() => undefined);
             return;
         }
@@ -78,10 +87,10 @@ export async function restore(repository, snapshot, path, target, options = {}) 
             await symlink(entry.target ?? '', place);
             return;
         }
-        const file = await open(place, 'wx', entry.mode);
+        const file = await open(place, 'wx', 0o600);
         try {
             for await (const chunk of readFile(repository, entry)) {
-                await file.write(chunk);
+                await file.writeFile(chunk);
                 result.bytes += chunk.length;
             }
         }
@@ -89,9 +98,13 @@ export async function restore(repository, snapshot, path, target, options = {}) 
             await file.close();
         }
         await own(place, entry);
+        await chmod(place, entry.mode);
         await utimes(place, stamp(entry.mtime), stamp(entry.mtime));
         result.files++;
     };
+    if (path.length > 0 && !safeName(start.name)) {
+        throw new Error('This backup holds a name that cannot be restored safely');
+    }
     await mkdir(target, { recursive: true });
     await put(start, path.length > 0 ? join(target, start.name) : target);
     return result;

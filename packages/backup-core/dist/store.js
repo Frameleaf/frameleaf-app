@@ -1,6 +1,14 @@
-import { mkdir, open, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { link, mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
+export class ObjectExistsError extends Error {
+    key;
+    name = 'ObjectExistsError';
+    constructor(key) {
+        super(`This object is already stored: ${key}`);
+        this.key = key;
+    }
+}
 const slice = (body, range) => !range
     ? body
     : 'suffix' in range
@@ -12,6 +20,9 @@ export function memoryStore() {
     return {
         objects,
         async put(key, body) {
+            if (objects.has(key)) {
+                throw new ObjectExistsError(key);
+            }
             objects.set(key, Buffer.from(body));
             written.set(key, new Date());
             return { versionId: null };
@@ -45,8 +56,31 @@ export function dirStore(root) {
             const target = path(key);
             await mkdir(dirname(target), { recursive: true });
             const temporary = `${target}.${randomBytes(6).toString('hex')}.part`;
-            await writeFile(temporary, body);
-            await rename(temporary, target);
+            try {
+                const file = await open(temporary, 'wx', 0o600);
+                try {
+                    await file.writeFile(body);
+                    await file.sync();
+                }
+                finally {
+                    await file.close();
+                }
+                await link(temporary, target).catch(async (error) => {
+                    if (error.code === 'EEXIST') {
+                        throw new ObjectExistsError(key);
+                    }
+                    if (await stat(target).catch(() => null)) {
+                        throw new ObjectExistsError(key);
+                    }
+                    await rename(temporary, target);
+                });
+            }
+            finally {
+                await rm(temporary, { force: true });
+            }
+            const folder = await open(dirname(target), 'r').catch(() => null);
+            await folder?.sync().catch(() => undefined);
+            await folder?.close();
             return { versionId: null };
         },
         async get(key, range) {
@@ -64,15 +98,21 @@ export function dirStore(root) {
             }
         },
         async list(prefix) {
-            const names = await readdir(root, { recursive: true }).catch(() => []);
+            const missing = (error) => {
+                if (error.code === 'ENOENT') {
+                    return null;
+                }
+                throw error;
+            };
+            const names = (await readdir(root, { recursive: true }).catch(missing)) ?? [];
             const found = [];
             for (const name of names) {
                 const key = name.split(sep).join('/');
                 if (!key.startsWith(prefix) || key.endsWith('.part')) {
                     continue;
                 }
-                const info = await stat(join(root, name));
-                if (info.isFile()) {
+                const info = await stat(join(root, name)).catch(missing);
+                if (info?.isFile()) {
                     found.push({ key, size: info.size, modified: info.mtime });
                 }
             }
