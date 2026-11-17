@@ -272,7 +272,7 @@
 {/snippet}
 {#snippet folderRows(removable: boolean)}
   {#each always as folder, index}
-    <div class="list-row" class:sb-first={index === 0}><Icon name="settings" /><div class="grow"><strong>Manager’s recovery points</strong><p>What Manager needs to bring your photo library’s albums, people and settings back.</p></div>{#if folder.bytes !== undefined}<span class="sb-size">{formatBytes(folder.bytes)}</span>{/if}<span class="badge">Always included</span></div>
+    <div class="list-row sb-stack" class:sb-first={index === 0}><Icon name="settings" /><div class="grow"><strong>Manager’s recovery points</strong><p>What Manager needs to bring your photo library’s albums, people and settings back.</p></div>{#if folder.bytes !== undefined}<span class="sb-size">{formatBytes(folder.bytes)}</span>{/if}<span class="badge">Always included</span></div>
   {/each}
   {#each chosen as folder}
     <div class="list-row"><Icon name={folder.path === photosPath ? 'images' : 'folder'} /><div class="grow"><strong>{folder.path}</strong><p>{folder.files !== undefined ? `${folder.files.toLocaleString()} files` : 'Measured at the next backup'}</p></div>{#if folder.bytes !== undefined}<span class="sb-size">{formatBytes(folder.bytes)}</span>{/if}{#if removable}<button class="button quiet" disabled={busy} onclick={() => edit((settings) => (settings.folders = settings.folders.filter((item) => item !== folder.path)))}>Remove</button>{/if}</div>
@@ -282,7 +282,7 @@
   {#if photosPath && !photosProtected}
     <section class="card mt16">
       <div class="card-header"><h2>Left out</h2></div>
-      <div class="list-row sb-first"><Icon name="images" /><div class="grow"><strong>Your photo library</strong><p>{photosPath} · Cloud Backup in Frameleaf looks after it. Adding it here stores it a second time.</p></div><button class="button quiet" disabled={busy} onclick={() => edit((settings) => settings.folders.push(photosPath!))}>Add anyway</button></div>
+      <div class="list-row sb-first sb-stack"><Icon name="images" /><div class="grow"><strong>Your photo library</strong><p>{photosPath} · Cloud Backup in Frameleaf looks after it. Adding it here stores it a second time.</p></div><button class="button quiet" disabled={busy} onclick={() => edit((settings) => settings.folders.push(photosPath!))}>Add anyway</button></div>
     </section>
   {/if}
 {/snippet}
@@ -611,6 +611,10 @@
     .sb-intro { flex-direction: column; }
     .sb-connect { flex-direction: column; align-items: flex-start; }
     .sb-run, .sb-reveal { flex-wrap: wrap; row-gap: 8px; }
+    /* The description gets the full width; what sat beside it (a size, a badge, a button) goes on a line of its own under it. */
+    .sb-stack { flex-wrap: wrap; row-gap: 10px; }
+    .sb-stack .grow { flex: 1 1 calc(100% - 40px); }
+    .sb-stack .grow + * { margin-left: 32px; }
     .sb-run .sb-when { flex-basis: 100%; padding-left: 32px; }
     .sb-reveal input { width: 100%; }
   }
