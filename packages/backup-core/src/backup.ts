@@ -165,6 +165,14 @@ export async function backup(
         continue;
       }
       const earlier = before.get(now.name);
+      if (now.unreadable !== undefined) {
+        // One entry that can't be looked at today keeps what it held in the last backup.
+        problems.push({ path: child, message: now.unreadable });
+        if (earlier) {
+          entries.push(earlier);
+        }
+        continue;
+      }
       if (now.type === 'dir') {
         const { size: _, ...rest } = now;
         entries.push({
@@ -202,6 +210,9 @@ export async function backup(
   await data.flush();
   await trees.flush();
   await repository.writeIndex([...data.written, ...trees.written]);
+  // A stop that arrives while the last packs and the index are written still stops: what is stored is
+  // adopted by the next run, and no snapshot is written for a run that was told to stop.
+  options.signal?.throwIfAborted();
   stats.storedBytes = data.storedBytes + trees.storedBytes;
   const written = await repository.writeSnapshot(
     {

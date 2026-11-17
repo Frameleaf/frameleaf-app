@@ -10,12 +10,14 @@ import {
   type Snapshot,
   type Source,
   type SourceEntry,
+  type Store,
   ObjectExistsError,
   Repository,
   backup,
   chunkStream,
   dirStore,
   find,
+  fsSource,
   gearTable,
   listFolder,
   memoryStore,
@@ -141,6 +143,68 @@ describe('backup', () => {
     expect((await content(repository, second.snapshot, ['docs', 'b.txt'])).toString()).toBe('beta');
   });
 
+  it('reports one entry it cannot look at, keeps what it held, and still backs up its neighbours', async () => {
+    const { repository } = await fresh();
+    const tree = { docs: { 'a.txt': Buffer.from('alpha'), 'b.txt': Buffer.from('beta') } };
+    const unreadable: Meta = { 'docs/b.txt': { unreadable: 'permission denied' } };
+
+    // With nothing from before to keep, it is left out and its neighbour is stored.
+    const first = await backup(repository, made(tree, unreadable), { packTarget });
+    expect(first.problems).toEqual([{ path: ['docs', 'b.txt'], message: 'permission denied' }]);
+    expect((await listFolder(repository, first.snapshot, ['docs'])).map((entry) => entry.name)).toEqual(['a.txt']);
+
+    await backup(repository, made(tree), { packTarget });
+    const changed = { docs: { 'a.txt': Buffer.from('alpha, edited'), 'b.txt': Buffer.from('never read') } };
+    const third = await backup(repository, made(changed, unreadable), { packTarget });
+    expect(third.problems).toEqual([{ path: ['docs', 'b.txt'], message: 'permission denied' }]);
+    expect((await content(repository, third.snapshot, ['docs', 'a.txt'])).toString()).toBe('alpha, edited');
+    expect((await content(repository, third.snapshot, ['docs', 'b.txt'])).toString()).toBe('beta');
+  });
+
+  // Root may look inside any folder, so there is nothing to refuse it.
+  it.skipIf(process.getuid?.() === 0)('lists a folder whose entries it may not look at, one problem each', async () => {
+    await mkdir(join(work, 'shut'));
+    await writeFile(join(work, 'shut', 'inside.txt'), 'x');
+    await writeFile(join(work, 'open.txt'), 'y');
+    await chmod(join(work, 'shut'), 0o444);
+    try {
+      const source = fsSource(work);
+      expect((await source.list([])).map((entry) => [entry.name, entry.unreadable])).toEqual([
+        ['open.txt', undefined],
+        ['shut', undefined],
+      ]);
+      const inside = await source.list(['shut']);
+      expect(inside.map((entry) => entry.name)).toEqual(['inside.txt']);
+      expect(inside[0]!.unreadable).toContain('EACCES');
+    } finally {
+      await chmod(join(work, 'shut'), 0o755);
+    }
+  });
+
+  it('writes no snapshot when the stop arrives while the index is being written', async () => {
+    const inner = memoryStore();
+    const stopped = new AbortController();
+    const store: Store = {
+      ...inner,
+      put(key, body) {
+        if (key.startsWith('i/')) {
+          stopped.abort();
+        }
+        return inner.put(key, body);
+      },
+    };
+    const repository = await Repository.init(store, { rootKey, chunker });
+    const source = made({ 'a.bin': randomBytes(5000) });
+    await expect(backup(repository, source, { packTarget, signal: stopped.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(await repository.listSnapshots()).toEqual([]);
+    // Nothing it stored is wasted: the next run finds it all there.
+    const next = await backup(repository, source, { packTarget });
+    expect((await content(repository, next.snapshot, ['a.bin'])).length).toBe(5000);
+    expect((await repository.listSnapshots()).length).toBe(1);
+  });
+
   it('leaves out a name that would not restore inside its folder, and says so', async () => {
     const inner = made({ 'fine.txt': Buffer.from('fine'), victim: Buffer.from('evil') });
     const source: Source = {
@@ -236,6 +300,23 @@ describe('restore', () => {
     } finally {
       await chmod(join(target, 'old'), 0o755);
     }
+  });
+
+  it('fills the folders it makes whatever the process umask takes away', async () => {
+    const tree = { deep: { er: { 'letter.txt': Buffer.from('dear all') } } };
+    const { repository } = await fresh();
+    const { snapshot } = await backup(repository, made(tree), { packTarget });
+    const target = join(work, 'out');
+    await mkdir(target);
+    // New folders would come out without write permission for their owner.
+    const before = process.umask(0o277);
+    try {
+      await restore(repository, snapshot, [], target);
+    } finally {
+      process.umask(before);
+    }
+    expect((await readDisk(join(target, 'deep', 'er', 'letter.txt'))).toString()).toBe('dear all');
+    expect((await lstat(join(target, 'deep'))).mode & 0o777).toBe(0o755);
   });
 
   it('never moves something aside onto something moved aside before', async () => {
