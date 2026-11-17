@@ -1,0 +1,98 @@
+import { chown, lstat, mkdir, open, rename, symlink, utimes } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileChunks, readTree } from './tree.js';
+const stamp = (milliseconds) => (milliseconds + 0.5) / 1000;
+const safeName = (name) => name !== '' && name !== '.' && name !== '..' && !/[/\\\0]/.test(name);
+export async function find(repository, snapshot, path) {
+    let tree = snapshot.tree;
+    let found = {
+        name: '',
+        type: 'dir',
+        mode: 0o755,
+        uid: 0,
+        gid: 0,
+        mtime: Date.parse(snapshot.time),
+        size: 0,
+        tree,
+    };
+    for (const name of path) {
+        if (found.type !== 'dir' || !found.tree) {
+            return null;
+        }
+        const next = (await readTree(repository, tree)).find((entry) => entry.name === name);
+        if (!next) {
+            return null;
+        }
+        found = next;
+        tree = next.tree ?? '';
+    }
+    return found;
+}
+export async function listFolder(repository, snapshot, path) {
+    const folder = await find(repository, snapshot, path);
+    if (folder?.type !== 'dir' || !folder.tree) {
+        throw new Error('No such folder in this backup');
+    }
+    return readTree(repository, folder.tree);
+}
+export async function* readFile(repository, entry) {
+    for (const id of await fileChunks(repository, entry)) {
+        yield await repository.readBlob(id);
+    }
+}
+export async function restore(repository, snapshot, path, target, options = {}) {
+    const started = new Date().toISOString().replaceAll(/[:.]/g, '-');
+    const aside = options.aside ?? ((existing) => `${existing}.before-restore-${started}`);
+    const result = { files: 0, bytes: 0, movedAside: [] };
+    const start = await find(repository, snapshot, path);
+    if (!start) {
+        throw new Error('No such file or folder in this backup');
+    }
+    const clear = async (place) => {
+        if (await lstat(place).catch(() => null)) {
+            const to = aside(place);
+            await rename(place, to);
+            result.movedAside.push({ from: place, to });
+        }
+    };
+    const own = (place, entry) => chown(place, entry.uid, entry.gid).catch(() => undefined);
+    const put = async (entry, place) => {
+        if (entry.type === 'dir') {
+            const existing = await lstat(place).catch(() => null);
+            if (existing && !existing.isDirectory()) {
+                await clear(place);
+            }
+            await mkdir(place, { recursive: true, mode: entry.mode });
+            for (const child of entry.tree ? await readTree(repository, entry.tree) : []) {
+                if (!safeName(child.name)) {
+                    throw new Error('This backup holds a name that cannot be restored safely');
+                }
+                await put(child, join(place, child.name));
+            }
+            await own(place, entry);
+            await utimes(place, stamp(entry.mtime), stamp(entry.mtime)).catch(() => undefined);
+            return;
+        }
+        await clear(place);
+        if (entry.type === 'symlink') {
+            await symlink(entry.target ?? '', place);
+            return;
+        }
+        const file = await open(place, 'wx', entry.mode);
+        try {
+            for await (const chunk of readFile(repository, entry)) {
+                await file.write(chunk);
+                result.bytes += chunk.length;
+            }
+        }
+        finally {
+            await file.close();
+        }
+        await own(place, entry);
+        await utimes(place, stamp(entry.mtime), stamp(entry.mtime));
+        result.files++;
+    };
+    await mkdir(target, { recursive: true });
+    await put(start, path.length > 0 ? join(target, start.name) : target);
+    return result;
+}
