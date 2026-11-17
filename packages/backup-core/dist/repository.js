@@ -174,13 +174,16 @@ export class Repository {
         }
         return snapshot;
     }
-    async writeSnapshot(body) {
-        const seq = ((await this.listSnapshots()).at(-1)?.seq ?? 0) + 1;
+    async writeSnapshot(body, sequence) {
+        const seq = sequence ?? ((await this.listSnapshots()).at(-1)?.seq ?? 0) + 1;
+        if (!Number.isInteger(seq) || seq < 1 || seq > 999_999_999_999) {
+            throw new RangeError('A snapshot number must be a whole number from 1 to 999999999999');
+        }
         const key = `s/${String(seq).padStart(12, '0')}-${randomBytes(8).toString('hex')}`;
         const snapshot = { v: 1, repoId: this.config.repoId, seq, ...body };
         const sealed = seal(this.keys.meta, Buffer.from(key), Buffer.from(JSON.stringify(snapshot)));
-        await this.store.put(key, sealed);
-        return { key, snapshot, ciphertextSha256: createHash('sha256').update(sealed).digest('hex') };
+        const { versionId } = await this.store.put(key, sealed);
+        return { key, snapshot, versionId, ciphertextSha256: createHash('sha256').update(sealed).digest('hex') };
     }
 }
 export class PackWriter {

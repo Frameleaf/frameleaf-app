@@ -93,7 +93,12 @@ one folder reads one small blob.
 
 Sealed with the `meta` key (associated data: the object name):
 `{ v, repoId, seq, time, tree, parent, stats }`. `seq` equals the digits in the name. Snapshots are
-ordered by `seq`; `time` is information only, so a wrong clock cannot reorder history.
+ordered by `seq`, then by name; `time` is information only, so a wrong clock cannot reorder history.
+
+Where a signed history of snapshots is kept outside the repository (Frameleaf Cloud keeps one), the
+writer takes each number from that history. A run that stored its snapshot but stopped before the
+history recorded it leaves a snapshot whose number the next run uses again. Both can be restored;
+only the recorded one is part of the signed history.
 
 ## Rules that keep data safe
 

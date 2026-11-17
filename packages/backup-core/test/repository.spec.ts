@@ -357,6 +357,24 @@ describe('repository', () => {
     expect(second.unchanged).toBe(1);
   });
 
+  it('numbers a snapshot as asked and passes on the version storage gave it', async () => {
+    const inner = memoryStore();
+    const versioned = {
+      ...inner,
+      put: async (key: string, body: Buffer) => (await inner.put(key, body), { versionId: `v-${key}` }),
+    };
+    const repository = await Repository.init(versioned, { rootKey, chunker });
+    const first = await backup(repository, fsSource(library), { packTarget, sequence: 7 });
+    expect(first.snapshot.seq).toBe(7);
+    expect(first.key).toMatch(/^s\/000000000007-[0-9a-f]{16}$/);
+    expect(first.versionId).toBe(`v-${first.key}`);
+    // The same number again, as after a run whose record was never made: both are kept, the later name wins ties.
+    const again = await backup(repository, fsSource(library), { packTarget, sequence: 7 });
+    expect((await repository.listSnapshots()).map((item) => item.seq)).toEqual([7, 7]);
+    expect(again.unchanged).toBe(4);
+    await expect(backup(repository, fsSource(library), { packTarget, sequence: 0 })).rejects.toThrow(RangeError);
+  });
+
   it('reports a file it cannot read and still finishes', async () => {
     const inner = fsSource(library);
     const source: Source = {

@@ -159,11 +159,14 @@ export function s3Store(options) {
         }
         return value;
     };
+    const version = (answer) => {
+        const value = answer.headers['x-amz-version-id'];
+        return { versionId: typeof value === 'string' && value !== 'null' ? value : null };
+    };
     return {
         async put(key, body) {
             if (body.length <= partSize) {
-                await send('PUT', key, {}, {}, body);
-                return;
+                return version(await send('PUT', key, {}, {}, body));
             }
             const uploadId = tag((await send('POST', key, { uploads: '' })).body.toString(), 'UploadId');
             if (!uploadId) {
@@ -182,6 +185,7 @@ export function s3Store(options) {
                 if (tag(done.body.toString(), 'Code')) {
                     throw new S3Error('The storage provider could not finish an upload', done.status, tag(done.body.toString(), 'Code'));
                 }
+                return version(done);
             }
             catch (error) {
                 await send('DELETE', key, { uploadId }).catch(() => undefined);

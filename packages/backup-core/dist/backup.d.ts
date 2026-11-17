@@ -8,12 +8,14 @@ export interface BackupResult {
     key: string;
     snapshot: Snapshot;
     ciphertextSha256: string;
+    versionId: string | null;
     problems: BackupProblem[];
     unchanged: number;
 }
 export interface BackupOptions {
     time?: Date;
     packTarget?: number;
+    sequence?: number;
     signal?: AbortSignal;
     onProgress?: (progress: {
         files: number;
