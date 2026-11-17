@@ -88,7 +88,8 @@ function* decodeEntries(data: Buffer) {
 }
 
 const wrapInfo = (repoId: string) => Buffer.from(`${FORMAT}/${VERSION} ${repoId}`);
-const SNAPSHOT_KEY = /^s\/(\d{12})-[0-9a-f]{8}$/;
+// Frameleaf Cloud accepts 16 to 64 hex characters here; the engine writes 16.
+const SNAPSHOT_KEY = /^s\/(\d{12})-[0-9a-f]{16,64}$/;
 
 export class Repository {
   /**
@@ -261,7 +262,7 @@ export class Repository {
   /** The last step of a backup. Returns what a signed receipt needs: the object's name and the hash of what was stored. */
   async writeSnapshot(body: Pick<Snapshot, 'time' | 'tree' | 'parent' | 'stats'>) {
     const seq = ((await this.listSnapshots()).at(-1)?.seq ?? 0) + 1;
-    const key = `s/${String(seq).padStart(12, '0')}-${randomBytes(4).toString('hex')}`;
+    const key = `s/${String(seq).padStart(12, '0')}-${randomBytes(8).toString('hex')}`;
     const snapshot: Snapshot = { v: 1, repoId: this.config.repoId, seq, ...body };
     const sealed = seal(this.keys.meta, Buffer.from(key), Buffer.from(JSON.stringify(snapshot)));
     await this.store.put(key, sealed);
