@@ -15,6 +15,12 @@ export type BackupSourceFile = {
   open?: () => AsyncIterable<Uint8Array>;
   /** The content's length, when `open` gives something other than the file's bytes. */
   size?: number;
+  /**
+   * A part of the backup this server makes itself (the dump, the catalog). The engine leaves a file it
+   * cannot read out of the snapshot and carries on; without one of these the snapshot is not a backup, so
+   * failing to read it stops the run.
+   */
+  required?: boolean;
 };
 
 /** A top-level folder of the snapshot. `files` may be made only when the engine gets to the folder. */
@@ -172,15 +178,22 @@ export class BackupSource implements Source {
     // A second read of a file that changed size replaces what the first one found, whatever it ends in.
     this.opened.add(key);
     this.hashed.delete(key);
-    const { hashed } = this;
+    const { hashed, fail } = this;
     const content = file.open ?? (() => createReadStream(file.path, { highWaterMark: 1024 * 1024 }));
     return (async function* () {
       const hash = createHash('sha256');
       let size = 0;
-      for await (const part of content()) {
-        hash.update(part);
-        size += part.length;
-        yield part;
+      try {
+        for await (const part of content()) {
+          hash.update(part);
+          size += part.length;
+          yield part;
+        }
+      } catch (error) {
+        if (file.required) {
+          fail(error);
+        }
+        throw error;
       }
       hashed.set(key, { sha256: hash.digest('hex'), size });
     })();
