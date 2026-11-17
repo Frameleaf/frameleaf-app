@@ -138,6 +138,44 @@ describe('TimelineManager', () => {
     }
   });
 
+  it('a refresh keeps the month on screen, not the pixel offset', async () => {
+    const buckets = [
+      { count: 40, timeBucket: '2026-09-01' },
+      { count: 40, timeBucket: '2019-11-01' },
+    ];
+    sdkMock.getTimeBuckets.mockResolvedValue(buckets);
+    const manager = new TimelineManager();
+    try {
+      manager.viewportWidth = 1000;
+      manager.viewportHeight = 800;
+      await manager.updateOptions({});
+      const scroller = document.createElement('div');
+      Object.defineProperty(scroller, 'scrollTop', { value: 0, configurable: true });
+      // Where 2019-11 starts and how tall it is at the moment the refresh scrolls (it is re-estimated after).
+      const targets: { top: number; monthMiddle: number }[] = [];
+      scroller.scrollTo = (({ top }: { top: number }) => {
+        const month = manager.months[1];
+        targets.push({ top, monthMiddle: month.top + month.height * 0.5 });
+      }) as never;
+      manager.scrollableElement = scroller;
+      manager.viewportTopMonthIntersection = {
+        month: manager.months[1],
+        viewportTopRatioInMonth: 0.5,
+        monthBottomViewportRatio: 1,
+      };
+
+      await manager.refresh();
+
+      expect(manager.months[1].yearMonth).toEqual({ year: 2019, month: 11 });
+      const last = targets.at(-1)!;
+      // The old pixel offset (0) would have put 2026 on screen.
+      expect(last.top).toBeGreaterThan(0);
+      expect(last.top).toBe(last.monthMiddle);
+    } finally {
+      manager.destroy();
+    }
+  });
+
   it('re-reads album membership after assets are added only to its album (FL-40)', async () => {
     sdkMock.getTimeBuckets
       .mockResolvedValueOnce([{ count: 1, timeBucket: '2024-01-01' }])
