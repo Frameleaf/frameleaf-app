@@ -148,6 +148,13 @@ Verify changes nothing. It walks every snapshot and reports snapshots that canno
 needed blobs that are not stored. For the packs it is asked to read, it downloads each one, opens
 every blob and checks that the blob's id matches its content.
 
+## In an S3 bucket
+
+Object names are used as they are, after a prefix the caller chooses (Frameleaf Cloud uses
+`r/v1/<vault id>/`). Objects larger than 8 MiB are sent as multipart uploads in 8 MiB parts. Nothing
+depends on object versions, tags or metadata; a listing, ranged reads, writes and deletes are all a
+repository needs.
+
 ## Known limits of version 1
 
 - The index is held in memory (about 200 MB per million blobs).
