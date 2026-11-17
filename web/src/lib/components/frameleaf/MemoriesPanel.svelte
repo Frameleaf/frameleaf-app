@@ -548,7 +548,7 @@
     </section>
 
     {#if preferences.showUpcoming && sections.upcoming.length > 0}
-      <section class="fm-section" aria-label={$t('memories_upcoming')}>
+      <section class="fm-section fm-upcoming" aria-label={$t('memories_upcoming')}>
         <div class="fm-section-heading">
           <h2>{$t('memories_upcoming')}</h2>
           <small>{$t('frameleaf_memories_next_14_days')}</small>
@@ -824,11 +824,41 @@
   }
   .fm-row {
     display: grid;
-    grid-auto-columns: minmax(13.75rem, 1fr);
+    grid-auto-columns: minmax(var(--fm-tile, 13.75rem), 1fr);
     grid-auto-flow: column;
     gap: 0.75rem;
     overflow-x: auto;
     padding-block-end: 0.375rem;
+  }
+  /* A row up to 2.5rem short of fitting N whole cards (N * 14.5rem - 0.75rem) narrows them to fit
+     instead of scrolling by those few pixels. The last band reaches the page's widest row. */
+  .fm-upcoming {
+    container-type: inline-size;
+  }
+  @container (25.75rem <= width < 28.25rem) {
+    .fm-row {
+      --fm-tile: calc((100% - 0.75rem) / 2);
+    }
+  }
+  @container (40.25rem <= width < 42.75rem) {
+    .fm-row {
+      --fm-tile: calc((100% - 1.5rem) / 3);
+    }
+  }
+  @container (54.75rem <= width < 57.25rem) {
+    .fm-row {
+      --fm-tile: calc((100% - 2.25rem) / 4);
+    }
+  }
+  @container (69.25rem <= width < 71.75rem) {
+    .fm-row {
+      --fm-tile: calc((100% - 3rem) / 5);
+    }
+  }
+  @container (83.75rem <= width < 86.25rem) {
+    .fm-row {
+      --fm-tile: calc((100% - 3.75rem) / 6);
+    }
   }
   .fm-grid {
     display: grid;

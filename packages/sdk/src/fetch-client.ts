@@ -11483,6 +11483,13 @@ export type QueueRunDto = {
     heldForNight?: boolean;
     /** Whether the queue is paused */
     isPaused: boolean;
+    /** Photos and videos this run has finished (completed or failed, as `processed` counts), of those it has: a queue that runs several jobs for each (thumbnails) counts more jobs than photos */
+    items?: {
+        done: number;
+        /** When the oldest of them was queued */
+        startedAt: string | null;
+        total: number;
+    };
     lastProgressAt?: string | null;
     name: QueueName;
     noDispatchBacklog?: boolean;
@@ -18605,6 +18612,8 @@ export type SmartSearchDto = {
     createdAfter?: string;
     /** Filter by creation date (before) */
     createdBefore?: string;
+    /** Cursor for the next page of results */
+    cursor?: string;
     filter?: SearchFilter;
     imageEnrichment?: ImageEnrichmentFilter;
     /** Filter by encoded status */

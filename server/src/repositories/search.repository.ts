@@ -391,10 +391,10 @@ const mostSpecificLandmark = sql`(landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}
  * then the latest.
  */
 const bestCover = sql`asset_best_photo_score.score is not null desc,
-  coalesce(asset.width::float / nullif(asset.height, 0), 1.5) >= 0.9 desc,
+  coalesce(matched.width::float / nullif(matched.height, 0), 1.5) >= 0.9 desc,
   asset_best_photo_score.score desc nulls last,
-  asset."localDateTime" desc,
-  asset.id`;
+  matched."localDateTime" desc,
+  matched."assetId"`;
 
 @Injectable()
 export class SearchRepository {
@@ -507,21 +507,59 @@ export class SearchRepository {
       throw new Error(`Invalid value for 'size': ${pagination.size}`);
     }
 
-    return this.db.transaction().execute(async (trx) => {
-      await sql`set local hnsw.ef_search = 100`.execute(trx);
-      const items = await searchAssetBuilderLegacy(trx, options)
-        .selectAll('asset')
-        .select(isLocked('asset').as('isLocked'))
-        .select(this.smartSearchOrder(options).as('searchDistance'))
-        .select(this.visualDistance(options.embedding).as('visualDistance'))
-        .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
-        .orderBy(sql.ref('searchDistance'))
-        .orderBy('asset.id', 'asc')
-        .limit(pagination.size + 1)
-        .offset((pagination.page - 1) * pagination.size)
-        .execute();
-      return paginationHelper(items, pagination.size);
-    });
+    return this.db
+      .transaction()
+      .execute((trx) =>
+        this.rankSmartSearch(
+          trx,
+          searchAssetBuilderLegacy(trx, options).selectAll('asset').select(isLocked('asset').as('isLocked')),
+          options,
+          { take: pagination.size, skip: (pagination.page - 1) * pagination.size },
+        ),
+      );
+  }
+
+  /**
+   * FL-1655: the ranked page of a smart search. The nearest `SMART_SEARCH_COUNT_CAP` matches by how
+   * they look are picked first, ordered by the plain embedding distance so `clip_index` can serve
+   * them; only those get the bonuses for their own words (`smartSearchOrder`) and are paged. Ordering
+   * every match by the blended score instead scored, and looked up the words of, every photo in the
+   * library on each search.
+   *
+   * ponytail: a photo outside the nearest thousand by look is not a result, however well its words
+   * match. Add text candidates (the trigram indexes on OCR text and description) if that is missed.
+   */
+  private async rankSmartSearch<O extends object>(
+    trx: Kysely<DB>,
+    matched: SelectQueryBuilder<DB, any, O>,
+    options: { embedding: string; query?: string },
+    { take, skip }: { take: number; skip: number },
+  ) {
+    await sql`set local hnsw.ef_search = 100`.execute(trx);
+    // keeps reading the index until the candidates are found, however many the filters turn away;
+    // the candidates are sorted again below, so the index need not return them in strict order
+    await sql`set local hnsw.iterative_scan = relaxed_order`.execute(trx);
+    const visualDistance = sql<number>`(smart_search.embedding <=> ${options.embedding})`;
+    const items = await trx
+      .with(
+        (cte) => cte('candidate').materialized(),
+        () =>
+          matched
+            .select(visualDistance.as('visualDistance'))
+            .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
+            .orderBy(visualDistance)
+            .limit(SMART_SEARCH_COUNT_CAP),
+      )
+      .selectFrom('candidate')
+      .selectAll('candidate')
+      .select(this.smartSearchOrder(options).as('searchDistance'))
+      .orderBy(sql.ref('searchDistance'))
+      .orderBy(sql.ref('candidate.id'), 'asc')
+      .limit(take + 1)
+      .offset(skip)
+      .execute();
+    // the generic row type does not survive the trip through the CTE
+    return paginationHelper(items as unknown as Array<O & { visualDistance: number; searchDistance: number }>, take);
   }
 
   /**
@@ -811,58 +849,63 @@ export class SearchRepository {
    */
   @GenerateSql({ params: [[DummyValue.UUID]] })
   getVisitedLandmarks(userIds: string[], options: SearchSuggestionPrivacyOptions = {}) {
-    return this.db
-      .with('matched', (qb) =>
-        qb
-          .selectFrom('asset_landmark')
-          .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
-          .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
-          .where(validLandmarkMatch())
-          .select(['asset_landmark.assetId', 'asset_landmark.landmarkId', 'asset_landmark.inference'])
-          .select(
-            sql<number>`row_number() over (partition by asset_landmark."assetId" order by asset_landmark.inference is not null, ${mostSpecificLandmark})`.as(
-              'position',
-            ),
-          )
-          .where('asset.ownerId', '=', anyUuid(userIds))
-          .where(isTimelineVisible('asset', options.revealLockedOwnerId))
-          .where(libraryScopePredicate(LibraryScope.Personal))
-          .where('asset.deletedAt', 'is', null)
-          .$call((qb) => withHiddenContentFilter(qb, options)),
-      )
-      .selectFrom('matched')
-      .innerJoin('landmark', 'landmark.id', 'matched.landmarkId')
-      .innerJoin('asset', 'asset.id', 'matched.assetId')
-      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .leftJoin('asset_best_photo_score', 'asset_best_photo_score.assetId', 'asset.id')
-      .select([
-        'landmark.id',
-        'landmark.name',
-        'landmark.kind',
-        'landmark.latitude',
-        'landmark.longitude',
-        'landmark.radiusM',
-      ])
-      .select((eb) => [
-        eb.fn.countAll<number>().as('assetCount'),
-        eb.fn.min('asset.localDateTime').as('firstTakenAt'),
-        eb.fn.max('asset.localDateTime').as('lastTakenAt'),
-        sql<string>`(array_agg(asset.id order by ${bestCover}))[1]`.as('coverAssetId'),
-        sql<string | null>`mode() within group (order by asset_exif.city) filter (where matched.inference is null)`.as(
-          'city',
-        ),
-        sql<string | null>`mode() within group (order by asset_exif.state) filter (where matched.inference is null)`.as(
-          'state',
-        ),
-        sql<
-          string | null
-        >`mode() within group (order by asset_exif.country) filter (where matched.inference is null)`.as('country'),
-      ])
-      .groupBy('landmark.id')
-      .having(sql<boolean>`bool_or(matched.position = 1) or landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}`)
-      .orderBy('assetCount', 'desc')
-      .orderBy('landmark.id')
-      .execute();
+    return this.db.transaction().execute(async (trx) => {
+      // The cover's order would otherwise be sorted in with every joined column: 300 MB on disk for two million items.
+      await sql`set local enable_presorted_aggregate = off`.execute(trx);
+      return trx
+        .with('matched', (qb) =>
+          qb
+            .selectFrom('asset_landmark')
+            .innerJoin('landmark', 'landmark.id', 'asset_landmark.landmarkId')
+            .innerJoin('asset', 'asset.id', 'asset_landmark.assetId')
+            .where(validLandmarkMatch())
+            .select(['asset_landmark.assetId', 'asset_landmark.landmarkId', 'asset_landmark.inference'])
+            // read here, where the item is joined for the privacy rules anyway, not by a second pass over every item
+            .select(['asset.localDateTime', 'asset.width', 'asset.height'])
+            .select(
+              sql<number>`row_number() over (partition by asset_landmark."assetId" order by asset_landmark.inference is not null, ${mostSpecificLandmark})`.as(
+                'position',
+              ),
+            )
+            .where('asset.ownerId', '=', anyUuid(userIds))
+            .where(isTimelineVisible('asset', options.revealLockedOwnerId))
+            .where(libraryScopePredicate(LibraryScope.Personal))
+            .where('asset.deletedAt', 'is', null)
+            .$call((qb) => withHiddenContentFilter(qb, options)),
+        )
+        .selectFrom('matched')
+        .innerJoin('landmark', 'landmark.id', 'matched.landmarkId')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'matched.assetId')
+        .leftJoin('asset_best_photo_score', 'asset_best_photo_score.assetId', 'matched.assetId')
+        .select([
+          'landmark.id',
+          'landmark.name',
+          'landmark.kind',
+          'landmark.latitude',
+          'landmark.longitude',
+          'landmark.radiusM',
+        ])
+        .select((eb) => [
+          eb.fn.countAll<number>().as('assetCount'),
+          eb.fn.min('matched.localDateTime').as('firstTakenAt'),
+          eb.fn.max('matched.localDateTime').as('lastTakenAt'),
+          sql<string>`(array_agg(matched."assetId" order by ${bestCover}))[1]`.as('coverAssetId'),
+          sql<
+            string | null
+          >`mode() within group (order by asset_exif.city) filter (where matched.inference is null)`.as('city'),
+          sql<
+            string | null
+          >`mode() within group (order by asset_exif.state) filter (where matched.inference is null)`.as('state'),
+          sql<
+            string | null
+          >`mode() within group (order by asset_exif.country) filter (where matched.inference is null)`.as('country'),
+        ])
+        .groupBy('landmark.id')
+        .having(sql<boolean>`bool_or(matched.position = 1) or landmark."radiusM" > ${LANDMARK_WIDE_RADIUS_M}`)
+        .orderBy('assetCount', 'desc')
+        .orderBy('landmark.id')
+        .execute();
+    });
   }
 
   /** Recorded locations first, then labelled inferences about nearby photos or the scene. */
@@ -1020,21 +1063,16 @@ export class SearchRepository {
     options: Omit<AssetSearchBuilderV3Options, 'order'> & { embedding: string; query?: string },
     scope: AssetSearchScope,
   ) {
-    return this.db.transaction().execute(async (trx) => {
-      await sql`set local hnsw.ef_search = 100`.execute(trx);
-      const items = await searchAssetBuilder(trx, options, scope)
-        .select(columns.searchAsset)
-        .select(isLocked('asset').as('isLocked'))
-        .select(this.smartSearchOrder(options).as('searchDistance'))
-        .select(this.visualDistance(options.embedding).as('visualDistance'))
-        .innerJoin('smart_search', 'asset.id', 'smart_search.assetId')
-        .orderBy(sql.ref('searchDistance'))
-        .orderBy('asset.id', 'asc')
-        .limit(pagination.take + 1)
-        .offset(pagination.skip ?? 0)
-        .execute();
-      return paginationHelper(items, pagination.take);
-    });
+    return this.db
+      .transaction()
+      .execute((trx) =>
+        this.rankSmartSearch(
+          trx,
+          searchAssetBuilder(trx, options, scope).select(columns.searchAsset).select(isLocked('asset').as('isLocked')),
+          options,
+          { take: pagination.take, skip: pagination.skip ?? 0 },
+        ),
+      );
   }
 
   // TODO(v4): drop the V3 suffix once the legacy methods are removed
@@ -1320,32 +1358,29 @@ export class SearchRepository {
     };
   }
 
-  /** How far a photo looks from the search, before any bonus for its own words. */
-  private visualDistance(embedding: string) {
-    return sql<number>`(smart_search.embedding <=> ${embedding})`;
-  }
-
+  /**
+   * What a candidate of `rankSmartSearch` is ranked by: how far it looks from the search (its
+   * `visualDistance`), less bounded bonuses for its own words.
+   */
   private smartSearchOrder(options: { embedding: string; query?: string }) {
     const text = options.query?.trim();
     const fusionText = text ? tokenizeForSearch(text).join(' ') : null;
     // CLIP cosine distance is the primary signal. When a raw text query is
     // available, subtract bounded trigram-similarity bonuses from text
     // sidecars (OCR + description) so text-aware matches surface alongside
-    // visual matches. Scalar subqueries are used instead of joins to avoid
-    // clashing with conditional joins inside searchAssetBuilder.
+    // visual matches.
     // <=> returns [0, 2]; (1 - <->>>) returns [0, 1] when the sidecar row
     // exists, NULL otherwise.
-    const visualDistance = this.visualDistance(options.embedding);
     // Visual distance minus a capped bonus for a close description match (see
     // DESCRIPTION_MATCH_MAX_DISTANCE). No description embedding yet means no
     // bonus.
     const blendedClipDistance = sql<number>`(
-      ${visualDistance}
+      candidate."visualDistance"
       - ${DESCRIPTION_MATCH_MAX_BONUS / DESCRIPTION_MATCH_MAX_DISTANCE} * coalesce(
           greatest(
             0,
             ${DESCRIPTION_MATCH_MAX_DISTANCE}
-              - (select embedding <=> ${options.embedding} from smart_search_description where "assetId" = asset.id)
+              - (select embedding <=> ${options.embedding} from smart_search_description where "assetId" = candidate.id)
           ),
           0
         )
@@ -1354,11 +1389,11 @@ export class SearchRepository {
       ? sql<number>`
         ${blendedClipDistance}
         - ${OCR_FUSION_WEIGHT} * coalesce(
-            1 - (f_unaccent((select text from ocr_search where "assetId" = asset.id)) <->>> f_unaccent(${fusionText})),
+            1 - (f_unaccent((select text from ocr_search where "assetId" = candidate.id)) <->>> f_unaccent(${fusionText})),
             0
           )
         - ${DESCRIPTION_FUSION_WEIGHT} * coalesce(
-            1 - (f_unaccent((select description from asset_exif where "assetId" = asset.id)) <->>> f_unaccent(${fusionText})),
+            1 - (f_unaccent((select description from asset_exif where "assetId" = candidate.id)) <->>> f_unaccent(${fusionText})),
             0
           )
         `
