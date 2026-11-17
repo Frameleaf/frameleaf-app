@@ -1,12 +1,12 @@
-import { chown, lstat, mkdir, open, rename, symlink, utimes } from 'node:fs/promises';
+import { chmod, chown, lstat, mkdir, open, rename, symlink, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Repository, Snapshot } from './repository.js';
-import { type Entry, fileChunks, readTree } from './tree.js';
+import { type Entry, fileChunks, readTree, safeName } from './tree.js';
 
 // Times are kept in whole milliseconds. Half a millisecond is added because the conversion to the
 // file system's seconds can otherwise land just under the stored value and lose a millisecond.
-const stamp = (milliseconds: number) => (milliseconds + 0.5) / 1000;
-const safeName = (name: string) => name !== '' && name !== '.' && name !== '..' && !/[/\\\0]/.test(name);
+// Given as text: Node turns a negative number into "now", which would lose every date before 1970.
+const stamp = (milliseconds: number) => String((milliseconds + 0.5) / 1000);
 
 /** Finds one file or folder in a snapshot. An empty path is the top. */
 export async function find(repository: Repository, snapshot: Snapshot, path: string[]): Promise<Entry | null> {
@@ -84,7 +84,12 @@ export async function restore(
 
   const clear = async (place: string) => {
     if (await lstat(place).catch(() => null)) {
-      const to = aside(place);
+      // Never onto something moved aside earlier: a taken name gets a number until one is free.
+      const wanted = aside(place);
+      let to = wanted;
+      for (let attempt = 2; await lstat(to).catch(() => null); attempt++) {
+        to = `${wanted}-${attempt}`;
+      }
       await rename(place, to);
       result.movedAside.push({ from: place, to });
     }
@@ -98,7 +103,11 @@ export async function restore(
       if (existing && !existing.isDirectory()) {
         await clear(place);
       }
-      await mkdir(place, { recursive: true, mode: entry.mode });
+      const made = !existing?.isDirectory();
+      if (made) {
+        // Made writable for the one restoring, whatever its stored mode, so a read-only folder can be filled.
+        await mkdir(place, { mode: 0o700 });
+      }
       for (const child of entry.tree ? await readTree(repository, entry.tree) : []) {
         if (!safeName(child.name)) {
           throw new Error('This backup holds a name that cannot be restored safely');
@@ -106,6 +115,9 @@ export async function restore(
         await put(child, join(place, child.name));
       }
       await own(place, entry);
+      if (made) {
+        await chmod(place, entry.mode);
+      }
       await utimes(place, stamp(entry.mtime), stamp(entry.mtime)).catch(() => undefined);
       return;
     }
@@ -114,20 +126,26 @@ export async function restore(
       await symlink(entry.target ?? '', place);
       return;
     }
-    const file = await open(place, 'wx', entry.mode);
+    const file = await open(place, 'wx', 0o600);
     try {
       for await (const chunk of readFile(repository, entry)) {
-        await file.write(chunk);
+        // writeFile goes on until every byte is written; a bare write may stop short on a full disk.
+        await file.writeFile(chunk);
         result.bytes += chunk.length;
       }
     } finally {
       await file.close();
     }
     await own(place, entry);
+    // Set outright, after ownership: the mode a file is made with is cut down by the process's umask.
+    await chmod(place, entry.mode);
     await utimes(place, stamp(entry.mtime), stamp(entry.mtime));
     result.files++;
   };
 
+  if (path.length > 0 && !safeName(start.name)) {
+    throw new Error('This backup holds a name that cannot be restored safely');
+  }
   await mkdir(target, { recursive: true });
   // Everything goes straight into `target`; one file or folder keeps its own name inside it.
   await put(start, path.length > 0 ? join(target, start.name) : target);

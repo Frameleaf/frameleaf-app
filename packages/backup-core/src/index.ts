@@ -12,7 +12,7 @@ export { find, listFolder, readFile, restore } from './restore.js';
 export type { RestoreOptions, RestoreResult } from './restore.js';
 export { S3Error, s3Store, signS3Request } from './s3.js';
 export type { S3Credentials, S3Options } from './s3.js';
-export { dirStore, memoryStore } from './store.js';
+export { ObjectExistsError, dirStore, memoryStore } from './store.js';
 export type { ByteRange, Store, StoredObject } from './store.js';
 export { fsSource } from './tree.js';
 export type { Entry, EntryType, Source, SourceEntry } from './tree.js';
