@@ -73,9 +73,10 @@ export declare class Repository {
         seq: number;
     }[]>;
     readSnapshot(key: string): Promise<Snapshot>;
-    writeSnapshot(body: Pick<Snapshot, 'time' | 'tree' | 'parent' | 'stats'>): Promise<{
+    writeSnapshot(body: Pick<Snapshot, 'time' | 'tree' | 'parent' | 'stats'>, sequence?: number): Promise<{
         key: string;
         snapshot: Snapshot;
+        versionId: string | null;
         ciphertextSha256: string;
     }>;
 }

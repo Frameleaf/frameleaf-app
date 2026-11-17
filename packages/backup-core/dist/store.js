@@ -14,6 +14,7 @@ export function memoryStore() {
         async put(key, body) {
             objects.set(key, Buffer.from(body));
             written.set(key, new Date());
+            return { versionId: null };
         },
         async get(key, range) {
             const body = objects.get(key);
@@ -46,6 +47,7 @@ export function dirStore(root) {
             const temporary = `${target}.${randomBytes(6).toString('hex')}.part`;
             await writeFile(temporary, body);
             await rename(temporary, target);
+            return { versionId: null };
         },
         async get(key, range) {
             const file = await open(path(key), 'r');

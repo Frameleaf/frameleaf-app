@@ -10,7 +10,9 @@ export type ByteRange = {
     suffix: number;
 };
 export interface Store {
-    put(key: string, body: Buffer): Promise<void>;
+    put(key: string, body: Buffer): Promise<{
+        versionId: string | null;
+    }>;
     get(key: string, range?: ByteRange): Promise<Buffer>;
     list(prefix: string): Promise<StoredObject[]>;
     delete(key: string): Promise<void>;
