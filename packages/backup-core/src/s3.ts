@@ -257,11 +257,16 @@ export function s3Store(options: S3Options): Store {
     return value;
   };
 
+  /** A bucket that keeps versions names the one a write made. `null` (the word) means versioning is off. */
+  const version = (answer: Answer) => {
+    const value = answer.headers['x-amz-version-id'];
+    return { versionId: typeof value === 'string' && value !== 'null' ? value : null };
+  };
+
   return {
     async put(key, body) {
       if (body.length <= partSize) {
-        await send('PUT', key, {}, {}, body);
-        return;
+        return version(await send('PUT', key, {}, {}, body));
       }
       const uploadId = tag((await send('POST', key, { uploads: '' })).body.toString(), 'UploadId');
       if (!uploadId) {
@@ -291,6 +296,7 @@ export function s3Store(options: S3Options): Store {
             tag(done.body.toString(), 'Code'),
           );
         }
+        return version(done);
       } catch (error) {
         // Parts of an upload that never finishes are billed until removed.
         await send('DELETE', key, { uploadId }).catch(() => undefined);

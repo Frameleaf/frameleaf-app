@@ -88,7 +88,9 @@ function standIn() {
     if (request.method === 'POST' && uploadId) {
       objects.set(key, Buffer.concat(uploads.get(uploadId)!));
       uploads.delete(uploadId);
-      return xml(response, 200, '<CompleteMultipartUploadResult></CompleteMultipartUploadResult>');
+      return xml(response, 200, '<CompleteMultipartUploadResult></CompleteMultipartUploadResult>', {
+        'x-amz-version-id': `version-of-${key}`,
+      });
     }
     if (request.method === 'DELETE' && uploadId) {
       uploads.delete(uploadId);
@@ -96,7 +98,7 @@ function standIn() {
     }
     if (request.method === 'PUT') {
       objects.set(key, body);
-      return xml(response, 200, '', { etag: '"whole"' });
+      return xml(response, 200, '', { etag: '"whole"', 'x-amz-version-id': `version-of-${key}` });
     }
     if (request.method === 'DELETE') {
       objects.delete(key);
@@ -199,7 +201,8 @@ describe('s3Store', () => {
   it('sends a large object in parts, and clears the parts away if it cannot finish', async () => {
     const store = open({ partSize: 1024 });
     const body = randomBytes(3000);
-    await store.put('p/large', body);
+    expect(await store.put('p/large', body)).toEqual({ versionId: 'version-of-r/v1/vault/p/large' });
+    expect(await store.put('p/small', Buffer.from('x'))).toEqual({ versionId: 'version-of-r/v1/vault/p/small' });
     expect(s3.objects.get('r/v1/vault/p/large')).toEqual(body);
     expect(s3.seen.filter((call) => call.query.includes('partNumber')).length).toBe(3);
 
