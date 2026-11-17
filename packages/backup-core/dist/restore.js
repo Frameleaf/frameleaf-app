@@ -1,5 +1,5 @@
 import { chmod, chown, lstat, mkdir, open, rename, symlink, utimes } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileChunks, readTree, safeName } from './tree.js';
 const stamp = (milliseconds) => String((milliseconds + 0.5) / 1000);
 export async function find(repository, snapshot, path) {
@@ -106,8 +106,13 @@ export async function restore(repository, snapshot, path, target, options = {}) 
     if (path.length > 0 && !safeName(start.name)) {
         throw new Error('This backup holds a name that cannot be restored safely');
     }
-    if (await mkdir(target, { recursive: true })) {
-        await chmod(target, ((await lstat(target)).mode & 0o7777) | 0o700);
+    const missing = [];
+    for (let at = resolve(target); !(await lstat(at).catch(() => null)); at = dirname(at)) {
+        missing.unshift(at);
+    }
+    for (const folder of missing) {
+        await mkdir(folder);
+        await chmod(folder, ((await lstat(folder)).mode & 0o7777) | 0o700);
     }
     await put(start, path.length > 0 ? join(target, start.name) : target);
     return result;
