@@ -124,8 +124,8 @@ export function dirStore(root) {
                 if (!key.startsWith(prefix) || key.endsWith('.part')) {
                     continue;
                 }
-                const info = await stat(join(root, name)).catch(missing);
-                if (info?.isFile()) {
+                const info = await stat(join(root, name));
+                if (info.isFile()) {
                     found.push({ key, size: info.size, modified: info.mtime });
                 }
             }
