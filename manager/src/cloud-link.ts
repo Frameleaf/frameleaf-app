@@ -1,6 +1,6 @@
 // Manager's own connection to Frameleaf Cloud, as a "backup machine": an identity made on this server,
 // sign-in that proves possession of its key on every request, and the calls Server Backup needs.
-// The contract is frameleaf-cloud's `docs/instance-contract.md` and `docs/cloud-backup.md` (FC-284, FC-286).
+// The contract is frameleaf-cloud's `docs/instance-contract.md` and `docs/cloud-backup.md` (FC-284, FC-286, FC-287).
 // The photo server has its own link; nothing here uses it or its key.
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import { z } from 'zod';
@@ -111,6 +111,17 @@ export const Grant = z.object({
   }),
 });
 export type Grant = z.infer<typeof Grant>;
+const Takeover = z.object({
+  fromInstanceId: z.uuid(),
+  status: z.enum(['pending', 'approved', 'denied', 'expired', 'cancelled']),
+  /** When an unanswered request lapses. Null only when the answer could no longer be read (see `takeover`). */
+  expiresAt: z.string().nullable(),
+  /** Set once approved: the id this installation is in Cloud from now on. */
+  instanceId: z.uuid().nullable(),
+  /** Set once approved: no backup or prune starts before this. Restores work at once. */
+  writesFrom: z.string().nullable(),
+});
+export type Takeover = z.infer<typeof Takeover>;
 const Parent = z.object({ parent: z.object({ instanceId: z.string(), name: z.string(), attachedAt: z.string(), follows: z.boolean() }).nullable() });
 
 type Operation = 'upload' | 'restore' | 'prune';
@@ -361,6 +372,38 @@ export class Cloud {
   }
   async parent(identity: Identity) {
     return Parent.parse(await this.call(identity, 'GET', '/v1/backup-machine/parent')).parent;
+  }
+
+  /**
+   * Taking over an older machine's backups (FC-287), for a server that replaces one that is gone.
+   * These are the account's other backup machines that hold backups: all this machine may learn before the owner approves.
+   */
+  async takeoverCandidates(identity: Identity) {
+    const answer = await this.call(identity, 'GET', '/v1/backup-machine/takeover/candidates');
+    return z.object({ machines: z.array(z.object({ instanceId: z.uuid(), name: z.string(), lastBackupAt: z.string().nullable() })) }).parse(answer).machines;
+  }
+  /** Asks. Nothing changes until the owner approves on the account site. Asking again answers the same request. */
+  async requestTakeover(identity: Identity, fromInstanceId: string) {
+    return Takeover.parse(await this.call(identity, 'POST', '/v1/backup-machine/takeover', { fromInstanceId }));
+  }
+  /**
+   * Whether the owner has answered. Approval makes this installation the older machine in Cloud: the caller
+   * must from then on use `instanceId` from the answer as its id, with the key it already has.
+   * Approval also unlinks the id this machine linked as. If that happens before the answer is read, signing
+   * in as the older machine with this key works, and only an approval makes it work.
+   */
+  async takeover(identity: Identity, fromInstanceId: string): Promise<Takeover> {
+    try {
+      return Takeover.parse(await this.call(identity, 'GET', '/v1/backup-machine/takeover'));
+    } catch (error) {
+      if (!(error instanceof CloudError) || (error.status !== 400 && error.status !== 401)) throw error;
+      try {
+        await this.token({ ...identity, instanceId: fromInstanceId });
+      } catch {
+        throw error;
+      }
+      return { fromInstanceId, status: 'approved', expiresAt: null, instanceId: fromInstanceId, writesFrom: null };
+    }
   }
 
   async locations(identity: Identity) {
