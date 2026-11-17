@@ -1,6 +1,9 @@
 name: Frameleaf Cloud integration tests
 'on':
   workflow_call:
+    secrets:
+      GH_PACKAGES_TOKEN:
+        required: false
 permissions: {}
 concurrency:
   group: cloud-consumers-${{ github.sha }}
@@ -20,7 +23,8 @@ jobs:
       - name: Retrieve and verify immutable registry archive
         id: fetch
         env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
+          # Off GitHub (Forgejo), github.token cannot read GitHub Packages: use a read:packages token instead.
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
         run: |
           set -euo pipefail
           config="$RUNNER_TEMP/cloud-package.npmrc"

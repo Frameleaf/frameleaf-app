@@ -144,8 +144,10 @@ const ACCELERATION_SERVICE: Record<Exclude<Acceleration, 'cpu'>, Record<string, 
 /**
  * Picks the ML variant for this host: NVIDIA (Docker has the nvidia runtime), then AMD (render node + ROCm
  * kfd), then Intel (render node). Docker mounts host sysfs read-only in every container, so Manager needs
- * no /dev mapping to detect. Unraid also passes visible DRI devices to the server for video acceleration. The CUDA, ROCm and OpenVINO images
- * are amd64 only. MANAGER_ML_ACCELERATION overrides detection.
+ * no /dev mapping to detect. Unraid also passes visible DRI devices to the server for video acceleration. The ROCm and OpenVINO images
+ * are amd64 only; the CUDA image is also built for arm64 (FL-997: Grace and arm64 servers with an NVIDIA GPU), but not
+ * for Jetson, whose Tegra GPU needs NVIDIA's L4T base, so a Jetson keeps the CPU image. MANAGER_ML_ACCELERATION
+ * overrides detection.
  */
 export async function detectAcceleration(
   sys = '/sys',
@@ -154,8 +156,9 @@ export async function detectAcceleration(
 ): Promise<Acceleration> {
   const forced = process.env.MANAGER_ML_ACCELERATION;
   if (forced === 'cpu' || forced === 'cuda' || forced === 'rocm' || forced === 'openvino') return forced;
-  if (arch !== 'x64') return 'cpu';
+  if (arch !== 'x64' && arch !== 'arm64') return 'cpu';
   const docker = await runtimes().then((r) => JSON.parse(r || '{}') ?? {}, () => ({}));
+  if (arch === 'arm64') return Object.hasOwn(docker, 'nvidia') && !(await isTegra(sys)) ? 'cuda' : 'cpu';
   if (Object.hasOwn(docker, 'nvidia')) return 'cuda';
   const nodes = (await readdir(join(sys, 'class/drm')).catch(() => [])).filter((n) => n.startsWith('renderD'));
   const vendors = await Promise.all(
@@ -167,6 +170,12 @@ export async function detectAcceleration(
   return 'cpu';
 }
 
+/** FL-997: an NVIDIA Jetson (Tegra), whose devicetree names a Tegra SoC. */
+async function isTegra(sys: string): Promise<boolean> {
+  const compatible = await readFile(join(sys, 'firmware/devicetree/base/compatible'), 'latin1').catch(() => '');
+  return compatible.includes('nvidia,tegra');
+}
+
 /** FL-984: an Intel NPU (Core Ultra) the kernel exposes as an accel device, for the OpenVINO image. */
 export async function detectNpu(sys = '/sys'): Promise<boolean> {
   const nodes = await readdir(join(sys, 'class/accel')).catch(() => []);
@@ -174,8 +183,11 @@ export async function detectNpu(sys = '/sys'): Promise<boolean> {
 }
 
 /** The attested ML variant digest for this acceleration; undefined keeps the CPU image rather than an unverified tag. */
-function mlVariant(images: NasManifest['images'], accel: Acceleration): string | undefined {
-  return accel === 'cpu' ? undefined : images.machineLearningVariants?.[accel];
+export function mlVariant(images: NasManifest['images'], accel: Acceleration, arch = process.arch): string | undefined {
+  if (accel === 'cpu') return undefined;
+  // An arm64 host needs a variant the release says was built for arm64; an older release keeps the CPU image.
+  if (arch === 'arm64' && !images.machineLearningVariantPlatforms?.[accel]?.includes('linux/arm64')) return undefined;
+  return images.machineLearningVariants?.[accel];
 }
 /**
  * Every image renderCompose references on this host, so the download step pulls exactly what `up --pull never`

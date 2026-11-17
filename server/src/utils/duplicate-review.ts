@@ -188,16 +188,22 @@ export const groupAlignedBatchSize = (
 /* How a group reads                                                            */
 /* -------------------------------------------------------------------------- */
 
-/** A suggestion never proves that edits or unrepresented motion can be discarded. */
+/**
+ * A suggestion never proves that edits or unrepresented motion can be discarded. Nor may a healthy
+ * copy go to the trash while every kept copy is damaged (FL-1660).
+ */
 export const duplicateDisposalReasons = (
   assets: readonly Pick<AssetResponseDto, 'id' | 'isEdited' | 'livePhotoVideoId'>[],
   keepIds: readonly string[],
   historyIds: ReadonlySet<string>,
+  damagedIds: ReadonlySet<string> = new Set(),
 ): string[] => {
   const keepers = assets.filter(({ id }) => keepIds.includes(id));
+  const onlyDamagedKept = keepers.length > 0 && keepers.every(({ id }) => damagedIds.has(id));
   const reasons = new Set<string>();
   for (const asset of assets) {
     if (keepIds.includes(asset.id)) continue;
+    if (onlyDamagedKept && !damagedIds.has(asset.id)) reasons.add('damaged-keeper');
     if (asset.isEdited) reasons.add('edited-copy');
     if (historyIds.has(asset.id)) reasons.add('develop-history');
     if (asset.livePhotoVideoId && keepers.every((keeper) => keeper.livePhotoVideoId !== asset.livePhotoVideoId))

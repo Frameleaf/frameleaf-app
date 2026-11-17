@@ -194,10 +194,13 @@ export class MetadataService extends BaseService {
 
     try {
       await this.jobRepository.pause(QueueName.MetadataExtraction);
-      const imported = await this.databaseRepository.withLock(DatabaseLock.GeodataImport, () =>
-        this.mapRepository.init(),
-      );
-      await this.jobRepository.resume(QueueName.MetadataExtraction);
+      let imported: boolean;
+      try {
+        imported = await this.databaseRepository.withLock(DatabaseLock.GeodataImport, () => this.mapRepository.init());
+      } finally {
+        // The pause is stored in the database: a failed start must not leave details detection paused for good.
+        await this.jobRepository.resume(QueueName.MetadataExtraction);
+      }
       if (imported) {
         await this.jobRepository.queue({ name: JobName.LandmarkMatchAll });
       } else {

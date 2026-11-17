@@ -3,6 +3,7 @@ import {
   type DuplicateGroupDecision,
   classifyDuplicateGroup,
   duplicateDecisionProblem,
+  duplicateDisposalReasons,
   duplicateGroupIndex,
   duplicateQualityReasons,
   duplicateStackPrimary,
@@ -214,6 +215,23 @@ describe('duplicate review rules', () => {
         { duplicateId: 'g1', decision: DuplicateDecisionKind.Keepers, memberIds: ['a', 'b'], keepAssetIds: ['a'] },
       ]);
       expect(parseDuplicateGroups(undefined)).toEqual([]);
+    });
+  });
+
+  describe('duplicateDisposalReasons (FL-1660)', () => {
+    const copies = [{ id: 'a' }, { id: 'b' }, { id: 'c' }] as Parameters<typeof duplicateDisposalReasons>[0];
+
+    it('refuses to trash a healthy copy while every kept copy is damaged', () => {
+      expect(duplicateDisposalReasons(copies, ['a'], new Set(), new Set(['a']))).toEqual(['damaged-keeper']);
+    });
+
+    it('allows a damaged copy to go when a healthy one is kept', () => {
+      expect(duplicateDisposalReasons(copies, ['a'], new Set(), new Set(['b']))).toEqual([]);
+      expect(duplicateDisposalReasons(copies, ['a', 'b'], new Set(), new Set(['b']))).toEqual([]);
+    });
+
+    it('allows damaged copies to go when every copy is damaged', () => {
+      expect(duplicateDisposalReasons(copies, ['a'], new Set(), new Set(['a', 'b', 'c']))).toEqual([]);
     });
   });
 

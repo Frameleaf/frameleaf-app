@@ -654,6 +654,25 @@ where
     where
       "assetId" = "asset"."id"
   )
+  and NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.asset_origin origin
+      JOIN asset source ON source.id = origin."sourceAssetId"
+    WHERE
+      origin."assetId" = asset.id
+      AND source."deletedAt" IS NULL
+      AND source.status = 'active'
+      AND NOT EXISTS (
+        SELECT
+          1
+        FROM
+          public.smart_search
+        WHERE
+          smart_search."assetId" = source.id
+      )
+  )
 
 -- AssetJobRepository.getForClipEncoding
 select

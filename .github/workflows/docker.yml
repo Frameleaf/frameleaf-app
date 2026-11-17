@@ -273,7 +273,8 @@ jobs:
         include:
           - device: cuda
             suffix: '-cuda'
-            platforms: linux/amd64
+            # FL-997: arm64 for Grace and other arm64 CUDA servers (not Jetson, which needs L4T).
+            platforms: linux/amd64,linux/arm64
             target: prod
           - device: armnn
             suffix: '-armnn'

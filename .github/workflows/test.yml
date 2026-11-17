@@ -30,6 +30,8 @@ jobs:
       contents: read
       packages: read
     uses: ./.github/workflows/frameleaf-cloud-consumers.yml
+    secrets:
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
   script-unit-tests:
     name: Scripts unit tests
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
