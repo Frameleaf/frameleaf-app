@@ -17,6 +17,8 @@ export interface BackupResult {
   snapshot: Snapshot;
   /** For the signed receipt Cloud keeps: the hash of the snapshot object as stored. */
   ciphertextSha256: string;
+  /** The stored version of the snapshot object, where storage keeps versions. */
+  versionId: string | null;
   /** Files that could not be read, or changed while they were read. The backup still finishes. */
   problems: BackupProblem[];
   /** Files taken from the previous backup without being read again. */
@@ -27,6 +29,8 @@ export interface BackupOptions {
   time?: Date;
   /** Bytes per pack. Tests make it small. */
   packTarget?: number;
+  /** The snapshot's number, when a signed history kept elsewhere decides it. Otherwise one more than the newest stored. */
+  sequence?: number;
   /** Stops the run, for a window that closes or a user who presses Stop. What was stored is kept for the next run. */
   signal?: AbortSignal;
 }
@@ -183,11 +187,14 @@ export async function backup(
   await trees.flush();
   await repository.writeIndex([...data.written, ...trees.written]);
   stats.storedBytes = data.storedBytes + trees.storedBytes;
-  const written = await repository.writeSnapshot({
-    time: (options.time ?? new Date()).toISOString(),
-    tree,
-    parent: parentKey,
-    stats,
-  });
+  const written = await repository.writeSnapshot(
+    {
+      time: (options.time ?? new Date()).toISOString(),
+      tree,
+      parent: parentKey,
+      stats,
+    },
+    options.sequence,
+  );
   return { ...written, problems, unchanged };
 }
