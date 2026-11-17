@@ -68,6 +68,7 @@ export async function restore(repository, snapshot, path, target, options = {}) 
             const made = !existing?.isDirectory();
             if (made) {
                 await mkdir(place, { mode: 0o700 });
+                await chmod(place, 0o700);
             }
             for (const child of entry.tree ? await readTree(repository, entry.tree) : []) {
                 if (!safeName(child.name)) {

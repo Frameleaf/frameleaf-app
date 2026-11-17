@@ -18,6 +18,11 @@ export interface SourceEntry {
   /** Symlinks only. */
   target?: string;
   /**
+   * Set when this one entry could not be looked at (no permission, a failing disk). The backup reports it
+   * and keeps what the entry held last time; its neighbours are backed up as usual.
+   */
+  unreadable?: string;
+  /**
    * Anything that changes whenever the content might have. When a file's key is the same as last time,
    * it isn't read again. The photo server passes the checksum it already holds.
    */
@@ -79,12 +84,21 @@ export function fsSource(root: string): Source {
       const entries: SourceEntry[] = [];
       for (const name of await readdir(folder)) {
         // A file deleted between the listing and this look is simply no longer there; its neighbours still are.
-        const info = await lstat(join(folder, name)).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') {
-            return null;
+        // Any other trouble is this entry's alone: it is reported, and the rest of the folder is still listed.
+        const failed: { error?: NodeJS.ErrnoException } = {};
+        const trouble = (error: NodeJS.ErrnoException) => {
+          failed.error = error;
+          return null;
+        };
+        const info = await lstat(join(folder, name)).catch(trouble);
+        const target = info?.isSymbolicLink() ? await readlink(join(folder, name)).catch(trouble) : null;
+        if (failed.error) {
+          if (failed.error.code !== 'ENOENT') {
+            const unreadable = failed.error.message;
+            entries.push({ name, type: 'file', mode: 0, uid: 0, gid: 0, mtime: 0, size: 0, unreadable });
           }
-          throw error;
-        });
+          continue;
+        }
         if (!info) {
           continue;
         }
@@ -106,7 +120,7 @@ export function fsSource(root: string): Source {
           gid: info.gid,
           mtime: Math.floor(info.mtimeMs),
           size: type === 'file' ? info.size : 0,
-          ...(type === 'symlink' ? { target: await readlink(join(folder, name)) } : {}),
+          ...(target === null ? {} : { target }),
           ...(type === 'file'
             ? { key: `${info.ino}:${info.size}:${Math.floor(info.mtimeMs)}:${Math.floor(info.ctimeMs)}` }
             : {}),
@@ -183,7 +197,7 @@ export async function measureSource(source: Source, path: string[] = []): Promis
       const inside = await measureSource(source, [...path, entry.name]);
       total.files += inside.files;
       total.bytes += inside.bytes;
-    } else if (entry.type === 'file') {
+    } else if (entry.type === 'file' && entry.unreadable === undefined) {
       total.files++;
       total.bytes += entry.size;
     }

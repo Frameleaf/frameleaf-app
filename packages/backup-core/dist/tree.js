@@ -25,12 +25,20 @@ export function fsSource(root) {
             const folder = join(root, ...path);
             const entries = [];
             for (const name of await readdir(folder)) {
-                const info = await lstat(join(folder, name)).catch((error) => {
-                    if (error.code === 'ENOENT') {
-                        return null;
+                const failed = {};
+                const trouble = (error) => {
+                    failed.error = error;
+                    return null;
+                };
+                const info = await lstat(join(folder, name)).catch(trouble);
+                const target = info?.isSymbolicLink() ? await readlink(join(folder, name)).catch(trouble) : null;
+                if (failed.error) {
+                    if (failed.error.code !== 'ENOENT') {
+                        const unreadable = failed.error.message;
+                        entries.push({ name, type: 'file', mode: 0, uid: 0, gid: 0, mtime: 0, size: 0, unreadable });
                     }
-                    throw error;
-                });
+                    continue;
+                }
                 if (!info) {
                     continue;
                 }
@@ -52,7 +60,7 @@ export function fsSource(root) {
                     gid: info.gid,
                     mtime: Math.floor(info.mtimeMs),
                     size: type === 'file' ? info.size : 0,
-                    ...(type === 'symlink' ? { target: await readlink(join(folder, name)) } : {}),
+                    ...(target === null ? {} : { target }),
                     ...(type === 'file'
                         ? { key: `${info.ino}:${info.size}:${Math.floor(info.mtimeMs)}:${Math.floor(info.ctimeMs)}` }
                         : {}),
@@ -117,7 +125,7 @@ export async function measureSource(source, path = []) {
             total.files += inside.files;
             total.bytes += inside.bytes;
         }
-        else if (entry.type === 'file') {
+        else if (entry.type === 'file' && entry.unreadable === undefined) {
             total.files++;
             total.bytes += entry.size;
         }
