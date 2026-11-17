@@ -164,18 +164,20 @@ export class Repository {
       const sealed = await this.store.get(object.key);
       let data: Buffer;
       try {
-        data = zstdDecompressSync(unseal(this.keys.meta, Buffer.from(object.key), sealed));
+        data = unseal(this.keys.meta, Buffer.from(object.key), sealed);
       } catch (error) {
-        // The index is only a faster copy of what packs say about themselves. One whose bytes are wrong
-        // (it fails its seal, or what the seal held does not unpack) is left out; the packs it listed are
-        // read from their own trailers below. Any other failure is not about this index and is passed on.
-        const unpack = String((error as NodeJS.ErrnoException).code ?? '').startsWith('ZSTD_');
-        if (!(error instanceof UnsealError) && !unpack) {
+        // The index is only a faster copy of what packs say about themselves. One that fails its seal is
+        // left out; the packs it listed are read from their own trailers below. Any other failure is not
+        // about this index and is passed on.
+        if (!(error instanceof UnsealError)) {
           throw error;
         }
         this.damagedIndexes.push(object.key);
         continue;
       }
+      // Bytes that passed their seal are the bytes this code wrote. If they do not unpack, the cause is
+      // here (memory, a fault), not damage in storage, so that failure is passed on too.
+      data = zstdDecompressSync(data);
       for (let at = 0; at < data.length;) {
         const pack = `p/${data.toString('hex', at, at + 16)}`;
         const count = data.readUInt32BE(at + 16);
@@ -282,7 +284,12 @@ export class Repository {
   }
 
   /** The last step of a backup. Returns what a signed receipt needs: the object's name and the hash of what was stored. */
-  async writeSnapshot(body: Pick<Snapshot, 'time' | 'tree' | 'parent' | 'stats'>, sequence?: number) {
+  async writeSnapshot(
+    body: Pick<Snapshot, 'time' | 'tree' | 'parent' | 'stats'>,
+    sequence?: number,
+    /** Checked last of all, right before the snapshot is stored: a run told to stop commits nothing. */
+    signal?: AbortSignal,
+  ) {
     // Where a signed history is kept (Frameleaf Cloud), its next number is used, so the two never drift apart.
     const seq = sequence ?? ((await this.listSnapshots()).at(-1)?.seq ?? 0) + 1;
     if (!Number.isInteger(seq) || seq < 1 || seq > 999_999_999_999) {
@@ -291,6 +298,7 @@ export class Repository {
     const key = `s/${String(seq).padStart(12, '0')}-${randomBytes(8).toString('hex')}`;
     const snapshot: Snapshot = { v: 1, repoId: this.config.repoId, seq, ...body };
     const sealed = seal(this.keys.meta, Buffer.from(key), Buffer.from(JSON.stringify(snapshot)));
+    signal?.throwIfAborted();
     const { versionId } = await this.store.put(key, sealed);
     return { key, snapshot, versionId, ciphertextSha256: createHash('sha256').update(sealed).digest('hex') };
   }
