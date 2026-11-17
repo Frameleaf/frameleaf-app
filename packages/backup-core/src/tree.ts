@@ -44,6 +44,9 @@ export interface Entry extends Omit<SourceEntry, 'size'> {
   tree?: string;
 }
 
+/** A name that can be put back inside a folder without leaving it. */
+export const safeName = (name: string) => name !== '' && name !== '.' && name !== '..' && !/[/\\\0]/.test(name);
+
 export const encodeTree = (entries: Entry[]) =>
   Buffer.from(
     JSON.stringify({ v: 1, entries: entries.toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) }),
@@ -75,7 +78,16 @@ export function fsSource(root: string): Source {
       const folder = join(root, ...path);
       const entries: SourceEntry[] = [];
       for (const name of await readdir(folder)) {
-        const info = await lstat(join(folder, name));
+        // A file deleted between the listing and this look is simply no longer there; its neighbours still are.
+        const info = await lstat(join(folder, name)).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') {
+            return null;
+          }
+          throw error;
+        });
+        if (!info) {
+          continue;
+        }
         const type: EntryType | null = info.isFile()
           ? 'file'
           : info.isDirectory()

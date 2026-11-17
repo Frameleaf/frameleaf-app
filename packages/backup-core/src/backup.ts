@@ -1,7 +1,7 @@
 import { chunkStream } from './chunker.js';
 import { blobId } from './keys.js';
 import { PackWriter, type Repository, type Snapshot } from './repository.js';
-import { type Entry, type Source, type SourceEntry, encodeTree, fileChunks, readTree } from './tree.js';
+import { type Entry, type Source, type SourceEntry, encodeTree, fileChunks, readTree, safeName } from './tree.js';
 
 /** A file's chunk ids sit in its folder's tree up to this many; beyond it they move into list blobs. */
 const INLINE_CHUNKS = 1024;
@@ -40,9 +40,10 @@ export interface BackupOptions {
 /** The source could not give a file's content. */
 class SourceError extends Error {}
 
-async function* guarded(stream: AsyncIterable<Uint8Array>) {
+async function* guarded(open: () => AsyncIterable<Uint8Array>) {
   try {
-    for await (const part of stream) {
+    // Opened in here, so a source that fails at once is treated like one that fails part-way.
+    for await (const part of open()) {
       yield part;
     }
   } catch (error) {
@@ -67,6 +68,7 @@ export async function backup(
   source: Source,
   options: BackupOptions = {},
 ): Promise<BackupResult> {
+  options.signal?.throwIfAborted();
   await repository.loadIndex();
   const data = new PackWriter(repository, options.packTarget);
   const trees = new PackWriter(repository, options.packTarget);
@@ -89,7 +91,11 @@ export async function backup(
   const readFile = async (path: string[]) => {
     const ids: string[] = [];
     let bytes = 0;
-    for await (const chunk of chunkStream(guarded(source.read(path)), repository.config.chunker, repository.gear)) {
+    for await (const chunk of chunkStream(
+      guarded(() => source.read(path)),
+      repository.config.chunker,
+      repository.gear,
+    )) {
       options.signal?.throwIfAborted();
       ids.push(await store(data, chunk));
       bytes += chunk.length;
@@ -142,10 +148,9 @@ export async function backup(
 
   const folder = async (path: string[], beforeTree: string | undefined): Promise<string> => {
     const before = new Map<string, Entry>();
-    if (beforeTree) {
-      for (const entry of await readTree(repository, beforeTree).catch(() => [])) {
-        before.set(entry.name, entry);
-      }
+    const earlierTree = beforeTree ? await readTree(repository, beforeTree).catch(() => null) : null;
+    for (const entry of earlierTree ?? []) {
+      before.set(entry.name, entry);
     }
     const entries: Entry[] = [];
     let listed: SourceEntry[] = [];
@@ -153,9 +158,18 @@ export async function backup(
       listed = await source.list(path);
     } catch (error) {
       problems.push({ path, message: error instanceof Error ? error.message : String(error) });
+      // A folder that can't be listed today keeps what it held in the last backup, instead of looking empty.
+      if (beforeTree && earlierTree) {
+        return beforeTree;
+      }
     }
     for (const now of listed) {
+      options.signal?.throwIfAborted();
       const child = [...path, now.name];
+      if (!safeName(now.name)) {
+        problems.push({ path: child, message: 'This name can’t be stored: it would not restore inside its folder' });
+        continue;
+      }
       const earlier = before.get(now.name);
       if (now.type === 'dir') {
         const { size: _, ...rest } = now;
@@ -183,6 +197,8 @@ export async function backup(
   let tree: string;
   try {
     tree = await folder([], parent?.tree);
+    // A stop that arrives after the last file still stops: no snapshot is written.
+    options.signal?.throwIfAborted();
   } catch (error) {
     // A stopped run keeps what it has: the next run adopts these packs and sends none of it again.
     if (options.signal?.aborted) {

@@ -35,10 +35,18 @@ export function retain(snapshots: { key: string; time: string }[], policy: Reten
 }
 
 /** Adds every blob a tree needs to `live`. With `missing`, a blob that isn't stored is noted there instead of thrown. */
-async function mark(repository: Repository, tree: string, live: Set<string>, missing?: Set<string>): Promise<void> {
-  if (live.has(tree)) {
+async function mark(
+  repository: Repository,
+  tree: string,
+  live: Set<string>,
+  /** Trees already walked. Kept apart from `live`: a file's chunk can have the same id as a folder's tree. */
+  visited: Set<string>,
+  missing?: Set<string>,
+): Promise<void> {
+  if (visited.has(tree)) {
     return;
   }
+  visited.add(tree);
   live.add(tree);
   const read = async (id: string) => {
     try {
@@ -57,7 +65,7 @@ async function mark(repository: Repository, tree: string, live: Set<string>, mis
   }
   for (const entry of (JSON.parse(data.toString()) as { entries: Entry[] }).entries) {
     if (entry.tree) {
-      await mark(repository, entry.tree, live, missing);
+      await mark(repository, entry.tree, live, visited, missing);
     }
     for (const id of entry.chunks ?? []) {
       live.add(id);
@@ -82,6 +90,8 @@ export interface VerifyReport {
   packsRead: number;
   /** Packs whose content no longer matches what was written. */
   damagedPacks: string[];
+  /** Index objects that can no longer be opened. Nothing is lost: packs describe themselves. The next prune replaces them. */
+  damagedIndexes: string[];
 }
 
 export interface VerifyOptions {
@@ -93,6 +103,7 @@ export interface VerifyOptions {
 export async function verify(repository: Repository, options: VerifyOptions = {}): Promise<VerifyReport> {
   await repository.loadIndex();
   const live = new Set<string>();
+  const visited = new Set<string>();
   const missing = new Set<string>();
   const report: VerifyReport = {
     snapshots: 0,
@@ -101,10 +112,11 @@ export async function verify(repository: Repository, options: VerifyOptions = {}
     missing: [],
     packsRead: 0,
     damagedPacks: [],
+    damagedIndexes: [...repository.damagedIndexes],
   };
   for (const { key } of await repository.listSnapshots()) {
     try {
-      await mark(repository, (await repository.readSnapshot(key)).tree, live, missing);
+      await mark(repository, (await repository.readSnapshot(key)).tree, live, visited, missing);
       report.snapshots++;
     } catch (error) {
       if (!(error instanceof UnsealError)) {
@@ -187,8 +199,9 @@ export async function prune(repository: Repository, options: PruneOptions = {}):
 
   // A kept backup with a missing piece stops the prune here: a damaged repository is never thinned.
   const live = new Set<string>();
+  const visited = new Set<string>();
   for (const snapshot of snapshots.filter((item) => keep.has(item.key))) {
-    await mark(repository, snapshot.tree, live);
+    await mark(repository, snapshot.tree, live, visited);
   }
 
   for (const id of live) {
@@ -249,7 +262,8 @@ export async function prune(repository: Repository, options: PruneOptions = {}):
     }
   }
   // Left alone when nothing changed, so a quiet week doesn't rewrite the index for no reason.
-  if (remove.length > 0 || (await repository.store.list('i/')).length > 8) {
+  // A damaged index object is replaced here too: the rewrite leaves it out and then removes it.
+  if (remove.length > 0 || repository.damagedIndexes.length > 0 || (await repository.store.list('i/')).length > 8) {
     await repository.rewriteIndex();
   }
   for (const pack of remove) {
