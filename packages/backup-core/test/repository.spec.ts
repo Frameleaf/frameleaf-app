@@ -273,7 +273,7 @@ describe('repository', () => {
 
     expect(
       [...store.objects.keys()].every((key) =>
-        /^(config|p\/[0-9a-f]{32}|i\/[0-9a-f]{32}|s\/\d{12}-[0-9a-f]{8})$/.test(key),
+        /^(config|p\/[0-9a-f]{32}|i\/[0-9a-f]{32}|s\/\d{12}-[0-9a-f]{16})$/.test(key),
       ),
     ).toBe(true);
     const everything = Buffer.concat([...store.objects.values()]);
