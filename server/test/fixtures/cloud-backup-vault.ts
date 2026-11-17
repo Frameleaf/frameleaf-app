@@ -24,6 +24,7 @@ export const testKeyring = (): VaultKeyring => ({ current: 1, keys: { 1: Buffer.
 
 /** A source made of tree keys and their bytes: every folder on the way is made up. */
 const treeSource = (files: Record<string, Buffer>): Source => ({
+  // eslint-disable-next-line @typescript-eslint/require-await
   list: async (path) => {
     const prefix = path.length === 0 ? '' : `${path.join('/')}/`;
     const names = new Map<string, SourceEntry>();
@@ -40,10 +41,10 @@ const treeSource = (files: Record<string, Buffer>): Source => ({
         size: rest.length > 0 ? 0 : body.length,
       });
     }
-    return [...names.values()];
+    return names.values().toArray();
   },
   // eslint-disable-next-line @typescript-eslint/require-await
-  read: async function* (path) {
+  async *read(path) {
     yield files[path.join('/')];
   },
 });

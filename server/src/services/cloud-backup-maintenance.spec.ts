@@ -39,6 +39,7 @@ const source = (body: Buffer): Source => {
   );
   const files: Record<string, Buffer> = { 'catalog/catalog.json': catalog, 'files/x': body };
   return {
+    // eslint-disable-next-line @typescript-eslint/require-await
     list: async (path) => {
       if (path.length === 0) {
         return ['catalog', 'files'].map((name) => ({
@@ -54,7 +55,7 @@ const source = (body: Buffer): Source => {
       return Object.entries(files)
         .filter(([key]) => key.startsWith(`${path[0]}/`))
         .map(([key, value]) => ({
-          name: key.split('/')[1],
+          name: key.split('/', 2)[1],
           type: 'file' as const,
           mode: 0o644,
           uid: 0,
@@ -64,7 +65,7 @@ const source = (body: Buffer): Source => {
         }));
     },
     // eslint-disable-next-line @typescript-eslint/require-await
-    read: async function* (path) {
+    async *read(path) {
       yield files[path.join('/')];
     },
   };

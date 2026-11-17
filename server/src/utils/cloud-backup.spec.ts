@@ -3,7 +3,6 @@ import { normalizeBackupFolder } from 'src/utils/cloud-backup-selection.js';
 import {
   backupKeyFile,
   cloudBackupPersonSchema,
-  compactIso,
   keyFingerprint,
   parseBackupKey,
   parseRunResult,

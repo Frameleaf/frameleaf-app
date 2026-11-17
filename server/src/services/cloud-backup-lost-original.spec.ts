@@ -1,3 +1,4 @@
+import { S3Error } from '@frameleaf/backup-core';
 import { createHash } from 'node:crypto';
 import { access, link, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -5,14 +6,13 @@ import { dirname, join } from 'node:path';
 import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { ChecksumAlgorithm, DatabaseLock, MediaOperationKind, StorageFolder, SystemMetadataKey } from 'src/enum.js';
-import { S3Error } from '@frameleaf/backup-core';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
 import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
-import { cloudContractFixture, cloudRepositoryGrant } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { packHolding, storeTestBackup, versionedMemoryStore } from 'test/fixtures/cloud-backup-vault.js';
+import { cloudRepositoryGrant } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
@@ -80,8 +80,6 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   let identityDir: string;
   let previousMedia: string | undefined;
   let originalPath: string;
-  /** What the backup holds as the original: the backed-up bytes. */
-  let backedUp: Buffer;
   /** The bucket, its newest backup, and the stored pack that holds the photo's bytes. */
   let vault: ReturnType<typeof versionedMemoryStore>;
   let newest: string;
@@ -115,7 +113,6 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   });
   /** The bucket holds `bytes` as the asset's original, in the newest kept backup (a real one, FL-1676). */
   const backup = async (bytes: Buffer) => {
-    backedUp = bytes;
     const stored = await storeTestBackup(vault, {
       vaultId: INSTANCE_ID,
       sequence: 1,

@@ -13,7 +13,6 @@ vi.mock('src/utils/media-health-roots.js', async (original) => ({
   ...(await original<typeof import('src/utils/media-health-roots.js')>()),
   retainFile,
 }));
-import { VaultFileError } from 'src/utils/cloud-backup-vault.js';
 import { CloudBackupBucket } from 'src/services/cloud-backup-maintenance.js';
 import {
   CloudBackupRestoreScope,
@@ -22,6 +21,7 @@ import {
   restorePlan,
   restoredDumpName,
 } from 'src/services/cloud-backup-restore.js';
+import { VaultFileError } from 'src/utils/cloud-backup-vault.js';
 import { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 
 const hex = (text: string) => createHash('sha256').update(text).digest('hex');
