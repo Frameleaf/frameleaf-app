@@ -179,6 +179,8 @@ await page.route('**/manager-api/**', async (route) => {
   requests.push({ path, body, headers: req.headers() });
   let value;
   if (path === 'status') value = { claimed: true };
+  // FL-1664 (mock): this Manager has no Server Backup, so the workspace switch stays hidden.
+  else if (path === 'server-backup') return route.fulfill({ contentType: 'application/json', body: 'null' });
   else if (path === 'dashboard') {
     if (failDashboard) {
       failDashboard = false;
@@ -689,7 +691,7 @@ try {
     await nav('Containers');
     await mainButton('Edit as text').click();
     await page.getByLabel('Settings as text').fill('POSTGRES_DB=nope');
-    await nav('Backups');
+    await nav('Recovery points');
     await page.getByText('Last recovery point', { exact: true }).waitFor();
     await mainButton('Export key').click();
     await page.getByLabel('Current Manager password').fill('fixture proof password');
@@ -709,7 +711,7 @@ try {
     await page.getByText('Thumbnails go back in the photos folder', { exact: true }).waitFor();
     // Another recovery point's missing thumbnails folder is checked again, never kept with the photos unasked.
     snapshots = [snapshot, { id: 'e'.repeat(64), time: '2026-10-06T02:00:00Z' }];
-    await nav('Backups');
+    await nav('Recovery points');
     await mainButton('Restore…').first().click();
     await mainButton('Choose a recovery point').click();
     await page.getByRole('radio').last().check();
@@ -730,7 +732,7 @@ try {
     await page.getByRole('checkbox').check();
     assert.equal(await mainButton('Restore database').isEnabled(), true);
     await screenshot('restore-review');
-    assert.equal(await page.locator('.nav-item.active > span').first().innerText(), 'Backups');
+    assert.equal(await page.locator('.nav-item.active > span').first().innerText(), 'Recovery points');
   });
   await check('going back to the version before the last update reviews what is undone and asks to type go back', async () => {
     // FL-973: offered for 14 days after an update.

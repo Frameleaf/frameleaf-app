@@ -102,4 +102,18 @@ progress.progress,progress.meter{appearance:none;border:0;display:block;width:10
 .st-change-link{display:inline-flex;align-items:center;gap:2px;color:var(--accent);font-size:12px;font-weight:600;white-space:nowrap}.st-change-link svg{width:16px;height:16px;transition:transform 200ms}details[open] .st-change-link svg{transform:rotate(180deg)}
 .st-form>details.containers>summary.card-header{flex-direction:row;flex-wrap:nowrap}
 @media(max-width:640px){.st-form>.card .card-header{flex-direction:column}}
+/* FL-1664 (mock): the two workspaces. Server Backup carries its own accent so the products never look alike. */
+:root{--ws-photos:#22c55e;--ws-backup:#60a5fa}[data-theme=light]{--ws-photos:#157b40;--ws-backup:#1d5fd0}
+.shell[data-workspace=backup]{--accent:#60a5fa;--accent-text:#06203f}[data-theme=light] .shell[data-workspace=backup]{--accent:#1d5fd0;--accent-text:#fff}
+.ws-switch{display:grid;gap:6px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+.ws-item{display:flex;align-items:center;gap:10px;width:100%;min-height:54px;padding:8px 10px;border:1px solid transparent;border-radius:11px;text-align:left;color:var(--muted)}
+.ws-item strong{display:block;font-size:14px;font-weight:600;color:var(--text)}.ws-item small{display:block;font-size:12px}
+.ws-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;flex-shrink:0;border:1px solid var(--border);background:var(--raised);color:var(--ws-photos)}.ws-icon svg{width:17px;height:17px}
+.ws-backup .ws-icon{color:var(--ws-backup)}
+.ws-item.active{background:var(--raised);border-color:var(--border)}
+.ws-photos.active .ws-icon{background:color-mix(in srgb,var(--ws-photos) 14%,var(--panel));border-color:color-mix(in srgb,var(--ws-photos) 35%,var(--border))}
+.ws-backup.active .ws-icon{background:color-mix(in srgb,var(--ws-backup) 14%,var(--panel));border-color:color-mix(in srgb,var(--ws-backup) 35%,var(--border))}
+.brand-workspace{color:var(--muted)}.context-workspace{color:var(--accent);font-weight:500}
+.ws-link{align-items:center}.ws-link>svg{color:var(--ws-backup)}
+@media(max-width:640px){.ws-link{flex-wrap:wrap}.ws-link .button{width:100%}.brand-workspace{display:none}}
 .list-row .service-extra{display:flex;align-items:center;gap:6px;font-size:12px}.list-row .service-extra svg{width:13px;height:13px;flex-shrink:0}.list-row .button svg{width:15px;height:15px}

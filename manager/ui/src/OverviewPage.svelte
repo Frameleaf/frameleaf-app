@@ -64,9 +64,9 @@
           action: 'Open Storage',
           screen: 'storage',
         });
-    if (!latest) items.push({ tone: 'warning', icon: 'shield', title: 'No recovery point yet', detail: 'Make one now so the database can be put back if something goes wrong.', action: 'Open Backups', screen: 'backups' });
+    if (!latest) items.push({ tone: 'warning', icon: 'shield', title: 'No recovery point yet', detail: 'Make one now so the database can be put back if something goes wrong.', action: 'Open Recovery points', screen: 'backups' });
     else if (ageDays(latest.time) > 7)
-      items.push({ tone: 'warning', icon: 'shield', title: `No recovery point since ${when(latest.time)}`, detail: 'Manager makes them when you ask and before updates. Make one now so recent changes are safe.', action: 'Open Backups', screen: 'backups' });
+      items.push({ tone: 'warning', icon: 'shield', title: `No recovery point since ${when(latest.time)}`, detail: 'Manager makes them when you ask and before updates. Make one now so recent changes are safe.', action: 'Open Recovery points', screen: 'backups' });
     for (const [id, override] of Object.entries(containers?.outside ?? {}))
       if (Object.keys(override.environment ?? {}).length || override.mounts?.length)
         items.push({ tone: 'warning', icon: 'box', title: `${STATE[id]} was changed in Docker or Unraid`, detail: 'The next update removes those changes unless you keep them in Manager.', action: 'Review on Containers', screen: 'containers', tab: id as ContainerId });
@@ -124,7 +124,7 @@
   <section class="card metric">
     <span class="label"><Icon name="shield" />Last recovery point</span>
     <strong>{latest ? when(latest.time) : 'None yet'}</strong>
-    <small>{latest ? `${snapshots.length} kept · database only` : 'Make one on Backups'} · <button class="text-button" onclick={() => go('backups')}>Backups</button></small>
+    <small>{latest ? `${snapshots.length} kept · database only` : 'Make one on Recovery points'} · <button class="text-button" onclick={() => go('backups')}>Recovery points</button></small>
   </section>
 </div>
 
@@ -155,7 +155,7 @@
   <section class="card"><div class="card-body">
     <div class="row mb16"><Icon name="shield" /><h2>Recovery points</h2></div>
     <p class="muted">{latest ? `${snapshots.length} ${snapshots.length === 1 ? 'recovery point' : 'recovery points'}, the newest from ${when(latest.time).replace(/^(Last|Today|Yesterday)/, (w) => w.toLowerCase())}.` : 'None yet.'} They hold the database: albums, people, edits and settings. Your photos stay where they are.</p>
-    <button class="text-button mt16" onclick={() => go('backups')}>Open Backups</button>
+    <button class="text-button mt16" onclick={() => go('backups')}>Open Recovery points</button>
   </div></section>
   <section class="card"><div class="card-body">
     <div class="row mb16"><Icon name="update" /><h2>{!updates.loaded ? 'Updates' : updates.available.length ? 'An update is ready' : 'Up to date'}</h2></div>
