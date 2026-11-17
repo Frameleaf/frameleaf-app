@@ -31,7 +31,7 @@ named in each section.
 | `config` | JSON, not encrypted: `format`, `version`, `repoId`, `chunker` `{min, avg, max}`, `keyVersion` (the caller's label for the root key), `wrappedKey` (base64 of the repository key sealed with the root key; associated data `frameleaf-repository/1 <repoId>`) |
 | `p/<32 hex>` | a pack |
 | `i/<32 hex>` | an index object |
-| `s/<12 digits>-<8 hex>` | a snapshot; the digits are its sequence number |
+| `s/<12 digits>-<16 hex>` | a snapshot; the digits are its sequence number. A reader accepts 16 to 64 hex characters |
 
 Pack and index names are random. They carry no meaning.
 
