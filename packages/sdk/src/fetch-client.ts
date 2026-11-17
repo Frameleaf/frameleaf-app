@@ -610,7 +610,7 @@ export type CloudBackupLastRunDto = {
     /** Files that were not on disk */
     missing: number;
     operationId: string;
-    /** Files already in the bucket */
+    /** Files unchanged since the previous backup, which were not read again */
     skipped: number;
     startedAt: string;
     status: CloudBackupLastRunStatus;
@@ -688,7 +688,7 @@ export type CloudBackupStatusResponseDto = {
     nextDrillAt: string | null;
     region: string | null;
     target: CloudBackupTargetSetting;
-    /** Unique files this server has in the bucket and their size */
+    /** What the newest backup holds: its files and their size (managed storage: what is stored) */
     usage: {
         bytes: number;
         objects: number;
@@ -783,7 +783,7 @@ export type CloudBackupManifestDto = {
     assets: number;
     bytes: number;
     createdAt: string;
-    /** The database dump this backup pairs with */
+    /** The database dump this backup holds */
     databaseKey: string | null;
     files: number;
     finishedAt: string | null;
@@ -795,7 +795,7 @@ export type CloudBackupManifestsResponseDto = {
     manifests: CloudBackupManifestDto[];
 };
 export type CloudBackupManifestAlbumsDto = {
-    /** The backup run’s manifest in the bucket */
+    /** The backup, by its name in the bucket */
     manifestKey: string;
 };
 export type CloudBackupManifestAlbumDto = {
@@ -817,7 +817,7 @@ export type CloudBackupManifestAlbumsResponseDto = {
     manifestKey: string;
 };
 export type CloudBackupExclusionsDto = {
-    /** The backup run’s manifest in the bucket */
+    /** The backup, by its name in the bucket */
     manifestKey: string;
 };
 export type CloudBackupAccountExclusionsDto = {
@@ -845,7 +845,7 @@ export type CloudBackupManifestItemsDto = {
     filter?: CloudBackupItemFilter;
     /** Items to return; 100 when absent */
     limit?: number;
-    /** The backup run’s manifest in the bucket */
+    /** The backup, by its name in the bucket */
     manifestKey: string;
     /** Part of a file name */
     query?: string;
@@ -883,7 +883,7 @@ export type CloudBackupRestoreDto = {
     assetIds?: string[];
     /** asset and album: how details of items still in the library come back; keep when absent */
     details?: CloudBackupRestoreDetails;
-    /** The backup run’s manifest in the bucket */
+    /** The backup, by its name in the bucket */
     manifestKey: string;
     scope: CloudBackupRestoreScope;
 };
@@ -22104,7 +22104,7 @@ export type OwnerBackupHistoryResponseDto = {
 };
 export type OwnerBackupRestoreDto = {
     assetIds: string[];
-    /** The backup run’s manifest in the bucket */
+    /** The backup, by its name in the bucket */
     manifestKey: string;
 };
 export type OwnerBackupRestoreResponseDto = {
@@ -23769,12 +23769,12 @@ export type NotificationSearchDto = {
 export type OwnerBackupExclusionsDto = {
     afterId?: string;
     limit?: number;
-    /** The backup run’s manifest in the bucket */
+    /** The backup, by its name in the bucket */
     manifestKey: string;
 };
 export type OwnerBackupHistoryDto = {
     limit?: number;
-    /** The backup run’s manifest in the bucket */
+    /** The backup, by its name in the bucket */
     manifestKey: string;
     offset?: number;
     query?: string;
