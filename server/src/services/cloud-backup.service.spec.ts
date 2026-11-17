@@ -86,7 +86,7 @@ import {
   withOperationExecution,
 } from 'src/utils/operation-execution.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { cloudContractFixture, cloudRepositoryGrant } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { expectLocalisedSystemNotices, getMocks } from 'test/utils.js';
 
@@ -293,7 +293,7 @@ const managedGrantFixture = (name: string) => {
     credentials,
     ...metadata
   } = legacy;
-  const current = cloudContractFixture('backup/capability-upload.json');
+  const current = cloudRepositoryGrant('upload');
   return {
     ...metadata,
     version: 4,

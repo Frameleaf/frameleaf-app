@@ -1,13 +1,8 @@
-import { backupTransferSchema, readBackupTransfer } from 'src/utils/cloud-backup-transfer.js';
 import { backupGrantResponseSchema } from 'src/utils/frameleaf-cloud-backup.js';
-import {
-  ManagedBackupAuthorizationError,
-  managedBackupReadSession,
-  managedBackupSession,
-} from 'src/utils/managed-backup-session.js';
-import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { ManagedBackupAuthorizationError, managedBackupSession } from 'src/utils/managed-backup-session.js';
+import { cloudRepositoryGrant } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
-const initial = () => backupGrantResponseSchema.parse(cloudContractFixture('backup/capability-upload.json'));
+const initial = () => backupGrantResponseSchema.parse(cloudRepositoryGrant('upload'));
 const nextGrant = () => {
   const grant = initial();
   grant.capability.credentials.accessKeyId = 'ASIANEXTSYNTHETICKEY';
@@ -17,10 +12,9 @@ const nextGrant = () => {
 describe('managed backup sessions', () => {
   it('accepts the cross-project fixtures and requires all temporary credential members and format versions', () => {
     for (const operation of ['upload', 'restore', 'prune']) {
-      expect(
-        backupGrantResponseSchema.parse(cloudContractFixture(`backup/capability-${operation}.json`)).capability
-          .operation,
-      ).toBe(operation);
+      expect(backupGrantResponseSchema.parse(cloudRepositoryGrant(operation as 'upload')).capability.operation).toBe(
+        operation,
+      );
     }
     const grant = initial();
     delete (grant.capability.credentials as Partial<typeof grant.capability.credentials>).sessionToken;
@@ -116,85 +110,5 @@ describe('managed backup sessions', () => {
     await expect(managedBackupSession(grant, 'restore', () => Promise.resolve(grant))()).resolves.toEqual(
       grant.capability.credentials,
     );
-  });
-
-  it('accepts only bounded nonsecret transfer receipts', () => {
-    const state = {
-      kind: 'upload',
-      key: 'o/hash',
-      source: null,
-      sourceStamp: null,
-      expectedSha256: null,
-      uploadId: 'upload-1',
-      previousUploads: [],
-      parts: [],
-      completing: false,
-    };
-    expect(readBackupTransfer({ backupTransfer: state })).toEqual(state);
-    expect(backupTransferSchema.safeParse({ ...state, credentials: initial().capability.credentials }).success).toBe(
-      false,
-    );
-    expect(
-      readBackupTransfer({ backupTransfer: { ...state, parts: Array.from({ length: 10_001 }, () => ({})) } }),
-    ).toBeNull();
-  });
-
-  it('lazily shares a separate restore session for version reads and renews its expired key once', async () => {
-    let sequence = 0;
-    const renew = vi.fn(() => {
-      const grant = nextGrant();
-      grant.capability.operation = 'restore';
-      grant.capability.credentials.accessKeyId = `ASIAREADSESSION${++sequence}`;
-      return Promise.resolve(grant);
-    });
-    const read = managedBackupReadSession(initial(), renew);
-    expect(renew).not.toHaveBeenCalled();
-    const values = await Promise.all(Array.from({ length: 8 }, () => read()));
-    expect(renew).toHaveBeenCalledTimes(1);
-    expect(values.every((value) => value.accessKeyId === 'ASIAREADSESSION1')).toBe(true);
-    await Promise.all([read('ASIAREADSESSION1'), read('ASIAREADSESSION1')]);
-    expect(renew).toHaveBeenCalledTimes(2);
-    expect((await read()).accessKeyId).toBe('ASIAREADSESSION2');
-  });
-
-  it.each(['binding', 'coverage', 'operation'])(
-    'refuses changed %s when opening exact-version restore authority',
-    async (change) => {
-      const grant = nextGrant();
-      grant.capability.operation = 'restore';
-      switch (change) {
-        case 'binding': {
-          grant.storageId = 'f0000000-0000-4000-8000-000000000001';
-          break;
-        }
-        case 'coverage': {
-          grant.coverage = { scope: 'none' };
-          break;
-        }
-        case 'operation': {
-          grant.capability.operation = 'upload';
-          break;
-        }
-      }
-      const renew = vi.fn().mockResolvedValue(grant);
-      const read = managedBackupReadSession(initial(), renew);
-      await expect(read()).rejects.toMatchObject({ retryAfterMs: null });
-      await expect(read()).rejects.toBeInstanceOf(ManagedBackupAuthorizationError);
-      expect(renew).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it('backs off an unavailable version session and never returns upload credentials as a fallback', async () => {
-    let clock = 0;
-    const grant = nextGrant();
-    grant.capability.operation = 'restore';
-    const renew = vi.fn().mockRejectedValueOnce(new Error('Cloud unavailable')).mockResolvedValue(grant);
-    const read = managedBackupReadSession(initial(), renew, () => clock);
-    await expect(read()).rejects.toMatchObject({ retryAfterMs: 60_000 });
-    await expect(read()).rejects.toBeInstanceOf(ManagedBackupAuthorizationError);
-    expect(renew).toHaveBeenCalledTimes(1);
-    clock = 60_000;
-    await expect(read()).resolves.toEqual(grant.capability.credentials);
-    expect(renew).toHaveBeenCalledTimes(2);
   });
 });

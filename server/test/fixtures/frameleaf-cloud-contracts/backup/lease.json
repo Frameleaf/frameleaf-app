@@ -1,0 +1,7 @@
+{
+  "leaseId": "0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54",
+  "operation": "backup",
+  "acquiredAt": "2026-11-17T12:00:00.000Z",
+  "expiresAt": "2026-11-17T12:05:00.000Z",
+  "heartbeatAfterSec": 60
+}

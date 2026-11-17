@@ -236,11 +236,12 @@ gap, as does Cloud's quarterly key publication fix. No production auth weakening
 changes. These are authored source tests pending hosted execution, not deployed identity/provider,
 quarterly rotation, native/store or complete product acceptance.
 
-- FL-376 / FC-156 managed backup v4: `backup/capability-upload.json`,
-  `backup/capability-restore.json`, and `backup/capability-prune.json` are the
-  independently authored Apache-2.0 Cloud contract fixtures from
-  `Frameleaf/frameleaf-cloud:packages/contracts/fixtures/backup/`. They retain
-  their synthetic values verbatim. Existing v2 fixtures remain unchanged.
+- FL-1676 / FC-284 backup repository: `backup/capability-repository-upload.json` and `backup/lease.json` are
+  byte-identical to `Frameleaf/frameleaf-cloud:packages/contracts/fixtures/backup/` on the FC-284 branch
+  (`aj/FC-284-backup-repository-foundation`, PR 707, at `26c48971`). They replace the FL-376 v4 capability
+  fixtures (`capability-upload.json`, `-restore.json`, `-prune.json`), which carried SSE-C and the removed object
+  formats. Specs make the restore and prune grants from the upload one by changing its operation. Existing v2
+  fixtures remain unchanged.
 
 - FL-362 / FC-149 run coverage: `backup/run-coverage-client.json` is byte-identical to the independently
   authored, synthetic Apache-2.0 client fixture `apps/api/test/fixtures/backup/run-coverage-client.json` on

@@ -12,7 +12,7 @@ import { CloudBackupService } from 'src/services/cloud-backup.service.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
 import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
-import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { cloudContractFixture, cloudRepositoryGrant } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
 
@@ -430,7 +430,7 @@ describe('CloudBackupService.restoreLostOriginal (FL-1337)', () => {
   });
 
   describe('on Frameleaf-managed storage', () => {
-    const grant = cloudContractFixture('backup/capability-restore.json');
+    const grant = cloudRepositoryGrant('restore');
     const cloudUrl = 'https://cloud.frameleaf.test';
 
     beforeEach(() => {

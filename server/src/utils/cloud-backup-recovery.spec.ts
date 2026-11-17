@@ -34,10 +34,10 @@ const record = (sequence: number, previousDigest: string | null) =>
       previousDigest,
       createdAt: '2026-10-11T00:00:00.000Z',
       manifest: {
-        format: 'frameleaf-client-backup',
+        format: 'frameleaf-repository',
         formatVersion: 1,
         keyVersion: 1,
-        objectKey: `m/v1/${vaultId}/1/20261011T0000${String(sequence).padStart(2, '0')}Z.json.gz`,
+        objectKey: `r/v1/${vaultId}/s/${String(sequence).padStart(12, '0')}-${'0'.repeat(15)}${sequence}`,
         versionId: `version-${sequence}`,
         ciphertextSha256: 'a'.repeat(64),
       },
@@ -54,8 +54,16 @@ describe('trusted recovery history', () => {
       signerKid: 'A'.repeat(43),
       manifest: { ...record(1, null).descriptor.manifest, versionId: 'provider-version+1' },
     };
+    // the published transcript, written out by hand: a label line, then the fields in the contract's order
+    const transcript =
+      'frameleaf-backup-snapshot-v2\n' +
+      `{"version":2,"instanceId":"${vaultId}","vaultId":"${vaultId}","snapshotId":"f0000000-0000-4000-8000-000000000002",` +
+      `"sequence":1,"previousDigest":null,"createdAt":"2026-10-11T00:00:00.000Z","manifest":{"format":"frameleaf-repository",` +
+      `"formatVersion":1,"keyVersion":1,"objectKey":"r/v1/${vaultId}/s/000000000001-0000000000000001",` +
+      `"versionId":"provider-version+1","ciphertextSha256":"${'a'.repeat(64)}"},"signerKid":"${'A'.repeat(43)}"}`;
+    expect(backupSnapshotSigningInput(descriptor).toString()).toBe(transcript);
     expect(createHash('sha256').update(backupSnapshotSigningInput(descriptor)).digest('hex')).toBe(
-      '9960c0b4e4611a2d9c8ca23109f27a4a88503c617d881cc0b058680a27c16287',
+      createHash('sha256').update(transcript).digest('hex'),
     );
   });
   it('uses FC canonical signature bytes and preserves explicit historical selection', () => {

@@ -6,10 +6,6 @@
   "quotaBytes": 1000000000000,
   "readOnly": false,
   "versioning": true,
-  "sseC": {
-    "required": true,
-    "algorithm": "AES256"
-  },
   "policy": {
     "denies": [
       "s3:DeleteObjectVersion",
@@ -33,7 +29,7 @@
   },
   "capability": {
     "version": 1,
-    "operation": "prune",
+    "operation": "upload",
     "expiresAt": "2026-10-11T12:15:00.000Z",
     "refreshAfterSec": 600,
     "credentials": {
@@ -45,21 +41,13 @@
   "objectFormats": {
     "read": [
       {
-        "format": "frameleaf-client-backup",
-        "version": 1
-      },
-      {
-        "format": "legacy-sse-c",
+        "format": "frameleaf-repository",
         "version": 1
       }
     ],
     "write": [
       {
-        "format": "frameleaf-client-backup",
-        "version": 1
-      },
-      {
-        "format": "legacy-sse-c",
+        "format": "frameleaf-repository",
         "version": 1
       }
     ]
