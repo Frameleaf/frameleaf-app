@@ -87,6 +87,11 @@ export async function backup(repository, source, options = {}) {
         }
         return { ...rest, size: read.bytes, lists };
     };
+    const totals = (tree, entries) => ({
+        tree,
+        files: entries.reduce((sum, entry) => sum + (entry.type === 'file' ? 1 : (entry.files ?? 0)), 0),
+        bytes: entries.reduce((sum, entry) => sum + (entry.type === 'symlink' ? 0 : entry.size), 0),
+    });
     const folder = async (path, beforeTree) => {
         const before = new Map();
         const earlierTree = beforeTree ? await readTree(repository, beforeTree).catch(() => null) : null;
@@ -101,7 +106,7 @@ export async function backup(repository, source, options = {}) {
         catch (error) {
             problems.push({ path, message: error instanceof Error ? error.message : String(error) });
             if (beforeTree && earlierTree) {
-                return beforeTree;
+                return totals(beforeTree, earlierTree);
             }
         }
         for (const now of listed) {
@@ -121,11 +126,8 @@ export async function backup(repository, source, options = {}) {
             }
             if (now.type === 'dir') {
                 const { size: _, ...rest } = now;
-                entries.push({
-                    ...rest,
-                    size: 0,
-                    tree: await folder(child, earlier?.type === 'dir' ? earlier.tree : undefined),
-                });
+                const below = await folder(child, earlier?.type === 'dir' ? earlier.tree : undefined);
+                entries.push({ ...rest, size: below.bytes, files: below.files, tree: below.tree });
                 stats.folders++;
             }
             else if (now.type === 'symlink') {
@@ -141,11 +143,11 @@ export async function backup(repository, source, options = {}) {
                 }
             }
         }
-        return store(trees, encodeTree(entries));
+        return totals(await store(trees, encodeTree(entries)), entries);
     };
     let tree;
     try {
-        tree = await folder([], parent?.tree);
+        tree = (await folder([], parent?.tree)).tree;
         options.signal?.throwIfAborted();
     }
     catch (error) {

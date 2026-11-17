@@ -47,6 +47,8 @@ export interface Entry extends Omit<SourceEntry, 'size'> {
   lists?: string[];
   /** Folders: the id of the tree blob. */
   tree?: string;
+  /** Folders: how many files are below, at any depth (their bytes are the folder's `size`). */
+  files?: number;
 }
 
 /** A name that can be put back inside a folder without leaving it. */

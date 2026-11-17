@@ -146,6 +146,14 @@ const CloudBackupItemFilterSchema = z
   .describe('all items; only items no longer in the library; only items still in the library (or its trash)')
   .meta({ id: 'CloudBackupItemFilter' });
 
+/** FL-1677: an absolute path on this server, as a backup recorded it. */
+const StoredPathSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .regex(/^\//)
+  .refine((path) => !path.includes('\0'));
+
 /** FL-1676: a backup's name in storage: `r/v1/<vault id>/s/<its number in the signed history>-<id>`. */
 export const ManifestKeySchema = z
   .string()
@@ -185,8 +193,61 @@ const CloudBackupRestoreSchema = z
     details: CloudBackupRestoreDetailsSchema.optional().describe(
       'asset and album: how details of items still in the library come back; keep when absent',
     ),
+    paths: z
+      .array(StoredPathSchema)
+      .min(1)
+      .max(1000)
+      .optional()
+      .describe('files: files or folders as they were stored, by their path on this server, instead of items'),
+    folder: StoredPathSchema.optional().describe(
+      'files with paths: put them under this folder, keeping their folders; where they were when absent',
+    ),
   })
   .meta({ id: 'CloudBackupRestoreDto' });
+
+const CloudBackupBrowseSchema = z
+  .object({
+    manifestKey: ManifestKeySchema,
+    path: StoredPathSchema.describe('A folder as it was on this server; / is the top'),
+    offset: z.int().min(0).optional().describe('Entries to skip; 0 when absent'),
+    limit: z.int().min(1).max(5000).optional().describe('Entries to return; 500 when absent'),
+  })
+  .meta({ id: 'CloudBackupBrowseDto' });
+
+const CloudBackupBrowseEntrySchema = z
+  .object({
+    name: z.string(),
+    type: z.enum(['file', 'folder']).meta({ id: 'CloudBackupBrowseEntryType' }),
+    size: z.int().describe('Bytes; 0 for a folder'),
+    modifiedAt: z.string().describe('When it was last written before the backup'),
+  })
+  .meta({ id: 'CloudBackupBrowseEntryDto' });
+
+const CloudBackupBrowseResponseSchema = z
+  .object({
+    path: z.string(),
+    total: z.int().describe('Entries in the folder, the ones on this page included'),
+    entries: z.array(CloudBackupBrowseEntrySchema).describe('Folders first, then files, by name'),
+    hiddenLocked: z.int().describe('Files of Locked items in this folder: never named here, restored with it'),
+  })
+  .meta({ id: 'CloudBackupBrowseResponseDto' });
+
+const CloudBackupFileVersionsSchema = z
+  .object({ path: StoredPathSchema.describe('A file as it was on this server') })
+  .meta({ id: 'CloudBackupFileVersionsDto' });
+
+const CloudBackupFileVersionSchema = z
+  .object({
+    manifestKey: z.string().describe('The first kept backup that holds this copy'),
+    createdAt: z.string(),
+    size: z.int(),
+    modifiedAt: z.string(),
+  })
+  .meta({ id: 'CloudBackupFileVersionDto' });
+
+const CloudBackupFileVersionsResponseSchema = z
+  .object({ versions: z.array(CloudBackupFileVersionSchema).describe('Each different copy, newest first') })
+  .meta({ id: 'CloudBackupFileVersionsResponseDto' });
 
 const CloudBackupManifestAlbumsSchema = z
   .object({ manifestKey: ManifestKeySchema })
@@ -546,6 +607,10 @@ export class CloudBackupPruneDto extends createZodDto(CloudBackupPruneSchema) {}
 export class CloudBackupEscrowDto extends createZodDto(CloudBackupEscrowSchema) {}
 export class CloudBackupRestoreDto extends createZodDto(CloudBackupRestoreSchema) {}
 export class CloudBackupManifestItemsDto extends createZodDto(CloudBackupManifestItemsSchema) {}
+export class CloudBackupBrowseDto extends createZodDto(CloudBackupBrowseSchema) {}
+export class CloudBackupBrowseResponseDto extends createZodDto(CloudBackupBrowseResponseSchema) {}
+export class CloudBackupFileVersionsDto extends createZodDto(CloudBackupFileVersionsSchema) {}
+export class CloudBackupFileVersionsResponseDto extends createZodDto(CloudBackupFileVersionsResponseSchema) {}
 export class CloudBackupManifestAlbumsDto extends createZodDto(CloudBackupManifestAlbumsSchema) {}
 export class CloudBackupManifestAlbumsResponseDto extends createZodDto(CloudBackupManifestAlbumsResponseSchema) {}
 export class CloudBackupManifestsResponseDto extends createZodDto(CloudBackupManifestsResponseSchema) {}

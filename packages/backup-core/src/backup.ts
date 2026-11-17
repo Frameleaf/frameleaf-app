@@ -153,7 +153,17 @@ export async function backup(
     return { ...rest, size: read.bytes, lists };
   };
 
-  const folder = async (path: string[], beforeTree: string | undefined): Promise<string> => {
+  /** A folder's tree, with the files and bytes below it (a folder entry carries both, for browsing). */
+  const totals = (tree: string, entries: Entry[]) => ({
+    tree,
+    files: entries.reduce((sum, entry) => sum + (entry.type === 'file' ? 1 : (entry.files ?? 0)), 0),
+    bytes: entries.reduce((sum, entry) => sum + (entry.type === 'symlink' ? 0 : entry.size), 0),
+  });
+
+  const folder = async (
+    path: string[],
+    beforeTree: string | undefined,
+  ): Promise<{ tree: string; files: number; bytes: number }> => {
     const before = new Map<string, Entry>();
     const earlierTree = beforeTree ? await readTree(repository, beforeTree).catch(() => null) : null;
     for (const entry of earlierTree ?? []) {
@@ -167,7 +177,7 @@ export async function backup(
       problems.push({ path, message: error instanceof Error ? error.message : String(error) });
       // A folder that can't be listed today keeps what it held in the last backup, instead of looking empty.
       if (beforeTree && earlierTree) {
-        return beforeTree;
+        return totals(beforeTree, earlierTree);
       }
     }
     for (const now of listed) {
@@ -188,11 +198,8 @@ export async function backup(
       }
       if (now.type === 'dir') {
         const { size: _, ...rest } = now;
-        entries.push({
-          ...rest,
-          size: 0,
-          tree: await folder(child, earlier?.type === 'dir' ? earlier.tree : undefined),
-        });
+        const below = await folder(child, earlier?.type === 'dir' ? earlier.tree : undefined);
+        entries.push({ ...rest, size: below.bytes, files: below.files, tree: below.tree });
         stats.folders++;
       } else if (now.type === 'symlink') {
         entries.push({ ...now, size: 0 });
@@ -206,12 +213,12 @@ export async function backup(
         }
       }
     }
-    return store(trees, encodeTree(entries));
+    return totals(await store(trees, encodeTree(entries)), entries);
   };
 
   let tree: string;
   try {
-    tree = await folder([], parent?.tree);
+    tree = (await folder([], parent?.tree)).tree;
     // A stop that arrives after the last file still stops: no snapshot is written.
     options.signal?.throwIfAborted();
   } catch (error) {

@@ -81,7 +81,8 @@ Sealed with the `meta` key (associated data: the object name) over zstd of, for 
 JSON `{ "v": 1, "entries": [...] }`, entries sorted by `name` in code-unit order. An entry has `name`,
 `type` (`file`, `dir`, `symlink`), `mode`, `uid`, `gid`, `mtime` (milliseconds), `size`, and:
 
-- `dir`: `tree`, the id of its tree blob;
+- `dir`: `tree`, the id of its tree blob, and `files`, the number of files below it at any depth (its
+  `size` is their bytes; a tree written before these were kept has `size` 0 and no `files`);
 - `symlink`: `target`;
 - `file`: `chunks`, the chunk ids in order, or for more than 1024 chunks `lists`, ids of blobs that
   each hold up to 32768 chunk ids as 32 raw bytes apiece;

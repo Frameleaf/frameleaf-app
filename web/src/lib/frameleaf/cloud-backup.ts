@@ -68,7 +68,7 @@ export const backupKeyFile = (options: {
     {
       format: KEY_FILE_FORMAT,
       version: 1,
-      algorithm: 'AES256 (SSE-C)',
+      algorithm: 'AES-256-GCM',
       instanceId: options.instanceId,
       bucket: options.bucket,
       mode: options.mode,

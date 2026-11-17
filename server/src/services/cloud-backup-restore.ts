@@ -217,8 +217,18 @@ export const restorePlan = (options: {
   currentOriginals: ReadonlyMap<string, string>;
   /** Per asset made again from this backup, its backed-up paths another asset holds now. */
   takenPaths?: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
+   * FL-1677, files scope: the files and folders to restore, by their storage paths when backed up. Each goes
+   * back where it was (inside the media folder; else to the restore folder), or under `folder` keeping the
+   * shape below the chosen folder's parent.
+   */
+  paths?: string[] | null;
+  folder?: string | null;
 }): { files: CloudBackupRestoreFile[]; destination: string | null } => {
   const { manifest, scope, operationId, mediaLocation } = options;
+  const paths = options.paths?.map((path) => resolve(path)) ?? null;
+  const chosenPath = (path: string) =>
+    paths?.find((chosen) => resolve(path) === chosen || isInside(chosen, path)) ?? null;
   if (scope === 'database') {
     return { files: [], destination: null };
   }
@@ -236,6 +246,28 @@ export const restorePlan = (options: {
       const name = `${safeName(file.role, 'file')}-${safeName(file.path, file.sha256)}`;
       const inFolder = join(restoreRoot, safeName(assetId, 'asset'), name);
       let target = inFolder;
+      if (paths) {
+        const root = chosenPath(file.path);
+        if (!root) {
+          continue;
+        }
+        if (options.folder) {
+          target = join(options.folder, relative(dirname(root), resolve(file.path)));
+        } else if (isInside(mediaLocation, file.path)) {
+          target = file.path;
+        }
+        files.push({
+          fileKey,
+          assetId,
+          role: file.role,
+          sha256: file.sha256,
+          ...(file.objectKey && { objectKey: file.objectKey }),
+          size: file.size,
+          target,
+          inPlace: !options.folder && target !== inFolder,
+        });
+        continue;
+      }
       if (inPlace) {
         const current = file.role === 'original' ? options.currentOriginals.get(assetId) : undefined;
         const wanted =
@@ -254,7 +286,7 @@ export const restorePlan = (options: {
       });
     }
   }
-  if (!chosen) {
+  if (!chosen && !paths) {
     for (const [userId, file] of Object.entries(manifest.profiles)) {
       const inFolder = join(restoreRoot, 'profiles', `${safeName(userId, 'user')}-${safeName(file.path, file.sha256)}`);
       const target = inPlace && isInside(mediaLocation, file.path) ? file.path : inFolder;
@@ -291,7 +323,7 @@ export const restorePlan = (options: {
   }
   return {
     files: files.toSorted((a, b) => compareCodeUnits(a.fileKey, b.fileKey)),
-    destination: inPlace ? null : restoreRoot,
+    destination: inPlace ? null : (options.folder ?? restoreRoot),
   };
 };
 

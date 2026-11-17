@@ -506,6 +506,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
       retention: { keepDaily: 7, keepWeekly: 4, keepMonthly: 12 },
       verifyWeekly: true,
       escrow: false,
+      uploadLimit: { enabled: false, mbps: 20 },
+      uploadHours: { enabled: false, start: '01:00', stop: '07:00' },
     },
   },
   libraryCare: {
