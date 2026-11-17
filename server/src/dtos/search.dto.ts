@@ -541,6 +541,7 @@ const SmartSearchSchema = withShapeExclusivity(
     language: z.string().optional().describe('Search language code'),
     page: z.int().min(1).optional().describe('Page number').meta(DEPRECATED_FLAT_FIELD),
     filter: filterField,
+    cursor: cursorField,
   }),
 ).meta({ id: 'SmartSearchDto' });
 

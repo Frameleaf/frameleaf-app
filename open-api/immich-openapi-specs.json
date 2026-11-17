@@ -168520,6 +168520,17 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "cursor": {
+            "description": "Cursor for the next page of results",
+            "minLength": 1,
+            "type": "string",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "filter": {
             "$ref": "#/components/schemas/SearchFilter",
             "x-immich-history": [

@@ -380,7 +380,7 @@ describe(SearchService.name, () => {
       mocks.machineLearning.encodeText.mockResolvedValue('[1, 2, 3]');
       await sut.searchSmart(auth, { size: 100, filter: {}, query: 'test' });
       expect(mocks.search.searchSmartV3).toHaveBeenCalledWith(
-        { take: 100 },
+        { take: 100, skip: 0 },
         expect.objectContaining({ embedding: '[1, 2, 3]' }),
         expect.objectContaining({ lockedOwnerId: expect.any(String) }),
       );
@@ -392,7 +392,7 @@ describe(SearchService.name, () => {
       mocks.machineLearning.encodeText.mockResolvedValue('[1, 2, 3]');
       await sut.searchSmart(auth, { filter: {}, query: 'private photo' });
       expect(mocks.search.searchSmartV3).toHaveBeenCalledWith(
-        { take: 100 },
+        { take: 100, skip: 0 },
         expect.objectContaining({ excludeNsfw: true, query: 'private photo' }),
         expect.anything(),
       );
@@ -606,6 +606,35 @@ describe(SearchService.name, () => {
         await expect(sut.searchSmart(authStub.user1, { query: 'lake', size: 2 })).resolves.toMatchObject({
           assets: { closeMatches: 1, nextPage: '2' },
         });
+      });
+
+      it('pages a structured search by cursor (FL-1655)', async () => {
+        mocks.search.searchSmartV3.mockResolvedValue({ ...ranked(0.9, 0.99), hasNextPage: true } as never);
+        mocks.search.getUnrelatedSearchDistance.mockResolvedValue(1);
+
+        const first = await sut.searchSmart(authStub.user1, { filter: {}, query: 'lake', size: 2 });
+        expect(first.assets).toMatchObject({ closeMatches: 1, nextCursor: expect.any(String) });
+        expect(mocks.search.searchSmartV3).toHaveBeenLastCalledWith(
+          { take: 2, skip: 0 },
+          expect.anything(),
+          expect.anything(),
+        );
+
+        mocks.search.searchSmartV3.mockResolvedValue(ranked(1, 1.01) as never);
+        const second = await sut.searchSmart(authStub.user1, {
+          filter: {},
+          query: 'lake',
+          size: 2,
+          cursor: first.assets.nextCursor!,
+        });
+        expect(mocks.search.searchSmartV3).toHaveBeenLastCalledWith(
+          { take: 2, skip: 2 },
+          expect.anything(),
+          expect.anything(),
+        );
+        expect(second.assets.nextCursor).toBeNull();
+        // only a first page starts at the best result
+        expect(second.assets).not.toHaveProperty('closeMatches');
       });
 
       it('counts on the first page only, and never for a similar-photo search', async () => {
