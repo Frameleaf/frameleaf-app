@@ -1,4 +1,4 @@
-import { mkdir, open, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { link, mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
@@ -16,6 +16,14 @@ export type ByteRange = { start: number; end: number } | { suffix: number };
  * ponytail: `put` takes the whole object in memory (packs are about 64 MiB). The S3 store sends packs as
  * multipart parts; widen this to a stream when that lands.
  */
+/** Objects are written once. Storing under a name that is taken is refused, so nothing is ever replaced. */
+export class ObjectExistsError extends Error {
+  override name = 'ObjectExistsError';
+  constructor(readonly key: string) {
+    super(`This object is already stored: ${key}`);
+  }
+}
+
 export interface Store {
   /** Storage that keeps versions says which one this write made; a signed record of a backup names it. */
   put(key: string, body: Buffer): Promise<{ versionId: string | null }>;
@@ -37,6 +45,9 @@ export function memoryStore(): Store & { objects: Map<string, Buffer> } {
   return {
     objects,
     async put(key, body) {
+      if (objects.has(key)) {
+        throw new ObjectExistsError(key);
+      }
       objects.set(key, Buffer.from(body));
       written.set(key, new Date());
       return { versionId: null };
@@ -71,10 +82,34 @@ export function dirStore(root: string): Store {
     async put(key, body) {
       const target = path(key);
       await mkdir(dirname(target), { recursive: true });
-      // Written beside the target and renamed, so a crash never leaves half an object under its real name.
+      // Written beside the target and flushed to disk first, so a crash or a power cut never leaves half
+      // an object under its real name.
       const temporary = `${target}.${randomBytes(6).toString('hex')}.part`;
-      await writeFile(temporary, body);
-      await rename(temporary, target);
+      try {
+        const file = await open(temporary, 'wx', 0o600);
+        try {
+          await file.writeFile(body);
+          await file.sync();
+        } finally {
+          await file.close();
+        }
+        // Linked into place, not renamed: a link fails when the name is taken, so nothing is ever replaced.
+        await link(temporary, target).catch(async (error: NodeJS.ErrnoException) => {
+          if (error.code === 'EEXIST') {
+            throw new ObjectExistsError(key);
+          }
+          // A drive that can't make links (exFAT, some network shares): look first, then rename.
+          if (await stat(target).catch(() => null)) {
+            throw new ObjectExistsError(key);
+          }
+          await rename(temporary, target);
+        });
+      } finally {
+        await rm(temporary, { force: true });
+      }
+      const folder = await open(dirname(target), 'r').catch(() => null);
+      await folder?.sync().catch(() => undefined);
+      await folder?.close();
       return { versionId: null };
     },
     async get(key, range) {
@@ -91,15 +126,23 @@ export function dirStore(root: string): Store {
       }
     },
     async list(prefix) {
-      const names = await readdir(root, { recursive: true }).catch(() => [] as string[]);
+      // Only a folder that isn't there yet is empty. Any other failure is passed on: reading "nothing
+      // stored" from a drive that could not be read would let a new repository be started over an old one.
+      const missing = (error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') {
+          return null;
+        }
+        throw error;
+      };
+      const names = (await readdir(root, { recursive: true }).catch(missing)) ?? [];
       const found: StoredObject[] = [];
       for (const name of names) {
         const key = name.split(sep).join('/');
         if (!key.startsWith(prefix) || key.endsWith('.part')) {
           continue;
         }
-        const info = await stat(join(root, name));
-        if (info.isFile()) {
+        const info = await stat(join(root, name)).catch(missing);
+        if (info?.isFile()) {
           found.push({ key, size: info.size, modified: info.mtime });
         }
       }

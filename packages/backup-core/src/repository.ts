@@ -98,6 +98,8 @@ export class Repository {
    * node:sqlite cache on disk before servers of that size are common.
    */
   readonly index = new Map<string, Location>();
+  /** Index objects the last `loadIndex` could not open. */
+  readonly damagedIndexes: string[] = [];
 
   private constructor(
     readonly store: Store,
@@ -157,10 +159,18 @@ export class Repository {
     this.index.clear();
     const packs = new Set((await this.store.list('p/')).map((object) => object.key));
     const indexed = new Set<string>();
+    this.damagedIndexes.length = 0;
     for (const object of await this.store.list('i/')) {
-      const data = zstdDecompressSync(
-        unseal(this.keys.meta, Buffer.from(object.key), await this.store.get(object.key)),
-      );
+      const sealed = await this.store.get(object.key);
+      let data: Buffer;
+      try {
+        data = zstdDecompressSync(unseal(this.keys.meta, Buffer.from(object.key), sealed));
+      } catch {
+        // The index is only a faster copy of what packs say about themselves. One that can't be opened is
+        // left out; the packs it listed are read from their own trailers below.
+        this.damagedIndexes.push(object.key);
+        continue;
+      }
       for (let at = 0; at < data.length;) {
         const pack = `p/${data.toString('hex', at, at + 16)}`;
         const count = data.readUInt32BE(at + 16);
@@ -179,7 +189,14 @@ export class Repository {
       if (indexed.has(pack)) {
         continue;
       }
-      for (const entry of await this.readTrailer(pack).catch(() => [])) {
+      // A pack whose trailer can't be opened was never finished. A storage failure is not that, and is passed on.
+      const adopted = await this.readTrailer(pack).catch((error: unknown) => {
+        if (error instanceof UnsealError) {
+          return [];
+        }
+        throw error;
+      });
+      for (const entry of adopted) {
         this.index.set(entry.id, { pack, offset: entry.offset, length: entry.length });
       }
     }

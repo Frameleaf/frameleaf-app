@@ -10,7 +10,7 @@ export { MissingBlobError, PACK_TARGET, Repository } from './repository.js';
 export type { Location, RepositoryConfig, Snapshot } from './repository.js';
 export { find, listFolder, readFile, restore } from './restore.js';
 export type { RestoreOptions, RestoreResult } from './restore.js';
-export { dirStore, memoryStore } from './store.js';
+export { ObjectExistsError, dirStore, memoryStore } from './store.js';
 export type { ByteRange, Store, StoredObject } from './store.js';
 export { fsSource } from './tree.js';
 export type { Entry, EntryType, Source, SourceEntry } from './tree.js';
