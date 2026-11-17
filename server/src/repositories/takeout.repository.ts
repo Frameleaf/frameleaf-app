@@ -294,6 +294,13 @@ export class TakeoutRepository {
     );
     return rows[0] ? mapImport(rows[0]) : undefined;
   }
+  /** Which of these imports still exist, for sweeping staging folders nothing owns. */
+  async existingImports(ids: string[]): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      select id from takeout_import where id = any(${`{${ids}}`}::uuid[])
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
   async list(ownerId: string): Promise<TakeoutImport[]> {
     const { rows } = await sql<Record<string, unknown>>`
       select * from takeout_import where "ownerId" = ${ownerId}::uuid order by "createdAt" desc, id desc limit 100
