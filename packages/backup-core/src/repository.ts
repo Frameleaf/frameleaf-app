@@ -165,9 +165,14 @@ export class Repository {
       let data: Buffer;
       try {
         data = zstdDecompressSync(unseal(this.keys.meta, Buffer.from(object.key), sealed));
-      } catch {
-        // The index is only a faster copy of what packs say about themselves. One that can't be opened is
-        // left out; the packs it listed are read from their own trailers below.
+      } catch (error) {
+        // The index is only a faster copy of what packs say about themselves. One whose bytes are wrong
+        // (it fails its seal, or what the seal held does not unpack) is left out; the packs it listed are
+        // read from their own trailers below. Any other failure is not about this index and is passed on.
+        const unpack = String((error as NodeJS.ErrnoException).code ?? '').startsWith('ZSTD_');
+        if (!(error instanceof UnsealError) && !unpack) {
+          throw error;
+        }
         this.damagedIndexes.push(object.key);
         continue;
       }

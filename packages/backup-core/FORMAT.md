@@ -9,14 +9,14 @@ All integers are big-endian. Hex is lower case.
 
 ## Keys
 
-| Key | From | Used for |
-| --- | --- | --- |
-| root key | the caller (32 bytes) | wraps the repository key in `config` |
-| repository key | 32 random bytes made by `init` | everything below |
-| `id` | HKDF | names blobs |
-| `blob` | HKDF | base key for blob encryption |
-| `cut` | HKDF | the chunker's table |
-| `meta` | HKDF | pack trailers, index objects, snapshots |
+| Key            | From                           | Used for                                |
+| -------------- | ------------------------------ | --------------------------------------- |
+| root key       | the caller (32 bytes)          | wraps the repository key in `config`    |
+| repository key | 32 random bytes made by `init` | everything below                        |
+| `id`           | HKDF                           | names blobs                             |
+| `blob`         | HKDF                           | base key for blob encryption            |
+| `cut`          | HKDF                           | the chunker's table                     |
+| `meta`         | HKDF                           | pack trailers, index objects, snapshots |
 
 HKDF is HKDF-SHA256 with the repository key as input, the repository id (its UUID text) as salt, and
 `frameleaf-repository/1 <name>` as info, 32 bytes out. Changing the root key rewrites only `config`.
@@ -26,12 +26,12 @@ named in each section.
 
 ## Objects
 
-| Name | Content |
-| --- | --- |
-| `config` | JSON, not encrypted: `format`, `version`, `repoId`, `chunker` `{min, avg, max}`, `keyVersion` (the caller's label for the root key), `wrappedKey` (base64 of the repository key sealed with the root key; associated data `frameleaf-repository/1 <repoId>`) |
-| `p/<32 hex>` | a pack |
-| `i/<32 hex>` | an index object |
-| `s/<12 digits>-<16 hex>` | a snapshot; the digits are its sequence number. A reader accepts 16 to 64 hex characters |
+| Name                     | Content                                                                                                                                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `config`                 | JSON, not encrypted: `format`, `version`, `repoId`, `chunker` `{min, avg, max}`, `keyVersion` (the caller's label for the root key), `wrappedKey` (base64 of the repository key sealed with the root key; associated data `frameleaf-repository/1 <repoId>`) |
+| `p/<32 hex>`             | a pack                                                                                                                                                                                                                                                       |
+| `i/<32 hex>`             | an index object                                                                                                                                                                                                                                              |
+| `s/<12 digits>-<16 hex>` | a snapshot; the digits are its sequence number. A reader accepts 16 to 64 hex characters                                                                                                                                                                     |
 
 Pack and index names are random. They carry no meaning. Every object is written once: storing under a
 name that is taken is refused.
@@ -161,5 +161,6 @@ repository needs.
 - A pack is built in memory before it is written.
 - Extended attributes, ACLs and hard links are not recorded.
 - A change in a file is noticed while reading only if its size changes.
-- Restore works by path. It must run where nothing else is writing to the destination: a process that can
-  swap a destination folder for a link while a restore runs could send files elsewhere.
+- Restore works by path. It must run where nothing else can change the destination or any folder on the
+  way to it: a process that can swap one of those for a link while a restore runs could send files
+  elsewhere. A destination that is itself a link to a folder is followed, as the caller named it.
