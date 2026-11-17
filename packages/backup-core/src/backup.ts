@@ -229,6 +229,7 @@ export async function backup(
       stats,
     },
     options.sequence,
+    options.signal,
   );
   return { ...written, problems, unchanged };
 }

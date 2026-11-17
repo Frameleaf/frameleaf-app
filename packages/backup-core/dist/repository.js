@@ -93,16 +93,16 @@ export class Repository {
             const sealed = await this.store.get(object.key);
             let data;
             try {
-                data = zstdDecompressSync(unseal(this.keys.meta, Buffer.from(object.key), sealed));
+                data = unseal(this.keys.meta, Buffer.from(object.key), sealed);
             }
             catch (error) {
-                const unpack = String(error.code ?? '').startsWith('ZSTD_');
-                if (!(error instanceof UnsealError) && !unpack) {
+                if (!(error instanceof UnsealError)) {
                     throw error;
                 }
                 this.damagedIndexes.push(object.key);
                 continue;
             }
+            data = zstdDecompressSync(data);
             for (let at = 0; at < data.length;) {
                 const pack = `p/${data.toString('hex', at, at + 16)}`;
                 const count = data.readUInt32BE(at + 16);
@@ -194,7 +194,7 @@ export class Repository {
         }
         return snapshot;
     }
-    async writeSnapshot(body, sequence) {
+    async writeSnapshot(body, sequence, signal) {
         const seq = sequence ?? ((await this.listSnapshots()).at(-1)?.seq ?? 0) + 1;
         if (!Number.isInteger(seq) || seq < 1 || seq > 999_999_999_999) {
             throw new RangeError('A snapshot number must be a whole number from 1 to 999999999999');
@@ -202,6 +202,7 @@ export class Repository {
         const key = `s/${String(seq).padStart(12, '0')}-${randomBytes(8).toString('hex')}`;
         const snapshot = { v: 1, repoId: this.config.repoId, seq, ...body };
         const sealed = seal(this.keys.meta, Buffer.from(key), Buffer.from(JSON.stringify(snapshot)));
+        signal?.throwIfAborted();
         const { versionId } = await this.store.put(key, sealed);
         return { key, snapshot, versionId, ciphertextSha256: createHash('sha256').update(sealed).digest('hex') };
     }
