@@ -288,28 +288,10 @@ describe(CloudBackupSelectionRepository.name, () => {
       key: 'm/20261016T120000Z.json.gz',
       operationId: runId,
     });
-    await index.upsertEntries(manifest.id, [
-      {
-        fileKey: `${kept.id}:original`,
-        assetId: kept.id,
-        ownerId: user.id,
-        role: 'original',
-        path: kept.originalPath,
-        sha256: 'a'.repeat(64),
-        size: 1,
-        mtime: null,
-      },
-      {
-        fileKey: `${kept.id}:sidecar:x`,
-        assetId: kept.id,
-        ownerId: user.id,
-        role: 'sidecar',
-        path: 'x',
-        sha256: 'b'.repeat(64),
-        size: 1,
-        mtime: null,
-      },
-    ]);
+    await index.finishManifest(manifest.id, {
+      status: 'complete',
+      originals: [{ assetId: kept.id, sha256: 'a'.repeat(64) }],
+    });
     await sut.recordIncluded(runId, manifest.id);
     await sut.recordIncluded(runId, manifest.id);
     expect((await sut.getDecisionAccounts(runId)).find(({ userId }) => userId === user.id)).toMatchObject({

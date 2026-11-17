@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { ChecksumAlgorithm, MediaOperationStatus } from 'src/enum.js';
+import { ChecksumAlgorithm } from 'src/enum.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
@@ -24,11 +24,7 @@ beforeAll(async () => {
 
 describe('FL-226 persisted proof prerequisites', () => {
   it('installs feature tables in the real canonical baseline', async () => {
-    await expectCanonicalTables(db, [
-      'asset_integrity_verification',
-      'cloud_backup_manifest_original',
-      'cloud_backup_object_verification',
-    ]);
+    await expectCanonicalTables(db, ['asset_integrity_verification', 'cloud_backup_manifest_original']);
   });
 
   it('timestamps repeated checks and records failures without replacing the immutable baseline', async () => {
@@ -127,37 +123,21 @@ describe('FL-226 persisted proof prerequisites', () => {
     const bucket = `https://s3.test/${randomUUID()}`;
     const assetId = randomUUID(); // No asset FK: deleted library media remains historical membership.
     const make = (key: string) => backup.createManifest({ bucket, key, operationId: randomUUID() });
-    const entry = {
-      fileKey: `${assetId}:original`,
-      assetId,
-      ownerId: null,
-      role: 'original',
-      path: '/original',
-      sha256: sha('original'),
-      size: 8,
-      mtime: null,
-    };
+    const original = { assetId, sha256: sha('original') };
     const completed = await make('m/complete');
-    await backup.upsertEntries(completed.id, [
-      entry,
-      { ...entry, fileKey: `${assetId}:preview`, role: 'preview', sha256: sha('preview') },
-    ]);
-    await backup.finishManifest(completed.id, { status: 'complete' });
-    await backup.deleteEntries(completed.id);
-    await backup.upsertEntries(completed.id, [{ ...entry, sha256: sha('later') }]);
-    await backup.finishManifest(completed.id, { status: 'complete' });
-    await backup.deleteEntries(completed.id);
+    await backup.finishManifest(completed.id, { status: 'complete', originals: [original] });
+    // completing twice keeps the first membership
+    await backup.finishManifest(completed.id, { status: 'complete', originals: [{ assetId, sha256: sha('later') }] });
     const rows = () =>
       db.selectFrom('cloud_backup_manifest_original').selectAll().where('manifestId', '=', completed.id).execute();
-    expect(await rows()).toEqual([{ manifestId: completed.id, assetId, sha256: entry.sha256 }]);
+    expect(await rows()).toEqual([{ manifestId: completed.id, ...original }]);
     await backup.markManifests(bucket, ['m/complete'], 'degraded');
     expect(await rows()).toHaveLength(1);
     await backup.markManifests(bucket, ['m/complete'], 'pruned');
     expect(await rows()).toHaveLength(1);
     for (const status of ['cancelled', 'failed'] as const) {
       const failed = await make(`m/${status}`);
-      await backup.upsertEntries(failed.id, [entry]);
-      await backup.finishManifest(failed.id, { status });
+      await backup.finishManifest(failed.id, { status, originals: [original] });
       expect(
         await db.selectFrom('cloud_backup_manifest_original').selectAll().where('manifestId', '=', failed.id).execute(),
       ).toEqual([]);
@@ -174,62 +154,5 @@ describe('FL-226 persisted proof prerequisites', () => {
     expect(
       await db.selectFrom('cloud_backup_manifest_original').selectAll().where('manifestId', '=', adopted.id).execute(),
     ).toEqual([]);
-  });
-
-  it('distinguishes GET+SHA from HEAD+size, guards the claim and qualifies only completed verification runs', async () => {
-    const { ctx, backup } = setup();
-    const { user } = await ctx.newUser();
-    const bucket = `https://s3.test/${randomUUID()}`;
-    const hash = sha('original');
-    for (const [depth, method] of [
-      ['sample', 'sha256-get'],
-      ['full', 'size-head'],
-    ] as const) {
-      const claimToken = randomUUID();
-      const { rows } = await sql<{ id: string }>`INSERT INTO media_operation
-        ("ownerId", kind, destination, label, snapshot, settings, status, "claimToken", "claimExpiresAt", result)
-        VALUES (${user.id}::uuid, 'cloud_backup', 'local', 'Verify',
-          ${{ bucketRef: bucket, task: 'verify', depth }}::jsonb, '{}'::jsonb,
-          'rendering', ${claimToken}::uuid, clock_timestamp() + interval '1 hour', ${{ task: 'verify', done: true, depth }}::jsonb) RETURNING id`.execute(
-        db,
-      );
-      const operationId = rows[0].id;
-      const proof = { bucket, sha256: hash, operationId, claimToken, method, result: 'passed' as const };
-      await backup.recordObjectVerification({ ...proof, claimToken: randomUUID() });
-      expect(
-        await db
-          .selectFrom('cloud_backup_object_verification')
-          .selectAll()
-          .where('operationId', '=', operationId)
-          .execute(),
-      ).toEqual([]);
-      await backup.recordObjectVerification(proof);
-      expect(
-        (await backup.getCompletedObjectVerifications(bucket, [hash])).filter((row) => row.operationId === operationId),
-      ).toEqual([]);
-      for (const status of [
-        MediaOperationStatus.Cancelled,
-        MediaOperationStatus.Failed,
-        MediaOperationStatus.Completed,
-      ]) {
-        await db.updateTable('media_operation').set({ status }).where('id', '=', operationId).execute();
-        const qualified = (await backup.getCompletedObjectVerifications(bucket, [hash])).filter(
-          (row) => row.operationId === operationId,
-        );
-        expect(qualified).toHaveLength(status === 'completed' ? 1 : 0);
-        if (status === 'completed') {
-          expect(qualified[0]).toMatchObject({ method, result: 'passed' });
-        }
-      }
-      await db
-        .updateTable('media_operation')
-        .set({ result: { task: 'verify', done: false } })
-        .where('id', '=', operationId)
-        .execute();
-      expect(
-        (await backup.getCompletedObjectVerifications(bucket, [hash])).filter((row) => row.operationId === operationId),
-      ).toEqual([]);
-    }
-    expect(await backup.getCompletedObjectVerifications(`${bucket}-other`, [hash])).toEqual([]);
   });
 });
