@@ -191,6 +191,20 @@ it('leads an empty Boards with the first-run actions', async () => {
   expect(screen.getByRole('button', { name: 'Upload files' })).toBeInTheDocument();
 });
 
+it('keeps an empty Boards on screen while a live update reloads it (FL-1681)', async () => {
+  sdkMock.searchLibraryItems.mockResolvedValueOnce(empty);
+  renderWithTooltips(LibraryItemsView, { title: 'Boards', query, onQueryChange: vi.fn() });
+  const heading = await screen.findByRole('heading', { name: 'Collect what inspires your work' });
+  let answer!: (value: LibraryItemSearchResponseDto) => void;
+  sdkMock.searchLibraryItems.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+  socket.listeners.get('on_asset_update')?.();
+  await waitFor(() => expect(sdkMock.searchLibraryItems).toHaveBeenCalledTimes(2));
+  expect(heading).toBeInTheDocument();
+  expect(screen.queryByText('Loading')).not.toBeInTheDocument();
+  answer(empty);
+  expect(await screen.findByRole('heading', { name: 'Collect what inspires your work' })).toBeInTheDocument();
+});
+
 it('offers loose matches when nothing is close to the colour', async () => {
   sdkMock.searchLibraryItems.mockResolvedValue(empty);
   const colour = {

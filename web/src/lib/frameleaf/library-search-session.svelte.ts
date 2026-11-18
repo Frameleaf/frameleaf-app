@@ -68,6 +68,8 @@ export class LibrarySearchSession {
   askResponse = $state<AskSearchResponseDto>();
   assistantResponse = $state<AssistantAskResponseDto>();
   loading = $state(false);
+  /** A live refresh of the same library query: what is on screen stays until the new first page replaces it. */
+  refreshing = $state(false);
   nextPage = $state<number | null>(null);
   nextCursor = $state<string | null>(null);
   #destroyed = false;
@@ -75,13 +77,17 @@ export class LibrarySearchSession {
   #request?: AbortController;
   #switchBack?: { token: string; isCurrent: () => boolean };
 
-  reset(query: LibrarySearchQuery | null = null) {
+  reset(query: LibrarySearchQuery | null = null, { keepResults = false } = {}) {
     this.#request?.abort();
     this.#request = undefined;
     this.#query = query;
-    this.items = [];
-    this.count = null;
-    this.countCapped = false;
+    // ponytail: library queries only; the other kinds still clear, add when they get live refreshes.
+    this.refreshing = keepResults && query?.kind === 'library';
+    if (!this.refreshing) {
+      this.items = [];
+      this.count = null;
+      this.countCapped = false;
+    }
     this.textFallback = false;
     this.closeMatches = null;
     this.assets = [];
@@ -176,6 +182,10 @@ export class LibrarySearchSession {
         this.textFallback = byText;
         const key = (item: LibraryItemDto) =>
           item.kind === LibraryAssetItemKind.Asset ? item.asset.id : `bookmark:${item.bookmark.id}`;
+        if (this.refreshing) {
+          this.items = [];
+          this.refreshing = false;
+        }
         const known = new Set(this.items.map((item) => key(item)));
         for (const item of response.items) {
           if (!known.has(key(item))) {
@@ -274,6 +284,7 @@ export class LibrarySearchSession {
     } finally {
       if (this.#request === request) {
         this.loading = false;
+        this.refreshing = false;
       }
     }
   }

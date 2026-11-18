@@ -342,7 +342,10 @@
   const requestKey = $derived(JSON.stringify(request));
 
   const refresh = debounce(() => generation++, 250);
+  /** A removal or an access change clears what is shown; any other live refresh keeps it until the new page lands. */
+  let clearOnReload = false;
   const restrict = () => {
+    clearOnReload = true;
     results.reset();
     session.clearSelection();
     activeBookmark = null;
@@ -448,8 +451,11 @@
     }
     untrack(() => {
       const body = request;
-      results.reset(body ? { kind: 'library', terms: body } : null);
       const identity = key;
+      // A live update (a photo elsewhere finished processing) must not blank the grid or flash Loading (FL-1681).
+      const keepResults = identity === requestIdentity && !clearOnReload;
+      clearOnReload = false;
+      results.reset(body ? { kind: 'library', terms: body } : null, { keepResults });
       if (identity !== requestIdentity) {
         // The first request opens the link a deep link names; any later change of request closes it.
         linkedBookmark = requestIdentity === '' ? (bookmark ?? null) : null;
@@ -467,6 +473,7 @@
   });
   onDestroy(
     onLibraryAccessChange(() => {
+      clearOnReload = true;
       results.reset();
       session.clearSelection();
       activeBookmark = null;
@@ -1174,8 +1181,10 @@
             message={$t(request ? 'frameleaf_pro_load_failed' : 'frameleaf_pro_filter_unavailable')}
             onRetry={request ? load : undefined}
           />{/if}
-        {#if results.loading && results.items.length === 0}<p role="status">{$t('loading')}</p>{/if}
-        {#snippet emptyState()}{#if !results.loading && !failed}
+        {#if results.loading && !results.refreshing && results.items.length === 0}<p role="status">
+            {$t('loading')}
+          </p>{/if}
+        {#snippet emptyState()}{#if (!results.loading || results.refreshing) && !failed}
             {#if emptyKind === 'first'}
               <div class="fl-items-first" role="status">
                 <span class="fl-items-first-icon" aria-hidden="true"
