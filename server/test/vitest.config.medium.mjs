@@ -28,6 +28,10 @@ export default defineConfig({
         }
       : {}),
     fileParallelism: false,
+    // The self-hosted CI slots run real ffmpeg, Postgres and file work slower than GitHub's VMs did; the 5 s / 10 s
+    // defaults turned that into random timeouts. Tests that need longer still set their own.
+    testTimeout: 20_000,
+    hookTimeout: 30_000,
     root: serverRoot,
     globals: true,
     include: suite.include,

@@ -11,6 +11,8 @@ export default defineConfig({
   },
   test: {
     name: 'server:unit',
+    // The self-hosted CI slots are slower than GitHub's VMs; 5 s timed out file-reading tests under load.
+    testTimeout: 15_000,
     root: serverRoot,
     globals: true,
     include: ['src/**/*.spec.ts'],
