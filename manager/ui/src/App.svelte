@@ -601,6 +601,8 @@
     claimed = true;
     // Signed in only once the installation is known: without it the screen falls back to first-run setup.
     await refresh();
+    // Its workspace and the fresh-server "Restore this server" both depend on it.
+    await loadServerBackup().catch(() => undefined);
     signedIn = true;
     await go(activeOperation ? 'progress' : installation ? 'overview' : 'welcome');
   }
