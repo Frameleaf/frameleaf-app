@@ -92,6 +92,7 @@ const runHelper = (
     restartFailure = false,
     namespace = false,
     dockerFailure = false,
+    systemd = true,
   } = {},
 ) => {
   const directory = mkdtempSync(path.join(tmpdir(), "frameleaf-mirror-"));
@@ -119,8 +120,12 @@ if (path.basename(process.argv[1]) === 'sudo') {
     process.exit(process.env.MIRROR_DOCKER_FAILURE === 'true' ? 94 : 0);
   }
   if (JSON.stringify(args) !== JSON.stringify(['info', '--format', '{{json .RegistryConfig.Mirrors}}'])) process.exit(93);
-  const active = JSON.parse(fs.readFileSync(config + '.active', 'utf8'));
-  console.log(process.env.MIRROR_REPORTED ?? JSON.stringify(active['registry-mirrors']));
+  if (process.env.MIRROR_REPORTED !== undefined) {
+    console.log(process.env.MIRROR_REPORTED);
+  } else {
+    const active = JSON.parse(fs.readFileSync(config + '.active', 'utf8'));
+    console.log(JSON.stringify(active['registry-mirrors']));
+  }
 }
 `;
   for (const command of ["sudo", "docker"]) {
@@ -139,6 +144,9 @@ if (path.basename(process.argv[1]) === 'sudo') {
         MIRROR_RESTART_FAILURE: String(restartFailure),
         MIRROR_DOCKER_FAILURE: String(dockerFailure),
         NSC_CONTAINER_REGISTRY: namespace ? "nscr.io/fixture-owned" : "",
+        FRAMELEAF_SYSTEMD_RUN_DIR: systemd
+          ? directory
+          : path.join(directory, "no-systemd"),
         ...(reportedMirrors === undefined
           ? {}
           : { MIRROR_REPORTED: reportedMirrors }),
@@ -223,6 +231,23 @@ test("daemon restart or missing active mirror cannot silently pass", () => {
     runHelper("{}", { reportedMirrors: '["https://mirror.gcr.io/"]' }).status,
     0,
   );
+});
+
+test("self-hosted daemons that already mirror, or are not systemd-managed, are left alone", () => {
+  const original = '{"log-driver":"local"}';
+  const active = runHelper(original, {
+    reportedMirrors: '["https://mirror.gcr.io"]',
+    restartFailure: true,
+  });
+  assert.equal(active.status, 0, active.stderr);
+  assert.equal(active.final, original);
+  const unmanaged = runHelper(original, {
+    systemd: false,
+    restartFailure: true,
+  });
+  assert.equal(unmanaged.status, 0, unmanaged.stderr);
+  assert.equal(unmanaged.final, original);
+  assert.match(unmanaged.stdout, /::warning::/);
 });
 
 test("Namespace verifies managed Docker without changing daemon configuration or restarting it", () => {

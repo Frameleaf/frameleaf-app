@@ -22,7 +22,7 @@ mirror_active() {
 if mirror_active; then
   exit 0
 fi
-if [[ ! -d /run/systemd/system ]]; then
+if [[ ! -d ${FRAMELEAF_SYSTEMD_RUN_DIR:-/run/systemd/system} ]]; then
   echo "::warning::Docker daemon is not managed here; continuing without the public Docker Hub mirror"
   exit 0
 fi
