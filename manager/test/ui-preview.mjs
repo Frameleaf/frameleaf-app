@@ -150,7 +150,9 @@ const api = (path, page, body) => {
   if (path === 'dashboard') return dashboard(fresh);
   if (path === 'server-backup') return sample;
   if (path === 'server-backup-browse') return { path: body.path, entries: tree[body.path.join('/')] ?? [] };
-  if (path === 'server-backup-first-key' || path === 'server-backup-key') return { key: '7c1e9a40b2d85f63e0a71c4d9b3f6e25a8d04c7f1b9e3a62d5f08c4b7e1a9d30' };
+  if (path === 'server-backup-first-key' || path === 'server-backup-key') return { code: 'FLRK-FGF9-M85J-PDHY-1RJF-9KZF-WRT8-7HYR-KYX2-9FMC-GBMA-A3Q1-P8C8-X0' };
+  if (path === 'server-backup-cloud-usage') return { bytesCurrent: 412 * GB, accountBytesCurrent: 450 * GB, allowanceBytes: TB, readOnly: false, readOnlyReason: null };
+  if (path === 'server-backup-cloud-disconnect') return { ...sample, state: 'off', cloud: clouds.new, snapshots: [] };
   if (path === 'server-backup-turn-on' || path === 'server-backup-run') return { ...on, ...samples.running, snapshots: [], cloud };
   if (path === 'server-backup-cloud-link') return { ...sample, cloud: clouds.code };
   if (path === 'server-backup-cloud-check') return { ...sample, linking: 'waiting' };

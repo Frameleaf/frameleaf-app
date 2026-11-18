@@ -11,6 +11,7 @@ import { Cloud, CloudError, uuidv7 } from '../src/cloud-link.js';
 import { CloudBackup } from '../src/server-backup-cloud.js';
 import { DEFAULT_SETTINGS, ServerBackup, vaultOf, type Run } from '../src/server-backup.js';
 import { Store } from '../src/store.js';
+import { parseRecoveryCode } from '@frameleaf/backup-core';
 import { API, fixture, machine, standIn, thumbprint } from './cloud-stand-in.js';
 
 // Two Managers, one Frameleaf Cloud account, one bucket: the first backs up, the second replaces it.
@@ -18,6 +19,7 @@ let root: string;
 let storage: ReturnType<typeof storageStandIn>;
 let cloud: ReturnType<typeof standIn>;
 let key: string;
+let code: string;
 const stores: Store[] = [];
 const at = (...names: string[]) => join(root, ...names);
 const parts = (path: string) => path.split(sep).filter(Boolean);
@@ -95,7 +97,10 @@ after(async () => {
 test('nothing runs until this Manager is linked and knows where to store', async () => {
   assert.equal(first.service.view()?.state, 'off');
   await first.service.turnOn({ ...DEFAULT_SETTINGS, folders: [at('server', 'documents')] });
-  key = await first.service.firstKey();
+  code = (await first.service.firstKey()).code;
+  // Shown as the same FLRK code the photo app's recovery kit uses.
+  assert.match(code, /^FLRK(-[0-9A-HJKMNP-TV-Z]{4}){12}-[0-9A-HJKMNP-TV-Z]{4}$/);
+  key = parseRecoveryCode(code)!.toString('hex');
   await assert.rejects(first.service.backUp(), refused('server_backup_cloud_not_linked'));
   await link(first);
   await assert.rejects(first.service.backUp(), refused('server_backup_cloud_no_location'));
@@ -217,8 +222,9 @@ test('a replacement server takes the backups over once the owner approves, with 
   await assert.rejects(second.service.adoptKey('not a key'));
   // A well-formed key that is not the old server's opens nothing, and is not kept.
   await assert.rejects(second.service.adoptKey('ab'.repeat(32)), refused('server_backup_key_wrong'));
-  await second.service.adoptKey(key);
-  await assert.rejects(second.service.adoptKey(key), refused('server_backup_key_exists'));
+  // Typed in as written down: lower case, spaces, and an O for a zero all read the same.
+  await second.service.adoptKey(code.toLowerCase().replaceAll('-', ' ').replaceAll('0', 'O'));
+  await assert.rejects(second.service.adoptKey('ab'.repeat(32)), refused('server_backup_key_exists'));
   const snapshots = second.service.view()!.snapshots;
   assert.equal(snapshots.length, 4);
   await mkdir(at('server', 'replacement'));
@@ -241,4 +247,28 @@ test('a replacement server takes the backups over once the owner approves, with 
   assert.ok(vouched <= 3, String(vouched));
   assert.equal((cloud.state.chain[4]!.record as { descriptor: { instanceId: string } }).descriptor.instanceId, older!.instanceId);
   await until(() => cloud.state.lease === null);
+});
+
+test('disconnecting stops backups and keeps what is stored; connecting again brings it back with the same key', async () => {
+  const usage = await second.link.usage();
+  assert.equal(usage.bytesCurrent, 412e9);
+  const { snapshots } = second.service.view()!;
+  const before = cloud.state.instances.size;
+  await second.service.disconnect();
+  const view = second.service.view()!;
+  assert.deepEqual([view.state, view.cloud?.state, view.snapshots.length], ['off', 'unlinked', 0]);
+  // Cloud saw the disconnect; nothing stored was touched.
+  assert.ok([...cloud.state.instances.values()].every((item) => item.kind !== 'backup-machine' || !item.linked));
+  assert.deepEqual(sequences(), [1, 2, 3, 4, 5]);
+  await assert.rejects(second.service.disconnect(), refused('server_backup_cloud_not_linked'));
+
+  // The same Manager connects again, takes its own older backups over, and its own key opens them.
+  await link(second);
+  assert.equal(cloud.state.instances.size, before + 1);
+  const [older] = await second.link.takeoverCandidates();
+  await second.link.askTakeover(older!.instanceId);
+  cloud.approve();
+  assert.equal((await second.link.checkTakeover()).status, 'approved');
+  await second.service.adoptKey(code);
+  assert.deepEqual(second.service.view()!.snapshots.map((item) => item.key), snapshots.map((item) => item.key));
 });
