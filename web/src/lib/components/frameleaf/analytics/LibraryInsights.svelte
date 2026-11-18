@@ -243,7 +243,12 @@
     {#if years.length === 0}
       <p class="empty">{$t('frameleaf_analytics_no_items')}</p>
     {:else}
-      <div class="an-years" role="img" aria-label={$t('frameleaf_analytics_years_label')}>
+      <div
+        class="an-years"
+        class:dense={years.length > 12}
+        role="img"
+        aria-label={$t('frameleaf_analytics_years_label')}
+      >
         {#each years as row (row.year)}
           <div
             class="an-year"
@@ -733,19 +738,26 @@
     grid-auto-columns: minmax(0, 1fr);
     grid-auto-flow: column;
     align-items: end;
-    gap: 6px;
+    gap: min(6px, 1%);
     height: 220px;
+    container-type: inline-size;
   }
+  /* One column per year: the value and label are centred on it and may overflow it, but never
+     widen it, so the bars never overlap on a narrow screen. */
   .an-year {
     display: grid;
     grid-template-rows: auto 1fr auto;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
     align-items: end;
     height: 100%;
     min-width: 0;
     text-align: center;
+    white-space: nowrap;
   }
   .an-year .bar {
     align-self: end;
+    justify-self: stretch;
     min-height: 3px;
     background: color-mix(in srgb, var(--an-1) 55%, transparent);
     border-radius: 6px 6px 2px 2px;
@@ -776,6 +788,13 @@
     color: var(--fl-muted);
     font-size: 11px;
     font-variant-numeric: var(--fl-numeric);
+  }
+  /* ponytail: many years on a narrow screen label every other year, counted back from this year.
+     Past ~30 years on a phone the labels touch again; step by 3 then if it matters. */
+  @container (max-width: 560px) {
+    .an-years.dense .an-year:nth-last-child(even) .label {
+      visibility: hidden;
+    }
   }
 
   /* punchcard */
