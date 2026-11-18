@@ -249,6 +249,22 @@ test('a replacement server takes the backups over once the owner approves, with 
   await until(() => cloud.state.lease === null);
 });
 
+test('deleting this server’s backups waits 30 days, stops backups, and can be called off', async () => {
+  assert.equal(await second.link.purge(), null);
+  await second.service.turnOn({ ...DEFAULT_SETTINGS, folders: [at('server', 'documents')] });
+  const purge = await second.service.deleteBackups();
+  assert.equal(purge.status, 'held');
+  assert.ok(Date.parse(purge.holdUntil) - cloud.state.now >= 29 * 86_400_000);
+  assert.equal(second.service.view()!.state, 'off');
+  // Nothing is gone yet: restores still work during the hold.
+  assert.deepEqual(sequences(), [1, 2, 3, 4, 5]);
+  assert.equal((await second.link.purge())?.status, 'held');
+  // Asking twice is the same request.
+  assert.equal((await second.service.deleteBackups()).holdUntil, purge.holdUntil);
+  assert.equal((await second.link.cancelPurge()).status, 'cancelled');
+  assert.equal(await second.link.purge(), null);
+});
+
 test('disconnecting stops backups and keeps what is stored; connecting again brings it back with the same key', async () => {
   const usage = await second.link.usage();
   assert.equal(usage.bytesCurrent, 412e9);

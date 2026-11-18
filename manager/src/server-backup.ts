@@ -224,6 +224,18 @@ export class ServerBackup {
     if (this.child) throw new Refusal('server_backup_busy');
     this.save({ on: false });
   }
+  /**
+   * Asks Frameleaf Cloud to delete everything stored for this server. Backups stop at once; what is stored stays
+   * restorable through Cloud's 30-day hold, and the owner can keep it until then.
+   */
+  async deleteBackups() {
+    if (this.child || this.starting) throw new Refusal('server_backup_busy');
+    if (!this.options.cloud?.linked) throw new Refusal('server_backup_cloud_not_linked');
+    const purge = await this.options.cloud.requestPurge();
+    this.save({ on: false });
+    return purge;
+  }
+
   /** Disconnects from Frameleaf Cloud: backups stop, and what this Manager knew of the stored ones is forgotten. The key stays. */
   async disconnect() {
     if (this.child || this.starting) throw new Refusal('server_backup_busy');

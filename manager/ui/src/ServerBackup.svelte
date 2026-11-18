@@ -222,6 +222,24 @@
     if (page !== 'settings' || cloud?.state !== 'linked' || usage) return;
     untrack(() => void api('server-backup-cloud-usage', {}).then((answer) => (usage = answer)).catch(() => undefined));
   });
+  // Deleting this server's backups: Cloud holds them 30 days first, and they can be kept until then.
+  let purge = $state<{ status: string; holdUntil: string; cancellable: boolean } | null | undefined>(undefined);
+  $effect(() => {
+    if ((page !== 'settings' && data.state === 'on') || cloud?.state !== 'linked' || purge !== undefined) return;
+    untrack(() => void api('server-backup-cloud-purge', {}).then((answer) => (purge = answer.purge)).catch(() => (purge = null)));
+  });
+  let deleting = $state(false);
+  let deletePassword = $state('');
+  const deleteBackups = () =>
+    run(async () => {
+      const answer = await api('server-backup-delete', { password: deletePassword });
+      deletePassword = '';
+      deleting = false;
+      purge = answer.purge;
+      change(answer);
+    });
+  const keepBackups = () => run(async () => ((purge = null), change(await api('server-backup-keep', {}))));
+  const day = (iso: string) => new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' });
   let disconnecting = $state(false);
   const disconnect = () =>
     run(async () => {
@@ -442,6 +460,7 @@
       <button class="button primary" disabled={busy} onclick={() => begin('setup')}>Set up Server Backup</button>
     </div>
   </section>
+  {#if purge?.status === 'held'}<div class="notice warning mt16"><Icon name="warning" /><div class="grow"><strong>This server’s backups will be deleted on {day(purge.holdUntil)}</strong><p>You asked for them to be deleted. Restores still work until then.</p></div>{#if purge.cancellable}<button class="button" disabled={busy} onclick={keepBackups}>Keep my backups</button>{/if}</div>{/if}
   {#if cloud?.takeover}<div class="notice warning mt16"><Icon name="clock" /><div class="grow"><strong>Waiting for your approval in Frameleaf Cloud</strong><p>This server asked to restore from another server’s backups.</p></div><button class="button" onclick={() => begin('restore', 'server')}>Continue</button></div>{/if}
   {#if cloud}
     <section class="card mt16">
@@ -602,7 +621,7 @@
     <section class="card mb16">
       <div class="card-header"><h2>Frameleaf Cloud</h2></div>
       <div class="list-row sb-first"><Icon name="server" /><div class="grow"><strong>{location.hostname}</strong><p>Connected as {cloud.account.email}. Shown in your Cloud account as a backup server.</p></div><button class="button quiet" disabled={busy || !!running} onclick={() => (disconnecting = true)}>Disconnect…</button></div>
-      {#if usage}<div class="list-row"><Icon name="harddisk" /><div class="grow"><strong>{formatBytes(usage.bytesCurrent)} of {formatBytes(usage.allowanceBytes)} used</strong><p>Shared with Cloud Backup. Another 1 TB is added automatically if you pass it ($9.99 a month each).</p></div></div>{/if}
+      {#if usage}<div class="list-row"><Icon name="harddisk" /><div class="grow"><strong>{formatBytes(usage.bytesCurrent)} of {formatBytes(usage.allowanceBytes)} used</strong><p>Shared with Cloud Backup. Another 1 TB is added automatically if you pass it ($9.99 a month each).</p></div><a class="button quiet" href="https://frameleaf.cloud" target="_blank" rel="noreferrer">Open Cloud account</a></div>{/if}
       {#if disconnecting}
         <div class="card-body stack sb-shown">
           <div class="notice warning"><Icon name="warning" /><div><strong>Disconnect this server from Frameleaf Cloud?</strong><p>Backups stop. What is already stored is kept, read-only, for 30 days, and Frameleaf Cloud emails you before deleting it. To keep it, connect again and choose “Restore this server from a backup you already have”; your recovery key opens it.</p></div></div>
@@ -612,7 +631,24 @@
     </section>
   {/if}
   <section class="card">
-    <div class="list-row sb-first"><Icon name="stop" /><div class="grow"><strong>Turn off Server Backup</strong><p>Backups stop. What is already stored stays where it is and can be restored after turning it back on.</p></div><button class="button quiet" disabled={busy || !!running} onclick={() => act('server-backup-turn-off')}>Turn off</button></div>
+    <div class="card-header"><h2>Turn off</h2></div>
+    <div class="list-row sb-first"><Icon name="stop" /><div class="grow"><strong>Turn off Server Backup</strong><p>Backups stop. What is already stored stays where it is and can be restored after turning it back on.</p></div><button class="button quiet" disabled={busy || !!running || data.state !== 'on'} onclick={() => act('server-backup-turn-off')}>Turn off</button></div>
+    {#if cloud?.account}
+      {#if purge && purge.status === 'held'}
+        <div class="list-row sb-failed"><Icon name="warning" /><div class="grow"><strong>Backups will be deleted on {day(purge.holdUntil)}</strong><p>Restores still work until then. Backups have stopped.</p></div>{#if purge.cancellable}<button class="button" disabled={busy} onclick={keepBackups}>Keep my backups</button>{/if}</div>
+      {:else if purge && purge.status === 'purging'}
+        <div class="list-row sb-failed"><Icon name="warning" /><div class="grow"><strong>This server’s backups are being deleted</strong><p>It can’t be stopped now.</p></div></div>
+      {:else}
+        <div class="list-row"><Icon name="alert" /><div class="grow"><strong>Delete this server’s backups</strong><p>Removes everything Server Backup stored for this server. This can’t be undone after 30 days.</p></div><button class="button danger" disabled={busy || !!running} onclick={() => (deleting = true)}>Delete…</button></div>
+        {#if deleting}
+          <form class="card-body stack sb-shown" onsubmit={(event) => { event.preventDefault(); void deleteBackups(); }}>
+            <div class="notice warning"><Icon name="warning" /><div><strong>Delete everything Server Backup stored for this server?</strong><p>Backups stop now. Frameleaf Cloud keeps what is stored for 30 days, so you can still restore or change your mind, then deletes it for good. Your photo library’s Cloud Backup is not affected.</p></div></div>
+            <label class="field sb-narrow"><span>Manager password</span><input type="password" bind:value={deletePassword} required maxlength="256" autocomplete="current-password" /></label>
+            <div class="actions"><button type="button" class="button quiet" onclick={() => ((deleting = false), (deletePassword = ''))}>Cancel</button><button class="button danger" disabled={busy || !deletePassword}>Delete backups</button></div>
+          </form>
+        {/if}
+      {/if}
+    {/if}
   </section>
 {:else}
   {@render heading('Server Backup', 'A private, encrypted copy of this server’s other folders.')}
