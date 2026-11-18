@@ -154,6 +154,27 @@ export class CloudBackup {
     }
   }
 
+  /** What this server's backups use of the plan's storage. */
+  async usage() {
+    return this.cloud.usage(await this.identity());
+  }
+
+  /**
+   * Disconnects this Manager from Frameleaf Cloud. Its identity is thrown away: it can't be used again.
+   * What is stored stays in Cloud, read-only, for the hold Cloud keeps before deleting it; a Manager that
+   * connects again can take those backups over with the recovery key.
+   */
+  async unlink() {
+    const identity = await this.identity();
+    await this.cloud.unlink(identity).catch((error) => {
+      // Already gone from Cloud (unlinked on the account site, or taken over): nothing left to undo there.
+      if (!(error instanceof CloudError) || (error.status !== 401 && error.status !== 404)) throw error;
+    });
+    await rm(this.file(), { force: true });
+    this.linking = null;
+    this.store.set(KEY, { account: null, locationId: null, unrecorded: null, takeover: null, attached: null } satisfies Saved);
+  }
+
   async locations() {
     return this.cloud.locations(await this.identity());
   }
