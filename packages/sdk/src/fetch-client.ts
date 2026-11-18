@@ -9636,6 +9636,7 @@ export type DesktopCapabilitiesDto = {
         nativeHost: false;
         sources: false;
         worker: false;
+        workerAutoSetup: true;
         workerSession: true;
     };
     protocolVersion: number;

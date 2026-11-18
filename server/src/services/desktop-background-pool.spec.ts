@@ -24,7 +24,7 @@ const binding = { revisionId: 'index', space };
 const policy = { accounts: { [ownerId]: { revisionId: 'consent' } } };
 const index = { selectProfile: vi.fn(), assertCurrent: vi.fn() };
 const policies = { snapshot: vi.fn(), assertCurrent: vi.fn() };
-const routes = { getRouteStates: vi.fn(), assertDefaultRoute: vi.fn() };
+const routes = { getRouteStates: vi.fn(), assertDesktopDestination: vi.fn() };
 const assertSource = vi.fn();
 const assertConfig = vi.fn();
 let context: QueueExecution;
@@ -72,45 +72,45 @@ beforeEach(() => {
 });
 const select = (jobId?: string) =>
   service.selectBackgroundPool(selection, { jobId, modelName: defaults.machineLearning.clip.modelName, assertConfig });
-it('selects a consented source owner on the default queued route', async () => {
+it('selects a consented source owner for queued home work', async () => {
   await queueExecution.run(context, async () => {
     const chosen = await select('asset');
     expect(chosen.desktopClip).toBeTypeOf('function');
     expect(assertSource).toHaveBeenCalledOnce();
     expect(policies.assertCurrent).toHaveBeenCalledWith(ownerId, 'consent', undefined);
-    expect(routes.assertDefaultRoute).toHaveBeenCalledWith(selection, 'route', undefined);
+    expect(routes.assertDesktopDestination).toHaveBeenCalledWith(selection, undefined, MlWorkload.Clip);
   });
 });
-it.each(['interactive', 'pinned', 'legacy', 'other-account', 'other-workload'])(
-  'preserves %s selection',
-  async (mode) => {
-    if (mode === 'interactive') {
-      expect(await select('asset')).toBe(selection);
-      return;
+it.each(['pinned', 'legacy'] as const)('takes work whose %s route chose a home destination', async (origin) => {
+  routes.getRouteStates.mockResolvedValue([
+    { workload: MlWorkload.Clip, destinationId: 'nas', origin, revisionId: null },
+  ]);
+  await queueExecution.run(context, async () => expect((await select('asset')).desktopClip).toBeTypeOf('function'));
+});
+it('takes work for a home destination the route does not name (processing order)', async () => {
+  routes.getRouteStates.mockResolvedValue([]);
+  await queueExecution.run(context, async () => expect((await select('asset')).desktopClip).toBeTypeOf('function'));
+});
+it.each(['interactive', 'other-account', 'other-workload'])('preserves %s selection', async (mode) => {
+  if (mode === 'interactive') {
+    expect(await select('asset')).toBe(selection);
+    return;
+  }
+  switch (mode) {
+    case 'other-account': {
+      context.sourceAuthorities!.get('asset')!.ownerId = other;
+      break;
     }
-    switch (mode) {
-      case 'pinned':
-      case 'legacy': {
-        routes.getRouteStates.mockResolvedValue([
-          { workload: MlWorkload.Clip, destinationId: 'nas', origin: mode, revisionId: 'route' },
-        ]);
-        break;
-      }
-      case 'other-account': {
-        context.sourceAuthorities!.get('asset')!.ownerId = other;
-        break;
-      }
-      case 'other-workload': {
-        selection.workload = MlWorkload.PetRecognition;
-        break;
-      }
-      default: {
-        break;
-      }
+    case 'other-workload': {
+      selection.workload = MlWorkload.PetRecognition;
+      break;
     }
-    await queueExecution.run(context, async () => expect(await select('asset')).toBe(selection));
-  },
-);
+    default: {
+      break;
+    }
+  }
+  await queueExecution.run(context, async () => expect(await select('asset')).toBe(selection));
+});
 it.each(['unknown', 'ambiguous', 'index'])('waits without falling back for %s authority', async (mode) => {
   switch (mode) {
     case 'unknown': {
@@ -288,7 +288,7 @@ describe('a gallery guest selfie (FL-1058)', () => {
     expect(request.disclosure).not.toHaveProperty('job');
     expect(request.deadlineAt.getTime() - Date.now()).toBeLessThanOrEqual(25_000);
     expect(broker.discard).toHaveBeenCalledWith('task', true);
-    expect(routes.assertDefaultRoute).toHaveBeenCalledWith(selection, 'route', undefined, MlWorkload.Face);
+    expect(routes.assertDesktopDestination).toHaveBeenCalledWith(selection, undefined, MlWorkload.Face);
   });
 
   it('never uses a household computer or an unready helper', async () => {
@@ -302,7 +302,7 @@ describe('a gallery guest selfie (FL-1058)', () => {
 });
 
 describe('a helper reading a guest selfie (FL-1058)', () => {
-  it('rechecks policy, route and face settings without a library photo or queued job', async () => {
+  it('rechecks policy, destination and face settings without a library photo or queued job', async () => {
     const face = defaults.machineLearning.facialRecognition;
     const profile = desktopFaceProfile(face);
     const endpoint = { url: 'https://unused.invalid' };
@@ -310,7 +310,6 @@ describe('a helper reading a guest selfie (FL-1058)', () => {
       version: 4,
       workload: 'guest-face',
       policyRevision: '5f0c2b8e-1111-4c1d-9b1a-000000000001',
-      routeRevision: '5f0c2b8e-1111-4c1d-9b1a-000000000002',
       destinationId: '5f0c2b8e-1111-4c1d-9b1a-000000000003',
       kind: MlDestinationKind.Local,
       endpointSha256: desktopEndpointDigest(endpoint),
@@ -323,7 +322,9 @@ describe('a helper reading a guest selfie (FL-1058)', () => {
     const tx = {};
     vi.spyOn(MlDestinationRepository.prototype, 'getById').mockResolvedValue(destination as never);
     vi.spyOn(MlDestinationRepository.prototype, 'assertRecoveryAuthority').mockResolvedValue();
-    const defaultRoute = vi.spyOn(MlDestinationRepository.prototype, 'assertDefaultRoute').mockResolvedValue();
+    const desktopDestination = vi
+      .spyOn(MlDestinationRepository.prototype, 'assertDesktopDestination')
+      .mockResolvedValue();
     vi.spyOn(mlDestination, 'resolveEndpoint').mockReturnValue(endpoint as never);
     const assertDesktopFaceConfig = vi.fn();
     const broker = {
@@ -342,9 +343,8 @@ describe('a helper reading a guest selfie (FL-1058)', () => {
     );
     await expect(service.input({} as never, 'attempt')).resolves.toEqual(Buffer.from('selfie'));
     expect(policies.assertCurrent).toHaveBeenCalledWith(ownerId, authority.policyRevision, tx);
-    expect(defaultRoute).toHaveBeenCalledWith(
+    expect(desktopDestination).toHaveBeenCalledWith(
       expect.objectContaining({ destinationId: authority.destinationId }),
-      authority.routeRevision,
       tx,
       MlWorkload.Face,
     );

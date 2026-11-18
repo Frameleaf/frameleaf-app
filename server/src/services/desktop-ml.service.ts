@@ -78,9 +78,7 @@ export class DesktopMlService {
     )
       return selection;
     if (!this.policies || !this.routes) throw new Error('desktop_pool_authority_unavailable');
-    const route = (await this.routes.getRouteStates()).find((route) => route.workload === selection.workload);
-    if (route?.origin !== 'default' || route.destinationId !== selection.destinationId || !route.revisionId)
-      return selection;
+    // A desktop stands in for any home destination the work was admitted to, whichever route sent it there.
     const policy = await this.policies.snapshot();
     const sources = context.sourceAuthorities;
     const source = options.jobId
@@ -105,11 +103,9 @@ export class DesktopMlService {
     if (locked && !policy.accounts[ownerId]) return selection;
     const ready = (modelKey: string) =>
       !options.requireReady || this.repository.hasReadyWorker(ownerId, modelKey, { household: !locked });
-    const revisionId = route.revisionId;
     const assertAuthority = async (tx?: Transaction<DB>) => {
       await this.policies!.assertCurrent(ownerId, account.revisionId, tx);
-      if (selection.workload === MlWorkload.Clip) await this.routes!.assertDefaultRoute(selection, revisionId, tx);
-      else await this.routes!.assertDefaultRoute(selection, revisionId, tx, selection.workload);
+      await this.routes!.assertDesktopDestination(selection, tx, selection.workload);
       await options.assertConfig(tx);
       await source.assertCurrent(tx);
     };
@@ -133,7 +129,6 @@ export class DesktopMlService {
           workload: 'face',
           source: source.snapshot,
           policyRevision: account.revisionId,
-          routeRevision: revisionId,
           destinationId: selection.destinationId,
           kind: selection.kind as MlDestinationKind.Local | MlDestinationKind.Lan,
           endpointSha256: desktopEndpointDigest(selection.endpoint),
@@ -163,7 +158,6 @@ export class DesktopMlService {
           workload: 'ocr',
           source: source.snapshot,
           policyRevision: account.revisionId,
-          routeRevision: revisionId,
           destinationId: selection.destinationId,
           kind: selection.kind as MlDestinationKind.Local | MlDestinationKind.Lan,
           endpointSha256: desktopEndpointDigest(selection.endpoint),
@@ -182,13 +176,12 @@ export class DesktopMlService {
     if (!(await ready(selected.binding.space.visualModelKey))) return selection;
     return this.selectClipPool(selection, {
       ownerId,
-      authorityKey: `${account.revisionId}:${revisionId}`,
+      authorityKey: account.revisionId,
       binding: selected.binding,
       disclosure: {
         version: 1,
         source: source.snapshot,
         policyRevision: account.revisionId,
-        routeRevision: revisionId,
         destinationId: selection.destinationId,
         kind: selection.kind as MlDestinationKind.Local | MlDestinationKind.Lan,
         endpointSha256: desktopEndpointDigest(selection.endpoint),
@@ -216,9 +209,6 @@ export class DesktopMlService {
       return selection;
     if (!this.policies || !this.routes) throw new Error('desktop_pool_authority_unavailable');
     const ownerId = z.uuid().parse(options.guestOwnerId);
-    const route = (await this.routes.getRouteStates()).find((route) => route.workload === MlWorkload.Face);
-    if (route?.origin !== 'default' || route.destinationId !== selection.destinationId || !route.revisionId)
-      return selection;
     const account = (await this.policies.snapshot()).accounts[ownerId];
     if (!account) return selection;
     let profile: DesktopModelProfile;
@@ -232,13 +222,11 @@ export class DesktopMlService {
       !(await this.repository.hasReadyWorker(ownerId, profile.modelKey, { household: false }))
     )
       return selection;
-    const revisionId = route.revisionId;
     const endpoint = Object.freeze({ ...selection.endpoint });
     const disclosure: DesktopMlDisclosure = {
       version: 4,
       workload: 'guest-face',
       policyRevision: account.revisionId,
-      routeRevision: revisionId,
       destinationId: selection.destinationId,
       kind: selection.kind as MlDestinationKind.Local | MlDestinationKind.Lan,
       endpointSha256: desktopEndpointDigest(endpoint),
@@ -248,7 +236,7 @@ export class DesktopMlService {
     };
     const assertAuthority = async (tx?: Transaction<DB>) => {
       await this.policies!.assertCurrent(ownerId, account.revisionId, tx);
-      await this.routes!.assertDefaultRoute(selection, revisionId, tx, MlWorkload.Face);
+      await this.routes!.assertDesktopDestination(selection, tx, MlWorkload.Face);
       await options.assertConfig(tx);
       await endpoint.assertAuthority?.();
     };
@@ -474,7 +462,7 @@ export class DesktopMlService {
       const selection = { destinationId: destination.id, kind: destination.kind, endpoint };
       await routes.assertRecoveryAuthority(destination);
       if (authority.version === 4 || authority.version === 3) {
-        await routes.assertDefaultRoute(selection, authority.routeRevision, tx, MlWorkload.Face);
+        await routes.assertDesktopDestination(selection, tx, MlWorkload.Face);
         const profile = desktopFaceProfile(authority.face, authority.modelKey);
         if (
           task.modelKey !== authority.modelKey ||
@@ -487,7 +475,7 @@ export class DesktopMlService {
         // FL-1058: a guest selfie has no library photo or queued job; its request discards the task when done.
         if (authority.version === 4) return;
       } else if (authority.version === 2) {
-        await routes.assertDefaultRoute(selection, authority.routeRevision, tx, MlWorkload.Ocr);
+        await routes.assertDesktopDestination(selection, tx, MlWorkload.Ocr);
         const profile = desktopOcrProfile(authority.ocr, authority.modelKey);
         if (
           task.modelKey !== authority.modelKey ||
@@ -498,7 +486,7 @@ export class DesktopMlService {
           throw new Error('desktop_pool_profile_changed');
         await this.machineLearning.assertDesktopOcrConfig(selection, profile.spec.entries, tx, authority.ocr);
       } else {
-        await routes.assertDefaultRoute(selection, authority.routeRevision, tx);
+        await routes.assertDesktopDestination(selection, tx);
         await this.machineLearning.assertDesktopPoolConfig(selection, authority.modelName, tx);
         const binding = await this.index.getActive(tx);
         if (

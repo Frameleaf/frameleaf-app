@@ -245,7 +245,7 @@ it('executes the existing NAS SmartSearch handler through the selected desktop p
       .mockResolvedValue([
         { workload: MlWorkload.Clip, destinationId: selection.destinationId, origin: 'default', revisionId: 'route' },
       ]),
-    assertDefaultRoute: vi.fn(),
+    assertDesktopDestination: vi.fn(),
   };
   ml = new MachineLearningRepository(LoggingRepository.create(), undefined, undefined, undefined, index as never);
   service = new DesktopMlService(repository as never, index as never, policies as never, routes as never, ml);

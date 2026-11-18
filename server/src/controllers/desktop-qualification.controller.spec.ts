@@ -8,9 +8,9 @@ import request from 'supertest';
 import { defaults } from 'src/config.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
-import { MlWorkload } from 'src/enum.js';
 import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
@@ -18,7 +18,6 @@ import { getConfig } from 'src/utils/config.js';
 import { createDesktopModelChallenge, parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import { DesktopQualificationReceipt } from 'src/utils/desktop-qualification.js';
 import { canonicalJson } from 'src/utils/object.js';
-import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { type ControllerContext, controllerSetup } from 'test/utils.js';
 
 const authority = vi.hoisted(() => ({ policy: '', spaces: undefined as string | undefined }));
@@ -151,12 +150,10 @@ const acceptedRow = () => ({
   reportSha256: createHash('sha256').update(canonicalJson(report())).digest('hex'),
 });
 const repository = { session: vi.fn(), consume: vi.fn(), owner: vi.fn() };
-const inventoryRoutes = { getRouteStates: vi.fn(), getAll: vi.fn(), assertRecoveryAuthority: vi.fn() };
 const inventoryPolicies = { read: vi.fn() };
 const challenges = { issue: vi.fn(), read: vi.fn(), record: vi.fn(), readAccepted: vi.fn() };
 let ctx: ControllerContext;
 let app: Express;
-const nasProducer = { verify: vi.fn() };
 const activation = { activate: vi.fn() };
 
 const proof = (operation: string, raw: string) => {
@@ -187,10 +184,8 @@ beforeAll(async () => {
         challenges as never,
         {} as never,
         metadata as never,
-        nasProducer as never,
         activation as never,
         repository as never,
-        inventoryRoutes as never,
         inventoryPolicies as never,
       ),
     },
@@ -205,7 +200,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   activation.activate.mockReset().mockResolvedValue(undefined);
   challenges.readAccepted.mockResolvedValue(acceptedRow());
-  nasProducer.verify.mockReset().mockResolvedValue({ assertCurrent: vi.fn().mockResolvedValue(undefined) });
   repository.session.mockResolvedValue({
     publicKey: keys.publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64'),
     authorizationEpoch: 2,
@@ -213,11 +207,6 @@ beforeEach(() => {
   repository.consume.mockResolvedValue(grant);
   repository.owner.mockResolvedValue(id);
   inventoryPolicies.read.mockResolvedValue({ revisionId: id });
-  inventoryRoutes.getRouteStates.mockResolvedValue([
-    { workload: MlWorkload.Clip, origin: 'default', destinationId: mlDestinationStub.local.id, revisionId: id },
-  ]);
-  inventoryRoutes.getAll.mockResolvedValue([mlDestinationStub.local]);
-  inventoryRoutes.assertRecoveryAuthority.mockResolvedValue(undefined);
   challenges.issue.mockResolvedValue(row());
   challenges.read.mockResolvedValue(row());
   challenges.record.mockResolvedValue(true);
@@ -426,10 +415,8 @@ it('refuses a catalogue-approved profile without a release-owned paired embeddin
       challenges as never,
       {} as never,
       {} as never,
-      nasProducer as never,
       activation as never,
       repository as never,
-      {} as never,
       {} as never,
     );
     await expect(service.issue(undefined, undefined, payload())).rejects.toThrow('desktop_model_profile_unavailable');
@@ -439,10 +426,20 @@ it('refuses a catalogue-approved profile without a release-owned paired embeddin
   }
 });
 
-it('refuses a qualification challenge when the selected NAS producer cannot be verified', async () => {
-  nasProducer.verify.mockRejectedValue(new Error('producer offline'));
+it('issues a challenge from the catalogue without running anything on the server', async () => {
+  const response = await post('/desktop/worker/challenges', 'challenge', payload());
+  expect(response.status).toBe(200);
+  expect(challenges.issue).toHaveBeenCalledOnce();
+});
+
+it('refuses a task the settings turned off with a named code, and logs it', async () => {
+  vi.mocked(getConfig).mockResolvedValue({
+    machineLearning: { enabled: true, clip: { enabled: false, modelName: profile.modelName } },
+  } as never);
+  const warn = vi.spyOn(LoggingRepository.prototype, 'warn');
   const response = await post('/desktop/worker/challenges', 'challenge', payload());
   expect(response.status).toBe(409);
-  expect(response.body.message).toBe('desktop_nas_producer_unavailable');
+  expect(response.body.message).toBe('desktop_model_profile_unavailable');
   expect(challenges.issue).not.toHaveBeenCalled();
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('desktop_model_profile_unavailable'));
 });

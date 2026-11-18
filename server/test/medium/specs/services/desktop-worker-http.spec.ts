@@ -11,7 +11,6 @@ import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -76,12 +75,10 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
         new DesktopWorkerChallengeRepository(db),
         new ConfigRepository(),
         metadata,
-        { verify: () => Promise.resolve({ assertCurrent: () => Promise.resolve() }) } as never,
         {
           activate: () => Promise.reject(new Error('activation_not_available_in_broker_fixture')),
         } as never,
         sessions,
-        new MlDestinationRepository(db),
         new DesktopAssistancePolicyService(metadata),
       ),
     },

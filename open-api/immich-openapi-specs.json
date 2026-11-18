@@ -106654,6 +106654,12 @@
                 ],
                 "type": "boolean"
               },
+              "workerAutoSetup": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
               "workerSession": {
                 "enum": [
                   true
@@ -106665,6 +106671,7 @@
               "enrollment",
               "worker",
               "workerSession",
+              "workerAutoSetup",
               "sources",
               "nativeHost"
             ],

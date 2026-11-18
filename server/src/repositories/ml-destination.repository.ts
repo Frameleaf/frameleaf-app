@@ -673,22 +673,19 @@ export class MlDestinationRepository {
       .execute();
   }
 
-  async assertDefaultRoute(
+  /**
+   * The home destination a desktop stands in for is still the one its work was admitted to. Which route or
+   * processing order sent the work there does not matter to a desktop, so routes are not checked.
+   */
+  async assertDesktopDestination(
     selection: Pick<MlSelection, 'destinationId' | 'kind' | 'endpoint'>,
-    revisionId: string,
     tx?: Transaction<DB>,
     workload: MlWorkload = MlWorkload.Clip,
   ) {
-    const { destinationId } = selection;
-    if (tx) await this.lockRoute(tx, workload);
-    const repository = tx ? new MlDestinationRepository(tx) : this;
-    const route = (await repository.getRouteStates()).find((route) => route.workload === workload);
-    if (route?.origin !== 'default' || route.destinationId !== destinationId || route.revisionId !== revisionId)
-      throw new Error('desktop_pool_route_changed');
     const destination = await (tx ?? this.db)
       .selectFrom('ml_destination')
       .selectAll()
-      .where('id', '=', destinationId)
+      .where('id', '=', selection.destinationId)
       .$if(!!tx, (query) => query.forShare())
       .executeTakeFirst();
     if (

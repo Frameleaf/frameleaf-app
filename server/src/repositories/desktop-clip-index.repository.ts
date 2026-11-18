@@ -98,6 +98,10 @@ export class DesktopClipIndexRepository {
     };
   }
 
+  space(spaceKey: string): DesktopClipSpace | undefined {
+    return this.spaces.spaces.find((space) => space.spaceKey === spaceKey);
+  }
+
   async selectProfile(modelName: string, kind: 'image' | 'text', language?: string) {
     const binding = await this.getActive();
     if (!binding) return;
