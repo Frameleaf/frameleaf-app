@@ -574,6 +574,7 @@ jobs:
           docker_cli=$(readlink -f "$(command -v docker)")
           test -S /var/run/docker.sock
           docker run --rm --pull never --name "$MEDIUM_CONTAINER" --network host \
+            --tmpfs /tmp:rw,exec,size=8g \
             --mount type=bind,src="$docker_cli",dst=/usr/local/bin/docker,readonly \
             --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
             --mount type=bind,src="$GITHUB_WORKSPACE/docker/postgres",dst=/usr/src/app/docker/postgres,readonly \
@@ -649,6 +650,7 @@ jobs:
           chmod 700 "$RUNNER_TEMP/frameleaf-medium-scale-reports"
           medium_exit_status=0
           docker run --pull never --name "$MEDIUM_CONTAINER" --network host \
+            --tmpfs /tmp:rw,exec,size=8g \
             --mount type=bind,src="$docker_cli",dst=/usr/local/bin/docker,readonly \
             --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
             --mount type=bind,src="$GITHUB_WORKSPACE/docker/postgres",dst=/usr/src/app/docker/postgres,readonly \
