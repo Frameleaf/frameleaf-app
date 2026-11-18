@@ -1,3 +1,4 @@
+import { BackupMachineStatementCommand } from 'src/commands/backup-machine-statement.command.js';
 import { cloudBackupCommands } from 'src/commands/cloud-backup.command.js';
 import { GrantAdminCommand, PromptEmailQuestion, RevokeAdminCommand } from 'src/commands/grant-admin.js';
 import { ImportImmichCommand } from 'src/commands/import-immich.command.js';
@@ -26,6 +27,8 @@ export const commandsAndQuestions = [
   ValidateRestoreCommand,
   // FL-164: bare-metal restore from a cloud backup bucket
   ...cloudBackupCommands,
+  // FL-1673: Manager's Server Backup shares this server's licence
+  BackupMachineStatementCommand,
   ResetAdminPasswordCommand,
   PromptPasswordResetQuestions,
   ResetSignInPolicyCommand,
