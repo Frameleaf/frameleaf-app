@@ -261,6 +261,105 @@ describe(ICloudSyncRepository.name, () => {
     expect(await repository.get(connection.id, randomUUID())).toBeUndefined();
   });
 
+  describe('download while listing (FL-1685)', () => {
+    const resources = () =>
+      sql<{ sourceAssetId: string }>`SELECT "sourceAssetId" FROM public.icloud_resource ORDER BY "sourceAssetId"`
+        .execute(db)
+        .then(({ rows }) => rows.map((row) => row.sourceAssetId));
+    const orphan = {
+      recordName: 'orphan',
+      recordType: 'CPLAsset',
+      fields: { masterRef: field({ recordName: 'later' }) },
+    };
+
+    it('queues a page’s photos at once, leaving one whose master has not arrived for the keyset pass', async () => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master, orphan], 'next', false);
+      await repository.materializeEarly(connection, 'library', library, ['asset', 'orphan']);
+      expect(await resources()).toEqual(['asset']);
+      expect(await repository.claim(connection.id, 1000)).toMatchObject({ sourceAssetId: 'asset' });
+      // nothing is marked unsupported before its master could arrive
+      const { rows } = await sql<{ unsupported: boolean }>`SELECT fields ? '__icloudUnsupported' AS unsupported
+        FROM public.icloud_record WHERE "recordId"='orphan'`.execute(db);
+      expect(rows[0].unsupported).toBe(false);
+      // and the keyset pass is idempotent over what was queued early
+      expect(await repository.materialize(connection, 'library', library)).toBe(true);
+      expect(await resources()).toEqual(['asset']);
+    });
+
+    it('waits for the albums under an album selection', async () => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], 'next', false);
+      await repository.materializeEarly(
+        { ...connection, config: { ...connection.config, albums: ['library:album'] } },
+        'library',
+        library,
+        ['asset'],
+      );
+      expect(await resources()).toEqual([]);
+    });
+
+    const checkpointScopes = () =>
+      sql<{
+        scope: string;
+      }>`SELECT scope FROM public.icloud_checkpoint WHERE "connectionId"=${connection.id}::uuid ORDER BY scope`
+        .execute(db)
+        .then(({ rows }) => rows.map((row) => row.scope));
+    const endRun = () => repository.endRun(connection.id, 'failed');
+
+    it('carries on from a listing the last run did not finish', async () => {
+      await repository.startRun(connection);
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], 'page-2', false);
+      await endRun();
+      await repository.startRun(connection);
+      expect(await repository.checkpoint(connection.id, 'assets:library')).toMatchObject({
+        cursor: 'page-2',
+        complete: false,
+      });
+    });
+
+    it('starts a fresh pass after a listing that finished', async () => {
+      await repository.startRun(connection);
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+      await repository.savePage(connection.id, 'inventory-complete', '', [], null, true);
+      await endRun();
+      await repository.startRun(connection);
+      expect(await checkpointScopes()).toEqual([]);
+    });
+
+    it('forgets the listing for a new sign-in', async () => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], 'page-2', false);
+      await repository.savePage(connection.id, 'changes:library', 'library', [], 'token', true);
+      await repository.forgetListing(connection.id);
+      expect(await checkpointScopes()).toEqual([]);
+    });
+
+    it('lists only the libraries the signed-in account has', async () => {
+      const zone = (name: string) => ({
+        recordName: name,
+        recordType: 'Library',
+        fields: { zoneID: { zoneName: name } },
+      });
+      await repository.savePage(connection.id, 'libraries', '', [zone('old-private'), zone('old-shared')], null, true);
+      expect((await repository.inventory(connection.id)).libraries.map(({ id }) => id)).toEqual([
+        'old-private',
+        'old-shared',
+      ]);
+
+      // another Apple Account signs in: its listing starts again and finds only its own library
+      await repository.forgetListing(connection.id);
+      await repository.savePage(connection.id, 'libraries', '', [zone('new-private')], null, true);
+      expect((await repository.inventory(connection.id)).libraries.map(({ id }) => id)).toEqual(['new-private']);
+    });
+
+    it('starts a fresh pass when the unfinished listing has not moved for a day', async () => {
+      await repository.startRun(connection);
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], 'page-2', false);
+      await sql`UPDATE public.icloud_checkpoint SET "updatedAt"=now() - interval '2 days'`.execute(db);
+      await endRun();
+      await repository.startRun(connection);
+      expect(await checkpointScopes()).toEqual([]);
+    });
+  });
+
   it('gives a resource the kinds of the smart albums its photo is in, and drops one it left (FL-1289)', async () => {
     await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
     const snapshot = randomUUID();

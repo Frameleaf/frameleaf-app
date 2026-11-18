@@ -358,10 +358,15 @@ export class ICloudSyncService {
     }
     await this.repository.update(id, auth.user.id, { state: 'authenticating', lastError: null });
     try {
-      await this.repository.withSession(id, auth.user.id, async (connection) => {
+      await this.repository.withSession(id, auth.user.id, async (connection, db) => {
         const session =
           dto.action === 'login' ? undefined : await this.transport.decodeSession(id, connection.encryptedSession);
         const result = await this.transport.authenticate(dto, session);
+        if (dto.action === 'login') {
+          // FL-1685: a listing left unfinished is resumed by the next run; a new sign-in may be another Apple
+          // Account, so its listing starts again rather than carrying on from the last account's pages.
+          await this.repository.forgetListing(id, db);
+        }
         return {
           value: undefined,
           state: result.state,
@@ -941,7 +946,7 @@ export class ICloudSyncService {
     const outcome = await this.operations.fail(claim.operation.id, claim.claimToken, { error: code, errorCode: code });
     const connectionId = asObject(claim.operation.snapshot).connectionId;
     if (outcome === 'failed' && typeof connectionId === 'string') {
-      // The run record ends with the run; the next run starts a fresh inventory pass.
+      // The run record ends with the run; the next run carries on from a listing this one did not finish (FL-1685).
       await this.repository.endRun(connectionId, 'failed').catch(() => {});
     }
     // FL-538: a pause the administrator chose is not a failure to warn the owner about
@@ -1069,6 +1074,17 @@ export class ICloudSyncService {
           response.complete,
           db,
         );
+        if ((kind === 'assets' || kind === 'changes') && !smartAlbum && library) {
+          // FL-1685: this page's photos go in line for download now, not after the whole library is listed
+          const assets = records.filter((record) => record.recordType === 'CPLAsset' && !record.deleted);
+          await this.repository.materializeEarly(
+            current,
+            libraryKey,
+            library,
+            assets.map((record) => record.recordName),
+            db,
+          );
+        }
         return false;
       };
       if (!(await page('libraries', 'libraries', ''))) {
