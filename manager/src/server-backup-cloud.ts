@@ -47,17 +47,31 @@ interface Saved {
   unrecorded: Entry | null;
   /** The older machine whose backups this one has asked to take over. */
   takeover: { fromInstanceId: string } | null;
+  /** The Cloud id under which the photo server has vouched for this Manager, once Cloud has taken that. */
+  attached?: string | null;
 }
 
 const KEY = 'server-backup-cloud';
 
+/** What a failure is called on Manager's screens and in a run's history: Cloud's own code, in Manager's spelling. */
+export function reasonOf(error: unknown): string {
+  if (error instanceof CloudError) {
+    const detail = error.code === 'entitlement-missing' ? error.data?.missing : error.code === 'request-invalid' ? error.detail : null;
+    const code = `${error.code}${typeof detail === 'string' ? `_${detail}` : ''}`.replaceAll('-', '_').toLowerCase();
+    return /^[a-z0-9_]{1,60}$/.test(code) ? (code.startsWith('cloud_') ? code : `cloud_${code}`) : 'cloud_refused';
+  }
+  return (error as { code?: string })?.code ?? (error instanceof Error ? error.message : String(error));
+}
+
 export class CloudBackup {
-  private linking: { deviceCode: string; userCode: string; approveAt: string; until: number; linkToken: string | null } | null = null;
+  private linking: { name: string; deviceCode: string; userCode: string; approveAt: string; until: number; intervalSec: number; linkToken: string | null } | null = null;
 
   constructor(
     private store: Store,
     private cloud: Cloud,
-    private machine: () => { name: string; version: string; platform: string },
+    private machine: { version: string; platform: string },
+    /** Asks the photo server on this machine to vouch for the Manager with this Cloud id. Null when it can't. */
+    private vouch: (machineInstanceId: string) => Promise<{ statement: unknown; signature: string } | null> = async () => null,
   ) {}
 
   private saved(): Saved {
@@ -91,22 +105,22 @@ export class CloudBackup {
     return {
       state: account ? 'linked' : this.linking && this.linking.until > Date.now() ? 'linking' : 'unlinked',
       account,
-      code: account || !this.linking ? null : { userCode: this.linking.userCode, approveAt: this.linking.approveAt },
+      code: account || !this.linking || this.linking.until <= Date.now() ? null : { userCode: this.linking.userCode, approveAt: this.linking.approveAt, intervalSec: this.linking.intervalSec },
       locationId,
       takeover,
       unrecorded: unrecorded !== null,
     };
   }
 
-  /** Starts linking: the owner approves the code on the account site. */
-  async startLink() {
+  /** Starts linking: the owner approves the code on the account site. `name` is what the account site calls this server. */
+  async startLink(name: string) {
     if (this.linked) throw new Refusal('server_backup_cloud_already_linked');
     // A new id and key each time. One that Cloud never accepted is worth nothing, and one an older Cloud
     // linked as a photo server must never be used again.
     const identity = createIdentity();
     await this.keep(identity);
-    const started = await this.cloud.startLink(identity, this.machine());
-    this.linking = { deviceCode: started.deviceCode, userCode: started.userCode, approveAt: started.approveAt, until: Date.now() + started.expiresInSec * 1000, linkToken: null };
+    const started = await this.cloud.startLink(identity, { name, ...this.machine });
+    this.linking = { name, intervalSec: started.intervalSec, deviceCode: started.deviceCode, userCode: started.userCode, approveAt: started.approveAt, until: Date.now() + started.expiresInSec * 1000, linkToken: null };
     return { userCode: started.userCode, approveAt: started.approveAt, expiresInSec: started.expiresInSec, intervalSec: started.intervalSec };
   }
 
@@ -129,7 +143,7 @@ export class CloudBackup {
     }
     try {
       const text = await readFile(this.file(), 'utf8');
-      const account = await this.cloud.register(JSON.parse(text) as Identity, linking.linkToken, this.machine());
+      const account = await this.cloud.register(JSON.parse(text) as Identity, linking.linkToken, { name: linking.name, ...this.machine });
       this.save({ account: { label: account.account, email: account.email, dataRegion: account.dataRegion } });
       this.linking = null;
       return 'linked';
@@ -143,8 +157,12 @@ export class CloudBackup {
   async locations() {
     return this.cloud.locations(await this.identity());
   }
-  setLocation(locationId: string) {
-    this.save({ locationId });
+  /** Where the first backup makes its storage. Only a place Cloud offers; with one on offer there is nothing to choose. */
+  async setLocation(locationId?: string) {
+    const offered = await this.locations();
+    const chosen = locationId === undefined && offered.length === 1 ? offered[0] : offered.find((place) => place.locationId === locationId);
+    if (!chosen) throw new Refusal('server_backup_cloud_no_location');
+    this.save({ locationId: chosen.locationId });
   }
 
   /** The account's other backup machines whose backups this one may ask for. */
@@ -170,6 +188,19 @@ export class CloudBackup {
       this.save({ takeover: null, unrecorded: null });
     } else if (answer.status !== 'pending') this.save({ takeover: null });
     return answer;
+  }
+
+  /**
+   * Shares the photo server's licence and plan: its signed word that this Manager manages it goes to Cloud
+   * once per Cloud id (a takeover changes the id, and Cloud then wants it again). Without a photo server
+   * that can vouch, this Manager stands on its own and Cloud says what it lacks.
+   */
+  private async attach(identity: Identity) {
+    if (this.saved().attached === identity.instanceId) return;
+    const vouched = await this.vouch(identity.instanceId);
+    if (!vouched) return;
+    await this.cloud.attach(identity, vouched);
+    this.save({ attached: identity.instanceId });
   }
 
   /** Sends a record Cloud has not confirmed. Sending the same one twice is answered with the first. */
@@ -222,6 +253,8 @@ export class CloudBackup {
       try {
         return await this.cloud.rotate(identity, { operation, ...under });
       } catch (error) {
+        // Cloud no longer counts the photo server's licence for us: it is asked to vouch again next time.
+        if (error instanceof CloudError && error.code === 'entitlement-missing') this.save({ attached: null });
         // No storage yet: this is the first backup, and its storage is made where the owner chose.
         if (!(error instanceof CloudError) || error.status !== 404) throw error;
         const { locationId } = this.saved();
@@ -237,6 +270,9 @@ export class CloudBackup {
     };
 
     try {
+      // Before the first credentials are asked for, so a licence shared by the photo server counts at once.
+      // A photo server that can't vouch right now doesn't stop a Manager that has what it needs anyway.
+      if (kind === 'backup') await this.attach(identity).catch(() => undefined);
       const first = await take(kind === 'backup' ? 'upload' : 'restore');
       let sequence: number | null = null;
       let previousDigest: string | null = null;

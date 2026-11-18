@@ -1,7 +1,8 @@
 <script lang="ts">
   // FL-1668: the Server Backup workspace, on the state Manager serves at `manager-api/server-backup`.
-  // The screens follow the mock approved in FL-1664. Parts that need Frameleaf Cloud (connecting, plan
-  // storage, the recovery kit) arrive with the Cloud link; nothing here pretends they exist.
+  // The screens follow the mock approved in FL-1664. FL-1672 adds the ones that need Frameleaf Cloud:
+  // connecting, and restoring on a server that replaces another. `data.cloud` is null where backups go
+  // to a folder, and then none of that is shown.
   import { untrack } from 'svelte';
   import FolderPicker from './FolderPicker.svelte';
   import Icon from './Icon.svelte';
@@ -39,7 +40,14 @@
     if (!edited) draft = clone(data.settings);
   });
 
-  let step = $state(0); // 0: not setting up. 1 folders, 2 key, 3 schedule.
+  type Step = '' | 'connect' | 'folders' | 'key' | 'schedule' | 'server' | 'oldkey' | 'restore';
+  const stepNames: Record<string, string> = { connect: 'Connect Cloud', folders: 'Choose folders', key: 'Save your key', schedule: 'Schedule', server: 'Choose server', oldkey: 'Recovery key', restore: 'Choose what to restore' };
+  const cloud = $derived(data.cloud);
+  // Setting up, or bringing back what an older server stored. '' is neither.
+  let flow = $state<'setup' | 'restore'>('setup');
+  let step = $state<Step>('');
+  const order = $derived<Step[]>(flow === 'restore' ? ['connect', 'server', 'oldkey', 'restore'] : cloud ? ['connect', 'folders', 'key', 'schedule'] : ['folders', 'key', 'schedule']);
+  const move = (by: number) => (step = order[order.indexOf(step) + by] ?? '');
   let firstKey = $state('');
   let saved = $state(false);
   let picking = $state<'folder' | 'restore' | null>(null);
@@ -82,14 +90,109 @@
     if (save) void saveSettings();
   }
 
-  function beginSetup() {
-    step = 1;
-    edited = true;
+  function begin(which: 'setup' | 'restore', at?: Step) {
+    flow = which;
+    step = at ?? order[0]!;
+    if (which === 'setup') edited = true;
   }
   const showFirstKey = () =>
     run(async () => {
       firstKey = (await api('server-backup-first-key', {})).key;
-      step = 2;
+      step = 'key';
+    });
+
+  // Connect Cloud. A code is asked for once on arriving; after that only the button asks, so a Cloud that
+  // can't be reached is not asked over and over.
+  let codeAsked = false;
+  let linkEnded = $state<'' | 'refused' | 'expired'>('');
+  let places = $state<{ locationId: string; city: string; country: string }[]>([]);
+  let place = $state('');
+  const getCode = () => {
+    linkEnded = '';
+    return run(async () => change(await api('server-backup-cloud-link', {})));
+  };
+  $effect(() => {
+    if (step !== 'connect' || cloud?.state !== 'unlinked' || codeAsked) return;
+    codeAsked = true;
+    untrack(() => void getCode());
+  });
+  // Looks for the owner's approval at the pace Cloud asked for.
+  $effect(() => {
+    if (step !== 'connect' || cloud?.state !== 'linking') return;
+    const timer = setInterval(async () => {
+      const view = await api('server-backup-cloud-check', {}).catch(() => null);
+      if (!view) return;
+      if (view.linking === 'refused' || view.linking === 'expired') linkEnded = view.linking;
+      change(view);
+    }, (cloud.code?.intervalSec ?? 5) * 1000);
+    return () => clearInterval(timer);
+  });
+  const needsPlace = $derived(flow === 'setup' && cloud?.state === 'linked' && !cloud.locationId);
+  $effect(() => {
+    if (step !== 'connect' || !needsPlace || places.length) return;
+    untrack(() => void api('server-backup-cloud-locations', {}).then((answer) => ((places = answer.locations), (place = places[0]?.locationId ?? ''))).catch(() => undefined));
+  });
+  const connected = () =>
+    run(async () => {
+      if (needsPlace) change(await api('server-backup-cloud-location', { locationId: place }));
+      move(1);
+    });
+  const shortAddress = (address: string) => {
+    const url = new URL(address);
+    return url.host + url.pathname.replace(/\/$/, '');
+  };
+
+  // Choose server: the account's other servers that have backups, then the owner's approval in Cloud.
+  let machines = $state<{ instanceId: string; name: string; lastBackupAt: string | null }[] | null>(null);
+  let from = $state('');
+  let answered = $state('');
+  $effect(() => {
+    if (step !== 'server' || cloud?.takeover || machines !== null) return;
+    untrack(() => void run(async () => ((machines = (await api('server-backup-cloud-machines', {})).machines), (from = machines![0]?.instanceId ?? ''))));
+  });
+  const askTakeover = () =>
+    run(async () => {
+      answered = '';
+      change(await api('server-backup-cloud-takeover', { instanceId: from }));
+    });
+  $effect(() => {
+    if (step !== 'server' || !cloud?.takeover) return;
+    const timer = setInterval(async () => {
+      const view = await api('server-backup-cloud-takeover-check', {}).catch(() => null);
+      if (!view) return;
+      change(view);
+      if (view.takeover === 'approved') step = 'oldkey';
+      else if (view.takeover !== 'pending') ((answered = view.takeover), (machines = null));
+    }, 10_000);
+    return () => clearInterval(timer);
+  });
+  // Choose what to restore: what the chosen backup protected, each folder going back where it was.
+  type Kept = { path: string; kind: 'manager' | 'folder'; files: number; bytes: number; reachable: boolean };
+  let kept = $state<Kept[] | null>(null);
+  let keptFor = '';
+  let wanted = $state<string[]>([]);
+  let byFile = $state(false);
+  $effect(() => {
+    if (step !== 'restore' || !snapshot || keptFor === snapshot) return;
+    keptFor = snapshot;
+    untrack(
+      () =>
+        void api('server-backup-contents', { snapshot })
+          .then((answer) => ((kept = answer.folders), (wanted = (answer.folders ?? []).filter((folder: Kept) => folder.reachable).map((folder: Kept) => folder.path))))
+          .catch(() => (kept = null)),
+    );
+  });
+  const wantedBytes = $derived((kept ?? []).filter((folder) => wanted.includes(folder.path)).reduce((sum, folder) => sum + folder.bytes, 0));
+  const want = (path: string) => (wanted = wanted.includes(path) ? wanted.filter((item) => item !== path) : [...wanted, path]);
+  const restoreWhole = () => run(async () => change(await api('server-backup-restore', { snapshot, items: wanted.map((path) => path.split('/').filter(Boolean)), into: null })));
+  let oldKey = $state('');
+  const adoptKey = () =>
+    run(async () => {
+      change(await api('server-backup-adopt-key', { key: oldKey }));
+      oldKey = '';
+      snapshot = data.snapshots[0]?.key ?? '';
+      entries = null;
+      step = 'restore';
     });
   const finishSetup = () =>
     run(async () => {
@@ -97,7 +200,7 @@
       await api('server-backup-key-saved', {});
       change(await api('server-backup-run', {}));
       edited = false;
-      step = 0;
+      step = '';
       go('overview');
     });
 
@@ -112,7 +215,7 @@
     });
   }
   $effect(() => {
-    if (page === 'restore' && entries === null && snapshot && !busy) void open(path);
+    if ((step === 'restore' || (data.state === 'on' && page === 'restore')) && entries === null && snapshot && !busy) void open(path);
   });
   const toggle = (name: string) => (picked = picked.includes(name) ? picked.filter((item) => item !== name) : [...picked, name]);
   const startRestore = () =>
@@ -141,13 +244,23 @@
     worker_exited: 'It stopped unexpectedly.',
     manager_restarted: 'Manager restarted while it ran.',
     stopped: 'It was stopped.',
+    cloud_unreachable: 'Frameleaf Cloud could not be reached.',
+    cloud_entitlement_missing_licence: 'This server needs a Server licence to back up to Frameleaf Cloud.',
+    cloud_entitlement_missing_plan: 'This account needs a Frameleaf Cloud plan to back up.',
+    cloud_lease_held: 'Frameleaf Cloud had another backup of this server under way.',
+    cloud_lease_lost: 'Frameleaf Cloud ended this backup’s turn, so it stopped at once.',
+    cloud_record_failed: 'It was stored, but Frameleaf Cloud could not record it. The next backup records it first.',
+    server_backup_cloud_no_location: 'No place to store backups has been chosen.',
+    server_backup_cloud_not_linked: 'This server is not connected to Frameleaf Cloud.',
   };
+  /** Refused before anything was read or sent. */
+  const neverStarted = (error: string | null) => !!error && /^(cloud_|server_backup_cloud_)/.test(error) && !['cloud_lease_lost', 'cloud_record_failed'].includes(error);
   /** One line of history in plain words. */
   function told(item: any): { icon: string; title: string; detail: string } {
     const what = item.kind === 'restore' ? 'Restore' : item.kind === 'verify' ? 'Check' : 'Backup';
     if (item.state === 'running') return { icon: 'update', title: `${what} running`, detail: 'Started ' + midSentence(when(item.startedAt)) + '.' };
     if (item.state === 'stopped') return { icon: 'stop', title: `${what} stopped`, detail: item.kind === 'backup' ? 'What was stored is kept. The next backup carries on from there.' : (problem[item.error] ?? 'It was stopped.') };
-    if (item.state === 'failed') return { icon: 'warning', title: `${what} didn’t finish`, detail: (problem[item.error] ?? item.error ?? 'Something went wrong.') + (item.kind === 'backup' ? ' The next backup carries on from where this one got to.' : '') };
+    if (item.state === 'failed') return { icon: 'warning', title: `${what} didn’t finish`, detail: (problem[item.error] ?? item.error ?? 'Something went wrong.') + (item.kind === 'backup' && !neverStarted(item.error) ? ' The next backup carries on from where this one got to.' : '') };
     const outcome = item.outcome ?? {};
     if (item.kind === 'restore')
       return { icon: 'restore', title: `Restored ${outcome.files.toLocaleString()} ${outcome.files === 1 ? 'file' : 'files'}`, detail: formatBytes(outcome.bytes) + (outcome.movedAside ? ` · ${outcome.movedAside} already there, kept under another name` : '') };
@@ -178,7 +291,7 @@
 {/snippet}
 {#snippet folderRows(removable: boolean)}
   {#each always as folder, index}
-    <div class="list-row" class:sb-first={index === 0}><Icon name="settings" /><div class="grow"><strong>Manager’s recovery points</strong><p>What Manager needs to bring your photo library’s albums, people and settings back.</p></div>{#if folder.bytes !== undefined}<span class="sb-size">{formatBytes(folder.bytes)}</span>{/if}<span class="badge">Always included</span></div>
+    <div class="list-row sb-stack" class:sb-first={index === 0}><Icon name="settings" /><div class="grow"><strong>Manager’s recovery points</strong><p>What Manager needs to bring your photo library’s albums, people and settings back.</p></div>{#if folder.bytes !== undefined}<span class="sb-size">{formatBytes(folder.bytes)}</span>{/if}<span class="badge">Always included</span></div>
   {/each}
   {#each chosen as folder}
     <div class="list-row"><Icon name={folder.path === photosPath ? 'images' : 'folder'} /><div class="grow"><strong>{folder.path}</strong><p>{folder.files !== undefined ? `${folder.files.toLocaleString()} files` : 'Measured at the next backup'}</p></div>{#if folder.bytes !== undefined}<span class="sb-size">{formatBytes(folder.bytes)}</span>{/if}{#if removable}<button class="button quiet" disabled={busy} onclick={() => edit((settings) => (settings.folders = settings.folders.filter((item) => item !== folder.path)))}>Remove</button>{/if}</div>
@@ -188,7 +301,7 @@
   {#if photosPath && !photosProtected}
     <section class="card mt16">
       <div class="card-header"><h2>Left out</h2></div>
-      <div class="list-row sb-first"><Icon name="images" /><div class="grow"><strong>Your photo library</strong><p>{photosPath} · Cloud Backup in Frameleaf looks after it. Adding it here stores it a second time.</p></div><button class="button quiet" disabled={busy} onclick={() => edit((settings) => settings.folders.push(photosPath!))}>Add anyway</button></div>
+      <div class="list-row sb-first sb-stack"><Icon name="images" /><div class="grow"><strong>Your photo library</strong><p>{photosPath} · Cloud Backup in Frameleaf looks after it. Adding it here stores it a second time.</p></div><button class="button quiet" disabled={busy} onclick={() => edit((settings) => settings.folders.push(photosPath!))}>Add anyway</button></div>
     </section>
   {/if}
 {/snippet}
@@ -209,83 +322,7 @@
   {/each}
 {/snippet}
 
-{#if data.state !== 'on' && step === 0}
-  {@render heading('Server Backup', 'Keep a private, encrypted copy of this server’s other folders.')}
-  <section class="card">
-    <div class="card-body sb-intro">
-      <span class="sb-mark"><Icon name="shield" /></span>
-      <div>
-        <h2>Protect more than your photos</h2>
-        <ul class="checklist">
-          <li><Icon name="check" /><span>Choose any folders on this server: documents, app data, family shares.</span></li>
-          <li><Icon name="check" /><span>Everything is encrypted here first. File names and contents open only with your recovery key.</span></li>
-          <li><Icon name="check" /><span>After the first backup, only what changed is sent.</span></li>
-          <li><Icon name="check" /><span>Restore one file, one folder or everything, as it was on the day you choose.</span></li>
-        </ul>
-      </div>
-    </div>
-    <div class="card-footer"><span class="muted">{data.snapshots.length ? `${data.snapshots.length} earlier backups are still stored and can be restored once it is on.` : 'Three steps. Nothing is sent until you start the first backup.'}</span><button class="button primary" disabled={busy} onclick={beginSetup}>Set up Server Backup</button></div>
-  </section>
-  <div class="notice mt16"><Icon name="images" /><div><strong>Your photos are looked after separately</strong><p>Cloud Backup in Frameleaf protects your photo library. Server Backup leaves that folder out unless you add it.</p></div></div>
-{:else if data.state !== 'on'}
-  {@render heading('Set up Server Backup', 'Three steps. Nothing is sent until you start the first backup.')}
-  {@render steps(['Choose folders', 'Save your key', 'Schedule'], step - 1)}
-  {#if step === 1}
-    <section class="card">
-      <div class="card-header"><h2>Folders to protect</h2><button class="button quiet" onclick={() => (picking = 'folder')}><Icon name="plus" />Add a folder…</button></div>
-      {@render folderRows(true)}
-    </section>
-    {@render leftOut()}
-    <div class="wizard-footer"><button class="button quiet" onclick={() => (step = 0)}><Icon name="back" />Back</button><button class="button primary" disabled={busy || draft.folders.length === 0} onclick={showFirstKey}>Continue<Icon name="arrow" /></button></div>
-  {:else if step === 2}
-    <section class="card">
-      <div class="card-header"><h2>Save your recovery key</h2></div>
-      <div class="card-body stack">
-        <p class="muted">This key was made on this server and stays here. It is the only way to open your backups on another server.</p>
-        <p class="sb-key">{grouped(firstKey)}</p>
-        <div class="actions sb-wrap"><button class="button" onclick={() => navigator.clipboard?.writeText(firstKey)}>Copy key</button></div>
-        <div class="notice warning"><Icon name="warning" /><div><strong>Frameleaf can’t recover this for you</strong><p>Without the key nobody can open your backups, including us. Keep it off this server: in a password manager or printed.</p></div></div>
-        <label class="sb-confirm"><input type="checkbox" bind:checked={saved} /><span>I’ve saved the recovery key somewhere off this server</span></label>
-      </div>
-    </section>
-    <div class="wizard-footer"><button class="button quiet" onclick={() => (step = 1)}><Icon name="back" />Back</button><button class="button primary" disabled={!saved} onclick={() => (step = 3)}>Continue<Icon name="arrow" /></button></div>
-  {:else}
-    <section class="card">
-      <div class="card-header"><h2>When to back up</h2></div>
-      <div class="card-body">{@render scheduleFields()}</div>
-    </section>
-    <div class="notice mt16"><Icon name="clock" /><div><strong>The first backup takes the longest</strong><p>Everything has to be stored once. After that only changes are, usually in minutes. You can keep using the server meanwhile.</p></div></div>
-    <div class="wizard-footer"><button class="button quiet" onclick={() => (step = 2)}><Icon name="back" />Back</button><button class="button primary" disabled={busy} onclick={finishSetup}>Start first backup</button></div>
-  {/if}
-{:else if page === 'folders'}
-  {@render heading('Folders', 'What Server Backup protects on this server.')}
-  <section class="card">
-    <div class="card-header"><h2>Protected</h2><button class="button quiet" disabled={busy} onclick={() => (picking = 'folder')}><Icon name="plus" />Add a folder…</button></div>
-    {@render folderRows(true)}
-    <div class="card-footer"><span>{measured ? `${formatBytes(protectedBytes)} at the last backup` : 'Sizes appear after the next backup'}</span></div>
-  </section>
-  {@render leftOut()}
-  <section class="card mt16">
-    <div class="card-header"><h2>Skipped inside these folders</h2></div>
-    <div class="card-body"><div class="sb-chips">{#each draft.exclusions as item}<span class="badge">{item}</span>{/each}</div><p class="meta mt16">Temporary files and caches that apps rebuild by themselves.</p></div>
-  </section>
-{:else if page === 'schedule'}
-  {@render heading('Schedule', 'When backups run, how fast they send and how long earlier versions are kept.')}
-  <section class="card">
-    <div class="card-body">{@render scheduleFields()}</div>
-    <div class="card-footer"><span>{data.next ? `Next backup ${nextText(data.next)}` : ''}</span><button class="button primary" disabled={busy || !edited} onclick={saveSettings}>Save</button></div>
-  </section>
-{:else if page === 'restore'}
-  {@render heading('Restore', 'Bring back a file, a folder or everything, as it was on a date you choose.')}
-  {#if running?.kind === 'restore'}
-    <section class="card sb-status mb16" data-tone="running">
-      <div class="sb-status-body">
-        <span class="sb-mark"><Icon name="restore" /></span>
-        <div><span class="sb-eyebrow">Restoring now</span><h2>{running.files.toLocaleString()} files · {formatBytes(running.bytes)}</h2><p class="meta">Files already there are kept under another name.</p></div>
-        <button class="button quiet" disabled={busy} onclick={() => act('server-backup-stop')}><Icon name="stop" />Stop</button>
-      </div>
-    </section>
-  {/if}
+{#snippet restoreBody()}
   {#if data.snapshots.length === 0}
     <section class="card"><div class="card-body"><p class="muted">There is nothing to restore until the first backup finishes.</p></div></section>
   {:else}
@@ -316,6 +353,173 @@
       </section>
     {/if}
   {/if}
+{/snippet}
+{#snippet restoringNow()}
+  {#if running?.kind === 'restore'}
+    <section class="card sb-status mb16" data-tone="running">
+      <div class="sb-status-body">
+        <span class="sb-mark"><Icon name="restore" /></span>
+        <div><span class="sb-eyebrow">Restoring now</span><h2>{running.files.toLocaleString()} files · {formatBytes(running.bytes)}</h2><p class="meta">Files already there are kept under another name.</p></div>
+        <button class="button quiet" disabled={busy} onclick={() => act('server-backup-stop')}><Icon name="stop" />Stop</button>
+      </div>
+    </section>
+  {/if}
+{/snippet}
+
+{#if data.state !== 'on' && step === ''}
+  {@render heading('Server Backup', 'Keep a private, encrypted copy of this server’s other folders.')}
+  <section class="card">
+    <div class="card-body sb-intro">
+      <span class="sb-mark"><Icon name="shield" /></span>
+      <div>
+        <h2>Protect more than your photos</h2>
+        <ul class="checklist">
+          <li><Icon name="check" /><span>Choose any folders on this server: documents, app data, family shares.</span></li>
+          <li><Icon name="check" /><span>Everything is encrypted here first. File names and contents open only with your recovery key.</span></li>
+          <li><Icon name="check" /><span>After the first backup, only what changed is sent.</span></li>
+          <li><Icon name="check" /><span>Restore one file, one folder or everything, as it was on the day you choose.</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="card-footer">
+      {#if cloud && data.snapshots.length}<button class="text-button sb-plain" onclick={() => begin('restore', 'restore')}>Restore from the {data.snapshots.length} backups stored</button>
+      {:else if cloud}<button class="text-button sb-plain" onclick={() => begin('restore', cloud.state === 'linked' ? 'server' : 'connect')}>Restore this server from a backup you already have</button>
+      {:else}<span class="muted">{data.snapshots.length ? `${data.snapshots.length} earlier backups are still stored and can be restored once it is on.` : 'Three steps. Nothing is sent until you start the first backup.'}</span>{/if}
+      <button class="button primary" disabled={busy} onclick={() => begin('setup')}>Set up Server Backup</button>
+    </div>
+  </section>
+  {#if cloud?.takeover}<div class="notice warning mt16"><Icon name="clock" /><div class="grow"><strong>Waiting for your approval in Frameleaf Cloud</strong><p>This server asked to restore from another server’s backups.</p></div><button class="button" onclick={() => begin('restore', 'server')}>Continue</button></div>{/if}
+  {#if cloud}
+    <section class="card mt16">
+      <div class="card-header"><h2>What you need</h2></div>
+      <div class="list-row sb-first"><Icon name="key" /><div class="grow"><strong>Server licence</strong><p>The one your photo server has covers Server Backup too.</p></div></div>
+      <div class="list-row"><Icon name="server" /><div class="grow"><strong>Frameleaf Cloud plan</strong><p>Server Backup shares the plan’s storage with Cloud Backup.</p></div></div>
+    </section>
+  {/if}
+  <div class="notice mt16"><Icon name="images" /><div><strong>Your photos are looked after separately</strong><p>Cloud Backup in Frameleaf protects your photo library. Server Backup leaves that folder out unless you add it.</p></div></div>
+{:else if data.state !== 'on'}
+  {#if flow === 'restore'}{@render heading('Restore this server', 'Bring back your folders from the backups another server stored.')}
+  {:else}{@render heading('Set up Server Backup', `${order.length === 4 ? 'Four' : 'Three'} steps. Nothing is sent until you start the first backup.`)}{/if}
+  {@render steps(order.map((name) => stepNames[name]!), order.indexOf(step))}
+  {#if step === 'connect'}
+    <section class="card">
+      <div class="card-header"><h2>Connect this server to Frameleaf Cloud</h2></div>
+      {#if cloud.state === 'linked'}
+        <div class="list-row sb-first"><Icon name="check-circle" /><div class="grow"><strong>Connected as {cloud.account.label}</strong><p>{cloud.account.email}</p></div></div>
+        {#if needsPlace && places.length > 1}
+          <div class="card-body sb-place"><label class="field sb-narrow"><span>Store backups in</span><select bind:value={place}>{#each places as item}<option value={item.locationId}>{item.city}, {item.country}</option>{/each}</select><small class="muted">Chosen once. This server’s backups stay there.</small></label></div>
+        {/if}
+      {:else if cloud.code}
+        <div class="card-body sb-connect">
+          <div><p class="muted">On your phone or computer, open</p><p><a class="sb-address" href={cloud.code.approveAt} target="_blank" rel="noreferrer">{shortAddress(cloud.code.approveAt)}</a></p><p class="muted sb-then">and enter this code</p><p class="sb-code">{cloud.code.userCode}</p></div>
+          <p class="sb-waiting"><span class="spinner"></span>Waiting for you to approve…</p>
+        </div>
+      {:else}
+        <div class="card-body stack"><p class="muted">{linkEnded === 'refused' ? 'That request was turned down on the account site.' : linkEnded === 'expired' ? 'That code ran out before it was approved.' : 'Manager asks Frameleaf Cloud for a code, and you approve it on your account.'}</p><div><button class="button" disabled={busy} onclick={getCode}>Get a {linkEnded ? 'new ' : ''}code</button></div></div>
+      {/if}
+      <div class="card-footer"><span class="muted sb-lock"><Icon name="lock" />Manager never sees your Cloud password.</span><div class="actions"><button class="button quiet" onclick={() => (step = '')}>Back</button><button class="button primary" disabled={busy || cloud.state !== 'linked' || (needsPlace && !place)} onclick={connected}>Continue<Icon name="arrow" /></button></div></div>
+    </section>
+    <div class="notice mt16"><Icon name="server" /><div><strong>Manager gets its own connection</strong><p>Backups and restores keep working when Frameleaf is stopped, and on a new server before Frameleaf is installed.</p></div></div>
+  {:else if step === 'server'}
+    <section class="card">
+      <div class="card-header"><h2>Which server’s backups?</h2></div>
+      {#if cloud.takeover}
+        <div class="card-body sb-connect">
+          <div><strong>Approve this in Frameleaf Cloud</strong><p class="muted sb-note">We’ve emailed {cloud.account.email}. Open your Frameleaf Cloud account and approve this server taking over those backups. The request ends after three days.</p></div>
+          <p class="sb-waiting"><span class="spinner"></span>Waiting for you to approve…</p>
+        </div>
+      {:else}
+        {#each machines ?? [] as machine, index}
+          <label class="list-row sb-check" class:sb-first={index === 0}><input type="radio" name="sb-from" checked={from === machine.instanceId} onchange={() => (from = machine.instanceId)} /><Icon name="server" /><div class="grow"><strong>{machine.name}</strong><p>{machine.lastBackupAt ? `Last backup ${midSentence(when(machine.lastBackupAt))}` : 'No backup recorded yet'}</p></div></label>
+        {:else}
+          <div class="card-body"><p class="muted">{machines === null ? 'Looking in your account…' : 'No other server in this account has backups in Frameleaf Cloud.'}</p></div>
+        {/each}
+      {/if}
+      <div class="card-footer"><span class="muted">{answered ? `That request was ${answered === 'denied' ? 'turned down' : 'not answered in time'}. Choose a server to ask again.` : 'Only you can approve this, in your Frameleaf Cloud account.'}</span><div class="actions"><button class="button quiet" onclick={() => (step = '')}>Back</button>{#if !cloud.takeover}<button class="button primary" disabled={busy || !from} onclick={askTakeover}>Ask to restore from it</button>{/if}</div></div>
+    </section>
+    <div class="notice warning mt16"><Icon name="warning" /><div><strong>The old server stops backing up when you approve</strong><p>Its backups carry on from this server. If the old server is still running, it can no longer back up or restore.</p></div></div>
+  {:else if step === 'oldkey'}
+    <section class="card">
+      <div class="card-header"><h2>Enter that server’s recovery key</h2></div>
+      <form class="card-body stack" onsubmit={(event) => { event.preventDefault(); void adoptKey(); }}>
+        <p class="muted">The key you saved when Server Backup was set up on the old server. It opens the backups here. Frameleaf never receives it.</p>
+        <textarea class="sb-keyfield" bind:value={oldKey} rows="3" spellcheck="false" autocomplete="off" aria-label="Recovery key" required></textarea>
+        <div><button class="button primary" disabled={busy || !oldKey.trim()}>Open the backups</button></div>
+      </form>
+    </section>
+  {:else if step === 'restore'}
+    {@render restoringNow()}
+    {#if kept && !byFile}
+      <section class="card">
+        <div class="list-row sb-first sb-pick-row"><Icon name="clock" /><div class="grow"><strong>As it was on</strong><p>The newest backup is chosen. Earlier dates keep earlier versions of every file.</p></div><select class="sb-pick" aria-label="Backup date" bind:value={snapshot}>{#each data.snapshots as item}<option value={item.key}>{when(item.time)}</option>{/each}</select></div>
+      </section>
+      <section class="card mt16">
+        <div class="card-header"><h2>What to restore</h2><span class="sb-size">{formatBytes(wantedBytes)}</span></div>
+        {#each kept as folder, index}
+          <label class="list-row sb-check" class:sb-first={index === 0}>
+            <input type="checkbox" aria-label="Restore {folder.path}" checked={wanted.includes(folder.path)} disabled={!folder.reachable} onchange={() => want(folder.path)} />
+            <Icon name={folder.kind === 'manager' ? 'settings' : 'folder'} />
+            <div class="grow"><strong>{folder.kind === 'manager' ? 'Manager’s photo recovery points' : folder.path}</strong><p>{!folder.reachable ? `Manager can’t reach ${folder.path} on this server. Share that folder with Manager, then come back.` : folder.kind === 'manager' ? 'What Manager needs to bring back your photo library’s albums, people and settings.' : `Back to ${folder.path}`}</p></div>
+            <span class="sb-size">{formatBytes(folder.bytes)}</span>
+          </label>
+        {/each}
+        <div class="card-footer"><span class="muted sb-lock"><Icon name="shield" />Files already in a folder are kept and renamed, never deleted.</span><button class="button primary" disabled={busy || !!running || wanted.length === 0} onclick={restoreWhole}>Restore {formatBytes(wantedBytes)}</button></div>
+      </section>
+      <p class="mt16"><button class="text-button sb-plain" onclick={() => (byFile = true)}>Choose individual files instead</button></p>
+    {:else}
+      {#if kept}<p class="mb16"><button class="text-button sb-plain" onclick={() => (byFile = false)}>Back to the whole server</button></p>{/if}
+      {@render restoreBody()}
+    {/if}
+    <div class="wizard-footer"><button class="button quiet" onclick={() => (step = '')}><Icon name="back" />Done</button><button class="button" disabled={busy} onclick={() => begin('setup', 'folders')}>Set up backups on this server</button></div>
+  {:else if step === 'folders'}
+    <section class="card">
+      <div class="card-header"><h2>Folders to protect</h2><button class="button quiet" onclick={() => (picking = 'folder')}><Icon name="plus" />Add a folder…</button></div>
+      {@render folderRows(true)}
+    </section>
+    {@render leftOut()}
+    <div class="wizard-footer"><button class="button quiet" onclick={() => move(-1)}><Icon name="back" />Back</button><button class="button primary" disabled={busy || draft.folders.length === 0} onclick={showFirstKey}>Continue<Icon name="arrow" /></button></div>
+  {:else if step === 'key'}
+    <section class="card">
+      <div class="card-header"><h2>Save your recovery key</h2></div>
+      <div class="card-body stack">
+        <p class="muted">This key was made on this server and stays here. It is the only way to open your backups on another server.</p>
+        <p class="sb-key">{grouped(firstKey)}</p>
+        <div class="actions sb-wrap"><button class="button" onclick={() => navigator.clipboard?.writeText(firstKey)}>Copy key</button></div>
+        <div class="notice warning"><Icon name="warning" /><div><strong>Frameleaf can’t recover this for you</strong><p>Without the key nobody can open your backups, including us. Keep it off this server: in a password manager or printed.</p></div></div>
+        <label class="sb-confirm"><input type="checkbox" bind:checked={saved} /><span>I’ve saved the recovery key somewhere off this server</span></label>
+      </div>
+    </section>
+    <div class="wizard-footer"><button class="button quiet" onclick={() => (step = 'folders')}><Icon name="back" />Back</button><button class="button primary" disabled={!saved} onclick={() => (step = 'schedule')}>Continue<Icon name="arrow" /></button></div>
+  {:else}
+    <section class="card">
+      <div class="card-header"><h2>When to back up</h2></div>
+      <div class="card-body">{@render scheduleFields()}</div>
+    </section>
+    <div class="notice mt16"><Icon name="clock" /><div><strong>The first backup takes the longest</strong><p>Everything has to be stored once. After that only changes are, usually in minutes. You can keep using the server meanwhile.</p></div></div>
+    <div class="wizard-footer"><button class="button quiet" onclick={() => (step = 'key')}><Icon name="back" />Back</button><button class="button primary" disabled={busy} onclick={finishSetup}>Start first backup</button></div>
+  {/if}
+{:else if page === 'folders'}
+  {@render heading('Folders', 'What Server Backup protects on this server.')}
+  <section class="card">
+    <div class="card-header"><h2>Protected</h2><button class="button quiet" disabled={busy} onclick={() => (picking = 'folder')}><Icon name="plus" />Add a folder…</button></div>
+    {@render folderRows(true)}
+    <div class="card-footer"><span>{measured ? `${formatBytes(protectedBytes)} at the last backup` : 'Sizes appear after the next backup'}</span></div>
+  </section>
+  {@render leftOut()}
+  <section class="card mt16">
+    <div class="card-header"><h2>Skipped inside these folders</h2></div>
+    <div class="card-body"><div class="sb-chips">{#each draft.exclusions as item}<span class="badge">{item}</span>{/each}</div><p class="meta mt16">Temporary files and caches that apps rebuild by themselves.</p></div>
+  </section>
+{:else if page === 'schedule'}
+  {@render heading('Schedule', 'When backups run, how fast they send and how long earlier versions are kept.')}
+  <section class="card">
+    <div class="card-body">{@render scheduleFields()}</div>
+    <div class="card-footer"><span>{data.next ? `Next backup ${nextText(data.next)}` : ''}</span><button class="button primary" disabled={busy || !edited} onclick={saveSettings}>Save</button></div>
+  </section>
+{:else if page === 'restore'}
+  {@render heading('Restore', 'Bring back a file, a folder or everything, as it was on a date you choose.')}
+  {@render restoringNow()}
+  {@render restoreBody()}
 {:else if page === 'activity'}
   {@render heading('Activity', 'Every backup and restore, newest first.')}
   <section class="card">{@render history(data.runs)}</section>
@@ -339,6 +543,11 @@
   </section>
 {:else if page === 'settings'}
   {@render heading('Settings', 'Turn Server Backup off, or back on.')}
+  {#if cloud?.account}
+    <section class="card mb16">
+      <div class="list-row sb-first"><Icon name="server" /><div class="grow"><strong>Frameleaf Cloud</strong><p>Connected as {cloud.account.label} · {cloud.account.email}</p></div></div>
+    </section>
+  {/if}
   <section class="card">
     <div class="list-row sb-first"><Icon name="stop" /><div class="grow"><strong>Turn off Server Backup</strong><p>Backups stop. What is already stored stays where it is and can be restored after turning it back on.</p></div><button class="button quiet" disabled={busy || !!running} onclick={() => act('server-backup-turn-off')}>Turn off</button></div>
   </section>
@@ -421,6 +630,18 @@
   .sb-open { padding: 0; text-align: left; color: var(--accent); }
   .sb-reveal input { background: var(--raised); border: 1px solid var(--border); border-radius: 9px; color: var(--text); padding: 8px 11px; font-size: 14px; min-height: 36px; width: 200px; }
   .sb-shown { border-top: 1px solid var(--border); }
+  .sb-connect { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+  .sb-then { margin-top: 14px; }
+  .sb-address { font-size: 18px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+  .sb-code { font: 600 26px/1.3 ui-monospace, SFMono-Regular, monospace; letter-spacing: 3px; color: var(--accent); margin-top: 4px; }
+  .sb-waiting { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; white-space: nowrap; }
+  .sb-lock { display: flex; align-items: center; gap: 8px; }
+  .sb-lock :global(svg) { width: 15px; height: 15px; flex-shrink: 0; }
+  .sb-place { border-top: 1px solid var(--border); }
+  .sb-narrow { max-width: 420px; }
+  .sb-connect .sb-note { font-size: 14px; margin-top: 6px; max-width: 62ch; }
+  .sb-pick { width: auto; max-width: 260px; flex-shrink: 0; }
+  .sb-keyfield { font: 500 15px/1.7 ui-monospace, SFMono-Regular, monospace; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--raised); color: var(--text); width: 100%; resize: vertical; }
   .button :global(svg) { width: 15px; height: 15px; }
   @media (max-width: 640px) {
     .sb-status-body { grid-template-columns: auto minmax(0, 1fr); }
@@ -428,7 +649,14 @@
     .sb-fields { grid-template-columns: 1fr; }
     .sb-toolbar { flex-direction: column; align-items: stretch; }
     .sb-intro { flex-direction: column; }
+    .sb-connect { flex-direction: column; align-items: flex-start; }
+    .sb-pick-row { flex-wrap: wrap; row-gap: 10px; }
+    .sb-pick { width: 100%; max-width: none; }
     .sb-run, .sb-reveal { flex-wrap: wrap; row-gap: 8px; }
+    /* The description gets the full width; what sat beside it (a size, a badge, a button) goes on a line of its own under it. */
+    .sb-stack { flex-wrap: wrap; row-gap: 10px; }
+    .sb-stack .grow { flex: 1 1 calc(100% - 40px); }
+    .sb-stack .grow + * { margin-left: 32px; }
     .sb-run .sb-when { flex-basis: 100%; padding-left: 32px; }
     .sb-reveal input { width: 100%; }
   }

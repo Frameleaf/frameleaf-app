@@ -14,7 +14,7 @@ const source = {
   type: AssetType.Image,
   originalPath: '/synthetic/logo.png',
   originalFileName: 'logo.png',
-  files: [],
+  files: [{ type: AssetFileType.Preview, path: '/synthetic/flattened.jpg', isEdited: false, isTransparent: true }],
   edits: [],
   exif: null,
   develop: null,
@@ -54,6 +54,7 @@ describe('palette indexing lifecycle', () => {
   });
   it('refreshes changed metadata only once a preview has been published', async () => {
     const { service, jobs, palettes } = setup();
+    palettes.source.mockResolvedValueOnce({ ...source, files: [] } as never);
     await service.onMetadataExtracted({ assetId: 'asset', userId: 'owner' });
     expect(jobs.queue).not.toHaveBeenCalled();
     palettes.source.mockResolvedValue({
@@ -196,6 +197,17 @@ describe('palette indexing lifecycle', () => {
     } as never);
     await service.handleExtract({ id: 'asset', sourceRevision: 'rev' });
     expect(media.extractAssetPalette).toHaveBeenCalledWith('/thumbs/photo-preview.jpg', expect.anything());
+  });
+  it('waits for a preview rather than decoding an original whose thumbnail has not been made', async () => {
+    const { service, palettes, media } = setup();
+    palettes.source.mockResolvedValue({ ...source, originalPath: '/library/old.jpg', files: [] } as never);
+    expect(await service.handleExtract({ id: 'asset', sourceRevision: 'rev' })).toBe(JobStatus.Success);
+    expect(media.extractAssetPalette).not.toHaveBeenCalled();
+    expect(palettes.publish).toHaveBeenLastCalledWith(
+      'asset',
+      'rev',
+      expect.objectContaining({ status: 'unavailable' }),
+    );
   });
   it('keeps unedited GIF alpha by decoding a representative original frame', async () => {
     const { service, palettes, media } = setup();
