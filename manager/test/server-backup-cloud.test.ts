@@ -209,6 +209,14 @@ test('a run whose lease is lost is stopped at once, and the next run carries on'
   await until(() => cloud.state.lease === null);
 });
 
+test('a locked copy of the key can be kept in Cloud, and Cloud never sees the key', async () => {
+  await assert.rejects(first.service.keepKeyCopy('too short'), refused('server_backup_passphrase_short'));
+  await first.service.keepKeyCopy('correct horse battery staple');
+  assert.ok(first.link.view().keyCopyAt);
+  const stored = JSON.stringify([...cloud.state.escrows.values()]);
+  assert.ok(!stored.includes(key) && !stored.includes(code.replaceAll('-', '')));
+});
+
 test('a replacement server takes the backups over once the owner approves, with the saved recovery key', async () => {
   await link(second);
   const [older] = await second.link.takeoverCandidates();
@@ -219,10 +227,15 @@ test('a replacement server takes the backups over once the owner approves, with 
   assert.equal((await second.link.checkTakeover()).status, 'approved');
   assert.equal(second.link.view().takeover, null);
 
+  // The older server's locked copy answers to its passphrase only; Cloud kept it through the takeover.
+  await assert.rejects(second.service.adoptKeyCopy('not the passphrase'), refused('server_backup_passphrase_wrong'));
+  assert.equal(second.service.view()!.snapshots.length, 0);
   await assert.rejects(second.service.adoptKey('not a key'));
   // A well-formed key that is not the old server's opens nothing, and is not kept.
   await assert.rejects(second.service.adoptKey('ab'.repeat(32)), refused('server_backup_key_wrong'));
   // Typed in as written down: lower case, spaces, and an O for a zero all read the same.
+  await second.service.adoptKeyCopy('correct horse battery staple');
+  // The same key, also typed in as written down: lower case, spaces, and an O for a zero all read the same.
   await second.service.adoptKey(code.toLowerCase().replaceAll('-', ' ').replaceAll('0', 'O'));
   await assert.rejects(second.service.adoptKey('ab'.repeat(32)), refused('server_backup_key_exists'));
   const snapshots = second.service.view()!.snapshots;
@@ -299,4 +312,12 @@ test('disconnecting stops backups and keeps what is stored; connecting again bri
   // Its own key, typed as the older hex form across two lines, still reads.
   await second.service.adoptKey(`${key.slice(0, 32)}\n${key.slice(32)}`);
   assert.deepEqual(second.service.view()!.snapshots.map((item) => item.key), snapshots.map((item) => item.key));
+});
+
+test('turning the locked copy off deletes it from Cloud', async () => {
+  await second.service.keepKeyCopy('another long passphrase');
+  assert.equal(cloud.state.escrows.size, 1);
+  await second.service.dropKeyCopy();
+  assert.equal(cloud.state.escrows.size, 0);
+  assert.equal(second.link.view().keyCopyAt, null);
 });
