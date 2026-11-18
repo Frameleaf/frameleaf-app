@@ -481,7 +481,7 @@ export class ICloudSyncRepository {
           | undefined;
         await sql`INSERT INTO public.icloud_record ("connectionId", "libraryKey", "recordId", "recordType", revision, "masterId", fields, deleted)
           VALUES (${connectionId}::uuid, ${libraryKey}, ${record.recordName}, ${record.recordType ?? 'CPLAsset'}, ${record.recordChangeTag ?? null},
-            ${master?.value?.recordName ?? null}, ${sanitizeICloudFields({ ...record.fields, ...(scope.startsWith('assets:') && { __icloudSnapshot: snapshotId }) })}::jsonb, ${record.deleted ?? false})
+            ${master?.value?.recordName ?? null}, ${sanitizeICloudFields({ ...record.fields, ...((scope.startsWith('assets:') || scope === 'libraries') && { __icloudSnapshot: snapshotId }) })}::jsonb, ${record.deleted ?? false})
           ON CONFLICT ("connectionId", "libraryKey", "recordId") DO UPDATE SET revision = excluded.revision, "masterId" = excluded."masterId",
             "recordType" = CASE WHEN excluded.deleted THEN public.icloud_record."recordType" ELSE excluded."recordType" END, fields = excluded.fields, deleted = excluded.deleted, "updatedAt" = now()`.execute(
           db,
@@ -492,6 +492,12 @@ export class ICloudSyncRepository {
             db,
           );
         }
+      }
+      if (complete && scope === 'libraries') {
+        // FL-1685: a library this listing did not see is gone (another Apple Account signed in, a shared library
+        // left), so the run no longer lists it
+        await sql`UPDATE public.icloud_record SET deleted=true WHERE "connectionId"=${connectionId}::uuid AND "recordType"='Library'
+          AND fields->>'__icloudSnapshot' IS DISTINCT FROM ${snapshotId}`.execute(db);
       }
       if (complete && scope.startsWith('assets:')) {
         await sql`UPDATE public.icloud_record SET deleted=true WHERE "connectionId"=${connectionId}::uuid AND "libraryKey"=${libraryKey}

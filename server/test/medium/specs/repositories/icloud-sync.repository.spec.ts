@@ -332,6 +332,24 @@ describe(ICloudSyncRepository.name, () => {
       expect(await checkpointScopes()).toEqual([]);
     });
 
+    it('lists only the libraries the signed-in account has', async () => {
+      const zone = (name: string) => ({
+        recordName: name,
+        recordType: 'Library',
+        fields: { zoneID: { zoneName: name } },
+      });
+      await repository.savePage(connection.id, 'libraries', '', [zone('old-private'), zone('old-shared')], null, true);
+      expect((await repository.inventory(connection.id)).libraries.map(({ id }) => id)).toEqual([
+        'old-private',
+        'old-shared',
+      ]);
+
+      // another Apple Account signs in: its listing starts again and finds only its own library
+      await repository.forgetListing(connection.id);
+      await repository.savePage(connection.id, 'libraries', '', [zone('new-private')], null, true);
+      expect((await repository.inventory(connection.id)).libraries.map(({ id }) => id)).toEqual(['new-private']);
+    });
+
     it('starts a fresh pass when the unfinished listing has not moved for a day', async () => {
       await repository.startRun(connection);
       await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], 'page-2', false);
