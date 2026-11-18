@@ -601,6 +601,8 @@ export interface IPushDeliverJob extends IBaseJob {
 
 export interface IIntegrityJob {
   refreshOnly?: boolean;
+  /** Run now: read every original, including ones a recent pass already matched (FL-1686). */
+  manual?: boolean;
 }
 
 export interface IIntegrityDeleteReportTypeJob {

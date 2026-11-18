@@ -102,7 +102,7 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
     }
 
     case ManualJobName.IntegrityChecksumFiles: {
-      return { name: JobName.IntegrityChecksumFiles };
+      return { name: JobName.IntegrityChecksumFiles, data: { manual: true } };
     }
 
     case ManualJobName.IntegrityMissingFilesRefresh: {

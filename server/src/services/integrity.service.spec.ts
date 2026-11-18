@@ -126,6 +126,16 @@ describe(IntegrityService.name, () => {
       mocks.storage.createPlainReadStream.mockReturnValue(Readable.from([contents]) as never);
     };
 
+    it('skips recently matched originals on the scheduled pass but reads them all on Run now (FL-1686)', async () => {
+      streamAsset(sha256, ChecksumAlgorithm.sha256File);
+      await sut.handleChecksumFiles({});
+      expect(mocks.integrityReport.streamAssetChecksums).toHaveBeenLastCalledWith(undefined, { rereadRecent: false });
+
+      streamAsset(sha256, ChecksumAlgorithm.sha256File);
+      await sut.handleChecksumFiles({ manual: true });
+      expect(mocks.integrityReport.streamAssetChecksums).toHaveBeenLastCalledWith(undefined, { rereadRecent: true });
+    });
+
     it('should backfill a sha1 for a verified sha256 asset', async () => {
       // Upstream Immich clients pre-check duplicates with sha1; assets uploaded
       // before that digest was recorded get one here, off the verification read.

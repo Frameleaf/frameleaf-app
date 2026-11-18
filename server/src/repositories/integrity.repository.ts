@@ -549,7 +549,7 @@ export class IntegrityRepository {
     >;
   }
   @GenerateSql({ params: [DummyValue.DATE], stream: true })
-  streamAssetChecksums(startMarker?: Date) {
+  streamAssetChecksums(startMarker?: Date, { rereadRecent = false }: { rereadRecent?: boolean } = {}) {
     return (
       this.db
         .selectFrom('asset')
@@ -569,7 +569,7 @@ export class IntegrityRepository {
         ])
         .where('asset.isExternal', '=', sql.lit(false))
         // FL-1686: an original read and matched recently is not read again until the recheck period has passed
-        .where((eb) => eb.not(recentlyVerified(eb)))
+        .$if(!rereadRecent, (qb) => qb.where((eb) => eb.not(recentlyVerified(eb))))
         .$if(startMarker !== undefined, (qb) => qb.where('asset.createdAt', '>=', startMarker!))
         .orderBy('asset.createdAt', 'asc')
         .stream()
