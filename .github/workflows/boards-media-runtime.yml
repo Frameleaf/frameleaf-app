@@ -55,8 +55,8 @@ jobs:
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          username: ${{ vars.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
       - name: Build the candidate Library image without publishing
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
         with:

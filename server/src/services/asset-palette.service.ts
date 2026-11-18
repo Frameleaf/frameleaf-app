@@ -182,7 +182,10 @@ export class AssetPaletteService {
     // The preview already shows the edits and orientation and lives on the server's own storage: decoding every
     // original instead read a 1M-photo library end to end off the array. Only a transparent image keeps its
     // original, because the preview is flattened and would lose the alpha.
-    if (preview && !preview.isTransparent) {
+    // No preview yet: wait for one (a finished thumbnail job queues this again). A photo whose thumbnail failed
+    // would only fail here too, with no decoder ladder, as "Input buffer has corrupt header" noise.
+    if (!preview) return;
+    if (!preview.isTransparent) {
       return { path: preview.path, options };
     }
     const video = source.type === AssetType.Video;
@@ -190,7 +193,7 @@ export class AssetPaletteService {
     const raw = mimeTypes.isRaw(source.originalFileName);
     const complexEdits = source.edits.some(({ action }) => !['crop', 'rotate', 'mirror'].includes(action));
     if (video || hdr || raw || complexEdits) {
-      return preview ? { path: preview.path, options } : undefined;
+      return { path: preview.path, options };
     }
     return {
       path: source.originalPath,

@@ -89,6 +89,20 @@ describe('SharpOperations.repairJpeg', () => {
     expect(await sut.pictureSaved(halved)).toBeLessThan(70);
   });
 
+  it('reads a picture whole however many warnings its decoder gives', async () => {
+    // an old camera's JPEG: a stray byte before each of its 599 restart markers, and every row there
+    const noisy = 'test/fixtures/jpeg-repair/many-warnings.jpg';
+    await expect(sharp(noisy, { failOn: 'none' }).raw().toBuffer()).rejects.toThrow('extraneous bytes');
+    await expect(sut.pictureSaved(noisy)).resolves.toBe(100);
+    const result = await sut.repairJpeg(
+      noisy,
+      join(directory, 'out.jpg'),
+      join(directory, 'preview.jpg'),
+      join(directory, 'header.jpg'),
+    );
+    expect(result).toMatchObject({ method: 'rebuilt', width: 8, height: 4800, percentSaved: 100 });
+  });
+
   const repair = async (bytes: Buffer) => {
     const input = join(directory, 'broken.jpg');
     await writeFile(input, bytes);

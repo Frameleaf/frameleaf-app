@@ -148,7 +148,7 @@ jobs:
               digest:$digest,configDigest:$config,rootfsDiffIds:$rootfs[0],archiveSha256:$archiveSha,smoke:"passed"}' > receipt.json
           rm -rf layout runtime-layout
       - name: Retain tested archives and receipt
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: cli-tested-${{ matrix.architecture }}
           path: ${{ runner.temp }}/cli/
@@ -192,7 +192,7 @@ jobs:
             exit 1
           fi
       - name: Download both qualified archives
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         with:
           pattern: cli-tested-*
           path: ${{ runner.temp }}/cli-archives
@@ -205,8 +205,8 @@ jobs:
         id: publish
         env:
           SOURCE_SHA: ${{ github.sha }}
-          REGISTRY_TOKEN: ${{ github.token }}
-          ACTOR: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          ACTOR: ${{ vars.GHCR_USERNAME || github.actor }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |-
@@ -276,6 +276,8 @@ jobs:
               architectures:[$amd64[0],$arm64[0]]}' \
             > "$RUNNER_TEMP/cli-publication.json"
       - name: Attest published build provenance
+        # GitHub-only attestation store; on Forgejo the cosign signature stands alone (FL-1678).
+        if: github.server_url == 'https://github.com'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/frameleaf/frameleaf-cli
@@ -293,8 +295,23 @@ jobs:
           [[ "$(oras resolve ghcr.io/frameleaf/frameleaf-cli:latest)" == "$DIGEST" ]]
           oras logout ghcr.io
       - name: Retain publication binding
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: cli-publication
           path: ${{ runner.temp }}/cli-publication.json
           if-no-files-found: error
+
+  # FL-1678: copy the published image to Docker Hub and Forgejo (GHCR keeps it too).
+  mirror:
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' && github.server_url != 'https://github.com' }}
+    uses: ./.github/workflows/mirror-images.yml
+    with:
+      refs: frameleaf-cli:latest
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      REGISTRY_PUBLISH_TOKEN: ${{ secrets.REGISTRY_PUBLISH_TOKEN }}
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}

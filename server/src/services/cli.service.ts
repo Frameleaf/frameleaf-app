@@ -7,6 +7,7 @@ import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
+import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { createMaintenanceLoginUrl, generateMaintenanceSecret } from 'src/utils/maintenance.js';
 import { DEFAULT_SIGN_IN_REQUIREMENT } from 'src/utils/sign-in-policy.js';
 
@@ -83,6 +84,41 @@ export class CliService extends BaseService {
       },
       { source: 'server-cli' },
     );
+  }
+
+  /**
+   * FL-1673: vouches for the Manager on this machine, so its Server Backup shares this server's licence and
+   * plan in Frameleaf Cloud. The statement names this server and the Manager's own Cloud id, and is signed
+   * with this server's identity key; Manager hands it to Cloud. It holds nothing secret and grants nothing
+   * by itself: Cloud accepts it only from that Manager, in the same account, for ten minutes.
+   * The fields and their order are Cloud's contract (`frameleaf-backup-machine-attach-v1`).
+   */
+  async vouchForBackupMachine(machineInstanceId: string, now = new Date()) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(machineInstanceId)) {
+      throw new Error('That is not a backup machine id');
+    }
+    const deps = {
+      configRepository: this.configRepository,
+      databaseRepository: this.databaseRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+      instanceIdentityRepository: this.instanceIdentityRepository,
+      frameleafCloudRepository: this.frameleafCloudRepository,
+    };
+    const { link, linked } = await readCloudLink(deps);
+    if (!linked || !link?.instanceId) {
+      throw new Error('This server is not linked to Frameleaf Cloud');
+    }
+    await loadInstanceIdentity(deps);
+    const signer = this.instanceIdentityRepository.currentSigner();
+    const statement = {
+      version: 1 as const,
+      parentInstanceId: link.instanceId,
+      machineInstanceId,
+      issuedAt: now.toISOString(),
+      signerKid: signer.kid,
+    };
+    const signed = `frameleaf-backup-machine-attach-v1\n${JSON.stringify(statement)}`;
+    return { statement, signature: Buffer.from(signer.signBytes(Buffer.from(signed, 'utf8'))).toString('base64url') };
   }
 
   /** Unified sign-in: back to "administrators away from home", for an owner who locked themselves out. */

@@ -1384,7 +1384,7 @@
     margin: 0 0 16px;
   }
   /* A stage group right under the arrivals/feature list, which has no bottom margin of its own. */
-  .fla-section > :global(*) + .fla-group {
+  .fla-section > .fla-group:not(:first-child) {
     margin-top: 20px;
   }
   .fla-group-title {
