@@ -958,7 +958,7 @@ it.each([
   { workload: MlWorkload.Ocr, legacy: true },
   { workload: MlWorkload.Face, legacy: true },
 ])(
-  'reconstructs durable $workload disclosure (legacy=$legacy) and refuses revoked source, policy, route, config and job authority',
+  'reconstructs durable $workload disclosure (legacy=$legacy) and refuses revoked source, policy, destination, config and job authority',
   async ({ workload, legacy }) => {
     const profiles: DesktopModelProfile[] = JSON.parse(
       readFileSync('resources/desktop/model-catalogue.json', 'utf8'),
@@ -1240,8 +1240,9 @@ it.each([
             .execute(),
         'desktop_input_authority_invalid',
       );
+      // Routing no longer decides desktop work: a cleared route leaves the task to its desktop.
       await routes.clearRoute(workload);
-      await expect(input()).rejects.toThrow('desktop_pool_route_changed');
+      await expect(input()).resolves.toBeInstanceOf(Buffer);
     } finally {
       controller.abort();
       resumeObserver.resolve();
