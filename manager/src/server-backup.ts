@@ -5,6 +5,7 @@ import { DEFAULT_RETENTION, Repository, dirStore, escrowPassphraseProblem, find,
 import { fork, type ChildProcess } from 'node:child_process';
 import { hkdfSync, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -394,6 +395,42 @@ export class ServerBackup {
       prune: trigger === 'schedule' && now.getDay() === 0,
       ...(session?.sequence ? { sequence: session.sequence } : {}),
     }));
+  }
+
+  /**
+   * The old server's Server Backup settings, from the copy of Manager's database a whole-server restore
+   * brought back. Offered only on a Manager that has not backed up yet: on any other, that file is its own.
+   * Only what is safe to carry over is read: the backup settings and the automatic-updates choice.
+   */
+  restoredSettings() {
+    const file = this.options.managerState && join(this.options.managerState, 'manager.sqlite');
+    if (!file || !existsSync(file) || this.runs(100).some((run) => run.kind === 'backup')) return null;
+    let db: DatabaseSync | null = null;
+    try {
+      db = new DatabaseSync(file, { readOnly: true });
+      const read = (key: string) => {
+        const row = db!.prepare('SELECT value FROM settings WHERE key=?').get(key) as { value: string } | undefined;
+        return row ? JSON.parse(row.value) : null;
+      };
+      const settings = Settings.safeParse((read(KEY) as Saved | null)?.settings);
+      if (!settings.success) return null;
+      const folders = settings.data.folders.map((path) => ({ path, reachable: this.options.inside(path) && existsSync(path) }));
+      return { settings: settings.data, folders, autoUpdate: typeof read('auto-update') === 'boolean' ? (read('auto-update') as boolean) : null };
+    } catch {
+      return null;
+    } finally {
+      db?.close();
+    }
+  }
+  /** Uses them: the folders this Manager can reach, the same schedule and keeping, and backups turned back on. */
+  async applyRestoredSettings() {
+    const restored = this.restoredSettings();
+    if (!restored) throw new Refusal('server_backup_nothing_restored');
+    const folders = restored.folders.filter((folder) => folder.reachable).map((folder) => folder.path);
+    if (folders.length === 0) throw new Refusal('server_backup_no_folders');
+    await this.turnOn({ ...restored.settings, folders });
+    if (restored.autoUpdate !== null) this.store.set('auto-update', restored.autoUpdate);
+    return { skipped: restored.folders.filter((folder) => !folder.reachable).map((folder) => folder.path) };
   }
 
   /** A consistent copy of Manager's settings database, written beside it and moved into place whole. */
