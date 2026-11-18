@@ -97,6 +97,7 @@ describe(ICloudSyncService.name, () => {
     initializeCheckpoint: vi.fn(),
     saveMembershipPage: vi.fn(),
     materialize: vi.fn(),
+    materializeEarly: vi.fn(),
   };
   const transport = {
     setSwitchedOn: vi.fn(),
@@ -277,6 +278,45 @@ describe(ICloudSyncService.name, () => {
     open.clear();
     await expect(enumerate(connection)).resolves.toBe(true);
     expect(repository.materialize).toHaveBeenCalled();
+  });
+
+  it('queues the photos of a library page for download as the page lands (FL-1685)', async () => {
+    const library = { area: 'private', zoneID: { zoneName: 'PrimarySync' } };
+    const records = [
+      { recordName: 'asset', recordType: 'CPLAsset', fields: {} },
+      { recordName: 'gone', recordType: 'CPLAsset', deleted: true, fields: {} },
+      { recordName: 'master', recordType: 'CPLMaster', fields: {} },
+    ];
+    repository.inventory.mockResolvedValue({ libraries: [{ id: 'lib', fields: library }], albums: [] });
+    repository.checkpoint.mockImplementation((_id: string, scope: string) =>
+      Promise.resolve(scope === 'assets:lib' ? undefined : { complete: true }),
+    );
+    transport.inventory.mockResolvedValue({ session: {}, records, nextCursor: 'next', complete: false });
+    const enumerate = (sut as unknown as { enumerate(c: typeof connection): Promise<boolean> }).enumerate.bind(sut);
+
+    await expect(enumerate(connection)).resolves.toBe(false);
+    expect(repository.materializeEarly).toHaveBeenCalledWith(connection, 'lib', library, ['asset'], undefined);
+    // the keyset pass after the listing still decides
+    expect(repository.materialize).not.toHaveBeenCalled();
+  });
+
+  it('queues nothing early from a smart album page (FL-1685)', async () => {
+    const library = { area: 'private', zoneID: { zoneName: 'PrimarySync' } };
+    repository.inventory.mockResolvedValue({ libraries: [{ id: 'lib', fields: library }], albums: [] });
+    repository.checkpoint.mockImplementation((_id: string, scope: string) =>
+      Promise.resolve(scope === 'smart:lib:TIMELAPSE' ? undefined : { complete: true }),
+    );
+    transport.inventory.mockResolvedValue({
+      session: {},
+      records: [{ recordName: 'asset', recordType: 'CPLAsset', fields: {} }],
+      nextCursor: 'next',
+      complete: false,
+      capabilities: { smartAlbums: true },
+    });
+    const enumerate = (sut as unknown as { enumerate(c: typeof connection): Promise<boolean> }).enumerate.bind(sut);
+
+    await expect(enumerate(connection)).resolves.toBe(false);
+    expect(repository.materializeEarly).not.toHaveBeenCalled();
   });
 
   it('never trusts a smart album page from a bridge without smart albums, and skips one Apple refuses (FL-1289)', async () => {
