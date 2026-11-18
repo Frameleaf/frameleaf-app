@@ -159,6 +159,18 @@ export class CloudBackup {
     return this.cloud.usage(await this.identity());
   }
 
+  /** A deletion of this server's backups that is waiting or under way, or null. */
+  async purge() {
+    const latest = await this.cloud.purge(await this.identity());
+    return latest && (latest.status === 'held' || latest.status === 'purging') ? latest : null;
+  }
+  async requestPurge() {
+    return this.cloud.requestPurge(await this.identity());
+  }
+  async cancelPurge() {
+    return this.cloud.cancelPurge(await this.identity());
+  }
+
   /**
    * Disconnects this Manager from Frameleaf Cloud. Its identity is thrown away: it can't be used again.
    * What is stored stays in Cloud, read-only, for the hold Cloud keeps before deleting it; a Manager that

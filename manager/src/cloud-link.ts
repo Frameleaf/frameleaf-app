@@ -122,6 +122,15 @@ const Takeover = z.object({
   writesFrom: z.string().nullable(),
 });
 export type Takeover = z.infer<typeof Takeover>;
+const Purge = z.object({
+  status: z.enum(['held', 'purging', 'purged', 'cancelled']),
+  requestedBy: z.string(),
+  /** Nothing is deleted before this. */
+  holdUntil: z.string(),
+  purgeBy: z.string(),
+  cancellable: z.boolean(),
+});
+export type Purge = z.infer<typeof Purge>;
 const Parent = z.object({ parent: z.object({ instanceId: z.string(), name: z.string(), attachedAt: z.string(), follows: z.boolean() }).nullable() });
 
 type Operation = 'upload' | 'restore' | 'prune';
@@ -479,6 +488,27 @@ export class Cloud {
     report: { runId: string; status: 'running' | 'succeeded' | 'partial' | 'failed' | 'cancelled'; startedAt: string; finishedAt: string | null; bytesUploaded: number; objectsUploaded: number; objectsSkipped: number; manifestKey: string | null; errorCode: string | null },
   ) {
     return this.call(identity, 'POST', '/v1/backup/runs', report);
+  }
+
+  /**
+   * Asks Cloud to delete everything this machine stored. Nothing goes at once: storage is read-only for a 30-day
+   * hold (restores still work), then deleted by day 90. Asking again answers the same request.
+   */
+  async requestPurge(identity: Identity) {
+    return Purge.parse(await this.call(identity, 'POST', '/v1/backup/purge', {}));
+  }
+  /** The latest deletion request for this machine, or null when there has never been one. */
+  async purge(identity: Identity) {
+    try {
+      return Purge.parse(await this.call(identity, 'GET', '/v1/backup/purge'));
+    } catch (error) {
+      if (error instanceof CloudError && error.status === 404) return null;
+      throw error;
+    }
+  }
+  /** Stops a deletion while it is held. Only one this machine or the owner asked for can be stopped. */
+  async cancelPurge(identity: Identity) {
+    return Purge.parse(await this.call(identity, 'DELETE', '/v1/backup/purge'));
   }
 
   usage(identity: Identity) {

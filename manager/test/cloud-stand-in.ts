@@ -40,6 +40,7 @@ export function standIn(options: { old?: boolean } = {}) {
     refuseSnapshots: 0,
     /** Which photo server vouches for which backup machine. */
     parents: new Map<string, string>(),
+    purges: new Map<string, { id: string; status: string }>(),
     takeovers: [] as { takeoverId: string; fromInstanceId: string; asker: string; status: string }[],
     discovery: { version: 1, validFor: 3600, issuer: ISSUER, api: API, ml: {} } as Record<string, unknown>,
   };
@@ -203,6 +204,20 @@ export function standIn(options: { old?: boolean } = {}) {
         verify(null, Buffer.from(signed), createPublicKey({ key: parent.jwk, format: 'jwk' }), Buffer.from(signature, 'base64url'));
       if (good) state.parents.set(held.instanceId, statement.parentInstanceId);
       return good ? answer(200, { parent: { instanceId: statement.parentInstanceId, name: 'Family library', attachedAt: new Date(state.now).toISOString(), follows: true } }) : envelope(422, 'request-invalid');
+    }
+    if (route.endsWith(' api/v1/backup/purge')) {
+      const purge = state.purges.get(held.instanceId);
+      const shown = (item: typeof purge) => ({ id: item!.id, status: item!.status, requestedBy: 'instance', requestedAt: new Date(state.now).toISOString(), holdUntil: new Date(state.now + 30 * 86_400_000).toISOString(), purgeBy: new Date(state.now + 90 * 86_400_000).toISOString(), cancellable: true, cancelledAt: null, purgedAt: null });
+      if (method === 'GET') return purge ? answer(200, shown(purge)) : envelope(404, 'not-found');
+      if (method === 'POST') {
+        if (!state.grant) return envelope(404, 'not-found');
+        const open = purge?.status === 'held' ? purge : { id: randomUUID(), status: 'held' };
+        state.purges.set(held.instanceId, open);
+        return answer(200, shown(open));
+      }
+      if (purge?.status !== 'held') return envelope(409, 'request-invalid');
+      purge.status = 'cancelled';
+      return answer(200, shown(purge));
     }
     if (route === 'GET api/v1/backup/usage')
       return answer(200, { bytesCurrent: 412e9, bytesNoncurrent: 0, objects: 10, includedBytes: 1e12, accountBytesCurrent: 450e9, extraBlocks: 0, allowanceBytes: 1e12, blockBytes: 1e12, readOnly: false, readOnlyReason: null });

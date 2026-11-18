@@ -807,6 +807,21 @@ class Api {
     });
     return serverBackup.view();
   }
+  @Post('server-backup-cloud-purge') async serverBackupCloudPurge() {
+    return { purge: await cloudly((cloud) => cloud.purge()) };
+  }
+  @Post('server-backup-delete') async serverBackupDelete(@Body() input: unknown) {
+    const { password } = z.object({ password: z.string().max(256) }).strict().parse(input);
+    await security.confirm(password);
+    const purge = await serverBackup.deleteBackups().catch((error) => {
+      throw error instanceof Refusal ? error : new Refusal(reasonOf(error), 502);
+    });
+    return { ...serverBackup.view(), purge };
+  }
+  @Post('server-backup-keep') async serverBackupKeep() {
+    await cloudly((cloud) => cloud.cancelPurge());
+    return { ...serverBackup.view(), purge: null };
+  }
   @Post('server-backup-cloud-locations') async serverBackupCloudLocations() {
     return { locations: await cloudly((cloud) => cloud.locations()) };
   }
