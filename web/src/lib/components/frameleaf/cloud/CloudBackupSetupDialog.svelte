@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
    * "Set up cloud backup" (FL-160): the prototype's `BackupSetup`
-   * (design/frameleaf/template/src/FrameleafCloud.jsx). Steps: Destination (your own bucket, checked for
-   * SSE-C), Encryption key ("Generate a key for me" or "I'll maintain my own key"), the Recovery kit for
+   * (design/frameleaf/template/src/FrameleafCloud.jsx). Steps: Destination (your own bucket, checked over
+   * HTTPS), Encryption key ("Generate a key for me" or "I'll maintain my own key"), the Recovery kit for
    * a generated key, and Claim bucket, which claims it on the server and turns backup on. With
    * Frameleaf-managed storage the owner never chose a bucket, so that last step is "Turn on backup":
    * one sentence, one button that claims and closes, and the bucket details behind a disclosure.

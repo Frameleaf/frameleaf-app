@@ -190,6 +190,20 @@ describe('repository', () => {
       'notes.txt',
     ]);
     expect(await find(reopened, snapshot, ['Documents', 'missing'])).toBeNull();
+
+    // a folder entry carries the files and bytes below it, so a browse shows them without reading deeper
+    const top = await listFolder(reopened, snapshot, []);
+    const documents = await listFolder(reopened, snapshot, ['Documents']);
+    const tax = documents.find(({ name }) => name === 'Tax');
+    const notes = documents.find(({ name }) => name === 'notes.txt');
+    expect(tax).toMatchObject({ files: 1 });
+    expect(top.find(({ name }) => name === 'Documents')).toMatchObject({
+      files: 2,
+      size: tax!.size + notes!.size,
+    });
+    expect(
+      top.reduce((sum, entry) => sum + (entry.type === 'dir' ? entry.files! : Number(entry.type === 'file')), 0),
+    ).toBe(4);
   });
 
   it('sends nothing new and reads no unchanged file on a second run', async () => {

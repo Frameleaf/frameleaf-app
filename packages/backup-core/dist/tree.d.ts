@@ -21,6 +21,7 @@ export interface Entry extends Omit<SourceEntry, 'size'> {
     chunks?: string[];
     lists?: string[];
     tree?: string;
+    files?: number;
 }
 export declare const safeName: (name: string) => boolean;
 export declare const encodeTree: (entries: Entry[]) => Buffer<ArrayBuffer>;

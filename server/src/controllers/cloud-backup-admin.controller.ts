@@ -9,11 +9,15 @@ import {
   CloudBackupLicenceCoverageResponseDto,
 } from 'src/dtos/cloud-backup-selection.dto.js';
 import {
+  CloudBackupBrowseDto,
+  CloudBackupBrowseResponseDto,
   CloudBackupCheckDto,
   CloudBackupCheckResponseDto,
   CloudBackupDrillDto,
   CloudBackupDrillReportDto,
   CloudBackupEscrowDto,
+  CloudBackupFileVersionsDto,
+  CloudBackupFileVersionsResponseDto,
   CloudBackupGeneratedKeyDto,
   CloudBackupManifestAlbumsDto,
   CloudBackupManifestAlbumsResponseDto,
@@ -295,6 +299,34 @@ export class CloudBackupAdminController {
   })
   listManifestAlbums(@Body() dto: CloudBackupManifestAlbumsDto): Promise<CloudBackupManifestAlbumsResponseDto> {
     return this.service.listManifestAlbums(dto);
+  }
+
+  @Post('manifests/browse')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'browseCloudBackup',
+    summary: 'Browse a backup by folder',
+    description:
+      'What one folder held in a kept backup, as it was stored on this server. Reads only that folder from the bucket. Files of Locked items are counted, never named.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  browse(@Body() dto: CloudBackupBrowseDto): Promise<CloudBackupBrowseResponseDto> {
+    return this.service.browse(dto);
+  }
+
+  @Post('manifests/versions')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true })
+  @Endpoint({
+    operationId: 'getCloudBackupFileVersions',
+    summary: 'List the earlier versions of a file',
+    description:
+      'Each different copy of one file the kept backups hold, newest first, with the backup to restore it from. A file of a Locked item is refused.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getFileVersions(@Body() dto: CloudBackupFileVersionsDto): Promise<CloudBackupFileVersionsResponseDto> {
+    return this.service.getFileVersions(dto);
   }
 
   @Post('manifests/exclusions')

@@ -267,6 +267,23 @@
       "byo-s3"
     ]
   },
+  "frameleafCloud.cloudBackup.uploadHours.enabled": {
+    "type": "boolean"
+  },
+  "frameleafCloud.cloudBackup.uploadHours.start": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudBackup.uploadHours.stop": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudBackup.uploadLimit.enabled": {
+    "type": "boolean"
+  },
+  "frameleafCloud.cloudBackup.uploadLimit.mbps": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 10000
+  },
   "frameleafCloud.cloudBackup.verifyWeekly": {
     "type": "boolean"
   },

@@ -296,6 +296,9 @@ const frameleafCloudDefaults = {
     retention: { keepDaily: 7, keepWeekly: 4, keepMonthly: 12 },
     verifyWeekly: true,
     escrow: false,
+    // FL-1677: both off until an administrator sets them (Backup › Schedule)
+    uploadLimit: { enabled: false, mbps: 20 },
+    uploadHours: { enabled: false, start: '01:00', stop: '07:00' },
   },
 };
 
@@ -798,6 +801,32 @@ const AdminConfigFrameleafCloudSchema = z
         escrow: configBool.describe(
           'Keep a passphrase-wrapped copy of the bucket key with Frameleaf Cloud (server key mode only)',
         ),
+        // FL-1677: defaulted, so a configuration saved before these existed reads as both off
+        uploadLimit: z
+          .object({
+            enabled: configBool.describe('Limit how fast backups upload'),
+            mbps: z.int().min(1).max(10_000).describe('Upload speed limit, Mbit/s'),
+          })
+          .default(frameleafCloudDefaults.cloudBackup.uploadLimit)
+          .meta({ id: 'AdminConfigFrameleafCloudBackupUploadLimitDto' }),
+        uploadHours: z
+          .object({
+            enabled: configBool.describe('Upload only between the start and stop times (server time)'),
+            start: z.iso
+              .time({
+                precision: -1,
+                error: (iss) => `Invalid input: expected string in HH:MM format, received ${typeof iss.input}`,
+              })
+              .describe('Uploads may start (HH:MM)'),
+            stop: z.iso
+              .time({
+                precision: -1,
+                error: (iss) => `Invalid input: expected string in HH:MM format, received ${typeof iss.input}`,
+              })
+              .describe('Uploads stop (HH:MM); a backup still uploading then pauses and carries on at the next start'),
+          })
+          .default(frameleafCloudDefaults.cloudBackup.uploadHours)
+          .meta({ id: 'AdminConfigFrameleafCloudBackupUploadHoursDto' }),
       })
       .default(frameleafCloudDefaults.cloudBackup)
       .meta({ id: 'AdminConfigFrameleafCloudBackupDto' }),

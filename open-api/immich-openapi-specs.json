@@ -2627,6 +2627,63 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/cloud/backup/manifests/browse": {
+      "post": {
+        "description": "What one folder held in a kept backup, as it was stored on this server. Reads only that folder from the bucket. Files of Locked items are counted, never named.",
+        "operationId": "browseCloudBackup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupBrowseDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupBrowseResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Browse a backup by folder",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/backup/manifests/exclusions": {
       "post": {
         "description": "FL-362: per account, the items this server holds whose original is not in one kept backup, by reason (left out by the account’s choice, no licence, not backed up yet, unknown), from that backup’s own decision. Counts only: never what an account chose. Reads the backup’s manifest from the bucket.",
@@ -2723,6 +2780,63 @@
           }
         ],
         "summary": "Search the items in a backup",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/cloud/backup/manifests/versions": {
+      "post": {
+        "description": "Each different copy of one file the kept backups hold, newest first, with the backup to restore it from. A file of a Locked item is refused.",
+        "operationId": "getCloudBackupFileVersions",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloudBackupFileVersionsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupFileVersionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the earlier versions of a file",
         "tags": [
           "Frameleaf Cloud backup (admin)"
         ],
@@ -80071,6 +80185,12 @@
           "target": {
             "$ref": "#/components/schemas/CloudBackupTargetSetting"
           },
+          "uploadHours": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudBackupUploadHoursDto"
+          },
+          "uploadLimit": {
+            "$ref": "#/components/schemas/AdminConfigFrameleafCloudBackupUploadLimitDto"
+          },
           "verifyWeekly": {
             "description": "Check a sample of the backed-up files every week, and every referenced file every month",
             "type": "boolean"
@@ -80182,6 +80302,49 @@
         },
         "required": [
           "cronExpression"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudBackupUploadHoursDto": {
+        "properties": {
+          "enabled": {
+            "description": "Upload only between the start and stop times (server time)",
+            "type": "boolean"
+          },
+          "start": {
+            "description": "Uploads may start (HH:MM)",
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          },
+          "stop": {
+            "description": "Uploads stop (HH:MM); a backup still uploading then pauses and carries on at the next start",
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "start",
+          "stop"
+        ],
+        "type": "object"
+      },
+      "AdminConfigFrameleafCloudBackupUploadLimitDto": {
+        "properties": {
+          "enabled": {
+            "description": "Limit how fast backups upload",
+            "type": "boolean"
+          },
+          "mbps": {
+            "description": "Upload speed limit, Mbit/s",
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "mbps"
         ],
         "type": "object"
       },
@@ -99693,6 +99856,113 @@
         ],
         "type": "string"
       },
+      "CloudBackupBrowseDto": {
+        "properties": {
+          "limit": {
+            "description": "Entries to return; 500 when absent",
+            "maximum": 5000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "manifestKey": {
+            "description": "The backup, by its name in the bucket",
+            "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
+            "type": "string"
+          },
+          "offset": {
+            "description": "Entries to skip; 0 when absent",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "description": "A folder as it was on this server; / is the top",
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^\\/",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifestKey",
+          "path"
+        ],
+        "type": "object"
+      },
+      "CloudBackupBrowseEntryDto": {
+        "properties": {
+          "files": {
+            "description": "Files below a folder, at any depth; 1 for a file",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "modifiedAt": {
+            "description": "When it was last written before the backup",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "description": "Bytes; for a folder, of every file below it",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/CloudBackupBrowseEntryType"
+          }
+        },
+        "required": [
+          "files",
+          "modifiedAt",
+          "name",
+          "size",
+          "type"
+        ],
+        "type": "object"
+      },
+      "CloudBackupBrowseEntryType": {
+        "enum": [
+          "file",
+          "folder"
+        ],
+        "type": "string"
+      },
+      "CloudBackupBrowseResponseDto": {
+        "properties": {
+          "entries": {
+            "description": "Folders first, then files, by name",
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupBrowseEntryDto"
+            },
+            "type": "array"
+          },
+          "hiddenLocked": {
+            "description": "Files of Locked items in this folder: never named here, restored with it",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "total": {
+            "description": "Entries in the folder, the ones on this page included",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entries",
+          "hiddenLocked",
+          "path",
+          "total"
+        ],
+        "type": "object"
+      },
       "CloudBackupBucketState": {
         "description": "empty: ready to claim; claimed: holds a Frameleaf claim; not-empty: holds other files",
         "enum": [
@@ -100252,6 +100522,62 @@
           "decisionKnown",
           "manifestKey",
           "totals"
+        ],
+        "type": "object"
+      },
+      "CloudBackupFileVersionDto": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "manifestKey": {
+            "description": "The first kept backup that holds this copy",
+            "type": "string"
+          },
+          "modifiedAt": {
+            "type": "string"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdAt",
+          "manifestKey",
+          "modifiedAt",
+          "size"
+        ],
+        "type": "object"
+      },
+      "CloudBackupFileVersionsDto": {
+        "properties": {
+          "path": {
+            "description": "A file as it was on this server",
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^\\/",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "CloudBackupFileVersionsResponseDto": {
+        "properties": {
+          "versions": {
+            "description": "Each different copy, newest first",
+            "items": {
+              "$ref": "#/components/schemas/CloudBackupFileVersionDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions"
         ],
         "type": "object"
       },
@@ -101106,10 +101432,29 @@
             "$ref": "#/components/schemas/CloudBackupRestoreDetails",
             "description": "asset and album: how details of items still in the library come back; keep when absent"
           },
+          "folder": {
+            "description": "files with paths: put them under this folder, keeping their folders; where they were when absent",
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^\\/",
+            "type": "string"
+          },
           "manifestKey": {
             "description": "The backup, by its name in the bucket",
             "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
             "type": "string"
+          },
+          "paths": {
+            "description": "files: files or folders as they were stored, by their path on this server, instead of items",
+            "items": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^\\/",
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
           },
           "scope": {
             "$ref": "#/components/schemas/CloudBackupRestoreScope"

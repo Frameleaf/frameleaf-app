@@ -816,6 +816,35 @@ export type CloudBackupManifestAlbumsResponseDto = {
     hasDetails: boolean;
     manifestKey: string;
 };
+export type CloudBackupBrowseDto = {
+    /** Entries to return; 500 when absent */
+    limit?: number;
+    /** The backup, by its name in the bucket */
+    manifestKey: string;
+    /** Entries to skip; 0 when absent */
+    offset?: number;
+    /** A folder as it was on this server; / is the top */
+    path: string;
+};
+export type CloudBackupBrowseEntryDto = {
+    /** Files below a folder, at any depth; 1 for a file */
+    files: number;
+    /** When it was last written before the backup */
+    modifiedAt: string;
+    name: string;
+    /** Bytes; for a folder, of every file below it */
+    size: number;
+    "type": CloudBackupBrowseEntryType;
+};
+export type CloudBackupBrowseResponseDto = {
+    /** Folders first, then files, by name */
+    entries: CloudBackupBrowseEntryDto[];
+    /** Files of Locked items in this folder: never named here, restored with it */
+    hiddenLocked: number;
+    path: string;
+    /** Entries in the folder, the ones on this page included */
+    total: number;
+};
 export type CloudBackupExclusionsDto = {
     /** The backup, by its name in the bucket */
     manifestKey: string;
@@ -872,6 +901,21 @@ export type CloudBackupManifestItemsResponseDto = {
     /** Items that match, of which at most `limit` are listed */
     total: number;
 };
+export type CloudBackupFileVersionsDto = {
+    /** A file as it was on this server */
+    path: string;
+};
+export type CloudBackupFileVersionDto = {
+    createdAt: string;
+    /** The first kept backup that holds this copy */
+    manifestKey: string;
+    modifiedAt: string;
+    size: number;
+};
+export type CloudBackupFileVersionsResponseDto = {
+    /** Each different copy, newest first */
+    versions: CloudBackupFileVersionDto[];
+};
 export type CloudBackupPruneDto = {
     /** Count what the clean-up would remove without removing anything; a clean-up needs a dry run first */
     dryRun: boolean;
@@ -883,8 +927,12 @@ export type CloudBackupRestoreDto = {
     assetIds?: string[];
     /** asset and album: how details of items still in the library come back; keep when absent */
     details?: CloudBackupRestoreDetails;
+    /** files with paths: put them under this folder, keeping their folders; where they were when absent */
+    folder?: string;
     /** The backup, by its name in the bucket */
     manifestKey: string;
+    /** files: files or folders as they were stored, by their path on this server, instead of items */
+    paths?: string[];
     scope: CloudBackupRestoreScope;
 };
 export type CloudBackupSetupDto = {
@@ -1704,6 +1752,20 @@ export type AdminConfigFrameleafCloudBackupScheduleDto = {
     /** When scheduled backup runs start */
     cronExpression: string;
 };
+export type AdminConfigFrameleafCloudBackupUploadHoursDto = {
+    /** Upload only between the start and stop times (server time) */
+    enabled: boolean;
+    /** Uploads may start (HH:MM) */
+    start: string;
+    /** Uploads stop (HH:MM); a backup still uploading then pauses and carries on at the next start */
+    stop: string;
+};
+export type AdminConfigFrameleafCloudBackupUploadLimitDto = {
+    /** Limit how fast backups upload */
+    enabled: boolean;
+    /** Upload speed limit, Mbit/s */
+    mbps: number;
+};
 export type AdminConfigFrameleafCloudBackupDto = {
     /** Back up to the claimed bucket (set up from Settings › Frameleaf Cloud › Cloud backup) */
     enabled: boolean;
@@ -1715,6 +1777,8 @@ export type AdminConfigFrameleafCloudBackupDto = {
     s3: AdminConfigFrameleafCloudBackupS3Dto;
     schedule: AdminConfigFrameleafCloudBackupScheduleDto;
     target: CloudBackupTargetSetting;
+    uploadHours?: AdminConfigFrameleafCloudBackupUploadHoursDto;
+    uploadLimit?: AdminConfigFrameleafCloudBackupUploadLimitDto;
     /** Check a sample of the backed-up files every week, and every referenced file every month */
     verifyWeekly: boolean;
 };
@@ -25676,6 +25740,21 @@ export function listCloudBackupManifestAlbums({ cloudBackupManifestAlbumsDto }: 
     })));
 }
 /**
+ * Browse a backup by folder
+ */
+export function browseCloudBackup({ cloudBackupBrowseDto }: {
+    cloudBackupBrowseDto: CloudBackupBrowseDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupBrowseResponseDto;
+    }>("/admin/cloud/backup/manifests/browse", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupBrowseDto
+    })));
+}
+/**
  * Count the items a backup holds no original of, and why
  */
 export function getCloudBackupManifestExclusions({ cloudBackupExclusionsDto }: {
@@ -25703,6 +25782,21 @@ export function searchCloudBackupManifestItems({ cloudBackupManifestItemsDto }: 
         ...opts,
         method: "POST",
         body: cloudBackupManifestItemsDto
+    })));
+}
+/**
+ * List the earlier versions of a file
+ */
+export function getCloudBackupFileVersions({ cloudBackupFileVersionsDto }: {
+    cloudBackupFileVersionsDto: CloudBackupFileVersionsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupFileVersionsResponseDto;
+    }>("/admin/cloud/backup/manifests/versions", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: cloudBackupFileVersionsDto
     })));
 }
 /**
@@ -44632,6 +44726,10 @@ export enum CloudBackupAlbumState {
     Deleted = "deleted",
     MissingItems = "missing-items",
     Complete = "complete"
+}
+export enum CloudBackupBrowseEntryType {
+    File = "file",
+    Folder = "folder"
 }
 export enum CloudBackupItemFilter {
     All = "all",

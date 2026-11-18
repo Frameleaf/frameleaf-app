@@ -1294,6 +1294,8 @@ export type FrameleafCloudBackup = {
   lastRestore?: FrameleafCloudBackupRestore;
   /** FL-164: a scheduled run found the bucket busy; it starts when the operation holding it ends. */
   scheduledRunDueAt?: string;
+  /** FL-1677: the backup run the upload hours paused; the hourly check carries it on when they open. */
+  uploadHoursPausedRunId?: string;
   /** FL-879: a scheduled restore drill found the bucket busy; it starts once the operation holding it ends. */
   drillDueAt?: string;
 };

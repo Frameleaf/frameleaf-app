@@ -10,7 +10,7 @@ import {
 import { CronTime } from 'cron';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, rm } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
   CloudBackupOwnerSetupResponseDto,
@@ -42,10 +42,14 @@ import {
   OwnerBackupExclusionsResponseDto,
 } from 'src/dtos/cloud-backup-selection.dto.js';
 import {
+  CloudBackupBrowseDto,
+  CloudBackupBrowseResponseDto,
   CloudBackupCheckDto,
   CloudBackupCheckResponseDto,
   CloudBackupDrillDto,
   CloudBackupEscrowDto,
+  CloudBackupFileVersionsDto,
+  CloudBackupFileVersionsResponseDto,
   CloudBackupGeneratedKeyDto,
   CloudBackupManifestAlbum,
   CloudBackupManifestAlbumsDto,
@@ -168,6 +172,7 @@ import { type CloudBackupRunSummary, CloudBackupRunner, summarizeCatalog } from 
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { selectBackupLocation } from 'src/utils/backup-location-selection.js';
 import { flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import { browseBackup, fileVersions } from 'src/utils/cloud-backup-browse.js';
 import { type ClientBackupKeys, parseClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
 import { escrowPassphraseProblem, unwrapBucketKey, wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import { CloudBackupKeyChannel, loadBackupWorkerIdentity } from 'src/utils/cloud-backup-key-channel.js';
@@ -198,6 +203,7 @@ import {
 } from 'src/utils/cloud-backup-recovery.js';
 import { verificationDue } from 'src/utils/cloud-backup-retention.js';
 import { type BackupLicenceScope, backupUserFingerprint, isLicenceEligible } from 'src/utils/cloud-backup-selection.js';
+import { uploadWindow } from 'src/utils/cloud-backup-upload-hours.js';
 import {
   VaultFileError,
   openVault,
@@ -1384,7 +1390,8 @@ export class CloudBackupService {
       expression: VERIFY_CHECK_EXPRESSION,
       onTick: () =>
         handlePromiseError(this.jobRepository.queue({ name: JobName.CloudBackupVerify, data: {} }), this.logger),
-      start: backup.enabled && backup.target !== 'off' && backup.verifyWeekly,
+      // FL-1677: the hourly check also carries on a run the upload hours paused
+      start: backup.enabled && backup.target !== 'off' && (backup.verifyWeekly || backup.uploadHours.enabled),
     });
   }
 
@@ -1400,7 +1407,8 @@ export class CloudBackupService {
     this.cronRepository.update({
       name: CLOUD_BACKUP_VERIFY_CRON,
       expression: VERIFY_CHECK_EXPRESSION,
-      start: backup.enabled && backup.target !== 'off' && backup.verifyWeekly,
+      // FL-1677: the hourly check also carries on a run the upload hours paused
+      start: backup.enabled && backup.target !== 'off' && (backup.verifyWeekly || backup.uploadHours.enabled),
     });
   }
 
@@ -1515,6 +1523,7 @@ export class CloudBackupService {
     if (!metadata || !settings.enabled || settings.target === 'off') {
       return JobStatus.Skipped;
     }
+    await this.resumeAfterUploadHours(metadata, settings.uploadHours, serverTimeZone(server));
     // FL-362: coverage that could not be reported yet is tried again every hour; it never holds the bucket
     if (metadata.target === 'managed') {
       await this.coverage.publishDue();
@@ -2005,6 +2014,9 @@ export class CloudBackupService {
       throw new Error(
         'This unfinished backup was started by an older version of Frameleaf. Cancel it and back up again.',
       );
+    // FL-1677: the upload speed limit as set when the run started
+    const limit = settings.uploadLimit;
+    opened.connection.uploadLimit = () => (limit.enabled ? limit.mbps * 125_000 : null);
     const repository = await this.openRepository(opened, { create: true });
     await this.openManifest(run);
     await this.recordRun(operation, progress.result, 'running');
@@ -2547,6 +2559,12 @@ export class CloudBackupService {
       // needs is not known here, so this backup cannot be vouched for. It stays restorable; the next run is new.
       throw new Error('This backup was stored but not recorded before it stopped. Back up again.');
     }
+    // FL-1677: outside the upload hours a run waits, paused, for the hourly check to carry it on
+    const { server } = await this.readSettings();
+    const window = uploadWindow(settings.uploadHours, serverTimeZone(server));
+    if (!window.open) {
+      await this.pauseForUploadHours(run);
+    }
     run.progress.result = { ...run.progress.result, phase: 'assets' };
     if (!(await this.checkpoint(run))) {
       return false;
@@ -2568,6 +2586,14 @@ export class CloudBackupService {
     relay(this.lease?.lost.signal);
     let writtenAt = Date.now();
     let writing: Promise<unknown> = Promise.resolve();
+    // the upload hours end: the run pauses at its next progress write
+    const closing =
+      window.open && window.closesAt
+        ? setTimeout(
+            () => handlePromiseError(this.pauseForUploadHours(run), this.logger),
+            window.closesAt.getTime() - Date.now(),
+          )
+        : undefined;
     try {
       const outcome = await this.runner.run({
         repository,
@@ -2652,7 +2678,33 @@ export class CloudBackupService {
       }
       throw error;
     } finally {
+      clearTimeout(closing);
       await this.storageRepository.unlink(dump).catch(() => {});
+    }
+  }
+
+  /**
+   * FL-1677: a backup run paused for the upload hours, marked so that the hourly check carries it on once
+   * they open again. A run paused by hand is never carried on by itself.
+   */
+  private async pauseForUploadHours(run: Run) {
+    await this.updateMetadata((current) => ({ ...current, uploadHoursPausedRunId: run.id }));
+    await this.operations.requestPause(run.id, run.operation.ownerId, BUCKET_KINDS);
+  }
+
+  private async resumeAfterUploadHours(
+    metadata: FrameleafCloudBackup,
+    hours: SystemConfig['frameleafCloud']['cloudBackup']['uploadHours'],
+    timeZone: string,
+  ) {
+    const id = metadata.uploadHoursPausedRunId;
+    if (!id || !uploadWindow(hours, timeZone).open) {
+      return;
+    }
+    await this.updateMetadata(({ uploadHoursPausedRunId: _id, ...current }) => current);
+    const operation = await this.operations.getOfKind(id, KIND);
+    if (operation?.status === MediaOperationStatus.Paused) {
+      await this.operations.resume(id, operation.ownerId);
     }
   }
 
@@ -3501,12 +3553,14 @@ export class CloudBackupService {
         mediaLocation,
         currentOriginals,
         takenPaths,
+        paths: snapshot.paths ?? null,
+        folder: snapshot.folder ?? null,
       });
       if (snapshot.owner) {
         plan.files = plan.files.filter((file) => file.role === 'original' || file.role === 'sidecar');
         if (plan.files.some((file) => !file.inPlace)) throw new Error('Owner restore destination unavailable');
       }
-      if (snapshot.assetIds && plan.files.length === 0 && snapshot.scope !== 'album') {
+      if ((snapshot.assetIds || snapshot.paths) && plan.files.length === 0 && snapshot.scope !== 'album') {
         throw new Error('This backup does not hold the chosen items.');
       }
       const done = await this.restorer.restore({
@@ -4379,6 +4433,12 @@ export class CloudBackupService {
     if ((dto.scope === 'database' || dto.scope === 'library') && !manifest.databaseKey) {
       throw new BadRequestException('This backup has no database dump to restore.');
     }
+    if (dto.paths && (dto.scope !== 'files' || dto.assetIds)) {
+      throw new BadRequestException('Files and folders are restored on their own, with no items chosen.');
+    }
+    if (dto.folder && !dto.paths) {
+      throw new BadRequestException('Only chosen files and folders go to another folder.');
+    }
     await this.requireKeyForRequest(metadata);
     let assetIds = dto.scope === 'files' || dto.scope === 'asset' ? (dto.assetIds ?? null) : null;
     if (dto.scope === 'album') {
@@ -4400,6 +4460,7 @@ export class CloudBackupService {
       manifestKey: dto.manifestKey,
       scope: dto.scope,
       assetIds,
+      ...(dto.paths && { paths: dto.paths, folder: dto.folder ?? null }),
       ...(dto.scope === 'album' && { albumId: dto.albumId }),
       ...((dto.scope === 'asset' || dto.scope === 'album') && { details: dto.details ?? 'keep' }),
     };
@@ -4440,7 +4501,20 @@ export class CloudBackupService {
     if (kept.every((manifest) => manifest.key !== key)) {
       throw new NotFoundException('This backup is not one of the kept backups.');
     }
-    const binding = JSON.stringify([
+    const cached = this.cachedManifest(metadata, key);
+    if (cached) {
+      return cached;
+    }
+    const manifest = await this.readForRequest(
+      metadata,
+      async (connection) => (await this.openSnapshot({ connection }, key)).manifest,
+    );
+    this.manifestCache = { bucketRef: metadata.bucketRef, key, binding: this.manifestBinding(metadata), manifest };
+    return manifest;
+  }
+
+  private manifestBinding(metadata: FrameleafCloudBackup) {
+    return JSON.stringify([
       metadata.bucketRef,
       metadata.region,
       metadata.bucket,
@@ -4448,27 +4522,38 @@ export class CloudBackupService {
       metadata.managed?.storageId ?? null,
       metadata.managed?.location?.locationId ?? null,
     ]);
-    if (
-      this.manifestCache?.bucketRef === metadata.bucketRef &&
-      this.manifestCache.key === key &&
-      this.manifestCache.binding === binding
-    ) {
-      return this.manifestCache.manifest;
-    }
+  }
+
+  private cachedManifest(metadata: FrameleafCloudBackup, key: string) {
+    const cache = this.manifestCache;
+    return cache?.bucketRef === metadata.bucketRef &&
+      cache.key === key &&
+      cache.binding === this.manifestBinding(metadata)
+      ? cache.manifest
+      : undefined;
+  }
+
+  /**
+   * Reads from the bucket for an API request. With Frameleaf-managed storage the read key is rotated in under
+   * the bucket lock, so only while no operation holds the bucket.
+   */
+  private async readForRequest<T>(
+    metadata: FrameleafCloudBackup,
+    use: (connection: CloudBackupConnection) => Promise<T>,
+  ): Promise<T> {
     await this.requireKeyForRequest(metadata);
     const read = async (connection: CloudBackupConnection) => {
       try {
         await this.attachClientHistory(connection, metadata);
-        return (await this.openSnapshot({ connection }, key)).manifest;
+        return await use(connection);
       } catch (error) {
         throw this.asRequestError(error);
       }
     };
-    let manifest: CloudBackupManifest;
     if (metadata.target === 'managed') {
       // A new key revokes the one a running operation holds: under the bucket lock, which every operation
       // is created under and every rotation takes, nothing else can hold the bucket while this reads.
-      manifest = await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () => {
+      return this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () => {
         if (await this.activeBucketOperation()) {
           throw new ConflictException(
             'Wait for the running cloud backup operation to finish before browsing a backup.',
@@ -4485,18 +4570,108 @@ export class CloudBackupService {
         }
         return read(connection);
       });
-    } else {
-      const { frameleafCloud } = await this.readSettings();
-      let connection: CloudBackupConnection;
-      try {
-        connection = this.ownBucketConnection(metadata, frameleafCloud.cloudBackup);
-      } catch (error) {
-        throw new ConflictException(errorMessage(error));
-      }
-      manifest = await read(connection);
     }
-    this.manifestCache = { bucketRef: metadata.bucketRef, key, binding, manifest };
-    return manifest;
+    const { frameleafCloud } = await this.readSettings();
+    let connection: CloudBackupConnection;
+    try {
+      connection = this.ownBucketConnection(metadata, frameleafCloud.cloudBackup);
+    } catch (error) {
+      throw new ConflictException(errorMessage(error));
+    }
+    return read(connection);
+  }
+
+  /** FL-1677: the item ids of a backup that are Locked: as the library has them now, else as the backup recorded. */
+  private async lockedItems(manifest: CloudBackupManifest) {
+    const ids = Object.keys(manifest.assets);
+    const library = await this.libraryState(ids);
+    return new Set(ids.filter((id) => library.get(id)?.locked ?? manifest.assets[id].details?.visibility === 'locked'));
+  }
+
+  /** FL-1677: the paths of the files of a backup's Locked items, never named by a browse. */
+  private async lockedPaths(manifest: CloudBackupManifest) {
+    const locked = await this.lockedItems(manifest);
+    return new Set([...locked].flatMap((id) => manifest.assets[id].files.map((file) => resolve(file.path))));
+  }
+
+  /**
+   * FL-1677: what one folder held in a kept backup, read from that folder's tree alone (the catalog only to
+   * leave out the files of Locked items, from this server's copy when it has one).
+   */
+  async browse(dto: CloudBackupBrowseDto): Promise<CloudBackupBrowseResponseDto> {
+    const metadata = await this.requireClaim();
+    const kept = await this.index.listKeptManifests(metadata.bucketRef);
+    if (kept.every(({ key }) => key !== dto.manifestKey)) {
+      throw new NotFoundException('This backup is not one of the kept backups.');
+    }
+    const { entries, manifest } = await this.readForRequest(metadata, async (connection) => {
+      const named = parseSnapshotObjectKey(dto.manifestKey);
+      if (!named || named.vaultId !== connection.vaultId) {
+        throw new NotFoundException('This is not one of this server’s backups.');
+      }
+      const repository = await this.openRepository({ connection });
+      const snapshot = await readVaultSnapshot(repository, named.key, connection.trustedManifests?.[dto.manifestKey]);
+      const catalog = this.cachedManifest(metadata, dto.manifestKey) ?? (await readVaultCatalog(repository, snapshot));
+      try {
+        return { entries: await browseBackup(repository, snapshot, dto.path), manifest: catalog };
+      } catch (error) {
+        if (error instanceof Error && error.message === 'No such folder in this backup') {
+          throw new NotFoundException('This backup holds no such folder.');
+        }
+        throw error;
+      }
+    });
+    this.manifestCache = {
+      bucketRef: metadata.bucketRef,
+      key: dto.manifestKey,
+      binding: this.manifestBinding(metadata),
+      manifest,
+    };
+    const locked = await this.lockedPaths(manifest);
+    const shown = entries.filter((entry) => entry.type === 'folder' || !locked.has(resolve(dto.path, entry.name)));
+    const offset = dto.offset ?? 0;
+    return {
+      path: dto.path,
+      total: shown.length,
+      entries: shown.slice(offset, offset + (dto.limit ?? 500)),
+      hiddenLocked: entries.length - shown.length,
+    };
+  }
+
+  /** FL-1677: each different copy of one file the kept backups hold, newest first. A Locked item's file is refused. */
+  async getFileVersions(dto: CloudBackupFileVersionsDto): Promise<CloudBackupFileVersionsResponseDto> {
+    const metadata = await this.requireClaim();
+    const kept = await this.index.listKeptManifests(metadata.bucketRef);
+    if (kept.length === 0) {
+      return { versions: [] };
+    }
+    const newest = await this.readManifestForRequest(metadata, kept[0].key);
+    if ((await this.lockedPaths(newest)).has(resolve(dto.path))) {
+      throw new ForbiddenException('The earlier versions of a Locked item are not listed.');
+    }
+    const versions = await this.readForRequest(metadata, async (connection) => {
+      const repository = await this.openRepository({ connection });
+      const snapshots = [];
+      for (const { key } of kept) {
+        const named = parseSnapshotObjectKey(key);
+        if (named && named.vaultId === connection.vaultId) {
+          snapshots.push({
+            key,
+            snapshot: await readVaultSnapshot(repository, named.key, connection.trustedManifests?.[key]),
+          });
+        }
+      }
+      return fileVersions(repository, snapshots, dto.path);
+    });
+    const created = new Map(kept.map(({ key, createdAt }) => [key, createdAt]));
+    return {
+      versions: versions.map(({ snapshotKey, size, modifiedAt }) => ({
+        manifestKey: snapshotKey,
+        createdAt: (created.get(snapshotKey) ?? new Date(0)).toISOString(),
+        size,
+        modifiedAt,
+      })),
+    };
   }
 
   /**
