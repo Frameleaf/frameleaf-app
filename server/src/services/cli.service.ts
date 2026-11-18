@@ -110,6 +110,9 @@ export class CliService extends BaseService {
     }
     await loadInstanceIdentity(deps);
     const signer = this.instanceIdentityRepository.currentSigner();
+    if (!signer.signBytes) {
+      throw new Error('The identity key cannot sign raw bytes');
+    }
     const statement = {
       version: 1 as const,
       parentInstanceId: link.instanceId,
