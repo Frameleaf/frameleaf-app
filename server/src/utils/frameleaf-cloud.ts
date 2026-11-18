@@ -1,5 +1,4 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import z from 'zod';
 import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
@@ -2491,13 +2490,7 @@ export const workloadForCatalogEntry = (workload: string, mode: CloudRestoration
   return appWorkloadsForCloudId(workload)[0] ?? null;
 };
 
-export const base64url = (input: Buffer | string): string => Buffer.from(input).toString('base64url');
-
-/** RFC 7638 JWK thumbprint of an Ed25519 public key. */
-export const ed25519Thumbprint = (jwk: { crv: string; kty: string; x: string }): string =>
-  createHash('sha256')
-    .update(JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x }))
-    .digest('base64url');
+export { base64url, ed25519Thumbprint } from '@frameleaf/backup-core';
 
 /** The regional processing gateway for a data region, from discovery. Never a hard-coded host. */
 export const regionalGateway = (document: FrameleafDiscoveryDocument, region: string | undefined): string | null => {

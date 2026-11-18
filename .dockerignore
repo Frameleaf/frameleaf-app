@@ -16,6 +16,9 @@
 # locked-crypto ships its committed build the same way (CI checks it matches src).
 !packages/locked-crypto/dist/
 !packages/locked-crypto/dist/**
+# backup-core too: the server and Manager both run its committed build.
+!packages/backup-core/dist/
+!packages/backup-core/dist/**
 !packages/ui/dist/
 !packages/ui/dist/**
 **/coverage/

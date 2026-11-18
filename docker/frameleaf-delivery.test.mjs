@@ -348,6 +348,8 @@ test("the selective server build admits owned SQL-tools and retains its producti
       "!packages/sql-tools/dist/**",
       "!packages/locked-crypto/dist/",
       "!packages/locked-crypto/dist/**",
+      "!packages/backup-core/dist/",
+      "!packages/backup-core/dist/**",
       "!packages/ui/dist/",
       "!packages/ui/dist/**",
     ],

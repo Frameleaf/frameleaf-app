@@ -57,9 +57,8 @@ const encode = (value: string) =>
 const tag = (xml: string, name: string) => new RegExp(`<${name}>([^<]*)</${name}>`).exec(xml)?.[1] ?? null;
 
 /**
- * AWS Signature Version 4 for S3: the headers to send, without `host`.
- * A copy of the photo server's `signS3Request`, checked against the same AWS example; the server's
- * copy goes when the server uses this package.
+ * AWS Signature Version 4 for S3: the headers to send, without `host` (which the sender sets from the
+ * address it signed for). Every header given is signed. The photo server signs with this too.
  */
 export function signS3Request(request: {
   method: string;
