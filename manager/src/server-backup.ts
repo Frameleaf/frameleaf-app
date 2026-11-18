@@ -192,7 +192,8 @@ export class ServerBackup {
    */
   async adoptKey(input: unknown) {
     const text = z.string().max(200).parse(input);
-    const key = /^[0-9a-f]{64}$/i.test(text.trim()) ? text.trim().toLowerCase() : parseRecoveryCode(text)?.toString('hex');
+    const bare = text.replaceAll(/\s/g, '');
+    const key = /^[0-9a-f]{64}$/i.test(bare) ? bare.toLowerCase() : parseRecoveryCode(text)?.toString('hex');
     if (!key) throw new Refusal('server_backup_key_wrong');
     this.available();
     const existing = (await readFile(this.keyFile(), 'utf8').catch(() => null))?.trim();
@@ -240,9 +241,15 @@ export class ServerBackup {
   async disconnect() {
     if (this.child || this.starting) throw new Refusal('server_backup_busy');
     if (!this.options.cloud?.linked) throw new Refusal('server_backup_cloud_not_linked');
-    await this.options.cloud.unlink();
-    this.repository = null;
-    this.save({ on: false, snapshots: [], sizes: {} });
+    // Holds off any run, by hand or on schedule, while Cloud is asked; released if Cloud can't be reached.
+    this.starting = true;
+    try {
+      await this.options.cloud.unlink();
+      this.repository = null;
+      this.save({ on: false, snapshots: [], sizes: {} });
+    } finally {
+      this.starting = false;
+    }
   }
 
   private async launch(kind: RunKind, trigger: Run['trigger'], rootKey: string, work: (target: Target, session: Session | null) => Job): Promise<Run> {

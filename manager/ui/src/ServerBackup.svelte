@@ -97,6 +97,8 @@
   }
   const showFirstKey = () =>
     run(async () => {
+      // A key already confirmed (this server's own, after connecting again) is not shown again without the password.
+      if (data.key.saved) return void (step = 'schedule');
       firstKey = (await api('server-backup-first-key', {})).code;
       step = 'key';
     });

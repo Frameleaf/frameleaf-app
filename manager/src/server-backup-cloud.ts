@@ -179,8 +179,10 @@ export class CloudBackup {
   async unlink() {
     const identity = await this.identity();
     await this.cloud.unlink(identity).catch((error) => {
-      // Already gone from Cloud (unlinked on the account site, or taken over): nothing left to undo there.
-      if (!(error instanceof CloudError) || (error.status !== 401 && error.status !== 404)) throw error;
+      // Already gone from Cloud (unlinked on the account site, taken over, or an earlier disconnect whose
+      // answer was lost): it can no longer sign in, so there is nothing left to undo there.
+      const gone = error instanceof CloudError && (error.status === 401 || error.status === 404 || error.code === 'invalid_client');
+      if (!gone) throw error;
     });
     await rm(this.file(), { force: true });
     this.linking = null;

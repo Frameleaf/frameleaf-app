@@ -277,14 +277,24 @@ test('disconnecting stops backups and keeps what is stored; connecting again bri
   assert.ok([...cloud.state.instances.values()].every((item) => item.kind !== 'backup-machine' || !item.linked));
   assert.deepEqual(sequences(), [1, 2, 3, 4, 5]);
   await assert.rejects(second.service.disconnect(), refused('server_backup_cloud_not_linked'));
+  // A disconnect whose answer was lost, retried after the token ran out: the identity no longer signs in,
+  // and the local cleanup still finishes.
+  await link(second);
+  const machine = [...cloud.state.instances].findLast(([, item]) => item.kind === 'backup-machine')!;
+  machine[1].linked = false;
+  cloud.state.tokens.clear();
+  cloud.state.now += 11 * 60_000;
+  await second.service.disconnect();
+  assert.equal(second.service.view()!.cloud?.state, 'unlinked');
 
   // The same Manager connects again, takes its own older backups over, and its own key opens them.
   await link(second);
-  assert.equal(cloud.state.instances.size, before + 1);
+  assert.equal(cloud.state.instances.size, before + 2);
   const [older] = await second.link.takeoverCandidates();
   await second.link.askTakeover(older!.instanceId);
   cloud.approve();
   assert.equal((await second.link.checkTakeover()).status, 'approved');
-  await second.service.adoptKey(code);
+  // Its own key, typed as the older hex form across two lines, still reads.
+  await second.service.adoptKey(`${key.slice(0, 32)}\n${key.slice(32)}`);
   assert.deepEqual(second.service.view()!.snapshots.map((item) => item.key), snapshots.map((item) => item.key));
 });
