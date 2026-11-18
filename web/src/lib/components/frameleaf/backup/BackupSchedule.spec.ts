@@ -10,7 +10,13 @@ const draft = vi.hoisted(() => ({
     database: { enabled: true, cronExpression: '0 02 * * *', keepLastAmount: 14 },
     schedule: { cronExpression: '' },
   },
-  frameleafCloud: { cloudBackup: { schedule: { cronExpression: '0 3 * * *' } } },
+  frameleafCloud: {
+    cloudBackup: { schedule: { cronExpression: '0 3 * * *' } } as {
+      schedule: { cronExpression: string };
+      uploadLimit?: { enabled: boolean; mbps: number };
+      uploadHours?: { enabled: boolean; start: string; stop: string };
+    },
+  },
 }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { value: { configFile: false } },
@@ -43,6 +49,8 @@ describe('Backup › Schedule (FL-362)', () => {
     draft.backup.schedule.cronExpression = '';
     draft.backup.database.cronExpression = '0 02 * * *';
     draft.frameleafCloud.cloudBackup.schedule.cronExpression = '0 3 * * *';
+    delete draft.frameleafCloud.cloudBackup.uploadLimit;
+    delete draft.frameleafCloud.cloudBackup.uploadHours;
   });
 
   it('says the schedule in force back in words, with the order of the places that are on', async () => {
@@ -135,5 +143,49 @@ describe('Backup › Schedule (FL-362)', () => {
     sdkMock.getBackupSchedule.mockResolvedValue(server('0 02 * * *', { places: [{ id: 'local', on: false }] }));
     render(BackupSchedule);
     expect(await screen.findByText(en.frameleaf_backup_schedule_nothing_on)).toBeInTheDocument();
+  });
+
+  describe('Cloud Backup uploads (FL-1666)', () => {
+    const uploads = () => screen.getByRole('region', { name: en.frameleaf_backup_schedule_uploads_title });
+
+    it('has the speed limit and upload hours off by default, and says nothing about them', async () => {
+      await open();
+      const section = uploads();
+      expect(within(section).getByRole('switch', { name: 'Limit Cloud Backup’s upload speed' })).toHaveAttribute(
+        'aria-checked',
+        'false',
+      );
+      expect(within(section).getByRole('switch', { name: 'Only upload during set hours' })).toHaveAttribute(
+        'aria-checked',
+        'false',
+      );
+      expect(within(section).queryByLabelText('Upload speed limit')).toBeNull();
+      expect(within(section).queryByLabelText('Uploads start at')).toBeNull();
+      expect(within(sentence()).queryByText(/^Cloud Backup uploads/)).toBeNull();
+    });
+
+    it('keeps each switch in the settings draft, starting from the server defaults', async () => {
+      await open();
+      await fireEvent.click(screen.getByRole('switch', { name: 'Limit Cloud Backup’s upload speed' }));
+      expect(draft.frameleafCloud.cloudBackup.uploadLimit).toEqual({ enabled: true, mbps: 20 });
+      await fireEvent.click(screen.getByRole('switch', { name: 'Only upload during set hours' }));
+      expect(draft.frameleafCloud.cloudBackup.uploadHours).toEqual({ enabled: true, start: '01:00', stop: '07:00' });
+    });
+
+    it('shows the limit and the hours when on, keeps changes, and says both in a sentence', async () => {
+      draft.frameleafCloud.cloudBackup.uploadLimit = { enabled: true, mbps: 20 };
+      draft.frameleafCloud.cloudBackup.uploadHours = { enabled: true, start: '01:00', stop: '06:00' };
+      await open();
+      expect(
+        within(sentence()).getByText(
+          /^Cloud Backup uploads only between 1:00\sAM and 6:00\sAM, at up to 20 Mbit\/s\. Buddy Backup/,
+        ),
+      ).toBeInTheDocument();
+
+      await fireEvent.input(screen.getByLabelText('Upload speed limit'), { target: { value: '50' } });
+      expect(draft.frameleafCloud.cloudBackup.uploadLimit).toEqual({ enabled: true, mbps: 50 });
+      await fireEvent.change(screen.getByLabelText('Uploads stop at'), { target: { value: '05:30' } });
+      expect(draft.frameleafCloud.cloudBackup.uploadHours).toEqual({ enabled: true, start: '01:00', stop: '05:30' });
+    });
   });
 });

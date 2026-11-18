@@ -669,6 +669,10 @@
         />
       </Row>
     {/if}
+    <!-- FL-1666: what the storage side can see of a backup. -->
+    <Row label={$t('frameleaf_cloud_backup_visible')} help={$t('frameleaf_cloud_backup_visible_help')}>
+      <span class="always">{$t('frameleaf_cloud_backup_visible_value')}</span>
+    </Row>
     <Row label={$t('frameleaf_backup_check_now')} help={$t('frameleaf_backup_check_now_help')}>
       <Button disabled={busy || locked || !!active || !!status.activeRestore} onclick={() => void verify()}>
         <Icon icon={mdiCheckCircleOutline} size="18" />
@@ -711,6 +715,8 @@
       <dl class="fc-facts">
         <dt>{$t('frameleaf_cloud_backup_encryption')}</dt>
         <dd>{$t('frameleaf_cloud_backup_encryption_value')}</dd>
+        <dt>{$t('frameleaf_cloud_backup_visible_fact')}</dt>
+        <dd>{$t('frameleaf_cloud_backup_visible_fact_value')}</dd>
         <dt>{$t('frameleaf_cloud_backup_bucket')}</dt>
         <dd><code>{status.bucket}</code></dd>
         {#if status.target !== CloudBackupTargetSetting.Managed}

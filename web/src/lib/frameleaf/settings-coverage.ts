@@ -162,38 +162,33 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'frameleafCloud.cloudBackup.uploadHours.enabled',
-    // FL-1677: the Schedule page's controls come with FL-1666
-    kind: 'api-only',
-    file: '../server/src/dtos/config.dto.ts',
-    evidence: 'Upload only between the start and stop times',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'uploadHours.enabled',
   },
   {
     pattern: 'frameleafCloud.cloudBackup.uploadHours.start',
-    // FL-1677: the Schedule page's controls come with FL-1666
-    kind: 'api-only',
-    file: '../server/src/dtos/config.dto.ts',
-    evidence: 'Uploads may start (HH:MM)',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'uploadHours.start',
   },
   {
     pattern: 'frameleafCloud.cloudBackup.uploadHours.stop',
-    // FL-1677: the Schedule page's controls come with FL-1666
-    kind: 'api-only',
-    file: '../server/src/dtos/config.dto.ts',
-    evidence: 'Uploads stop (HH:MM)',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'uploadHours.stop',
   },
   {
     pattern: 'frameleafCloud.cloudBackup.uploadLimit.enabled',
-    // FL-1677: the Schedule page's controls come with FL-1666
-    kind: 'api-only',
-    file: '../server/src/dtos/config.dto.ts',
-    evidence: 'Limit how fast backups upload',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'uploadLimit.enabled',
   },
   {
     pattern: 'frameleafCloud.cloudBackup.uploadLimit.mbps',
-    // FL-1677: the Schedule page's controls come with FL-1666
-    kind: 'api-only',
-    file: '../server/src/dtos/config.dto.ts',
-    evidence: 'Upload speed limit, Mbit/s',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'uploadLimit.mbps',
   },
   {
     pattern: 'frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd',
