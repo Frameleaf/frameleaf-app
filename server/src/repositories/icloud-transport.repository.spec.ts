@@ -109,6 +109,19 @@ describe(ICloudTransportRepository.name, () => {
     respond(page);
     expect(await sut.inventory({ session, kind: 'assets' })).toEqual(page);
   });
+  it('sends a stored library as protocol fields only, without the server bookkeeping (FL-1685)', async () => {
+    respond({ version: 1, session, records: [], complete: true, capabilities: {} });
+    const send = (sut as unknown as { send: ReturnType<typeof vi.fn> }).send;
+    const zoneID = { zoneName: 'PrimarySync', ownerRecordName: '_owner', zoneType: 'REGULAR_CUSTOM_ZONE' };
+    const stored = { area: 'private', zoneID, __icloudSnapshot: 'snapshot-1' } as never;
+    await sut.inventory({ session, kind: 'albums', library: stored });
+    expect(send).toHaveBeenCalledWith('inventory', {
+      session,
+      kind: 'albums',
+      library: { area: 'private', zoneID },
+      limit: 100,
+    });
+  });
   it.each([
     { version: 2, session },
     { session },

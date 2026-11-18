@@ -71,6 +71,12 @@ const freeLoopbackPort = () =>
     });
   });
 
+/**
+ * Protocol v1 names a library by its area and zone only. A stored library record also carries the server's own
+ * bookkeeping (FL-1685's `__icloudSnapshot`), and the bridge rejects unknown fields as invalid_request.
+ */
+const bridgeLibrary = ({ area, zoneID }: ICloudLibrary): ICloudLibrary => ({ area, zoneID });
+
 @Injectable()
 export class ICloudTransportRepository {
   // Static: weeklyIdentityAdoptionActive builds its own instance and must see the same answer.
@@ -354,7 +360,13 @@ export class ICloudTransportRepository {
     smartAlbum?: ICloudSmartAlbum;
     cursor?: unknown;
   }): Promise<ICloudPage> {
-    const value = await this.readJson(await this.send('inventory', { ...input, limit: 100 }));
+    const value = await this.readJson(
+      await this.send('inventory', {
+        ...input,
+        ...(input.library && { library: bridgeLibrary(input.library) }),
+        limit: 100,
+      }),
+    );
     if (
       !value ||
       typeof value !== 'object' ||
@@ -386,7 +398,7 @@ export class ICloudTransportRepository {
     },
     signal?: AbortSignal,
   ) {
-    const stream = await this.send('download', input, signal);
+    const stream = await this.send('download', { ...input, library: bridgeLibrary(input.library) }, signal);
     const header = stream.headers['x-icloud-session'];
     const fingerprint = stream.headers['x-icloud-resource-fingerprint'];
     const size = Number(stream.headers['x-icloud-resource-size']);
