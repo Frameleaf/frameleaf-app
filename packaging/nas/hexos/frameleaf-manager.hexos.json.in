@@ -3,7 +3,7 @@
   "custom": true,
   "metadata": {
     "name": "Frameleaf",
-    "description": "Your photos. Your server. Everywhere.\n\nBring photos and videos together in a library with a timeline, albums, smart search, people, places, sharing and editing. Your server holds the originals; local use needs no Cloud account.\n\nThis package installs Frameleaf Manager. Manager guides storage setup, installs the application from a signed release, monitors services, handles updates and keeps encrypted database recovery points. HexOS creates dedicated folders in your selected storage locations. Open Manager after installation to create your local administrator and set up the photo library.\n\nManager needs Docker access to manage the application containers. Its backups cover the database and configuration, so keep a separate backup of original photos and videos. Product screenshots show demonstration data.\n\nInstallation: https://frameleaf.app/docs/nas/hexos/\nHelp center: https://frameleaf.app/help/\nCommunity: https://frameleaf.app/help/community/",
+    "description": "Your photos. Your server. Everywhere.\n\nBring photos and videos together in a library with a timeline, albums, smart search, people, places, sharing and editing. Your server holds the originals; local use needs no Cloud account.\n\nThis package installs Frameleaf Manager. Manager guides storage setup, installs the application from a signed release, monitors services, handles updates and keeps encrypted database recovery points. HexOS creates dedicated folders in your selected storage locations. Open Manager after installation to create your local administrator and set up the photo library.\n\nManager needs Docker access to manage the application containers. It is also given your Documents, Downloads, Media, Music, Movies, Shows and Videos locations, so Server Backup can protect them; turn a location off in HexOS to keep it out. Its backups cover the database and configuration, so keep a separate backup of original photos and videos. Product screenshots show demonstration data.\n\nInstallation: https://frameleaf.app/docs/nas/hexos/\nHelp center: https://frameleaf.app/help/\nCommunity: https://frameleaf.app/help/community/",
     "icon": "https://raw.githubusercontent.com/Frameleaf/frameleaf-app/main/design/frameleaf/mark.png",
     "version": "@MANAGER_VERSION@",
     "categories": [
@@ -41,7 +41,7 @@
     "changeLog": "Frameleaf Manager @MANAGER_VERSION@."
   },
   "requirements": {
-    "locations": ["ApplicationsPerformance", "ApplicationsCapacity", "Photos"],
+    "locations": ["ApplicationsPerformance", "ApplicationsCapacity", "Photos", "Documents", "Downloads", "Media", "Music", "Movies", "Shows", "Videos"],
     "specifications": ["4CORE", "8GBRAM", "10GB"],
     "permissions": ["READ_WRITE_LOCATIONS"],
     "ports": [2282]
@@ -107,7 +107,14 @@
         "type": "host_path",
         "mount_path": "$LOCATION(ApplicationsCapacity)/frameleaf/backups",
         "host_path_config": { "path": "$LOCATION(ApplicationsCapacity)/frameleaf/backups" }
-      }
+      },
+      "$MOUNTED_HOST_PATH($LOCATION(Documents), $LOCATION(Documents))",
+      "$MOUNTED_HOST_PATH($LOCATION(Downloads), $LOCATION(Downloads))",
+      "$MOUNTED_HOST_PATH($LOCATION(Media), $LOCATION(Media))",
+      "$MOUNTED_HOST_PATH($LOCATION(Music), $LOCATION(Music))",
+      "$MOUNTED_HOST_PATH($LOCATION(Movies), $LOCATION(Movies))",
+      "$MOUNTED_HOST_PATH($LOCATION(Shows), $LOCATION(Shows))",
+      "$MOUNTED_HOST_PATH($LOCATION(Videos), $LOCATION(Videos))"
     ]
   }
 }

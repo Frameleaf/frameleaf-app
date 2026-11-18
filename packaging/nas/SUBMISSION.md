@@ -151,7 +151,9 @@ bounding set to CHOWN, DAC_OVERRIDE and FOWNER and sets `no-new-privs` itself.
   the catalog's image watcher opens its own pull requests for later `manager-v`
   tags; submit again only when the script itself changes.
 
-Not yet qualified on a HexOS box: `$LOCATION` inside `mount_path`, the `root` owner
+Not yet qualified on a HexOS box: `$MOUNTED_HOST_PATH` in a custom app's `storage` list (the
+Documents, Downloads, Media, Music, Movies, Shows and Videos locations Server Backup can protect;
+other catalog apps use it in their chart's `additional_storage`), `$LOCATION` inside `mount_path`, the `root` owner
 on the Frameleaf folders, Custom Install accepting `latest`, and importing an Immich
 that HexOS installed. HexOS can restart its own Immich app, which Manager's
 restart-policy fence does not prevent; stop Immich in HexOS before an import.

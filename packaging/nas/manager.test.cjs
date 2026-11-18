@@ -125,12 +125,17 @@ for template in templates:
     const env = Object.fromEntries(hexos.app_values.envs.map(({ name, value }) => [name, value]));
     assert.equal(env.MANAGER_BIND_ADDRESS, '0.0.0.0');
     assert.equal(env.MANAGER_ORIGIN, undefined);
-    const mounts = Object.fromEntries(hexos.app_values.storage.map(entry => [entry.mount_path, entry]));
+    // The NAS's own folders, for Server Backup: each at its host path, left out by HexOS when the owner turns it off.
+    const optional = hexos.app_values.storage.filter(entry => typeof entry === 'string');
+    const owners = ['Documents', 'Downloads', 'Media', 'Music', 'Movies', 'Shows', 'Videos'];
+    assert.deepEqual(optional, owners.map(name => `$MOUNTED_HOST_PATH($LOCATION(${name}), $LOCATION(${name}))`));
+    for (const name of owners) assert(hexos.requirements.locations.includes(name), name);
+    const mounts = Object.fromEntries(hexos.app_values.storage.filter(entry => typeof entry !== 'string').map(entry => [entry.mount_path, entry]));
     assert.equal(mounts['/var/run/docker.sock'].host_path_config.path, '/var/run/docker.sock');
     assert.equal(mounts['/run/frameleaf-host/mountinfo'].read_only, true);
     assert.equal(mounts['/run/frameleaf-host/mountinfo'].host_path_config.path, '/proc/1/mountinfo');
     // Manager compares host paths with its own view, so every library folder mounts at its host path.
-    const folders = hexos.app_values.storage.filter(entry => entry.mount_path.startsWith('$LOCATION('));
+    const folders = hexos.app_values.storage.filter(entry => typeof entry !== 'string' && entry.mount_path.startsWith('$LOCATION('));
     for (const entry of folders) assert.equal(entry.host_path_config.path, entry.mount_path);
     const roots = [env.MANAGER_DATA, env.MANAGER_BACKUP_ROOT, env.MANAGER_APPDATA_ROOT,
       ...env.MANAGER_STORAGE_ROOTS.split(':'), ...env.MANAGER_DATABASE_ROOTS.split(':')];
