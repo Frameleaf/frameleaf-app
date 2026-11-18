@@ -402,6 +402,7 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @fram
 
 FROM plugin-sdk AS server
 
+COPY ./packages/backup-core ./packages/backup-core/
 COPY ./packages/locked-crypto ./packages/locked-crypto/
 COPY ./packages/sql-tools ./packages/sql-tools/
 COPY ./server/package.json ./server/package.json

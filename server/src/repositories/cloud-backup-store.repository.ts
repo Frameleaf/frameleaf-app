@@ -1,5 +1,6 @@
+import { signS3Request } from '@frameleaf/backup-core';
 import { Injectable } from '@nestjs/common';
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
 import { type FileHandle, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -127,7 +128,6 @@ export const SSE_C_REFUSED_MESSAGE =
 export const VERSIONING_OFF_MESSAGE =
   'This bucket does not keep object versions. Turn on versioning for the bucket (and a lifecycle rule that removes old versions after a few days), then check the bucket again.';
 
-const EMPTY_SHA256 = createHash('sha256').update('').digest('hex');
 const REQUEST_TIMEOUT_MS = 120_000;
 const PART_TIMEOUT_MS = 10 * 60_000;
 /** A restore or verification reads a whole object in one request; a large video can take a while. */
@@ -138,7 +138,6 @@ const LIST_PAGE = 1000;
 
 const sha256Hex = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
 const md5Base64 = (data: Buffer) => createHash('md5').update(data).digest('base64');
-const hmac = (key: Buffer | string, data: string) => createHmac('sha256', key).update(data).digest();
 
 const RESERVED: Record<string, string> = { '!': '%21', "'": '%27', '(': '%28', ')': '%29', '*': '%2A' };
 
@@ -252,14 +251,6 @@ export const sanitizeProviderResponse = (response: Response | StorageResponse, a
 const escapeXml = (value: string) =>
   value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
-const amzDates = (now: Date) => {
-  const amzDate = now
-    .toISOString()
-    .replaceAll(/[-:]/g, '')
-    .replace(/\.\d{3}/, '');
-  return { amzDate, dateStamp: amzDate.slice(0, 8) };
-};
-
 /**
  * What a provider's refusal means, in words an administrator can act on. The common setup mistakes get
  * their own sentence; anything else is named by its status and code. Never a header, never a key.
@@ -281,55 +272,8 @@ export const describeProviderError = (status: number, code: string | null, actio
   return `The storage provider refused ${action}: ${status}${safeCode ? ` ${safeCode}` : ''}`;
 };
 
-/**
- * AWS Signature Version 4 for S3: the headers to send (without `host`, which `fetch` sets from the URL
- * it was signed for), including `authorization`, `x-amz-date` and `x-amz-content-sha256`. Every header
- * given is signed, the SSE-C ones included.
- */
-export const signS3Request = (request: {
-  method: string;
-  host: string;
-  canonicalUri: string;
-  query: string;
-  headers: Record<string, string>;
-  body?: Buffer;
-  region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  now: Date;
-  sessionToken?: string;
-}): Record<string, string> => {
-  const { amzDate, dateStamp } = amzDates(request.now);
-  const payloadHash = request.body ? sha256Hex(request.body) : EMPTY_SHA256;
-  const headers: Record<string, string> = {
-    ...Object.fromEntries(Object.entries(request.headers).map(([name, value]) => [name.toLowerCase(), value])),
-    host: request.host,
-    'x-amz-content-sha256': payloadHash,
-    'x-amz-date': amzDate,
-    ...(request.sessionToken && { 'x-amz-security-token': request.sessionToken }),
-  };
-  const signedNames = Object.keys(headers).toSorted(compareCodeUnits);
-  const canonicalHeaders = signedNames.map((name) => `${name}:${headers[name].trim()}\n`).join('');
-  const signedHeaders = signedNames.join(';');
-  const canonicalRequest = [
-    request.method,
-    request.canonicalUri,
-    request.query,
-    canonicalHeaders,
-    signedHeaders,
-    payloadHash,
-  ].join('\n');
-  const scope = `${dateStamp}/${request.region}/s3/aws4_request`;
-  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256Hex(canonicalRequest)].join('\n');
-  const signingKey = hmac(
-    hmac(hmac(hmac(`AWS4${request.secretAccessKey}`, dateStamp), request.region), 's3'),
-    'aws4_request',
-  );
-  const signature = createHmac('sha256', signingKey).update(stringToSign).digest('hex');
-  const { host: _host, ...sent } = headers;
-  sent.authorization = `AWS4-HMAC-SHA256 Credential=${request.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-  return sent;
-};
+/** AWS Signature Version 4 for S3, shared with the backup engine. Every header given is signed, the SSE-C ones included. */
+export { signS3Request } from '@frameleaf/backup-core';
 
 type SignedRequest = {
   method: 'GET' | 'PUT' | 'HEAD' | 'POST' | 'DELETE';

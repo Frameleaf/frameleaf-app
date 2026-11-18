@@ -580,9 +580,13 @@ export class SharpOperations {
   async repairJpeg(input: string, output: string, preview: string, metadataSource: string): Promise<JpegRepairResult> {
     const bytes = await imageHdrInput(input, this.maxBytes);
     const found = jpegRepairCandidates(bytes);
+    // libvips stops reading a JPEG after a few hundred decoder warnings unless told not to. Old cameras
+    // write files that warn at every restart marker and still show whole; stopped there, the picture
+    // reads as damaged past repair and only a cut-down half of it "decodes".
+    const whole = { limitInputPixels: this.maxPixels, unlimited: true };
     const decode = async (candidate: Buffer, strict: boolean) => {
       try {
-        const image = sharp(candidate, { failOn: strict ? 'warning' : 'none', limitInputPixels: this.maxPixels });
+        const image = sharp(candidate, { failOn: strict ? 'warning' : 'none', ...whole });
         const { width, height } = await image.metadata();
         // metadata reads the header only; the pixels must decode too (small, so memory stays low)
         await image.clone().resize(256, 256, { fit: 'inside' }).raw().toBuffer();
@@ -638,12 +642,12 @@ export class SharpOperations {
     if (lossless) {
       await writeFile(output, best.bytes, { flag: 'wx' });
     } else {
-      await sharp(best.bytes, { failOn: 'none', limitInputPixels: this.maxPixels })
+      await sharp(best.bytes, { failOn: 'none', ...whole })
         .keepMetadata()
         .jpeg({ quality: 95, chromaSubsampling: '4:4:4' })
         .toFile(output);
     }
-    await sharp(output, { failOn: 'none', limitInputPixels: this.maxPixels })
+    await sharp(output, { failOn: 'none', ...whole })
       .rotate()
       .resize(1440, 1440, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 80 })
@@ -671,7 +675,7 @@ export class SharpOperations {
    * row in the file's own order, so a cut is always at the bottom.
    */
   async pictureSaved(bytes: string | Buffer): Promise<number> {
-    const { data, info } = await sharp(bytes, { failOn: 'none', limitInputPixels: this.maxPixels })
+    const { data, info } = await sharp(bytes, { failOn: 'none', limitInputPixels: this.maxPixels, unlimited: true })
       .resize(64, 400, { fit: 'fill', kernel: 'nearest' })
       .removeAlpha()
       .raw()

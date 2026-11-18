@@ -95,6 +95,7 @@ const idle = {
   blocked: 0,
   retrying: 0,
   noDispatchBacklog: false,
+  items: null,
 };
 
 describe(RunningJobService.name, () => {

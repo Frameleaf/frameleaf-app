@@ -19,6 +19,7 @@ const {
   trustedRun,
   ATTESTATION_TYPE,
   COSIGN_PUBLIC_KEY,
+  runFromUrl,
 } = require("./frameleaf-release.cjs");
 
 async function verifyBundle(
@@ -130,9 +131,12 @@ async function verifyBundle(
     const id = new RegExp(`^${SOURCE}/actions/runs/([0-9]+)$`).exec(
       manifest.buildRun,
     )?.[1];
+    // FL-1678: a release built on Forgejo links its run there.
+    const buildRun = id
+      ? await request(`actions/runs/${id}`)
+      : await runFromUrl(manifest.buildRun);
     assert(
-      id &&
-        trustedRun(await request(`actions/runs/${id}`), manifest.sourceCommit),
+      buildRun && trustedRun(buildRun, manifest.sourceCommit),
       "Build provenance is not trusted",
     );
   }
