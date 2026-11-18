@@ -1238,7 +1238,10 @@ select
       matched."assetId"
       order by
         asset_best_photo_score.score is not null desc,
-        coalesce(matched.width::float / nullif(matched.height, 0), 1.5) >= 0.9 desc,
+        coalesce(
+          matched.width::float / nullif(matched.height, 0),
+          1.5
+        ) >= 0.9 desc,
         asset_best_photo_score.score desc nulls last,
         matched."localDateTime" desc,
         matched."assetId"
