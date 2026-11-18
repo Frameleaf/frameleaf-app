@@ -175,6 +175,37 @@ test('choosing the whole photo library protects its keys there, not twice; a fol
   assert.ok(service.view()!.folders.some((folder: { path: string }) => folder.path === keys));
 });
 
+test('a replacement Manager picks up the old one’s backup settings from the restored copy, and only those', async () => {
+  // The copy every backup took of this Manager's database stands in for one a whole-server restore brought back.
+  service.setSettings({ ...settings(), schedule: { time: '03:30', stop: null }, folders: [...settings().folders, at('server', 'gone')] });
+  await mkdir(at('server', 'gone'));
+  await service.backUp();
+  await finished();
+  await rm(at('server', 'gone'), { recursive: true });
+  // This Manager has backed up: the copy is its own, and nothing is offered.
+  assert.equal(service.restoredSettings(), null);
+
+  const fresh = new Store(at('fresh-state'));
+  const replacement = new ServerBackup(fresh, {
+    target: { kind: 'folder', path: at('repository') },
+    inside: (path) => path === at('server') || path.startsWith(at('server') + sep),
+    always: [at('server', 'recovery')],
+    managerState: at('server', 'manager-state'),
+  });
+  fresh.set('administrator', { name: 'new owner' });
+  const offered = replacement.restoredSettings()!;
+  assert.equal(offered.settings.schedule.time, '03:30');
+  assert.deepEqual(offered.folders.find((folder) => folder.path === at('server', 'gone'))?.reachable, false);
+  const { skipped } = await replacement.applyRestoredSettings();
+  assert.deepEqual(skipped, [at('server', 'gone')]);
+  const view = replacement.view()!;
+  assert.deepEqual([view.state, view.settings.schedule.time, view.settings.folders], ['on', '03:30', settings().folders]);
+  // Nothing else of the old Manager came across.
+  assert.deepEqual(fresh.get('administrator'), { name: 'new owner' });
+  fresh.close();
+  service.setSettings(settings());
+});
+
 test('the schedule starts one backup a day at its time', async () => {
   const two = new Date(2026, 10, 18, 2, 0, 30);
   await service.tick(new Date(2026, 10, 18, 1, 59, 0));
@@ -195,5 +226,5 @@ test('a run cut short by a restart is recorded as stopped, and turning off keeps
   assert.deepEqual([service.runs(1)[0]!.state, service.runs(1)[0]!.error], ['stopped', 'manager_restarted']);
   service.turnOff();
   assert.equal(service.view()!.state, 'off');
-  assert.equal(service.view()!.snapshots.length, 3);
+  assert.equal(service.view()!.snapshots.length, 4);
 });

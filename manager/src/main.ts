@@ -829,6 +829,13 @@ class Api {
     });
     return serverBackup.view();
   }
+  @Post('server-backup-restored-settings') serverBackupRestoredSettings() {
+    return { restored: serverBackup.restoredSettings() };
+  }
+  @Post('server-backup-apply-restored') async serverBackupApplyRestored() {
+    const { skipped } = await serverBackup.applyRestoredSettings();
+    return { ...serverBackup.view(), skipped };
+  }
   @Post('server-backup-cloud-purge') async serverBackupCloudPurge() {
     return { purge: await cloudly((cloud) => cloud.purge()) };
   }
