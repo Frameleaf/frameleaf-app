@@ -6,6 +6,10 @@ import { MlWorkload } from 'src/enum.js';
 export const DesktopModelInventoryRequestSchema = DesktopQualificationRequestSchema.pick({
   provider: true,
   runtimeSourceRevision: true,
+}).extend({
+  // 2: the reply also carries each eligible task's catalogue profiles, so the desktop runs exactly the
+  // server's catalogue and keeps no copy of its own (docs/desktop-worker-setup-protocol.md in frameleaf-desktop).
+  protocolVersion: z.literal(2).optional(),
 });
 export const desktopInventoryWorkloads = [
   MlWorkload.Clip,
@@ -21,6 +25,8 @@ const entry = z
       .meta({ id: 'DesktopModelAvailability' }),
     modelNames: z.array(z.string().min(1).max(512)).max(8),
     modelKeys: z.array(z.string().regex(/^(clip|ocr|face):[a-f0-9]{64}$/)).max(8),
+    /** Protocol 2: the catalogue profile of each model key, in the same order, exactly as the server ships it. */
+    profiles: z.array(z.record(z.string(), z.unknown())).max(8).optional(),
   })
   .refine((value) =>
     value.state === 'eligible'
@@ -29,12 +35,19 @@ const entry = z
         new Set(value.modelKeys).size === value.modelKeys.length &&
         value.modelKeys.every((key) => key.startsWith(value.workload + ':'))
       : value.modelKeys.length === 0,
+  )
+  .refine(
+    (value) =>
+      !value.profiles ||
+      (value.profiles.length === value.modelKeys.length &&
+        value.profiles.every((profile, index) => profile.modelKey === value.modelKeys[index])),
   );
 export type DesktopModelAvailability = z.infer<typeof entry>;
 export class DesktopModelInventoryDto extends createZodDto(
   z.strictObject({
-    protocolVersion: z.number().int().min(1).max(1),
-    ...DesktopModelInventoryRequestSchema.shape,
+    protocolVersion: z.number().int().min(1).max(2),
+    provider: DesktopModelInventoryRequestSchema.shape.provider,
+    runtimeSourceRevision: DesktopModelInventoryRequestSchema.shape.runtimeSourceRevision,
     workloads: z
       .array(entry)
       .length(4)

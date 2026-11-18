@@ -77,3 +77,26 @@ it('offers every enabled task from the machine-learning settings alone, with no 
   const disabled = await service.inventory('token', 'proof', payload);
   expect(disabled.workloads.find((item) => item.workload === MlWorkload.Clip)?.state).toBe('disabled');
 });
+
+it('serves the server’s own catalogue profile for each eligible model on protocol 2, and none on protocol 1', async () => {
+  const v1 = await service.inventory('token', 'proof', payload);
+  expect(v1.protocolVersion).toBe(1);
+  expect(v1.workloads.every((item) => !('profiles' in item))).toBe(true);
+  const v2 = await service.inventory('token', 'proof', JSON.stringify({ ...JSON.parse(payload), protocolVersion: 2 }));
+  expect(v2.protocolVersion).toBe(2);
+  const eligible = v2.workloads.filter((item) => item.state === 'eligible');
+  expect(eligible.length).toBeGreaterThan(0);
+  for (const item of eligible) {
+    expect(item.profiles!.map((profile) => profile.modelKey)).toEqual(item.modelKeys);
+    for (const profile of item.profiles!)
+      expect(profile).toEqual(
+        catalogue.profiles.find(
+          (raw: { modelKey: string; spec: { provider: string }; runtimeSourceRevision: string }) =>
+            raw.modelKey === profile.modelKey &&
+            raw.spec.provider === 'CPUExecutionProvider' &&
+            raw.runtimeSourceRevision === JSON.parse(payload).runtimeSourceRevision,
+        ),
+      );
+  }
+  expect(v2.workloads.filter((item) => item.state !== 'eligible' && item.profiles !== undefined)).toEqual([]);
+});

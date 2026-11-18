@@ -55,9 +55,10 @@ const parse = <T>(schema: z.ZodType<T>, payload: string): T => {
 @Injectable()
 export class DesktopQualificationService {
   private logger = LoggingRepository.create(DesktopQualificationService.name);
-  private catalogue = parseDesktopModelCatalogue(
-    JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop/model-catalogue.json'), 'utf8')),
+  private catalogueJson: { profiles: Record<string, unknown>[] } = JSON.parse(
+    readFileSync(join(import.meta.dirname, '../../resources/desktop/model-catalogue.json'), 'utf8'),
   );
+  private catalogue = parseDesktopModelCatalogue(this.catalogueJson);
   private spaces = parseDesktopClipSpaces(
     JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop/model-spaces.json'), 'utf8')),
     this.catalogue,
@@ -96,15 +97,30 @@ export class DesktopQualificationService {
         if (!ownerId) throw new UnauthorizedException('desktop_worker_credential_invalid');
         if (!(await this.policies.read(ownerId))) throw new ForbiddenException('desktop_pool_policy_required');
         const config = await this.config();
+        const { provider, runtimeSourceRevision } = request;
+        const workloads = selectDesktopModelInventory({
+          config: config.machineLearning,
+          catalogue: this.catalogue,
+          spaces: this.spaces,
+          provider,
+          runtimeSourceRevision,
+        });
+        if (request.protocolVersion !== 2) return { protocolVersion: 1, provider, runtimeSourceRevision, workloads };
+        // The desktop runs exactly these profiles: the server's catalogue is the only one.
+        const served = (modelKey: string) =>
+          this.catalogueJson.profiles.find(
+            (profile) =>
+              profile.modelKey === modelKey &&
+              (profile.spec as { provider?: string }).provider === provider &&
+              profile.runtimeSourceRevision === runtimeSourceRevision,
+          )!;
         return {
-          protocolVersion: 1,
-          ...request,
-          workloads: selectDesktopModelInventory({
-            config: config.machineLearning,
-            catalogue: this.catalogue,
-            spaces: this.spaces,
-            ...request,
-          }),
+          protocolVersion: 2,
+          provider,
+          runtimeSourceRevision,
+          workloads: workloads.map((item) =>
+            item.state === 'eligible' ? { ...item, profiles: item.modelKeys.map((key) => served(key)) } : item,
+          ),
         };
       },
     );

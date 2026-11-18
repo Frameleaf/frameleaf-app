@@ -426,6 +426,21 @@ it('refuses a catalogue-approved profile without a release-owned paired embeddin
   }
 });
 
+it('serves protocol 2 inventory with the catalogue profiles through the response contract', async () => {
+  vi.mocked(getConfig).mockResolvedValue(structuredClone(defaults));
+  const raw = JSON.stringify({
+    provider: profile.spec.provider,
+    runtimeSourceRevision: profile.runtimeSourceRevision,
+    protocolVersion: 2,
+  });
+  const response = await post('/desktop/worker/models', 'models', raw);
+  expect(response.status).toBe(200);
+  expect(response.body.protocolVersion).toBe(2);
+  const clip = response.body.workloads.find((item: { workload: string }) => item.workload === 'clip');
+  expect(clip.profiles.map((item: { modelKey: string }) => item.modelKey)).toEqual(clip.modelKeys);
+  expect(clip.profiles[0].fixtureBase64).toEqual(expect.any(String));
+});
+
 it('issues a challenge from the catalogue without running anything on the server', async () => {
   const response = await post('/desktop/worker/challenges', 'challenge', payload());
   expect(response.status).toBe(200);
