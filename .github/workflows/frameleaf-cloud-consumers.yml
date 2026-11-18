@@ -2,7 +2,7 @@ name: Frameleaf Cloud integration tests
 'on':
   workflow_call:
     secrets:
-      GH_PACKAGES_TOKEN:
+      PACKAGES_READ_TOKEN:
         required: false
 permissions: {}
 concurrency:
@@ -23,15 +23,16 @@ jobs:
       - name: Retrieve and verify immutable registry archive
         id: fetch
         env:
-          # Off GitHub (Forgejo), github.token cannot read GitHub Packages: use a read:packages token instead.
-          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
+          # FL-1684: on Forgejo the package lives in Forgejo's npm registry (GitHub Packages is billing-locked).
+          NODE_AUTH_TOKEN: ${{ github.server_url == 'https://github.com' && github.token || secrets.PACKAGES_READ_TOKEN }}
+          REGISTRY: ${{ github.server_url == 'https://github.com' && 'npm.pkg.github.com' || 'code.heroapps.ca/api/packages/Frameleaf/npm' }}
         run: |
           set -euo pipefail
           config="$RUNNER_TEMP/cloud-package.npmrc"
           trap 'rm -f "$config"' EXIT
           # npm expands the token at request time; keep its value out of the file.
           # shellcheck disable=SC2016
-          printf '%s\n' '@frameleaf:registry=https://npm.pkg.github.com' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > "$config"
+          printf '%s\n' "@frameleaf:registry=https://${REGISTRY}/" "//${REGISTRY}/"':_authToken=${NODE_AUTH_TOKEN}' > "$config"
           mkdir -p "$RUNNER_TEMP/cloud-contracts"
           NPM_CONFIG_USERCONFIG="$config" npm pack @frameleaf/cloud-contracts@0.0.5 --ignore-scripts --pack-destination "$RUNNER_TEMP/cloud-contracts" --json > "$RUNNER_TEMP/cloud-contracts/pack.json"
           node --input-type=module <<'NODE'
