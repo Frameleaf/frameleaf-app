@@ -5,7 +5,7 @@ import { CliService } from 'src/services/cli.service.js';
 @Command({
   name: 'backup-machine-statement',
   arguments: '<machineInstanceId>',
-  description: 'Vouch for the Manager on this machine, so its Server Backup shares this server\u2019s licence',
+  description: 'Vouch for the Manager on this machine, so its Server Backup shares this server\u{2019}s licence',
 })
 export class BackupMachineStatementCommand extends CommandRunner {
   constructor(private service: CliService) {
