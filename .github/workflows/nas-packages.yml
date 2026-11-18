@@ -26,8 +26,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      GH_TOKEN: ${{ github.token }}
-      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+      GITHUB_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+      FORGEJO_TOKEN: ${{ github.token }}
       MANAGER_TAG: ${{ inputs['manager-tag'] }}
       APPLICATION_TAG: ${{ inputs['application-tag'] }}
       NODE_PATH: ${{ github.workspace }}/manager/node_modules
@@ -68,7 +69,7 @@ jobs:
           cd "$RUNNER_TEMP/nas"
           find . -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/NAS-SHA256SUMS"
           mv "$RUNNER_TEMP/NAS-SHA256SUMS" SHA256SUMS
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: frameleaf-nas-packages
           path: ${{ runner.temp }}/nas/

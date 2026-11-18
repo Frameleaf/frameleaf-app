@@ -245,7 +245,7 @@ test("Studio graph recovery preserves the failed gate and generates only genuine
   assert.equal(upload.with["if-no-files-found"], "error");
   assert.equal(
     upload.uses,
-    "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+    "https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245",
   );
   assert.ok(
     steps.some((step) =>
@@ -278,7 +278,7 @@ test("Studio source recovery retains evidence without bypassing normal preparati
   assert.equal(upload.with["if-no-files-found"], "error");
   assert.equal(
     upload.uses,
-    "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+    "https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245",
   );
   for (const step of steps.filter((step) =>
     /npm --prefix studio\/engine (?:ci|run build)/.test(step.run ?? ""),
@@ -1514,7 +1514,7 @@ const assertIntegrationMlArchives = (w) => {
     w.jobs.build.steps.indexOf(mlStep) < w.jobs.build.steps.indexOf(records),
   );
   const upload = w.jobs.build.steps.find((step) =>
-    step.uses?.startsWith("actions/upload-artifact@"),
+    /\/upload-artifact@/.test(step.uses ?? ""),
   );
   assert.equal(upload.with.path, "${{ runner.temp }}/archive/");
   assert.equal(upload.with["if-no-files-found"], "error");
@@ -1522,7 +1522,7 @@ const assertIntegrationMlArchives = (w) => {
     w.jobs.build.steps.indexOf(records) < w.jobs.build.steps.indexOf(upload),
   );
   const download = w.jobs["deploy-test"].steps.find((step) =>
-    step.uses?.startsWith("actions/download-artifact@"),
+    /\/download-artifact@/.test(step.uses ?? ""),
   );
   assert.equal(
     download.with.name,
@@ -1779,7 +1779,7 @@ test("integration ML source contract rejects released reuse, skipped builds and 
     },
     (changed) => {
       changed.jobs.build.steps.find((step) =>
-        step.uses?.startsWith("actions/upload-artifact@"),
+        /\/upload-artifact@/.test(step.uses ?? ""),
       ).with.path = "${{ runner.temp }}/archive/postgres/";
     },
     (changed) => {
@@ -2100,7 +2100,7 @@ test("all Docker publication routes require same-run Assistant qualification whe
   );
   assert.equal(qualification.steps[0].with.ref, "${{ github.sha }}");
   const archive = qualification.steps.find((step) =>
-    step.uses?.startsWith("actions/download-artifact@"),
+    /\/download-artifact@/.test(step.uses ?? ""),
   );
   assert.match(
     archive.with.name,
@@ -2114,7 +2114,10 @@ test("all Docker publication routes require same-run Assistant qualification whe
   );
   assert.equal(qualification.steps.at(-2)["continue-on-error"], undefined);
   const evidence = qualification.steps.at(-1);
-  assert.match(evidence.uses, /^actions\/upload-artifact@[a-f0-9]{40}$/);
+  assert.match(
+    evidence.uses,
+    /^https:\/\/code\.forgejo\.org\/forgejo\/upload-artifact@[a-f0-9]{40}$/,
+  );
   assert.equal(evidence.if, undefined);
   assert.equal(evidence["continue-on-error"], undefined);
   assert.equal(evidence.with["if-no-files-found"], "error");
@@ -2124,7 +2127,7 @@ test("all Docker publication routes require same-run Assistant qualification whe
   );
   assert.equal(
     qualification.steps.filter((step) =>
-      step.uses?.startsWith("actions/download-artifact@"),
+      /\/download-artifact@/.test(step.uses ?? ""),
     ).length,
     1,
   );

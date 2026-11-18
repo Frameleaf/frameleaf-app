@@ -219,7 +219,7 @@ describe('duplicate review rules', () => {
   });
 
   describe('duplicateDisposalReasons (FL-1660)', () => {
-    const copies = [{ id: 'a' }, { id: 'b' }, { id: 'c' }] as Parameters<typeof duplicateDisposalReasons>[0];
+    const copies = ['a', 'b', 'c'].map((id) => ({ id, isEdited: false, livePhotoVideoId: null }));
 
     it('refuses to trash a healthy copy while every kept copy is damaged', () => {
       expect(duplicateDisposalReasons(copies, ['a'], new Set(), new Set(['a']))).toEqual(['damaged-keeper']);

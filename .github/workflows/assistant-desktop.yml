@@ -41,9 +41,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run bundle
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
-          archive: false
+          # The v5 fork has no `archive: false`: the bundle arrives zipped under this name.
+          name: frameleaf-assistant.mcpb
           include-hidden-files: true
           path: integrations/claude-desktop/.artifacts/frameleaf-assistant.mcpb
           if-no-files-found: error
