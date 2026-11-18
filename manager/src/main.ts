@@ -163,6 +163,12 @@ const serverBackup = new ServerBackup(store, {
   cloud: serverBackupCloud,
   inside: insideMappedFolders,
   always: [join(backupRoot, 'frameleaf-database')],
+  managerState: join(backupRoot, 'frameleaf-manager'),
+  // The photo server keeps its Cloud Backup keys in its library folder, unless told otherwise.
+  photoKeys: () => {
+    const media = operations.installation()?.mounts?.find((mount) => mount.target === '/data')?.source;
+    return media ? join(media, 'frameleaf', 'identity') : null;
+  },
 });
 const operations = new Operations(
   store,
