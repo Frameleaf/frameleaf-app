@@ -510,6 +510,12 @@ export class ICloudSyncRepository {
       );
     }, transaction);
   }
+  /** FL-1685: drop the listing's checkpoints, so the next run lists the library from the start. */
+  async forgetListing(connectionId: string, transaction?: Kysely<DB>): Promise<void> {
+    await this.active(async (db) => {
+      await sql`DELETE FROM public.icloud_checkpoint WHERE "connectionId" = ${connectionId}::uuid`.execute(db);
+    }, transaction);
+  }
   async resetInventory(connectionId: string, transaction?: Kysely<DB>): Promise<void> {
     await this.active(async (db) => {
       await sql`DELETE FROM public.icloud_checkpoint WHERE "connectionId" = ${connectionId}::uuid`.execute(db);

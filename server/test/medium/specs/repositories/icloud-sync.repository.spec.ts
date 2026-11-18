@@ -325,6 +325,13 @@ describe(ICloudSyncRepository.name, () => {
       expect(await checkpointScopes()).toEqual([]);
     });
 
+    it('forgets the listing for a new sign-in', async () => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], 'page-2', false);
+      await repository.savePage(connection.id, 'changes:library', 'library', [], 'token', true);
+      await repository.forgetListing(connection.id);
+      expect(await checkpointScopes()).toEqual([]);
+    });
+
     it('starts a fresh pass when the unfinished listing has not moved for a day', async () => {
       await repository.startRun(connection);
       await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], 'page-2', false);

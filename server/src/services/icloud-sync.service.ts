@@ -358,10 +358,15 @@ export class ICloudSyncService {
     }
     await this.repository.update(id, auth.user.id, { state: 'authenticating', lastError: null });
     try {
-      await this.repository.withSession(id, auth.user.id, async (connection) => {
+      await this.repository.withSession(id, auth.user.id, async (connection, db) => {
         const session =
           dto.action === 'login' ? undefined : await this.transport.decodeSession(id, connection.encryptedSession);
         const result = await this.transport.authenticate(dto, session);
+        if (dto.action === 'login') {
+          // FL-1685: a listing left unfinished is resumed by the next run; a new sign-in may be another Apple
+          // Account, so its listing starts again rather than carrying on from the last account's pages.
+          await this.repository.forgetListing(id, db);
+        }
         return {
           value: undefined,
           state: result.state,

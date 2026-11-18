@@ -98,6 +98,7 @@ describe(ICloudSyncService.name, () => {
     saveMembershipPage: vi.fn(),
     materialize: vi.fn(),
     materializeEarly: vi.fn(),
+    forgetListing: vi.fn(),
   };
   const transport = {
     setSwitchedOn: vi.fn(),
@@ -1014,6 +1015,20 @@ describe(ICloudSyncService.name, () => {
         trigger: 'authenticated',
         retryOfId: null,
       });
+    });
+
+    it('starts the listing again after a new sign-in, which may be another Apple Account (FL-1685)', async () => {
+      const auth = { user: { id: 'owner' }, session: {} } as never;
+      repository.admitAuth.mockResolvedValue(true);
+      transport.authenticate.mockResolvedValue({ state: 'awaiting-2fa', session: {} });
+      repository.get.mockResolvedValue({ ...connection, state: 'awaiting-2fa' });
+      await sut.authenticate(auth, 'connection', { action: 'login', appleId: 'b@example.test', password: 'x' }, true);
+      expect(repository.forgetListing).toHaveBeenCalledExactlyOnceWith('connection', undefined);
+
+      // the code finishes the same sign-in: nothing more is dropped
+      repository.forgetListing.mockClear();
+      await sut.authenticate(auth, 'connection', { action: 'two-factor', code: '123456' }, true);
+      expect(repository.forgetListing).not.toHaveBeenCalled();
     });
   });
 
