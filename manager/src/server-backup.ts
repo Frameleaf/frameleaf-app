@@ -8,8 +8,9 @@ import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { CloudError } from './cloud-link.js';
 import { Refusal } from './contracts.js';
-import type { CloudBackup, Session } from './server-backup-cloud.js';
+import { reasonOf, type CloudBackup, type Session } from './server-backup-cloud.js';
 import type { Job, Message, Outcome, Progress, Reply, Target } from './server-backup-worker.js';
 import type { Store } from './store.js';
 
@@ -188,12 +189,18 @@ export class ServerBackup {
   async adoptKey(input: unknown) {
     const key = z.string().regex(/^[0-9a-f]{64}$/).parse(input);
     this.available();
-    await writeFile(this.keyFile(), key, { mode: 0o600, flag: 'wx' }).catch(() => {
-      throw new Refusal('server_backup_key_exists');
+    if (await readFile(this.keyFile(), 'utf8').catch(() => null)) throw new Refusal('server_backup_key_exists');
+    // Kept only once it has opened the backups it is for: a wrong key would otherwise be this server's key for good.
+    // Nothing stored under this key's vault, or a store it does not open: either way it is not the key.
+    const repository = await this.open(key).catch((error) => {
+      if (error instanceof CloudError || (error instanceof Refusal && error.code !== 'server_backup_nothing_stored')) throw error;
+      throw new Refusal('server_backup_key_wrong');
     });
+    await writeFile(this.keyFile(), key, { mode: 0o600, flag: 'wx' });
     await chmod(this.keyFile(), 0o600);
+    this.repository = repository;
     this.save({ keySavedAt: Date.now() });
-    await this.refreshSnapshots().catch(() => undefined);
+    await this.refreshSnapshots();
   }
   confirmKeySaved() {
     this.save({ keySavedAt: Date.now() });
@@ -275,7 +282,7 @@ export class ServerBackup {
         // Only a run on Cloud storage asks, and it always has a session.
         (ask.what === 'credentials' ? session!.credentials(ask.operation, ask.renew) : session!.record(ask.stored)).then(
           (value) => reply({ value }),
-          (error: Error & { code?: string }) => reply({ error: ask.what === 'record' ? 'cloud_record_failed' : (error.code ?? error.message) }),
+          (error: unknown) => reply({ error: ask.what === 'record' ? 'cloud_record_failed' : reasonOf(error) }),
         );
       } else settle(failure(message.message));
     });
@@ -332,22 +339,28 @@ export class ServerBackup {
     if (this.current?.trigger === 'schedule' && this.current.kind === 'backup' && stop && clock(now) === stop) return this.stop();
     if (this.child || clock(now) !== time || saved.scheduledOn === day(now)) return;
     this.save({ scheduledOn: day(now) });
-    await this.backUp('schedule', now);
+    // A backup that could not even start is still part of the history, with its reason.
+    await this.backUp('schedule', now).catch((error) => {
+      const value: Omit<Run, 'id'> = { kind: 'backup', trigger: 'schedule', state: 'failed', startedAt: now.getTime(), finishedAt: Date.now(), progress: null, outcome: null, error: reasonOf(error) };
+      this.store.db.prepare('INSERT INTO server_backup_runs (value) VALUES (?)').run(JSON.stringify(value));
+    });
   }
 
   private async opened(): Promise<Repository> {
-    if (!this.repository) {
-      const rootKey = await this.rootKey(false);
-      const { target, session } = await this.place('restore', rootKey);
-      const store =
-        target.kind === 'folder'
-          ? dirStore(target.path)
-          : s3Store({ endpoint: target.endpoint, region: target.region, bucket: target.bucket, prefix: target.prefix, credentials: (renew) => session!.credentials('restore', renew) });
-      const repository = await Repository.open(store, { rootKey: Buffer.from(rootKey, 'hex') });
-      await repository.loadIndex();
-      this.repository = repository;
-    }
+    this.repository ??= await this.open(await this.rootKey(false));
     return this.repository;
+  }
+  /** Opens what `rootKey` protects, where this Manager keeps backups. */
+  private async open(rootKey: string): Promise<Repository> {
+    const { target, session } = await this.place('restore', rootKey);
+    const store =
+      target.kind === 'folder'
+        ? dirStore(target.path)
+        : s3Store({ endpoint: target.endpoint, region: target.region, bucket: target.bucket, prefix: target.prefix, credentials: (renew) => session!.credentials('restore', renew) });
+    if ((await store.list('config')).length === 0) throw new Refusal('server_backup_nothing_stored');
+    const repository = await Repository.open(store, { rootKey: Buffer.from(rootKey, 'hex') });
+    await repository.loadIndex();
+    return repository;
   }
   private async refreshSnapshots() {
     const repository = await this.opened();
@@ -390,6 +403,8 @@ export class ServerBackup {
     if (due <= now || saved.scheduledOn === day(now)) due.setDate(due.getDate() + 1);
     return {
       state: saved.on ? 'on' : 'off',
+      /** Null when backups go to a folder: there is nothing to connect. */
+      cloud: this.options.target ? null : (this.options.cloud?.view() ?? null),
       settings: saved.settings,
       key: { saved: saved.keySavedAt !== null, savedAt: saved.keySavedAt },
       folders: [

@@ -51,13 +51,23 @@ interface Saved {
 
 const KEY = 'server-backup-cloud';
 
+/** What a failure is called on Manager's screens and in a run's history: Cloud's own code, in Manager's spelling. */
+export function reasonOf(error: unknown): string {
+  if (error instanceof CloudError) {
+    const detail = error.code === 'entitlement-missing' ? error.data?.missing : error.code === 'request-invalid' ? error.detail : null;
+    const code = `${error.code}${typeof detail === 'string' ? `_${detail}` : ''}`.replaceAll('-', '_').toLowerCase();
+    return /^[a-z0-9_]{1,60}$/.test(code) ? (code.startsWith('cloud_') ? code : `cloud_${code}`) : 'cloud_refused';
+  }
+  return (error as { code?: string })?.code ?? (error instanceof Error ? error.message : String(error));
+}
+
 export class CloudBackup {
-  private linking: { deviceCode: string; userCode: string; approveAt: string; until: number; linkToken: string | null } | null = null;
+  private linking: { name: string; deviceCode: string; userCode: string; approveAt: string; until: number; intervalSec: number; linkToken: string | null } | null = null;
 
   constructor(
     private store: Store,
     private cloud: Cloud,
-    private machine: () => { name: string; version: string; platform: string },
+    private machine: { version: string; platform: string },
   ) {}
 
   private saved(): Saved {
@@ -91,22 +101,22 @@ export class CloudBackup {
     return {
       state: account ? 'linked' : this.linking && this.linking.until > Date.now() ? 'linking' : 'unlinked',
       account,
-      code: account || !this.linking ? null : { userCode: this.linking.userCode, approveAt: this.linking.approveAt },
+      code: account || !this.linking || this.linking.until <= Date.now() ? null : { userCode: this.linking.userCode, approveAt: this.linking.approveAt, intervalSec: this.linking.intervalSec },
       locationId,
       takeover,
       unrecorded: unrecorded !== null,
     };
   }
 
-  /** Starts linking: the owner approves the code on the account site. */
-  async startLink() {
+  /** Starts linking: the owner approves the code on the account site. `name` is what the account site calls this server. */
+  async startLink(name: string) {
     if (this.linked) throw new Refusal('server_backup_cloud_already_linked');
     // A new id and key each time. One that Cloud never accepted is worth nothing, and one an older Cloud
     // linked as a photo server must never be used again.
     const identity = createIdentity();
     await this.keep(identity);
-    const started = await this.cloud.startLink(identity, this.machine());
-    this.linking = { deviceCode: started.deviceCode, userCode: started.userCode, approveAt: started.approveAt, until: Date.now() + started.expiresInSec * 1000, linkToken: null };
+    const started = await this.cloud.startLink(identity, { name, ...this.machine });
+    this.linking = { name, intervalSec: started.intervalSec, deviceCode: started.deviceCode, userCode: started.userCode, approveAt: started.approveAt, until: Date.now() + started.expiresInSec * 1000, linkToken: null };
     return { userCode: started.userCode, approveAt: started.approveAt, expiresInSec: started.expiresInSec, intervalSec: started.intervalSec };
   }
 
@@ -129,7 +139,7 @@ export class CloudBackup {
     }
     try {
       const text = await readFile(this.file(), 'utf8');
-      const account = await this.cloud.register(JSON.parse(text) as Identity, linking.linkToken, this.machine());
+      const account = await this.cloud.register(JSON.parse(text) as Identity, linking.linkToken, { name: linking.name, ...this.machine });
       this.save({ account: { label: account.account, email: account.email, dataRegion: account.dataRegion } });
       this.linking = null;
       return 'linked';
@@ -143,8 +153,12 @@ export class CloudBackup {
   async locations() {
     return this.cloud.locations(await this.identity());
   }
-  setLocation(locationId: string) {
-    this.save({ locationId });
+  /** Where the first backup makes its storage. Only a place Cloud offers; with one on offer there is nothing to choose. */
+  async setLocation(locationId?: string) {
+    const offered = await this.locations();
+    const chosen = locationId === undefined && offered.length === 1 ? offered[0] : offered.find((place) => place.locationId === locationId);
+    if (!chosen) throw new Refusal('server_backup_cloud_no_location');
+    this.save({ locationId: chosen.locationId });
   }
 
   /** The account's other backup machines whose backups this one may ask for. */

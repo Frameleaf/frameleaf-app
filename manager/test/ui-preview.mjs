@@ -1,9 +1,11 @@
 // FL-1664: opens manager/ui with sample data, for design review. No Manager, Docker or network is involved.
 //   node test/ui-preview.mjs [port]
 // The page address picks the sample (read here from the Referer):
-//   ?sb=off|on|running|warning|restoring   Server Backup's state (default on)
+//   ?sb=off|on|running|warning|unlicensed|restoring   Server Backup's state (default on)
 //   &ws=backup&page=folders|schedule|restore|activity|key|settings   open a Server Backup screen
 //   &fresh=1   a server with no Frameleaf installed yet
+//   &cloud=none|new|code|linked|waiting   the Frameleaf Cloud link (default: connected, storage chosen).
+//     none is a Manager that stores to a folder; waiting has asked to take over another server's backups
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,6 +111,11 @@ const samples = {
     last: { state: 'failed', at: ms(0, 2, 40), error: 'The storage could not be reached.', completeAt: ms(1, 2, 9) },
     runs: [{ ...runs[3], finishedAt: ms(0, 2, 40), startedAt: ms(0, 2, 0) }, ...runs.slice(1, 3)],
   },
+  unlicensed: {
+    ...on,
+    last: { state: 'failed', at: ms(0, 2, 0), error: 'cloud_entitlement_missing_licence', completeAt: ms(1, 2, 9) },
+    runs: [{ ...runs[3], finishedAt: ms(0, 2, 0), startedAt: ms(0, 2, 0), error: 'cloud_entitlement_missing_licence' }, ...runs.slice(1, 3)],
+  },
   restoring: { ...on, running: { kind: 'restore', trigger: 'you', startedAt: Date.now() - 60_000, files: 412, bytes: 0.7 * GB, totalBytes: 0, bytesPerSecond: 0, secondsLeft: null } },
   off: { ...on, state: 'off', settings: { ...settings, folders: [] }, key: { saved: false, savedAt: null }, folders: [on.folders[0]].map(({ kind, path }) => ({ kind, path })), last: null, next: null, runs: [], snapshots: [] },
 };
@@ -126,15 +133,33 @@ const tree = {
   ],
 };
 
+const account = { label: 'Taylor household', email: 'you@example.com', dataRegion: 'na' };
+const clouds = {
+  none: null,
+  new: { state: 'unlinked', account: null, code: null, locationId: null, takeover: null, unrecorded: false },
+  code: { state: 'linking', account: null, code: { userCode: 'KMQD-7T2P', approveAt: 'https://frameleaf.cloud/link?user_code=KMQD-7T2P', intervalSec: 3600 }, locationId: null, takeover: null, unrecorded: false },
+  linked: { state: 'linked', account, code: null, locationId: null, takeover: null, unrecorded: false },
+  waiting: { state: 'linked', account, code: null, locationId: null, takeover: { fromInstanceId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53' }, unrecorded: false },
+  ready: { state: 'linked', account, code: null, locationId: 'loc-01', takeover: null, unrecorded: false },
+};
 const api = (path, page, body) => {
   const fresh = page.get('fresh') === '1';
-  const sample = samples[page.get('sb') ?? (fresh ? 'off' : 'on')] ?? on;
+  const cloud = clouds[page.get('cloud') ?? 'ready'];
+  const sample = { ...(samples[page.get('sb') ?? (fresh ? 'off' : 'on')] ?? on), cloud };
   if (path === 'status') return { claimed: true };
   if (path === 'dashboard') return dashboard(fresh);
   if (path === 'server-backup') return sample;
   if (path === 'server-backup-browse') return { path: body.path, entries: tree[body.path.join('/')] ?? [] };
   if (path === 'server-backup-first-key' || path === 'server-backup-key') return { key: '7c1e9a40b2d85f63e0a71c4d9b3f6e25a8d04c7f1b9e3a62d5f08c4b7e1a9d30' };
-  if (path === 'server-backup-turn-on' || path === 'server-backup-run') return { ...on, ...samples.running, snapshots: [] };
+  if (path === 'server-backup-turn-on' || path === 'server-backup-run') return { ...on, ...samples.running, snapshots: [], cloud };
+  if (path === 'server-backup-cloud-link') return { ...sample, cloud: clouds.code };
+  if (path === 'server-backup-cloud-check') return { ...sample, linking: 'waiting' };
+  if (path === 'server-backup-cloud-locations') return { locations: [{ locationId: 'loc-01', city: 'Ashburn', country: 'United States', countryCode: 'US' }, { locationId: 'loc-02', city: 'Toronto', country: 'Canada', countryCode: 'CA' }] };
+  if (path === 'server-backup-cloud-location') return { ...sample, cloud: clouds.ready };
+  if (path === 'server-backup-cloud-machines') return { machines: [{ instanceId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53', name: 'basement-nas', lastBackupAt: at(3, 2, 10) }, { instanceId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54', name: 'office-server', lastBackupAt: at(41, 2, 5) }] };
+  if (path === 'server-backup-cloud-takeover') return { ...sample, cloud: clouds.waiting };
+  if (path === 'server-backup-cloud-takeover-check') return page.get('approve') === '1' ? { ...sample, cloud: clouds.ready, takeover: 'approved' } : { ...sample, takeover: 'pending' };
+  if (path === 'server-backup-adopt-key') return { ...samples.off, snapshots: on.snapshots, key: { saved: true, savedAt: Date.now() }, cloud: clouds.ready };
   if (path.startsWith('server-backup-')) return sample;
   if (path === 'folders') return { path: '/mnt/user', parent: null, folders: ['appdata', 'documents', 'media', 'shares'].map((name) => ({ name, path: `/mnt/user/${name}` })), truncated: false };
   if (path === 'storage') return storage;
