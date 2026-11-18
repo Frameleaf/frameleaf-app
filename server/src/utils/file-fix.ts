@@ -22,6 +22,24 @@ export const MAX_BACKUP_WAITS = 48;
 export const FIX_SEARCH_DELAY_MS = 2 * 60_000;
 
 /**
+ * Which repair wrote a finding's result, kept on it as `repairEngine`. Engine 1 (no number kept) stopped
+ * reading a JPEG that gave many decoder warnings and saved only the part before a cut it made itself.
+ * Raise this when a repair is fixed again: every repair by an older engine is undone and redone once.
+ */
+export const REPAIR_ENGINE = 2;
+
+/** A settled repair an older engine made, which the current one should make again from the kept file. */
+export const isOldRepair = (finding: { evidence: unknown; resolvedAt: unknown; dismissedAt: unknown }): boolean => {
+  const { fixState, repairEngine } = (finding.evidence ?? {}) as Record<string, unknown>;
+  return (
+    !!finding.resolvedAt &&
+    !finding.dismissedAt &&
+    (fixState === 'repaired' || fixState === 'part-saved') &&
+    (typeof repairEngine === 'number' ? repairEngine : 1) < REPAIR_ENGINE
+  );
+};
+
+/**
  * How a repair turned out for the history and the list. Part saved: the picture was rebuilt from a file
  * cut short, or only its small embedded picture could be saved. A lossless repair saves all of it.
  */
