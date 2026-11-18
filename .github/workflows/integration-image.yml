@@ -260,8 +260,8 @@ jobs:
         run: .github/install-oras.sh
       - name: Push each tested archive by digest, byte for byte
         env:
-          REGISTRY_TOKEN: ${{ github.token }}
-          ACTOR: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          ACTOR: ${{ vars.GHCR_USERNAME || github.actor }}
         run: |
           set -euo pipefail
           printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io --username "$ACTOR" --password-stdin
