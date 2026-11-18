@@ -134,6 +134,20 @@ test('a backup can be browsed by folder, and a file put back where it was or som
   await assert.rejects(service.restore({ snapshot, items: [['etc', 'passwd']], into: null }), refused('server_backup_folder_outside'));
 });
 
+test('a backup records what it protected, for a server that replaces this one', async () => {
+  const snapshot = service.view()!.snapshots[0]!.key;
+  const { folders } = await service.contents({ snapshot });
+  assert.deepEqual(folders!.map((folder) => [folder.path, folder.kind, folder.reachable]).sort(), [
+    [at('server', 'appdata'), 'folder', true],
+    [at('server', 'documents'), 'folder', true],
+    [at('server', 'recovery'), 'manager', true],
+  ]);
+  assert.ok(folders!.every((folder) => folder.files > 0 && folder.bytes > 0));
+  // The record is not something to restore, so the browser does not show it.
+  const top = await service.browse({ snapshot, path: [] });
+  assert.ok(!top.entries.some((entry) => entry.name.startsWith('.frameleaf')));
+});
+
 test('the schedule starts one backup a day at its time', async () => {
   const two = new Date(2026, 10, 18, 2, 0, 30);
   await service.tick(new Date(2026, 10, 18, 1, 59, 0));

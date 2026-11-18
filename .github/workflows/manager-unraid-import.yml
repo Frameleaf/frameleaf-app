@@ -50,7 +50,7 @@ jobs:
           [ -n "$IMMICH_TAG" ] || unset IMMICH_TAG
           [ -n "$FRAMELEAF_TAG" ] || unset FRAMELEAF_TAG
           node manager/test/unraid-import.mjs
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         if: always()
         with:
           name: unraid-import-${{ matrix.architecture }}

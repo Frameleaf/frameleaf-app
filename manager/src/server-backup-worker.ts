@@ -16,6 +16,7 @@ import {
   type Source,
   type Store,
 } from '@frameleaf/backup-core';
+import { createHash } from 'node:crypto';
 import { sep } from 'node:path';
 
 /** Where the repository lives: a folder (tests and pre-release), or storage that Frameleaf Cloud gives out credentials for. */
@@ -24,7 +25,7 @@ export type Target =
   | { kind: 'cloud'; endpoint: string; region: string; bucket: string; prefix: string; limitMbps: number | null };
 
 export type Job = { target: Target; rootKey: string } & (
-  | { kind: 'backup'; folders: string[]; exclusions: string[]; retention: RetentionPolicy; prune: boolean; /** The backup's number in Cloud's signed history. */ sequence?: number }
+  | { kind: 'backup'; folders: string[]; /** Those of `folders` that are Manager's own, not the owner's choice. */ always?: string[]; exclusions: string[]; retention: RetentionPolicy; prune: boolean; /** The backup's number in Cloud's signed history. */ sequence?: number }
   | { kind: 'restore'; snapshot: string; items: string[][]; into: string | null }
   | { kind: 'verify' }
 );
@@ -47,6 +48,21 @@ export type Reply = { type: 'answer'; id: number; value?: unknown; error?: strin
 type Asker = (ask: Ask) => Promise<unknown>;
 
 const segments = (path: string) => path.split(sep).filter(Boolean);
+
+/**
+ * Where a backup says what it protected: each folder, whether it is Manager's own, and its size. A server
+ * that replaces this one reads it to offer the whole server back without knowing anything else about it.
+ */
+export const RECORD = ['.frameleaf', 'server-backup.json'];
+export type Protected = { path: string; kind: 'manager' | 'folder'; files: number; bytes: number };
+const oneFile = (name: string, body: Buffer): Source => ({
+  // No time of its own and a key from its content: a backup of unchanged folders then stores nothing new.
+  list: async (path) =>
+    path.length > 0 ? [] : [{ name, type: 'file', mode: 0o600, uid: 0, gid: 0, mtime: 0, size: body.length, key: createHash('sha256').update(body).digest('hex') }],
+  async *read() {
+    yield body;
+  },
+});
 
 /** `*.tmp` leaves out files by name; `cache/` leaves out folders by name. `*` stands for any run of characters. */
 export function skips(patterns: string[]) {
@@ -90,7 +106,12 @@ async function run(job: Job, report: (progress: Progress) => void, signal: Abort
       total.files += sizes[folder].files;
       total.bytes += sizes[folder].bytes;
     }
-    const source: Source = mountSource(each.map(({ folder, source }) => ({ path: segments(folder), source })));
+    const record: Protected[] = job.folders.map((path) => ({ path, kind: job.always?.includes(path) ? 'manager' : 'folder', ...sizes[path]! }));
+    const recorded = Buffer.from(JSON.stringify({ version: 1, folders: record }));
+    const source: Source = mountSource([
+      ...each.map(({ folder, source }) => ({ path: segments(folder), source })),
+      { path: RECORD.slice(0, -1), source: oneFile(RECORD.at(-1)!, recorded) },
+    ]);
     const done = await backup(repository, source, {
       signal,
       onProgress: (progress) => report({ ...progress, totalFiles: total.files, totalBytes: total.bytes }),
@@ -105,8 +126,9 @@ async function run(job: Job, report: (progress: Progress) => void, signal: Abort
       kind: 'backup',
       snapshot: done.key,
       time: done.snapshot.time,
-      files: done.snapshot.stats.files,
-      bytes: done.snapshot.stats.bytes,
+      // The record is the backup's own note, not one of the owner's files.
+      files: done.snapshot.stats.files - 1,
+      bytes: done.snapshot.stats.bytes - recorded.length,
       storedBytes: done.snapshot.stats.storedBytes,
       problems: done.problems.length,
       sizes,

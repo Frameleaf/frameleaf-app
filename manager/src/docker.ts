@@ -395,6 +395,11 @@ export class Docker {
       throw new Refusal('invalid_configuration_path');
     return this.execute('docker', ['exec', id, 'cat', '--', path]);
   }
+  /** Runs one of the photo server's admin commands in its running container and returns what it printed. */
+  async admin(id: string, args: string[]): Promise<string> {
+    containerId.parse(id);
+    return this.execute('docker', ['exec', id, SERVER_ADMIN, ...args], { timeout: 60_000 });
+  }
   async node(id: string, script: string, args: string[] = []): Promise<string> {
     containerId.parse(id);
     return this.execute('docker', ['exec', id, 'node', '-e', script, '--', ...args]);

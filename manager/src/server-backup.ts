@@ -1,16 +1,17 @@
 // Server Backup: Manager's second job. It keeps an encrypted copy of chosen folders, runs on a schedule,
 // and restores a file, a folder or everything. The work happens in a separate process
 // (server-backup-worker.ts); this file owns the settings, the history and what the screens show.
-import { DEFAULT_RETENTION, Repository, dirStore, listFolder, s3Store, type RetentionPolicy } from '@frameleaf/backup-core';
+import { DEFAULT_RETENTION, Repository, dirStore, find, listFolder, readFile as readStored, s3Store, type RetentionPolicy } from '@frameleaf/backup-core';
 import { fork, type ChildProcess } from 'node:child_process';
 import { hkdfSync, randomBytes } from 'node:crypto';
 import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { CloudError } from './cloud-link.js';
 import { Refusal } from './contracts.js';
-import type { CloudBackup, Session } from './server-backup-cloud.js';
-import type { Job, Message, Outcome, Progress, Reply, Target } from './server-backup-worker.js';
+import { reasonOf, type CloudBackup, type Session } from './server-backup-cloud.js';
+import { RECORD, type Job, type Message, type Outcome, type Progress, type Reply, type Target } from './server-backup-worker.js';
 import type { Store } from './store.js';
 
 const Time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -188,12 +189,18 @@ export class ServerBackup {
   async adoptKey(input: unknown) {
     const key = z.string().regex(/^[0-9a-f]{64}$/).parse(input);
     this.available();
-    await writeFile(this.keyFile(), key, { mode: 0o600, flag: 'wx' }).catch(() => {
-      throw new Refusal('server_backup_key_exists');
+    if (await readFile(this.keyFile(), 'utf8').catch(() => null)) throw new Refusal('server_backup_key_exists');
+    // Kept only once it has opened the backups it is for: a wrong key would otherwise be this server's key for good.
+    // Nothing stored under this key's vault, or a store it does not open: either way it is not the key.
+    const repository = await this.open(key).catch((error) => {
+      if (error instanceof CloudError || (error instanceof Refusal && error.code !== 'server_backup_nothing_stored')) throw error;
+      throw new Refusal('server_backup_key_wrong');
     });
+    await writeFile(this.keyFile(), key, { mode: 0o600, flag: 'wx' });
     await chmod(this.keyFile(), 0o600);
+    this.repository = repository;
     this.save({ keySavedAt: Date.now() });
-    await this.refreshSnapshots().catch(() => undefined);
+    await this.refreshSnapshots();
   }
   confirmKeySaved() {
     this.save({ keySavedAt: Date.now() });
@@ -275,7 +282,7 @@ export class ServerBackup {
         // Only a run on Cloud storage asks, and it always has a session.
         (ask.what === 'credentials' ? session!.credentials(ask.operation, ask.renew) : session!.record(ask.stored)).then(
           (value) => reply({ value }),
-          (error: Error & { code?: string }) => reply({ error: ask.what === 'record' ? 'cloud_record_failed' : (error.code ?? error.message) }),
+          (error: unknown) => reply({ error: ask.what === 'record' ? 'cloud_record_failed' : reasonOf(error) }),
         );
       } else settle(failure(message.message));
     });
@@ -294,6 +301,7 @@ export class ServerBackup {
       target,
       rootKey,
       folders: [...this.options.always, ...saved.settings.folders],
+      always: this.options.always,
       exclusions: saved.settings.exclusions,
       retention: saved.settings.retention,
       prune: trigger === 'schedule' && now.getDay() === 0,
@@ -332,28 +340,52 @@ export class ServerBackup {
     if (this.current?.trigger === 'schedule' && this.current.kind === 'backup' && stop && clock(now) === stop) return this.stop();
     if (this.child || clock(now) !== time || saved.scheduledOn === day(now)) return;
     this.save({ scheduledOn: day(now) });
-    await this.backUp('schedule', now);
+    // A backup that could not even start is still part of the history, with its reason.
+    await this.backUp('schedule', now).catch((error) => {
+      const value: Omit<Run, 'id'> = { kind: 'backup', trigger: 'schedule', state: 'failed', startedAt: now.getTime(), finishedAt: Date.now(), progress: null, outcome: null, error: reasonOf(error) };
+      this.store.db.prepare('INSERT INTO server_backup_runs (value) VALUES (?)').run(JSON.stringify(value));
+    });
   }
 
   private async opened(): Promise<Repository> {
-    if (!this.repository) {
-      const rootKey = await this.rootKey(false);
-      const { target, session } = await this.place('restore', rootKey);
-      const store =
-        target.kind === 'folder'
-          ? dirStore(target.path)
-          : s3Store({ endpoint: target.endpoint, region: target.region, bucket: target.bucket, prefix: target.prefix, credentials: (renew) => session!.credentials('restore', renew) });
-      const repository = await Repository.open(store, { rootKey: Buffer.from(rootKey, 'hex') });
-      await repository.loadIndex();
-      this.repository = repository;
-    }
+    this.repository ??= await this.open(await this.rootKey(false));
     return this.repository;
+  }
+  /** Opens what `rootKey` protects, where this Manager keeps backups. */
+  private async open(rootKey: string): Promise<Repository> {
+    const { target, session } = await this.place('restore', rootKey);
+    const store =
+      target.kind === 'folder'
+        ? dirStore(target.path)
+        : s3Store({ endpoint: target.endpoint, region: target.region, bucket: target.bucket, prefix: target.prefix, credentials: (renew) => session!.credentials('restore', renew) });
+    if ((await store.list('config')).length === 0) throw new Refusal('server_backup_nothing_stored');
+    const repository = await Repository.open(store, { rootKey: Buffer.from(rootKey, 'hex') });
+    await repository.loadIndex();
+    return repository;
   }
   private async refreshSnapshots() {
     const repository = await this.opened();
     const snapshots: Saved['snapshots'] = [];
     for (const { key } of await repository.listSnapshots()) snapshots.push({ key, time: (await repository.readSnapshot(key)).time });
     this.save({ snapshots });
+  }
+
+  /**
+   * What one backup protected, as it recorded itself: the folders, whose they are and their sizes. This is
+   * what a replacement server offers back. Null for a backup from before backups kept this record.
+   */
+  async contents(input: unknown) {
+    const { snapshot } = z.object({ snapshot: z.string().regex(/^s\/\d{12}-[0-9a-f]{16,64}$/) }).strict().parse(input);
+    const repository = await this.opened();
+    const entry = await find(repository, await repository.readSnapshot(snapshot), RECORD).catch(() => null);
+    if (!entry || entry.type !== 'file' || entry.size > 1024 * 1024) return { folders: null };
+    const parts: Buffer[] = [];
+    for await (const part of readStored(repository, entry)) parts.push(part);
+    const record = z
+      .object({ folders: z.array(z.object({ path: z.string().min(1).max(4096), kind: z.enum(['manager', 'folder']), files: z.number().int().nonnegative(), bytes: z.number().nonnegative() })).max(100) })
+      .safeParse(JSON.parse(Buffer.concat(parts).toString('utf8')));
+    // What the old server wrote decides nothing here: a folder is only offered back where this Manager may write.
+    return { folders: record.success ? record.data.folders.map((folder) => ({ ...folder, reachable: this.options.inside(resolve(folder.path)) })) : null };
   }
 
   /** What a folder held in one backup. An empty path is the top. */
@@ -369,7 +401,7 @@ export class ServerBackup {
     return {
       path,
       entries: entries
-        .filter((entry) => entry.type !== 'symlink')
+        .filter((entry) => entry.type !== 'symlink' && !(path.length === 0 && entry.name === RECORD[0]))
         .map((entry) => ({ name: entry.name, type: entry.type === 'dir' ? 'folder' : 'file', bytes: entry.size, modified: entry.mtime })),
     };
   }
@@ -390,6 +422,8 @@ export class ServerBackup {
     if (due <= now || saved.scheduledOn === day(now)) due.setDate(due.getDate() + 1);
     return {
       state: saved.on ? 'on' : 'off',
+      /** Null when backups go to a folder: there is nothing to connect. */
+      cloud: this.options.target ? null : (this.options.cloud?.view() ?? null),
       settings: saved.settings,
       key: { saved: saved.keySavedAt !== null, savedAt: saved.keySavedAt },
       folders: [

@@ -4370,7 +4370,7 @@ describe(MediaHealthService.name, () => {
 
       const input = vi.mocked(mediaHealthRepository.replaceRepairedOriginal).mock.calls[0][0];
       // a lossless repair saves the whole picture; who reviewed it is in the history
-      expect(input.evidence).toEqual({ fixState: 'repaired', partSaved: false });
+      expect(input.evidence).toEqual({ fixState: 'repaired', partSaved: false, repairEngine: 2 });
       expect(input.steps).toEqual([
         {
           step: 'repaired',
@@ -4699,7 +4699,7 @@ describe(MediaHealthService.name, () => {
         expectedOriginalPath: damaged,
         provenance: expect.objectContaining({ recoveredBy: 'user-id', automatic: true, repairMethod: 'rebuilt' }),
       });
-      expect(fixState()).toEqual({ fixState: 'part-saved', partSaved: true });
+      expect(fixState()).toEqual({ fixState: 'part-saved', partSaved: true, repairEngine: 2 });
       // previews are made again, as after an upload, so the follow-up work runs too
       expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith(
         expect.arrayContaining([{ name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } }]),
@@ -6440,6 +6440,103 @@ describe(MediaHealthService.name, () => {
         expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
           { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
         ]);
+      });
+
+      describe('a repair an older version made', () => {
+        const oldRepair = async (evidence: Record<string, unknown> = {}) => {
+          const damaged = join(care, 'asset-1-health-1.damaged.jpg');
+          const repaired = join(care, 'asset-1-health-1-0123abcd.jpg');
+          await writeFile(damaged, 'the damaged file');
+          await writeFile(repaired, 'the repaired file');
+          photo({ originalPath: repaired, checksum: sha256('the repaired file') });
+          vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+            problem({
+              originalPath: repaired,
+              evidence: { fixState: 'part-saved', partSaved: true, retainedPath: damaged, ...evidence },
+            }),
+          ] as never);
+          history(
+            step('step-2', 'repaired', 'ok'),
+            step('step-3', 'kept-damaged', 'info', {
+              undo: {
+                kind: 'repair',
+                previousPath: damaged,
+                originalPath: repaired,
+                checksum: sha256('the repaired file').toString('hex'),
+              },
+            }),
+          );
+          return damaged;
+        };
+        const redo = { id: 'asset-1', from: 'check', redoRepair: true } as const;
+
+        it('is undone without a no to automatic repair, and its kept file is fixed again', async () => {
+          const damaged = await oldRepair();
+
+          await sut.handleFixAsset(redo);
+
+          expect(mediaHealthRepository.undoFix).toHaveBeenCalledWith(
+            expect.objectContaining({
+              healthId: 'health-1',
+              ownerId: owner.user.id,
+              stepId: 'step-3',
+              relinkTo: expect.objectContaining({ path: damaged, takeChecksum: true }),
+              status: MediaHealthStatus.CorruptConfirmed,
+              evidence: { fixState: 'cant-repair', partSaved: false, redoRepair: true },
+              steps: [{ step: 'undone', outcome: 'info', facts: { redo: true } }],
+            }),
+          );
+        });
+
+        it.each([
+          ['the current repair made it', { repairEngine: 2 }],
+          ['its owner said no to automatic repair', { autoRepairDeclined: true }],
+        ])('is left as it is when %s', async (_, evidence) => {
+          await oldRepair(evidence);
+          await expect(sut.handleFixAsset(redo)).resolves.toBe(JobStatus.Skipped);
+          expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+        });
+
+        it('is never undone twice: a redo that stopped after its undo carries on with the fix', async () => {
+          await oldRepair();
+          vi.mocked(mediaHealthRepository.getFindingsForAsset).mockResolvedValue([
+            problem({
+              status: MediaHealthStatus.CorruptConfirmed,
+              resolvedAt: null,
+              evidence: { fixState: 'cant-repair', partSaved: false, redoRepair: true },
+            }),
+          ] as never);
+          await sut.handleFixAsset(redo);
+          expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+        });
+
+        it('is left as it is when the photo changed since', async () => {
+          await oldRepair();
+          photo({ originalPath: '/elsewhere.jpg', checksum: sha256('edited since') });
+          await expect(sut.handleFixAsset(redo)).resolves.toBe(JobStatus.Skipped);
+          expect(mediaHealthRepository.undoFix).not.toHaveBeenCalled();
+        });
+
+        it('is asked about when the server starts, and a current repair is not', async () => {
+          vi.mocked(mocks.database.tryLock).mockResolvedValue(true);
+          vi.mocked(mocks.cron.create).mockReturnValue();
+          vi.mocked(mediaHealthRepository.list).mockResolvedValue([
+            problem(),
+            problem({ id: 'health-2', assetId: 'asset-2', evidence: { fixState: 'repaired', repairEngine: 2 } }),
+            problem({ id: 'health-3', assetId: 'asset-3', evidence: { fixState: 'found-again' } }),
+          ] as never);
+
+          await sut.onConfigInit({
+            newConfig: { libraryCare: { healthScan: false, healthScanCronExpression: '0 02 * * *' } },
+          } as never);
+          await vi.waitFor(() => expect(mocks.job.queue).toHaveBeenCalled());
+
+          expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+          expect(mocks.job.queue).toHaveBeenCalledWith({
+            name: JobName.MediaHealthFixAsset,
+            data: { id: 'asset-1', from: 'check', redoRepair: true },
+          });
+        });
       });
 
       it('undoes a repair whose kept-damaged step was never written, from the kept file', async () => {

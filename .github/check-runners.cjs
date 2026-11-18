@@ -18,17 +18,21 @@ const workflows = Object.fromEntries(
       load(fs.readFileSync(path.join(directory, file), "utf8")),
     ]),
 );
-// GitHub-hosted runners only; Namespace and self-hosted labels are rejected.
+// GitHub-hosted runner labels, which the Forgejo runners also serve (FL-1678), plus the two
+// Forgejo-only labels: `lan` (Unraid, reaches the Forgejo registry over the LAN) and `small`.
+// Namespace and any other self-hosted labels are rejected.
 const supported = new Set([
   "ubuntu-24.04",
   "ubuntu-24.04-arm",
   "windows-latest",
+  "lan",
+  "small",
 ]);
 let count = 0;
 for (const [file, workflow] of Object.entries(workflows)) {
   assert(
     !JSON.stringify(workflow).match(
-      /adamtaylor152|altran1502|secrets\.(PUSH_O_MATIC|DOCKERHUB|FDROID|CLOUDFLARE)/,
+      /adamtaylor152|altran1502|secrets\.(PUSH_O_MATIC|FDROID|CLOUDFLARE)/,
     ),
     `${file}: inherited identity, publishing destination or secret`,
   );

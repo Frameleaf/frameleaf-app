@@ -1206,7 +1206,7 @@ export async function observeQueueRun(db: QueryExecutorProvider, name: string, i
   const { rows: open } = await sql<{ id: string }>`select id from job_run where "finishedAt" is null`.execute(db);
   const openRuns = open.map(({ id }) => id);
   const {
-    rows: [{ itemsDone, itemsLeft, ...row }],
+    rows: [{ itemsDone, itemsLeft, itemsStartedAt, ...row }],
   } = await sql<{
     active: number;
     waiting: number;

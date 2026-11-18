@@ -38,6 +38,8 @@ export function standIn(options: { old?: boolean } = {}) {
     heartbeatAfterSec: 60,
     /** How many of the next snapshot records to refuse as if Cloud were down. */
     refuseSnapshots: 0,
+    /** Which photo server vouches for which backup machine. */
+    parents: new Map<string, string>(),
     takeovers: [] as { takeoverId: string; fromInstanceId: string; asker: string; status: string }[],
     discovery: { version: 1, validFor: 3600, issuer: ISSUER, api: API, ml: {} } as Record<string, unknown>,
   };
@@ -199,6 +201,7 @@ export function standIn(options: { old?: boolean } = {}) {
         statement.machineInstanceId === held.instanceId &&
         statement.signerKid === thumbprint(parent.jwk) &&
         verify(null, Buffer.from(signed), createPublicKey({ key: parent.jwk, format: 'jwk' }), Buffer.from(signature, 'base64url'));
+      if (good) state.parents.set(held.instanceId, statement.parentInstanceId);
       return good ? answer(200, { parent: { instanceId: statement.parentInstanceId, name: 'Family library', attachedAt: new Date(state.now).toISOString(), follows: true } }) : envelope(422, 'request-invalid');
     }
     if (route === 'GET api/v4/backup/locations')
@@ -269,6 +272,8 @@ export function standIn(options: { old?: boolean } = {}) {
     asker.linked = false;
     for (const [token, held] of state.tokens) if (held.instanceId === request.fromInstanceId) state.tokens.delete(token);
     state.lease = null;
+    // The photo server vouched for the old installation, not this one.
+    state.parents.delete(request.fromInstanceId);
     request.status = 'approved';
   };
   return { state, approve, fetch: handle as typeof fetch };

@@ -41,7 +41,8 @@ const VARIANTS = Object.freeze(
       image: "frameleaf-machine-learning",
       suffix: "-cuda",
       device: "cuda",
-      platforms: ["linux/amd64"],
+      // FL-997: Deploy builds CUDA for arm64 too (Grace and other arm64 NVIDIA servers).
+      platforms: ["linux/amd64", "linux/arm64"],
       target: "prod",
     },
     {
@@ -396,7 +397,7 @@ const REQUIRED_TEST_JOBS = Object.freeze([
   "OpenAPI Clients",
   "SQL Schema Checks",
 ]);
-async function requireTestQualification(sha, request = github, expected) {
+async function requireTestQualification(sha, request = ci, expected) {
   assert(SHA.test(sha), "Test qualification: invalid source SHA");
   const latestRun = async () => {
     // Do not filter to success: a newer failed/running run must never fall back to an older green run.
@@ -446,7 +447,10 @@ async function requireTestQualification(sha, request = github, expected) {
       result.jobs.length < 100,
     "Test qualification: incomplete jobs response",
   );
-  const jobs = REQUIRED_TEST_JOBS.map((name) => {
+  const required = onForgejo()
+    ? REQUIRED_TEST_JOBS.filter((name) => !NO_FORGEJO_RUNNER.has(name))
+    : REQUIRED_TEST_JOBS;
+  const jobs = required.map((name) => {
     const matches = result.jobs.filter((job) => job.name === name);
     assert.equal(
       matches.length,
@@ -803,12 +807,8 @@ async function releaseEvidence(tag = "latest") {
     record.target_commitish,
     "Reuse release source differs",
   );
-  const run = new RegExp(`^${SOURCE}/actions/runs/([0-9]+)$`).exec(
-    manifest.buildRun,
-  );
   assert(
-    run &&
-      trustedRun(await github(`actions/runs/${run[1]}`), manifest.sourceCommit),
+    trustedRun(await runFromUrl(manifest.buildRun), manifest.sourceCommit),
     "Reuse release run is not trusted",
   );
   return manifest;
@@ -1006,6 +1006,161 @@ async function github(endpoint, options = {}) {
     },
   );
   return JSON.parse(await checkedResponse(response));
+}
+// FL-1678: CI runs on Forgejo (code.heroapps.ca) while GitHub stays the source of truth for
+// main, tags and releases. Run evidence is read from whichever server ran the workflow, shaped like
+// GitHub's API so trustedRun and requireTestQualification apply unchanged.
+const FORGEJO = "https://code.heroapps.ca";
+const FORGEJO_SOURCE = `${FORGEJO}/${REPOSITORY}`;
+// Lanes Forgejo has no runner for; required only on GitHub.
+const NO_FORGEJO_RUNNER = new Set(["Unit Test CLI (Windows)"]);
+function onForgejo(env = process.env) {
+  return (env.GITHUB_SERVER_URL || "").replace(/\/+$/, "") === FORGEJO;
+}
+async function forgejo(endpoint) {
+  const response = await fetch(
+    `${FORGEJO}/api/v1/repos/${REPOSITORY}/${endpoint}`,
+    {
+      headers: {
+        Accept: "application/json",
+        ...(process.env.FORGEJO_TOKEN && {
+          Authorization: `token ${process.env.FORGEJO_TOKEN}`,
+        }),
+      },
+      signal: AbortSignal.timeout(60_000),
+    },
+  );
+  return JSON.parse(await checkedResponse(response));
+}
+const FORGEJO_DONE = new Set(["success", "failure", "cancelled", "skipped"]);
+function forgejoRun(run, jobs) {
+  const attempt = Math.max(1, ...jobs.map((job) => job.attempt || 1));
+  return {
+    id: run.id,
+    head_sha: run.commit_sha,
+    head_branch: run.prettyref,
+    head_repository: { full_name: run.repository?.full_name ?? REPOSITORY },
+    event: run.trigger_event || run.event,
+    status: FORGEJO_DONE.has(run.status) ? "completed" : run.status,
+    conclusion: FORGEJO_DONE.has(run.status) ? run.status : null,
+    path: `.github/workflows/${run.workflow_id}`,
+    run_attempt: attempt,
+    updated_at: run.updated,
+    html_url: run.html_url,
+  };
+}
+// Forgejo names matrix members "Name", "Name-1", "Name-2" where GitHub writes "Name (a, b)". Members
+// map in order onto the GitHub names that start with that group's name; a group whose size differs
+// from the required list maps nothing, so the qualification fails closed on a missing or extra lane.
+function githubJobNames(jobs, required = REQUIRED_TEST_JOBS) {
+  const group = (name) => name.replace(/-\d+$/, "");
+  const groups = new Map();
+  for (const job of jobs) {
+    const key = jobs.some((j) => j !== job && group(j.name) === group(job.name))
+      ? group(job.name)
+      : job.name;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(job);
+  }
+  const names = new Map();
+  for (const [key, members] of groups) {
+    const exact = required.filter((name) => name === key);
+    const wanted = exact.length
+      ? exact
+      : required.filter(
+          (name) =>
+            name.startsWith(`${key} (`) &&
+            ![...groups.keys()].some(
+              (other) =>
+                other.length > key.length &&
+                other.startsWith(key) &&
+                (name === other || name.startsWith(`${other} (`)),
+            ),
+        );
+    if (wanted.length !== members.length) continue;
+    const order = (job) => Number(/-(\d+)$/.exec(job.name)?.[1] ?? 0);
+    [...members]
+      .sort((a, b) => order(a) - order(b))
+      .forEach((job, i) => names.set(job, wanted[i]));
+  }
+  return names;
+}
+// Answers the GitHub run endpoints this script uses from Forgejo's API.
+async function forgejoAsGithub(endpoint, request = forgejo) {
+  const [path, query = ""] = endpoint.split("?");
+  const params = new URLSearchParams(query);
+  const jobsOf = async (id) => {
+    const jobs = await request(`actions/runs/${id}/jobs`);
+    assert(Array.isArray(jobs), "Invalid Forgejo jobs response");
+    return jobs;
+  };
+  let match = /^actions\/workflows\/([\w.-]+)\/runs$/.exec(path);
+  if (match) {
+    assert(
+      SHA.test(params.get("head_sha") || ""),
+      "Forgejo run query needs a SHA",
+    );
+    const response = await request(
+      `actions/runs?workflow_id=${match[1]}&head_sha=${params.get("head_sha")}&limit=50`,
+    );
+    const rows = response.workflow_runs;
+    assert(
+      Array.isArray(rows) && rows.length < 50,
+      "Incomplete Forgejo runs response",
+    );
+    let runs = [];
+    for (const run of rows) runs.push(forgejoRun(run, await jobsOf(run.id)));
+    if (params.get("status"))
+      runs = runs.filter((run) => run.conclusion === params.get("status"));
+    return { total_count: runs.length, workflow_runs: runs };
+  }
+  match = /^actions\/runs\/(\d+)$/.exec(path);
+  if (match)
+    return forgejoRun(
+      await request(`actions/runs/${match[1]}`),
+      await jobsOf(match[1]),
+    );
+  match = /^actions\/runs\/(\d+)\/attempts\/(\d+)\/jobs$/.exec(path);
+  if (match) {
+    const run = forgejoRun(
+      await request(`actions/runs/${match[1]}`),
+      await jobsOf(match[1]),
+    );
+    const all = (await jobsOf(match[1])).filter(
+      (job) => (job.attempt || 1) === Number(match[2]),
+    );
+    const names = githubJobNames(all);
+    const jobs = all.map((job) => ({
+      id: job.id,
+      name: names.get(job) ?? job.name,
+      run_id: job.run_id,
+      head_sha: run.head_sha,
+      head_branch: run.head_branch,
+      workflow_name:
+        run.path === ".github/workflows/test.yml" ? "Test" : run.path,
+      status: FORGEJO_DONE.has(job.status) ? "completed" : job.status,
+      conclusion: FORGEJO_DONE.has(job.status) ? job.status : null,
+      run_attempt: job.attempt || 1,
+    }));
+    return { total_count: jobs.length, jobs };
+  }
+  throw new Error(`No Forgejo equivalent for ${endpoint}`);
+}
+// Run evidence: Forgejo when this job runs there, GitHub otherwise.
+function ci(endpoint, options) {
+  return onForgejo() ? forgejoAsGithub(endpoint) : github(endpoint, options);
+}
+// The manifest links a run on the server that ran it; reuse reads it back from the same server.
+function runUrl(id) {
+  return `${onForgejo() ? FORGEJO_SOURCE : SOURCE}/actions/runs/${id}`;
+}
+async function runFromUrl(url) {
+  const github_ = new RegExp(`^${SOURCE}/actions/runs/([0-9]+)$`).exec(url);
+  if (github_) return github(`actions/runs/${github_[1]}`);
+  const forgejo_ = new RegExp(`^${FORGEJO_SOURCE}/actions/runs/([0-9]+)$`).exec(
+    url,
+  );
+  return forgejo_ ? forgejoAsGithub(`actions/runs/${forgejo_[1]}`) : undefined;
 }
 async function currentMainline(sha) {
   const branch = await github(`git/ref/heads/${MAIN}`);
@@ -1219,7 +1374,7 @@ async function resolveCandidate(
     "Give the exact 40-character commit SHA or a sha256 digest",
   );
   assert(await currentMainline(sha), `${sha} is not the current ${MAIN} head`);
-  const { workflow_runs: runs } = await github(
+  const { workflow_runs: runs } = await ci(
     `actions/workflows/docker.yml/runs?head_sha=${sha}&status=success&per_page=100`,
   );
   const run = (Array.isArray(runs) ? runs : []).find((r) => trustedRun(r, sha));
@@ -1714,10 +1869,7 @@ async function release(env = process.env) {
   assert(SHA.test(env.SOURCE_SHA));
   assert(/^\d+$/.test(env.BUILD_RUN_ID), "Missing build run");
   assert(
-    trustedRun(
-      await github(`actions/runs/${env.BUILD_RUN_ID}`),
-      env.SOURCE_SHA,
-    ),
+    trustedRun(await ci(`actions/runs/${env.BUILD_RUN_ID}`), env.SOURCE_SHA),
     "Build run is not trusted",
   );
   assert(await currentMainline(env.SOURCE_SHA), "Stale release candidate");
@@ -1750,8 +1902,8 @@ async function release(env = process.env) {
     repository: REPOSITORY,
     sourceCommit: env.SOURCE_SHA,
     tag,
-    buildRun: `${SOURCE}/actions/runs/${env.BUILD_RUN_ID}`,
-    testRun: `${SOURCE}/actions/runs/${testQualification.runId}/attempts/${testQualification.attempt}`,
+    buildRun: runUrl(env.BUILD_RUN_ID),
+    testRun: `${runUrl(testQualification.runId)}/attempts/${testQualification.attempt}`,
     testValidation: testQualification,
     images,
     dependencies: [...dependencies].map(([reference, digest]) => ({
@@ -1765,7 +1917,7 @@ async function release(env = process.env) {
   };
   if (env.DEPLOY_RUN_ID) {
     assert(/^\d+$/.test(env.DEPLOY_RUN_ID), "Invalid deployment run");
-    manifest.deploymentRun = `${SOURCE}/actions/runs/${env.DEPLOY_RUN_ID}`;
+    manifest.deploymentRun = runUrl(env.DEPLOY_RUN_ID);
   }
   const rolloutPercent = parsePercent(env.ROLLOUT_PERCENT);
   assert(
@@ -1848,7 +2000,7 @@ async function release(env = process.env) {
   // Check the bundle exactly as Manager will (signatures included when signed) before anything is uploaded.
   const { verifyBundle } = require("./verify-release-bundle.cjs");
   await verifyBundle(directory, tag, { authenticate: env.SIGN === "1" });
-  await requireTestQualification(env.SOURCE_SHA, github, testQualification);
+  await requireTestQualification(env.SOURCE_SHA, ci, testQualification);
   assert(
     await currentMainline(env.SOURCE_SHA),
     "Mainline changed before promotion; draft/version tags retained for inspection",
@@ -1895,6 +2047,9 @@ module.exports = {
   validateImageConfig,
   trustedRun,
   requireTestQualification,
+  forgejoAsGithub,
+  githubJobNames,
+  runFromUrl,
   chooseTag,
   previousReleaseTag,
   releaseNotesBody,

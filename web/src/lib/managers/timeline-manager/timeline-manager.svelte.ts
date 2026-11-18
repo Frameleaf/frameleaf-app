@@ -561,6 +561,18 @@ export class TimelineManager extends VirtualScrollManager {
 
     this.#viewAccessRevision = revision;
     const top = refreshing ? this.scrollTop : undefined;
+    // A refresh rebuilds every month at its estimated height, so the same pixel offset lands on another
+    // date (a live update mid-scroll threw the view years away): hold the month on screen instead.
+    const anchor = refreshing ? this.viewportTopMonthIntersection : undefined;
+    const anchorKey = anchor?.month?.yearMonth;
+    const restoreScroll = () => {
+      const month = anchorKey && this.months.find((candidate) => isEqual(candidate.yearMonth, anchorKey));
+      if (month && anchor) {
+        this.scrollTo(month.top + month.height * anchor.viewportTopRatioInMonth);
+      } else if (top !== undefined) {
+        this.scrollTo(top);
+      }
+    };
     this.#loadedPages.clear();
     this.#geometryNeedsInitialization = true;
     this.#nsfwHiddenAssetIds.clear();
@@ -595,9 +607,7 @@ export class TimelineManager extends VirtualScrollManager {
       this.datesToCheck = undefined;
       this.albumAssets.clear();
       this.updateViewportGeometry(false);
-      if (top !== undefined) {
-        this.scrollTo(top);
-      }
+      restoreScroll();
       return;
     }
 
@@ -640,9 +650,7 @@ export class TimelineManager extends VirtualScrollManager {
     this.months = months;
     this.albumAssets.clear();
     this.updateViewportGeometry(false);
-    if (top !== undefined) {
-      this.scrollTo(top);
-    }
+    restoreScroll();
   }
 
   async updateOptions(options: TimelineManagerOptions) {

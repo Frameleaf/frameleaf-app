@@ -29,6 +29,8 @@ import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
 import { findDrives, suggestFolders } from './drives.js';
 import { storageSuggestions } from './storage-suggestions.js';
 import { adoptMappedFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, externalRoots, insideMappedFolders, listFolders, newLibraryFolders } from './folders.js';
+import { Cloud } from './cloud-link.js';
+import { CloudBackup, reasonOf } from './server-backup-cloud.js';
 import { ServerBackup } from './server-backup.js';
 import { thumbnailMount } from './mounts.js';
 import { Security, trustedProxyList } from './security.js';
@@ -137,8 +139,28 @@ const databaseStorage = new PostgresStorage(docker, directory, defaults.roots, d
 // FL-1668: Server Backup stores to a folder until Manager can link to Frameleaf Cloud. The folder is named
 // only for testing before release; without it Server Backup reports nothing and its screens stay hidden.
 const serverBackupFolder = runtime === 'docker' ? process.env.MANAGER_SERVER_BACKUP_FOLDER : undefined;
+// FL-1672: backups go to Frameleaf Cloud. Before release this is shown only where Manager is started with
+// MANAGER_SERVER_BACKUP_CLOUD=1: the Cloud side is not deployed, and a product that cannot work is not shown.
+const serverBackupCloud =
+  runtime === 'docker' && process.env.MANAGER_SERVER_BACKUP_CLOUD === '1'
+    ? new CloudBackup(store, new Cloud(process.env.FRAMELEAF_CLOUD_URL ?? 'https://api.frameleaf.cloud'), {
+        version: JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version,
+        platform: `manager/${process.platform}`,
+      }, (machineInstanceId) => operations.backupMachineStatement(machineInstanceId))
+    : null;
+/** Server Backup's link to Cloud, or a refusal where this Manager has none. Cloud's own refusals are passed on in words the screens know. */
+const cloudly = async <T>(work: (cloud: CloudBackup) => Promise<T>): Promise<T> => {
+  if (!serverBackupCloud) throw new Refusal('server_backup_unavailable');
+  try {
+    return await work(serverBackupCloud);
+  } catch (error) {
+    if (error instanceof Refusal) throw error;
+    throw new Refusal(reasonOf(error), 502);
+  }
+};
 const serverBackup = new ServerBackup(store, {
   target: serverBackupFolder ? { kind: 'folder', path: serverBackupFolder } : null,
+  cloud: serverBackupCloud,
   inside: insideMappedFolders,
   always: [join(backupRoot, 'frameleaf-database')],
 });
@@ -747,7 +769,9 @@ class Api {
     return serverBackup.view();
   }
   @Post('server-backup-run') async serverBackupRun() {
-    await serverBackup.backUp();
+    await serverBackup.backUp().catch((error) => {
+      throw error instanceof Refusal ? error : new Refusal(reasonOf(error), 502);
+    });
     return serverBackup.view();
   }
   @Post('server-backup-stop') serverBackupStop() {
@@ -757,8 +781,51 @@ class Api {
   @Post('server-backup-browse') serverBackupBrowse(@Body() input: unknown) {
     return serverBackup.browse(input);
   }
+  @Post('server-backup-contents') serverBackupContents(@Body() input: unknown) {
+    return serverBackup.contents(input);
+  }
   @Post('server-backup-restore') async serverBackupRestore(@Body() input: unknown) {
     await serverBackup.restore(input);
+    return serverBackup.view();
+  }
+  @Post('server-backup-cloud-link') async serverBackupCloudLink(@Req() request: Request) {
+    await cloudly((cloud) => cloud.startLink(new URL(security.requestOrigin(request)).hostname));
+    return serverBackup.view();
+  }
+  @Post('server-backup-cloud-check') async serverBackupCloudCheck() {
+    const state = await cloudly((cloud) => cloud.checkLink());
+    // With one place on offer there is nothing to ask; with several, the screen asks.
+    if (state === 'linked') await cloudly((cloud) => cloud.setLocation()).catch(() => undefined);
+    return { ...serverBackup.view(), linking: state };
+  }
+  @Post('server-backup-cloud-locations') async serverBackupCloudLocations() {
+    return { locations: await cloudly((cloud) => cloud.locations()) };
+  }
+  @Post('server-backup-cloud-location') async serverBackupCloudLocation(@Body() input: unknown) {
+    const { locationId } = z.object({ locationId: z.string().min(1).max(64) }).strict().parse(input);
+    await cloudly((cloud) => cloud.setLocation(locationId));
+    return serverBackup.view();
+  }
+  @Post('server-backup-cloud-machines') async serverBackupCloudMachines() {
+    return { machines: await cloudly((cloud) => cloud.takeoverCandidates()) };
+  }
+  @Post('server-backup-cloud-takeover') async serverBackupCloudTakeover(@Body() input: unknown) {
+    const { instanceId } = z.object({ instanceId: z.uuid() }).strict().parse(input);
+    await cloudly((cloud) => cloud.askTakeover(instanceId));
+    return serverBackup.view();
+  }
+  @Post('server-backup-cloud-takeover-check') async serverBackupCloudTakeoverCheck() {
+    const answer = await cloudly((cloud) => cloud.checkTakeover());
+    return { ...serverBackup.view(), takeover: answer.status };
+  }
+  @Post('server-backup-adopt-key') async serverBackupAdoptKey(@Body() input: unknown) {
+    const { key } = z.object({ key: z.string().max(200) }).strict().parse(input);
+    try {
+      await serverBackup.adoptKey(key.replaceAll(/\s/g, '').toLowerCase());
+    } catch (error) {
+      if (error instanceof Refusal) throw error;
+      throw new Refusal(error instanceof z.ZodError ? 'server_backup_key_wrong' : reasonOf(error), error instanceof z.ZodError ? 409 : 502);
+    }
     return serverBackup.view();
   }
   @Post('export') async configuration(@Body() input: unknown, @Res() response: Response) {
