@@ -257,6 +257,8 @@
       await api('server-backup-key-saved', {});
       change(await api('server-backup-run', {}));
       edited = false;
+      // The key was on screen only to be saved; it is not kept around once it is.
+      firstKey = '';
       step = '';
       go('overview');
     });
@@ -552,7 +554,7 @@
       <div class="card-body">{@render scheduleFields()}</div>
     </section>
     <div class="notice mt16"><Icon name="clock" /><div><strong>The first backup takes the longest</strong><p>Everything has to be stored once. After that only changes are, usually in minutes. You can keep using the server meanwhile.</p></div></div>
-    <div class="wizard-footer"><button class="button quiet" onclick={() => (step = 'key')}><Icon name="back" />Back</button><button class="button primary" disabled={busy} onclick={finishSetup}>Start first backup</button></div>
+    <div class="wizard-footer"><button class="button quiet" onclick={() => (step = data.key.saved ? 'folders' : 'key')}><Icon name="back" />Back</button><button class="button primary" disabled={busy} onclick={finishSetup}>Start first backup</button></div>
   {/if}
 {:else if page === 'folders'}
   {@render heading('Folders', 'What Server Backup protects on this server.')}
