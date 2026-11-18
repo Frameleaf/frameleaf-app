@@ -270,6 +270,8 @@ test('disconnecting stops backups and keeps what is stored; connecting again bri
   cloud.state.now += 11 * 60_000;
   await second.service.disconnect();
   assert.equal(second.service.view()!.cloud?.state, 'unlinked');
+  // Its identity is gone from disk too, so it can never be used again.
+  await assert.rejects(readFile(at('second', 'server-backup-cloud.identity')), { code: 'ENOENT' });
 
   // The same Manager connects again, takes its own older backups over, and its own key opens them.
   await link(second);
