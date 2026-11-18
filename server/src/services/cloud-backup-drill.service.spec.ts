@@ -1,10 +1,13 @@
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { backup, memoryStore } from '@frameleaf/backup-core';
+import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { gzipSync } from 'node:zlib';
 import type { CloudBackupBucket } from 'src/services/cloud-backup-maintenance.js';
+import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import type { FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
-import { CloudBackupStoreError } from 'src/repositories/cloud-backup-store.repository.js';
 import {
   DRILL_SAMPLE_SIZE,
   type DrillDeps,
@@ -14,70 +17,133 @@ import {
   runRestoreDrill,
 } from 'src/services/cloud-backup-drill.js';
 import { DRILL_DATABASE_NAME, createSqlCommandGuard } from 'src/services/database-backup.service.js';
+import { CATALOG_PATH, fileTreePath, treeKey } from 'src/utils/cloud-backup-catalog.js';
+import { BackupSource, type BackupSourceFile } from 'src/utils/cloud-backup-source.js';
+import { openVault, snapshotObjectKey } from 'src/utils/cloud-backup-vault.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import { canonicalJson, drillReportOf, signDrillReport, verifyDrillReport } from 'src/utils/restore-drill-report.js';
 
 const STARTED = '2026-11-08T02:00:00.000Z';
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-const sha = (n: number) => n.toString(16).padStart(64, '0');
+const sha256 = (body: Buffer) => createHash('sha256').update(body).digest('hex');
+const VAULT = '0195a1b2-0000-7000-8000-0000000000ff';
+const SQL = Buffer.from('-- PostgreSQL database dump\nSELECT 1;\n-- PostgreSQL database dump complete\n');
+const roots: string[] = [];
 
-const manifestOf = (assets = 3) => ({
-  format: 'frameleaf-backup-manifest',
-  version: 2,
-  instanceId: id(999),
-  createdAt: STARTED,
-  database: { key: 'db/v1/vault/1/hmac/frameleaf-db-backup.sql.gz', sha256: sha(9999), size: 10 },
-  assets: Object.fromEntries(
-    Array.from({ length: assets }, (_, index) => [
-      id(index + 1),
-      {
-        owner: id(500),
-        type: index === 0 ? 'VIDEO' : 'IMAGE',
-        originalFileName: `a${index}.jpg`,
-        fileCreatedAt: STARTED,
-        fileModifiedAt: STARTED,
-        localDateTime: STARTED,
-        duration: null,
-        files: [{ role: 'original', path: `a${index}.jpg`, sha256: sha(index + 1), size: 1, mtime: null }],
+/** A real backup in the backup engine: three originals, a dump and the catalog, as a run stores them. */
+const backedUp = async (
+  options: { catalog?: (catalog: CloudBackupManifest) => void; trusted?: (hash: string) => string } = {},
+) => {
+  const root = await mkdtemp(join(tmpdir(), 'frameleaf-drill-'));
+  roots.push(root);
+  const library = join(root, 'library');
+  await mkdir(library, { recursive: true });
+  const files: BackupSourceFile[] = [];
+  const entry = async (index: number) => {
+    const path = join(library, `a${index}.jpg`);
+    const body = Buffer.from(`photo ${index}`);
+    await writeFile(path, body);
+    files.push({ treePath: fileTreePath(path), path });
+    return {
+      role: 'original',
+      path,
+      objectKey: treeKey(fileTreePath(path)),
+      sha256: sha256(body),
+      size: body.length,
+      mtime: null,
+    };
+  };
+  const dumpPath = join(root, 'library-data.sql');
+  await writeFile(dumpPath, SQL);
+  const catalog: CloudBackupManifest = {
+    format: 'frameleaf-backup-manifest',
+    version: 4,
+    instanceId: VAULT,
+    createdAt: STARTED,
+    database: { key: 'database/library-data.sql', sha256: sha256(SQL), size: SQL.length },
+    assets: Object.fromEntries(
+      await Promise.all(
+        [0, 1, 2].map(async (index) => [
+          id(index + 1),
+          {
+            owner: id(500),
+            type: index === 0 ? 'VIDEO' : 'IMAGE',
+            originalFileName: `a${index}.jpg`,
+            fileCreatedAt: STARTED,
+            fileModifiedAt: STARTED,
+            localDateTime: STARTED,
+            duration: null,
+            files: [await entry(index)],
+          },
+        ]),
+      ),
+    ),
+    profiles: {},
+    albums: {
+      [id(700)]: {
+        name: 'Trip',
+        description: '',
+        ownerId: id(500),
+        coverAssetId: null,
+        order: 'desc',
+        sharedUsers: [],
       },
-    ]),
-  ),
-  profiles: {},
-  albums: {
-    [id(700)]: { name: 'Trip', description: '', ownerId: id(500), coverAssetId: null, order: 'desc', sharedUsers: [] },
-  },
-  people: {},
-});
-
-const bucket = (head: string | undefined = 'm/v1/vault/1/2026-11-08.json.gz') =>
-  ({
+    },
+    people: {},
+  };
+  options.catalog?.(catalog);
+  const catalogPath = join(root, 'catalog.json');
+  await writeFile(catalogPath, JSON.stringify(catalog));
+  const keyring = { current: 1, keys: { 1: randomBytes(32).toString('base64') } };
+  const repository = await openVault(memoryStore(), keyring, { create: true });
+  const source = new BackupSource(
+    [
+      { name: 'database', files: [{ treePath: ['database', 'library-data.sql'], path: dumpPath }] },
+      { name: 'files', files },
+      { name: 'catalog', files: [{ treePath: CATALOG_PATH, path: catalogPath }] },
+    ],
+    () => {},
+  );
+  const stored = await backup(repository, source, { sequence: 1 });
+  const head = snapshotObjectKey(VAULT, stored.key);
+  const bucket = {
     bucketRef: 'ref',
     bucketKey: Buffer.alloc(32),
-    connection: { trustedManifestHead: head },
-  }) as unknown as CloudBackupBucket;
+    connection: {
+      vaultId: VAULT,
+      trustedManifestHead: head,
+      trustedManifests: {
+        [head]: {
+          versionId: 'v1',
+          ciphertextSha256: options.trusted?.(stored.ciphertextSha256) ?? stored.ciphertextSha256,
+        },
+      },
+    },
+  } as unknown as CloudBackupBucket;
+  return { bucket, repository, scratch: join(root, 'scratch') };
+};
 
-const setup = (overrides: Partial<DrillDeps> = {}, manifest: object = manifestOf()) => {
+const setup = async (overrides: Partial<DrillDeps> = {}, backupOptions: Parameters<typeof backedUp>[0] = {}) => {
   const removed: string[] = [];
+  const made = await backedUp(backupOptions);
+  const dumps: Buffer[] = [];
   const deps: DrillDeps = {
-    store: {
-      exportObject: vi.fn().mockResolvedValue({ path: '/scratch/manifest/x' }),
-      get: vi.fn().mockResolvedValue(gzipSync(JSON.stringify(manifest))),
-      download: vi.fn().mockResolvedValue({ size: 1, sha256: '' }),
-    } as never,
-    makeDirectory: vi.fn().mockResolvedValue(undefined),
-    removeDirectory: vi.fn((path: string) => {
+    open: () => Promise.resolve(made.repository),
+    makeDirectory: (path: string) => mkdir(path, { recursive: true }).then(() => {}),
+    removeDirectory: vi.fn(async (path: string) => {
       removed.push(path);
-      return Promise.resolve();
+      await rm(path, { recursive: true, force: true });
     }),
-    rehearse: vi.fn((_path: string, ids: string[]) =>
-      Promise.resolve({ counts: { asset: 3, user: 1, album: 1 }, presentAssetIds: ids }),
-    ),
+    rehearse: vi.fn(async (path: string, ids: string[]) => {
+      dumps.push(await readFile(path));
+      return { counts: { asset: 3, user: 1, album: 1 }, presentAssetIds: ids };
+    }),
     addedAt: vi.fn().mockResolvedValue(new Map()),
     progress: vi.fn().mockResolvedValue(true),
     random: () => 0,
     ...overrides,
   };
-  return { deps, removed };
+  return { deps, removed, dumps, ...made };
 };
 
 const failure = async (promise: Promise<unknown>) => {
@@ -86,10 +152,16 @@ const failure = async (promise: Promise<unknown>) => {
   return drillOutcomeOf(error)!;
 };
 
-describe('restore drill (FL-879)', () => {
+describe('restore drill (FL-879, on the backup engine since FL-1676)', () => {
+  afterEach(async () => {
+    for (const root of roots.splice(0)) {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('passes when the backup unlocks, its library data rebuilds and every sampled original matches', async () => {
-    const { deps, removed } = setup();
-    const outcome = await runRestoreDrill(bucket(), '/scratch', deps);
+    const { deps, removed, dumps, bucket, scratch } = await setup();
+    const outcome = await runRestoreDrill(bucket, scratch, deps);
     expect(outcome).toMatchObject({
       result: 'passed',
       failedStep: null,
@@ -101,112 +173,82 @@ describe('restore drill (FL-879)', () => {
       matched: 3,
       mismatches: [],
     });
-    // the dump and each original are checked against the SHA-256 the backup recorded
-    expect(deps.store.download).toHaveBeenCalledWith(
-      expect.anything(),
-      'db/v1/vault/1/hmac/frameleaf-db-backup.sql.gz',
-      expect.anything(),
-      '/scratch/library-data.sql.gz',
-      sha(9999),
-    );
-    expect(deps.store.download).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.any(String),
-      expect.anything(),
-      '/scratch/original',
-      sha(1),
-    );
-    expect(removed.at(-1)).toBe('/scratch');
+    // the library data is rebuilt from exactly the dump the backup holds
+    expect(dumps).toEqual([SQL]);
+    expect(removed.at(-1)).toBe(scratch);
   });
 
-  it('fails at fetch when the newest backup does not match its signed history (a tampered manifest)', async () => {
-    const { deps, removed } = setup({
-      store: {
-        exportObject: vi
-          .fn()
-          .mockRejectedValue(
-            new CloudBackupStoreError('Export snapshot ciphertext mismatch', null, 'ChecksumMismatch'),
-          ),
-        get: vi.fn(),
-        download: vi.fn(),
-      } as never,
-    });
-    const outcome = await failure(runRestoreDrill(bucket(), '/scratch', deps));
+  it('fails at fetch when the newest backup does not match its signed history (a tampered backup)', async () => {
+    const { deps, removed, bucket, scratch } = await setup({}, { trusted: () => 'f'.repeat(64) });
+    const outcome = await failure(runRestoreDrill(bucket, scratch, deps));
     expect(outcome).toMatchObject({ result: 'failed', failedStep: 'fetch' });
     expect(deps.rehearse).not.toHaveBeenCalled();
-    expect(removed.at(-1)).toBe('/scratch');
+    expect(removed.at(-1)).toBe(scratch);
   });
 
   it('fails at fetch when there is no signed backup to take back', async () => {
-    const { deps } = setup();
-    expect(await failure(runRestoreDrill(bucket(''), '/scratch', deps))).toMatchObject({ failedStep: 'fetch' });
+    const { deps, bucket, scratch } = await setup();
+    bucket.connection.trustedManifestHead = '';
+    expect(await failure(runRestoreDrill(bucket, scratch, deps))).toMatchObject({ failedStep: 'fetch' });
   });
 
-  it('fails at unlock when the recovery key does not decrypt the backup (a wrong key)', async () => {
-    const { deps } = setup({
-      store: {
-        exportObject: vi.fn().mockResolvedValue({}),
-        get: vi
-          .fn()
-          .mockRejectedValue(
-            new CloudBackupStoreError('Encrypted backup authentication failed', null, 'ChecksumMismatch'),
-          ),
-        download: vi.fn(),
-      } as never,
+  it('fails at unlock when the recovery key does not open the backup (a wrong key)', async () => {
+    const { deps, bucket, scratch } = await setup({
+      open: () => Promise.reject(new Error('This recovery key does not open the backup stored here.')),
     });
-    expect(await failure(runRestoreDrill(bucket(), '/scratch', deps))).toMatchObject({ failedStep: 'unlock' });
+    expect(await failure(runRestoreDrill(bucket, scratch, deps))).toMatchObject({ failedStep: 'unlock' });
   });
 
   it('fails at rebuild when the library data does not rebuild, and when an older item is missing from it', async () => {
-    const broken = setup({ rehearse: vi.fn().mockRejectedValue(new Error('psql exited 3')) });
-    expect(await failure(runRestoreDrill(bucket(), '/scratch', broken.deps))).toMatchObject({ failedStep: 'rebuild' });
+    const broken = await setup({ rehearse: vi.fn().mockRejectedValue(new Error('psql exited 3')) });
+    expect(await failure(runRestoreDrill(broken.bucket, broken.scratch, broken.deps))).toMatchObject({
+      failedStep: 'rebuild',
+    });
 
-    const missing = setup({
+    const missing = await setup({
       rehearse: vi.fn().mockResolvedValue({ counts: { asset: 2, user: 1, album: 1 }, presentAssetIds: [id(2), id(3)] }),
       addedAt: vi.fn().mockResolvedValue(new Map([[id(1), new Date('2026-01-01T00:00:00Z')]])),
     });
-    expect(await failure(runRestoreDrill(bucket(), '/scratch', missing.deps))).toMatchObject({
+    expect(await failure(runRestoreDrill(missing.bucket, missing.scratch, missing.deps))).toMatchObject({
       failedStep: 'rebuild',
       mismatches: [{ assetId: id(1), problem: 'not-in-library-data' }],
     });
   });
 
   it('accepts an item added after the backup started that its library data does not hold yet', async () => {
-    const { deps } = setup({
+    const { deps, bucket, scratch } = await setup({
       rehearse: vi.fn().mockResolvedValue({ counts: { asset: 2, user: 1, album: 1 }, presentAssetIds: [id(2), id(3)] }),
       addedAt: vi.fn().mockResolvedValue(new Map([[id(1), new Date('2026-11-08T02:30:00Z')]])),
     });
-    expect(await runRestoreDrill(bucket(), '/scratch', deps)).toMatchObject({ result: 'passed' });
+    expect(await runRestoreDrill(bucket, scratch, deps)).toMatchObject({ result: 'passed' });
   });
 
-  it('fails at compare when a sampled original is corrupted or missing, never a pass', async () => {
-    const download = vi
-      .fn()
-      .mockResolvedValueOnce({}) // the library data
-      .mockRejectedValueOnce(new CloudBackupStoreError('damaged', null, 'ChecksumMismatch'))
-      .mockRejectedValueOnce(new CloudBackupStoreError('gone', 404, 'NoSuchKey'))
-      .mockResolvedValueOnce({});
-    const { deps } = setup({
-      store: {
-        exportObject: vi.fn().mockResolvedValue({}),
-        get: vi.fn().mockResolvedValue(gzipSync(JSON.stringify(manifestOf()))),
-        download,
-      } as never,
-    });
-    const outcome = await failure(runRestoreDrill(bucket(), '/scratch', deps));
+  it('fails at compare when a sampled original is different or missing, never a pass', async () => {
+    const { deps, bucket, scratch } = await setup(
+      {},
+      {
+        catalog: (catalog) => {
+          catalog.assets[id(2)].files[0].sha256 = 'a'.repeat(64);
+          catalog.assets[id(3)].files[0].objectKey = 'files/nowhere/gone.jpg';
+        },
+      },
+    );
+    const outcome = await failure(runRestoreDrill(bucket, scratch, deps));
     expect(outcome).toMatchObject({ result: 'failed', failedStep: 'compare', checked: 3, matched: 1 });
     expect(outcome.mismatches.map(({ problem }) => problem).toSorted()).toEqual(['different', 'missing']);
   });
 
   it('stops without a report, and removes its scratch folder, when cancelled', async () => {
-    const { deps, removed } = setup({ progress: vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false) });
-    expect(await runRestoreDrill(bucket(), '/scratch', deps)).toBeNull();
-    expect(removed.at(-1)).toBe('/scratch');
+    const { deps, removed, bucket, scratch } = await setup({
+      progress: vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false),
+    });
+    expect(await runRestoreDrill(bucket, scratch, deps)).toBeNull();
+    expect(removed.at(-1)).toBe(scratch);
   });
 
   it('takes back only items the licence covers', async () => {
-    const { deps } = setup({ eligible: () => false });
-    expect(await failure(runRestoreDrill(bucket(), '/scratch', deps))).toMatchObject({ failedStep: 'fetch' });
+    const { deps, bucket, scratch } = await setup({ eligible: () => false });
+    expect(await failure(runRestoreDrill(bucket, scratch, deps))).toMatchObject({ failedStep: 'fetch' });
   });
 
   it('samples at most 500, without repeats', () => {

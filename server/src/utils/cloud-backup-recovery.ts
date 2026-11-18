@@ -7,7 +7,7 @@ import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { parseClientBackupKeys } from 'src/utils/cloud-backup-crypto.js';
 import { ESCROW_SCRYPT, escrowPassphraseProblem, scryptDerive } from 'src/utils/cloud-backup-escrow.js';
 import { parseBackupKey } from 'src/utils/cloud-backup.js';
-import { keyEscrowBlobSchema } from 'src/utils/frameleaf-cloud-backup.js';
+import { BACKUP_SNAPSHOT_KEY, keyEscrowBlobSchema } from 'src/utils/frameleaf-cloud-backup.js';
 
 const digest = z.string().regex(/^[\da-f]{64}$/);
 const publicKey = z.strictObject({
@@ -26,13 +26,11 @@ export const backupSnapshotDescriptorSchema = z
     previousDigest: digest.nullable(),
     createdAt: z.iso.datetime(),
     manifest: z.strictObject({
-      format: z.literal('frameleaf-client-backup'),
+      format: z.literal('frameleaf-repository'),
       formatVersion: z.literal(1),
       keyVersion: z.int().positive().max(999_999_999),
-      objectKey: z
-        .string()
-        .max(160)
-        .regex(/^m\/v1\/[\da-f-]{36}\/[1-9]\d{0,8}\/\d{8}T\d{6}Z\.json\.gz$/),
+      // FL-1676: the backup itself, a snapshot of the chunked repository, named by its place in this history
+      objectKey: z.string().max(128).regex(BACKUP_SNAPSHOT_KEY),
       versionId: z
         .string()
         .min(1)
@@ -46,7 +44,7 @@ export const backupSnapshotDescriptorSchema = z
   .superRefine((value, context) => {
     if (
       (value.sequence === 1) !== (value.previousDigest === null) ||
-      !value.manifest.objectKey.startsWith(`m/v1/${value.vaultId}/${value.manifest.keyVersion}/`)
+      !value.manifest.objectKey.startsWith(`r/v1/${value.vaultId}/s/${String(value.sequence).padStart(12, '0')}-`)
     )
       context.addIssue({ code: 'custom', message: 'Invalid snapshot chain or vault reference' });
   });

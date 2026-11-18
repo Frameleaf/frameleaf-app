@@ -69,7 +69,7 @@ describe('admin restore publication on a real filesystem', () => {
         return { size: bytes.length, sha256 };
       },
     };
-    const sut = new CloudBackupRestorer(null, storage, new CryptoRepository(), logger);
+    const sut = new CloudBackupRestorer(storage, new CryptoRepository(), logger);
     return { sut, storage, options, target };
   };
 
@@ -191,7 +191,7 @@ describe('owner restore publication on a drive without hard links (FL-1333)', ()
       });
     }
     const logger = LoggingRepository.create();
-    const sut = new CloudBackupRestorer(null, new StorageRepository(logger), new CryptoRepository(), logger);
+    const sut = new CloudBackupRestorer(new StorageRepository(logger), new CryptoRepository(), logger);
     const options = {
       manifest: { database: null } as CloudBackupManifest,
       scope: 'asset' as const,
@@ -341,7 +341,7 @@ describe('admin restore on a drive without hard links (FL-1347)', () => {
     const bytes = Buffer.from('backed-up photo');
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const logger = LoggingRepository.create();
-    const sut = new CloudBackupRestorer(null, new StorageRepository(logger), new CryptoRepository(), logger);
+    const sut = new CloudBackupRestorer(new StorageRepository(logger), new CryptoRepository(), logger);
     const options = {
       manifest: { database: null } as CloudBackupManifest,
       scope: 'asset' as const,

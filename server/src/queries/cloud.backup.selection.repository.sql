@@ -226,13 +226,12 @@ SET
     SELECT
       count(*)::int
     FROM
-      public.cloud_backup_manifest_entry entry
+      public.cloud_backup_manifest_original original
       JOIN public.cloud_backup_decision_asset decision ON decision."runId" = account."runId"
-      AND decision."assetId" = entry."assetId"
+      AND decision."assetId" = original."assetId"
       AND decision.reason = 'included'
     WHERE
-      entry."manifestId" = $1::uuid
-      AND entry.role = 'original'
+      original."manifestId" = $1::uuid
       AND decision."ownerId" = account."userId"
   )
 WHERE

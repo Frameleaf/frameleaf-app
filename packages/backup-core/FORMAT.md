@@ -31,7 +31,7 @@ named in each section.
 | `config`                 | JSON, not encrypted: `format`, `version`, `repoId`, `chunker` `{min, avg, max}`, `keyVersion` (the caller's label for the root key), `wrappedKey` (base64 of the repository key sealed with the root key; associated data `frameleaf-repository/1 <repoId>`) |
 | `p/<32 hex>`             | a pack                                                                                                                                                                                                                                                       |
 | `i/<32 hex>`             | an index object                                                                                                                                                                                                                                              |
-| `s/<12 digits>-<16 hex>` | a snapshot; the digits are its sequence number. A reader accepts 16 to 64 hex characters                                                                                                                                                                     |
+| `s/<12 digits>-<16 hex>` | a snapshot; the digits are its sequence number. A reader accepts 16 to 64 hex characters, and a writer may be given them (the photo server uses its run's id, so it knows a snapshot's name before the run starts)                                          |
 
 Pack and index names are random. They carry no meaning. Every object is written once: storing under a
 name that is taken is refused.
@@ -123,7 +123,9 @@ changes nothing in the format; it only deletes objects and writes new packs and 
 
 Retention keeps: the newest few snapshots whatever their age (never fewer than one), every snapshot
 younger than a number of days, and beyond that the newest snapshot of each calendar month (UTC) for a
-number of months. The defaults are 3, 90 days and 12 months.
+number of months. The defaults are 3, 90 days and 12 months. A caller with retention rules of its own
+may choose the snapshots to keep instead (the photo server keeps by day, week and month); the newest
+snapshot is kept whatever it chooses. A prune can also be asked only to say what it would remove.
 
 A blob is **needed** if a kept snapshot reaches it through its trees. Prune stops before changing
 anything if a needed blob is not stored: a damaged repository is never thinned.

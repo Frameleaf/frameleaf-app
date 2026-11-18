@@ -1,14 +1,14 @@
 {
-  "sourceCommit": "f1d96f940098b90408f6c27e4aedbb7a063dc2bb",
+  "sourceCommit": "851b69526a5a181fb9206292ce82382a88f7b754",
   "sourceHashes": {
-    "src/enum.ts": "9ae6aadf86029426894889d824c9196d73305bb46da6f428428d24c9cb83f0d7",
+    "src/enum.ts": "8afcffa5713bbda62821ca8176400e480ce5e7eedab15e21de3a309f6c3b0b43",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/library-import/state-schema.ts": "b4d13d8e68b85c68a14257f56062df1f4efdd7a929918f21af225fa6b4998408",
     "src/queue/schema.ts": "a7562b1877064164778469c46c67f4f16c284d7d2e91d27df0e137ff4f587401",
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "67f4038af7fff5d2b939c9c91c70cce0521385972e9747214c4afb515e6171ca",
-    "src/schema/index.ts": "3ab70ae3768035c89116f6921ec5c592214a4acce19ff67697255817d57a4894",
+    "src/schema/index.ts": "7bdaa37211b1461461f7943bbadead55ef12aeccb39f68269c588537bf7c4d4c",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "fdeae320fa3828799baa404f4f3548138b092fe911e1695109c585c37e58f939",
@@ -73,7 +73,7 @@
     "src/schema/tables/classification-match.table.ts": "6e00d228ae79c90805e2806ae3209bf34734da217dc821bb4eb493a448dff20a",
     "src/schema/tables/classification-rule.table.ts": "c0e071287fc194c50c12e398c8664e3fa2e04dd3194a7a500c1854614fb4019c",
     "src/schema/tables/cloud-backup-selection.table.ts": "6c72239fd0dab353350cb50351b8dac6b45cff33fc498e801cd338b352b1e762",
-    "src/schema/tables/cloud-backup.table.ts": "907b9724b8b04a0800697b66b590030c53ad75c1dca1a354dc2efe674c7b0d0f",
+    "src/schema/tables/cloud-backup.table.ts": "e9c5f39c972515d69404180c2b5b2501d2c5a499f9985fc8ea739256da560516",
     "src/schema/tables/cluster-group-request.table.ts": "028ade594e1de7cc3d12b4af20509ccc009a590fb92eafea72823dd4ea968dca",
     "src/schema/tables/cluster-group.table.ts": "57b156f30aafb96a7fa754795270129e0b4eb7c9aed7af96646ba343bb5c4a30",
     "src/schema/tables/connect-event.table.ts": "f47a28ea1694ef20dc03a9068dc8682b08ea4a85eba559b09a14c3e26d0a356d",
@@ -143,7 +143,7 @@
     "src/schema/tables/preservation.table.ts": "63c0980d90689f8ad844b56e3d4f2c673c67905a2a440623994d14998fae6baf",
     "src/schema/tables/push-device.table.ts": "9a217577f14d42ba35b2f1d42520a6f68a4c1ef5fa032c5fc50595564eec8523",
     "src/schema/tables/render-worker.table.ts": "4692e94f2c240c98be411a39bd95f2a426e276bf031febb18c2d2868a746e1ec",
-    "src/schema/tables/safety-proof.table.ts": "b29cf0ffa0c25ef94ee3e120f6e904b7854f38cf3c6b98440b674bf2dfa3d6e9",
+    "src/schema/tables/safety-proof.table.ts": "6868c5aa5d958c80dd83733a178060f20fec396511bceac6abd75685427a7da4",
     "src/schema/tables/session-sign-in.table.ts": "fa0e294c4f6d3c8a2b2d5cc8aacbfb558e3e30da603e5b4c8ecad24c2eb4dc12",
     "src/schema/tables/session.table.ts": "0c24659924204115116b5878f13f7228a2dbc37f6065477b2e89fb82852fda0b",
     "src/schema/tables/shared-link-asset.table.ts": "026a663bcb9c11ce3675359a46d097b654e05019427dcb01ed8c1a0af8b4ca07",
@@ -198,6 +198,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "c4bc0b3392048430b23462094111bda6d765aaf9822a2c22c6f8388cdd6c978f",
-  "rawMetadataSha256": "67d0e76d4cfceecf0b9ac4f14ff50abe8dc1a9bb38e29656a2ee7f8ecbb2a66f"
+  "dumpSha256": "56ed7165f8e30643b3832c4dd834fbebccba1055dafb13618bca0261e3c09035",
+  "rawMetadataSha256": "078f60f0ae361b7f62d8a9cc1c37e284d98b443a59a9d5cd790fd3c8bba9a09c"
 }

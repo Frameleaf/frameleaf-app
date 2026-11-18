@@ -120,7 +120,18 @@ export async function prune(repository, options = {}) {
         const { time, tree } = await repository.readSnapshot(key);
         snapshots.push({ key, time, tree });
     }
-    const keep = retain(snapshots, options.policy ?? DEFAULT_RETENTION, now);
+    const keep = options.keep
+        ? new Set(options.keep(snapshots.map(({ key, time }) => ({ key, time }))))
+        : retain(snapshots, options.policy ?? DEFAULT_RETENTION, now);
+    const newest = snapshots.at(-1);
+    if (newest) {
+        keep.add(newest.key);
+    }
+    for (const key of keep) {
+        if (!snapshots.some((snapshot) => snapshot.key === key)) {
+            keep.delete(key);
+        }
+    }
     const live = new Set();
     const visited = new Set();
     for (const snapshot of snapshots.filter((item) => keep.has(item.key))) {
@@ -142,6 +153,7 @@ export async function prune(repository, options = {}) {
     const writer = new PackWriter(repository, options.packTarget ?? PACK_TARGET);
     const remove = [];
     let repackedPacks = 0;
+    let copiedBytes = 0;
     const moves = [];
     for (const pack of await repository.store.list('p/')) {
         if (now.getTime() - pack.modified.getTime() < minAge) {
@@ -155,6 +167,7 @@ export async function prune(repository, options = {}) {
         else if (bytes < pack.size * (options.repackBelow ?? 0.5)) {
             remove.push(pack);
             repackedPacks++;
+            copiedBytes += bytes;
             moves.push(async () => {
                 for (const { id, location } of blobs) {
                     const range = { start: location.offset, end: location.offset + location.length };
@@ -166,6 +179,15 @@ export async function prune(repository, options = {}) {
         }
     }
     const removedSnapshots = snapshots.filter((snapshot) => !keep.has(snapshot.key)).map((snapshot) => snapshot.key);
+    if (options.dryRun) {
+        return {
+            keptSnapshots: keep.size,
+            removedSnapshots,
+            deletedPacks: remove.length,
+            repackedPacks,
+            freedBytes: remove.reduce((sum, pack) => sum + pack.size, 0) - copiedBytes,
+        };
+    }
     for (const key of removedSnapshots) {
         await repository.store.delete(key);
     }

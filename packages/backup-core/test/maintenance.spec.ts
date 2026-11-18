@@ -198,6 +198,52 @@ describe('prune', () => {
       expect((await attempt.list('s/')).map((object) => object.key)).toEqual([b.key]);
     }
   });
+
+  it('only says what it would remove when asked for a dry run', async () => {
+    const { store, repository, a } = await twoBackups();
+    const before = [...store.objects.keys()].toSorted();
+    const now = new Date(Date.now() + DAY);
+    const preview = await prune(repository, { ...everything, now, dryRun: true });
+
+    expect([...store.objects.keys()].toSorted()).toEqual(before);
+    expect(preview).toMatchObject({ keptSnapshots: 1, removedSnapshots: [a.key] });
+    const done = await prune(await Repository.open(store, { rootKey }), { ...everything, now });
+    expect(done).toMatchObject({
+      removedSnapshots: preview.removedSnapshots,
+      deletedPacks: preview.deletedPacks,
+      repackedPacks: preview.repackedPacks,
+    });
+    // The estimate leaves out only the few bytes each new pack adds for itself.
+    expect(preview.freedBytes).toBeGreaterThanOrEqual(done.freedBytes);
+    expect(preview.freedBytes - done.freedBytes).toBeLessThan(4096);
+  });
+
+  it('keeps what the caller chooses, and the newest backup whatever it chooses', async () => {
+    const { store, repository, a, b } = await twoBackups();
+    const now = new Date(Date.now() + DAY);
+    const seen: string[][] = [];
+    const kept = await prune(repository, {
+      minAgeDays: 0,
+      packTarget,
+      now,
+      keep: (snapshots) => {
+        seen.push(snapshots.map((snapshot) => snapshot.key));
+        return [a.key, 's/000000000099-0000000000000000'];
+      },
+    });
+    // The older one was asked for, the newest is kept anyway, and a name that is not a backup counts for nothing.
+    expect(seen).toEqual([[a.key, b.key]]);
+    expect(kept).toMatchObject({ keptSnapshots: 2, removedSnapshots: [] });
+
+    const emptied = await prune(await Repository.open(store, { rootKey }), {
+      minAgeDays: 0,
+      packTarget,
+      now,
+      keep: () => [],
+    });
+    expect(emptied).toMatchObject({ keptSnapshots: 1, removedSnapshots: [a.key] });
+    await whole(store, b.key);
+  });
 });
 
 describe('verify', () => {

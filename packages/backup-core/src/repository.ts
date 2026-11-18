@@ -91,6 +91,13 @@ const wrapInfo = (repoId: string) => Buffer.from(`${FORMAT}/${VERSION} ${repoId}
 // Frameleaf Cloud accepts 16 to 64 hex characters here; the engine writes 16.
 const SNAPSHOT_KEY = /^s\/(\d{12})-[0-9a-f]{16,64}$/;
 
+/** Refused before a run does any work, and again where the name is made. */
+export function checkSnapshotId(id: string | undefined) {
+  if (id !== undefined && !/^[0-9a-f]{16,64}$/.test(id)) {
+    throw new RangeError('A snapshot id is 16 to 64 lower-case hex characters');
+  }
+}
+
 export class Repository {
   /**
    * Every blob the repository holds, by id.
@@ -289,13 +296,16 @@ export class Repository {
     sequence?: number,
     /** Checked last of all, right before the snapshot is stored: a run told to stop commits nothing. */
     signal?: AbortSignal,
+    /** The random part of the snapshot's name, when the caller must know the name before the run starts. */
+    id?: string,
   ) {
     // Where a signed history is kept (Frameleaf Cloud), its next number is used, so the two never drift apart.
     const seq = sequence ?? ((await this.listSnapshots()).at(-1)?.seq ?? 0) + 1;
     if (!Number.isInteger(seq) || seq < 1 || seq > 999_999_999_999) {
       throw new RangeError('A snapshot number must be a whole number from 1 to 999999999999');
     }
-    const key = `s/${String(seq).padStart(12, '0')}-${randomBytes(8).toString('hex')}`;
+    checkSnapshotId(id);
+    const key = `s/${String(seq).padStart(12, '0')}-${id ?? randomBytes(8).toString('hex')}`;
     const snapshot: Snapshot = { v: 1, repoId: this.config.repoId, seq, ...body };
     const sealed = seal(this.keys.meta, Buffer.from(key), Buffer.from(JSON.stringify(snapshot)));
     signal?.throwIfAborted();

@@ -1,6 +1,6 @@
 import { chunkStream } from './chunker.js';
 import { blobId } from './keys.js';
-import { PackWriter, type Repository, type Snapshot } from './repository.js';
+import { PackWriter, type Repository, type Snapshot, checkSnapshotId } from './repository.js';
 import { type Entry, type Source, type SourceEntry, encodeTree, fileChunks, readTree, safeName } from './tree.js';
 
 /** A file's chunk ids sit in its folder's tree up to this many; beyond it they move into list blobs. */
@@ -31,6 +31,12 @@ export interface BackupOptions {
   packTarget?: number;
   /** The snapshot's number, when a signed history kept elsewhere decides it. Otherwise one more than the newest stored. */
   sequence?: number;
+  /**
+   * The random part of the snapshot's name (16 to 64 hex characters), for a caller that must record the name
+   * before the run starts. With `sequence` it fixes the whole name, so a run that stopped after storing its
+   * snapshot can be recognised and is not made twice. Otherwise the name is random.
+   */
+  snapshotId?: string;
   /** Stops the run, for a window that closes or a user who presses Stop. What was stored is kept for the next run. */
   signal?: AbortSignal;
   /** Called as the run goes: after every file, and after every chunk of a file being read. */
@@ -69,6 +75,7 @@ export async function backup(
   options: BackupOptions = {},
 ): Promise<BackupResult> {
   options.signal?.throwIfAborted();
+  checkSnapshotId(options.snapshotId);
   await repository.loadIndex();
   const data = new PackWriter(repository, options.packTarget);
   const trees = new PackWriter(repository, options.packTarget);
@@ -230,6 +237,7 @@ export async function backup(
     },
     options.sequence,
     options.signal,
+    options.snapshotId,
   );
   return { ...written, problems, unchanged };
 }

@@ -37,6 +37,11 @@ function* decodeEntries(data) {
 }
 const wrapInfo = (repoId) => Buffer.from(`${FORMAT}/${VERSION} ${repoId}`);
 const SNAPSHOT_KEY = /^s\/(\d{12})-[0-9a-f]{16,64}$/;
+export function checkSnapshotId(id) {
+    if (id !== undefined && !/^[0-9a-f]{16,64}$/.test(id)) {
+        throw new RangeError('A snapshot id is 16 to 64 lower-case hex characters');
+    }
+}
 export class Repository {
     store;
     config;
@@ -194,12 +199,13 @@ export class Repository {
         }
         return snapshot;
     }
-    async writeSnapshot(body, sequence, signal) {
+    async writeSnapshot(body, sequence, signal, id) {
         const seq = sequence ?? ((await this.listSnapshots()).at(-1)?.seq ?? 0) + 1;
         if (!Number.isInteger(seq) || seq < 1 || seq > 999_999_999_999) {
             throw new RangeError('A snapshot number must be a whole number from 1 to 999999999999');
         }
-        const key = `s/${String(seq).padStart(12, '0')}-${randomBytes(8).toString('hex')}`;
+        checkSnapshotId(id);
+        const key = `s/${String(seq).padStart(12, '0')}-${id ?? randomBytes(8).toString('hex')}`;
         const snapshot = { v: 1, repoId: this.config.repoId, seq, ...body };
         const sealed = seal(this.keys.meta, Buffer.from(key), Buffer.from(JSON.stringify(snapshot)));
         signal?.throwIfAborted();

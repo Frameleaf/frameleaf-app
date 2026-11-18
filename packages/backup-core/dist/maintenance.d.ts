@@ -24,6 +24,11 @@ export interface VerifyOptions {
 export declare function verify(repository: Repository, options?: VerifyOptions): Promise<VerifyReport>;
 export interface PruneOptions {
     policy?: RetentionPolicy;
+    keep?: (snapshots: {
+        key: string;
+        time: string;
+    }[]) => Iterable<string>;
+    dryRun?: boolean;
     now?: Date;
     minAgeDays?: number;
     repackBelow?: number;

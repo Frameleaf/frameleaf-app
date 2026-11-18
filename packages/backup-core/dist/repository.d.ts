@@ -43,6 +43,7 @@ interface WrittenPack {
     pack: string;
     entries: PackEntry[];
 }
+export declare function checkSnapshotId(id: string | undefined): void;
 export declare class Repository {
     readonly store: Store;
     readonly config: RepositoryConfig;
@@ -74,7 +75,7 @@ export declare class Repository {
         seq: number;
     }[]>;
     readSnapshot(key: string): Promise<Snapshot>;
-    writeSnapshot(body: Pick<Snapshot, 'time' | 'tree' | 'parent' | 'stats'>, sequence?: number, signal?: AbortSignal): Promise<{
+    writeSnapshot(body: Pick<Snapshot, 'time' | 'tree' | 'parent' | 'stats'>, sequence?: number, signal?: AbortSignal, id?: string): Promise<{
         key: string;
         snapshot: Snapshot;
         versionId: string | null;

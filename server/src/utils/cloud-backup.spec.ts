@@ -3,9 +3,7 @@ import { normalizeBackupFolder } from 'src/utils/cloud-backup-selection.js';
 import {
   backupKeyFile,
   cloudBackupPersonSchema,
-  compactIso,
   keyFingerprint,
-  manifestKey,
   parseBackupKey,
   parseRunResult,
   readManifestSection,
@@ -46,11 +44,6 @@ describe('cloud backup helpers (FL-160)', () => {
 
   it('fingerprints a key the way the prototype and the browser do', () => {
     expect(keyFingerprint(Buffer.alloc(32))).toBe('0B2A-E445');
-  });
-
-  it('names manifests by time in ISO 8601 basic format', () => {
-    expect(compactIso(new Date('2026-09-26T03:00:00.123Z'))).toBe('20260926T030000Z');
-    expect(manifestKey(new Date('2026-09-26T03:00:00Z'))).toBe('m/20260926T030000Z.json.gz');
   });
 
   it('reads the signing region from regional, dual-stack and virtual-hosted addresses', () => {

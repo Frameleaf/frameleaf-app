@@ -122,11 +122,7 @@ import {
   CloudBackupDecisionRunTable,
   CloudBackupSelectionTable,
 } from 'src/schema/tables/cloud-backup-selection.table.js';
-import {
-  CloudBackupManifestEntryTable,
-  CloudBackupManifestTable,
-  CloudBackupObjectTable,
-} from 'src/schema/tables/cloud-backup.table.js';
+import { CloudBackupManifestTable } from 'src/schema/tables/cloud-backup.table.js';
 import { ClusterGroupRequestTable } from 'src/schema/tables/cluster-group-request.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 import {
@@ -269,7 +265,6 @@ import {
 import {
   AssetIntegrityVerificationTable,
   CloudBackupManifestOriginalTable,
-  CloudBackupObjectVerificationTable,
 } from 'src/schema/tables/safety-proof.table.js';
 import { SessionSignInTable } from 'src/schema/tables/session-sign-in.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
@@ -492,11 +487,8 @@ export class ImmichDatabase {
     AssetVideoFingerprintTable,
     ClassificationRuleTable,
     ClassificationMatchTable,
-    CloudBackupObjectTable,
     CloudBackupManifestTable,
-    CloudBackupManifestEntryTable,
     CloudBackupManifestOriginalTable,
-    CloudBackupObjectVerificationTable,
     CloudBackupSelectionTable,
     CloudBackupDecisionRunTable,
     CloudBackupDecisionAccountTable,
@@ -831,7 +823,6 @@ export interface DB extends QueueDatabase {
   backup_restore_report: BackupRestoreReportTable;
   asset_integrity_verification: AssetIntegrityVerificationTable;
   cloud_backup_manifest_original: CloudBackupManifestOriginalTable;
-  cloud_backup_object_verification: CloudBackupObjectVerificationTable;
 
   library: LibraryTable;
   library_folder_album: LibraryFolderAlbumTable;
@@ -885,8 +876,6 @@ export interface DB extends QueueDatabase {
   classification_match: ClassificationMatchTable;
   classification_rule: ClassificationRuleTable;
   cloud_backup_manifest: CloudBackupManifestTable;
-  cloud_backup_manifest_entry: CloudBackupManifestEntryTable;
-  cloud_backup_object: CloudBackupObjectTable;
   cloud_backup_selection: CloudBackupSelectionTable;
   cloud_backup_decision_run: CloudBackupDecisionRunTable;
   cloud_backup_decision_account: CloudBackupDecisionAccountTable;

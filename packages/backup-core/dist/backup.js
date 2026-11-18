@@ -1,6 +1,6 @@
 import { chunkStream } from './chunker.js';
 import { blobId } from './keys.js';
-import { PackWriter } from './repository.js';
+import { PackWriter, checkSnapshotId } from './repository.js';
 import { encodeTree, fileChunks, readTree, safeName } from './tree.js';
 const INLINE_CHUNKS = 1024;
 const LIST_CHUNKS = 32_768;
@@ -22,6 +22,7 @@ const same = (before, now) => before.type === 'file' &&
         : before.size === now.size && before.mtime === now.mtime);
 export async function backup(repository, source, options = {}) {
     options.signal?.throwIfAborted();
+    checkSnapshotId(options.snapshotId);
     await repository.loadIndex();
     const data = new PackWriter(repository, options.packTarget);
     const trees = new PackWriter(repository, options.packTarget);
@@ -163,6 +164,6 @@ export async function backup(repository, source, options = {}) {
         tree,
         parent: parentKey,
         stats,
-    }, options.sequence, options.signal);
+    }, options.sequence, options.signal, options.snapshotId);
     return { ...written, problems, unchanged };
 }

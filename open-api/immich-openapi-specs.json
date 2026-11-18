@@ -1900,7 +1900,7 @@
     },
     "/admin/cloud/backup/check": {
       "post": {
-        "description": "Lists the bucket and writes, reads back and deletes a test file encrypted with a throwaway customer key (SSE-C). Nothing is claimed or saved.",
+        "description": "Lists the bucket, checks that it keeps object versions, and writes, reads back and deletes a test file. Nothing is claimed or saved.",
         "operationId": "checkCloudBackupBucket",
         "parameters": [],
         "requestBody": {
@@ -3078,7 +3078,7 @@
     },
     "/admin/cloud/backup/setup": {
       "post": {
-        "description": "Claims the bucket for this server with the chosen key (an SSE-C write of frameleaf-backup.json holding the instance id) and turns cloud backup on. Refuses a bucket claimed by another server or holding other files, and a provider without SSE-C.",
+        "description": "Claims the bucket for this server with the chosen key (frameleaf-backup.json, holding the instance id and the key fingerprint) and turns cloud backup on. Refuses a bucket claimed by another server or holding other files, and one that does not keep object versions.",
         "operationId": "setupCloudBackup",
         "parameters": [],
         "requestBody": {
@@ -75368,9 +75368,9 @@
             "name": "manifestKey",
             "required": true,
             "in": "query",
-            "description": "The backup run’s manifest in the bucket",
+            "description": "The backup, by its name in the bucket",
             "schema": {
-              "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+              "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
               "type": "string"
             }
           }
@@ -75436,10 +75436,10 @@
             "name": "manifestKey",
             "required": true,
             "in": "query",
-            "description": "The backup run’s manifest in the bucket",
+            "description": "The backup, by its name in the bucket",
             "schema": {
               "maxLength": 300,
-              "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+              "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
               "type": "string"
             }
           },
@@ -75530,10 +75530,10 @@
             "name": "manifestKey",
             "required": true,
             "in": "query",
-            "description": "The backup run’s manifest in the bucket",
+            "description": "The backup, by its name in the bucket",
             "schema": {
               "maxLength": 300,
-              "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+              "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
               "type": "string"
             }
           },
@@ -78701,7 +78701,7 @@
     },
     {
       "name": "Frameleaf Cloud backup (admin)",
-      "description": "Cloud backup to one bucket per server: the claim, the SSE-C bucket key in one of three key modes (never returned after the recovery kit) and content-addressed runs that upload each unique file once."
+      "description": "Cloud backup to one bucket per server: the claim, the bucket key in one of three key modes (never returned after the recovery kit) and chunked, deduplicated runs encrypted on this server that store each unchanged piece once."
     },
     {
       "name": "Frameleaf Cloud processing (admin)",
@@ -100218,8 +100218,8 @@
       "CloudBackupExclusionsDto": {
         "properties": {
           "manifestKey": {
-            "description": "The backup run’s manifest in the bucket",
-            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "description": "The backup, by its name in the bucket",
+            "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
             "type": "string"
           }
         },
@@ -100477,7 +100477,7 @@
             "type": "string"
           },
           "skipped": {
-            "description": "Files already in the bucket",
+            "description": "Files unchanged since the previous backup, which were not read again",
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
             "type": "integer"
@@ -100765,8 +100765,8 @@
       "CloudBackupManifestAlbumsDto": {
         "properties": {
           "manifestKey": {
-            "description": "The backup run’s manifest in the bucket",
-            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "description": "The backup, by its name in the bucket",
+            "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
             "type": "string"
           }
         },
@@ -100815,7 +100815,7 @@
             "type": "string"
           },
           "databaseKey": {
-            "description": "The database dump this backup pairs with",
+            "description": "The database dump this backup holds",
             "nullable": true,
             "type": "string"
           },
@@ -100917,8 +100917,8 @@
             "type": "integer"
           },
           "manifestKey": {
-            "description": "The backup run’s manifest in the bucket",
-            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "description": "The backup, by its name in the bucket",
+            "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
             "type": "string"
           },
           "query": {
@@ -101107,8 +101107,8 @@
             "description": "asset and album: how details of items still in the library come back; keep when absent"
           },
           "manifestKey": {
-            "description": "The backup run’s manifest in the bucket",
-            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "description": "The backup, by its name in the bucket",
+            "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
             "type": "string"
           },
           "scope": {
@@ -101553,7 +101553,7 @@
             "$ref": "#/components/schemas/CloudBackupTargetSetting"
           },
           "usage": {
-            "description": "Unique files this server has in the bucket and their size",
+            "description": "What the newest backup holds: its files and their size (managed storage: what is stored)",
             "nullable": true,
             "properties": {
               "bytes": {
@@ -133271,8 +133271,8 @@
             "type": "integer"
           },
           "manifestKey": {
-            "description": "The backup run’s manifest in the bucket",
-            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "description": "The backup, by its name in the bucket",
+            "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
             "type": "string"
           }
         },
@@ -133319,9 +133319,9 @@
             "type": "integer"
           },
           "manifestKey": {
-            "description": "The backup run’s manifest in the bucket",
+            "description": "The backup, by its name in the bucket",
             "maxLength": 300,
-            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
             "type": "string"
           },
           "offset": {
@@ -133459,9 +133459,9 @@
             "type": "array"
           },
           "manifestKey": {
-            "description": "The backup run’s manifest in the bucket",
+            "description": "The backup, by its name in the bucket",
             "maxLength": 300,
-            "pattern": "^m\\/(?:v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/[1-9]\\d{0,8}\\/)?\\d{8}T\\d{6}Z\\.json\\.gz$",
+            "pattern": "^r\\/v1\\/[\\da-f]{8}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{4}-[\\da-f]{12}\\/s\\/\\d{12}-[\\da-f]{16,64}$",
             "type": "string"
           }
         },

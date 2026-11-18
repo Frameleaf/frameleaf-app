@@ -376,6 +376,21 @@ describe('repository', () => {
     await expect(backup(repository, fsSource(library), { packTarget, sequence: 0 })).rejects.toThrow(RangeError);
   });
 
+  it('names a snapshot as asked, so a caller knows the name before the run and never makes it twice', async () => {
+    const repository = await Repository.init(memoryStore(), { rootKey, chunker });
+    const id = '0195a1b200007000800000000000abcd';
+    const made = await backup(repository, fsSource(library), { packTarget, sequence: 3, snapshotId: id });
+    expect(made.key).toBe(`s/000000000003-${id}`);
+    expect((await repository.readSnapshot(made.key)).seq).toBe(3);
+    // The name is taken: a second run under it is refused rather than replacing the first.
+    await expect(backup(repository, fsSource(library), { packTarget, sequence: 3, snapshotId: id })).rejects.toThrow(
+      /already stored/,
+    );
+    for (const bad of ['abc', 'ABCDEF0123456789', `${id}${id}0`, '../../etc/passwd00']) {
+      await expect(backup(repository, fsSource(library), { packTarget, snapshotId: bad })).rejects.toThrow(RangeError);
+    }
+  });
+
   it('reports a file it cannot read and still finishes', async () => {
     const inner = fsSource(library);
     const source: Source = {

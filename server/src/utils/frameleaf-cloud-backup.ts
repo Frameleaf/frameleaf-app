@@ -8,10 +8,16 @@ import { FrameleafCloudError, cloudErrorCode, pausedMessageOf } from 'src/utils/
  * is strict like the cloud's: a grant's metadata that carried a secret, or an escrow blob with a field it
  * should not have, fails to parse. The bucket key never appears in any of them: the cloud never receives it.
  *
+ * FL-1676: this server stores only the chunked repository (`frameleaf-repository/1`, FC-284) and asks for it
+ * by name, so every grant here is a repository grant: no SSE-C, and uploads and clean-ups need the run lease.
+ *
  * Routes (instance token, DPoP-bound; `{api}` from discovery):
  * - `GET {api}/v4/backup/locations`: enabled cities and unauthenticated probe URLs.
+ * - `POST {api}/v4/backup/lease`, `/lease/heartbeat`, `DELETE /lease`: the run lease. One backup or clean-up
+ *   at a time holds it; it is renewed every minute and given back when the run stops.
  * - `POST {api}/v4/backup/grant`: selected location ID and upload/restore/prune operation; renewal at
- *   `/grant/rotate` takes that operation. Expiring provider sessions remain in memory only.
+ *   `/grant/rotate` takes that operation. Upload and prune name the lease they run under; restore names
+ *   none. Expiring provider sessions remain in memory only.
  * - `GET {api}/v1/backup/usage`: the latest hourly measurement.
  * - `POST {api}/v1/backup/runs`: run telemetry (counts, bytes, times, never a path).
  * - `PUT {api}/v1/backup/settings`: the key mode and whether a schedule is on.
@@ -52,15 +58,42 @@ export const backupLocationsSchema = z.strictObject({
 });
 export const backupOperationSchema = z.enum(['upload', 'restore', 'prune']);
 export type BackupOperation = z.infer<typeof backupOperationSchema>;
-export const backupCapabilityRequestSchema = z.strictObject({ operation: backupOperationSchema });
-export const backupGrantRequestSchema = backupCapabilityRequestSchema.extend({
-  locationId: backupCitySchema.shape.locationId,
-});
+/** The only layout this server stores and asks Frameleaf Cloud for. */
+export const BACKUP_REPOSITORY_FORMAT = 'frameleaf-repository/1';
+const repositoryRequest = {
+  operation: backupOperationSchema,
+  objectFormat: z.literal(BACKUP_REPOSITORY_FORMAT),
+  leaseId: z.uuid().optional(),
+};
+/** Upload and prune credentials are issued only to the holder of the run lease; restore takes none. */
+const leaseRule = (request: { operation: BackupOperation; leaseId?: string }, context: z.RefinementCtx) => {
+  if ((request.operation === 'restore') !== (request.leaseId === undefined)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['leaseId'],
+      message: 'Upload and prune name their run lease; restore names none.',
+    });
+  }
+};
+export const backupCapabilityRequestSchema = z.strictObject(repositoryRequest).superRefine(leaseRule);
+export const backupGrantRequestSchema = z
+  .strictObject({ ...repositoryRequest, locationId: backupCitySchema.shape.locationId })
+  .superRefine(leaseRule);
 export const managedStorageRef = (storageId: string): string => `frameleaf-storage:${storageId}`;
-const objectFormats = [
-  z.strictObject({ format: z.literal('frameleaf-client-backup'), version: z.literal(1) }),
-  z.strictObject({ format: z.literal('legacy-sse-c'), version: z.literal(1) }),
-] as const;
+const objectFormats = [z.strictObject({ format: z.literal('frameleaf-repository'), version: z.literal(1) })] as const;
+
+/** A run lease (FC-284): one writer per repository. */
+export const backupLeaseOperationSchema = z.enum(['backup', 'prune']);
+export type BackupLeaseOperation = z.infer<typeof backupLeaseOperationSchema>;
+export const backupLeaseRequestSchema = z.strictObject({ leaseId: z.uuid(), operation: backupLeaseOperationSchema });
+export const backupLeaseSchema = z.strictObject({
+  leaseId: z.uuid(),
+  operation: backupLeaseOperationSchema,
+  acquiredAt: z.iso.datetime({ offset: true }),
+  expiresAt: z.iso.datetime({ offset: true }),
+  heartbeatAfterSec: z.int().min(1).max(60),
+});
+export type BackupLease = z.infer<typeof backupLeaseSchema>;
 export const backupGrantMetadataSchema = z.strictObject({
   version: z.literal(4),
   provider: z.literal('frameleaf'),
@@ -73,7 +106,6 @@ export const backupGrantMetadataSchema = z.strictObject({
   readOnly: z.boolean(),
   readOnlyReason: BackupReadOnlyReasonSchema.nullable().optional(),
   versioning: z.literal(true),
-  sseC: z.strictObject({ required: z.literal(true), algorithm: z.literal('AES256') }),
   policy: z.strictObject({ denies: z.array(z.string().regex(/^s3:[A-Za-z]+$/)).min(1) }),
   coverage: z.discriminatedUnion('scope', [
     z.strictObject({ scope: z.literal('none') }),
@@ -101,7 +133,7 @@ export type BackupGrantResponse = z.infer<typeof backupGrantResponseSchema>;
 /** What the grant's IAM policy must deny for this server to trust it with backups (BAK-001). */
 export const REQUIRED_BACKUP_DENIES = ['s3:DeleteObjectVersion', 's3:PutBucketVersioning', 's3:DeleteBucket'] as const;
 
-/** Why a grant cannot be used, or null: it must require SSE-C, keep versioning and deny version deletion. */
+/** Why a grant cannot be used, or null: it must keep versioning and deny version deletion. */
 export const backupGrantProblem = (grant: BackupGrantMetadata): string | null => {
   const missing = REQUIRED_BACKUP_DENIES.filter((action) => !grant.policy.denies.includes(action));
   if (missing.length > 0) {
@@ -155,11 +187,10 @@ export type KeyEscrowBlob = z.infer<typeof keyEscrowBlobSchema>;
 export const keyEscrowRecordSchema = keyEscrowBlobSchema.extend({ updatedAt: Timestamp });
 export type KeyEscrowRecord = z.infer<typeof keyEscrowRecordSchema>;
 
-/**
- * `POST /v1/backup/runs`: telemetry only. The manifest key is `m/<ISO>.json.gz`, extended or basic (FL-362:
- * Frameleaf Cloud accepts this server's basic-format keys since FC-149); a client-encrypted `m/v1/…` key is
- * left out, its signed snapshot receipt names it instead.
- */
+/** A backup's name in storage: `r/v1/<vault id>/s/<its number in the signed history>-<id>`. */
+export const BACKUP_SNAPSHOT_KEY = /^r\/v1\/[\da-f-]{36}\/s\/\d{12}-[\da-f]{16,64}$/;
+
+/** `POST /v1/backup/runs`: telemetry only. `manifestKey` is the name of the backup a finished run stored. */
 export const backupRunReportSchema = z.strictObject({
   runId: z.uuid(),
   status: z.enum(['running', 'succeeded', 'partial', 'failed', 'cancelled']),
@@ -168,11 +199,7 @@ export const backupRunReportSchema = z.strictObject({
   bytesUploaded: z.int().min(0),
   objectsUploaded: z.int().min(0),
   objectsSkipped: z.int().min(0),
-  manifestKey: z
-    .string()
-    .max(64)
-    .regex(/^m\/(?:\d{4}-\d{2}-\d{2}T[\d.:-]+|\d{8}T\d{6})Z\.json\.gz$/)
-    .nullable(),
+  manifestKey: z.string().max(128).regex(BACKUP_SNAPSHOT_KEY).nullable(),
   errorCode: z
     .string()
     .regex(/^[\d_a-z-]{1,64}$/)
@@ -194,7 +221,10 @@ export const backupEndpoints = (document: { api: string }) => {
   return {
     locations: `${api}/v4/backup/locations`,
     grant: `${api}/v4/backup/grant`,
+    grantMetadata: `${api}/v4/backup/grant?objectFormat=${encodeURIComponent(BACKUP_REPOSITORY_FORMAT)}`,
     rotate: `${api}/v4/backup/grant/rotate`,
+    lease: `${api}/v4/backup/lease`,
+    leaseHeartbeat: `${api}/v4/backup/lease/heartbeat`,
     usage: `${api}/v1/backup/usage`,
     runs: `${api}/v1/backup/runs`,
     settings: `${api}/v1/backup/settings`,
@@ -240,6 +270,25 @@ export const managedBackupRefusal = (
         retry: false,
         retryAfterSeconds: null,
         cloneSuspected: true,
+      };
+    }
+    case 'lease-held': {
+      // Another backup or clean-up of this server holds the run lease (a run that crashed holds it for up to
+      // 15 minutes): wait as long as Frameleaf Cloud says and try again.
+      const fromData = Number((envelope?.data as { retryAfterSec?: unknown } | null)?.retryAfterSec);
+      return {
+        message: 'Another backup or clean-up of this server is still using its storage. This one waits for it.',
+        retry: true,
+        retryAfterSeconds: retryAfterSeconds ?? (Number.isFinite(fromData) && fromData > 0 ? fromData : null),
+        cloneSuspected: false,
+      };
+    }
+    case 'lease-lost': {
+      return {
+        message: 'This run lost its turn on the backup storage, so it stopped writing. It starts again later.',
+        retry: true,
+        retryAfterSeconds,
+        cloneSuspected: false,
       };
     }
     case 'backup-protocol-required': {
