@@ -85,7 +85,9 @@ const on = {
   settings,
   key: { saved: true, savedAt: ms(3, 10) },
   folders: [
-    { kind: 'manager', path: '/mnt/user/backups/frameleaf/frameleaf-database', files: 318, bytes: 2 * GB },
+    { kind: 'manager', role: 'recovery', path: '/mnt/user/backups/frameleaf/frameleaf-database', files: 318, bytes: 2 * GB },
+    { kind: 'manager', role: 'manager', path: '/mnt/user/backups/frameleaf/frameleaf-manager', files: 1, bytes: 3 * 1024 ** 2 },
+    { kind: 'manager', role: 'photo-key', path: '/mnt/user/media/photos/frameleaf/identity', files: 6, bytes: 24 * 1024 },
     { kind: 'folder', path: '/mnt/user/documents', files: 21_840, bytes: 38 * GB },
     { kind: 'folder', path: '/mnt/user/appdata', files: 184_210, bytes: 59 * GB },
     { kind: 'folder', path: '/mnt/user/shares/family', files: 9655, bytes: 212 * GB },

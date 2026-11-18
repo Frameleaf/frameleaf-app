@@ -19,6 +19,8 @@ const make = (target = true) =>
     target: target ? { kind: 'folder', path: at('repository') } : null,
     inside: (path) => path === at('server') || path.startsWith(at('server') + sep),
     always: [at('server', 'recovery')],
+    managerState: at('server', 'manager-state'),
+    photoKeys: () => at('server', 'photos', 'frameleaf', 'identity'),
   });
 
 /** Waits for the run in flight and returns how it ended. */
@@ -37,6 +39,10 @@ before(async () => {
   await mkdir(at('server', 'documents', 'cache'));
   await mkdir(at('server', 'appdata'));
   await mkdir(at('server', 'recovery'));
+  await mkdir(at('server', 'photos', 'frameleaf', 'identity', 'cloud-backup-scratch'), { recursive: true });
+  await writeFile(at('server', 'photos', 'frameleaf', 'identity', 'backup-key-1.pem'), 'the photo library key');
+  await writeFile(at('server', 'photos', 'frameleaf', 'identity', 'cloud-backup-scratch', 'big.tmp'), 'rebuilt');
+  await writeFile(at('server', 'photos', 'holiday.jpg'), 'a photo');
   await writeFile(at('server', 'documents', 'Tax', 'Return 2025.xlsx'), 'the numbers '.repeat(4000));
   await writeFile(at('server', 'documents', 'notes.txt'), 'remember the milk');
   await writeFile(at('server', 'documents', 'draft.tmp'), 'throwaway');
@@ -87,13 +93,14 @@ test('a backup protects the chosen folders and Manager’s recovery points, and 
   assert.equal(run.state, 'done');
   assert.ok(run.outcome?.kind === 'backup');
   // Return, notes, settings and the recovery point; the .tmp file and the cache folder are left out.
-  assert.equal(run.outcome.files, 4);
+  // Also Manager's settings copy and the photo library's key (not its scratch space).
+  assert.equal(run.outcome.files, 6);
   assert.equal(run.outcome.problems, 0);
 
   const view = service.view()!;
   assert.equal(view.snapshots.length, 1);
   assert.equal(view.last?.state, 'done');
-  assert.deepEqual(view.folders.map((folder) => [folder.kind, folder.files]), [['manager', 1], ['folder', 2], ['folder', 1]]);
+  assert.deepEqual(view.folders.map((folder) => [folder.kind, folder.files]), [['manager', 1], ['manager', 1], ['manager', 1], ['folder', 2], ['folder', 1]]);
 
   const stored = (await readdir(at('repository'), { recursive: true })).join('\n');
   assert.doesNotMatch(stored, /Return|notes|documents|settings/);
@@ -103,7 +110,8 @@ test('a second backup of unchanged folders stores nothing new', async () => {
   await service.backUp();
   const run = await finished();
   assert.ok(run.outcome?.kind === 'backup');
-  assert.equal(run.outcome.storedBytes, 0);
+  // Only Manager's own settings copy changed (it records each run); none of the folders is stored again.
+  assert.ok(run.outcome.storedBytes < 16 * 1024, String(run.outcome.storedBytes));
   assert.equal(service.view()!.snapshots.length, 2);
 });
 
@@ -137,15 +145,34 @@ test('a backup can be browsed by folder, and a file put back where it was or som
 test('a backup records what it protected, for a server that replaces this one', async () => {
   const snapshot = service.view()!.snapshots[0]!.key;
   const { folders } = await service.contents({ snapshot });
-  assert.deepEqual(folders!.map((folder) => [folder.path, folder.kind, folder.reachable]).sort(), [
-    [at('server', 'appdata'), 'folder', true],
-    [at('server', 'documents'), 'folder', true],
-    [at('server', 'recovery'), 'manager', true],
+  assert.deepEqual(folders!.map((folder) => [folder.path, folder.kind, folder.role, folder.reachable]).sort(), [
+    [at('server', 'appdata'), 'folder', undefined, true],
+    [at('server', 'documents'), 'folder', undefined, true],
+    [at('server', 'manager-state'), 'manager', 'manager', true],
+    [at('server', 'photos', 'frameleaf', 'identity'), 'manager', 'photo-key', true],
+    [at('server', 'recovery'), 'manager', 'recovery', true],
   ]);
+  // Manager's own settings went in as a consistent copy of its database, and the photo library's keys without their scratch space.
+  const keys = parts(at('server', 'photos', 'frameleaf', 'identity'));
+  assert.deepEqual((await service.browse({ snapshot, path: keys })).entries.map((entry) => entry.name), ['backup-key-1.pem']);
+  const state = (await service.browse({ snapshot, path: parts(at('server', 'manager-state')) })).entries;
+  assert.deepEqual(state.map((entry) => entry.name), ['manager.sqlite']);
+  assert.ok(state[0]!.bytes > 0);
   assert.ok(folders!.every((folder) => folder.files > 0 && folder.bytes > 0));
   // The record is not something to restore, so the browser does not show it.
   const top = await service.browse({ snapshot, path: [] });
   assert.ok(!top.entries.some((entry) => entry.name.startsWith('.frameleaf')));
+});
+
+test('choosing the whole photo library protects its keys there, not twice; a folder inside Manager’s own is refused', async () => {
+  const keys = at('server', 'photos', 'frameleaf', 'identity');
+  await assert.rejects(Promise.resolve().then(() => service.setSettings({ ...settings(), folders: [keys] })), refused('server_backup_folders_overlap'));
+  service.setSettings({ ...settings(), folders: [...settings().folders, at('server', 'photos')] });
+  const view = service.view()!;
+  assert.ok(!view.folders.some((folder: { path: string }) => folder.path === keys));
+  assert.ok(view.folders.some((folder: { path: string; kind: string }) => folder.path === at('server', 'photos') && folder.kind === 'folder'));
+  service.setSettings(settings());
+  assert.ok(service.view()!.folders.some((folder: { path: string }) => folder.path === keys));
 });
 
 test('the schedule starts one backup a day at its time', async () => {
