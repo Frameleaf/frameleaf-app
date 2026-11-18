@@ -511,6 +511,28 @@ export class Cloud {
     return Purge.parse(await this.call(identity, 'DELETE', '/v1/backup/purge'));
   }
 
+  /**
+   * The locked copy of the recovery key (escrow): an opaque blob, wrapped under a passphrase on this server.
+   * Cloud keeps one only for a machine that reports it holds its key itself ("server" key mode); reporting any
+   * other mode deletes it.
+   */
+  async putKeyCopy(identity: Identity, blob: unknown) {
+    await this.call(identity, 'PUT', '/v1/backup/settings', { keyMode: 'server', scheduleEnabled: true });
+    await this.call(identity, 'PUT', '/v1/backup/escrow', blob);
+  }
+  async keyCopy(identity: Identity): Promise<unknown | null> {
+    try {
+      return await this.call(identity, 'GET', '/v1/backup/escrow');
+    } catch (error) {
+      if (error instanceof CloudError && (error.status === 404 || error.code === 'escrow-not-allowed')) return null;
+      throw error;
+    }
+  }
+  /** Removes the copy, by reporting that the key is kept only by its owner. */
+  async dropKeyCopy(identity: Identity) {
+    await this.call(identity, 'PUT', '/v1/backup/settings', { keyMode: 'own-stored', scheduleEnabled: true });
+  }
+
   usage(identity: Identity) {
     return this.call(identity, 'GET', '/v1/backup/usage') as Promise<{ bytesCurrent: number; accountBytesCurrent: number; allowanceBytes: number; readOnly: boolean; readOnlyReason: string | null }>;
   }

@@ -807,6 +807,22 @@ class Api {
     });
     return serverBackup.view();
   }
+  @Post('server-backup-key-copy') async serverBackupKeyCopy(@Body() input: unknown) {
+    const { password, passphrase } = z.object({ password: z.string().max(256), passphrase: z.string().max(1024).nullable() }).strict().parse(input);
+    await security.confirm(password);
+    const work = passphrase === null ? serverBackup.dropKeyCopy() : serverBackup.keepKeyCopy(passphrase);
+    await work.catch((error) => {
+      throw error instanceof Refusal ? error : new Refusal(reasonOf(error), 502);
+    });
+    return serverBackup.view();
+  }
+  @Post('server-backup-adopt-key-copy') async serverBackupAdoptKeyCopy(@Body() input: unknown) {
+    const { passphrase } = z.object({ passphrase: z.string().max(1024) }).strict().parse(input);
+    await serverBackup.adoptKeyCopy(passphrase).catch((error) => {
+      throw error instanceof Refusal ? error : new Refusal(reasonOf(error), 502);
+    });
+    return serverBackup.view();
+  }
   @Post('server-backup-cloud-purge') async serverBackupCloudPurge() {
     return { purge: await cloudly((cloud) => cloud.purge()) };
   }
