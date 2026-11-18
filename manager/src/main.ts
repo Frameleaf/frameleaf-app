@@ -781,6 +781,9 @@ class Api {
   @Post('server-backup-browse') serverBackupBrowse(@Body() input: unknown) {
     return serverBackup.browse(input);
   }
+  @Post('server-backup-contents') serverBackupContents(@Body() input: unknown) {
+    return serverBackup.contents(input);
+  }
   @Post('server-backup-restore') async serverBackupRestore(@Body() input: unknown) {
     await serverBackup.restore(input);
     return serverBackup.view();

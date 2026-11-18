@@ -159,6 +159,7 @@ const api = (path, page, body) => {
   if (path === 'server-backup-cloud-machines') return { machines: [{ instanceId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53', name: 'basement-nas', lastBackupAt: at(3, 2, 10) }, { instanceId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54', name: 'office-server', lastBackupAt: at(41, 2, 5) }] };
   if (path === 'server-backup-cloud-takeover') return { ...sample, cloud: clouds.waiting };
   if (path === 'server-backup-cloud-takeover-check') return page.get('approve') === '1' ? { ...sample, cloud: clouds.ready, takeover: 'approved' } : { ...sample, takeover: 'pending' };
+  if (path === 'server-backup-contents') return { folders: on.folders.map((folder, index) => ({ ...folder, reachable: !(page.get('unreachable') === '1' && index === 3) })) };
   if (path === 'server-backup-adopt-key') return { ...samples.off, snapshots: on.snapshots, key: { saved: true, savedAt: Date.now() }, cloud: clouds.ready };
   if (path.startsWith('server-backup-')) return sample;
   if (path === 'folders') return { path: '/mnt/user', parent: null, folders: ['appdata', 'documents', 'media', 'shares'].map((name) => ({ name, path: `/mnt/user/${name}` })), truncated: false };

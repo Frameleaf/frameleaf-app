@@ -1,7 +1,7 @@
 // Server Backup: Manager's second job. It keeps an encrypted copy of chosen folders, runs on a schedule,
 // and restores a file, a folder or everything. The work happens in a separate process
 // (server-backup-worker.ts); this file owns the settings, the history and what the screens show.
-import { DEFAULT_RETENTION, Repository, dirStore, listFolder, s3Store, type RetentionPolicy } from '@frameleaf/backup-core';
+import { DEFAULT_RETENTION, Repository, dirStore, find, listFolder, readFile as readStored, s3Store, type RetentionPolicy } from '@frameleaf/backup-core';
 import { fork, type ChildProcess } from 'node:child_process';
 import { hkdfSync, randomBytes } from 'node:crypto';
 import { chmod, readFile, writeFile } from 'node:fs/promises';
@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { CloudError } from './cloud-link.js';
 import { Refusal } from './contracts.js';
 import { reasonOf, type CloudBackup, type Session } from './server-backup-cloud.js';
-import type { Job, Message, Outcome, Progress, Reply, Target } from './server-backup-worker.js';
+import { RECORD, type Job, type Message, type Outcome, type Progress, type Reply, type Target } from './server-backup-worker.js';
 import type { Store } from './store.js';
 
 const Time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -301,6 +301,7 @@ export class ServerBackup {
       target,
       rootKey,
       folders: [...this.options.always, ...saved.settings.folders],
+      always: this.options.always,
       exclusions: saved.settings.exclusions,
       retention: saved.settings.retention,
       prune: trigger === 'schedule' && now.getDay() === 0,
@@ -369,6 +370,24 @@ export class ServerBackup {
     this.save({ snapshots });
   }
 
+  /**
+   * What one backup protected, as it recorded itself: the folders, whose they are and their sizes. This is
+   * what a replacement server offers back. Null for a backup from before backups kept this record.
+   */
+  async contents(input: unknown) {
+    const { snapshot } = z.object({ snapshot: z.string().regex(/^s\/\d{12}-[0-9a-f]{16,64}$/) }).strict().parse(input);
+    const repository = await this.opened();
+    const entry = await find(repository, await repository.readSnapshot(snapshot), RECORD).catch(() => null);
+    if (!entry || entry.type !== 'file' || entry.size > 1024 * 1024) return { folders: null };
+    const parts: Buffer[] = [];
+    for await (const part of readStored(repository, entry)) parts.push(part);
+    const record = z
+      .object({ folders: z.array(z.object({ path: z.string().min(1).max(4096), kind: z.enum(['manager', 'folder']), files: z.number().int().nonnegative(), bytes: z.number().nonnegative() })).max(100) })
+      .safeParse(JSON.parse(Buffer.concat(parts).toString('utf8')));
+    // What the old server wrote decides nothing here: a folder is only offered back where this Manager may write.
+    return { folders: record.success ? record.data.folders.map((folder) => ({ ...folder, reachable: this.options.inside(resolve(folder.path)) })) : null };
+  }
+
   /** What a folder held in one backup. An empty path is the top. */
   async browse(input: unknown) {
     const { snapshot, path } = z
@@ -382,7 +401,7 @@ export class ServerBackup {
     return {
       path,
       entries: entries
-        .filter((entry) => entry.type !== 'symlink')
+        .filter((entry) => entry.type !== 'symlink' && !(path.length === 0 && entry.name === RECORD[0]))
         .map((entry) => ({ name: entry.name, type: entry.type === 'dir' ? 'folder' : 'file', bytes: entry.size, modified: entry.mtime })),
     };
   }
