@@ -206,6 +206,23 @@ test('a replacement Manager picks up the old one’s backup settings from the re
   service.setSettings(settings());
 });
 
+test('the schedule keeps the owner’s time zone, not the container’s', async () => {
+  const zoned = new ServerBackup(new Store(at('zoned-state')), {
+    target: { kind: 'folder', path: at('zoned-repository') },
+    inside: (path) => path === at('server') || path.startsWith(at('server') + sep),
+    always: [],
+  });
+  await zoned.turnOn({ ...settings(), schedule: { time: '02:00', stop: null }, timeZone: 'Asia/Tokyo' });
+  // 02:00 in Tokyo (UTC+9, no daylight time) is 17:00 UTC the day before. 02:00 UTC is 11:00 there: nothing starts.
+  await zoned.tick(new Date('2026-11-18T02:00:00Z'));
+  assert.equal(zoned.view()!.running, null);
+  assert.equal(zoned.view(new Date('2026-11-18T03:00:00Z'))!.next, Date.parse('2026-11-18T17:00:00Z'));
+  await zoned.tick(new Date('2026-11-18T17:00:00Z'));
+  assert.equal(zoned.view()!.running?.trigger, 'schedule');
+  zoned.stop();
+  await assert.rejects(Promise.resolve().then(() => zoned.setSettings({ ...settings(), timeZone: 'Not/AZone' })));
+});
+
 test('the schedule starts one backup a day at its time', async () => {
   const two = new Date(2026, 10, 18, 2, 0, 30);
   await service.tick(new Date(2026, 10, 18, 1, 59, 0));

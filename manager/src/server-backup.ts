@@ -22,6 +22,22 @@ export const Settings = z
     folders: z.array(z.string().min(1).max(4096)).max(64),
     exclusions: z.array(z.string().min(1).max(200).regex(/^[^/\0]+\/?$/)).max(100),
     schedule: z.object({ time: Time, stop: Time.nullable() }).strict(),
+    /**
+     * The owner's time zone, sent by their browser. NAS containers usually have none, so without it "02:00"
+     * would be 02:00 UTC. Missing in settings saved before it existed: the container's own time is used.
+     */
+    timeZone: z
+      .string()
+      .max(64)
+      .refine((zone) => {
+        try {
+          new Intl.DateTimeFormat('en', { timeZone: zone });
+          return true;
+        } catch {
+          return false;
+        }
+      })
+      .optional(),
     /** Megabits per second, or null for no limit. Applies once backups go to Frameleaf Cloud. */
     limitMbps: z.number().positive().max(10_000).nullable(),
     retention: z
@@ -63,8 +79,21 @@ interface Saved {
 }
 
 const KEY = 'server-backup';
-const day = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-const clock = (date: Date) => `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+/** A moment as the owner's wall clock shows it, in their time zone (or the container's when there is none). */
+function wall(date: Date, timeZone?: string) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value]),
+  );
+  return {
+    day: `${parts.year}-${parts.month}-${parts.day}`,
+    clock: `${parts.hour}:${parts.minute}`,
+    sunday: parts.weekday === 'Sun',
+    /** The same wall-clock reading as if it were UTC: the difference to `date` is the zone's offset. */
+    asUtc: Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute)),
+  };
+}
 /**
  * Where a server's backups sit in its Cloud storage. It follows from the recovery key alone, so a
  * replacement server that is given the key finds them without being told anything else. It says nothing about the key.
@@ -392,7 +421,7 @@ export class ServerBackup {
       roles: Object.fromEntries(included.map((item) => [item.path, item.role])),
       exclusions: saved.settings.exclusions,
       retention: saved.settings.retention,
-      prune: trigger === 'schedule' && now.getDay() === 0,
+      prune: trigger === 'schedule' && wall(now, saved.settings.timeZone).sunday,
       ...(session?.sequence ? { sequence: session.sequence } : {}),
     }));
   }
@@ -473,9 +502,10 @@ export class ServerBackup {
     const saved = this.saved();
     if (!saved.on || (!this.options.target && !this.options.cloud?.linked)) return;
     const { time, stop } = saved.settings.schedule;
-    if (this.current?.trigger === 'schedule' && this.current.kind === 'backup' && stop && clock(now) === stop) return this.stop();
-    if (this.child || clock(now) !== time || saved.scheduledOn === day(now)) return;
-    this.save({ scheduledOn: day(now) });
+    const here = wall(now, saved.settings.timeZone);
+    if (this.current?.trigger === 'schedule' && this.current.kind === 'backup' && stop && here.clock === stop) return this.stop();
+    if (this.child || here.clock !== time || saved.scheduledOn === here.day) return;
+    this.save({ scheduledOn: here.day });
     // A backup that could not even start is still part of the history, with its reason.
     await this.backUp('schedule', now).catch((error) => {
       const value: Omit<Run, 'id'> = { kind: 'backup', trigger: 'schedule', state: 'failed', startedAt: now.getTime(), finishedAt: Date.now(), progress: null, outcome: null, error: reasonOf(error) };
@@ -552,10 +582,13 @@ export class ServerBackup {
     const running = this.current;
     const progress = running?.progress;
     const perSecond = this.pace?.perSecond ?? 0;
-    const due = new Date(now);
     const [hours, minutes] = saved.settings.schedule.time.split(':').map(Number) as [number, number];
-    due.setHours(hours, minutes, 0, 0);
-    if (due <= now || saved.scheduledOn === day(now)) due.setDate(due.getDate() + 1);
+    const here = wall(now, saved.settings.timeZone);
+    const offset = here.asUtc - Math.floor(now.getTime() / 60_000) * 60_000;
+    const today = new Date(here.asUtc);
+    let dueAt = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), hours, minutes) - offset;
+    if (dueAt <= now.getTime() || saved.scheduledOn === here.day) dueAt += 86_400_000;
+    const due = new Date(dueAt);
     return {
       state: saved.on ? 'on' : 'off',
       /** Null when backups go to a folder: there is nothing to connect. */
