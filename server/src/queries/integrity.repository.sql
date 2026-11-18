@@ -192,7 +192,19 @@ from
 where
   "asset"."deletedAt" is null
   and "asset"."isExternal" = false
-  and "asset"."createdAt" >= $2
+  and not exists (
+    select
+      "verified"."assetId"
+    from
+      "asset_integrity_verification" as "verified"
+    where
+      "verified"."assetId" = "asset"."id"
+      and "verified"."originalPath" = "asset"."originalPath"
+      and "verified"."expectedChecksum" = "asset"."checksum"
+      and "verified"."result" = $2
+      and "verified"."checkedAt" > now() - '28 days'::interval
+  )
+  and "asset"."createdAt" >= $3
 order by
   "asset"."createdAt" asc
 

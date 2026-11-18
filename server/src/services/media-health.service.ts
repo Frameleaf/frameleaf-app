@@ -4147,8 +4147,13 @@ export class MediaHealthService {
     const changedSince = snapshot.slice && snapshot.changedSince ? new Date(snapshot.changedSince) : undefined;
     const damageChecked = config.integrityChecks.checksumFiles.enabled;
     const page: MediaHealthScanPage = { checked: 0, missing: 0, corrupt: 0, lastId: afterId };
+    // FL-1686: an original read and matched within the recheck period (by this scan or the damage check) is only
+    // looked for. A changed record (faces, tags, an edit) does not mean changed bytes; a moved or replaced file has
+    // a new path or checksum and is read again.
+    const verified = await this.mediaHealthRepository.getRecentlyVerified(assets.map(({ id }) => id));
     for (const asset of assets) {
-      const onlyLookFor = damageChecked && !!changedSince && new Date(asset.updatedAt) <= changedSince;
+      const onlyLookFor =
+        verified.has(asset.id) || (damageChecked && !!changedSince && new Date(asset.updatedAt) <= changedSince);
       const found = await this.scanAsset(asset, snapshot.missingRunId, onlyLookFor ? null : snapshot.corruptRunId, {
         checksumScan,
       });
@@ -5288,6 +5293,10 @@ export class MediaHealthService {
     });
     if (result.status === 'healthy') {
       await this.recordContentDigests(asset, result);
+      if (verifyChecksum && expectedDigest(asset)) {
+        // FL-1686: proved against its checksum, so neither this scan nor the damage check reads it again for a while
+        await this.mediaHealthRepository.recordVerified(asset, hex(result.sha256));
+      }
       return null;
     }
     if (result.status === 'encrypted') {

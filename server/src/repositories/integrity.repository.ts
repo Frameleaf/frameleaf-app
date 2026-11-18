@@ -7,7 +7,7 @@ import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetFileType, AssetStatus, ChecksumAlgorithm, IntegrityReport } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
-import { KEPT_STATUSES } from 'src/repositories/media-health.repository.js';
+import { KEPT_STATUSES, recentlyVerified } from 'src/repositories/media-health.repository.js';
 import { countPathReferences } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
@@ -550,26 +550,30 @@ export class IntegrityRepository {
   }
   @GenerateSql({ params: [DummyValue.DATE], stream: true })
   streamAssetChecksums(startMarker?: Date) {
-    return this.db
-      .selectFrom('asset')
-      .where('asset.deletedAt', 'is', null)
-      .leftJoin('integrity_report', (join) =>
-        join
-          .onRef('integrity_report.assetId', '=', 'asset.id')
-          .on('integrity_report.type', '=', IntegrityReport.ChecksumFail),
-      )
-      .select([
-        'asset.originalPath',
-        'asset.checksum',
-        'asset.checksumAlgorithm',
-        'asset.createdAt',
-        'asset.id as assetId',
-        'integrity_report.id as reportId',
-      ])
-      .where('asset.isExternal', '=', sql.lit(false))
-      .$if(startMarker !== undefined, (qb) => qb.where('asset.createdAt', '>=', startMarker!))
-      .orderBy('asset.createdAt', 'asc')
-      .stream();
+    return (
+      this.db
+        .selectFrom('asset')
+        .where('asset.deletedAt', 'is', null)
+        .leftJoin('integrity_report', (join) =>
+          join
+            .onRef('integrity_report.assetId', '=', 'asset.id')
+            .on('integrity_report.type', '=', IntegrityReport.ChecksumFail),
+        )
+        .select([
+          'asset.originalPath',
+          'asset.checksum',
+          'asset.checksumAlgorithm',
+          'asset.createdAt',
+          'asset.id as assetId',
+          'integrity_report.id as reportId',
+        ])
+        .where('asset.isExternal', '=', sql.lit(false))
+        // FL-1686: an original read and matched recently is not read again until the recheck period has passed
+        .where((eb) => eb.not(recentlyVerified(eb)))
+        .$if(startMarker !== undefined, (qb) => qb.where('asset.createdAt', '>=', startMarker!))
+        .orderBy('asset.createdAt', 'asc')
+        .stream()
+    );
   }
   /** One original's checksum and its damage report, as `streamAssetChecksums` reads them (Library care's "Check one…"). */
   @GenerateSql({ params: [DummyValue.UUID] })

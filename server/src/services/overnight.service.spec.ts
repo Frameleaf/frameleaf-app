@@ -372,6 +372,43 @@ describe(OvernightService.name, () => {
     expect(sunday.mocks.job.queue).toHaveBeenCalledWith(scan);
   });
 
+  it('looks for every stored file on the weekly day only, and reads originals nightly (FL-1686)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const missing = { name: JobName.IntegrityMissingFilesQueueAll, data: {} };
+    const untracked = { name: JobName.IntegrityUntrackedFilesQueueAll, data: {} };
+    const damage = { name: JobName.IntegrityChecksumFiles, data: {} };
+    vi.setSystemTime(new Date('2026-10-19T00:00:00Z')); // a Monday
+    const monday = setup();
+    await monday.sut.handleStart();
+    expect(monday.mocks.job.queue).toHaveBeenCalledWith(damage);
+    expect(monday.mocks.job.queue).not.toHaveBeenCalledWith(missing);
+    expect(monday.mocks.job.queue).not.toHaveBeenCalledWith(untracked);
+
+    vi.setSystemTime(new Date('2026-10-18T00:00:00Z')); // the weekly day, Sunday
+    const sunday = setup();
+    await sunday.sut.handleStart();
+    expect(sunday.mocks.job.queue).toHaveBeenCalledWith(missing);
+    expect(sunday.mocks.job.queue).toHaveBeenCalledWith(untracked);
+    expect(sunday.mocks.job.queue).toHaveBeenCalledWith(damage);
+  });
+
+  it("queues no file checks behind last night's that are still waiting (FL-1686)", async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-18T00:00:00Z')); // the weekly day, so every check would be due
+    const { sut, mocks, busy } = setup();
+    busy[QueueName.IntegrityCheck] = true;
+    await sut.handleStart();
+    for (const name of [
+      JobName.IntegrityMissingFilesQueueAll,
+      JobName.IntegrityUntrackedFilesQueueAll,
+      JobName.IntegrityChecksumFiles,
+    ]) {
+      expect(mocks.job.queue).not.toHaveBeenCalledWith({ name, data: {} });
+    }
+    // the health scan carries on with its own run
+    expect(mocks.mediaHealth.startScheduledScans).toHaveBeenCalled();
+  });
+
   it('keeps the nightly counts when the tidy-up does not run', async () => {
     const { sut, mocks } = setup({ steps: { cleanup: OvernightStepTiming.Manual } });
     await sut.handleStart();

@@ -76,6 +76,8 @@ describe(MediaHealthService.name, () => {
       getAssets: vi.fn(),
       getAssetChecksums: vi.fn(),
       getAssetPage: vi.fn().mockResolvedValue([]),
+      getRecentlyVerified: vi.fn().mockResolvedValue(new Set()),
+      recordVerified: vi.fn().mockResolvedValue(undefined),
       countScanAssets: vi.fn().mockResolvedValue(0),
       getScanSliceEnd: vi.fn().mockResolvedValue(null),
       // no file a search comes across is a photo's original unless a spec says so
@@ -4001,6 +4003,58 @@ describe(MediaHealthService.name, () => {
       care({ checksumScan: false });
       await sut.scanPage(snapshot, null, 25);
       expect(validate).toHaveBeenLastCalledWith(expect.objectContaining({ expected: undefined, deep: true }));
+    });
+
+    it('only looks for an original verified recently, even when its record changed (FL-1686)', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      const changed = { ...asset, checksum: Buffer.from('abc'), checksumAlgorithm: ChecksumAlgorithm.sha1File };
+      vi.mocked(mediaHealthRepository.getAssetPage).mockResolvedValue([changed] as never);
+      vi.mocked(mediaHealthRepository.getRecentlyVerified).mockResolvedValue(new Set(['asset-1']));
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+      validate.mockClear();
+      care({ checksumScan: true });
+
+      const page = await sut.scanPage(
+        {
+          mode: 'scan',
+          userId: 'user-id',
+          missingRunId: 'm',
+          corruptRunId: 'c',
+          changedSince: new Date(0).toISOString(),
+        },
+        null,
+        25,
+      );
+
+      expect(page.checked).toBe(1);
+      expect(mediaHealthRepository.getRecentlyVerified).toHaveBeenCalledWith(['asset-1']);
+      expect(mocks.storage.checkFileExists).toHaveBeenCalledWith('/data/a.jpg', expect.anything());
+      expect(validate).not.toHaveBeenCalled();
+    });
+
+    it('records an original it read and matched, so neither check reads it again for a while (FL-1686)', async () => {
+      const asset = AssetFactory.create({ id: 'asset-1', originalPath: '/data/a.jpg' });
+      const withSha1 = { ...asset, checksum: Buffer.from('abc'), checksumAlgorithm: ChecksumAlgorithm.sha1File };
+      vi.mocked(mediaHealthRepository.getAssetPage).mockResolvedValue([withSha1] as never);
+      vi.mocked(mocks.storage.checkFileExists).mockResolvedValue(true);
+      const validate = (sut as any).integrityService.validate as ReturnType<typeof vi.fn>;
+      const sha256 = Buffer.from('0123', 'hex');
+      validate.mockResolvedValue({ status: 'healthy', reason: 'verified', sha1: Buffer.from('abc'), sha256 });
+      const snapshot = { mode: 'scan' as const, userId: 'user-id', missingRunId: 'm', corruptRunId: 'c' };
+
+      care({ checksumScan: true });
+      await sut.scanPage(snapshot, null, 25);
+      expect(mediaHealthRepository.recordVerified).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: 'asset-1' }),
+        '0123',
+      );
+
+      // read without the checksum, it proved nothing about the bytes
+      vi.mocked(mediaHealthRepository.recordVerified).mockClear();
+      care({ checksumScan: false });
+      await sut.scanPage(snapshot, null, 25);
+      expect(mediaHealthRepository.recordVerified).not.toHaveBeenCalled();
     });
 
     it('leaves RAW originals out of a search while "Suggest recoverable RAW sources" is off', async () => {

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
+import { ExpressionBuilder, Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -51,6 +51,26 @@ export type MediaHealthChecksum = {
   sha256: Buffer;
   sizeInBytes: number;
 };
+/**
+ * FL-1686: an original whose bytes were proved against its current checksum, at its current path, within this many
+ * days counts as checked. Library care's health scan and File checks' damage check both skip reading it again, so on
+ * a large library each original is read once a pass (four weeks, as the health scan paces itself), not every night.
+ */
+export const VERIFIED_RECHECK_DAYS = 28;
+
+/** FL-1686: whether `asset`'s original was verified within `VERIFIED_RECHECK_DAYS` (see above). */
+export const recentlyVerified = (eb: ExpressionBuilder<DB, 'asset'>) =>
+  eb.exists(
+    eb
+      .selectFrom('asset_integrity_verification as verified')
+      .select('verified.assetId')
+      .whereRef('verified.assetId', '=', 'asset.id')
+      .whereRef('verified.originalPath', '=', 'asset.originalPath')
+      .whereRef('verified.expectedChecksum', '=', 'asset.checksum')
+      .where('verified.result', '=', 'passed')
+      .where('verified.checkedAt', '>', sql<Date>`now() - ${sql.lit(`${VERIFIED_RECHECK_DAYS} days`)}::interval`),
+  );
+
 export type MediaHealthAsset = Pick<
   Selectable<AssetTable>,
   | 'id'
@@ -1138,6 +1158,38 @@ export class MediaHealthRepository {
       yield asset;
     }
   }
+  /** FL-1686: which of these photos' originals were verified recently, so the scan only looks for them. */
+  async getRecentlyVerified(assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', 'in', assetIds)
+      .where((eb) => recentlyVerified(eb))
+      .execute();
+    return new Set(rows.map(({ id }) => id));
+  }
+
+  /**
+   * FL-1686: the health scan read this original and it matched its checksum: recorded as File checks records it, so
+   * neither reads it again within `VERIFIED_RECHECK_DAYS`. Nothing is recorded if the photo moved or its checksum
+   * changed since it was read.
+   */
+  async recordVerified(
+    asset: Pick<MediaHealthAsset, 'id' | 'originalPath' | 'checksum' | 'checksumAlgorithm'>,
+    actualSha256: string | null,
+  ): Promise<void> {
+    await sql`INSERT INTO asset_integrity_verification ("assetId","originalPath","expectedChecksum","checksumAlgorithm","actualSha256",result)
+      SELECT a.id, a."originalPath", a.checksum, a."checksumAlgorithm", ${actualSha256}, 'passed' FROM asset a
+      WHERE a.id = ${asset.id}::uuid AND a."originalPath" = ${asset.originalPath} AND a.checksum = ${asset.checksum}
+        AND a."checksumAlgorithm" IS NOT DISTINCT FROM ${asset.checksumAlgorithm}
+      ON CONFLICT ("assetId") DO UPDATE SET "originalPath"=excluded."originalPath","expectedChecksum"=excluded."expectedChecksum",
+        "checksumAlgorithm"=excluded."checksumAlgorithm","actualSha256"=excluded."actualSha256",result=excluded.result,
+        "checkedAt"=clock_timestamp()`.execute(this.db);
+  }
+
   /**
    * One page of an owner's scan (FL-69), in id order after `afterId`. The durable Library Care scan
    * records the last id it finished as its cursor, so a paused, restarted or retried scan carries on
