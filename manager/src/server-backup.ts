@@ -1,7 +1,7 @@
 // Server Backup: Manager's second job. It keeps an encrypted copy of chosen folders, runs on a schedule,
 // and restores a file, a folder or everything. The work happens in a separate process
 // (server-backup-worker.ts); this file owns the settings, the history and what the screens show.
-import { DEFAULT_RETENTION, Repository, dirStore, find, listFolder, readFile as readStored, s3Store, type RetentionPolicy } from '@frameleaf/backup-core';
+import { DEFAULT_RETENTION, Repository, dirStore, find, listFolder, parseRecoveryCode, readFile as readStored, recoveryCode, s3Store, type RetentionPolicy } from '@frameleaf/backup-core';
 import { fork, type ChildProcess } from 'node:child_process';
 import { hkdfSync, randomBytes } from 'node:crypto';
 import { chmod, readFile, writeFile } from 'node:fs/promises';
@@ -174,22 +174,37 @@ export class ServerBackup {
     this.save({ settings: this.checked(Settings.parse(input)) });
   }
   /** Shown during set-up, until the owner confirms it is saved. After that Manager asks for the password first. */
-  firstKey() {
+  async firstKey() {
     if (this.saved().keySavedAt !== null) throw new Refusal('server_backup_key_already_saved');
     this.available();
-    return this.rootKey(true);
+    return ServerBackup.shown(await this.rootKey(true));
   }
-  key() {
-    return this.rootKey(false);
+  async key() {
+    return ServerBackup.shown(await this.rootKey(false));
+  }
+  /** The key as the owner sees and writes it down: the same `FLRK-` code the photo app's recovery kit uses. */
+  private static shown(key: string) {
+    return { code: recoveryCode(Buffer.from(key, 'hex')) };
   }
   /**
    * On a server that replaces another: the recovery key saved from the old one, so its backups open here.
    * Only before this Manager has a key of its own; a key in use is never swapped.
    */
   async adoptKey(input: unknown) {
-    const key = z.string().regex(/^[0-9a-f]{64}$/).parse(input);
+    const text = z.string().max(200).parse(input);
+    const bare = text.replaceAll(/\s/g, '');
+    const key = /^[0-9a-f]{64}$/i.test(bare) ? bare.toLowerCase() : parseRecoveryCode(text)?.toString('hex');
+    if (!key) throw new Refusal('server_backup_key_wrong');
     this.available();
-    if (await readFile(this.keyFile(), 'utf8').catch(() => null)) throw new Refusal('server_backup_key_exists');
+    const existing = (await readFile(this.keyFile(), 'utf8').catch(() => null))?.trim();
+    // This Manager's own key, back for its own older backups (after disconnecting and connecting again).
+    if (existing === key) {
+      this.repository = null;
+      this.save({ keySavedAt: this.saved().keySavedAt ?? Date.now() });
+      await this.refreshSnapshots();
+      return;
+    }
+    if (existing) throw new Refusal('server_backup_key_exists');
     // Kept only once it has opened the backups it is for: a wrong key would otherwise be this server's key for good.
     // Nothing stored under this key's vault, or a store it does not open: either way it is not the key.
     const repository = await this.open(key).catch((error) => {
@@ -209,6 +224,20 @@ export class ServerBackup {
   turnOff() {
     if (this.child) throw new Refusal('server_backup_busy');
     this.save({ on: false });
+  }
+  /** Disconnects from Frameleaf Cloud: backups stop, and what this Manager knew of the stored ones is forgotten. The key stays. */
+  async disconnect() {
+    if (this.child || this.starting) throw new Refusal('server_backup_busy');
+    if (!this.options.cloud?.linked) throw new Refusal('server_backup_cloud_not_linked');
+    // Holds off any run, by hand or on schedule, while Cloud is asked; released if Cloud can't be reached.
+    this.starting = true;
+    try {
+      await this.options.cloud.unlink();
+      this.repository = null;
+      this.save({ on: false, snapshots: [], sizes: {} });
+    } finally {
+      this.starting = false;
+    }
   }
 
   private async launch(kind: RunKind, trigger: Run['trigger'], rootKey: string, work: (target: Target, session: Session | null) => Job): Promise<Run> {

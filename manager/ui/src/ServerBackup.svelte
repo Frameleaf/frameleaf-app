@@ -97,7 +97,9 @@
   }
   const showFirstKey = () =>
     run(async () => {
-      firstKey = (await api('server-backup-first-key', {})).key;
+      // A key already confirmed (this server's own, after connecting again) is not shown again without the password.
+      if (data.key.saved) return void (step = 'schedule');
+      firstKey = (await api('server-backup-first-key', {})).code;
       step = 'key';
     });
 
@@ -185,6 +187,61 @@
   const wantedBytes = $derived((kept ?? []).filter((folder) => wanted.includes(folder.path)).reduce((sum, folder) => sum + folder.bytes, 0));
   const want = (path: string) => (wanted = wanted.includes(path) ? wanted.filter((item) => item !== path) : [...wanted, path]);
   const restoreWhole = () => run(async () => change(await api('server-backup-restore', { snapshot, items: wanted.map((path) => path.split('/').filter(Boolean)), into: null })));
+  /**
+   * The recovery kit: a page to print or keep, with the key and how to use it. Made here, in the browser,
+   * from the key already on screen; nothing else leaves Manager.
+   */
+  function downloadKit(code: string) {
+    const server = location.hostname;
+    const made = new Date().toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' });
+    const escape = (text: string) => text.replace(/[&<>"]/g, (char) => `&#${char.charCodeAt(0)};`);
+    const page = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Server Backup recovery kit · ${escape(server)}</title>
+<style>body{font:15px/1.6 system-ui,sans-serif;max-width:680px;margin:48px auto;padding:0 24px;color:#111}h1{font-size:26px;margin:0 0 4px}.meta{color:#555}.key{font:600 20px/1.7 ui-monospace,monospace;letter-spacing:1px;border:2px dashed #999;border-radius:10px;padding:18px;margin:24px 0;word-break:break-all}li{margin:6px 0}.warn{border-left:4px solid #c80;padding:8px 14px;background:#fff8ec}</style>
+<h1>Frameleaf Server Backup: recovery kit</h1><p class="meta">Server: ${escape(server)} · Made ${escape(made)}</p>
+<p>This key opens the backups Server Backup keeps of this server in Frameleaf Cloud. It is the only way to open them. Frameleaf never receives it and can't recover it for you.</p>
+<p class="key">${escape(code)}</p>
+<h2>If this server is lost</h2><ol><li>Install Frameleaf Manager on the new server and sign in.</li><li>Open Server Backup and choose <b>Restore this server from a backup you already have</b>.</li><li>Connect to your Frameleaf Cloud account, choose this server (${escape(server)}), and approve the request in your account.</li><li>Enter the key above. Upper or lower case and spaces don't matter.</li><li>Choose what to restore.</li></ol>
+<p class="warn">Keep this somewhere safe and away from this server: printed, or in a password manager. Anyone who has this key and can sign in to your Frameleaf Cloud account can read these backups.</p></html>`;
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([page], { type: 'text/html' }));
+    link.download = `frameleaf-server-backup-recovery-kit-${server.replace(/[^a-z0-9.-]/gi, '-')}.html`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+  }
+  let kitAfterReveal = $state(false);
+  let passwordField = $state<HTMLInputElement | null>(null);
+  const reveal = () =>
+    run(async () => {
+      shownKey = (await api('server-backup-key', { password })).code;
+      password = '';
+      if (kitAfterReveal) downloadKit(shownKey);
+      kitAfterReveal = false;
+    });
+
+  // Settings: storage used, and disconnecting from Frameleaf Cloud.
+  let usage = $state<{ bytesCurrent: number; allowanceBytes: number } | null>(null);
+  $effect(() => {
+    if (page !== 'settings' || cloud?.state !== 'linked' || usage) return;
+    untrack(() => void api('server-backup-cloud-usage', {}).then((answer) => (usage = answer)).catch(() => undefined));
+  });
+  let disconnecting = $state(false);
+  const disconnect = () =>
+    run(async () => {
+      change(await api('server-backup-cloud-disconnect', {}));
+      disconnecting = false;
+      usage = null;
+      go('overview');
+    });
+
+  // A fresh server's "Restore this server" lands here.
+  $effect(() => {
+    if (page !== 'restore-server' || !cloud) return;
+    untrack(() => {
+      begin('restore', cloud.state === 'linked' ? 'server' : 'connect');
+      go('overview');
+    });
+  });
+
   let oldKey = $state('');
   const adoptKey = () =>
     run(async () => {
@@ -200,6 +257,8 @@
       await api('server-backup-key-saved', {});
       change(await api('server-backup-run', {}));
       edited = false;
+      // The key was on screen only to be saved; it is not kept around once it is.
+      firstKey = '';
       step = '';
       go('overview');
     });
@@ -225,7 +284,6 @@
       destination = false;
     });
 
-  const grouped = (key: string) => key.match(/.{1,8}/g)?.join(' ') ?? key;
   const minutes = (item: any) => Math.max(1, Math.round(((item.finishedAt ?? Date.now()) - item.startedAt) / 60_000));
   const took = (item: any) => `took ${minutes(item)} ${minutes(item) === 1 ? 'minute' : 'minutes'}`;
   function nextText(time: number) {
@@ -443,7 +501,7 @@
       <div class="card-header"><h2>Enter that server’s recovery key</h2></div>
       <form class="card-body stack" onsubmit={(event) => { event.preventDefault(); void adoptKey(); }}>
         <p class="muted">The key you saved when Server Backup was set up on the old server. It opens the backups here. Frameleaf never receives it.</p>
-        <textarea class="sb-keyfield" bind:value={oldKey} rows="3" spellcheck="false" autocomplete="off" aria-label="Recovery key" required></textarea>
+        <textarea class="sb-keyfield" bind:value={oldKey} rows="3" spellcheck="false" autocomplete="off" aria-label="Recovery key" placeholder="FLRK-…" required></textarea>
         <div><button class="button primary" disabled={busy || !oldKey.trim()}>Open the backups</button></div>
       </form>
     </section>
@@ -483,8 +541,8 @@
       <div class="card-header"><h2>Save your recovery key</h2></div>
       <div class="card-body stack">
         <p class="muted">This key was made on this server and stays here. It is the only way to open your backups on another server.</p>
-        <p class="sb-key">{grouped(firstKey)}</p>
-        <div class="actions sb-wrap"><button class="button" onclick={() => navigator.clipboard?.writeText(firstKey)}>Copy key</button></div>
+        <p class="sb-key">{firstKey}</p>
+        <div class="actions sb-wrap"><button class="button" onclick={() => downloadKit(firstKey)}><Icon name="import" />Download recovery kit</button><button class="button quiet" onclick={() => navigator.clipboard?.writeText(firstKey)}>Copy key</button></div>
         <div class="notice warning"><Icon name="warning" /><div><strong>Frameleaf can’t recover this for you</strong><p>Without the key nobody can open your backups, including us. Keep it off this server: in a password manager or printed.</p></div></div>
         <label class="sb-confirm"><input type="checkbox" bind:checked={saved} /><span>I’ve saved the recovery key somewhere off this server</span></label>
       </div>
@@ -496,7 +554,7 @@
       <div class="card-body">{@render scheduleFields()}</div>
     </section>
     <div class="notice mt16"><Icon name="clock" /><div><strong>The first backup takes the longest</strong><p>Everything has to be stored once. After that only changes are, usually in minutes. You can keep using the server meanwhile.</p></div></div>
-    <div class="wizard-footer"><button class="button quiet" onclick={() => (step = 'key')}><Icon name="back" />Back</button><button class="button primary" disabled={busy} onclick={finishSetup}>Start first backup</button></div>
+    <div class="wizard-footer"><button class="button quiet" onclick={() => (step = data.key.saved ? 'folders' : 'key')}><Icon name="back" />Back</button><button class="button primary" disabled={busy} onclick={finishSetup}>Start first backup</button></div>
   {/if}
 {:else if page === 'folders'}
   {@render heading('Folders', 'What Server Backup protects on this server.')}
@@ -528,24 +586,33 @@
   {#if !data.key.saved}<div class="notice warning mb16"><Icon name="warning" /><div class="grow"><strong>You haven’t confirmed that you saved it</strong><p>If this server is lost before you do, your backups can’t be opened by anyone.</p></div></div>{/if}
   <section class="card">
     <div class="list-row sb-first"><Icon name="key" /><div class="grow"><strong>Kept on this server only</strong><p>{data.key.saved ? `You confirmed saving it ${midSentence(when(data.key.savedAt))}.` : 'Made when Server Backup was set up.'} Frameleaf never receives it.</p></div></div>
-    <form class="list-row sb-reveal" onsubmit={(event) => { event.preventDefault(); void run(async () => { shownKey = (await api('server-backup-key', { password })).key; password = ''; }); }}>
+    <div class="list-row"><Icon name="document" /><div class="grow"><strong>Recovery kit</strong><p>A printable page with the key and how to use it. Manager asks for your password first.</p></div><button class="button quiet" onclick={() => (shownKey ? downloadKit(shownKey) : ((kitAfterReveal = true), passwordField?.focus()))}>Download…</button></div>
+    <form class="list-row sb-reveal" onsubmit={(event) => { event.preventDefault(); void reveal(); }}>
       <Icon name="lock" />
-      <div class="grow"><strong>Show the recovery key</strong><p>Enter your Manager password to see it.</p></div>
-      <input type="password" bind:value={password} required maxlength="256" autocomplete="current-password" aria-label="Manager password" />
+      <div class="grow"><strong>{kitAfterReveal ? 'Enter your password for the kit' : 'Show the recovery key'}</strong><p>Enter your Manager password to {kitAfterReveal ? 'download it' : 'see it'}.</p></div>
+      <input type="password" bind:this={passwordField} bind:value={password} required maxlength="256" autocomplete="current-password" aria-label="Manager password" />
       <button class="button quiet" disabled={busy}>Show</button>
     </form>
     {#if shownKey}
       <div class="card-body stack sb-shown">
-        <p class="sb-key">{grouped(shownKey)}</p>
-        <div class="actions sb-wrap"><button class="button" onclick={() => navigator.clipboard?.writeText(shownKey)}>Copy key</button>{#if !data.key.saved}<button class="button primary" disabled={busy} onclick={() => act('server-backup-key-saved')}>I’ve saved it</button>{/if}<button class="button quiet" onclick={() => (shownKey = '')}>Hide</button></div>
+        <p class="sb-key">{shownKey}</p>
+        <div class="actions sb-wrap"><button class="button" onclick={() => downloadKit(shownKey)}><Icon name="import" />Download recovery kit</button><button class="button quiet" onclick={() => navigator.clipboard?.writeText(shownKey)}>Copy key</button>{#if !data.key.saved}<button class="button primary" disabled={busy} onclick={() => act('server-backup-key-saved')}>I’ve saved it</button>{/if}<button class="button quiet" onclick={() => (shownKey = '')}>Hide</button></div>
       </div>
     {/if}
   </section>
 {:else if page === 'settings'}
-  {@render heading('Settings', 'Turn Server Backup off, or back on.')}
+  {@render heading('Settings', cloud ? 'This server’s connection to Frameleaf Cloud and its storage.' : 'Turn Server Backup off, or back on.')}
   {#if cloud?.account}
     <section class="card mb16">
-      <div class="list-row sb-first"><Icon name="server" /><div class="grow"><strong>Frameleaf Cloud</strong><p>Connected as {cloud.account.label} · {cloud.account.email}</p></div></div>
+      <div class="card-header"><h2>Frameleaf Cloud</h2></div>
+      <div class="list-row sb-first"><Icon name="server" /><div class="grow"><strong>{location.hostname}</strong><p>Connected as {cloud.account.email}. Shown in your Cloud account as a backup server.</p></div><button class="button quiet" disabled={busy || !!running} onclick={() => (disconnecting = true)}>Disconnect…</button></div>
+      {#if usage}<div class="list-row"><Icon name="harddisk" /><div class="grow"><strong>{formatBytes(usage.bytesCurrent)} of {formatBytes(usage.allowanceBytes)} used</strong><p>Shared with Cloud Backup. Another 1 TB is added automatically if you pass it ($9.99 a month each).</p></div></div>{/if}
+      {#if disconnecting}
+        <div class="card-body stack sb-shown">
+          <div class="notice warning"><Icon name="warning" /><div><strong>Disconnect this server from Frameleaf Cloud?</strong><p>Backups stop. What is already stored is kept, read-only, for 30 days, and Frameleaf Cloud emails you before deleting it. To keep it, connect again and choose “Restore this server from a backup you already have”; your recovery key opens it.</p></div></div>
+          <div class="actions"><button class="button quiet" onclick={() => (disconnecting = false)}>Cancel</button><button class="button danger" disabled={busy} onclick={disconnect}>Disconnect</button></div>
+        </div>
+      {/if}
     </section>
   {/if}
   <section class="card">

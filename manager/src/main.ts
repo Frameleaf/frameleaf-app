@@ -754,7 +754,7 @@ class Api {
     return serverBackup.view();
   }
   @Post('server-backup-first-key') async serverBackupFirstKey() {
-    return { key: await serverBackup.firstKey() };
+    return serverBackup.firstKey();
   }
   @Post('server-backup-key') async serverBackupKey(@Body() input: unknown) {
     const { password } = z
@@ -762,7 +762,7 @@ class Api {
       .strict()
       .parse(input);
     await security.confirm(password);
-    return { key: await serverBackup.key() };
+    return serverBackup.key();
   }
   @Post('server-backup-key-saved') serverBackupKeySaved() {
     serverBackup.confirmKeySaved();
@@ -798,6 +798,15 @@ class Api {
     if (state === 'linked') await cloudly((cloud) => cloud.setLocation()).catch(() => undefined);
     return { ...serverBackup.view(), linking: state };
   }
+  @Post('server-backup-cloud-usage') async serverBackupCloudUsage() {
+    return cloudly((cloud) => cloud.usage());
+  }
+  @Post('server-backup-cloud-disconnect') async serverBackupCloudDisconnect() {
+    await serverBackup.disconnect().catch((error) => {
+      throw error instanceof Refusal ? error : new Refusal(reasonOf(error), 502);
+    });
+    return serverBackup.view();
+  }
   @Post('server-backup-cloud-locations') async serverBackupCloudLocations() {
     return { locations: await cloudly((cloud) => cloud.locations()) };
   }
@@ -821,7 +830,7 @@ class Api {
   @Post('server-backup-adopt-key') async serverBackupAdoptKey(@Body() input: unknown) {
     const { key } = z.object({ key: z.string().max(200) }).strict().parse(input);
     try {
-      await serverBackup.adoptKey(key.replaceAll(/\s/g, '').toLowerCase());
+      await serverBackup.adoptKey(key);
     } catch (error) {
       if (error instanceof Refusal) throw error;
       throw new Refusal(error instanceof z.ZodError ? 'server_backup_key_wrong' : reasonOf(error), error instanceof z.ZodError ? 409 : 502);

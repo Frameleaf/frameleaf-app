@@ -204,6 +204,8 @@ export function standIn(options: { old?: boolean } = {}) {
       if (good) state.parents.set(held.instanceId, statement.parentInstanceId);
       return good ? answer(200, { parent: { instanceId: statement.parentInstanceId, name: 'Family library', attachedAt: new Date(state.now).toISOString(), follows: true } }) : envelope(422, 'request-invalid');
     }
+    if (route === 'GET api/v1/backup/usage')
+      return answer(200, { bytesCurrent: 412e9, bytesNoncurrent: 0, objects: 10, includedBytes: 1e12, accountBytesCurrent: 450e9, extraBlocks: 0, allowanceBytes: 1e12, blockBytes: 1e12, readOnly: false, readOnlyReason: null });
     if (route === 'GET api/v4/backup/locations')
       return answer(200, { version: 2, locations: [{ locationId: 'loc-01', cityId: 'ashburn', city: 'Ashburn', country: 'United States', countryCode: 'US', probeUrl: 'https://s3.us-east-1.backup.frameleaf.cloud/' }] });
 
