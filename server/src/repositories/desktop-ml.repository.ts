@@ -506,6 +506,29 @@ export class DesktopMlRepository {
     return until[0];
   }
 
+  /**
+   * Which of `modelKeys` the server took away from this computer and has not granted again. The desktop's
+   * own count starts again each time it sets up, so it can still believe it holds such a model.
+   */
+  async withdrawnModels(deviceId: string, modelKeys: readonly string[]): Promise<string[]> {
+    const failures = await this.readFailures(this.db);
+    return modelKeys.filter((modelKey) =>
+      equivalentDesktopModelKeys(modelKey).some((key) => failures[failureKey(deviceId, key)]?.heldUntil),
+    );
+  }
+
+  /** The model was granted to this computer again: the withdrawal is over. */
+  async clearWithdrawal(deviceId: string, modelKey: string): Promise<void> {
+    const keys = equivalentDesktopModelKeys(modelKey).map((key) => failureKey(deviceId, key));
+    const failures = await this.readFailures(this.db);
+    if (keys.every((key) => !failures[key])) return;
+    await this.db.transaction().execute((db) =>
+      this.changeFailures(db, (current) => {
+        for (const key of keys) delete current[key];
+      }),
+    );
+  }
+
   private async readFailures(db: Kysely<DesktopMlDatabase>): Promise<DesktopModelFailures> {
     const { rows } = await sql<{ value: unknown }>`SELECT value FROM system_metadata
       WHERE key=${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
@@ -524,9 +547,9 @@ export class DesktopMlRepository {
     const now = new Date(rows[0].now);
     change(failures, now);
     for (const [key, entry] of Object.entries(failures)) {
-      const held = entry.heldUntil && new Date(entry.heldUntil).getTime() > now.getTime();
-      // A count is good for an hour (a qualification's life); a hold until it ends.
-      if (!held && (entry.failures === 0 || now.getTime() - new Date(entry.at).getTime() > 3_600_000))
+      // A count and the record of a withdrawal are good for an hour (a qualification's life), by which time
+      // the desktop has qualified again; a count that went back to nothing is dropped at once.
+      if (now.getTime() - new Date(entry.at).getTime() > 3_600_000 || (!entry.heldUntil && entry.failures === 0))
         delete failures[key];
     }
     await sql`INSERT INTO system_metadata (key, value)

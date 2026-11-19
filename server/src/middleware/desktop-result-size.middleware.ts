@@ -1,5 +1,4 @@
 import { type RequestHandler, json } from 'express';
-import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 /** `POST /api/desktop/tasks/{id}/result`, with or without the API prefix. */
 const DESKTOP_RESULT_ROUTE = /^(?:\/api)?\/desktop\/tasks\/[^/]+\/result\/?$/i;
@@ -13,15 +12,14 @@ export const DESKTOP_RESULT_MAX_BYTES = 4 * 1024 * 1024;
  * desktop reads that 401 as "open a new session" instead of "fail this task".
  */
 export const desktopResultSize = (bodyLimit: string | number = '10mb'): RequestHandler => {
-  const logger = LoggingRepository.create('DesktopResultSize');
   const parse = json({ limit: bodyLimit });
   return (request, response, next) => {
     if (request.method !== 'POST' || !DESKTOP_RESULT_ROUTE.test(request.path)) {
       next();
       return;
     }
+    // Not logged: the request has not been authenticated yet, so anyone could fill the log this way.
     const refuse = () => {
-      logger.warn(`Desktop worker result refused (${request.path}): 400 desktop_result_too_large`);
       response.status(400).json({ message: 'desktop_result_too_large', error: 'Bad Request', statusCode: 400 });
     };
     parse(request, response, (error?: unknown) => {

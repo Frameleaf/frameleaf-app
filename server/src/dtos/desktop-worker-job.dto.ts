@@ -4,6 +4,11 @@ import z from 'zod';
 export const DesktopClaimRequestSchema = z.strictObject({
   modelKeys: z.array(z.string().min(1).max(256)).max(64),
   waitMs: z.number().int().min(0).max(20_000).default(20_000),
+  /**
+   * Asks to be told when a requested model was withdrawn from this computer: the claim then answers
+   * 409 `desktop_qualification_hold` at once. Without it a claim answers as it always has.
+   */
+  reportWithdrawn: z.boolean().optional(),
 });
 export const DesktopHeartbeatSchema = z.strictObject({ id: z.uuid() });
 export const DesktopResultSchema = z.strictObject({ result: z.record(z.string(), z.json()) });

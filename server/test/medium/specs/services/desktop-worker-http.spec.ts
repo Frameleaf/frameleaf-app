@@ -93,6 +93,7 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
           } as never,
           sessions,
           new DesktopAssistancePolicyService(metadata),
+          broker,
         ),
       },
     ],

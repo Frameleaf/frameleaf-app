@@ -167,6 +167,8 @@ const settings = (machineLearning: { enabled: boolean; clip: { enabled: boolean;
   }) as never;
 const inventoryPolicies = { read: vi.fn() };
 const challenges = { issue: vi.fn(), read: vi.fn(), record: vi.fn(), readAccepted: vi.fn() };
+/** No model is being held back from this desktop unless a test says so. */
+const holds = { heldUntil: vi.fn(), clearWithdrawal: vi.fn() };
 let ctx: ControllerContext;
 let app: Express;
 const activation = { activate: vi.fn() };
@@ -202,6 +204,7 @@ beforeAll(async () => {
         activation as never,
         repository as never,
         inventoryPolicies as never,
+        holds as never,
       ),
     },
   ]);
@@ -434,6 +437,7 @@ it('refuses a catalogue-approved profile without a release-owned paired embeddin
       activation as never,
       repository as never,
       {} as never,
+      holds as never,
     );
     await expect(service.issue(undefined, undefined, payload())).rejects.toThrow('desktop_model_profile_unavailable');
     expect(challenges.issue).not.toHaveBeenCalled();
@@ -502,6 +506,7 @@ it('challenges only the keys the inventory lists: a face or OCR key no task will
     activation as never,
     repository as never,
     {} as never,
+    holds as never,
   );
   const ask = (item: (typeof catalogue.profiles)[number]) =>
     service.issue(
@@ -579,7 +584,7 @@ it('answers 403 desktop_pool_policy_required when the account turned Desktop AI 
 });
 
 it('holds back a desktop that lost a model for failing it: no new challenge and no grant until the hold ends', async () => {
-  const broker = { heldUntil: vi.fn().mockResolvedValue(new Date(Date.now() + 60_000)) };
+  const broker = { heldUntil: vi.fn().mockResolvedValue(new Date(Date.now() + 60_000)), clearWithdrawal: vi.fn() };
   const service = new DesktopQualificationService(
     { authenticate: vi.fn().mockResolvedValue(grant) } as never,
     challenges as never,
@@ -604,4 +609,9 @@ it('holds back a desktop that lost a model for failing it: no new challenge and 
   expect(challenges.record).not.toHaveBeenCalled();
   broker.heldUntil.mockResolvedValue(undefined);
   await expect(service.issue(undefined, undefined, payload())).resolves.toMatchObject({ id });
+  // and once a report grants the model again, the withdrawal is over
+  await expect(service.record(undefined, undefined, id, JSON.stringify({ report: report() }))).resolves.toEqual({
+    accepted: true,
+  });
+  expect(broker.clearWithdrawal).toHaveBeenCalledExactlyOnceWith(id, profile.modelKey);
 });

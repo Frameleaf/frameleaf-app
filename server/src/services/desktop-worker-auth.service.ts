@@ -65,15 +65,19 @@ export class DesktopWorkerAuthService {
         if (!auth.session || auth.apiKey || auth.sharedLink || auth.system)
           throw new ForbiddenException('desktop_worker_photo_session_required');
         const request = DesktopSessionRequestSchema.parse(input);
-        if (!(await this.repository.allowed(auth.user.id, auth.user.isAdmin))) throw policyRequired();
-        const device = await this.repository.device(auth.user.id, request.deviceId);
+        // Who is asking is settled first: only a request signed by this account's own computer is told that
+        // Desktop AI processing is off for the account, as on the signed endpoints.
+        const identity = await this.repository.identity(auth.user.id, request.deviceId);
         const serverId = await stableServerId({ systemMetadataRepository: this.systemMetadataRepository });
-        if (!device) throw invalid();
+        if (!identity) throw invalid();
         if (Math.abs(Date.now() - request.timestamp) > MAX_CLOCK_SKEW_MS) throw expired();
         if (
-          !validSignature(device.publicKey, desktopSessionMessage(serverId, auth.user.id, request), request.signature)
+          !validSignature(identity.publicKey, desktopSessionMessage(serverId, auth.user.id, request), request.signature)
         )
           throw invalid();
+        if (!(await this.repository.allowed(auth.user.id, auth.user.isAdmin))) throw policyRequired();
+        const device = await this.repository.device(auth.user.id, request.deviceId);
+        if (!device) throw invalid();
         const token = randomBytes(32).toString('hex');
         const session = await this.repository.issue({
           deviceId: device.id,

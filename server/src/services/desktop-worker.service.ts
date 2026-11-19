@@ -1,4 +1,10 @@
-import { BadRequestException, HttpException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { setTimeout } from 'node:timers/promises';
 import z from 'zod';
 import {
@@ -106,6 +112,15 @@ export class DesktopWorkerService {
       const request = parse(DesktopClaimRequestSchema, payload);
       if (request.modelKeys.length === 0) return { task: null };
       note(`models ${request.modelKeys.slice(0, 8).join(', ')}`);
+      // A desktop that asks is told when one of these models was taken away from it for failing: it may
+      // still believe it holds it, and would otherwise wait for work that will not come.
+      if (request.reportWithdrawn) {
+        const withdrawn = await this.broker.withdrawnModels(grant.deviceId, request.modelKeys);
+        if (withdrawn.length > 0) {
+          note(`withdrawn ${withdrawn.join(', ')}`);
+          throw new ConflictException('desktop_qualification_hold');
+        }
+      }
       const deadline = performance.now() + request.waitMs;
       do {
         signal.throwIfAborted();

@@ -71,7 +71,7 @@ export class DesktopQualificationService {
     private activation: DesktopAssistanceActivationService,
     private workers: DesktopWorkerRepository,
     private policies: DesktopAssistancePolicyService,
-    private broker?: DesktopMlRepository,
+    private broker: DesktopMlRepository,
   ) {}
 
   /**
@@ -79,7 +79,7 @@ export class DesktopQualificationService {
    * A conflict it retries, like the rest of the challenge bookkeeping.
    */
   private async assertNotHeld(deviceId: string, modelKey: string) {
-    if (await this.broker?.heldUntil(deviceId, equivalentDesktopModelKeys(modelKey)))
+    if (await this.broker.heldUntil(deviceId, equivalentDesktopModelKeys(modelKey)))
       throw new ConflictException('desktop_qualification_hold');
   }
 
@@ -258,6 +258,8 @@ export class DesktopQualificationService {
             current,
           );
         else await this.activation.activateModel(grant, qualification, profile.modelKey, current);
+        // Granted again: a model that had been taken away from this computer is its own once more.
+        await this.broker.clearWithdrawal(grant.deviceId, profile.modelKey);
         return { accepted: true };
       },
     );

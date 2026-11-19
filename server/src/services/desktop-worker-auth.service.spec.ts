@@ -15,6 +15,7 @@ const repository = {
   consume: vi.fn(),
   rotate: vi.fn(),
   allowed: vi.fn(),
+  identity: vi.fn(),
   policyOff: vi.fn(),
 };
 const metadata = { get: vi.fn().mockResolvedValue({ id: 'server' }) };
@@ -42,6 +43,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   repository.device.mockResolvedValue({ id: deviceId, publicKey, authorizationEpoch: 7 });
   repository.allowed.mockResolvedValue(true);
+  repository.identity.mockResolvedValue({ publicKey });
   repository.policyOff.mockResolvedValue(undefined);
   repository.issue.mockImplementation(() =>
     Promise.resolve({
@@ -125,6 +127,19 @@ it('answers 403 desktop_pool_policy_required wherever Desktop AI processing is o
   });
   expect(repository.device).not.toHaveBeenCalled();
   expect(repository.issue).not.toHaveBeenCalled();
+  // only a request this account's own computer signed is told so: a bad signature learns nothing
+  const forged = initial();
+  forged.signature = Buffer.alloc(64, 1).toString('base64');
+  await expect(service.issue(auth, forged)).rejects.toMatchObject({
+    status: 401,
+    message: 'desktop_worker_credential_invalid',
+  });
+  repository.identity.mockResolvedValueOnce(undefined);
+  await expect(service.issue(auth, initial())).rejects.toMatchObject({
+    status: 401,
+    message: 'desktop_worker_credential_invalid',
+  });
+  expect(repository.allowed).toHaveBeenCalledTimes(1);
   // a worker credential of an account whose approval was turned off afterwards
   repository.session.mockResolvedValue(undefined);
   repository.policyOff.mockResolvedValue({ deviceId, publicKey, authorizationEpoch: 7 });
@@ -156,7 +171,7 @@ it('names a proof whose timestamp is off by more than two minutes, so a wrong cl
   ).toString('base64');
   await expect(service.issue(auth, request)).rejects.toMatchObject({ status: 401, message: 'desktop_proof_expired' });
   // an unknown device is still a refused device, whatever its clock says
-  repository.device.mockResolvedValueOnce(undefined);
+  repository.identity.mockResolvedValueOnce(undefined);
   await expect(service.issue(auth, request)).rejects.toMatchObject({
     status: 401,
     message: 'desktop_worker_credential_invalid',

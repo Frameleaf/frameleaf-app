@@ -15,6 +15,7 @@ const broker = {
   withdraw: vi.fn(),
   countFailure: vi.fn(),
   clearFailures: vi.fn(),
+  withdrawnModels: vi.fn(),
 };
 const warn = vi.spyOn(LoggingRepository.prototype, 'warn').mockImplementation(() => {});
 const warnings = () => warn.mock.calls.map(([message]) => message);
@@ -256,6 +257,37 @@ describe('refusals (docs/desktop-worker-setup-protocol.md)', () => {
     expect(() => assertDesktopResult({ modelKey: `clip:${'0'.repeat(64)}` }, { clip: '[]' })).toThrow(
       'desktop_result_invalid',
     );
+  });
+});
+
+describe('a model the server took away from this desktop', () => {
+  const signal = new AbortController().signal;
+  const claim = (extra: string) =>
+    service.claim('token', 'proof', `{"modelKeys":["m1","m2"],"waitMs":0${extra}}`, signal);
+
+  it('is named to a desktop that asks, at once and instead of a task', async () => {
+    broker.withdrawnModels.mockResolvedValue(['m2']);
+    await expect(claim(',"reportWithdrawn":true')).rejects.toMatchObject({
+      status: 409,
+      message: 'desktop_qualification_hold',
+    });
+    expect(broker.withdrawnModels).toHaveBeenCalledWith('device', ['m1', 'm2']);
+    expect(broker.claim).not.toHaveBeenCalled();
+    expect(warnings()).toEqual([
+      'Desktop worker claim refused (device device, withdrawn m2): 409 desktop_qualification_hold',
+    ]);
+  });
+
+  it('changes nothing for a desktop that does not ask, or when nothing was taken away', async () => {
+    broker.claim.mockResolvedValue(undefined);
+    broker.withdrawnModels.mockResolvedValue(['m2']);
+    // a desktop in the field: its claim answers as it always has
+    expect(await claim('')).toEqual({ task: null });
+    expect(await claim(',"reportWithdrawn":false')).toEqual({ task: null });
+    expect(broker.withdrawnModels).not.toHaveBeenCalled();
+    broker.withdrawnModels.mockResolvedValue([]);
+    expect(await claim(',"reportWithdrawn":true')).toEqual({ task: null });
+    expect(broker.claim).toHaveBeenCalledTimes(3);
   });
 });
 

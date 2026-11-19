@@ -200,6 +200,18 @@ export class DesktopWorkerRepository {
     return { deviceId: row.deviceId, publicKey: row.publicKey, authorizationEpoch: row.authorizationEpoch };
   }
 
+  /** This account's computer, whatever its approval: enough to check a request it signed. */
+  identity(userId: string, id: string): Promise<{ publicKey: string } | undefined> {
+    return this.db
+      .selectFrom('desktop_device')
+      .select('publicKey')
+      .where('id', '=', id)
+      .where('userId', '=', userId)
+      .where('mode', '=', 'client-worker')
+      .where('revokedAt', 'is', null)
+      .executeTakeFirst();
+  }
+
   async device(userId: string, id: string) {
     const row = await this.db
       .selectFrom('desktop_device as device')

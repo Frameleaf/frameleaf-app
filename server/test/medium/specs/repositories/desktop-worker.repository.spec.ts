@@ -169,6 +169,9 @@ it('tells a credential refused because Desktop AI processing is off from any oth
   const { sut, user, input } = await setup();
   const session = (await sut.issue(input))!;
   expect(await sut.allowed(user.id, true)).toBe(true);
+  // the computer's key is readable whatever the account's approval, to check a request it signed
+  expect(await sut.identity(user.id, input.deviceId)).toEqual({ publicKey: expect.any(String) });
+  expect(await sut.identity(randomUUID(), input.deviceId)).toBeUndefined();
   expect(await sut.policyOff(session.id, input.tokenHash)).toBeUndefined();
   // the account stops being an administrator and was never approved as a member: processing is off for it
   await db.updateTable('user').set({ isAdmin: false }).where('id', '=', user.id).execute();

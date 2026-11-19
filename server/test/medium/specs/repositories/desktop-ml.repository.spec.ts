@@ -678,11 +678,19 @@ it('counts failures in a row in the database, per desktop and model, and holds a
   await sut.clearFailures(one, request.modelKey);
   expect(await sut.heldUntil(one.deviceId, [request.modelKey])).toEqual(until);
   expect(await sut.countFailure(one, request.modelKey)).toBe(1);
+  // the desktop can be told which of its models were taken away, under any runtime revision's key
+  expect(await second.withdrawnModels(one.deviceId, ['another-model', request.modelKey])).toEqual([request.modelKey]);
+  expect(await sut.withdrawnModels(two.deviceId, [request.modelKey])).toEqual([]);
   // the hold ends by itself
   await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${one.deviceId}:${request.modelKey},heldUntil}`}::text[],
     to_jsonb(to_char(now() - interval '1 second', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
     WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
   expect(await sut.heldUntil(one.deviceId, [request.modelKey])).toBeUndefined();
+  // after the hold it is still known as withdrawn, until a report grants it again
+  expect(await sut.withdrawnModels(one.deviceId, [request.modelKey])).toEqual([request.modelKey]);
+  await second.clearWithdrawal(one.deviceId, request.modelKey);
+  expect(await sut.withdrawnModels(one.deviceId, [request.modelKey])).toEqual([]);
+  expect(await sut.countFailure(two, request.modelKey)).toBe(3);
 });
 
 it('leases a search task to a desktop on another runtime revision, under the key that desktop holds', async () => {
