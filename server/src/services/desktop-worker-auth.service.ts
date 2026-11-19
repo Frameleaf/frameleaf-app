@@ -11,10 +11,14 @@ import {
   desktopWorkerMessage,
 } from 'src/dtos/desktop-worker.dto.js';
 import { DesktopWorkerGrant, DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { logDesktopRefusals } from 'src/utils/desktop-refusal-log.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
 
 const invalid = () => new UnauthorizedException('desktop_worker_credential_invalid');
+/** Desktop AI processing is off for this account: the same refusal on every endpoint. */
+const policyRequired = () => new ForbiddenException('desktop_pool_policy_required');
 const hash = (value: string) => createHash('sha256').update(value).digest();
 const validSignature = (publicKey: string, message: string, signature: string): boolean => {
   try {
@@ -31,33 +35,43 @@ const validSignature = (publicKey: string, message: string, signature: string): 
 
 @Injectable()
 export class DesktopWorkerAuthService {
+  private logger = LoggingRepository.create(DesktopWorkerAuthService.name);
+
   constructor(
     private repository: DesktopWorkerRepository,
     private systemMetadataRepository: SystemMetadataRepository,
   ) {}
 
-  async issue(auth: AuthDto, input: DesktopSessionRequestDto): Promise<DesktopSessionDto> {
-    if (!auth.session || auth.apiKey || auth.sharedLink || auth.system)
-      throw new ForbiddenException('desktop_worker_photo_session_required');
-    const request = DesktopSessionRequestSchema.parse(input);
-    const device = await this.repository.device(auth.user.id, request.deviceId);
-    const serverId = await stableServerId({ systemMetadataRepository: this.systemMetadataRepository });
-    if (
-      !device ||
-      Math.abs(Date.now() - request.timestamp) > 120_000 ||
-      !validSignature(device.publicKey, desktopSessionMessage(serverId, auth.user.id, request), request.signature)
-    )
-      throw invalid();
-    const token = randomBytes(32).toString('hex');
-    const session = await this.repository.issue({
-      deviceId: device.id,
-      authorizationEpoch: device.authorizationEpoch,
-      photoSessionId: auth.session.id,
-      tokenHash: hash(token),
-      modelKeys: [],
-    });
-    if (!session) throw invalid();
-    return this.response(session, token);
+  issue(auth: AuthDto, input: DesktopSessionRequestDto): Promise<DesktopSessionDto> {
+    return logDesktopRefusals(
+      this.logger,
+      'session',
+      () => `account ${auth.user?.id}, device ${input?.deviceId}`,
+      async () => {
+        if (!auth.session || auth.apiKey || auth.sharedLink || auth.system)
+          throw new ForbiddenException('desktop_worker_photo_session_required');
+        const request = DesktopSessionRequestSchema.parse(input);
+        if (!(await this.repository.allowed(auth.user.id, auth.user.isAdmin))) throw policyRequired();
+        const device = await this.repository.device(auth.user.id, request.deviceId);
+        const serverId = await stableServerId({ systemMetadataRepository: this.systemMetadataRepository });
+        if (
+          !device ||
+          Math.abs(Date.now() - request.timestamp) > 120_000 ||
+          !validSignature(device.publicKey, desktopSessionMessage(serverId, auth.user.id, request), request.signature)
+        )
+          throw invalid();
+        const token = randomBytes(32).toString('hex');
+        const session = await this.repository.issue({
+          deviceId: device.id,
+          authorizationEpoch: device.authorizationEpoch,
+          photoSessionId: auth.session.id,
+          tokenHash: hash(token),
+          modelKeys: [],
+        });
+        if (!session) throw invalid();
+        return this.response(session, token);
+      },
+    );
   }
 
   async authenticate(
@@ -79,7 +93,7 @@ export class DesktopWorkerAuthService {
     }
     if (Math.abs(Date.now() - proof.timestamp) > 120_000) throw invalid();
     const session = await this.repository.session(proof.sessionId, hash(token));
-    if (!session) throw invalid();
+    if (!session) throw (await this.repository.policyOff(proof.sessionId, hash(token))) ? policyRequired() : invalid();
     const serverId = await stableServerId({ systemMetadataRepository: this.systemMetadataRepository });
     if (
       !validSignature(

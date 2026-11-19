@@ -9,7 +9,8 @@ export const DesktopModelInventoryRequestSchema = DesktopQualificationRequestSch
 }).extend({
   // 2: the reply also carries each eligible task's catalogue profiles, so the desktop runs exactly the
   // server's catalogue and keeps no copy of its own (docs/desktop-worker-setup-protocol.md in frameleaf-desktop).
-  protocolVersion: z.literal(2).optional(),
+  // 1, or nothing, asks for the protocol 1 reply.
+  protocolVersion: z.union([z.literal(1), z.literal(2)]).optional(),
 });
 export const desktopInventoryWorkloads = [
   MlWorkload.Clip,

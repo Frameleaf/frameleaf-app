@@ -1,5 +1,7 @@
 import { Kysely } from 'kysely';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import request from 'supertest';
 import z from 'zod';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
@@ -47,7 +49,15 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
     mode: 'client-worker',
     state: 'preparing',
   }))!;
-  const modelKey = 'fixture-' + randomUUID();
+  // A released text encoder and the answer the release recorded for it: results are checked against the model.
+  const profile = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+  ).profiles.find(
+    (item: { workload: string; spec: { fixtureKind: string } }) =>
+      item.workload === 'clip' && item.spec.fixtureKind === 'text',
+  );
+  const modelKey: string = profile.modelKey;
+  const answer: { clip: string } = profile.spec.expectedOutput;
   const token = randomBytes(32).toString('hex');
   const sessions = new DesktopWorkerRepository(db);
   const session = (await sessions.issue({
@@ -107,7 +117,7 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
       authorizationEpoch: device.authorizationEpoch,
       credentialHash: session.tokenHash,
     },
-    { modelKey, config: { clip: { textual: { modelName: 'fixture' } } }, inputKind: 'text' },
+    { modelKey, config: profile.spec.entries, inputKind: 'text' },
   );
   const authority = vi.fn().mockResolvedValue(undefined);
   const dispatched = new DesktopMlService(broker, new DesktopClipIndexRepository(db)).dispatch({
@@ -115,7 +125,7 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
       ownerId: user.id,
       modelKey,
       authorityKey: 'fixture-authority',
-      config: { clip: { textual: { modelName: 'fixture' } } },
+      config: profile.spec.entries,
       input,
       inputKind: 'text',
       deadlineAt: new Date(Date.now() + 120_000),
@@ -141,11 +151,14 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
     const heartbeat = await call('post', '/desktop/worker/heartbeat', 'heartbeat', JSON.stringify({ id }));
     expect(heartbeat.status).toBe(200);
     expect(heartbeat.body).toMatchObject({ accepted: true, expiresAt: expect.any(String) });
-    const payload = JSON.stringify({ result: { clip: 'fixture-result' } });
+    // a result that is not what the model returns is refused when it is submitted, and the lease stays
+    const malformed = await call('post', `/desktop/tasks/${id}/result`, `result:${id}`, '{"result":{"clip":"oops"}}');
+    expect([malformed.status, malformed.body.message]).toEqual([400, 'desktop_result_invalid']);
+    const payload = JSON.stringify({ result: answer });
     expect((await call('post', `/desktop/tasks/${id}/result`, `result:${id}`, payload)).body).toEqual({
       accepted: true,
     });
-    expect(await dispatched).toEqual({ clip: 'fixture-result' });
+    expect(await dispatched).toEqual(answer);
     expect(authority).toHaveBeenCalledTimes(2);
     expect((await call('post', `/desktop/tasks/${id}/result`, `result:${id}`, payload)).body).toEqual({
       accepted: true,
@@ -156,7 +169,7 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
           'post',
           `/desktop/tasks/${id}/result`,
           `result:${id}`,
-          JSON.stringify({ result: { clip: 'changed' } }),
+          JSON.stringify({ result: { clip: answer.clip.replace('[', '[1,').replace(/,[^,]*\]$/, ']') } }),
         )
       ).body,
     ).toEqual({ accepted: false });

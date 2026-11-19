@@ -73,7 +73,6 @@ export class DesktopWorkerChallengeRepository {
         .where((eb) =>
           eb.or([
             eb('expiresAt', '<=', sql<Date>`clock_timestamp()`),
-            eb('credentialHash', '!=', grant.credentialHash),
             eb('sessionId', '!=', grant.sessionId),
             eb('authorizationEpoch', '!=', grant.authorizationEpoch),
           ]),
@@ -215,6 +214,10 @@ export class DesktopWorkerChallengeRepository {
     });
   }
 
+  /**
+   * A challenge belongs to the worker session and its authorization epoch, not to one bearer token: renewing
+   * the session rotates the token and must not strand a challenge the desktop is still answering.
+   */
   private scoped(db: Kysely<ChallengeDatabase>, grant: DesktopWorkerGrant, id: string) {
     return db
       .selectFrom('desktop_worker_challenge')
@@ -223,7 +226,6 @@ export class DesktopWorkerChallengeRepository {
       .where('sessionId', '=', grant.sessionId)
       .where('deviceId', '=', grant.deviceId)
       .where('authorizationEpoch', '=', grant.authorizationEpoch)
-      .where('credentialHash', '=', grant.credentialHash)
       .where('expiresAt', '>', sql<Date>`clock_timestamp()`);
   }
 }

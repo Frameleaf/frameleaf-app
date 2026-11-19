@@ -1,13 +1,28 @@
+import { readFileSync } from 'node:fs';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
+import { assertDesktopResult } from 'src/utils/desktop-result.js';
 
 const grant = { deviceId: 'device', sessionId: 'session', authorizationEpoch: 2, credentialHash: Buffer.alloc(32, 7) };
 const auth = { authenticate: vi.fn(), renew: vi.fn() };
-const broker = { claim: vi.fn(), input: vi.fn(), heartbeatLease: vi.fn(), complete: vi.fn(), fail: vi.fn() };
+const broker = {
+  claim: vi.fn(),
+  input: vi.fn(),
+  heartbeatLease: vi.fn(),
+  complete: vi.fn(),
+  fail: vi.fn(),
+  attemptModelKey: vi.fn(),
+  withdraw: vi.fn(),
+};
+const warn = vi.spyOn(LoggingRepository.prototype, 'warn').mockImplementation(() => {});
+const warnings = () => warn.mock.calls.map(([message]) => message);
 const sessions = { revoke: vi.fn() };
 let service: DesktopWorkerService;
 beforeEach(() => {
   vi.resetAllMocks();
+  warn.mockImplementation(() => {});
   auth.authenticate.mockResolvedValue(grant);
+  broker.attemptModelKey.mockResolvedValue('face:model');
   service = new DesktopWorkerService(auth as never, broker as never, sessions as never, broker as never);
 });
 it('authenticates the exact claim bytes and returns only immutable task/lease metadata', async () => {
@@ -29,6 +44,8 @@ it('authenticates the exact claim bytes and returns only immutable task/lease me
       generation: 3,
       expiresAt: new Date('2026-10-15T20:59:00Z'),
     },
+    qualificationId: 'current-qualification',
+    workerModelKey: 'model-of-this-desktop',
     qualificationExpiresAt: new Date('2026-10-15T20:59:30Z'),
   });
   const payload = '{"modelKeys":["model"],"waitMs":0}';
@@ -43,7 +60,9 @@ it('authenticates the exact claim bytes and returns only immutable task/lease me
     configJson: '{"a":2,"z":1}',
     generation: 3,
     maxInputBytes: 16_777_216,
-    qualificationId: 'qualification',
+    // the desktop's current qualification and the key it holds the model under, not the task's bookkeeping
+    qualificationId: 'current-qualification',
+    modelKey: 'model-of-this-desktop',
     qualificationExpiresAt: '2026-10-15T20:59:30.000Z',
   });
   expect(result.task).not.toHaveProperty('input');
@@ -77,7 +96,7 @@ it('binds input and result proofs to the exact attempt and passes only scoped in
     accepted: true,
   });
   expect(auth.authenticate).toHaveBeenLastCalledWith('token', 'proof', 'result:attempt', '{"result":{"clip":"value"}}');
-  expect(broker.complete).toHaveBeenCalledWith(grant, 'attempt', { clip: 'value' });
+  expect(broker.complete).toHaveBeenCalledWith(grant, 'attempt', { clip: 'value' }, assertDesktopResult);
 });
 it('rejects stale input and malformed/nonfinite/oversized result envelopes', async () => {
   broker.input.mockResolvedValue(undefined);
@@ -115,10 +134,154 @@ it('never invokes the broker when credential authentication fails', async () => 
 });
 
 it('checks durable source and policy authority instead of serving raw broker input', async () => {
-  const authority = { input: vi.fn().mockRejectedValue(new Error('desktop_pool_source_changed')) };
+  const authority = { input: vi.fn().mockRejectedValue(new Error('desktop_pool_queue_changed')) };
   const guarded = new DesktopWorkerService(auth as never, broker as never, sessions as never, authority as never);
   broker.input.mockResolvedValue(Buffer.from('must not disclose'));
-  await expect(guarded.input('token', 'proof', 'attempt')).rejects.toThrow('desktop_pool_source_changed');
+  // the job behind the lease ended while the desktop asked: a lost lease, not a server error
+  await expect(guarded.input('token', 'proof', 'attempt')).rejects.toMatchObject({
+    status: 401,
+    message: 'desktop_lease_invalid',
+  });
   expect(authority.input).toHaveBeenCalledWith(grant, 'attempt');
   expect(broker.input).not.toHaveBeenCalled();
+  expect(warnings()).toContainEqual(
+    'Desktop worker input refused (device device, attempt attempt, face:model): 401 desktop_lease_invalid (desktop_pool_queue_changed)',
+  );
+  authority.input.mockRejectedValue(new Error('Asset inputs changed before publication'));
+  await expect(guarded.input('token', 'proof', 'attempt')).rejects.toMatchObject({ status: 401 });
+  // anything that is not a lost lease stays a server error
+  authority.input.mockRejectedValue(new Error('connection terminated'));
+  await expect(guarded.input('token', 'proof', 'attempt')).rejects.toThrow('connection terminated');
+});
+
+describe('refusals (docs/desktop-worker-setup-protocol.md)', () => {
+  it('logs a stale lease on input, heartbeat, result and fail with the device and model key', async () => {
+    broker.input.mockResolvedValue(undefined);
+    broker.heartbeatLease.mockResolvedValue(undefined);
+    broker.complete.mockResolvedValue(false);
+    broker.fail.mockResolvedValue(false);
+    await expect(service.input('token', 'proof', 'attempt')).rejects.toMatchObject({ status: 401 });
+    const id = '445bc2b6-f4cd-439e-b8bb-7e84d7ee0550';
+    expect(await service.heartbeat('token', 'proof', `{"id":"${id}"}`)).toEqual({ accepted: false, expiresAt: null });
+    expect(await service.complete('token', 'proof', 'attempt', '{"result":{}}')).toEqual({ accepted: false });
+    expect(await service.fail('token', 'proof', 'attempt', '{"code":"cancelled"}')).toEqual({ accepted: false });
+    expect(warnings()).toEqual([
+      'Desktop worker input refused (device device, attempt attempt, face:model): 401 desktop_lease_invalid',
+      `Desktop worker heartbeat refused (device device, attempt ${id}, face:model): 200 accepted:false`,
+      'Desktop worker result refused (device device, attempt attempt, face:model): 200 accepted:false',
+      'Desktop worker reported a failed task (device device, attempt attempt, face:model): cancelled, 200 accepted:false',
+    ]);
+  });
+
+  it('logs a refused credential and a malformed payload on every endpoint', async () => {
+    const { UnauthorizedException } = await import('@nestjs/common');
+    await expect(service.fail('token', 'proof', 'attempt', '{"code":"run-shell"}')).rejects.toMatchObject({
+      status: 400,
+      message: 'desktop_worker_payload_invalid',
+    });
+    auth.authenticate.mockRejectedValue(new UnauthorizedException('desktop_worker_credential_invalid'));
+    const signal = new AbortController().signal;
+    await expect(service.claim('token', 'proof', '{"modelKeys":["m"],"waitMs":0}', signal)).rejects.toThrow();
+    await expect(service.revoke('token', 'proof')).rejects.toThrow();
+    expect(warnings()).toEqual([
+      'Desktop worker fail refused (device device): 400 desktop_worker_payload_invalid',
+      'Desktop worker claim refused (unauthenticated): 401 desktop_worker_credential_invalid',
+      'Desktop worker session revoke refused (unauthenticated): 401 desktop_worker_credential_invalid',
+    ]);
+  });
+
+  it('refuses an oversized or malformed result when it is submitted, with a named 400', async () => {
+    broker.complete.mockRejectedValue(new Error('desktop_result_too_large'));
+    await expect(service.complete('token', 'proof', 'attempt', '{"result":{}}')).rejects.toMatchObject({
+      status: 400,
+      message: 'desktop_result_too_large',
+    });
+    // the broker runs the check on the task it has locked; a wrong shape never reaches the staged result
+    broker.complete.mockImplementation((_grant, _id, result, validate) => {
+      validate({ modelKey: 'face:model', inputKind: 'image' }, result);
+      return Promise.resolve(true);
+    });
+    await expect(service.complete('token', 'proof', 'attempt', '{"result":{"faces":"none"}}')).rejects.toMatchObject({
+      status: 400,
+      message: 'desktop_result_invalid',
+    });
+    expect(warnings()).toEqual([
+      'Desktop worker result refused (device device, attempt attempt, face:model): 400 desktop_result_too_large',
+      'Desktop worker result refused (device device, attempt attempt, face:model): 400 desktop_result_invalid',
+    ]);
+  });
+
+  it('checks a result against what its model returns', () => {
+    const catalogue = JSON.parse(
+      readFileSync(new URL('../../resources/desktop/model-catalogue.json', import.meta.url), 'utf8'),
+    );
+    for (const workload of ['clip', 'face', 'ocr']) {
+      const profile = catalogue.profiles.find(
+        (item: { workload: string; spec: { fixtureKind: string } }) =>
+          item.workload === workload && item.spec.fixtureKind === 'image',
+      );
+      expect(() => assertDesktopResult(profile, profile.spec.expectedOutput)).not.toThrow();
+      expect(() => assertDesktopResult(profile, {})).toThrow('desktop_result_invalid');
+      expect(() => assertDesktopResult(profile, { ...profile.spec.expectedOutput, extra: 1 })).toThrow(
+        'desktop_result_invalid',
+      );
+    }
+    expect(() => assertDesktopResult({ modelKey: `clip:${'0'.repeat(64)}` }, { clip: '[]' })).toThrow(
+      'desktop_result_invalid',
+    );
+  });
+});
+
+describe('a desktop that keeps failing a model', () => {
+  const fail = (code: string) => service.fail('token', 'proof', 'attempt', `{"code":"${code}"}`);
+  beforeEach(() => {
+    broker.fail.mockResolvedValue(true);
+    broker.complete.mockResolvedValue(true);
+    broker.withdraw.mockResolvedValue(true);
+  });
+
+  it('logs the code it gave, with the device and model key, and passes it to the broker', async () => {
+    expect(await fail('input-invalid')).toEqual({ accepted: true });
+    expect(broker.fail).toHaveBeenCalledWith(grant, 'attempt', 'input-invalid');
+    expect(warnings()).toEqual([
+      'Desktop worker reported a failed task (device device, attempt attempt, face:model): input-invalid',
+    ]);
+  });
+
+  it('loses the model after three inference failures in a row, and must qualify again', async () => {
+    await fail('inference-failed');
+    await fail('inference-failed');
+    expect(broker.withdraw).not.toHaveBeenCalled();
+    await fail('inference-failed');
+    expect(broker.withdraw).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
+    expect(warnings().at(-1)).toBe(
+      'Desktop worker lost face:model after 3 failures in a row (device device): it must qualify again',
+    );
+    // the count starts again once it has qualified again
+    await fail('inference-failed');
+    expect(broker.withdraw).toHaveBeenCalledOnce();
+  });
+
+  it('does not count a paused desktop, an unreadable photo, another model or a stale lease', async () => {
+    await fail('inference-failed');
+    await fail('inference-failed');
+    await fail('cancelled');
+    await fail('input-invalid');
+    broker.attemptModelKey.mockResolvedValueOnce('ocr:model');
+    await fail('inference-failed');
+    broker.fail.mockResolvedValueOnce(false);
+    await fail('inference-failed');
+    expect(broker.withdraw).not.toHaveBeenCalled();
+  });
+
+  it('starts counting again after a result it got right', async () => {
+    await fail('inference-failed');
+    await fail('model-unavailable');
+    await service.complete('token', 'proof', 'attempt', '{"result":{}}');
+    await fail('inference-failed');
+    await fail('inference-failed');
+    expect(broker.withdraw).not.toHaveBeenCalled();
+    await fail('inference-failed');
+    expect(broker.withdraw).toHaveBeenCalledOnce();
+  });
 });

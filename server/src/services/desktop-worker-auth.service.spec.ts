@@ -8,7 +8,15 @@ const publicKey = keys.publicKey.export({ type: 'spki', format: 'der' }).subarra
 const deviceId = '445bc2b6-f4cd-439e-b8bb-7e84d7ee0550';
 const sessionId = '1117c1ca-0495-46e9-b579-f321520c2b1a';
 const auth = { user: { id: 'account', isAdmin: true }, session: { id: 'photo-session' } } as never;
-const repository = { device: vi.fn(), issue: vi.fn(), session: vi.fn(), consume: vi.fn(), rotate: vi.fn() };
+const repository = {
+  device: vi.fn(),
+  issue: vi.fn(),
+  session: vi.fn(),
+  consume: vi.fn(),
+  rotate: vi.fn(),
+  allowed: vi.fn(),
+  policyOff: vi.fn(),
+};
 const metadata = { get: vi.fn().mockResolvedValue({ id: 'server' }) };
 let service: DesktopWorkerAuthService;
 const token = 'a'.repeat(64);
@@ -33,6 +41,8 @@ const proof = (operation = 'claim', payload = '{}') => {
 beforeEach(() => {
   vi.clearAllMocks();
   repository.device.mockResolvedValue({ id: deviceId, publicKey, authorizationEpoch: 7 });
+  repository.allowed.mockResolvedValue(true);
+  repository.policyOff.mockResolvedValue(false);
   repository.issue.mockImplementation(() =>
     Promise.resolve({
       id: sessionId,
@@ -105,6 +115,29 @@ it('never authenticates a photo session as a worker session and does not consume
   await expect(service.authenticate('Bearer photo-token', proof(), 'claim', '{}')).rejects.toThrow();
   await expect(service.authenticate('Bearer ' + token, proof('input:other'), 'claim', '{}')).rejects.toThrow();
   expect(repository.consume).not.toHaveBeenCalled();
+});
+
+it('answers 403 desktop_pool_policy_required wherever Desktop AI processing is off for the account', async () => {
+  repository.allowed.mockResolvedValue(false);
+  await expect(service.issue(auth, initial())).rejects.toMatchObject({
+    status: 403,
+    message: 'desktop_pool_policy_required',
+  });
+  expect(repository.device).not.toHaveBeenCalled();
+  expect(repository.issue).not.toHaveBeenCalled();
+  // a worker credential of an account whose approval was turned off afterwards
+  repository.session.mockResolvedValue(undefined);
+  repository.policyOff.mockResolvedValue(true);
+  await expect(service.authenticate('Bearer ' + token, proof(), 'claim', '{}')).rejects.toMatchObject({
+    status: 403,
+    message: 'desktop_pool_policy_required',
+  });
+  // any other credential that does not authenticate is still an invalid credential
+  repository.policyOff.mockResolvedValue(false);
+  await expect(service.authenticate('Bearer ' + token, proof(), 'claim', '{}')).rejects.toMatchObject({
+    status: 401,
+    message: 'desktop_worker_credential_invalid',
+  });
 });
 
 it('matches the native UTF-8 request-signing protocol fixture', () => {
