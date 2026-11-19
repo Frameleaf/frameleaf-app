@@ -290,6 +290,26 @@
       entries = null;
       step = 'restore';
     });
+  // After a whole-server restore brought back the old Manager's settings copy: its backup settings, to use here.
+  let restored = $state<{ settings: Settings; folders: { path: string; reachable: boolean }[]; autoUpdate: boolean | null } | null>(null);
+  let restoredFor = '';
+  $effect(() => {
+    const at = `${data.state}:${data.runs[0]?.id ?? ''}:${data.runs[0]?.state ?? ''}`;
+    if (data.state === 'on' || running || restoredFor === at) return;
+    restoredFor = at;
+    untrack(() => void api('server-backup-restored-settings', {}).then((answer) => (restored = answer.restored)).catch(() => undefined));
+  });
+  let skipped = $state<string[]>([]);
+  const useRestored = () =>
+    run(async () => {
+      const answer = await api('server-backup-apply-restored', {});
+      skipped = answer.skipped;
+      restored = null;
+      edited = false;
+      step = '';
+      change(answer);
+      go('overview');
+    });
   let oldKey = $state('');
   const adoptKey = () =>
     run(async () => {
@@ -472,8 +492,21 @@
   {/if}
 {/snippet}
 
+{#snippet restoredOffer()}
+  {#if restored}
+    <section class="card mb16">
+      <div class="card-header"><h2>Back up this server the way the old one was</h2></div>
+      <div class="card-body stack">
+        <p class="muted">The old server’s Manager settings came back with the restore. Use its Server Backup settings here: {restored.folders.filter((folder) => folder.reachable).length} of {restored.folders.length} folders, every day at {restored.settings.schedule.time}, and the same keeping. Backups then start again.</p>
+        {#if restored.folders.some((folder) => !folder.reachable)}<div class="notice warning"><Icon name="warning" /><div><strong>Not on this server yet</strong><p>{restored.folders.filter((folder) => !folder.reachable).map((folder) => folder.path).join(', ')}. Share these with Manager and add them in Folders.</p></div></div>{/if}
+        <div class="actions"><button class="button primary" disabled={busy || !restored.folders.some((folder) => folder.reachable)} onclick={useRestored}>Use them and turn backups on</button></div>
+      </div>
+    </section>
+  {/if}
+{/snippet}
 {#if data.state !== 'on' && step === ''}
   {@render heading('Server Backup', 'Keep a private, encrypted copy of this server’s other folders.')}
+  {@render restoredOffer()}
   <section class="card">
     <div class="card-body sb-intro">
       <span class="sb-mark"><Icon name="shield" /></span>
@@ -564,6 +597,7 @@
     </section>
   {:else if step === 'restore'}
     {@render restoringNow()}
+    {@render restoredOffer()}
     {#if kept && !byFile}
       <section class="card">
         <div class="list-row sb-first sb-pick-row"><Icon name="clock" /><div class="grow"><strong>As it was on</strong><p>The newest backup is chosen. Earlier dates keep earlier versions of every file.</p></div><select class="sb-pick" aria-label="Backup date" bind:value={snapshot}>{#each data.snapshots as item}<option value={item.key}>{when(item.time)}</option>{/each}</select></div>
@@ -711,6 +745,7 @@
   </section>
 {:else}
   {@render heading('Server Backup', 'A private, encrypted copy of this server’s other folders.')}
+  {#if skipped.length}<div class="notice warning mb16"><Icon name="warning" /><div class="grow"><strong>Some of the old server’s folders aren’t here</strong><p>{skipped.join(', ')}. Share them with Manager, then add them in Folders.</p></div><button class="button quiet" onclick={() => ((skipped = []), go('folders'))}>Open Folders</button></div>{/if}
   {#if !data.key.saved}<div class="notice warning mb16"><Icon name="warning" /><div class="grow"><strong>Save your recovery key</strong><p>Without it nobody can open your backups if this server is lost.</p></div><button class="button" onclick={() => go('key')}>Save it now</button></div>{/if}
   <section class="card sb-status" data-tone={running ? 'running' : failed ? 'warning' : 'good'} aria-labelledby="sb-status-title">
     <div class="sb-status-body">

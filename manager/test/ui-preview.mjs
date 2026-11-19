@@ -155,6 +155,8 @@ const api = (path, page, body) => {
   if (path === 'server-backup-first-key' || path === 'server-backup-key') return { code: 'FLRK-FGF9-M85J-PDHY-1RJF-9KZF-WRT8-7HYR-KYX2-9FMC-GBMA-A3Q1-P8C8-X0' };
   if (path === 'server-backup-cloud-usage') return { bytesCurrent: 412 * GB, accountBytesCurrent: 450 * GB, allowanceBytes: TB, readOnly: false, readOnlyReason: null };
   if (path === 'server-backup-key-copy') return { ...sample, cloud: { ...clouds.ready, keyCopyAt: body.passphrase ? Date.now() : null } };
+  if (path === 'server-backup-restored-settings') return { restored: page.get('restored') === '1' ? { settings, folders: settings.folders.map((path, index) => ({ path, reachable: index < 2 })), autoUpdate: true } : null };
+  if (path === 'server-backup-apply-restored') return { ...on, skipped: ['/mnt/user/shares/family'] };
   if (path === 'server-backup-cloud-purge') return { purge: page.get('purge') === 'held' ? { status: 'held', requestedBy: 'instance', holdUntil: new Date(Date.now() + 30 * 86_400_000).toISOString(), purgeBy: new Date(Date.now() + 90 * 86_400_000).toISOString(), cancellable: true } : null };
   if (path === 'server-backup-delete') return { ...sample, state: 'off', purge: { status: 'held', requestedBy: 'instance', holdUntil: new Date(Date.now() + 30 * 86_400_000).toISOString(), purgeBy: new Date(Date.now() + 90 * 86_400_000).toISOString(), cancellable: true } };
   if (path === 'server-backup-keep') return { ...sample, purge: null };
