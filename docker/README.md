@@ -37,7 +37,7 @@ docker compose exec database pg_isready
 
 After verifying a database and media backup, run `docker compose down` **with your current Compose file**, before replacing it. Do not add `--volumes` or `-v`. This removes the old service container while retaining persistent volumes and host folders. Keep your `.env`, project name and storage paths, replace the Compose file with the matching release file, and update any custom overrides, proxy targets or scripts to use `frameleaf-server`. Validate with `docker compose config`, then run `docker compose up -d` and check the server logs. Follow the release upgrade requirements as well; a service-name change does not make an older database compatible.
 
-Back up the database and originals before changing releases. Frameleaf uses PostgreSQL 19 RC 1 with pgvector 0.8.7 and HNSW. Release bundles pin the owned database image by digest. These installation files create a fresh canonical database. Mount its parent directory at `/var/lib/postgresql` and retain the versioned PostgreSQL directory within it. An offline read-only Immich 2.0 or later export is supported separately as a one-time import; old database directories must not be attached as the Frameleaf database. An installation on PostgreSQL 19 beta 4 moves to RC 1 by dump and restore (Manager does this during the update); for a plain Compose stack follow [Moving to a new PostgreSQL build](../docs/docs/administration/postgres-standalone.md#moving-to-a-new-postgresql-build).
+Back up the database and originals before changing releases. Frameleaf uses PostgreSQL 19.0 with pgvector 0.8.7 and HNSW. Release bundles pin the owned database image by digest. These installation files create a fresh canonical database. Mount its parent directory at `/var/lib/postgresql` and retain the versioned PostgreSQL directory within it. An offline read-only Immich 2.0 or later export is supported separately as a one-time import; old database directories must not be attached as the Frameleaf database. An installation on PostgreSQL 19 beta 4 moves to RC 1 by dump and restore (Manager does this during the update); for a plain Compose stack follow [Moving to a new PostgreSQL build](../docs/docs/administration/postgres-standalone.md#moving-to-a-new-postgresql-build).
 
 Cloud processing is Frameleaf Cloud, added and consented to by an administrator in the app; no image setting or Compose change enables it.
 
@@ -85,10 +85,10 @@ For a release installation, copy `prometheus.yml` and `grafana/frameleaf-dashboa
 services:
   frameleaf-server:
     environment:
-      FRAMELEAF_METRICS_ENABLED: 'true'
+      FRAMELEAF_METRICS_ENABLED: "true"
   frameleaf-machine-learning:
     environment:
-      FRAMELEAF_ML_METRICS_ENABLED: 'true'
+      FRAMELEAF_ML_METRICS_ENABLED: "true"
   prometheus:
     image: prom/prometheus:latest
     volumes:
@@ -97,7 +97,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - '127.0.0.1:3001:3000'
+      - "127.0.0.1:3001:3000"
     volumes:
       - grafana-data:/var/lib/grafana
 
@@ -124,11 +124,11 @@ For credential-bearing scrapes, use a dedicated private TLS listener for each wo
 
 Change each protected job in `prometheus.yml` to `scheme: https` and replace its target port with the one configured on its TLS proxy. For example, if the proxies bind the following ports and use the Compose service names in their certificates, set these targets.
 
-| Job | HTTPS target | Loopback upstream |
-| --- | --- | --- |
-| `frameleaf_api` | `frameleaf-server:8443` | `127.0.0.1:8081` |
-| `frameleaf_microservices` | `frameleaf-server:8444` | `127.0.0.1:8082` |
-| `frameleaf_ml` | `frameleaf-machine-learning:3443` | `127.0.0.1:3003` |
+| Job                       | HTTPS target                      | Loopback upstream |
+| ------------------------- | --------------------------------- | ----------------- |
+| `frameleaf_api`           | `frameleaf-server:8443`           | `127.0.0.1:8081`  |
+| `frameleaf_microservices` | `frameleaf-server:8444`           | `127.0.0.1:8082`  |
+| `frameleaf_ml`            | `frameleaf-machine-learning:3443` | `127.0.0.1:3003`  |
 
 If the proxies use a private certificate authority, mount its CA certificate in Prometheus and set `tls_config.ca_file` on the protected jobs.
 
