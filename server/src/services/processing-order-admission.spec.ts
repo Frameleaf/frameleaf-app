@@ -199,6 +199,8 @@ describe('admission follows the processing order (FL-456)', () => {
       const none = () =>
         mocks.machineLearning.selectBackgroundPool.mockImplementation((selection) => Promise.resolve(selection));
       beforeEach(() => mocks.job.pinnedDestination.mockResolvedValue(local.id));
+      /** The destinations whose own AI was asked whether it can take the job. */
+      const probed = () => mocks.machineLearning.probe.mock.calls.map(([endpoint]) => endpoint.url);
 
       it('waits when desktops are the only place in the order and none is ready', async () => {
         none();
@@ -229,6 +231,33 @@ describe('admission follows the processing order (FL-456)', () => {
         expect(selection.destinationId).toBe(local.id);
         expect(selection.desktopOcr).toBeUndefined();
         expect(mocks.machineLearning.probe).toHaveBeenCalled();
+      });
+
+      it('moves on to the next place in the order when no desktop is ready, instead of waiting for one', async () => {
+        none();
+        order(helpers, candidate(study.id, MlProcessingSource.Desktops));
+        const selection = await run(() => sut.select({ workload: MlWorkload.Ocr, jobId: 'asset' }));
+        expect(selection.destinationId).toBe(study.id);
+        expect(selection.desktopOcr).toBeUndefined();
+        expect(context.dependencyReason).toBeUndefined();
+        // the desktops were asked first, and the destination they stand in for was never asked itself
+        expect(mocks.machineLearning.selectBackgroundPool).toHaveBeenCalledWith(expect.anything(), 'asset', true);
+        expect(probed()).not.toContain(local.url);
+      });
+
+      it('follows the order when the place it ran on has left it', async () => {
+        none();
+        // this server is no longer in the order at all: neither its AI nor its desktops are asked
+        mocks.mlDestination.resolveRoute.mockResolvedValue([candidate(study.id, MlProcessingSource.Desktops)]);
+        const selection = await run(() => sut.select({ workload: MlWorkload.Ocr }));
+        expect(selection.destinationId).toBe(study.id);
+        expect(mocks.machineLearning.selectBackgroundPool).not.toHaveBeenCalled();
+        expect(probed()).not.toContain(local.url);
+        // and with nothing in the order, it is refused like a first run, not sent back where it was
+        mocks.mlDestination.resolveRoute.mockResolvedValue([]);
+        mocks.mlDestination.getRoute.mockResolvedValue(undefined);
+        const error = await run(() => sut.select({ workload: MlWorkload.Ocr })).catch((error: unknown) => error);
+        expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.WorkloadNotRouted);
       });
 
       it('leaves the desktops alone when the order no longer sends work to them', async () => {

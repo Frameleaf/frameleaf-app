@@ -606,27 +606,25 @@ export class BaseService {
     const homeOnly = await this.isHomeOnly(routed);
     const request = { ...routed, homeOnly };
     const pinned = await this.jobRepository.pinnedDestination(request.workload);
-    const candidates = ((await this.mlDestinationRepository.resolveRoute(request.workload)) ?? []).filter(
+    if (pinned && (await this.isCloudDestinationId(pinned)) && !homeOnly) {
+      // Work already sent to Frameleaf Cloud goes back to the same place: its job there is the one to resume.
+      return this.selectMlDestination({ ...request, destinationId: pinned });
+    }
+    const ordered = ((await this.mlDestinationRepository.resolveRoute(request.workload)) ?? []).filter(
       (candidate) => !homeOnly || candidate.source !== MlProcessingSource.Cloud,
     );
-    if (pinned && !(homeOnly && (await this.isCloudDestinationId(pinned)))) {
-      // A retry keeps the destination it was first admitted to, and stays inside the order as it is now: its
-      // desktops take it only while the order sends work to them, and the destination's own AI only while
-      // the order names that destination itself. With desktops alone in the order and none ready, it waits.
-      const here = candidates.filter((candidate) => candidate.destinationId === pinned);
-      const desktops = here.some((candidate) => candidate.desktopPool);
-      const itself = here.some((candidate) => !candidate.desktopPool);
-      const desktopPool = desktops === itself ? undefined : desktops ? ('only' as const) : ('skip' as const);
-      try {
-        return await this.selectMlDestination({
-          ...request,
-          destinationId: pinned,
-          ...(desktopPool && { desktopPool }),
-        });
-      } catch (error) {
-        throw desktopPool === 'only' ? await this.computerAway(error, MlProcessingSource.Desktops) : error;
-      }
-    }
+    // A retry walks the order as it is now, like a first run, starting with the place it ran on before (that
+    // destination itself and the desktops standing in for it, whichever of them the order still names). A
+    // place that has left the order is not asked again. With nothing else in the order, the job waits.
+    const candidates = pinned
+      ? [
+          ...ordered.filter((candidate) => candidate.destinationId === pinned),
+          ...ordered.filter((candidate) => candidate.destinationId !== pinned),
+        ]
+      : ordered;
+    // A job that already has a place recorded is admitted where the order says, not back at that record.
+    const admit = (admission: MlSelectionRequest) =>
+      pinned ? this.admitMlDestination(admission) : this.selectMlDestination(admission);
     const available = candidates.filter((candidate) => candidate.available);
     if (available.length === 0) {
       const destinationId =
@@ -639,7 +637,7 @@ export class BaseService {
       const [first] = candidates;
       const desktopPool = first ? (first.desktopPool ? ('only' as const) : ('skip' as const)) : undefined;
       try {
-        return await this.selectMlDestination({ ...request, destinationId, ...(desktopPool && { desktopPool }) });
+        return await admit({ ...request, destinationId, ...(desktopPool && { desktopPool }) });
       } catch (error) {
         throw await this.computerAway(error, candidates[0]?.source);
       }
