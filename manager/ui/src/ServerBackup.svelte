@@ -15,6 +15,7 @@
     schedule: { time: string; stop: string | null };
     limitMbps: number | null;
     retention: { keepLast: number; keepDays: number; keepMonthly: number };
+    timeZone?: string;
   };
   type Entry = { name: string; type: 'folder' | 'file'; bytes: number; modified: number };
 
@@ -33,6 +34,8 @@
   }>();
 
   const clone = (settings: Settings): Settings => JSON.parse(JSON.stringify(settings));
+  /** The schedule's times are this browser's wall clock: Manager runs it in this time zone, not the NAS container's. */
+  const zoned = (settings: Settings) => ({ ...settings, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
   // What is being edited. It follows the server until the owner changes something here.
   let draft = $state<Settings>(untrack(() => clone(data.settings)));
   let edited = $state(false);
@@ -88,7 +91,7 @@
   const act = (route: string, body: unknown = {}) => run(async () => change(await api(route, body)));
   const saveSettings = () =>
     run(async () => {
-      change(await api('server-backup-settings', draft));
+      change(await api('server-backup-settings', zoned(draft)));
       edited = false;
     });
   function edit(apply: (settings: Settings) => void, save = data.state === 'on') {
@@ -321,7 +324,7 @@
     });
   const finishSetup = () =>
     run(async () => {
-      await api('server-backup-turn-on', draft);
+      await api('server-backup-turn-on', zoned(draft));
       await api('server-backup-key-saved', {});
       change(await api('server-backup-run', {}));
       edited = false;
