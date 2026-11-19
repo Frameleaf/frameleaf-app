@@ -1,9 +1,8 @@
 name: Frameleaf Cloud integration tests
 'on':
+  # FL-1683: Forgejo rejects `secrets:` under workflow_call; the caller still maps only
+  # PACKAGES_READ_TOKEN.
   workflow_call:
-    secrets:
-      PACKAGES_READ_TOKEN:
-        required: false
 permissions: {}
 concurrency:
   group: cloud-consumers-${{ github.sha }}

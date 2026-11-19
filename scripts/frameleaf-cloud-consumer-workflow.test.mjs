@@ -26,9 +26,8 @@ test("package credentials never reach repository checkout or consumer execution"
     retrieval.if,
     /github\.repository == 'Frameleaf\/frameleaf-app'/,
   );
-  assert.deepEqual(workflow.on.workflow_call, {
-    secrets: { PACKAGES_READ_TOKEN: { required: false } },
-  });
+  // Forgejo rejects `secrets:` under workflow_call (FL-1683).
+  assert.equal(workflow.on.workflow_call, null);
   assert.doesNotMatch(retrieval.if, /inputs\.|workflow_dispatch|github\.ref/);
   assert.ok(
     retrieval.steps.every((step) => !step.uses?.startsWith("actions/checkout")),
