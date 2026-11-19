@@ -606,12 +606,27 @@ export class BaseService {
     const homeOnly = await this.isHomeOnly(routed);
     const request = { ...routed, homeOnly };
     const pinned = await this.jobRepository.pinnedDestination(request.workload);
-    if (pinned && !(homeOnly && (await this.isCloudDestinationId(pinned)))) {
-      return this.selectMlDestination({ ...request, destinationId: pinned });
-    }
     const candidates = ((await this.mlDestinationRepository.resolveRoute(request.workload)) ?? []).filter(
       (candidate) => !homeOnly || candidate.source !== MlProcessingSource.Cloud,
     );
+    if (pinned && !(homeOnly && (await this.isCloudDestinationId(pinned)))) {
+      // A retry keeps the destination it was first admitted to, and stays inside the order as it is now: its
+      // desktops take it only while the order sends work to them, and the destination's own AI only while
+      // the order names that destination itself. With desktops alone in the order and none ready, it waits.
+      const here = candidates.filter((candidate) => candidate.destinationId === pinned);
+      const desktops = here.some((candidate) => candidate.desktopPool);
+      const itself = here.some((candidate) => !candidate.desktopPool);
+      const desktopPool = desktops === itself ? undefined : desktops ? ('only' as const) : ('skip' as const);
+      try {
+        return await this.selectMlDestination({
+          ...request,
+          destinationId: pinned,
+          ...(desktopPool && { desktopPool }),
+        });
+      } catch (error) {
+        throw desktopPool === 'only' ? await this.computerAway(error, MlProcessingSource.Desktops) : error;
+      }
+    }
     const available = candidates.filter((candidate) => candidate.available);
     if (available.length === 0) {
       const destinationId =
@@ -619,8 +634,12 @@ export class BaseService {
         (homeOnly
           ? await homeMlDestinationId(this.mlDestinationRepository, request.workload)
           : await routedMlDestinationId(this.mlDestinationRepository, request.workload));
+      // The job waits on the first place in its order, and only there: when that place is the desktops, the
+      // destination they stand in for is not asked to do the work itself.
+      const [first] = candidates;
+      const desktopPool = first ? (first.desktopPool ? ('only' as const) : ('skip' as const)) : undefined;
       try {
-        return await this.selectMlDestination({ ...request, destinationId });
+        return await this.selectMlDestination({ ...request, destinationId, ...(desktopPool && { desktopPool }) });
       } catch (error) {
         throw await this.computerAway(error, candidates[0]?.source);
       }
