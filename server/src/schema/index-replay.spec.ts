@@ -1,5 +1,5 @@
 import { schemaDiff } from '@frameleaf/sql-tools';
-import { getFrameleafBaselineSchema } from 'src/schema/frameleaf-schema.js';
+import { getFrameleafBaselineSchema, getFrameleafSchema } from 'src/schema/frameleaf-schema.js';
 
 const wholeArray =
   "(ARRAY['completed'::character varying, 'cancelled'::character varying, 'failed'::character varying])::text[]";
@@ -58,4 +58,26 @@ it('retains a real drift inside a lowercase escape string after an escaped quote
   original.definition = String.raw`CREATE INDEX example ON example ((value = e'prefix\' (ARRAY[''::character varying])::text[]'))`;
   index.definition = String.raw`CREATE INDEX example ON example ((value = e'prefix\' ARRAY[(''::character varying)::text]'))`;
   expect(schemaDiff(source, target).asSql()).toHaveLength(2);
+});
+
+// The baseline was frozen on PostgreSQL 19 RC 1; the desired catalog is a 19.0 capture.
+it('recognizes the PostgreSQL 19.0 parentheses around zoned date_trunc index expressions', () => {
+  const names = ['asset_localDateTime_month_idx', 'asset_owner_taken_page_idx', 'asset_owner_added_page_idx'];
+  const pick = (schema: ReturnType<typeof getFrameleafSchema>) => {
+    const asset = structuredClone(schema.tables.find(({ name }) => name === 'asset')!);
+    asset.indexes = asset.indexes.filter(({ name }) => names.includes(name));
+    return { ...schema, tables: [asset] };
+  };
+  const rc = pick(getFrameleafBaselineSchema());
+  const release = pick(getFrameleafSchema());
+  const definitions = (schema: typeof rc) => schema.tables[0].indexes.map(({ definition }) => definition);
+  expect(definitions(rc)).toHaveLength(3);
+  expect(definitions(rc)).not.toEqual(expect.arrayContaining(definitions(release)));
+  const indexSql = (changes: string[]) => changes.filter((statement) => names.some((name) => statement.includes(name)));
+  expect(indexSql(schemaDiff(rc, release).asSql())).toEqual([]);
+  expect(indexSql(schemaDiff(release, rc).asSql())).toEqual([]);
+
+  const [index] = release.tables[0].indexes;
+  index.definition = index.definition!.replace("'MONTH'", () => "'DAY'");
+  expect(indexSql(schemaDiff(rc, release).asSql())).toHaveLength(2);
 });
