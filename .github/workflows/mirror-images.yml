@@ -3,6 +3,8 @@ name: Mirror images to Docker Hub and Forgejo
 # FL-1678: Docker Hub is the public pull location and Forgejo the internal copy; GHCR keeps every
 # image until Manager installs move off it. Copies keep their digests and are signed with the key
 # in cosign.pub. Runs only on Forgejo, on the runner that reaches its registry over the LAN.
+# FL-1683: no `secrets:` block, because Forgejo rejects it under workflow_call; callers map the
+# six secrets explicitly.
 on:
   workflow_call:
     inputs:
@@ -14,19 +16,6 @@ on:
         description: Also mirror every server and ML variant at the Latest release's tag, release and latest
         type: boolean
         default: false
-    secrets:
-      GH_PUBLISH_TOKEN:
-        required: true
-      DOCKERHUB_USERNAME:
-        required: true
-      DOCKERHUB_TOKEN:
-        required: true
-      REGISTRY_PUBLISH_TOKEN:
-        required: true
-      COSIGN_PRIVATE_KEY:
-        required: true
-      COSIGN_PASSWORD:
-        required: true
 
 permissions: {}
 
