@@ -1025,7 +1025,9 @@ export const selectMlDestination = async (
     [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(request.workload) &&
     [MlDestinationKind.Local, MlDestinationKind.Lan].includes(destination.kind);
   if (poolEligible && request.desktopPool !== 'skip') {
-    // Desktop capacity is admitted by its own qualification; NAS backend health is irrelevant to it.
+    // Desktop capacity is admitted by its own qualification; NAS backend health is irrelevant to it. A desktop
+    // must be ready to take the job now, on a first run and on a retry alike: otherwise the destination itself
+    // is asked, so a job never waits on a computer that is switched off.
     const pool = await selectBackgroundPool!(
       {
         destinationId: destination.id,
@@ -1035,7 +1037,7 @@ export const selectMlDestination = async (
         cloudModelId: null,
         record,
       },
-      { requireReady: request.desktopPool === 'only' },
+      { requireReady: true },
     );
     if (pool.desktopClip || pool.desktopOcr || pool.desktopFace) {
       await assertAuthority();

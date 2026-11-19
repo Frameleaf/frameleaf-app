@@ -29,7 +29,14 @@ const selection: MlSelection = {
   record: vi.fn(),
 };
 const ownerId = '8da8d162-c2c3-4d1d-b6e1-9148b0bfd327';
-const repository = { create: vi.fn(), result: vi.fn(), cancel: vi.fn(), discard: vi.fn(), assertAdoption: vi.fn() };
+const repository = {
+  create: vi.fn(),
+  result: vi.fn(),
+  cancel: vi.fn(),
+  discard: vi.fn(),
+  assertAdoption: vi.fn(),
+  hasReadyWorker: vi.fn(),
+};
 const index = { assertCurrent: vi.fn(), selectProfile: vi.fn() };
 const authority = vi.fn();
 let service: DesktopMlService;
@@ -169,6 +176,7 @@ it.each(['index', 'policy', 'worker', 'result', 'legacy'])(
 it('captures bounded image input and returns a validated vector with its producer identity', async () => {
   const visual = catalogue.profiles.find((p: { modelKey: string }) => p.modelKey === space.visualModelKey);
   index.selectProfile.mockResolvedValue({ binding, profile: visual });
+  repository.hasReadyWorker.mockResolvedValue(true);
   repository.result.mockImplementation(() => {
     const request = repository.create.mock.calls[0][0];
     return Promise.resolve({
@@ -263,6 +271,7 @@ it('executes the existing NAS SmartSearch handler through the selected desktop p
   } as never);
   mocks.machineLearning.encodeImage.mockImplementation(ml.encodeImage.bind(ml));
   index.selectProfile.mockResolvedValue({ binding, profile: visual });
+  repository.hasReadyWorker.mockResolvedValue(true);
   repository.result.mockImplementation(() => {
     const request = repository.create.mock.calls[0][0];
     return Promise.resolve({

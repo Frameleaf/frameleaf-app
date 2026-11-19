@@ -169,10 +169,8 @@ export class DesktopMlService {
       });
     }
     const selected = await this.index.selectProfile(options.modelName, 'image');
-    if (!selected) {
-      deferJobUntilDependency('destination-configuration');
-      throw new Error('desktop_pool_index_required');
-    }
+    // No desktop has been granted smart search yet, so none can take this job: the destination itself does.
+    if (!selected) return selection;
     if (!(await ready(selected.binding.space.visualModelKey))) return selection;
     return this.selectClipPool(selection, {
       ownerId,

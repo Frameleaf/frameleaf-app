@@ -111,31 +111,25 @@ it.each(['interactive', 'other-account', 'other-workload'])('preserves %s select
   }
   await queueExecution.run(context, async () => expect(await select('asset')).toBe(selection));
 });
-it.each(['unknown', 'ambiguous', 'index'])('waits without falling back for %s authority', async (mode) => {
-  switch (mode) {
-    case 'unknown': {
-      context.sourceAuthorities!.clear();
-      break;
-    }
-    case 'ambiguous': {
-      context.sourceAuthorities!.set('other', {
-        ownerId: other,
-        snapshot: desktopSourceSnapshot(other),
-        assertCurrent: vi.fn(),
-      });
-      break;
-    }
-    case 'index': {
-      index.selectProfile.mockResolvedValue(undefined);
-      break;
-    }
-    default: {
-      break;
-    }
-  }
+it.each(['unknown', 'ambiguous'])('waits without falling back for %s authority', async (mode) => {
+  if (mode === 'unknown') context.sourceAuthorities!.clear();
+  else
+    context.sourceAuthorities!.set('other', {
+      ownerId: other,
+      snapshot: desktopSourceSnapshot(other),
+      assertCurrent: vi.fn(),
+    });
   await queueExecution.run(context, async () => {
     await expect(select(mode === 'ambiguous' ? undefined : 'asset')).rejects.toThrow();
-    expect(context.dependencyReason).toBe(mode === 'index' ? 'destination-configuration' : 'source-unavailable');
+    expect(context.dependencyReason).toBe('source-unavailable');
+  });
+});
+it('leaves smart search on the destination itself while no desktop has been granted it', async () => {
+  index.selectProfile.mockResolvedValue(undefined);
+  await queueExecution.run(context, async () => {
+    expect(await select('asset')).toBe(selection);
+    // nothing to wait for: a retry must not defer for an index no desktop has asked for
+    expect(context.dependencyReason).toBeUndefined();
   });
 });
 it('refuses changed source before constructing an inference descriptor', async () => {
