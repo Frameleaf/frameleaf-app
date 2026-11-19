@@ -44,7 +44,7 @@ jobs:
         run: node .github/frameleaf-release.cjs plan-reuse
 
   integration:
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call')
     uses: ./.github/workflows/frameleaf-quality.yml
     permissions:
       contents: read
