@@ -124,3 +124,17 @@ test("off Forgejo, the Windows lane is still required", async () => {
     /Unit Test CLI \(Windows\)/,
   );
 });
+
+test("runners on Forgejo's LAN addresses count as Forgejo; GitHub and unknown servers do not (FL-1683)", () => {
+  const { onForgejo, validateBuildInput } = require("./frameleaf-release.cjs");
+  for (const url of [
+    "https://code.heroapps.ca",
+    "https://code.heroapps.ca/",
+    "http://192.168.176.2:3000/",
+    "http://192.168.0.58:3300",
+  ])
+    assert.equal(onForgejo({ GITHUB_SERVER_URL: url }), true, url);
+  for (const url of ["https://github.com", "", "http://192.168.176.9:3000"])
+    assert.equal(onForgejo({ GITHUB_SERVER_URL: url }), false, url);
+  assert.ok(typeof validateBuildInput === "function");
+});

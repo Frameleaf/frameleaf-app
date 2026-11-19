@@ -1020,8 +1020,17 @@ const FORGEJO = "https://code.heroapps.ca";
 const FORGEJO_SOURCE = `${FORGEJO}/${REPOSITORY}`;
 // Lanes Forgejo has no runner for; required only on GitHub.
 const NO_FORGEJO_RUNNER = new Set(["Unit Test CLI (Windows)"]);
+// FL-1683: runners that register with Forgejo's LAN address (the Unraid slots: its compose-network IP and
+// the host port) see that address as GITHUB_SERVER_URL; they are the same Forgejo.
+const FORGEJO_SERVER_URLS = new Set([
+  FORGEJO,
+  "http://192.168.176.2:3000",
+  "http://192.168.0.58:3300",
+]);
 function onForgejo(env = process.env) {
-  return (env.GITHUB_SERVER_URL || "").replace(/\/+$/, "") === FORGEJO;
+  return FORGEJO_SERVER_URLS.has(
+    (env.GITHUB_SERVER_URL || "").replace(/\/+$/, ""),
+  );
 }
 async function forgejo(endpoint) {
   const response = await fetch(
@@ -2049,6 +2058,7 @@ module.exports = {
   checkReleaseAssets,
   variant,
   validateBuildInput,
+  onForgejo,
   validateIndex,
   validateImageConfig,
   trustedRun,
