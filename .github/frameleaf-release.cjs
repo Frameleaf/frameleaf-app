@@ -203,7 +203,12 @@ function validateBuildInput(env) {
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY, "Wrong build repository");
   assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`, "Wrong build branch");
   assert(
-    ["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME),
+    // FL-1683: Forgejo reports `workflow_call` inside the reusable build workflow that Deploy calls.
+    [
+      "push",
+      "workflow_dispatch",
+      ...(onForgejo(env) ? ["workflow_call"] : []),
+    ].includes(env.GITHUB_EVENT_NAME),
     "Unsupported build event",
   );
   for (const [key, expected] of Object.entries({
@@ -615,7 +620,8 @@ class Registry {
     const key = anonymous ? `anonymous:${image}` : image;
     if (!this.tokens.has(key)) {
       const headers = {};
-      if (!anonymous) {
+      // FL-1683: on Forgejo the candidate check holds no GHCR token and reads the public images anonymously.
+      if (!anonymous && !(onForgejo(this.env) && !this.env.GITHUB_TOKEN)) {
         assert(this.env.GITHUB_TOKEN, "GITHUB_TOKEN is required");
         headers.Authorization = `Basic ${Buffer.from(
           `${this.env.GITHUB_ACTOR || "frameleaf"}:${this.env.GITHUB_TOKEN}`,

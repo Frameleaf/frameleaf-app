@@ -79,7 +79,9 @@ jobs:
         env:
           CANDIDATE: ${{ inputs.candidate }}
           ROLLOUT_PERCENT: ${{ inputs['rollout-percent'] }}
-          GITHUB_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          # FL-1683: only reads public GHCR images; on Forgejo it reads them anonymously instead of holding the
+          # publish token outside the production environment.
+          GITHUB_TOKEN: ${{ github.server_url == 'https://github.com' && github.token || '' }}
           FORGEJO_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -113,11 +115,13 @@ jobs:
           ref: ${{ needs.candidate.outputs.sha }}
           path: candidate
           persist-credentials: false
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      # FL-1683: the candidate images are public; on Forgejo they are pulled anonymously.
+      - if: github.server_url == 'https://github.com'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
-          username: ${{ vars.GHCR_USERNAME || github.actor }}
-          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Deploy the candidate images and test the installation
         env:
           SERVER_IMAGE: ${{ needs.candidate.outputs['server-image'] }}
@@ -191,7 +195,7 @@ jobs:
           ROLLOUT_PERCENT: ${{ inputs['rollout-percent'] }}
           REASON: ${{ inputs.reason }}
           DRY_RUN: 'true'
-          GITHUB_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ github.server_url == 'https://github.com' && github.token || '' }}
           FORGEJO_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs release-flags
 

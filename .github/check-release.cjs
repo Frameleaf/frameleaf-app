@@ -74,7 +74,19 @@ for (const [job, ref, action, dryRun, allowed] of [
 for (const [id, job] of Object.entries(workflow.jobs)) {
   const text = JSON.stringify(job);
   const writes = Object.values(job.permissions ?? {}).includes("write");
-  if (text.includes("secrets.") || writes) {
+  if (job.uses && text.includes("secrets.")) {
+    // FL-1683: a job that calls a reusable workflow cannot name an environment, so it may pass secrets
+    // only after production-environment jobs, and only off GitHub (the Forgejo mirror).
+    const needs = [job.needs ?? []].flat();
+    assert(needs.length > 0, `${id}: must follow verification`);
+    for (const need of needs)
+      assert.equal(
+        workflow.jobs[need]?.environment,
+        "production",
+        `${id}: passes secrets only after production jobs`,
+      );
+    assert.match(job.if ?? "", /github\.server_url != 'https:\/\/github\.com'/);
+  } else if (text.includes("secrets.") || writes) {
     assert.equal(
       job.environment,
       "production",
