@@ -673,7 +673,11 @@ export async function toRead(
     : aggregate.dependencyReasons.includes('source-unavailable')
       ? await waitedForLibraries(db, run.id)
       : undefined;
-  const reasons = runReasons(context, aggregate, noDispatchBacklog);
+  let reasons = runReasons(context, aggregate, noDispatchBacklog);
+  // `source-unavailable` also defers ordinary waits (a preview or search vector not made yet); with no offline photo
+  // behind them nothing is unreachable, so the run doesn't say "Waiting for a drive"
+  if (!run.refused && !unreachableLibraries?.length)
+    reasons = reasons.filter((reason) => reason !== 'source-unavailable');
   if (run.refused && !reasons.includes('source-unavailable')) reasons.push('source-unavailable');
   return {
     id: run.id,
@@ -731,13 +735,17 @@ function runSteps(run: Header, aggregate: RunAggregate, around: Surroundings): A
   return steps.values().toArray();
 }
 
-/** The external libraries (three at most) of the first 200 photos whose work waits for its source, from the deferral index. */
+/**
+ * The external libraries (three at most) of the first 200 photos whose work waits for its source, from the deferral
+ * index. Only offline photos count (as the drive failure cause reads them): a photo whose work only waits for its
+ * preview is still reachable.
+ */
 async function waitedForLibraries(db: QueryExecutorProvider, runId: string) {
   const { rows } = await sql<{ name: string }>`select distinct l.name from (
       select j."rootItemKey" root from job j where j."runId" = ${runId}::uuid and j.state = 'pending'
         and j."dependencyReason" = 'source-unavailable' limit 200
     ) d join asset a on a.id = case when pg_input_is_valid(d.root, 'uuid') then d.root::uuid end
-    join library l on l.id = a."libraryId" order by l.name limit 3`.execute(db);
+    join library l on l.id = a."libraryId" where a."isOffline" order by l.name limit 3`.execute(db);
   return rows.map(({ name }) => name);
 }
 

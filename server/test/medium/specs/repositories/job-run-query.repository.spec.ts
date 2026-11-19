@@ -500,7 +500,13 @@ describe('Recent work (FL-1349)', () => {
     const id = await run({ kind: 'library-import-derived' });
     await job(id, asset.id, 'Smart', { dependency: 'source-unavailable' });
     await job(id, upload.id, 'Smart', { dependency: 'source-unavailable' });
+    // waiting for a preview of a photo that is still on its drive names nothing and isn't "Waiting for a drive"
+    const online = await read(id);
+    expect(online.unreachableLibraries).toBeUndefined();
+    expect(online.reasons).not.toContain('source-unavailable');
+    await sql`update asset set "isOffline" = true where id = ${asset.id}::uuid`.execute(db);
     expect(await read(id)).toMatchObject({ unreachableLibraries: ['Holiday drive'] });
+    expect((await read(id)).reasons).toContain('source-unavailable');
     const plain = await run();
     await job(plain, 'a', 'Thumbnail');
     expect((await read(plain)).unreachableLibraries).toBeUndefined();
