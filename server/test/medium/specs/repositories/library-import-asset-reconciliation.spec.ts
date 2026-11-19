@@ -1,5 +1,6 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
+import { connectImportDatabase } from 'src/immich-import/database.js';
 import { ImportDatabase } from 'src/immich-import/types.js';
 import { reconcileImportedAssets } from 'src/library-import/asset-reconciliation.js';
 import { CanonicalAssetWriter } from 'src/library-import/asset-writer.js';
@@ -29,6 +30,7 @@ const setup = async (
   sealed = false,
   tags?: string[],
   twoOwners = false,
+  localClock?: string,
 ) => {
   const ownerId = randomUUID();
   const plan = parseDestinationImportPlan(fixture.plan);
@@ -94,6 +96,7 @@ const setup = async (
                   type: 'IMAGE',
                   fileModifiedAt: '2020-07-02T01:02:03.456789Z',
                   originalFileNames: { [prefix + 'jpeg']: 'camera.jpg', [prefix + 'raw']: 'camera.raw' },
+                  ...(localClock === undefined ? {} : { localDateTime: localClock }),
                 }
               : {}),
             id: prefix + 'photo',
@@ -103,7 +106,7 @@ const setup = async (
             visibility,
             metadata: {
               takenAt: '2020-07-01T12:34:56.123456Z',
-              timeZone: 'America/Edmonton',
+              ...(localClock === undefined ? { timeZone: 'America/Edmonton' } : {}),
               description: 'Manual caption',
               rating: 5,
               latitude: 51.1,
@@ -192,6 +195,38 @@ it('reconciles every original, microsecond clocks, manual metadata and quota aft
   });
   expect(await reconcileImportedAssets(wrap(db), context, [item])).toEqual(first);
   expect((await new LibraryImportJournal(wrap(db)).status()).run?.status).toBe('verifying');
+});
+
+it('keeps source wall clocks and microseconds through the production driver in a non-UTC process zone', async () => {
+  const [{ name }] = (await sql<{ name: string }>`SELECT current_database() AS name`.execute(db)).rows;
+  const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+  url.pathname = `/${name}`;
+  const { db: connection, close } = connectImportDatabase(url.href, false);
+  const zone = process.env.TZ;
+  // postgres.js serializes date-typed parameters through JavaScript Date, which reads wall clocks in this zone.
+  process.env.TZ = 'America/Edmonton';
+  try {
+    const { context } = await setup('archive', false, true, undefined, false, '2020-07-01T06:34:56.123456');
+    const item = {
+      sourceAssetId: 'photo',
+      type: 'IMAGE',
+      fileModifiedAt: '2020-07-02T01:02:03.456789Z',
+      originalFileNames: { jpeg: 'camera.jpg', raw: 'camera.raw' },
+    };
+    const id = await new CanonicalAssetWriter(connection, context).write(item);
+    await new LibraryImportJournal(connection).phase(context.binding, 'verifying');
+    await expect(reconcileImportedAssets(connection, context, [item])).resolves.toMatchObject({ assets: 1 });
+    const [clock] = await connection.query(
+      `SELECT to_char("localDateTime" AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US') AS local,
+      to_char("fileCreatedAt" AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US') AS taken FROM public.asset WHERE id=$1::uuid`,
+      [id],
+    );
+    expect(clock).toEqual({ local: '2020-07-01T06:34:56.123456', taken: '2020-07-01T12:34:56.123456' });
+  } finally {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+    await close();
+  }
 });
 
 it.each([
