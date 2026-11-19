@@ -46,8 +46,9 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { readConfig } from 'src/utils/config.js';
-import { faceEntries } from 'src/utils/desktop-face.js';
-import { ocrEntries } from 'src/utils/desktop-ocr.js';
+import { desktopFaceProfile, faceEntries } from 'src/utils/desktop-face.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
+import { desktopOcrProfile, ocrEntries } from 'src/utils/desktop-ocr.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
 import { readPlainFile } from 'src/utils/locked-read.js';
 import { canonicalJson } from 'src/utils/object.js';
@@ -2008,6 +2009,26 @@ export class MachineLearningRepository implements RestorationInference {
     this.desktopPoolSelector = selector;
   }
 
+  /**
+   * The model keys a desktop can hold to take this workload's queued work under the saved settings: the
+   * configured model's key and, for smart search, the same encoder under other desktop runtime revisions.
+   * None while the task is off, the model has no catalogue profile or no desktop has been granted smart search.
+   */
+  async desktopModelKeys(workload: MlWorkload): Promise<string[]> {
+    const config = this._config;
+    if (!config?.enabled) return [];
+    try {
+      if (workload === MlWorkload.Face)
+        return config.facialRecognition.enabled ? [desktopFaceProfile(config.facialRecognition).modelKey] : [];
+      if (workload === MlWorkload.Ocr) return config.ocr.enabled ? [desktopOcrProfile(config.ocr).modelKey] : [];
+      if (workload !== MlWorkload.Clip || !config.clip.enabled) return [];
+      const selected = await this.clipIndex?.selectProfile(config.clip.modelName, 'image');
+      return selected ? [...equivalentDesktopModelKeys(selected.profile.modelKey)] : [];
+    } catch {
+      return [];
+    }
+  }
+
   /** FL-1058: the owner's own Frameleaf Desktop helpers take a gallery guest's selfie, outside the queue. */
   selectGuestFacePool(selection: MlSelection, ownerId: string, requireReady = false): Promise<MlSelection> {
     if (selection.workload !== MlWorkload.Face) return Promise.resolve(selection);
@@ -2137,8 +2158,23 @@ export class MachineLearningRepository implements RestorationInference {
     return selected ? `${selected.binding.revisionId}:${selected.profile.modelKey}` : 'legacy';
   }
 
+  /**
+   * A search model the admitted desktop index does not hold is still allowed: saving it empties the library's
+   * vectors, as any model change does, and returns the index to unadmitted for the new model's space
+   * (`DatabaseRepository.deleteAllSearchEmbeddings`). Only an index that cannot be read stops the save.
+   */
   async assertClipModel(modelName: string): Promise<void> {
-    await this.clipIndex?.selectProfile(modelName, 'image');
+    try {
+      await this.clipIndex?.selectProfile(modelName, 'image');
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'desktop_clip_profile_unavailable') throw error;
+    }
+  }
+
+  /** The desktop vector index is admitted for another model than the saved one, so its vectors must go. */
+  async clipIndexStale(modelName: string): Promise<boolean> {
+    const admitted = await this.clipIndex?.modelName();
+    return admitted !== undefined && admitted !== modelName;
   }
 
   /**
