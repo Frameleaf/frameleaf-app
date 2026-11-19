@@ -1486,12 +1486,20 @@ export class FrameleafCloudService extends BaseService {
     this.cronRepository.create({
       name: 'frameleafHeartbeat',
       expression: '* * * * *',
-      onTick: () =>
-        handlePromiseError(this.jobRepository.queue({ name: JobName.FrameleafHeartbeat, data: {} }), this.logger),
+      onTick: () => handlePromiseError(this.queueHeartbeat(), this.logger),
       start: !!cloudUrl,
     });
     if (cloudUrl && linkToken) {
       await this.linkHeadless(cloudUrl, linkToken);
+    }
+  }
+
+  /** A server that isn't linked (or waiting on a link code) has nothing to check in, so no job is queued. */
+  private async queueHeartbeat() {
+    const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
+    const link = cloudUrl ? await this.readLink(cloudUrl) : null;
+    if (link?.status === 'linked' || link?.status === 'pending') {
+      await this.jobRepository.queue({ name: JobName.FrameleafHeartbeat, data: {} });
     }
   }
 
