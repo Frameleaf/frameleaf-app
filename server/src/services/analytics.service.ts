@@ -357,7 +357,7 @@ export class AnalyticsService {
     // originals and database sizes.
     host.breakdown =
       isHost && host.state === AnalyticsState.Measured
-        ? await this.readVolumeBreakdown(host.volumeUsedBytes, kept.report.summary.uploadedPhysicalBytes)
+        ? await this.readVolumeBreakdown(host.volumeUsedBytes, kept.report.summary)
         : null;
     return { ...kept.report, host };
   }
@@ -692,7 +692,7 @@ export class AnalyticsService {
   }
 
   /**
-   * What uses the library volume (FL-79, the template's storage donut): uploaded originals,
+   * What uses the library volume (FL-79, the template's storage donut): originals (uploaded, and external libraries on this volume),
    * generated previews and encoded video (measured by the nightly collector), the database, and
    * the rest of the volume used. The parts and `otherBytes` add up to `volumeUsedBytes`; when the
    * measured parts are larger (a database on another disk, say) `otherBytes` is 0 and
@@ -700,11 +700,16 @@ export class AnalyticsService {
    */
   private async readVolumeBreakdown(
     volumeUsedBytes: number | null,
-    originalsBytes: number,
+    physical: { uploadedPhysicalBytes: number; externalPhysicalBytes: number },
   ): Promise<AnalyticsVolumeBreakdownDto | null> {
     if (volumeUsedBytes === null) {
       return null;
     }
+    // External libraries are the owner's own photos too: they count with the originals when every
+    // import folder is on the library volume.
+    // ponytail: all-or-nothing; per-library bytes if one server mixes volumes for its libraries.
+    const externalOnVolume = await this.externalLibrariesOnVolume();
+    const originalsBytes = physical.uploadedPhysicalBytes + (externalOnVolume ? physical.externalPhysicalBytes : 0);
     const [databaseBytes, generated] = await Promise.all([
       this.analyticsRepository.getDatabaseBytes(),
       this.analyticsRepository.getLatestHostSamples([
@@ -742,6 +747,17 @@ export class AnalyticsService {
       otherBytes: Math.max(0, volumeUsedBytes - measured),
       exceedsUsed: measured > volumeUsedBytes,
     };
+  }
+
+  /** Whether every external library import folder is readable and on the library volume. */
+  private async externalLibrariesOnVolume(): Promise<boolean> {
+    const paths = await this.analyticsRepository.getExternalImportPaths();
+    if (paths.length === 0) {
+      return false;
+    }
+    const libraryDevice = await this.storageRepository.getDevice(StorageCore.getBaseFolder(StorageFolder.Library));
+    const devices = await Promise.all(paths.map((path) => this.storageRepository.getDevice(path)));
+    return libraryDevice !== null && devices.every((device) => device === libraryDevice);
   }
 
   /**
