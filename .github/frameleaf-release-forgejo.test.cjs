@@ -138,3 +138,34 @@ test("runners on Forgejo's LAN addresses count as Forgejo; GitHub and unknown se
     assert.equal(onForgejo({ GITHUB_SERVER_URL: url }), false, url);
   assert.ok(typeof validateBuildInput === "function");
 });
+
+test("on Forgejo a called build workflow's workflow_call counts as the dispatch that started Deploy (FL-1683)", () => {
+  const { buildEvent } = require("./frameleaf-release.cjs");
+  const lan = "http://192.168.176.2:3000";
+  assert.equal(
+    buildEvent({ GITHUB_SERVER_URL: lan, GITHUB_EVENT_NAME: "workflow_call" }),
+    "workflow_dispatch",
+  );
+  assert.equal(
+    buildEvent({
+      GITHUB_SERVER_URL: "https://code.heroapps.ca",
+      GITHUB_EVENT_NAME: "workflow_call",
+    }),
+    "workflow_dispatch",
+  );
+  assert.equal(
+    buildEvent({ GITHUB_SERVER_URL: lan, GITHUB_EVENT_NAME: "push" }),
+    "push",
+  );
+  assert.equal(
+    buildEvent({
+      GITHUB_SERVER_URL: "https://github.com",
+      GITHUB_EVENT_NAME: "workflow_call",
+    }),
+    "workflow_call",
+  );
+  assert.equal(
+    buildEvent({ GITHUB_SERVER_URL: lan, GITHUB_EVENT_NAME: "pull_request" }),
+    "pull_request",
+  );
+});
