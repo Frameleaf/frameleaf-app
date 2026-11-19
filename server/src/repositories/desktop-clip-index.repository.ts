@@ -140,6 +140,30 @@ export class DesktopClipIndexRepository {
     return { binding, profile };
   }
 
+  private serverVectors = new Set<string>();
+
+  /**
+   * Lets this server's own AI write vectors (no producer key) into the admitted index. An index admitted by
+   * an earlier release has no place for them; one admitted since already does. Done once per index revision.
+   */
+  async admitServerVectors(binding: DesktopClipIndexBinding): Promise<void> {
+    if (this.serverVectors.has(binding.revisionId)) return;
+    await this.db
+      .transaction()
+      .setIsolationLevel('read committed')
+      .execute(async (tx) => {
+        await sql`SELECT pg_advisory_xact_lock(912741, 1)`.execute(tx);
+        await this.assertCurrent(binding, tx);
+        await tx
+          .insertInto('desktop_clip_producer')
+          .values({ key: LEGACY, scope: 'clip' })
+          .onConflict((oc) => oc.column('key').doNothing())
+          .execute();
+      });
+    if (this.serverVectors.size > 16) this.serverVectors.clear();
+    this.serverVectors.add(binding.revisionId);
+  }
+
   /** Call only after selected NAS producer/config verification; this does not grant worker scope. */
   async admit(
     spaceKey: string,
