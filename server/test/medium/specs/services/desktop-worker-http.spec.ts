@@ -6,6 +6,7 @@ import request from 'supertest';
 import z from 'zod';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
+import { desktopResultSize } from 'src/middleware/desktop-result-size.middleware.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
@@ -75,24 +76,29 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
     // This fixture isolates signed HTTP transport; durable disclosure uses the real service fixture.
     input: (grant, id) => broker.input(grant, id, () => Promise.resolve()),
   } as DesktopMlService);
-  const http = await controllerSetup(DesktopWorkerController, [
-    { provide: ConfigRepository, useValue: new ConfigRepository() },
-    { provide: DesktopWorkerService, useValue: worker },
-    {
-      provide: DesktopQualificationService,
-      useValue: new DesktopQualificationService(
-        auth,
-        new DesktopWorkerChallengeRepository(db),
-        new ConfigRepository(),
-        metadata,
-        {
-          activate: () => Promise.reject(new Error('activation_not_available_in_broker_fixture')),
-        } as never,
-        sessions,
-        new DesktopAssistancePolicyService(metadata),
-      ),
-    },
-  ]);
+  const http = await controllerSetup(
+    DesktopWorkerController,
+    [
+      { provide: ConfigRepository, useValue: new ConfigRepository() },
+      { provide: DesktopWorkerService, useValue: worker },
+      {
+        provide: DesktopQualificationService,
+        useValue: new DesktopQualificationService(
+          auth,
+          new DesktopWorkerChallengeRepository(db),
+          new ConfigRepository(),
+          metadata,
+          {
+            activate: () => Promise.reject(new Error('activation_not_available_in_broker_fixture')),
+          } as never,
+          sessions,
+          new DesktopAssistancePolicyService(metadata),
+        ),
+      },
+    ],
+    // as app.common.ts installs it, with a small body limit so the test need not send ten megabytes
+    [desktopResultSize(6 * 1024 * 1024)],
+  );
   const abort = new AbortController();
   let sequence = 0;
   const call = (method: 'get' | 'post', path: string, operation: string, payload = '') => {
@@ -154,6 +160,21 @@ it('dispatches synthetic NAS input through signed HTTP claims and retains idempo
     // a result that is not what the model returns is refused when it is submitted, and the lease stays
     const malformed = await call('post', `/desktop/tasks/${id}/result`, `result:${id}`, '{"result":{"clip":"oops"}}');
     expect([malformed.status, malformed.body.message]).toEqual([400, 'desktop_result_invalid']);
+    // a result over the 4 MB cap is refused by that name however it is too large, and the lease stays:
+    // more bytes than the cap in fewer characters (it used to answer 401, which reads as "new session"),
+    // more characters than the payload field allows, and more bytes than the request body may have
+    for (const filler of ['é'.repeat(2_200_000), 'a'.repeat(4_300_000), 'a'.repeat(7_000_000)]) {
+      const oversized = await call(
+        'post',
+        `/desktop/tasks/${id}/result`,
+        `result:${id}`,
+        JSON.stringify({ result: { clip: filler } }),
+      );
+      expect([oversized.status, oversized.body.message]).toEqual([400, 'desktop_result_too_large']);
+    }
+    // the cap is on the result alone: another endpoint keeps its own answer for an oversized payload
+    const elsewhere = await call('post', '/desktop/worker/heartbeat', 'heartbeat', 'a'.repeat(4_300_000));
+    expect(elsewhere.body.message).not.toBe('desktop_result_too_large');
     const payload = JSON.stringify({ result: answer });
     expect((await call('post', `/desktop/tasks/${id}/result`, `result:${id}`, payload)).body).toEqual({
       accepted: true,
