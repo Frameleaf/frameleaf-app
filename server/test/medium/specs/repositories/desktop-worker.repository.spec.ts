@@ -169,21 +169,26 @@ it('tells a credential refused because Desktop AI processing is off from any oth
   const { sut, user, input } = await setup();
   const session = (await sut.issue(input))!;
   expect(await sut.allowed(user.id, true)).toBe(true);
-  expect(await sut.policyOff(session.id, input.tokenHash)).toBe(false);
+  expect(await sut.policyOff(session.id, input.tokenHash)).toBeUndefined();
   // the account stops being an administrator and was never approved as a member: processing is off for it
   await db.updateTable('user').set({ isAdmin: false }).where('id', '=', user.id).execute();
   expect(await sut.session(session.id, input.tokenHash)).toBeUndefined();
   expect(await sut.allowed(user.id, false)).toBe(false);
-  expect(await sut.policyOff(session.id, input.tokenHash)).toBe(true);
+  // with what is needed to check the request proof before saying so
+  expect(await sut.policyOff(session.id, input.tokenHash)).toEqual({
+    deviceId: input.deviceId,
+    publicKey: expect.any(String),
+    authorizationEpoch: input.authorizationEpoch,
+  });
   // a wrong token, an unknown session or a revoked one is an invalid credential, whatever the account
-  expect(await sut.policyOff(session.id, Buffer.alloc(32, 9))).toBe(false);
-  expect(await sut.policyOff(randomUUID(), input.tokenHash)).toBe(false);
+  expect(await sut.policyOff(session.id, Buffer.alloc(32, 9))).toBeUndefined();
+  expect(await sut.policyOff(randomUUID(), input.tokenHash)).toBeUndefined();
   await workerDb
     .updateTable('desktop_worker_session')
     .set({ revokedAt: sql`now()` })
     .where('id', '=', session.id)
     .execute();
-  expect(await sut.policyOff(session.id, input.tokenHash)).toBe(false);
+  expect(await sut.policyOff(session.id, input.tokenHash)).toBeUndefined();
 });
 it('photo sign-out and explicit worker revocation cannot be renewed with the old credential', async () => {
   const { sut, input } = await setup();

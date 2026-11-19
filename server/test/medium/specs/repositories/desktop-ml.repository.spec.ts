@@ -36,7 +36,11 @@ import { BaseService } from 'src/services/base.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { desktopImageModelKey } from 'src/utils/desktop-model-catalogue.js';
-import { DESKTOP_LEASE_SECONDS, DESKTOP_PRESENCE_SECONDS } from 'src/utils/desktop-worker-timing.js';
+import {
+  DESKTOP_LEASE_SECONDS,
+  DESKTOP_PRESENCE_SECONDS,
+  DESKTOP_REQUALIFY_HOLD_SECONDS,
+} from 'src/utils/desktop-worker-timing.js';
 import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
 import { seedDesktopQualification } from 'test/desktop-qualification.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
@@ -645,6 +649,40 @@ it('takes a model away from a desktop that keeps failing it, until it qualifies 
     );
   expect((await sut.claim(grants[0], [request.modelKey]))?.attempt.generation).toBe(2);
   await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+});
+
+it('counts failures in a row in the database, per desktop and model, and holds a withdrawn model back', async () => {
+  const { sut, second, grants, request } = await setup();
+  const [one, two] = grants;
+  // another API process, or the same one after a restart, sees the same count
+  expect(await sut.countFailure(one, request.modelKey)).toBe(1);
+  expect(await second.countFailure(one, request.modelKey)).toBe(2);
+  expect(await new DesktopMlRepository(db).countFailure(two, request.modelKey)).toBe(1);
+  expect(await sut.countFailure(one, 'another-model')).toBe(1);
+  // a new worker session for the same computer does not start the count again
+  expect(await sut.countFailure({ deviceId: one.deviceId }, request.modelKey)).toBe(3);
+  // a result it got right does
+  await second.clearFailures(one, request.modelKey);
+  expect(await sut.countFailure(one, request.modelKey)).toBe(1);
+  expect(await sut.countFailure(two, request.modelKey)).toBe(2);
+
+  expect(await sut.heldUntil(one.deviceId, [request.modelKey])).toBeUndefined();
+  expect(await sut.withdraw(one, request.modelKey)).toBe(true);
+  const until = (await second.heldUntil(one.deviceId, ['unrelated', request.modelKey]))!;
+  const seconds = (until.getTime() - Date.now()) / 1000;
+  expect(seconds).toBeGreaterThan(DESKTOP_REQUALIFY_HOLD_SECONDS - 30);
+  expect(seconds).toBeLessThanOrEqual(DESKTOP_REQUALIFY_HOLD_SECONDS + 5);
+  // only that computer, only that model; and the count starts again once it is back
+  expect(await sut.heldUntil(two.deviceId, [request.modelKey])).toBeUndefined();
+  expect(await sut.heldUntil(one.deviceId, ['another-model'])).toBeUndefined();
+  await sut.clearFailures(one, request.modelKey);
+  expect(await sut.heldUntil(one.deviceId, [request.modelKey])).toEqual(until);
+  expect(await sut.countFailure(one, request.modelKey)).toBe(1);
+  // the hold ends by itself
+  await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${one.deviceId}:${request.modelKey},heldUntil}`}::text[],
+    to_jsonb(to_char(now() - interval '1 second', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+    WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+  expect(await sut.heldUntil(one.deviceId, [request.modelKey])).toBeUndefined();
 });
 
 it('leases a search task to a desktop on another runtime revision, under the key that desktop holds', async () => {

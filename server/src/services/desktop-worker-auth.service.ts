@@ -17,6 +17,20 @@ import { logDesktopRefusals } from 'src/utils/desktop-refusal-log.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
 
 const invalid = () => new UnauthorizedException('desktop_worker_credential_invalid');
+/**
+ * The request's timestamp is more than two minutes from this server's clock. Its own name, so a desktop
+ * with a wrong clock is told about the clock and not that the computer is refused.
+ */
+const expired = () => new UnauthorizedException('desktop_proof_expired');
+const MAX_CLOCK_SKEW_MS = 120_000;
+/** The worker session a request proof names, for a log line; unverified, and undefined when unreadable. */
+export const proofSessionId = (header: string | undefined): string | undefined => {
+  try {
+    return DesktopWorkerProofSchema.parse(JSON.parse(Buffer.from(header ?? '', 'base64').toString('utf8'))).sessionId;
+  } catch {
+    return undefined;
+  }
+};
 /** Desktop AI processing is off for this account: the same refusal on every endpoint. */
 const policyRequired = () => new ForbiddenException('desktop_pool_policy_required');
 const hash = (value: string) => createHash('sha256').update(value).digest();
@@ -54,9 +68,9 @@ export class DesktopWorkerAuthService {
         if (!(await this.repository.allowed(auth.user.id, auth.user.isAdmin))) throw policyRequired();
         const device = await this.repository.device(auth.user.id, request.deviceId);
         const serverId = await stableServerId({ systemMetadataRepository: this.systemMetadataRepository });
+        if (!device) throw invalid();
+        if (Math.abs(Date.now() - request.timestamp) > MAX_CLOCK_SKEW_MS) throw expired();
         if (
-          !device ||
-          Math.abs(Date.now() - request.timestamp) > 120_000 ||
           !validSignature(device.publicKey, desktopSessionMessage(serverId, auth.user.id, request), request.signature)
         )
           throw invalid();
@@ -91,9 +105,12 @@ export class DesktopWorkerAuthService {
     } catch {
       throw invalid();
     }
-    if (Math.abs(Date.now() - proof.timestamp) > 120_000) throw invalid();
-    const session = await this.repository.session(proof.sessionId, hash(token));
-    if (!session) throw (await this.repository.policyOff(proof.sessionId, hash(token))) ? policyRequired() : invalid();
+    if (Math.abs(Date.now() - proof.timestamp) > MAX_CLOCK_SKEW_MS) throw expired();
+    const live = await this.repository.session(proof.sessionId, hash(token));
+    // A session whose account turned Desktop AI processing off is told so, once its proof has been checked.
+    const off = live ? undefined : await this.repository.policyOff(proof.sessionId, hash(token));
+    const session = live ?? off;
+    if (!session) throw invalid();
     const serverId = await stableServerId({ systemMetadataRepository: this.systemMetadataRepository });
     if (
       !validSignature(
@@ -103,6 +120,7 @@ export class DesktopWorkerAuthService {
       )
     )
       throw invalid();
+    if (off) throw policyRequired();
     const grant = await this.repository.consume(proof.sessionId, hash(token), proof.sequence);
     if (!grant) throw invalid();
     return grant;

@@ -20,13 +20,14 @@ import {
 } from 'src/dtos/desktop-qualification.dto.js';
 import { DesktopWorkerAckDto } from 'src/dtos/desktop-worker-job.dto.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
-import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
+import { DesktopWorkerAuthService, proofSessionId } from 'src/services/desktop-worker-auth.service.js';
 import { getConfig } from 'src/utils/config.js';
 import { findDesktopClipSpace, parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
 import {
@@ -34,6 +35,7 @@ import {
   createDesktopModelChallenge,
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { selectDesktopModelInventory } from 'src/utils/desktop-model-inventory.js';
 import { DesktopQualificationReceipt } from 'src/utils/desktop-qualification.js';
 import { logDesktopNotAccepted, logDesktopRefusals } from 'src/utils/desktop-refusal-log.js';
@@ -69,7 +71,17 @@ export class DesktopQualificationService {
     private activation: DesktopAssistanceActivationService,
     private workers: DesktopWorkerRepository,
     private policies: DesktopAssistancePolicyService,
+    private broker?: DesktopMlRepository,
   ) {}
+
+  /**
+   * A desktop that lost a model for failing it waits a few minutes before it can qualify for it again.
+   * A conflict it retries, like the rest of the challenge bookkeeping.
+   */
+  private async assertNotHeld(deviceId: string, modelKey: string) {
+    if (await this.broker?.heldUntil(deviceId, equivalentDesktopModelKeys(modelKey)))
+      throw new ConflictException('desktop_qualification_hold');
+  }
 
   /** Every refusal a desktop sees is also in the server log, with the code it was given. */
   private logged<T>(step: string, subject: () => string, work: () => Promise<T>): Promise<T> {
@@ -77,7 +89,8 @@ export class DesktopQualificationService {
   }
 
   inventory(authorization: string | undefined, proof: string | undefined, payload: string) {
-    let subject = 'unauthenticated';
+    const session = proofSessionId(proof);
+    let subject = session ? `unauthenticated, session ${session}` : 'unauthenticated';
     return this.logged(
       'inventory',
       () => subject,
@@ -123,7 +136,8 @@ export class DesktopQualificationService {
     proof: string | undefined,
     payload: string,
   ): Promise<DesktopQualificationChallengeDto> {
-    let subject = 'unauthenticated';
+    const session = proofSessionId(proof);
+    let subject = session ? `unauthenticated, session ${session}` : 'unauthenticated';
     return this.logged(
       'challenge',
       () => subject,
@@ -133,6 +147,7 @@ export class DesktopQualificationService {
         const request = parse(DesktopQualificationRequestSchema, payload);
         subject += `, ${request.modelKey} on ${request.provider}`;
         const profile = await this.selected(request.modelKey, request.provider, request.runtimeSourceRevision);
+        await this.assertNotHeld(grant.deviceId, profile.modelKey);
         let runtime;
         try {
           runtime = verifyDesktopRuntimeAttestation(request.runtime, profile);
@@ -216,6 +231,7 @@ export class DesktopQualificationService {
         } catch {
           throw new BadRequestException('desktop_qualification_report_invalid');
         }
+        await this.assertNotHeld(grant.deviceId, profile.modelKey);
         let recorded: boolean;
         try {
           recorded = await this.challenges.record(grant, id, receipt);

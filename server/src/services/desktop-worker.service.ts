@@ -16,9 +16,10 @@ import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { type DesktopWorkerGrant, DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
-import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
+import { DesktopWorkerAuthService, proofSessionId } from 'src/services/desktop-worker-auth.service.js';
 import { logDesktopNotAccepted, logDesktopRefusals } from 'src/utils/desktop-refusal-log.js';
 import { assertDesktopResult } from 'src/utils/desktop-result.js';
+import { DESKTOP_FAILURES_BEFORE_WITHDRAWAL } from 'src/utils/desktop-worker-timing.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 const parse = <T>(schema: z.ZodType<T>, payload: string): T => {
@@ -30,18 +31,27 @@ const parse = <T>(schema: z.ZodType<T>, payload: string): T => {
   }
 };
 
-/** Failures in a row, for one model, after which a desktop loses that model and must qualify again. */
-const FAILURES_BEFORE_WITHDRAWAL = 3;
+/**
+ * What the input authority throws when the lease can no longer be served: the job ended, or the photo,
+ * destination, model, settings, index or approval behind it changed while the desktop was asking. Anything
+ * else it throws is a server fault and stays a 500.
+ */
+const LEASE_LOST = new Set([
+  'desktop_input_owner_changed',
+  'desktop_pool_destination_changed',
+  'desktop_pool_profile_changed',
+  'desktop_pool_config_changed',
+  'desktop_pool_model_unavailable',
+  'desktop_pool_policy_changed',
+  'desktop_pool_queue_changed',
+  'desktop_clip_index_changed',
+  'desktop_clip_profile_unavailable',
+  'Asset inputs changed before publication',
+]);
 
 @Injectable()
 export class DesktopWorkerService {
   private logger = LoggingRepository.create(DesktopWorkerService.name);
-  /**
-   * Failures in a row per worker session and model key.
-   * ponytail: kept in this process, so it restarts with the server and each API process counts on its own;
-   * a column on the qualification if several API processes ever share desktops.
-   */
-  private failures = new Map<string, number>();
 
   constructor(
     private auth: DesktopWorkerAuthService,
@@ -59,7 +69,9 @@ export class DesktopWorkerService {
     payload: string,
     work: (grant: DesktopWorkerGrant, note: (detail: string) => void) => Promise<T>,
   ): Promise<T> {
-    let subject = 'unauthenticated';
+    // Until the request is authenticated, the session its proof names (unverified) is all that is known.
+    const session = proofSessionId(proof);
+    let subject = session ? `unauthenticated, session ${session}` : 'unauthenticated';
     return logDesktopRefusals(
       this.logger,
       step,
@@ -90,9 +102,10 @@ export class DesktopWorkerService {
     signal: AbortSignal,
   ): Promise<DesktopWorkerClaimDto> {
     signal.throwIfAborted();
-    return this.logged('claim', authorization, proof, 'claim', payload, async (grant) => {
+    return this.logged('claim', authorization, proof, 'claim', payload, async (grant, note) => {
       const request = parse(DesktopClaimRequestSchema, payload);
       if (request.modelKeys.length === 0) return { task: null };
+      note(`models ${request.modelKeys.slice(0, 8).join(', ')}`);
       const deadline = performance.now() + request.waitMs;
       do {
         signal.throwIfAborted();
@@ -137,11 +150,7 @@ export class DesktopWorkerService {
       } catch (error) {
         // The lease can no longer be served: the job, photo, settings or approval behind it changed while
         // the desktop was asking. That is a lost lease to the desktop, not a server error.
-        if (
-          !(error instanceof HttpException) &&
-          error instanceof Error &&
-          /^(desktop_|Asset inputs changed)/.test(error.message)
-        )
+        if (!(error instanceof HttpException) && error instanceof Error && LEASE_LOST.has(error.message))
           throw new UnauthorizedException('desktop_lease_invalid', { cause: error });
         throw error;
       }
@@ -186,8 +195,8 @@ export class DesktopWorkerService {
           throw new BadRequestException(error.message, { cause: error.cause });
         throw error;
       }
-      if (accepted) this.failures.delete(`${grant.sessionId}:${modelKey}`);
-      else logDesktopNotAccepted(this.logger, 'result', `device ${grant.deviceId}, ${label}`);
+      if (!accepted) logDesktopNotAccepted(this.logger, 'result', `device ${grant.deviceId}, ${label}`);
+      else if (modelKey) await this.broker.clearFailures(grant, modelKey);
       return { accepted };
     });
   }
@@ -209,18 +218,11 @@ export class DesktopWorkerService {
       );
       // A desktop whose model keeps failing stops being offered that work until it qualifies again.
       if (accepted && modelKey && (code === 'inference-failed' || code === 'model-unavailable')) {
-        const key = `${grant.sessionId}:${modelKey}`;
-        const failures = (this.failures.get(key) ?? 0) + 1;
-        if (failures < FAILURES_BEFORE_WITHDRAWAL) {
-          if (this.failures.size > 4096) this.failures.clear();
-          this.failures.set(key, failures);
-        } else {
-          this.failures.delete(key);
-          if (await this.broker.withdraw(grant, modelKey))
-            this.logger.warn(
-              `Desktop worker lost ${modelKey} after ${failures} failures in a row (device ${grant.deviceId}): it must qualify again`,
-            );
-        }
+        const failures = await this.broker.countFailure(grant, modelKey);
+        if (failures >= DESKTOP_FAILURES_BEFORE_WITHDRAWAL && (await this.broker.withdraw(grant, modelKey)))
+          this.logger.warn(
+            `Desktop worker lost ${modelKey} after ${failures} failures in a row (device ${grant.deviceId}): it must qualify again`,
+          );
       }
       return { accepted };
     });

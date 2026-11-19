@@ -42,7 +42,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   repository.device.mockResolvedValue({ id: deviceId, publicKey, authorizationEpoch: 7 });
   repository.allowed.mockResolvedValue(true);
-  repository.policyOff.mockResolvedValue(false);
+  repository.policyOff.mockResolvedValue(undefined);
   repository.issue.mockImplementation(() =>
     Promise.resolve({
       id: sessionId,
@@ -127,17 +127,49 @@ it('answers 403 desktop_pool_policy_required wherever Desktop AI processing is o
   expect(repository.issue).not.toHaveBeenCalled();
   // a worker credential of an account whose approval was turned off afterwards
   repository.session.mockResolvedValue(undefined);
-  repository.policyOff.mockResolvedValue(true);
+  repository.policyOff.mockResolvedValue({ deviceId, publicKey, authorizationEpoch: 7 });
   await expect(service.authenticate('Bearer ' + token, proof(), 'claim', '{}')).rejects.toMatchObject({
     status: 403,
     message: 'desktop_pool_policy_required',
   });
+  // only to a caller that proves it holds the installation key: a bad proof learns nothing about the account
+  await expect(service.authenticate('Bearer ' + token, proof('heartbeat'), 'claim', '{}')).rejects.toMatchObject({
+    status: 401,
+    message: 'desktop_worker_credential_invalid',
+  });
+  expect(repository.consume).not.toHaveBeenCalled();
   // any other credential that does not authenticate is still an invalid credential
-  repository.policyOff.mockResolvedValue(false);
+  repository.policyOff.mockResolvedValue(undefined);
   await expect(service.authenticate('Bearer ' + token, proof(), 'claim', '{}')).rejects.toMatchObject({
     status: 401,
     message: 'desktop_worker_credential_invalid',
   });
+});
+
+it('names a proof whose timestamp is off by more than two minutes, so a wrong clock is not read as a refused computer', async () => {
+  const request = initial();
+  request.timestamp -= 180_000;
+  request.signature = sign(
+    null,
+    Buffer.from(desktopSessionMessage('server', 'account', request)),
+    keys.privateKey,
+  ).toString('base64');
+  await expect(service.issue(auth, request)).rejects.toMatchObject({ status: 401, message: 'desktop_proof_expired' });
+  // an unknown device is still a refused device, whatever its clock says
+  repository.device.mockResolvedValueOnce(undefined);
+  await expect(service.issue(auth, request)).rejects.toMatchObject({
+    status: 401,
+    message: 'desktop_worker_credential_invalid',
+  });
+  const late = { sessionId, sequence: 1, timestamp: Date.now() + 180_000, signature: '' };
+  late.signature = sign(
+    null,
+    Buffer.from(desktopWorkerMessage('server', 7, token, late, 'claim', '{}')),
+    keys.privateKey,
+  ).toString('base64');
+  await expect(
+    service.authenticate('Bearer ' + token, Buffer.from(JSON.stringify(late)).toString('base64'), 'claim', '{}'),
+  ).rejects.toMatchObject({ status: 401, message: 'desktop_proof_expired' });
 });
 
 it('matches the native UTF-8 request-signing protocol fixture', () => {

@@ -225,7 +225,7 @@ beforeEach(() => {
   challenges.issue.mockResolvedValue(row());
   challenges.read.mockResolvedValue(row());
   challenges.record.mockResolvedValue(true);
-  repository.policyOff.mockResolvedValue(false);
+  repository.policyOff.mockResolvedValue(undefined);
   vi.mocked(getConfig).mockResolvedValue(
     settings({ enabled: true, clip: { enabled: true, modelName: profile.modelName } }),
   );
@@ -569,7 +569,39 @@ it('names and logs every refusal of a report, a challenge read and a qualificati
 
 it('answers 403 desktop_pool_policy_required when the account turned Desktop AI processing off', async () => {
   repository.session.mockResolvedValue(undefined);
-  repository.policyOff.mockResolvedValue(true);
+  repository.policyOff.mockResolvedValue({
+    deviceId: id,
+    publicKey: keys.publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64'),
+    authorizationEpoch: 2,
+  });
   const response = await post('/desktop/worker/challenges', 'challenge', payload());
   expect([response.status, response.body.message]).toEqual([403, 'desktop_pool_policy_required']);
+});
+
+it('holds back a desktop that lost a model for failing it: no new challenge and no grant until the hold ends', async () => {
+  const broker = { heldUntil: vi.fn().mockResolvedValue(new Date(Date.now() + 60_000)) };
+  const service = new DesktopQualificationService(
+    { authenticate: vi.fn().mockResolvedValue(grant) } as never,
+    challenges as never,
+    {} as never,
+    {} as never,
+    activation as never,
+    repository as never,
+    {} as never,
+    broker as never,
+  );
+  // a conflict the desktop retries, like the rest of the challenge bookkeeping
+  await expect(service.issue(undefined, undefined, payload())).rejects.toMatchObject({
+    status: 409,
+    message: 'desktop_qualification_hold',
+  });
+  expect(broker.heldUntil).toHaveBeenCalledWith(id, expect.arrayContaining([profile.modelKey]));
+  await expect(service.record(undefined, undefined, id, JSON.stringify({ report: report() }))).rejects.toMatchObject({
+    status: 409,
+    message: 'desktop_qualification_hold',
+  });
+  expect(challenges.issue).not.toHaveBeenCalled();
+  expect(challenges.record).not.toHaveBeenCalled();
+  broker.heldUntil.mockResolvedValue(undefined);
+  await expect(service.issue(undefined, undefined, payload())).resolves.toMatchObject({ id });
 });

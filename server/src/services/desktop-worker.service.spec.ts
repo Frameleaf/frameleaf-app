@@ -13,6 +13,8 @@ const broker = {
   fail: vi.fn(),
   attemptModelKey: vi.fn(),
   withdraw: vi.fn(),
+  countFailure: vi.fn(),
+  clearFailures: vi.fn(),
 };
 const warn = vi.spyOn(LoggingRepository.prototype, 'warn').mockImplementation(() => {});
 const warnings = () => warn.mock.calls.map(([message]) => message);
@@ -152,6 +154,15 @@ it('checks durable source and policy authority instead of serving raw broker inp
   // anything that is not a lost lease stays a server error
   authority.input.mockRejectedValue(new Error('connection terminated'));
   await expect(guarded.input('token', 'proof', 'attempt')).rejects.toThrow('connection terminated');
+  // so does a broken server invariant, even one named like a desktop refusal
+  for (const fault of [
+    'desktop_input_authority_unavailable',
+    'desktop_input_authority_invalid',
+    'desktop_clip_index_invalid',
+  ]) {
+    authority.input.mockRejectedValue(new Error(fault));
+    await expect(guarded.input('token', 'proof', 'attempt')).rejects.not.toMatchObject({ status: 401 });
+  }
 });
 
 describe('refusals (docs/desktop-worker-setup-protocol.md)', () => {
@@ -183,10 +194,26 @@ describe('refusals (docs/desktop-worker-setup-protocol.md)', () => {
     const signal = new AbortController().signal;
     await expect(service.claim('token', 'proof', '{"modelKeys":["m"],"waitMs":0}', signal)).rejects.toThrow();
     await expect(service.revoke('token', 'proof')).rejects.toThrow();
+    // a refused credential is logged with the session its proof names, and a claim with the models it asked for
+    const { ForbiddenException } = await import('@nestjs/common');
+    const named = Buffer.from(
+      JSON.stringify({
+        sessionId: '1117c1ca-0495-46e9-b579-f321520c2b1a',
+        sequence: 1,
+        timestamp: 1,
+        signature: Buffer.alloc(64).toString('base64'),
+      }),
+    ).toString('base64');
+    await expect(service.revoke('token', named)).rejects.toThrow();
+    auth.authenticate.mockResolvedValue(grant);
+    broker.claim.mockRejectedValue(new ForbiddenException('desktop_pool_policy_required'));
+    await expect(service.claim('token', 'proof', '{"modelKeys":["m1","m2"],"waitMs":0}', signal)).rejects.toThrow();
     expect(warnings()).toEqual([
       'Desktop worker fail refused (device device): 400 desktop_worker_payload_invalid',
       'Desktop worker claim refused (unauthenticated): 401 desktop_worker_credential_invalid',
       'Desktop worker session revoke refused (unauthenticated): 401 desktop_worker_credential_invalid',
+      'Desktop worker session revoke refused (unauthenticated, session 1117c1ca-0495-46e9-b579-f321520c2b1a): 401 desktop_worker_credential_invalid',
+      'Desktop worker claim refused (device device, models m1, m2): 403 desktop_pool_policy_required',
     ]);
   });
 
@@ -248,40 +275,34 @@ describe('a desktop that keeps failing a model', () => {
     ]);
   });
 
-  it('loses the model after three inference failures in a row, and must qualify again', async () => {
+  it('loses the model at the third failure in a row the database counts, and must qualify again', async () => {
+    broker.countFailure.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
     await fail('inference-failed');
-    await fail('inference-failed');
+    await fail('model-unavailable');
     expect(broker.withdraw).not.toHaveBeenCalled();
     await fail('inference-failed');
+    expect(broker.countFailure).toHaveBeenCalledTimes(3);
+    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model');
     expect(broker.withdraw).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
     expect(warnings().at(-1)).toBe(
       'Desktop worker lost face:model after 3 failures in a row (device device): it must qualify again',
     );
-    // the count starts again once it has qualified again
-    await fail('inference-failed');
-    expect(broker.withdraw).toHaveBeenCalledOnce();
   });
 
-  it('does not count a paused desktop, an unreadable photo, another model or a stale lease', async () => {
-    await fail('inference-failed');
-    await fail('inference-failed');
+  it('does not count a paused desktop, an unreadable photo or a stale lease', async () => {
     await fail('cancelled');
     await fail('input-invalid');
-    broker.attemptModelKey.mockResolvedValueOnce('ocr:model');
-    await fail('inference-failed');
     broker.fail.mockResolvedValueOnce(false);
     await fail('inference-failed');
+    expect(broker.countFailure).not.toHaveBeenCalled();
     expect(broker.withdraw).not.toHaveBeenCalled();
   });
 
-  it('starts counting again after a result it got right', async () => {
-    await fail('inference-failed');
-    await fail('model-unavailable');
+  it('ends the run of failures with a result it got right, and not with one that was refused', async () => {
     await service.complete('token', 'proof', 'attempt', '{"result":{}}');
-    await fail('inference-failed');
-    await fail('inference-failed');
-    expect(broker.withdraw).not.toHaveBeenCalled();
-    await fail('inference-failed');
-    expect(broker.withdraw).toHaveBeenCalledOnce();
+    expect(broker.clearFailures).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
+    broker.complete.mockResolvedValue(false);
+    await service.complete('token', 'proof', 'attempt', '{"result":{}}');
+    expect(broker.clearFailures).toHaveBeenCalledOnce();
   });
 });

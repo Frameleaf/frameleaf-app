@@ -1687,6 +1687,7 @@ export const CUSTOM_CLIP_MODELS_KEY = 'custom-clip-models' as SystemMetadataKey;
 
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.FrameleafDesktopAssistance]: import('src/services/desktop-assistance-policy.service.js').DesktopAssistancePolicyRegistry;
+  [SystemMetadataKey.FrameleafDesktopModelFailures]: import('src/repositories/desktop-ml.repository.js').DesktopModelFailures;
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
   [SystemMetadataKey.FaceModelState]: { modelName: string };

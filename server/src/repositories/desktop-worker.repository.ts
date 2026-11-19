@@ -176,14 +176,19 @@ export class DesktopWorkerRepository {
 
   /**
    * Why a worker credential that did not authenticate was refused, when the reason is the account: the
-   * credential names a live worker session whose account has Desktop AI processing turned off.
+   * credential names a live worker session whose account has Desktop AI processing turned off. Returns what
+   * the caller needs to check the request proof before saying so.
    */
-  async policyOff(id: string, tokenHash: Buffer): Promise<boolean> {
+  async policyOff(
+    id: string,
+    tokenHash: Buffer,
+  ): Promise<{ deviceId: string; publicKey: string; authorizationEpoch: number } | undefined> {
     const row = await this.db
       .selectFrom('desktop_worker_session as worker')
       .innerJoin('desktop_device as device', 'device.id', 'worker.deviceId')
       .innerJoin('user as owner', 'owner.id', 'device.userId')
-      .select(['owner.id as ownerId', 'owner.isAdmin'])
+      .select(['owner.id as ownerId', 'owner.isAdmin', 'device.id as deviceId', 'device.publicKey'])
+      .select('worker.authorizationEpoch')
       .where('worker.id', '=', id)
       .where('worker.tokenHash', '=', tokenHash)
       .where('worker.revokedAt', 'is', null)
@@ -191,7 +196,8 @@ export class DesktopWorkerRepository {
       .where('device.revokedAt', 'is', null)
       .where('owner.deletedAt', 'is', null)
       .executeTakeFirst();
-    return !!row && !(await desktopWorkerAccountAllowed(this.db, row.ownerId, row.isAdmin));
+    if (!row || (await desktopWorkerAccountAllowed(this.db, row.ownerId, row.isAdmin))) return;
+    return { deviceId: row.deviceId, publicKey: row.publicKey, authorizationEpoch: row.authorizationEpoch };
   }
 
   async device(userId: string, id: string) {

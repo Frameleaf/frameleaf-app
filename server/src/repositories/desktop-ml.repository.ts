@@ -3,6 +3,7 @@ import { type Kysely, type Selectable, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import z from 'zod';
+import { SystemMetadataKey } from 'src/enum.js';
 import {
   type DesktopWorkerGrant,
   type DesktopWorkerTables,
@@ -20,7 +21,11 @@ import { type DesktopQualificationTables } from 'src/schema/tables/desktop-worke
 import { desktopAccountPermitted } from 'src/utils/desktop-assistance-policy.js';
 import { type DesktopMlDisclosure, desktopMlDisclosureSchema } from 'src/utils/desktop-ml-disclosure.js';
 import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
-import { DESKTOP_LEASE_SECONDS, DESKTOP_PRESENCE_SECONDS } from 'src/utils/desktop-worker-timing.js';
+import {
+  DESKTOP_LEASE_SECONDS,
+  DESKTOP_PRESENCE_SECONDS,
+  DESKTOP_REQUALIFY_HOLD_SECONDS,
+} from 'src/utils/desktop-worker-timing.js';
 import { lockedAssetIdExists } from 'src/utils/locked.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -69,6 +74,13 @@ export type DesktopMlRequest = Pick<Task, 'ownerId' | 'modelKey' | 'authorityKey
   disclosure?: DesktopMlDisclosure;
 };
 const jsonObject = z.record(z.string(), z.json());
+const failuresSchema = z.record(
+  z.string(),
+  z.object({ failures: z.number().int().min(0), at: z.iso.datetime(), heldUntil: z.iso.datetime().optional() }),
+);
+/** Per desktop and model: failures in a row, when the last one was, and a hold after the model was withdrawn. */
+export type DesktopModelFailures = z.infer<typeof failuresSchema>;
+const failureKey = (deviceId: string, modelKey: string) => `${deviceId}:${modelKey}`;
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
 const leaseEnd = (deadline: Date, credentialExpiry: Date) =>
   sql<Date>`least(${deadline}, ${credentialExpiry}, clock_timestamp() + ${sql.raw(`interval '${DESKTOP_LEASE_SECONDS} seconds'`)})`;
@@ -421,7 +433,8 @@ export class DesktopMlRepository {
 
   /**
    * Takes a model away from a desktop that keeps failing it. Its qualification goes, so it is offered no more
-   * of that work until it qualifies again (the next inventory still lists the model).
+   * of that work until it qualifies again (the next inventory still lists the model), and it cannot qualify
+   * for it again until `DESKTOP_REQUALIFY_HOLD_SECONDS` have passed.
    */
   withdraw(grant: DesktopWorkerGrant, taskModelKey: string): Promise<boolean> {
     const keys = [...equivalentDesktopModelKeys(taskModelKey)];
@@ -440,8 +453,85 @@ export class DesktopMlRepository {
         .set({ modelKeys: sql<string[]>`${kept}::jsonb` })
         .where('id', '=', grant.sessionId)
         .execute();
+      await this.changeFailures(db, (failures, now) => {
+        failures[failureKey(grant.deviceId, taskModelKey)] = {
+          failures: 0,
+          at: now.toISOString(),
+          heldUntil: new Date(now.getTime() + DESKTOP_REQUALIFY_HOLD_SECONDS * 1000).toISOString(),
+        };
+      });
       return kept.length !== worker.modelKeys.length;
     });
+  }
+
+  /**
+   * Counts one more failure in a row for this desktop and model, and returns the count. Kept in the database
+   * (one small `system_metadata` record), so it is the same for every API process and survives a restart.
+   */
+  countFailure(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string): Promise<number> {
+    const key = failureKey(grant.deviceId, taskModelKey);
+    return this.db.transaction().execute(async (db) => {
+      let count = 0;
+      await this.changeFailures(db, (failures, now) => {
+        count = (failures[key]?.failures ?? 0) + 1;
+        failures[key] = { ...failures[key], failures: count, at: now.toISOString() };
+      });
+      return count;
+    });
+  }
+
+  /** A result the desktop got right ends its run of failures for that model. */
+  async clearFailures(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string): Promise<void> {
+    const key = failureKey(grant.deviceId, taskModelKey);
+    // Nearly every result finds nothing to clear: look before taking the lock.
+    if (!(await this.readFailures(this.db))[key]?.failures) return;
+    await this.db.transaction().execute((db) =>
+      this.changeFailures(db, (failures) => {
+        if (failures[key]?.heldUntil) failures[key].failures = 0;
+        else delete failures[key];
+      }),
+    );
+  }
+
+  /** Until when this desktop may not qualify for a model again (any of `modelKeys`), if it is being held back. */
+  async heldUntil(deviceId: string, modelKeys: readonly string[]): Promise<Date | undefined> {
+    const failures = await this.readFailures(this.db);
+    const { rows } = await sql<{ now: Date }>`SELECT clock_timestamp() AS now`.execute(this.db);
+    const until = modelKeys
+      .map((modelKey) => failures[failureKey(deviceId, modelKey)]?.heldUntil)
+      .filter((value): value is string => !!value)
+      .map((value) => new Date(value))
+      .filter((value) => value.getTime() > new Date(rows[0].now).getTime())
+      .toSorted((a, b) => b.getTime() - a.getTime());
+    return until[0];
+  }
+
+  private async readFailures(db: Kysely<DesktopMlDatabase>): Promise<DesktopModelFailures> {
+    const { rows } = await sql<{ value: unknown }>`SELECT value FROM system_metadata
+      WHERE key=${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+    const parsed = failuresSchema.safeParse(rows[0]?.value ?? {});
+    return parsed.success ? parsed.data : {};
+  }
+
+  /** Read, change and write the record under one lock; entries with nothing left to say are dropped. */
+  private async changeFailures(
+    db: Transaction<DesktopMlDatabase>,
+    change: (failures: DesktopModelFailures, now: Date) => void,
+  ): Promise<void> {
+    await sql`SELECT pg_advisory_xact_lock(912740, 2)`.execute(db);
+    const failures = await this.readFailures(db);
+    const { rows } = await sql<{ now: Date }>`SELECT clock_timestamp() AS now`.execute(db);
+    const now = new Date(rows[0].now);
+    change(failures, now);
+    for (const [key, entry] of Object.entries(failures)) {
+      const held = entry.heldUntil && new Date(entry.heldUntil).getTime() > now.getTime();
+      // A count is good for an hour (a qualification's life); a hold until it ends.
+      if (!held && (entry.failures === 0 || now.getTime() - new Date(entry.at).getTime() > 3_600_000))
+        delete failures[key];
+    }
+    await sql`INSERT INTO system_metadata (key, value)
+      VALUES (${SystemMetadataKey.FrameleafDesktopModelFailures}, ${JSON.stringify(failures)}::text::jsonb)
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(db);
   }
 
   async cancel(id: string): Promise<boolean> {
