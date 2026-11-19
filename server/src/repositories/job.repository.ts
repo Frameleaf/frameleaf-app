@@ -188,6 +188,13 @@ const REPEATABLE_JOBS = new Set<JobName>([
 const isRepeatableRequest = (item: JobItem) =>
   item.name === JobName.MediaHealthLocateMissing && item.data?.pending === true;
 /** Rows a selection producer inserts per fenced transaction. */
+/**
+ * One live job per edit row. The sweep re-sends a queued edit every 15 minutes; while its queue is paused
+ * the earlier job is still waiting, and without a key each pass added another.
+ */
+const editOperationJobOptions = (operationId?: string): QueueOptions | null =>
+  operationId ? { deduplication: { id: `edit-operation:${operationId}` } } : null;
+
 const SELECTION_PAGE = 2000;
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
@@ -1639,9 +1646,14 @@ export class JobRepository {
       case JobName.AssetPaletteQueueAll: {
         return { deduplication: { id: `${item.name}:${item.data.afterId ?? 'root'}:${!!item.data.force}` } };
       }
+      case JobName.AssetEditThumbnailGeneration:
+      case JobName.AssetVideoEditGeneration: {
+        return editOperationJobOptions(item.data.operationId);
+      }
       case JobName.AssetDevelopRender: {
         // The automatic retry of a failed render waits before it is claimed (FL-64).
-        return item.data.delay ? { delay: item.data.delay } : null;
+        const options = editOperationJobOptions(item.data.operationId);
+        return item.data.delay ? { ...options, delay: item.data.delay } : options;
       }
       case JobName.FacialRecognitionQueueAll: {
         return { deduplication: { id: JobName.FacialRecognitionQueueAll } };

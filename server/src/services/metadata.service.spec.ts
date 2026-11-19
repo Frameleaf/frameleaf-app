@@ -3424,6 +3424,54 @@ describe(MetadataService.name, () => {
         }),
       );
     });
+
+    it.each([
+      { imported: true, expected: { width: 2160, height: 3840 } },
+      { imported: false, expected: { width: undefined, height: undefined } },
+    ])(
+      'takes an edited video’s size from its edited file only on import ($imported)',
+      async ({ imported, expected }) => {
+        const asset = AssetFactory.create({ type: AssetType.Video, width: 360, height: 640, isEdited: true });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.job.isImportedMetadataJob.mockResolvedValue(imported);
+        mocks.asset.getForVideo.mockResolvedValue({
+          originalPath: asset.originalPath,
+          ownerId: asset.ownerId,
+          encodedVideoPath: null,
+          editedVideoPath: '/edited.mp4',
+        });
+        // The edited file carries a 90° rotation flag: 3840×2160 stored, shown 2160×3840.
+        mocks.media.probe.mockImplementation((path: string) =>
+          Promise.resolve(
+            path === '/edited.mp4' ? videoInfoStub.videoStreamVertical2160p : videoInfoStub.videoStreamH264,
+          ),
+        );
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining(expected));
+      },
+    );
+
+    it('keeps the size of a video edit published after the edited file was probed', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video, width: 360, height: 640, isEdited: true });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.job.isImportedMetadataJob.mockResolvedValue(true);
+      const video = { originalPath: asset.originalPath, ownerId: asset.ownerId, encodedVideoPath: null };
+      // Probed '/edited.mp4'; by publication a new edit has replaced it with its own file.
+      mocks.asset.getForVideo
+        .mockResolvedValueOnce({ ...video, editedVideoPath: '/edited.mp4' })
+        .mockResolvedValue({ ...video, editedVideoPath: '/edited-v2.mp4' });
+      mocks.media.probe.mockImplementation((path: string) =>
+        Promise.resolve(
+          path === '/edited.mp4' ? videoInfoStub.videoStreamVertical2160p : videoInfoStub.videoStreamH264,
+        ),
+      );
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ width: undefined, height: undefined }));
+    });
   });
 
   describe('handleQueueSidecar', () => {
