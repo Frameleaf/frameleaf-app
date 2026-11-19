@@ -1,4 +1,7 @@
 const assert = require("node:assert/strict");
+// FL-1683: these cases model GitHub; a CI runner's own GITHUB_SERVER_URL (a Forgejo address) must not
+// switch them to the Forgejo path. frameleaf-release-forgejo.test.cjs sets it explicitly per case.
+delete process.env.GITHUB_SERVER_URL;
 const test = require("node:test");
 const fs = require("node:fs/promises");
 const os = require("node:os");
