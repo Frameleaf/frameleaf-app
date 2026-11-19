@@ -4917,7 +4917,7 @@ export type WorkerDesktopHelperDto = {
     /** Name of the account signed in on it */
     ownerName?: string;
     platform: DesktopPlatform;
-    /** Online in the last 90 seconds with a current qualification, so it can take AI work now */
+    /** Online now (seen within the last few minutes) with a current qualification, so it can take AI work now */
     ready: boolean;
 };
 export type WorkerWorkloadAdmissionDto = {

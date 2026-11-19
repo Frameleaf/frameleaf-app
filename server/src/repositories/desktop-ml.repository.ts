@@ -10,13 +10,17 @@ import {
   desktopWorkerAccountAllowed,
   lockDesktopWorker,
   lockDesktopWorkerForAdoption,
+  readDesktopAssistancePolicy,
 } from 'src/repositories/desktop-worker.repository.js';
 import { DB } from 'src/schema/index.js';
 
 export type { DesktopWorkerGrant } from 'src/repositories/desktop-worker.repository.js';
 import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
 import { type DesktopQualificationTables } from 'src/schema/tables/desktop-worker-qualification.table.js';
+import { desktopAccountPermitted } from 'src/utils/desktop-assistance-policy.js';
 import { type DesktopMlDisclosure, desktopMlDisclosureSchema } from 'src/utils/desktop-ml-disclosure.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
+import { DESKTOP_LEASE_SECONDS, DESKTOP_PRESENCE_SECONDS } from 'src/utils/desktop-worker-timing.js';
 import { lockedAssetIdExists } from 'src/utils/locked.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -50,7 +54,15 @@ const taskColumns = [
   'createdAt',
   'deadlineAt',
 ] as const;
-export type DesktopMlClaim = { task: Omit<Task, 'input'>; attempt: Attempt; qualificationExpiresAt: Date };
+export type DesktopMlClaim = {
+  task: Omit<Task, 'input'>;
+  attempt: Attempt;
+  /** The desktop's own qualification for this task: its id, and the model key the desktop holds the model under. */
+  qualificationId: string;
+  workerModelKey: string;
+  qualificationExpiresAt: Date;
+};
+export type DesktopFailureCode = 'inference-failed' | 'input-invalid' | 'model-unavailable' | 'cancelled';
 export type DesktopMlRequest = Pick<Task, 'ownerId' | 'modelKey' | 'authorityKey' | 'config' | 'inputKind'> & {
   input: Buffer;
   deadlineAt: Date;
@@ -59,7 +71,10 @@ export type DesktopMlRequest = Pick<Task, 'ownerId' | 'modelKey' | 'authorityKey
 const jsonObject = z.record(z.string(), z.json());
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
 const leaseEnd = (deadline: Date, credentialExpiry: Date) =>
-  sql<Date>`least(${deadline}, ${credentialExpiry}, clock_timestamp() + interval '120 seconds')`;
+  sql<Date>`least(${deadline}, ${credentialExpiry}, clock_timestamp() + ${sql.raw(`interval '${DESKTOP_LEASE_SECONDS} seconds'`)})`;
+const seenSince = sql.raw(`clock_timestamp() - interval '${DESKTOP_PRESENCE_SECONDS} seconds'`);
+/** A task made for one key can be run under the same encoder's key of another desktop runtime revision. */
+const sameModel = (taskModelKey: string, held: string) => equivalentDesktopModelKeys(taskModelKey).includes(held);
 
 @Injectable()
 export class DesktopMlRepository {
@@ -143,7 +158,6 @@ export class DesktopMlRepository {
         .limit(1)
         .executeTakeFirst();
       if (busy) {
-        if (!modelKeys.includes(busy.modelKey)) return;
         const attempt = await db
           .selectFrom('desktop_ml_attempt')
           .selectAll()
@@ -156,9 +170,15 @@ export class DesktopMlRepository {
           .where('id', '=', attempt.taskId)
           .executeTakeFirstOrThrow();
         if (task.ownerId !== worker.ownerId && !household) return;
-        const qualification = await this.qualification(db, grant, task, attempt.qualificationId);
-        if (!qualification) return;
-        return { task, attempt, qualificationExpiresAt: new Date(qualification.expiresAt) };
+        const qualification = await this.qualification(db, grant, task);
+        if (!qualification || !modelKeys.includes(qualification.modelKey)) return;
+        return {
+          task,
+          attempt,
+          qualificationId: qualification.id,
+          workerModelKey: qualification.modelKey,
+          qualificationExpiresAt: new Date(qualification.expiresAt),
+        };
       }
 
       const task = await db
@@ -182,7 +202,7 @@ export class DesktopMlRepository {
           eb.or(
             qualifications.map((q) =>
               eb.and([
-                eb('modelKey', '=', q.modelKey),
+                eb('modelKey', 'in', [...equivalentDesktopModelKeys(q.modelKey)]),
                 eb('configSha256', '=', q.configSha256),
                 eb('inputKind', '=', q.inputKind),
               ]),
@@ -212,7 +232,10 @@ export class DesktopMlRepository {
         .executeTakeFirst();
       if (!task) return;
       const qualification = qualifications.find(
-        (q) => q.modelKey === task.modelKey && q.configSha256 === task.configSha256 && q.inputKind === task.inputKind,
+        (q) =>
+          sameModel(task.modelKey, q.modelKey) &&
+          q.configSha256 === task.configSha256 &&
+          q.inputKind === task.inputKind,
       )!;
       if (task.attemptId)
         await db
@@ -246,6 +269,8 @@ export class DesktopMlRepository {
       return {
         task: { ...metadata, state: 'running', generation: attempt.generation, attemptId: attempt.id },
         attempt,
+        qualificationId: qualification.id,
+        workerModelKey: qualification.modelKey,
         qualificationExpiresAt: new Date(qualification.expiresAt),
       };
     });
@@ -316,12 +341,19 @@ export class DesktopMlRepository {
   }
 
   /** Stages a result only. The NAS dispatcher must revalidate asset/route authority before adopting it. */
-  async complete(grant: DesktopWorkerGrant, attemptId: string, value: Record<string, unknown>): Promise<boolean> {
+  async complete(
+    grant: DesktopWorkerGrant,
+    attemptId: string,
+    value: Record<string, unknown>,
+    /** Throws when the result is not what this task's model returns; nothing is staged then. */
+    validate?: (task: Pick<Task, 'modelKey' | 'inputKind'>, result: Record<string, unknown>) => void,
+  ): Promise<boolean> {
     const result = jsonObject.parse(value);
     const encoded = canonicalJson(result);
     if (Buffer.byteLength(encoded) > 4 * 1024 * 1024) throw new Error('desktop_result_too_large');
     const resultSha256 = sha256(encoded);
     const accepted = await this.withAttempt(grant, attemptId, async (db, task) => {
+      validate?.(task, result);
       await db
         .updateTable('desktop_ml_task')
         .set({ state: 'completed', result, resultSha256, input: null })
@@ -341,10 +373,26 @@ export class DesktopMlRepository {
     );
   }
 
-  async fail(grant: DesktopWorkerGrant, attemptId: string): Promise<boolean> {
+  /**
+   * The desktop gives up this attempt. `cancelled` (the person paused the desktop) puts the task straight back
+   * in line; any other code counts toward the three failures after which the task itself fails.
+   */
+  async fail(
+    grant: DesktopWorkerGrant,
+    attemptId: string,
+    code: DesktopFailureCode = 'inference-failed',
+  ): Promise<boolean> {
     return (
       (await this.withAttempt(grant, attemptId, async (db, task) => {
-        const exhausted = task.generation >= 3;
+        const outcome = code === 'cancelled' ? 'cancelled' : 'failed';
+        await db.updateTable('desktop_ml_attempt').set({ outcome }).where('id', '=', attemptId).execute();
+        const { failed } = await db
+          .selectFrom('desktop_ml_attempt')
+          .select(db.fn.countAll<string>().as('failed'))
+          .where('taskId', '=', task.id)
+          .where('outcome', '=', 'failed')
+          .executeTakeFirstOrThrow();
+        const exhausted = Number(failed) >= 3;
         await db
           .updateTable('desktop_ml_task')
           .set({
@@ -354,10 +402,46 @@ export class DesktopMlRepository {
           })
           .where('id', '=', task.id)
           .execute();
-        await db.updateTable('desktop_ml_attempt').set({ outcome: 'failed' }).where('id', '=', attemptId).execute();
         return true;
       })) ?? false
     );
+  }
+
+  /** The model key of the task behind one of this desktop's attempts, for the log line of a refusal. */
+  async attemptModelKey(grant: Pick<DesktopWorkerGrant, 'deviceId'>, attemptId: string): Promise<string | undefined> {
+    const row = await this.db
+      .selectFrom('desktop_ml_attempt as attempt')
+      .innerJoin('desktop_ml_task as task', 'task.id', 'attempt.taskId')
+      .select('task.modelKey')
+      .where('attempt.id', '=', attemptId)
+      .where('attempt.deviceId', '=', grant.deviceId)
+      .executeTakeFirst();
+    return row?.modelKey;
+  }
+
+  /**
+   * Takes a model away from a desktop that keeps failing it. Its qualification goes, so it is offered no more
+   * of that work until it qualifies again (the next inventory still lists the model).
+   */
+  withdraw(grant: DesktopWorkerGrant, taskModelKey: string): Promise<boolean> {
+    const keys = [...equivalentDesktopModelKeys(taskModelKey)];
+    return this.db.transaction().execute(async (db) => {
+      const worker = await this.device(db, grant);
+      if (!worker) return false;
+      await db
+        .deleteFrom('desktop_worker_qualification')
+        .where('deviceId', '=', grant.deviceId)
+        .where('sessionId', '=', grant.sessionId)
+        .where('modelKey', 'in', keys)
+        .execute();
+      const kept = worker.modelKeys.filter((key) => !keys.includes(key));
+      await db
+        .updateTable('desktop_worker_session')
+        .set({ modelKeys: sql<string[]>`${kept}::jsonb` })
+        .where('id', '=', grant.sessionId)
+        .execute();
+      return kept.length !== worker.modelKeys.length;
+    });
   }
 
   async cancel(id: string): Promise<boolean> {
@@ -381,7 +465,12 @@ export class DesktopMlRepository {
   }
 
   async hasLiveAttempt(id: string): Promise<boolean> {
+    const task = await this.db.selectFrom('desktop_ml_task').select('modelKey').where('id', '=', id).executeTakeFirst();
+    if (!task) return false;
+    const keys = [...equivalentDesktopModelKeys(task.modelKey)];
     const household = householdMatch(await desktopHouseholdDevices(this.db));
+    // The attempt stays live while its desktop holds any current qualification for this model and config:
+    // qualifying again replaces the row the attempt was leased under, and must not end the attempt.
     const { rows } = await sql<{ ownerId: string; isAdmin: boolean }>`
       SELECT u.id AS "ownerId", u."isAdmin" FROM desktop_ml_task t
       JOIN desktop_ml_attempt a ON a.id=t."attemptId" AND a."taskId"=t.id AND a.generation=t.generation
@@ -389,15 +478,15 @@ export class DesktopMlRepository {
       JOIN desktop_device d ON d.id=a."deviceId"
       JOIN "user" u ON u.id=d."userId" AND (u.id=t."ownerId" ${household})
       JOIN session p ON p.id=w."photoSessionId" AND p."userId"=u.id
-      JOIN desktop_worker_qualification q ON q.id=a."qualificationId" AND q."sessionId"=w.id
+      JOIN desktop_worker_qualification q ON q."sessionId"=w.id
         AND q."deviceId"=d.id AND q."authorizationEpoch"=d."authorizationEpoch"
-        AND q."modelKey"=t."modelKey" AND q."configSha256"=t."configSha256" AND q."inputKind"=t."inputKind"
+        AND q."modelKey"=ANY(${keys}::text[]) AND q."configSha256"=t."configSha256" AND q."inputKind"=t."inputKind"
       WHERE t.id=${id} AND t.state='running' AND t."deadlineAt">clock_timestamp()
         AND a.outcome IS NULL AND a."expiresAt">clock_timestamp()
         AND a."authorizationEpoch"=d."authorizationEpoch" AND w."authorizationEpoch"=d."authorizationEpoch"
         AND w."revokedAt" IS NULL AND w."expiresAt">clock_timestamp()
-        AND w."lastSeenAt">clock_timestamp()-interval '90 seconds'
-        AND w."modelKeys" @> jsonb_build_array(t."modelKey") AND q."expiresAt">clock_timestamp()
+        AND w."lastSeenAt">${seenSince}
+        AND w."modelKeys" @> jsonb_build_array(q."modelKey") AND q."expiresAt">clock_timestamp()
         AND d.state='preparing' AND d.mode='client-worker' AND d."revokedAt" IS NULL
         AND u."deletedAt" IS NULL AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp())
       LIMIT 1`.execute(this.db);
@@ -406,22 +495,24 @@ export class DesktopMlRepository {
 
   /**
    * FL-456: one of the owner's approved Frameleaf Desktop helpers, or (FL-1484) a computer that works on
-   * everyone's photos, is online (seen in the last 90 seconds) and holds a current qualification for
-   * `modelKey`, so a job sent to the helpers now can be taken.
+   * everyone's photos, is online (seen within `DESKTOP_PRESENCE_SECONDS`) and holds a current qualification
+   * for `modelKey` (or the same encoder under its own runtime revision), so a job sent to the helpers now
+   * can be taken.
    */
   async hasReadyWorker(ownerId: string, modelKey: string, options: { household?: boolean } = {}): Promise<boolean> {
     const household = householdMatch(options.household === false ? [] : await desktopHouseholdDevices(this.db));
+    const keys = [...equivalentDesktopModelKeys(modelKey)];
     const { rows } = await sql<{ userId: string; isAdmin: boolean }>`
       SELECT u.id AS "userId", u."isAdmin" FROM desktop_device d
       JOIN "user" u ON u.id=d."userId" AND u."deletedAt" IS NULL
       JOIN desktop_worker_session w ON w."deviceId"=d.id AND w."authorizationEpoch"=d."authorizationEpoch"
       JOIN session p ON p.id=w."photoSessionId" AND p."userId"=u.id
       JOIN desktop_worker_qualification q ON q."sessionId"=w.id AND q."deviceId"=d.id
-        AND q."authorizationEpoch"=d."authorizationEpoch" AND q."modelKey"=${modelKey}
+        AND q."authorizationEpoch"=d."authorizationEpoch" AND q."modelKey"=ANY(${keys}::text[])
       WHERE (d."userId"=${ownerId} ${household}) AND d.state='preparing' AND d.mode='client-worker'
         AND d."revokedAt" IS NULL AND w."revokedAt" IS NULL AND w."expiresAt">clock_timestamp()
-        AND w."lastSeenAt">clock_timestamp()-interval '90 seconds'
-        AND w."modelKeys" @> jsonb_build_array(${modelKey}::text) AND q."expiresAt">clock_timestamp()
+        AND w."lastSeenAt">${seenSince}
+        AND w."modelKeys" @> jsonb_build_array(q."modelKey") AND q."expiresAt">clock_timestamp()
         AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp())
       LIMIT 16`.execute(this.db);
     for (const row of rows) {
@@ -429,6 +520,69 @@ export class DesktopMlRepository {
       if (await desktopWorkerAccountAllowed(this.db, row.userId, row.isAdmin)) return true;
     }
     return false;
+  }
+
+  /**
+   * How many extra jobs each queue may start for desktops, given the model keys its work needs now
+   * (`scopes`; a queue is left out when its route would not send work to desktops or its task is off).
+   *
+   * A desktop holds one lease across every queue, so it counts once: for the queue whose job it is running,
+   * or, while free, for the first queue in `scopes` that it is qualified for and that has work waiting. Only
+   * a desktop that is online, of a permitted account, with an unexpired qualification for a key in that
+   * queue's scope counts, so the number falls as soon as a model changes, a qualification runs out or the
+   * desktop stops asking for work.
+   */
+  async helperCapacity(scopes: Readonly<Record<string, readonly string[]>>): Promise<Record<string, number>> {
+    const queues = Object.keys(scopes).filter((queue) => scopes[queue].length > 0);
+    const capacity: Record<string, number> = Object.fromEntries(Object.keys(scopes).map((queue) => [queue, 0]));
+    if (queues.length === 0) return capacity;
+    const keys = [...new Set(queues.flatMap((queue) => scopes[queue]))];
+    const { rows } = await sql<{
+      id: string;
+      userId: string;
+      isAdmin: boolean;
+      held: string[];
+      busyQueue: string | null;
+      busy: boolean;
+    }>`
+      SELECT d.id, u.id AS "userId", u."isAdmin", array_agg(DISTINCT q."modelKey") AS held,
+        lease.queue AS "busyQueue", lease.id IS NOT NULL AS busy
+      FROM desktop_device d
+      JOIN "user" u ON u.id=d."userId" AND u."deletedAt" IS NULL
+      JOIN desktop_worker_session w ON w."deviceId"=d.id AND w."authorizationEpoch"=d."authorizationEpoch"
+      JOIN session p ON p.id=w."photoSessionId" AND p."userId"=u.id
+      JOIN desktop_worker_qualification q ON q."sessionId"=w.id AND q."deviceId"=d.id
+        AND q."authorizationEpoch"=d."authorizationEpoch" AND q."modelKey"=ANY(${keys}::text[])
+        AND q."expiresAt">clock_timestamp() AND w."modelKeys" @> jsonb_build_array(q."modelKey")
+      LEFT JOIN LATERAL (
+        SELECT a.id, j.queue FROM desktop_ml_attempt a
+        JOIN desktop_ml_task t ON t."attemptId"=a.id AND t.state='running' AND t."deadlineAt">clock_timestamp()
+        LEFT JOIN job j ON j.id=(t.disclosure->'job'->>'id')::uuid AND j.state='active'
+        WHERE a."deviceId"=d.id AND a.outcome IS NULL AND a."expiresAt">clock_timestamp() LIMIT 1
+      ) lease ON true
+      WHERE d.state='preparing' AND d.mode='client-worker' AND d."revokedAt" IS NULL
+        AND w."revokedAt" IS NULL AND w."expiresAt">clock_timestamp() AND w."lastSeenAt">${seenSince}
+        AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp())
+      GROUP BY d.id, u.id, u."isAdmin", lease.queue, lease.id
+      ORDER BY d.id LIMIT 64`.execute(this.db);
+    if (rows.length === 0) return capacity;
+    const policy = await readDesktopAssistancePolicy(this.db);
+    if (!policy) return capacity;
+    const { rows: waiting } = await sql<{ queue: string }>`
+      SELECT name AS queue FROM job_queue WHERE name=ANY(${queues}::text[]) AND EXISTS (
+        SELECT 1 FROM job WHERE job.queue=job_queue.name AND job.state='pending' AND job."availableAt"<=now())`.execute(
+      this.db,
+    );
+    const hasWork = new Set(waiting.map((row) => row.queue));
+    for (const row of rows) {
+      if (!desktopAccountPermitted(policy, row.userId, row.isAdmin)) continue;
+      const qualified = (queue: string) => scopes[queue].some((key) => row.held.includes(key));
+      const queue = row.busy
+        ? queues.find((name) => name === row.busyQueue && qualified(name))
+        : queues.find((name) => hasWork.has(name) && qualified(name));
+      if (queue) capacity[queue]++;
+    }
+    return capacity;
   }
 
   /** FL-1484: whether this photo is Locked, which keeps it off another account's computers. */
@@ -472,11 +626,7 @@ export class DesktopMlRepository {
       if (!attempt?.workerSessionId) throw new Error('desktop_result_authority_lost');
       const worker = await lockDesktopWorkerForAdoption(db, { ...attempt, sessionId: attempt.workerSessionId });
       const household = (await desktopHouseholdDevices(db)).includes(attempt.deviceId);
-      if (
-        !worker ||
-        (worker.ownerId !== expected.ownerId && !household) ||
-        !worker.modelKeys.includes(expected.modelKey)
-      )
+      if (!worker || (worker.ownerId !== expected.ownerId && !household))
         throw new Error('desktop_result_authority_lost');
       const task = await db
         .selectFrom('desktop_ml_task')
@@ -493,15 +643,9 @@ export class DesktopMlRepository {
         .where('deadlineAt', '>', sql<Date>`clock_timestamp()`)
         .forUpdate()
         .executeTakeFirst();
-      if (
-        !task ||
-        !(await this.qualification(
-          db,
-          { ...attempt, sessionId: attempt.workerSessionId },
-          task,
-          attempt.qualificationId,
-        ))
-      )
+      const qualification =
+        task && (await this.qualification(db, { ...attempt, sessionId: attempt.workerSessionId }, task));
+      if (!qualification || !worker.modelKeys.includes(qualification.modelKey))
         throw new Error('desktop_result_authority_lost');
     };
     if (transaction)
@@ -534,24 +678,28 @@ export class DesktopMlRepository {
       .execute();
   }
 
+  /**
+   * This desktop's current qualification for the task's model and config. An attempt is not tied to the row
+   * it was leased under: qualifying again replaces that row with fresh evidence for the same model, and the
+   * attempt in flight goes on under it.
+   */
   private qualification(
     db: Transaction<DesktopMlDatabase>,
     grant: Omit<DesktopWorkerGrant, 'credentialHash'>,
     task: Pick<Task, 'modelKey' | 'configSha256' | 'inputKind'>,
-    id: string | null,
   ) {
-    if (!id) return Promise.resolve(undefined);
     return db
       .selectFrom('desktop_worker_qualification')
       .selectAll()
-      .where('id', '=', id)
       .where('sessionId', '=', grant.sessionId)
       .where('deviceId', '=', grant.deviceId)
       .where('authorizationEpoch', '=', grant.authorizationEpoch)
-      .where('modelKey', '=', task.modelKey)
+      .where('modelKey', 'in', [...equivalentDesktopModelKeys(task.modelKey)])
       .where('configSha256', '=', task.configSha256)
       .where('inputKind', '=', task.inputKind)
       .where('expiresAt', '>', sql<Date>`clock_timestamp()`)
+      .orderBy('createdAt', 'desc')
+      .limit(1)
       .executeTakeFirst();
   }
 
@@ -588,10 +736,10 @@ export class DesktopMlRepository {
         .where('deadlineAt', '>', sql<Date>`clock_timestamp()`)
         .forUpdate()
         .executeTakeFirst();
-      if (!task || !worker.modelKeys.includes(task.modelKey)) return;
+      if (!task) return;
       if (task.ownerId !== worker.ownerId && !(await desktopHouseholdDevices(db)).includes(grant.deviceId)) return;
-      const qualification = await this.qualification(db, grant, task, attempt.qualificationId);
-      if (!qualification) return;
+      const qualification = await this.qualification(db, grant, task);
+      if (!qualification || !worker.modelKeys.includes(qualification.modelKey)) return;
       const live = await db
         .selectFrom('desktop_ml_attempt')
         .select('id')

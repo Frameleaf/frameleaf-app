@@ -23,6 +23,7 @@ import {
   desktopAssistancePolicySchema,
   householdDevices,
 } from 'src/utils/desktop-assistance-policy.js';
+import { DESKTOP_PRESENCE_SECONDS } from 'src/utils/desktop-worker-timing.js';
 import { ML_BUDGET_WINDOW_DAYS } from 'src/utils/ml-destination.js';
 import {
   ML_PROCESSING_ORDER_DEFAULT_SCOPE,
@@ -490,7 +491,7 @@ export class MlDestinationRepository {
 
   /**
    * FL-456: an approved Frameleaf Desktop helper of an account with desktop assistance is online (seen in
-   * the last 90 seconds) and holds a current qualification. Whether it can take one particular job is
+   * the presence window, `DESKTOP_PRESENCE_SECONDS`) and holds a current qualification. Whether it can take one particular job is
    * decided when the job is admitted (`DesktopMlService.selectBackgroundPool`).
    */
   async hasReadyDesktop(): Promise<boolean> {
@@ -505,7 +506,7 @@ export class MlDestinationRepository {
 
   /**
    * Approved Frameleaf Desktop helpers of accounts with desktop assistance, each with whether it is ready
-   * now (online in the last 90 seconds with a current qualification) and when it last checked in. The
+   * now (online within `DESKTOP_PRESENCE_SECONDS` with a current qualification) and when it last checked in. The
    * Computers page lists these and the processing order counts them, so both read the same helpers.
    */
   async getDesktopHelpers(): Promise<DesktopHelperRow[]> {
@@ -522,7 +523,7 @@ export class MlDestinationRepository {
           AND q."authorizationEpoch" = d."authorizationEpoch" AND q."expiresAt" > clock_timestamp()
         WHERE w."deviceId" = d.id AND w."authorizationEpoch" = d."authorizationEpoch"
           AND w."revokedAt" IS NULL AND w."expiresAt" > clock_timestamp()
-          AND w."lastSeenAt" > clock_timestamp() - interval '90 seconds'
+          AND w."lastSeenAt" > clock_timestamp() - ${sql.raw(`interval '${DESKTOP_PRESENCE_SECONDS} seconds'`)}
           AND (p."expiresAt" IS NULL OR p."expiresAt" > clock_timestamp())
       ) AS ready, (
         SELECT max(w."lastSeenAt") FROM desktop_worker_session w

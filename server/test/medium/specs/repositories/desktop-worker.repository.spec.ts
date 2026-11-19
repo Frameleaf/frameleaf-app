@@ -165,6 +165,26 @@ it('rechecks administrator status, parent session, device epoch and grant expiry
   expect(await sut.consume(replacement.id, input.tokenHash, 1)).toBeUndefined();
   expect(await sut.issue(input)).toBeUndefined();
 });
+it('tells a credential refused because Desktop AI processing is off from any other refused credential', async () => {
+  const { sut, user, input } = await setup();
+  const session = (await sut.issue(input))!;
+  expect(await sut.allowed(user.id, true)).toBe(true);
+  expect(await sut.policyOff(session.id, input.tokenHash)).toBe(false);
+  // the account stops being an administrator and was never approved as a member: processing is off for it
+  await db.updateTable('user').set({ isAdmin: false }).where('id', '=', user.id).execute();
+  expect(await sut.session(session.id, input.tokenHash)).toBeUndefined();
+  expect(await sut.allowed(user.id, false)).toBe(false);
+  expect(await sut.policyOff(session.id, input.tokenHash)).toBe(true);
+  // a wrong token, an unknown session or a revoked one is an invalid credential, whatever the account
+  expect(await sut.policyOff(session.id, Buffer.alloc(32, 9))).toBe(false);
+  expect(await sut.policyOff(randomUUID(), input.tokenHash)).toBe(false);
+  await workerDb
+    .updateTable('desktop_worker_session')
+    .set({ revokedAt: sql`now()` })
+    .where('id', '=', session.id)
+    .execute();
+  expect(await sut.policyOff(session.id, input.tokenHash)).toBe(false);
+});
 it('photo sign-out and explicit worker revocation cannot be renewed with the old credential', async () => {
   const { sut, input } = await setup();
   const session = (await sut.issue(input))!;

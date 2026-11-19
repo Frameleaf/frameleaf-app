@@ -7,9 +7,10 @@ import z from 'zod';
 import type { DB } from 'src/schema/index.js';
 import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 import { OnEvent } from 'src/decorators.js';
-import { MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { MlDestinationKind, MlWorkload, QueueName } from 'src/enum.js';
 import { afterJobCommit, deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { setDesktopQueueCapacity } from 'src/queue/store.js';
 import { QUEUE_TIMING } from 'src/queue/types.js';
 import {
   type DesktopClipIndexBinding,
@@ -46,8 +47,18 @@ import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 
+/** The queues desktops can work, in the order a free desktop is counted for them, and the work each does. */
+const QUEUE_WORKLOADS: ReadonlyArray<[string, MlWorkload]> = [
+  [QueueName.SmartSearch, MlWorkload.Clip],
+  [QueueName.FaceDetection, MlWorkload.Face],
+  [QueueName.Ocr, MlWorkload.Ocr],
+];
+const CAPACITY_FRESH_MS = 2000;
+
 @Injectable()
 export class DesktopMlService {
+  private capacity?: { at: number; value: Promise<Record<string, number>> };
+
   constructor(
     private repository: DesktopMlRepository,
     private index: DesktopClipIndexRepository,
@@ -60,11 +71,39 @@ export class DesktopMlService {
   onBootstrap() {
     if (!this.machineLearning) throw new Error('desktop_pool_authority_unavailable');
     this.machineLearning.setDesktopPoolSelector(this.selectBackgroundPool.bind(this));
+    setDesktopQueueCapacity(this.queueCapacity.bind(this));
   }
 
   @OnEvent({ name: 'AppShutdown' })
   onShutdown() {
     this.machineLearning?.setDesktopPoolSelector(null);
+    setDesktopQueueCapacity(null);
+  }
+
+  /**
+   * How many extra jobs `queue` may start for desktops now, on top of the administrator's concurrency.
+   * A queue gets none unless its work would go to desktops first (the first place in its processing order
+   * that is available now is the desktops), so with this server first and its AI answering, this server's
+   * AI never runs more jobs than the administrator set. Read at most every two seconds for all queues.
+   * ponytail: a job whose owner has no desktop of their own falls to the next place in the order, which can
+   * briefly be this server above its concurrency when desktops come first; per-owner counting if that matters.
+   */
+  async queueCapacity(queue: string): Promise<number> {
+    const now = performance.now();
+    if (!this.capacity || now - this.capacity.at > CAPACITY_FRESH_MS)
+      this.capacity = { at: now, value: this.countCapacity() };
+    return (await this.capacity.value)[queue] ?? 0;
+  }
+
+  private async countCapacity(): Promise<Record<string, number>> {
+    if (!this.routes || !this.machineLearning) return {};
+    const plans = await this.routes.resolveRoutes(QUEUE_WORKLOADS.map(([, workload]) => workload));
+    const scopes: Record<string, string[]> = {};
+    for (const [queue, workload] of QUEUE_WORKLOADS) {
+      const first = plans.get(workload)?.find((candidate) => candidate.available);
+      scopes[queue] = first?.desktopPool ? await this.machineLearning.desktopModelKeys(workload) : [];
+    }
+    return this.repository.helperCapacity(scopes);
   }
 
   async selectBackgroundPool(selection: MlSelection, options: DesktopPoolOptions): Promise<MlSelection> {

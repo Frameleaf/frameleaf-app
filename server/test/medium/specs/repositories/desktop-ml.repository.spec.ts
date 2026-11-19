@@ -36,6 +36,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { desktopImageModelKey } from 'src/utils/desktop-model-catalogue.js';
+import { DESKTOP_LEASE_SECONDS, DESKTOP_PRESENCE_SECONDS } from 'src/utils/desktop-worker-timing.js';
 import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
 import { seedDesktopQualification } from 'test/desktop-qualification.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
@@ -543,17 +544,141 @@ it('qualification expiry and replacement fence input, renewal, completion and st
   expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
   expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(false);
   expect(await sut.fail(grants[0], claim.attempt.id)).toBe(false);
-  await seedDesktopQualification(db, grants[0], request);
-  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toBeUndefined();
-  expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
+  // Qualifying again does not end the attempt in flight: it goes on under the new qualification.
+  const again = await seedDesktopQualification(db, grants[0], request);
+  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toEqual(request.input);
+  const held = (await sut.claim(grants[0], [request.modelKey]))!;
+  expect([held.attempt.id, held.qualificationId]).toEqual([claim.attempt.id, again.id]);
+  expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(true);
+  expect(await sut.hasLiveAttempt(task.id)).toBe(true);
   const secondTask = await sut.create(request);
   const second = (await sut.claim(grants[1], [request.modelKey]))!;
   expect(second.task.id).toBe(secondTask.id);
   expect(await sut.complete(grants[1], second.attempt.id, { clip: [3, 4] })).toBe(true);
   await expect(sut.assertAdoption(secondTask.id, secondTask)).resolves.toBeUndefined();
   await seedDesktopQualification(db, grants[1], request);
+  await expect(sut.assertAdoption(secondTask.id, secondTask)).resolves.toBeUndefined();
+  // but a qualification for another configuration of the model does not carry the work over
+  await seedDesktopQualification(db, grants[1], { ...request, config: { clip: { textual: { modelName: 'other' } } } });
   await expect(sut.assertAdoption(secondTask.id, secondTask)).rejects.toThrow('desktop_result_authority_lost');
+  await seedDesktopQualification(db, grants[0], { ...request, inputKind: 'image' });
+  expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(false);
   expect((await sut.result(task.id))?.state).toBe('running');
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+});
+
+it('keeps a lease good for a desktop that says nothing for most of it, and no longer', async () => {
+  const { sut, grants, request } = await setup();
+  const task = await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  const silentFor = (seconds: number) =>
+    sql`UPDATE desktop_worker_session SET "lastSeenAt" = clock_timestamp() - make_interval(secs => ${seconds})
+      WHERE id = ${grants[0].sessionId}::uuid`.execute(db);
+  // 91 seconds of silence under a 120-second lease used to lose the job
+  await silentFor(91);
+  expect(await sut.hasLiveAttempt(task.id)).toBe(true);
+  expect(DESKTOP_PRESENCE_SECONDS).toBeGreaterThan(DESKTOP_LEASE_SECONDS);
+  await silentFor(DESKTOP_LEASE_SECONDS + 1);
+  expect(await sut.hasLiveAttempt(task.id)).toBe(true);
+  expect(await sut.hasReadyWorker(request.ownerId, request.modelKey)).toBe(true);
+  await silentFor(DESKTOP_PRESENCE_SECONDS + 1);
+  expect(await sut.hasLiveAttempt(task.id)).toBe(false);
+  // the lease itself decides what the desktop may still do
+  expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(true);
+  const lease = await brokerDb
+    .selectFrom('desktop_ml_attempt')
+    .select(sql<number>`extract(epoch from "expiresAt" - clock_timestamp())`.as('seconds'))
+    .where('id', '=', claim.attempt.id)
+    .executeTakeFirstOrThrow();
+  expect(Number(lease.seconds)).toBeGreaterThan(DESKTOP_LEASE_SECONDS - 10);
+  expect(Number(lease.seconds)).toBeLessThanOrEqual(DESKTOP_LEASE_SECONDS);
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+});
+
+it('puts a task a paused desktop gave back straight in line, and counts only real failures', async () => {
+  const { sut, grants, request } = await setup();
+  const task = await sut.create(request);
+  // the person pauses the desktop, again and again: the task never fails for it
+  for (let n = 0; n < 4; n++) {
+    const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+    expect(await sut.fail(grants[0], claim.attempt.id, 'cancelled')).toBe(true);
+    expect((await sut.result(task.id))?.state).toBe('pending');
+  }
+  for (const code of ['inference-failed', 'model-unavailable'] as const) {
+    const claim = (await sut.claim(grants[1], [request.modelKey]))!;
+    expect(await sut.fail(grants[1], claim.attempt.id, code)).toBe(true);
+    expect((await sut.result(task.id))?.state).toBe('pending');
+  }
+  const last = (await sut.claim(grants[1], [request.modelKey]))!;
+  expect(last.task.generation).toBe(7);
+  expect(await sut.fail(grants[1], last.attempt.id, 'input-invalid')).toBe(true);
+  expect(await sut.result(task.id)).toMatchObject({ state: 'failed', result: null });
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+});
+
+it('takes a model away from a desktop that keeps failing it, until it qualifies again', async () => {
+  const { sut, grants, request } = await setup();
+  await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  expect(await sut.attemptModelKey(grants[0], claim.attempt.id)).toBe(request.modelKey);
+  expect(await sut.attemptModelKey(grants[1], claim.attempt.id)).toBeUndefined();
+  expect(await sut.fail(grants[0], claim.attempt.id)).toBe(true);
+  expect(await sut.withdraw(grants[0], request.modelKey)).toBe(true);
+  // no longer offered that work, nor counted as ready for it; the other desktop is untouched
+  expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
+  expect(
+    (await new DesktopWorkerRepository(db).session(grants[0].sessionId, grants[0].credentialHash))?.modelKeys,
+  ).toEqual([]);
+  await sql`UPDATE desktop_worker_session SET "lastSeenAt" = clock_timestamp() - interval '1 hour'
+    WHERE id = ${grants[1].sessionId}::uuid`.execute(db);
+  expect(await sut.hasReadyWorker(request.ownerId, request.modelKey)).toBe(false);
+  expect(await sut.withdraw(grants[0], request.modelKey)).toBe(false);
+  // it qualifies again and is granted the model again
+  const qualification = await seedDesktopQualification(db, grants[0], request);
+  await db
+    .transaction()
+    .execute((tx) =>
+      new DesktopWorkerRepository(db).grantQualifiedModel(
+        { grant: grants[0], ownerId: request.ownerId, qualification, modelKeys: [request.modelKey] },
+        tx,
+      ),
+    );
+  expect((await sut.claim(grants[0], [request.modelKey]))?.attempt.generation).toBe(2);
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+});
+
+it('leases a search task to a desktop on another runtime revision, under the key that desktop holds', async () => {
+  const profiles: DesktopModelProfile[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+  ).profiles;
+  const spaces: { visualModelKey: string }[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-spaces.json'), 'utf8'),
+  ).spaces;
+  const visual = (index: number) => profiles.find((p) => p.modelKey === spaces[index].visualModelKey)!;
+  // the same model under two desktop runtime revisions: different keys, the same request and the same vectors
+  const taskProfile = visual(0);
+  const held = spaces
+    .map((_, index) => visual(index))
+    .find((p) => p.modelName === taskProfile.modelName && p.modelKey !== taskProfile.modelKey)!;
+  const other = spaces.map((_, index) => visual(index)).find((p) => p.modelName !== taskProfile.modelName)!;
+  const { sut, grants, request } = await setup(false, held);
+  await Promise.all(grants.map((grant) => seedDesktopQualification(db, grant, request)));
+  expect(await sut.hasReadyWorker(request.ownerId, taskProfile.modelKey)).toBe(true);
+  expect(await sut.hasReadyWorker(request.ownerId, other.modelKey)).toBe(false);
+  // a task of another model is never this desktop's, whatever its request looks like
+  await sut.create({ ...request, modelKey: other.modelKey });
+  expect(await sut.claim(grants[0], [held.modelKey])).toBeUndefined();
+  const task = await sut.create({ ...request, modelKey: taskProfile.modelKey });
+  const claim = (await sut.claim(grants[0], [held.modelKey]))!;
+  expect(claim.task).toMatchObject({ id: task.id, modelKey: taskProfile.modelKey });
+  expect(claim.workerModelKey).toBe(held.modelKey);
+  expect(await sut.hasLiveAttempt(task.id)).toBe(true);
+  expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(true);
+  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toEqual(request.input);
+  expect(await sut.complete(grants[0], claim.attempt.id, { clip: '[1]' })).toBe(true);
+  // the result is adopted for the task as it was made: one producer key across the library
+  await expect(sut.assertAdoption(task.id, task)).resolves.toBeUndefined();
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
 });
 
 it('qualification authorizes only the exact request configuration and input kind', async () => {
@@ -720,7 +845,7 @@ it.each(['unclaimed', 'stale-worker'] as const)(
       const task = await firstReady.promise;
       const held = (await helper.claim(grants[0], [request.modelKey]))!;
       expect(held.task.id).toBe(task.id);
-      await sql`update desktop_worker_session set "lastSeenAt"=clock_timestamp()-interval '91 seconds'
+      await sql`update desktop_worker_session set "lastSeenAt"=clock_timestamp()-make_interval(secs => ${DESKTOP_PRESENCE_SECONDS + 1})
       where id=${grants[0].sessionId}::uuid`.execute(db);
       await firstExecution;
       expect(await helper.input(grants[0], held.attempt.id, () => Promise.resolve())).toBeUndefined();
@@ -812,7 +937,7 @@ it.each([
         break;
       }
       case 'stale': {
-        await workerDbUpdate({ lastSeenAt: new Date(Date.now() - 91_000) });
+        await workerDbUpdate({ lastSeenAt: new Date(Date.now() - (DESKTOP_PRESENCE_SECONDS + 1) * 1000) });
         break;
       }
       case 'revoked-worker': {

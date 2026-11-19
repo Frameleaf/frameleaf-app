@@ -187464,7 +187464,7 @@
             "$ref": "#/components/schemas/DesktopPlatform"
           },
           "ready": {
-            "description": "Online in the last 90 seconds with a current qualification, so it can take AI work now",
+            "description": "Online now (seen within the last few minutes) with a current qualification, so it can take AI work now",
             "type": "boolean"
           }
         },

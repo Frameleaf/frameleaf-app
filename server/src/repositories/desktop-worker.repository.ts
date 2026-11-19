@@ -29,7 +29,8 @@ export type DesktopWorkerSession = Selectable<DesktopWorkerSessionTable>;
 const expires = sql<Date>`clock_timestamp() + interval '1 hour'`;
 const models = z.array(z.string().min(1).max(256)).max(64);
 
-async function readDesktopPolicy(db: QueryExecutorProvider) {
+/** The saved Desktop AI processing approvals, read in the caller's transaction; undefined when unreadable. */
+export async function readDesktopAssistancePolicy(db: QueryExecutorProvider) {
   const { rows } = await sql<{ value: unknown }>`SELECT value FROM system_metadata
     WHERE key=${SystemMetadataKey.FrameleafDesktopAssistance}`.execute(db);
   const parsed = desktopAssistancePolicySchema.safeParse(rows[0]?.value ?? { version: 1, accounts: {} });
@@ -37,13 +38,13 @@ async function readDesktopPolicy(db: QueryExecutorProvider) {
 }
 
 export async function desktopWorkerAccountAllowed(db: QueryExecutorProvider, ownerId: string, isAdmin: boolean) {
-  const policy = await readDesktopPolicy(db);
+  const policy = await readDesktopAssistancePolicy(db);
   return !!policy && desktopAccountPermitted(policy, ownerId, isAdmin);
 }
 
 /** FL-1484: the computers that work on everyone's photos at home, read in the caller's transaction. */
 export async function desktopHouseholdDevices(db: QueryExecutorProvider): Promise<string[]> {
-  const policy = await readDesktopPolicy(db);
+  const policy = await readDesktopAssistancePolicy(db);
   return policy ? [...householdDevices(policy)] : [];
 }
 
@@ -166,6 +167,31 @@ export class DesktopWorkerRepository {
       .where('id', '=', grant.sessionId)
       .execute();
     return true;
+  }
+
+  /** Whether Desktop AI processing is on for this account. */
+  allowed(userId: string, isAdmin: boolean): Promise<boolean> {
+    return desktopWorkerAccountAllowed(this.db, userId, isAdmin);
+  }
+
+  /**
+   * Why a worker credential that did not authenticate was refused, when the reason is the account: the
+   * credential names a live worker session whose account has Desktop AI processing turned off.
+   */
+  async policyOff(id: string, tokenHash: Buffer): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('desktop_worker_session as worker')
+      .innerJoin('desktop_device as device', 'device.id', 'worker.deviceId')
+      .innerJoin('user as owner', 'owner.id', 'device.userId')
+      .select(['owner.id as ownerId', 'owner.isAdmin'])
+      .where('worker.id', '=', id)
+      .where('worker.tokenHash', '=', tokenHash)
+      .where('worker.revokedAt', 'is', null)
+      .where('worker.expiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where('device.revokedAt', 'is', null)
+      .where('owner.deletedAt', 'is', null)
+      .executeTakeFirst();
+    return !!row && !(await desktopWorkerAccountAllowed(this.db, row.ownerId, row.isAdmin));
   }
 
   async device(userId: string, id: string) {
