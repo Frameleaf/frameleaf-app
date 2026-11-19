@@ -41,6 +41,8 @@ export function standIn(options: { old?: boolean } = {}) {
     /** Which photo server vouches for which backup machine. */
     parents: new Map<string, string>(),
     purges: new Map<string, { id: string; status: string }>(),
+    keyModes: new Map<string, string>(),
+    escrows: new Map<string, Record<string, unknown>>(),
     takeovers: [] as { takeoverId: string; fromInstanceId: string; asker: string; status: string }[],
     discovery: { version: 1, validFor: 3600, issuer: ISSUER, api: API, ml: {} } as Record<string, unknown>,
   };
@@ -204,6 +206,18 @@ export function standIn(options: { old?: boolean } = {}) {
         verify(null, Buffer.from(signed), createPublicKey({ key: parent.jwk, format: 'jwk' }), Buffer.from(signature, 'base64url'));
       if (good) state.parents.set(held.instanceId, statement.parentInstanceId);
       return good ? answer(200, { parent: { instanceId: statement.parentInstanceId, name: 'Family library', attachedAt: new Date(state.now).toISOString(), follows: true } }) : envelope(422, 'request-invalid');
+    }
+    if (route === 'PUT api/v1/backup/settings') {
+      state.keyModes.set(held.instanceId, json.keyMode);
+      if (json.keyMode !== 'server') state.escrows.delete(held.instanceId);
+      return answer(200, { keyMode: json.keyMode, scheduleEnabled: json.scheduleEnabled });
+    }
+    if (route.endsWith(' api/v1/backup/escrow')) {
+      if (method === 'GET') return state.escrows.has(held.instanceId) ? answer(200, { ...state.escrows.get(held.instanceId), updatedAt: new Date(state.now).toISOString() }) : envelope(404, 'not-found');
+      if (state.keyModes.get(held.instanceId) !== 'server') return envelope(409, 'escrow-not-allowed');
+      if (json.kdf?.name !== 'scrypt' || json.cipher !== 'aes-256-gcm' || typeof json.ciphertext !== 'string') return envelope(422, 'request-invalid');
+      state.escrows.set(held.instanceId, json);
+      return answer(200, { ...json, updatedAt: new Date(state.now).toISOString() });
     }
     if (route.endsWith(' api/v1/backup/purge')) {
       const purge = state.purges.get(held.instanceId);

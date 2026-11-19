@@ -49,6 +49,8 @@ interface Saved {
   takeover: { fromInstanceId: string } | null;
   /** The Cloud id under which the photo server has vouched for this Manager, once Cloud has taken that. */
   attached?: string | null;
+  /** When a locked copy of the recovery key was last stored in Cloud, or null when there is none. */
+  keyCopyAt?: number | null;
 }
 
 const KEY = 'server-backup-cloud';
@@ -101,8 +103,9 @@ export class CloudBackup {
     return this.saved().account !== null;
   }
   view() {
-    const { account, locationId, takeover, unrecorded } = this.saved();
+    const { account, locationId, takeover, unrecorded, keyCopyAt } = this.saved();
     return {
+      keyCopyAt: keyCopyAt ?? null,
       state: account ? 'linked' : this.linking && this.linking.until > Date.now() ? 'linking' : 'unlinked',
       account,
       code: account || !this.linking || this.linking.until <= Date.now() ? null : { userCode: this.linking.userCode, approveAt: this.linking.approveAt, intervalSec: this.linking.intervalSec },
@@ -157,6 +160,19 @@ export class CloudBackup {
   /** What this server's backups use of the plan's storage. */
   async usage() {
     return this.cloud.usage(await this.identity());
+  }
+
+  async putKeyCopy(blob: unknown) {
+    await this.cloud.putKeyCopy(await this.identity(), blob);
+    this.save({ keyCopyAt: Date.now() });
+  }
+  async dropKeyCopy() {
+    await this.cloud.dropKeyCopy(await this.identity());
+    this.save({ keyCopyAt: null });
+  }
+  /** The locked copy Cloud holds for this server (after a takeover: the older server's), or null. */
+  async keyCopy() {
+    return this.cloud.keyCopy(await this.identity());
   }
 
   /** A deletion of this server's backups that is waiting or under way, or null. */

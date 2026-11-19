@@ -1,7 +1,7 @@
 // Server Backup: Manager's second job. It keeps an encrypted copy of chosen folders, runs on a schedule,
 // and restores a file, a folder or everything. The work happens in a separate process
 // (server-backup-worker.ts); this file owns the settings, the history and what the screens show.
-import { DEFAULT_RETENTION, Repository, dirStore, find, listFolder, parseRecoveryCode, readFile as readStored, recoveryCode, s3Store, type RetentionPolicy } from '@frameleaf/backup-core';
+import { DEFAULT_RETENTION, Repository, dirStore, escrowPassphraseProblem, find, listFolder, parseRecoveryCode, unwrapBucketKey, wrapBucketKey, type KeyEscrowBlob, readFile as readStored, recoveryCode, s3Store, type RetentionPolicy } from '@frameleaf/backup-core';
 import { fork, type ChildProcess } from 'node:child_process';
 import { hkdfSync, randomBytes } from 'node:crypto';
 import { chmod, readFile, writeFile } from 'node:fs/promises';
@@ -235,6 +235,30 @@ export class ServerBackup {
     const purge = await this.options.cloud.requestPurge();
     this.save({ on: false });
     return purge;
+  }
+
+  /**
+   * Keeps a copy of the recovery key in Frameleaf Cloud, locked with a passphrase here first: Cloud can't open it.
+   * Off by default; the owner chooses it.
+   */
+  async keepKeyCopy(passphrase: string) {
+    if (!this.options.cloud?.linked) throw new Refusal('server_backup_cloud_not_linked');
+    if (escrowPassphraseProblem(passphrase)) throw new Refusal('server_backup_passphrase_short');
+    await this.options.cloud.putKeyCopy(await wrapBucketKey(Buffer.from(await this.rootKey(false), 'hex'), passphrase));
+  }
+  async dropKeyCopy() {
+    if (!this.options.cloud?.linked) throw new Refusal('server_backup_cloud_not_linked');
+    await this.options.cloud.dropKeyCopy();
+  }
+  /** On a server that took another's backups over: the key from that server's locked copy, opened with its passphrase. */
+  async adoptKeyCopy(passphrase: string) {
+    if (!this.options.cloud?.linked) throw new Refusal('server_backup_cloud_not_linked');
+    const blob = (await this.options.cloud.keyCopy()) as KeyEscrowBlob | null;
+    if (!blob) throw new Refusal('server_backup_no_key_copy');
+    const key = await unwrapBucketKey(blob, passphrase).catch(() => {
+      throw new Refusal('server_backup_passphrase_wrong');
+    });
+    await this.adoptKey(key.toString('hex'));
   }
 
   /** Disconnects from Frameleaf Cloud: backups stop, and what this Manager knew of the stored ones is forgotten. The key stays. */

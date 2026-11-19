@@ -260,6 +260,29 @@
     });
   });
 
+  // The locked copy of the key in Frameleaf Cloud: off unless the owner turns it on.
+  let copying = $state<'on' | 'off' | null>(null);
+  let copyPassword = $state('');
+  let passphrase = $state('');
+  let passphraseAgain = $state('');
+  const copyProblem = $derived(copying !== 'on' ? '' : passphrase.length > 0 && passphrase.length < 12 ? 'Use at least 12 characters.' : passphraseAgain && passphrase !== passphraseAgain ? 'The two passphrases are different.' : '');
+  const saveCopy = () =>
+    run(async () => {
+      change(await api('server-backup-key-copy', { password: copyPassword, passphrase: copying === 'on' ? passphrase : null }));
+      copying = null;
+      copyPassword = passphrase = passphraseAgain = '';
+    });
+  // On a replacement server: open the older server's backups with its locked copy instead of the key.
+  let useCopy = $state(false);
+  let copyPassphrase = $state('');
+  const adoptCopy = () =>
+    run(async () => {
+      change(await api('server-backup-adopt-key-copy', { passphrase: copyPassphrase }));
+      copyPassphrase = '';
+      snapshot = data.snapshots[0]?.key ?? '';
+      entries = null;
+      step = 'restore';
+    });
   let oldKey = $state('');
   const adoptKey = () =>
     run(async () => {
@@ -518,11 +541,19 @@
   {:else if step === 'oldkey'}
     <section class="card">
       <div class="card-header"><h2>Enter that server’s recovery key</h2></div>
+      {#if useCopy}
+      <form class="card-body stack" onsubmit={(event) => { event.preventDefault(); void adoptCopy(); }}>
+        <p class="muted">If you kept a locked copy of the old server’s key in Frameleaf Cloud, its passphrase opens it here.</p>
+        <label class="field sb-narrow"><span>Passphrase</span><input type="password" bind:value={copyPassphrase} required maxlength="1024" autocomplete="off" /></label>
+        <div class="actions"><button class="button primary" disabled={busy || !copyPassphrase}>Open the backups</button><button type="button" class="text-button sb-plain" onclick={() => (useCopy = false)}>Enter the recovery key instead</button></div>
+      </form>
+      {:else}
       <form class="card-body stack" onsubmit={(event) => { event.preventDefault(); void adoptKey(); }}>
         <p class="muted">The key you saved when Server Backup was set up on the old server. It opens the backups here. Frameleaf never receives it.</p>
         <textarea class="sb-keyfield" bind:value={oldKey} rows="3" spellcheck="false" autocomplete="off" aria-label="Recovery key" placeholder="FLRK-…" required></textarea>
-        <div><button class="button primary" disabled={busy || !oldKey.trim()}>Open the backups</button></div>
+        <div class="actions"><button class="button primary" disabled={busy || !oldKey.trim()}>Open the backups</button><button type="button" class="text-button sb-plain" onclick={() => (useCopy = true)}>Use the locked copy in Frameleaf Cloud</button></div>
       </form>
+      {/if}
     </section>
   {:else if step === 'restore'}
     {@render restoringNow()}
@@ -617,6 +648,23 @@
         <p class="sb-key">{shownKey}</p>
         <div class="actions sb-wrap"><button class="button" onclick={() => downloadKit(shownKey)}><Icon name="import" />Download recovery kit</button><button class="button quiet" onclick={() => navigator.clipboard?.writeText(shownKey)}>Copy key</button>{#if !data.key.saved}<button class="button primary" disabled={busy} onclick={() => act('server-backup-key-saved')}>I’ve saved it</button>{/if}<button class="button quiet" onclick={() => (shownKey = '')}>Hide</button></div>
       </div>
+    {/if}
+    {#if cloud?.account}
+      <div class="list-row"><Icon name="network" /><div class="grow"><strong>Keep a locked copy in Frameleaf Cloud</strong><p>{cloud.keyCopyAt ? `On since ${midSentence(when(cloud.keyCopyAt))}. The key is locked with your passphrase before it leaves this server; Frameleaf can’t open it.` : 'Off. If you turn it on, the key is locked with a passphrase only you know before it leaves this server.'}</p></div><label class="toggle"><input type="checkbox" checked={!!cloud.keyCopyAt} disabled={busy} onchange={(event) => { copying = event.currentTarget.checked ? 'on' : 'off'; event.currentTarget.checked = !!cloud.keyCopyAt; }} aria-label="Keep a locked copy in Frameleaf Cloud" /><span class="toggle-track"></span></label></div>
+      {#if copying}
+        <form class="card-body stack sb-shown" onsubmit={(event) => { event.preventDefault(); void saveCopy(); }}>
+          {#if copying === 'on'}
+            <p class="muted">Choose a passphrase you will remember. On a new server it opens the copy instead of the key. Frameleaf can’t reset it.</p>
+            <label class="field sb-narrow"><span>Passphrase, at least 12 characters</span><input type="password" bind:value={passphrase} required minlength="12" maxlength="1024" autocomplete="new-password" /></label>
+            <label class="field sb-narrow"><span>The same passphrase again</span><input type="password" bind:value={passphraseAgain} required maxlength="1024" autocomplete="new-password" /></label>
+          {:else}
+            <p class="muted">The copy in Frameleaf Cloud is deleted. Your recovery key keeps working.</p>
+          {/if}
+          <label class="field sb-narrow"><span>Your Manager password, to confirm</span><input type="password" bind:value={copyPassword} required maxlength="256" autocomplete="current-password" /></label>
+          {#if copyProblem}<p class="field-error">{copyProblem}</p>{/if}
+          <div class="actions"><button type="button" class="button quiet" onclick={() => ((copying = null), (copyPassword = passphrase = passphraseAgain = ''))}>Cancel</button><button class="button primary" disabled={busy || !!copyProblem || !copyPassword || (copying === 'on' && (!passphrase || passphrase !== passphraseAgain))}>{copying === 'on' ? 'Keep a locked copy' : 'Delete the copy'}</button></div>
+        </form>
+      {/if}
     {/if}
   </section>
 {:else if page === 'settings'}
