@@ -154,9 +154,10 @@ export class DesktopMlService {
       let profile: DesktopModelProfile;
       try {
         profile = desktopFaceProfile(options.face);
-      } catch (error) {
-        deferJobUntilDependency('destination-configuration');
-        throw error;
+      } catch {
+        // These settings have no desktop profile (a slider moved off its default): no desktop can run the job,
+        // so the destination itself does. It must not wait for settings no desktop will ever be offered.
+        return selection;
       }
       if (!(await ready(profile.modelKey))) return selection;
       return this.selectImagePool(selection, {
@@ -183,9 +184,10 @@ export class DesktopMlService {
       let profile: DesktopModelProfile;
       try {
         profile = desktopOcrProfile(options.ocr);
-      } catch (error) {
-        deferJobUntilDependency('destination-configuration');
-        throw error;
+      } catch {
+        // These settings have no desktop profile (a slider moved off its default): no desktop can run the job,
+        // so the destination itself does. It must not wait for settings no desktop will ever be offered.
+        return selection;
       }
       if (!(await ready(profile.modelKey))) return selection;
       return this.selectOcrPool(selection, {

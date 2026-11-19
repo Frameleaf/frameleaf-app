@@ -201,6 +201,26 @@ it('selects a qualified face workload without changing the CLIP index', async ()
     expect(assertSource).toHaveBeenCalledOnce();
   });
 });
+it.each([MlWorkload.Face, MlWorkload.Ocr])(
+  'leaves %s on the destination itself when its settings have no desktop profile',
+  async (workload) => {
+    selection.workload = workload;
+    await queueExecution.run(context, async () => {
+      const chosen = await service.selectBackgroundPool(selection, {
+        jobId: 'asset',
+        modelName: 'model',
+        assertConfig,
+        // a slider moved off the value the release has a profile for
+        ...(workload === MlWorkload.Face
+          ? { face: { ...defaults.machineLearning.facialRecognition, minScore: 0.123 } }
+          : { ocr: { ...defaults.machineLearning.ocr, minDetectionScore: 0.123 } }),
+      });
+      expect(chosen).toBe(selection);
+      // nothing to wait for: the job runs where it was admitted
+      expect(context.dependencyReason).toBeUndefined();
+    });
+  },
+);
 describe('when the processing order sends the job to the helpers (FL-456)', () => {
   const ready = vi.fn();
   const selectReady = () =>
