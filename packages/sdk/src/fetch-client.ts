@@ -9735,7 +9735,7 @@ export type DesktopModelInventoryDto = {
         modelKeys: string[];
         modelNames: string[];
         profiles?: {
-            [key: string]: unknown;
+            [key: string]: any;
         }[];
         state: DesktopModelAvailability;
         workload: DesktopLibraryWorkload;
