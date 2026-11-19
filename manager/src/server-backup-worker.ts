@@ -25,7 +25,7 @@ export type Target =
   | { kind: 'cloud'; endpoint: string; region: string; bucket: string; prefix: string; limitMbps: number | null };
 
 export type Job = { target: Target; rootKey: string } & (
-  | { kind: 'backup'; folders: string[]; /** Those of `folders` that are Manager's own, not the owner's choice. */ always?: string[]; exclusions: string[]; retention: RetentionPolicy; prune: boolean; /** The backup's number in Cloud's signed history. */ sequence?: number }
+  | { kind: 'backup'; folders: string[]; /** Those of `folders` that are Manager's own, not the owner's choice, and what each is. */ roles?: Record<string, Role>; exclusions: string[]; retention: RetentionPolicy; prune: boolean; /** The backup's number in Cloud's signed history. */ sequence?: number }
   | { kind: 'restore'; snapshot: string; items: string[][]; into: string | null }
   | { kind: 'verify' }
 );
@@ -54,7 +54,9 @@ const segments = (path: string) => path.split(sep).filter(Boolean);
  * that replaces this one reads it to offer the whole server back without knowing anything else about it.
  */
 export const RECORD = ['.frameleaf', 'server-backup.json'];
-export type Protected = { path: string; kind: 'manager' | 'folder'; files: number; bytes: number };
+/** What an always-included folder is: Manager's recovery points, a copy of its own settings, or the photo library's backup keys. */
+export type Role = 'recovery' | 'manager' | 'photo-key';
+export type Protected = { path: string; kind: 'manager' | 'folder'; role?: Role; files: number; bytes: number };
 const oneFile = (name: string, body: Buffer): Source => ({
   // No time of its own and a key from its content: a backup of unchanged folders then stores nothing new.
   list: async (path) =>
@@ -96,7 +98,10 @@ async function run(job: Job, report: (progress: Progress) => void, signal: Abort
     const skip = skips(job.exclusions);
     const each = job.folders.map((folder) => ({
       folder,
-      source: filterSource(fsSource(folder), (path, entry) => skip(path.at(-1)!, entry.type === 'dir')),
+      // The photo server's scratch space beside its keys is rebuilt on its own; only the keys matter.
+      source: filterSource(fsSource(folder), (path, entry) =>
+        skip(path.at(-1)!, entry.type === 'dir') || (job.roles?.[folder] === 'photo-key' && path.length === 1 && path[0] === 'cloud-backup-scratch'),
+      ),
     }));
     // Measured first so progress can be shown as a share of the whole.
     const sizes: Record<string, { files: number; bytes: number }> = {};
@@ -106,7 +111,7 @@ async function run(job: Job, report: (progress: Progress) => void, signal: Abort
       total.files += sizes[folder].files;
       total.bytes += sizes[folder].bytes;
     }
-    const record: Protected[] = job.folders.map((path) => ({ path, kind: job.always?.includes(path) ? 'manager' : 'folder', ...sizes[path]! }));
+    const record: Protected[] = job.folders.map((path) => ({ path, kind: job.roles?.[path] ? 'manager' : 'folder', ...(job.roles?.[path] ? { role: job.roles[path] } : {}), ...sizes[path]! }));
     const recorded = Buffer.from(JSON.stringify({ version: 1, folders: record }));
     const source: Source = mountSource([
       ...each.map(({ folder, source }) => ({ path: segments(folder), source })),
