@@ -62,7 +62,7 @@ jobs:
   manager:
     env:
       FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
-      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:e698169ffdd3c23af2a1675d30f48eeab6883fb277bf5be6911ceac5cfaf760f
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:7b1e213e9680e7838da5ea2a929427901b866e69d08735186b72bddfe73c0453
     name: Manager (${{ matrix.architecture }})
     if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ${{ matrix.runner }}
