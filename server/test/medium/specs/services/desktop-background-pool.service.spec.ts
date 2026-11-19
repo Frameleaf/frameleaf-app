@@ -68,7 +68,7 @@ it('retains database ownership separately for each asset and refuses ownership c
     await context.sourceAuthorities!.get(second.id)!.assertCurrent();
   });
 });
-it('reconstructs the actual policy and route from storage and refuses route changes before adoption', async () => {
+it('reconstructs the actual policy and destination from storage and refuses their changes before adoption', async () => {
   const { user, asset } = await assetFixture();
   const policies = new DesktopAssistancePolicyService(new SystemMetadataRepository(db));
   const account = await policies.enable(user.id);
@@ -123,7 +123,8 @@ it('reconstructs the actual policy and route from storage and refuses route chan
         }>`select pg_try_advisory_xact_lock(hashtextextended('frameleaf:ml-route:' || ${MlWorkload.Clip}::text,0)) acquired`.execute(
           otherTx,
         );
-        expect(route.acquired).toBe(false);
+        // Routes are not locked: changing one does not hold up, or stop, desktop work.
+        expect(route.acquired).toBe(true);
       });
     });
     await routes.update(destination.id, { enabled: false });
@@ -135,6 +136,6 @@ it('reconstructs the actual policy and route from storage and refuses route chan
     await expect(factory.mock.calls[0][1].assertAuthority()).rejects.toThrow('desktop_pool_destination_changed');
     await routes.update(destination.id, { authToken: null });
     await routes.clearRoute(MlWorkload.Clip);
-    await expect(factory.mock.calls[0][1].assertAuthority()).rejects.toThrow('desktop_pool_route_changed');
+    await expect(factory.mock.calls[0][1].assertAuthority()).resolves.toBeUndefined();
   });
 });

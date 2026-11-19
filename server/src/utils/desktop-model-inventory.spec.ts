@@ -1,11 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { defaults } from 'src/config.js';
 import { DesktopModelInventoryDto, DesktopModelInventoryRequestSchema } from 'src/dtos/desktop-model-inventory.dto.js';
-import { MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { MlWorkload } from 'src/enum.js';
 import { parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
 import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import { selectDesktopModelInventory } from 'src/utils/desktop-model-inventory.js';
-import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 
 const catalogue = parseDesktopModelCatalogue(
   JSON.parse(readFileSync('resources/desktop/model-catalogue.json', 'utf8')),
@@ -20,16 +19,9 @@ const setup = () => ({
   catalogue,
   spaces,
   config: structuredClone(defaults.machineLearning),
-  routes: [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face, MlWorkload.Enrichment].map((workload) => ({
-    workload,
-    destinationId: 'nas',
-    origin: 'default' as 'default' | 'pinned' | 'legacy',
-    revisionId: 'route',
-  })),
-  destinations: [{ ...structuredClone(mlDestinationStub.local), id: 'nas', authToken: 'private-destination-token' }],
 });
 it.each(['CPUExecutionProvider', 'CoreMLExecutionProvider'])(
-  'advertises complete compiled groups for %s without exposing destinations',
+  'advertises complete compiled groups for %s from the settings alone',
   (provider) => {
     const input = { ...setup(), provider };
     const original = structuredClone(input);
@@ -40,24 +32,13 @@ it.each(['CPUExecutionProvider', 'CoreMLExecutionProvider'])(
       [MlWorkload.Face, 'eligible', 1],
       [MlWorkload.Enrichment, 'unsupported', 0],
     ]);
-    expect(JSON.stringify(result)).not.toMatch(
-      /private-destination-token|localhost|frameleaf-machine-learning|destinationId/,
-    );
+    expect(JSON.stringify(result)).not.toMatch(/localhost|frameleaf-machine-learning|destinationId/);
     expect(input).toEqual(original);
     expect(
       DesktopModelInventoryDto.schema.parse({ protocolVersion: 1, ...request, provider, workloads: result }),
     ).toBeDefined();
   },
 );
-it.each(['pinned', 'legacy'] as const)('preserves %s routes without blocking other workloads', (origin) => {
-  const input = setup();
-  input.routes[2].origin = origin;
-  const result = selectDesktopModelInventory(input);
-  expect(result[2]).toMatchObject({ state: origin, modelKeys: [] });
-  expect(result[0].state).toBe('eligible');
-  expect(result[1].state).toBe('eligible');
-  expect(input.routes[2].origin).toBe(origin);
-});
 it.each(['model', 'options', 'provider', 'source'])('does not substitute another %s', (change) => {
   const input = setup();
   switch (change) {
@@ -84,40 +65,9 @@ it.each(['model', 'options', 'provider', 'source'])('does not substitute another
   expect(result[2]).toMatchObject({ state: 'unsupported', modelKeys: [] });
   if (change === 'model' || change === 'options') expect(result[1].state).toBe('eligible');
 });
-it.each(['disabled', 'cloud', 'url', 'allowlist', 'route'])(
-  'refuses %s destination authority without probing it',
-  (change) => {
-    const input = setup();
-    switch (change) {
-      case 'disabled': {
-        input.destinations[0].enabled = false;
-        break;
-      }
-      case 'cloud': {
-        input.destinations[0].kind = MlDestinationKind.FrameleafCloud;
-        break;
-      }
-      case 'url': {
-        input.destinations[0].url = null;
-        break;
-      }
-      case 'allowlist': {
-        input.destinations[0].workloads = [];
-        break;
-      }
-      case 'route': {
-        input.routes = [];
-        // No default
-        break;
-      }
-    }
-    expect(selectDesktopModelInventory(input)[1]).toMatchObject({ state: 'unavailable', modelKeys: [] });
-  },
-);
-it('keeps disabled models disabled and never relies on NAS inference health for inventory', () => {
+it('keeps disabled models disabled', () => {
   const input = setup();
   input.config.facialRecognition.enabled = false;
-  input.destinations[0].lastProbeWorkloads = [];
   expect(selectDesktopModelInventory(input)[2]).toMatchObject({ state: 'disabled', modelKeys: [] });
   expect(selectDesktopModelInventory(input)[1].state).toBe('eligible');
   input.config.enabled = false;
@@ -146,7 +96,7 @@ it.each([
   ).toEqual(['eligible', 'unsupported', 'unsupported']);
 });
 
-it('offers all qualified current-main CPU groups without changing routes or model configuration', () => {
+it('offers all qualified current-main CPU groups without changing model configuration', () => {
   const input = setup();
   input.runtimeSourceRevision = 'f2c451a6bf71ca3f3aec986e07f0852937268e2f';
   const original = structuredClone(input);

@@ -173,6 +173,33 @@ const wakeClaimLoops = (db: Kysely<DB>) => {
  * All methods own short transactions. No connection escapes to a handler or an enumerator.
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
+
+/** The model-key prefix desktop helpers qualify for each queue whose work they can take. */
+const DESKTOP_QUEUE_MODELS: Partial<Record<string, string>> = {
+  [QueueName.SmartSearch]: 'clip:',
+  [QueueName.FaceDetection]: 'face:',
+  [QueueName.Ocr]: 'ocr:',
+};
+
+/**
+ * Desktop helpers online now (seen in the last 90 seconds) that hold a model for this queue's work.
+ * ponytail: counts helpers of any account; a job whose owner has none of them falls back to this server,
+ * so the server may briefly run more than its own concurrency. Per-owner counting if that matters.
+ */
+export const readyDesktopHelpers = async (db: Kysely<DB>, queue: string): Promise<number> => {
+  const prefix = DESKTOP_QUEUE_MODELS[queue];
+  if (!prefix) return 0;
+  const { rows } = await sql<{ ready: number }>`
+    SELECT count(DISTINCT d.id)::int AS ready FROM desktop_device d
+    JOIN desktop_worker_session w ON w."deviceId" = d.id AND w."authorizationEpoch" = d."authorizationEpoch"
+    WHERE d."revokedAt" IS NULL AND d.state = 'preparing' AND d.mode = 'client-worker' AND w."revokedAt" IS NULL
+      AND w."expiresAt" > clock_timestamp() AND w."lastSeenAt" > clock_timestamp() - interval '90 seconds'
+      AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(w."modelKeys") k WHERE starts_with(k, ${prefix}))`.execute(
+    db,
+  );
+  return Math.min(rows[0]?.ready ?? 0, QUEUE_BATCH);
+};
+
 export class SqlQueueStore {
   constructor(readonly db: Kysely<DB>) {}
 
@@ -460,8 +487,14 @@ export class SqlQueueStore {
         rows: [{ active }],
       } = await sql<{ active: number }>`select count(*)::int active from job
         where queue = ${queue} and state = 'active'`.execute(tx);
-      // The ones started by hand already count as active.
-      const capacity = Math.min(QUEUE_BATCH - byHand.length, maxClaims - byHand.length, config.concurrency - active);
+      // The ones started by hand already count as active. Each ready desktop helper adds one: every job
+      // it lets start becomes a desktop task the next free helper claims (docs/desktop-worker-setup-protocol.md).
+      const helpers = await readyDesktopHelpers(tx, queue);
+      const capacity = Math.min(
+        QUEUE_BATCH - byHand.length,
+        maxClaims - byHand.length,
+        config.concurrency + helpers - active,
+      );
       if (capacity <= 0) {
         return byHand;
       }

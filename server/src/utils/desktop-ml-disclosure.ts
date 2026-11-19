@@ -7,7 +7,8 @@ import { canonicalJson } from 'src/utils/object.js';
 
 const route = {
   policyRevision: z.uuid(),
-  routeRevision: z.uuid(),
+  // Written by servers before desktop auto-setup; routes no longer decide desktop work.
+  routeRevision: z.uuid().optional(),
   destinationId: z.uuid(),
   kind: z.enum([MlDestinationKind.Local, MlDestinationKind.Lan]),
   endpointSha256: z.string().regex(/^[a-f0-9]{64}$/),

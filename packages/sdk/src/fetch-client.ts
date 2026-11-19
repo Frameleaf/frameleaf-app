@@ -9636,6 +9636,7 @@ export type DesktopCapabilitiesDto = {
         nativeHost: false;
         sources: false;
         worker: false;
+        workerAutoSetup: true;
         workerSession: true;
     };
     protocolVersion: number;
@@ -9733,6 +9734,9 @@ export type DesktopModelInventoryDto = {
     workloads: {
         modelKeys: string[];
         modelNames: string[];
+        profiles?: {
+            [key: string]: unknown;
+        }[];
         state: DesktopModelAvailability;
         workload: DesktopLibraryWorkload;
     }[];

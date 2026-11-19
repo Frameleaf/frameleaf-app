@@ -3,22 +3,16 @@ import { type Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { DB } from 'src/schema/index.js';
-import { defaults } from 'src/config.js';
-import { MlDestinationKind, MlWorkload, SystemMetadataKey } from 'src/enum.js';
+import { SystemMetadataKey } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
-import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
-import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
-import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
-import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
 import { seedDesktopQualification } from 'test/desktop-qualification.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -73,36 +67,10 @@ const setup = async (consent = true) => {
     await metadata.withConfigTransaction((metadata) =>
       metadata.set(SystemMetadataKey.FrameleafDesktopAssistance, { version: 1, accounts: {} }),
     );
-  const routes = new MlDestinationRepository(db);
-  const destination = await routes.create({
-    kind: MlDestinationKind.Local,
-    name: 'synthetic NAS',
-    url: 'https://unused.invalid',
-    authToken: null,
-    enabled: true,
-    workloads: [MlWorkload.Clip],
-    budgetLimitUsd: null,
-    maxRuntimeMinutes: null,
-    maxUploadBytes: null,
-  });
-  await routes.setDefaultRoute(MlWorkload.Clip, destination.id);
-  const route = (await routes.getRouteStates()).find((route) => route.workload === MlWorkload.Clip)!;
-  const proof = {
-    spaceKey: space.spaceKey,
-    modelKeys: [space.visualModelKey, ...space.textModelKeys],
-    routeRevisionId: route.revisionId,
-    selection: {
-      destinationId: destination.id,
-      kind: MlDestinationKind.Local,
-      workload: MlWorkload.Clip,
-      endpoint: { url: destination.url!, assertAuthority: () => Promise.resolve() },
-      record: () => {},
-    },
-    assertCurrent: vi.fn().mockResolvedValue(undefined),
-  };
-  const nas = { verify: vi.fn().mockResolvedValue(proof), verifyFace: vi.fn() };
+  // Stands in for the server's settings check: resolves while they still ask for the qualified profile.
+  const assertProfile = vi.fn().mockResolvedValue(undefined);
   const index = new DesktopClipIndexRepository(db);
-  const service = new DesktopAssistanceActivationService(workers, index, nas as never, policies, metadata, routes);
+  const service = new DesktopAssistanceActivationService(workers, index, policies, metadata);
   return {
     user,
     devices,
@@ -113,27 +81,27 @@ const setup = async (consent = true) => {
     qualification,
     metadata,
     policies,
-    routes,
-    destination,
-    proof,
-    nas,
+    assertProfile,
     index,
     service,
   };
 };
-it('atomically admits the paired index and grants only the accepted model', async () => {
+const activate = (f: Awaited<ReturnType<typeof setup>>, qualification = f.qualification) =>
+  f.service.activate(f.grant, qualification, space.spaceKey, f.assertProfile);
+
+it('atomically admits the paired index and grants only the accepted model, with no route or destination', async () => {
   const f = await setup();
-  await f.service.activate(f.grant, f.qualification, space.spaceKey);
+  await activate(f);
   expect((await f.index.getActive())?.space.spaceKey).toBe(space.spaceKey);
   expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([space.visualModelKey]);
-  await f.service.activate(f.grant, f.qualification, space.spaceKey);
+  expect(f.assertProfile).toHaveBeenCalled();
+  await activate(f);
   expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([space.visualModelKey]);
+  expect(await db.selectFrom('ml_workload_route').selectAll().execute()).toEqual([]);
 });
 it('keeps the index unadmitted and scope empty when consent is absent', async () => {
   const f = await setup(false);
-  await expect(f.service.activate(f.grant, f.qualification, space.spaceKey)).rejects.toThrow(
-    'desktop_pool_policy_required',
-  );
+  await expect(activate(f)).rejects.toThrow('desktop_pool_policy_required');
   expect(await f.index.getActive()).toBeUndefined();
   expect(await f.workers.session(f.session.id, f.session.tokenHash)).toBeUndefined();
 });
@@ -141,22 +109,16 @@ it.each(['revoke', 'expiry', 'credential'])(
   'rolls back index admission when %s invalidates the helper before grant',
   async (reason) => {
     const f = await setup();
-    f.proof.assertCurrent.mockImplementationOnce(async () => {
+    // The credential rotates before activation starts; the others change while the grant is being written.
+    if (reason === 'credential') await f.workers.rotate(f.grant, f.session.tokenHash, Buffer.alloc(32, 4));
+    f.assertProfile.mockImplementationOnce(async () => {
       if (reason === 'revoke') await f.devices.revoke(f.user.id, f.device.id);
       else if (reason === 'expiry')
         await sql`UPDATE desktop_worker_qualification SET "createdAt"=now()-interval '2 hours', "expiresAt"=now()-interval '1 hour' WHERE id=${f.qualification.id}::uuid`.execute(
           db,
         );
     });
-    if (reason === 'credential') {
-      f.nas.verify.mockImplementationOnce(async () => {
-        await f.workers.rotate(f.grant, f.session.tokenHash, Buffer.alloc(32, 4));
-        return f.proof;
-      });
-    }
-    await expect(f.service.activate(f.grant, f.qualification, space.spaceKey)).rejects.toThrow(
-      'desktop_worker_activation_invalid',
-    );
+    await expect(activate(f)).rejects.toThrow('desktop_worker_activation_invalid');
     expect(await f.index.getActive()).toBeUndefined();
     const { rows } = await sql`SELECT "modelKeys" FROM desktop_worker_session WHERE id=${f.session.id}::uuid`.execute(
       db,
@@ -164,26 +126,23 @@ it.each(['revoke', 'expiry', 'credential'])(
     expect(rows).toEqual([{ modelKeys: [] }]);
   },
 );
-it('rechecks consent after NAS verification before making any grant', async () => {
+it('rechecks consent inside the grant transaction', async () => {
   const f = await setup();
-  f.nas.verify.mockImplementationOnce(async () => {
-    await f.metadata.withConfigTransaction((metadata) =>
-      metadata.set(SystemMetadataKey.FrameleafDesktopAssistance, { version: 1, accounts: {} }),
-    );
-    return f.proof;
-  });
-  await expect(f.service.activate(f.grant, f.qualification, space.spaceKey)).rejects.toThrow(
-    'desktop_pool_policy_changed',
+  const policy = await f.policies.read(f.user.id);
+  vi.spyOn(f.policies, 'read').mockResolvedValueOnce(policy);
+  await f.metadata.withConfigTransaction((metadata) =>
+    metadata.set(SystemMetadataKey.FrameleafDesktopAssistance, { version: 1, accounts: {} }),
   );
+  await expect(activate(f)).rejects.toThrow('desktop_pool_policy_changed');
   expect(await f.index.getActive()).toBeUndefined();
   expect(await f.workers.session(f.session.id, f.session.tokenHash)).toBeUndefined();
 });
-it('preserves a route pinned while qualification was in progress', async () => {
+it('grants nothing when the settings stopped asking for the profile', async () => {
   const f = await setup();
-  await f.routes.setRoute(MlWorkload.Clip, f.destination.id);
-  await expect(f.service.activate(f.grant, f.qualification, space.spaceKey)).rejects.toThrow(
-    'desktop_pool_route_changed',
-  );
+  f.assertProfile.mockRejectedValue(new ConflictException('desktop_model_profile_changed'));
+  const refused = activate(f);
+  await expect(refused).rejects.toThrow('desktop_model_profile_changed');
+  await expect(refused).rejects.toBeInstanceOf(ConflictException);
   expect(await f.index.getActive()).toBeUndefined();
   expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([]);
 });
@@ -193,7 +152,7 @@ it('preserves unknown legacy vectors when index admission is incompatible', asyn
   const asset = await new AssetRepository(db).create(mediumFactory.assetInsert({ ownerId: f.user.id }));
   const vector = JSON.stringify(Array.from({ length: 768 }, () => 0.1));
   await sql`INSERT INTO smart_search ("assetId", embedding) VALUES (${asset.id}::uuid, ${vector}::vector)`.execute(db);
-  const refused = f.service.activate(f.grant, f.qualification, space.spaceKey);
+  const refused = activate(f);
   await expect(refused).rejects.toThrow('desktop_clip_index_incompatible');
   await expect(refused).rejects.toBeInstanceOf(ConflictException);
   expect(await f.index.getActive()).toBeUndefined();
@@ -203,140 +162,42 @@ it('preserves unknown legacy vectors when index admission is incompatible', asyn
   ).toEqual({ producerModelKey: null });
 });
 
-it('uses the real NAS verifier in the activation transaction without a second-connection lock deadlock', async () => {
-  const f = await setup();
-  const settings = structuredClone(defaults);
-  settings.machineLearning.enabled = true;
-  settings.machineLearning.clip.enabled = true;
-  settings.machineLearning.clip.modelName = profile.modelName;
-  settings.machineLearning.urls = [f.destination.url!];
-  await f.metadata.withConfigTransaction((metadata) => metadata.set(SystemMetadataKey.SystemConfig, settings));
-  const machineLearning = {
-    probe: () =>
-      Promise.resolve({
-        reachable: true,
-        workloads: [MlWorkload.Clip],
-        hardware: null,
-        latencyMs: 1,
-        probedAt: new Date(),
-        error: null,
-      }),
-    encodeBoundClip: (_selection: unknown, _payload: unknown, selected: typeof profile) =>
-      Promise.resolve({ embedding: selected.spec.expectedOutput.clip, modelKey: selected.modelKey }),
-  };
-  const nas = new DesktopNasProducerService(
-    machineLearning as never,
-    f.routes,
-    f.index,
-    new ConfigRepository(),
-    f.metadata,
-  );
-  const service = new DesktopAssistanceActivationService(f.workers, f.index, nas, f.policies, f.metadata, f.routes);
-  await service.activate(f.grant, f.qualification, space.spaceKey);
-  expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([space.visualModelKey]);
-  expect((await f.index.getActive())?.space.spaceKey).toBe(space.spaceKey);
-});
-
 it('adds separately accepted paired roles and drops expired previous scope', async () => {
   const f = await setup();
-  await f.service.activate(f.grant, f.qualification, space.spaceKey);
+  await activate(f);
   const text = catalogue.profiles.find((p: { modelKey: string }) => p.modelKey === space.textModelKeys[0]);
   const accepted = await seedDesktopQualification(db, f.grant, {
     modelKey: text.modelKey,
     config: text.spec.entries,
     inputKind: 'text',
   });
-  await f.service.activate(f.grant, accepted, space.spaceKey);
+  await activate(f, accepted);
   expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual(
     [space.visualModelKey, text.modelKey].sort((a: string, b: string) => a.localeCompare(b)),
   );
   await sql`UPDATE desktop_worker_qualification SET "createdAt"=now()-interval '2 hours', "expiresAt"=now()-interval '1 hour' WHERE id=${f.qualification.id}::uuid`.execute(
     db,
   );
-  await f.service.activate(f.grant, accepted, space.spaceKey);
+  await activate(f, accepted);
   expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([text.modelKey]);
 });
 
-it('reports NAS verification unavailability as a setup conflict without a grant', async () => {
+it.each(['ocr', 'face'])('grants a %s model without CLIP inference or index admission', async (workload) => {
   const f = await setup();
-  f.nas.verify.mockRejectedValueOnce(new Error('private fixture network failure'));
-  const refused = f.service.activate(f.grant, f.qualification, space.spaceKey);
-  await expect(refused).rejects.toThrow('desktop_nas_producer_unavailable');
-  await expect(refused).rejects.toBeInstanceOf(ConflictException);
-  expect(await f.index.getActive()).toBeUndefined();
-  expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([]);
-});
-
-it('activates OCR without CLIP inference or index admission and rejects a changed OCR request', async () => {
-  const f = await setup();
-  const ocr = JSON.parse(readFileSync('test/fixtures/desktop-ocr-profile.json', 'utf8'));
+  const selected = JSON.parse(readFileSync(`test/fixtures/desktop-${workload}-profile.json`, 'utf8'));
   const qualification = await seedDesktopQualification(db, f.grant, {
-    modelKey: ocr.modelKey,
-    config: ocr.spec.entries,
+    modelKey: selected.modelKey,
+    config: selected.spec.entries,
     inputKind: 'image',
   });
-  await f.routes.setDefaultRoute(MlWorkload.Ocr, f.destination.id);
-  await db
-    .updateTable('ml_destination')
-    .set({ workloads: [MlWorkload.Clip, MlWorkload.Ocr] })
-    .where('id', '=', f.destination.id)
-    .execute();
-  const config = new ConfigRepository();
-  const ml = new MachineLearningRepository(LoggingRepository.create(), f.routes, config, f.metadata);
-  ml.setup({ ...defaults.machineLearning, urls: [f.destination.url!] });
-  await f.metadata.withConfigTransaction((metadata) =>
-    metadata.set(SystemMetadataKey.SystemConfig, { machineLearning: { urls: [f.destination.url!] } }),
-  );
-  const service = new DesktopAssistanceActivationService(
-    f.workers,
-    f.index,
-    f.nas as never,
-    f.policies,
-    f.metadata,
-    f.routes,
-    ml,
-  );
-  await service.activateOcr(f.grant, qualification, ocr);
-  expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([ocr.modelKey]);
+  await f.service.activateModel(f.grant, qualification, selected.modelKey, f.assertProfile);
+  expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([selected.modelKey]);
   expect(await f.index.getActive()).toBeUndefined();
-  expect(f.nas.verify).not.toHaveBeenCalled();
-  await f.metadata.withConfigTransaction((metadata) =>
-    metadata.set(SystemMetadataKey.SystemConfig, {
-      machineLearning: { urls: [f.destination.url!], ocr: { minDetectionScore: 0.6 } },
-    }),
+  await expect(f.service.activateModel(f.grant, qualification, space.visualModelKey, f.assertProfile)).rejects.toThrow(
+    'desktop_pool_model_unavailable',
   );
-  await expect(service.activateOcr(f.grant, qualification, ocr)).rejects.toThrow('desktop_pool_config_changed');
-  await expect(service.activateOcr(f.grant, qualification, ocr)).rejects.toBeInstanceOf(ConflictException);
-});
-
-it('grants a face role only after current NAS producer proof and leaves existing indices untouched', async () => {
-  const f = await setup();
-  const face = JSON.parse(readFileSync('test/fixtures/desktop-face-profile.json', 'utf8'));
-  const qualification = await seedDesktopQualification(db, f.grant, {
-    modelKey: face.modelKey,
-    config: face.spec.entries,
-    inputKind: 'image',
-  });
-  await db
-    .updateTable('ml_destination')
-    .set({ workloads: [MlWorkload.Clip, MlWorkload.Face] })
-    .where('id', '=', f.destination.id)
-    .execute();
-  await f.routes.setDefaultRoute(MlWorkload.Face, f.destination.id);
-  const route = (await f.routes.getRouteStates()).find((route) => route.workload === MlWorkload.Face)!;
-  const proof = {
-    ...f.proof,
-    modelKeys: [face.modelKey],
-    selection: { ...f.proof.selection, workload: MlWorkload.Face },
-    routeRevisionId: route.revisionId,
-  };
-  f.nas.verifyFace.mockResolvedValue(proof);
-  await f.service.activateFace(f.grant, qualification, face.modelKey);
-  expect(f.nas.verifyFace).toHaveBeenCalledWith(face.modelKey);
-  expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([face.modelKey]);
-  expect(await f.index.getActive()).toBeUndefined();
-  proof.assertCurrent.mockRejectedValue(new ConflictException('desktop_nas_producer_changed'));
-  await expect(f.service.activateFace(f.grant, qualification, face.modelKey)).rejects.toThrow(
-    'desktop_nas_producer_changed',
+  f.assertProfile.mockRejectedValue(new ConflictException('desktop_model_profile_changed'));
+  await expect(f.service.activateModel(f.grant, qualification, selected.modelKey, f.assertProfile)).rejects.toThrow(
+    'desktop_model_profile_changed',
   );
 });

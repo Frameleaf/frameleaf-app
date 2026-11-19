@@ -1,31 +1,26 @@
 import type { MachineLearningConfig } from 'src/config.js';
 import type { DesktopModelAvailability } from 'src/dtos/desktop-model-inventory.dto.js';
-import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import type { DesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
 import type { DesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import { desktopInventoryWorkloads } from 'src/dtos/desktop-model-inventory.dto.js';
-import { MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { MlWorkload } from 'src/enum.js';
 import { findDesktopClipSpace } from 'src/utils/desktop-clip-space.js';
 import { faceEntries } from 'src/utils/desktop-face.js';
 import { desktopImageModelKey } from 'src/utils/desktop-model-catalogue.js';
 import { ocrEntries } from 'src/utils/desktop-ocr.js';
 import { canonicalJson } from 'src/utils/object.js';
 
-type Route = Awaited<ReturnType<MlDestinationRepository['getRouteStates']>>[number];
+/** What each enabled task asks of a desktop: the catalogue profile for the configured model, whatever the routing. */
 export const selectDesktopModelInventory = ({
   config,
   catalogue,
   spaces,
-  routes,
-  destinations,
   provider,
   runtimeSourceRevision,
 }: {
   config: MachineLearningConfig;
   catalogue: DesktopModelCatalogue;
   spaces: DesktopClipSpaces;
-  routes: Route[];
-  destinations: MlDestinationRow[];
   provider: string;
   runtimeSourceRevision: string;
 }): DesktopModelAvailability[] =>
@@ -49,17 +44,6 @@ export const selectDesktopModelInventory = ({
       modelKeys,
     });
     if (!config.enabled || !(model ? model.enabled : enrichment.length > 0)) return result('disabled');
-    const route = routes.find((item) => item.workload === workload);
-    if (route?.origin === 'pinned' || route?.origin === 'legacy') return result(route.origin);
-    const destination = destinations.find((item) => item.id === route?.destinationId);
-    if (
-      !route?.revisionId ||
-      !destination?.enabled ||
-      !destination.url ||
-      ![MlDestinationKind.Local, MlDestinationKind.Lan].includes(destination.kind) ||
-      !destination.workloads.includes(workload)
-    )
-      return result('unavailable');
     if (!model) return result('unsupported');
     const profiles = catalogue.profiles.filter(
       (item) =>

@@ -106654,6 +106654,12 @@
                 ],
                 "type": "boolean"
               },
+              "workerAutoSetup": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
               "workerSession": {
                 "enum": [
                   true
@@ -106665,6 +106671,7 @@
               "enrollment",
               "worker",
               "workerSession",
+              "workerAutoSetup",
               "sources",
               "nativeHost"
             ],
@@ -106897,7 +106904,7 @@
         "additionalProperties": false,
         "properties": {
           "protocolVersion": {
-            "maximum": 1,
+            "maximum": 2,
             "minimum": 1,
             "type": "integer"
           },
@@ -106932,6 +106939,14 @@
                     "maxLength": 512,
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "profiles": {
+                  "items": {
+                    "additionalProperties": {},
+                    "type": "object"
                   },
                   "maxItems": 8,
                   "type": "array"

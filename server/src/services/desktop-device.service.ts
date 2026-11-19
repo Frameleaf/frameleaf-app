@@ -30,7 +30,16 @@ export class DesktopDeviceService {
         !auth.user.isAdmin && (await this.policy.read(auth.user.id))?.memberApproved === true
           ? 'account-approved'
           : 'administrators',
-      features: { enrollment: true, worker: false, workerSession: true, sources: false, nativeHost: false },
+      // workerAutoSetup: desktops set themselves up from the machine-learning settings alone
+      // (docs/desktop-worker-setup-protocol.md in frameleaf-desktop).
+      features: {
+        enrollment: true,
+        worker: false,
+        workerSession: true,
+        workerAutoSetup: true,
+        sources: false,
+        nativeHost: false,
+      },
     };
   }
 
