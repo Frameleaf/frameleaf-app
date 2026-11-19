@@ -131,6 +131,11 @@ describe('desktop enrollment authority', () => {
       features: { enrollment: true, worker: false, sources: false, nativeHost: false },
     });
   });
+  it('tells a desktop what this server understands, so it sends nothing an older server would refuse', async () => {
+    const { features } = await service.capabilities(auth);
+    // desktops set themselves up from the settings alone, and may ask a claim to name a withdrawn model
+    expect(features).toMatchObject({ workerAutoSetup: true, workerWithdrawalNotice: true });
+  });
   it('ends a signed-in association without permanently revoking its installation', async () => {
     repository.endSession.mockResolvedValue(true);
     await expect(service.endSession(auth, 'device')).resolves.toBeUndefined();

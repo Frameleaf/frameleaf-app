@@ -57,6 +57,7 @@ export class DesktopCapabilitiesDto extends createZodDto(
       worker: z.literal(false),
       workerSession: z.literal(true),
       workerAutoSetup: z.literal(true),
+      workerWithdrawalNotice: z.literal(true),
       sources: z.literal(false),
       nativeHost: z.literal(false),
     }),

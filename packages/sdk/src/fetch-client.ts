@@ -9638,6 +9638,7 @@ export type DesktopCapabilitiesDto = {
         worker: false;
         workerAutoSetup: true;
         workerSession: true;
+        workerWithdrawalNotice: true;
     };
     protocolVersion: number;
     serverId: string;

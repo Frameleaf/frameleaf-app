@@ -106665,6 +106665,12 @@
                   true
                 ],
                 "type": "boolean"
+              },
+              "workerWithdrawalNotice": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
               }
             },
             "required": [
@@ -106672,6 +106678,7 @@
               "worker",
               "workerSession",
               "workerAutoSetup",
+              "workerWithdrawalNotice",
               "sources",
               "nativeHost"
             ],

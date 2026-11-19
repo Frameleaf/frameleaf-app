@@ -37,6 +37,8 @@ export class DesktopDeviceService {
         worker: false,
         workerSession: true,
         workerAutoSetup: true,
+        // A claim may carry `reportWithdrawn: true` and is then told when a model was taken away from it.
+        workerWithdrawalNotice: true,
         sources: false,
         nativeHost: false,
       },
