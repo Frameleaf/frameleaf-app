@@ -50,7 +50,7 @@ test("the pinned release database is replaced only in disposable compose for arc
     /^\s*image:\s*(ghcr\.io\/frameleaf\/frameleaf-postgres:\S+)\s*$/m.exec(
       production,
     )[1];
-  assert.match(reference, /:19rc1-pgvector0\.8\.7@sha256:[a-f0-9]{64}$/);
+  assert.match(reference, /:19\.0-pgvector0\.8\.7@sha256:[a-f0-9]{64}$/);
   const compose = `# Original release dependency: ${reference}\n${production}`;
   const archiveReference = `127.0.0.1:5000/deploy-test/database@sha256:${"a".repeat(64)}`;
   for (const archive of [undefined, "/artifacts/postgres/image.tar"]) {

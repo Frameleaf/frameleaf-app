@@ -1,6 +1,6 @@
 # Standalone PostgreSQL
 
-Frameleaf uses one PostgreSQL 19 database with pgvector 0.8.7 and HNSW indexes. The owned database image is `ghcr.io/frameleaf/frameleaf-postgres:19rc1-pgvector0.8.7`. Use the digest pinned in the Frameleaf release's Compose file and manifest for deployment. PostgreSQL 19 RC 1 is the current baseline; an image build or source review does not establish production readiness.
+Frameleaf uses one PostgreSQL 19 database with pgvector 0.8.7 and HNSW indexes. The owned database image is `ghcr.io/frameleaf/frameleaf-postgres:19.0-pgvector0.8.7`. Use the digest pinned in the Frameleaf release's Compose file and manifest for deployment. PostgreSQL 19 RC 1 is the current baseline; an image build or source review does not establish production readiness.
 
 The PostgreSQL image is public and supports AMD64 and ARM64. Pulling this image does not require a GitHub account or registry credentials.
 
