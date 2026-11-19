@@ -63,6 +63,13 @@
   let into = $state<string | null>(null);
 
   const always = $derived(data.folders.filter((folder: any) => folder.kind === 'manager'));
+  /** What each of Manager's always-included folders is called, and why it is there. A backup from before roles were recorded only had recovery points. */
+  const own: Record<string, { icon: string; title: string; why: string }> = {
+    recovery: { icon: 'database', title: 'Manager’s recovery points', why: 'What Manager needs to bring your photo library’s albums, people and settings back.' },
+    manager: { icon: 'settings', title: 'Manager’s settings', why: 'A copy of Manager’s own settings and history, saved just before each backup.' },
+    'photo-key': { icon: 'key', title: 'Your photo library’s backup keys', why: 'So this recovery key is all you need to bring back the photo library’s Cloud Backup on a new server.' },
+  };
+  const ownOf = (folder: any) => own[folder.role ?? 'recovery']!;
   const chosen = $derived(draft.folders.map((folder) => ({ path: folder, ...(data.folders.find((item: any) => item.path === folder) ?? {}) })));
   const protectedBytes = $derived(data.folders.reduce((sum: number, folder: any) => sum + (folder.bytes ?? 0), 0));
   const measured = $derived(data.folders.some((folder: any) => folder.bytes !== undefined));
@@ -390,7 +397,7 @@
 {/snippet}
 {#snippet folderRows(removable: boolean)}
   {#each always as folder, index}
-    <div class="list-row sb-stack" class:sb-first={index === 0}><Icon name="settings" /><div class="grow"><strong>Manager’s recovery points</strong><p>What Manager needs to bring your photo library’s albums, people and settings back.</p></div>{#if folder.bytes !== undefined}<span class="sb-size">{formatBytes(folder.bytes)}</span>{/if}<span class="badge">Always included</span></div>
+    <div class="list-row sb-stack" class:sb-first={index === 0}><Icon name={ownOf(folder).icon} /><div class="grow"><strong>{ownOf(folder).title}</strong><p>{ownOf(folder).why}</p></div>{#if folder.bytes !== undefined}<span class="sb-size">{formatBytes(folder.bytes)}</span>{/if}<span class="badge">Always included</span></div>
   {/each}
   {#each chosen as folder}
     <div class="list-row"><Icon name={folder.path === photosPath ? 'images' : 'folder'} /><div class="grow"><strong>{folder.path}</strong><p>{folder.files !== undefined ? `${folder.files.toLocaleString()} files` : 'Measured at the next backup'}</p></div>{#if folder.bytes !== undefined}<span class="sb-size">{formatBytes(folder.bytes)}</span>{/if}{#if removable}<button class="button quiet" disabled={busy} onclick={() => edit((settings) => (settings.folders = settings.folders.filter((item) => item !== folder.path)))}>Remove</button>{/if}</div>
@@ -566,8 +573,8 @@
         {#each kept as folder, index}
           <label class="list-row sb-check" class:sb-first={index === 0}>
             <input type="checkbox" aria-label="Restore {folder.path}" checked={wanted.includes(folder.path)} disabled={!folder.reachable} onchange={() => want(folder.path)} />
-            <Icon name={folder.kind === 'manager' ? 'settings' : 'folder'} />
-            <div class="grow"><strong>{folder.kind === 'manager' ? 'Manager’s photo recovery points' : folder.path}</strong><p>{!folder.reachable ? `Manager can’t reach ${folder.path} on this server. Share that folder with Manager, then come back.` : folder.kind === 'manager' ? 'What Manager needs to bring back your photo library’s albums, people and settings.' : `Back to ${folder.path}`}</p></div>
+            <Icon name={folder.kind === 'manager' ? ownOf(folder).icon : 'folder'} />
+            <div class="grow"><strong>{folder.kind === 'manager' ? ownOf(folder).title : folder.path}</strong><p>{!folder.reachable ? `Manager can’t reach ${folder.path} on this server. Share that folder with Manager, then come back.` : folder.kind === 'manager' ? `${ownOf(folder).why} Back to ${folder.path}.` : `Back to ${folder.path}`}</p></div>
             <span class="sb-size">{formatBytes(folder.bytes)}</span>
           </label>
         {/each}

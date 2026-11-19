@@ -4,14 +4,15 @@
 import { DEFAULT_RETENTION, Repository, dirStore, escrowPassphraseProblem, find, listFolder, parseRecoveryCode, unwrapBucketKey, wrapBucketKey, type KeyEscrowBlob, readFile as readStored, recoveryCode, s3Store, type RetentionPolicy } from '@frameleaf/backup-core';
 import { fork, type ChildProcess } from 'node:child_process';
 import { hkdfSync, randomBytes } from 'node:crypto';
-import { chmod, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { CloudError } from './cloud-link.js';
 import { Refusal } from './contracts.js';
 import { reasonOf, type CloudBackup, type Session } from './server-backup-cloud.js';
-import { RECORD, type Job, type Message, type Outcome, type Progress, type Reply, type Target } from './server-backup-worker.js';
+import { RECORD, type Job, type Message, type Outcome, type Progress, type Reply, type Role, type Target } from './server-backup-worker.js';
 import type { Store } from './store.js';
 
 const Time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -100,6 +101,10 @@ export class ServerBackup {
       inside: (path: string) => boolean;
       /** Protected whatever the owner chooses: Manager's own recovery points. */
       always: string[];
+      /** Where a copy of Manager's own settings database is written before each backup, so it is always protected. */
+      managerState?: string;
+      /** The photo server's key folder (`<photo library>/frameleaf/identity`), when there is a photo server. */
+      photoKeys?: () => string | null;
     },
   ) {
     store.db.exec('CREATE TABLE IF NOT EXISTS server_backup_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT NOT NULL)');
@@ -152,12 +157,27 @@ export class ServerBackup {
     return { target: { kind: 'cloud', ...session.place, limitMbps: this.saved().settings.limitMbps }, session };
   }
 
+  /**
+   * What every backup protects whatever the owner chooses. One that sits inside a chosen folder (the photo
+   * library's keys, once the owner adds the whole library) is protected there already and is not added again.
+   */
+  private included(chosen: string[]): { path: string; role: Role }[] {
+    const keys = this.options.photoKeys?.() ?? null;
+    return [
+      ...this.options.always.map((path) => ({ path, role: 'recovery' as const })),
+      ...(this.options.managerState ? [{ path: this.options.managerState, role: 'manager' as const }] : []),
+      ...(keys && this.options.inside(keys) && existsSync(keys) ? [{ path: resolve(keys), role: 'photo-key' as const }] : []),
+    ].filter((item) => item.role !== 'photo-key' || !chosen.some((folder) => within(item.path, folder)));
+  }
+
   /** Every folder must be one Manager can read, and none may sit inside another: that would store files twice. */
   private checked(settings: Settings): Settings {
     const folders = [...new Set(settings.folders.map((folder) => resolve(folder)))];
     for (const folder of folders) {
       if (!this.options.inside(folder)) throw new Refusal('server_backup_folder_outside', 409, folder);
-      if ([...folders, ...this.options.always].some((other) => other !== folder && (within(folder, other) || within(other, folder))))
+      // Only the photo library's keys may sit inside a chosen folder (the library itself); they are then not added twice.
+      const own = this.included([]).filter((item) => within(folder, item.path) || (item.role !== 'photo-key' && within(item.path, folder)));
+      if (folders.some((other) => other !== folder && (within(folder, other) || within(other, folder))) || own.length > 0)
         throw new Refusal('server_backup_folders_overlap', 409, folder);
     }
     return { ...settings, folders };
@@ -361,17 +381,31 @@ export class ServerBackup {
     if (!saved.on) throw new Refusal('server_backup_off');
     // ponytail: thinning old backups rides along once a week (Sunday's run); give it its own schedule if owners ask.
     const rootKey = await this.rootKey(false);
+    await this.saveManagerState();
+    const included = this.included(saved.settings.folders);
     return this.launch('backup', trigger, rootKey, (target, session) => ({
       kind: 'backup',
       target,
       rootKey,
-      folders: [...this.options.always, ...saved.settings.folders],
-      always: this.options.always,
+      folders: [...included.map((item) => item.path), ...saved.settings.folders],
+      roles: Object.fromEntries(included.map((item) => [item.path, item.role])),
       exclusions: saved.settings.exclusions,
       retention: saved.settings.retention,
       prune: trigger === 'schedule' && now.getDay() === 0,
       ...(session?.sequence ? { sequence: session.sequence } : {}),
     }));
+  }
+
+  /** A consistent copy of Manager's settings database, written beside it and moved into place whole. */
+  private async saveManagerState() {
+    const folder = this.options.managerState;
+    if (!folder) return;
+    await mkdir(folder, { recursive: true, mode: 0o700 });
+    const copy = join(folder, 'manager.sqlite.part');
+    await rm(copy, { force: true });
+    this.store.db.exec(`VACUUM INTO '${copy.replaceAll("'", "''")}'`);
+    await chmod(copy, 0o600);
+    await rename(copy, join(folder, 'manager.sqlite'));
   }
 
   async restore(input: unknown): Promise<Run> {
@@ -447,7 +481,7 @@ export class ServerBackup {
     const parts: Buffer[] = [];
     for await (const part of readStored(repository, entry)) parts.push(part);
     const record = z
-      .object({ folders: z.array(z.object({ path: z.string().min(1).max(4096), kind: z.enum(['manager', 'folder']), files: z.number().int().nonnegative(), bytes: z.number().nonnegative() })).max(100) })
+      .object({ folders: z.array(z.object({ path: z.string().min(1).max(4096), kind: z.enum(['manager', 'folder']), role: z.enum(['recovery', 'manager', 'photo-key']).optional(), files: z.number().int().nonnegative(), bytes: z.number().nonnegative() })).max(100) })
       .safeParse(JSON.parse(Buffer.concat(parts).toString('utf8')));
     // What the old server wrote decides nothing here: a folder is only offered back where this Manager may write.
     return { folders: record.success ? record.data.folders.map((folder) => ({ ...folder, reachable: this.options.inside(resolve(folder.path)) })) : null };
@@ -492,7 +526,7 @@ export class ServerBackup {
       settings: saved.settings,
       key: { saved: saved.keySavedAt !== null, savedAt: saved.keySavedAt },
       folders: [
-        ...this.options.always.map((path) => ({ kind: 'manager', path, ...saved.sizes[path] })),
+        ...this.included(saved.settings.folders).map(({ path, role }) => ({ kind: 'manager', role, path, ...saved.sizes[path] })),
         ...saved.settings.folders.map((path) => ({ kind: 'folder', path, ...saved.sizes[path] })),
       ],
       running: running
