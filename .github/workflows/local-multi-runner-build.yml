@@ -50,7 +50,7 @@ on:
 
 jobs:
   matrix:
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && inputs.source-sha == github.sha && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && inputs.source-sha == github.sha && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
