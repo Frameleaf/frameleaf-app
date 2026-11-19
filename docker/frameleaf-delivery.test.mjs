@@ -1033,7 +1033,8 @@ test("the Postgres workflow publishes the tested image once, by dispatch, withou
   assert.ok(
     publish.steps.some(
       (step) =>
-        step.uses?.startsWith("actions/upload-artifact@") &&
+        // GitHub's action or Forgejo's fork (FL-1683), as the other workflow tests accept.
+        /\/upload-artifact@/.test(step.uses ?? "") &&
         step.with.name === "frameleaf-postgres-digest",
     ),
   );
