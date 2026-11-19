@@ -21,6 +21,12 @@ from onnxruntime.capi.onnxruntime_pybind11_state import Fail
 from frameleaf_ml.models.constants import SUPPORTED_PROVIDERS
 from frameleaf_ml.native_ort import current_policy
 from frameleaf_ml.schemas import ModelPrecision, SessionNode
+
+# FL-997: arm64 CUDA images ship PyPI's CUDA 13 onnxruntime-gpu with CUDA and cuDNN as wheels; load
+# those before any CUDA session so the image's CUDA 12 system libraries are not picked instead.
+if sys.platform == "linux" and platform.machine() == "aarch64" and hasattr(ort, "preload_dlls"):
+    if "CUDAExecutionProvider" in ort.get_available_providers():
+        ort.preload_dlls(cuda=True, cudnn=True, msvc=False)
 from frameleaf_ml.sessions import runtime_cache_dir
 
 from ..config import log, settings
