@@ -370,7 +370,9 @@ describe('AlbumDirectory', () => {
       workspaceHref('/albums?create=album', LibraryViewScope.Design, 'http://localhost'),
       'http://localhost',
     );
-    sdkMock.createAlbum.mockResolvedValue(albumFactory.build({ id: 'packaging', kind: AlbumKind.Album, libraryScope: LibraryScope.Design }));
+    sdkMock.createAlbum.mockResolvedValue(
+      albumFactory.build({ id: 'packaging', kind: AlbumKind.Album, libraryScope: LibraryScope.Design }),
+    );
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
     const dialog = await screen.findByRole('dialog', { name: 'New album' });
     await fireEvent.input(within(dialog).getByRole('textbox', { name: 'Name' }), { target: { value: 'Packaging' } });
