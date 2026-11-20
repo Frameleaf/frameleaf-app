@@ -110,7 +110,18 @@ export class DesktopQualificationService {
           provider,
           runtimeSourceRevision,
         });
-        if (request.protocolVersion !== 2) return { protocolVersion: 1, provider, runtimeSourceRevision, workloads };
+        // A desktop that can hold several leases is told how many of each kind of work the administrator
+        // allows it at once: the Jobs setting of that work's queue.
+        const limits = request.concurrentLeases ? await this.broker.workloadConcurrency() : undefined;
+        const limited = (item: (typeof workloads)[number]) =>
+          limits && item.state === 'eligible' ? { ...item, concurrency: limits[item.workload] ?? 1 } : item;
+        if (request.protocolVersion !== 2)
+          return {
+            protocolVersion: 1,
+            provider,
+            runtimeSourceRevision,
+            workloads: workloads.map((item) => limited(item)),
+          };
         // The desktop runs exactly these profiles: the server's catalogue is the only one.
         const served = (modelKey: string) =>
           this.catalogueJson.profiles.find(
@@ -124,7 +135,7 @@ export class DesktopQualificationService {
           provider,
           runtimeSourceRevision,
           workloads: workloads.map((item) =>
-            item.state === 'eligible' ? { ...item, profiles: item.modelKeys.map((key) => served(key)) } : item,
+            item.state === 'eligible' ? { ...limited(item), profiles: item.modelKeys.map((key) => served(key)) } : item,
           ),
         };
       },

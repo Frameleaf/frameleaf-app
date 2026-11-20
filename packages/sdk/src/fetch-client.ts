@@ -9643,6 +9643,7 @@ export type DesktopCapabilitiesDto = {
         sources: false;
         worker: false;
         workerAutoSetup: true;
+        workerConcurrentLeases: true;
         workerSession: true;
         workerWithdrawalNotice: true;
     };
@@ -9739,6 +9740,7 @@ export type DesktopModelInventoryDto = {
     provider: Provider;
     runtimeSourceRevision: string;
     workloads: {
+        concurrency?: number;
         modelKeys: string[];
         modelNames: string[];
         profiles?: {

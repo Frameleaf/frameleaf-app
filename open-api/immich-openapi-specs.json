@@ -106660,6 +106660,12 @@
                 ],
                 "type": "boolean"
               },
+              "workerConcurrentLeases": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
               "workerSession": {
                 "enum": [
                   true
@@ -106679,6 +106685,7 @@
               "workerSession",
               "workerAutoSetup",
               "workerWithdrawalNotice",
+              "workerConcurrentLeases",
               "sources",
               "nativeHost"
             ],
@@ -106933,6 +106940,11 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "concurrency": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
                 "modelKeys": {
                   "items": {
                     "pattern": "^(clip|ocr|face):[a-f0-9]{64}$",

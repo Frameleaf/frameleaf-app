@@ -11,6 +11,8 @@ export const DesktopModelInventoryRequestSchema = DesktopQualificationRequestSch
   // server's catalogue and keeps no copy of its own (docs/desktop-worker-setup-protocol.md in frameleaf-desktop).
   // 1, or nothing, asks for the protocol 1 reply.
   protocolVersion: z.union([z.literal(1), z.literal(2)]).optional(),
+  // Asks for each eligible task's `concurrency`. Desktops that hold one lease never ask, and never see it.
+  concurrentLeases: z.boolean().optional(),
 });
 export const desktopInventoryWorkloads = [
   MlWorkload.Clip,
@@ -28,6 +30,11 @@ const entry = z
     modelKeys: z.array(z.string().regex(/^(clip|ocr|face):[a-f0-9]{64}$/)).max(8),
     /** Protocol 2: the catalogue profile of each model key, in the same order, exactly as the server ships it. */
     profiles: z.array(z.record(z.string(), z.unknown())).max(8).optional(),
+    /**
+     * How many tasks of this work one desktop may hold at once: the administrator's Jobs setting for its
+     * queue. Sent to a desktop that asked with `concurrentLeases`; it caps this by what its hardware takes.
+     */
+    concurrency: z.number().int().min(1).optional(),
   })
   .refine((value) =>
     value.state === 'eligible'

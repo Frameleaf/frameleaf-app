@@ -168,7 +168,7 @@ const settings = (machineLearning: { enabled: boolean; clip: { enabled: boolean;
 const inventoryPolicies = { read: vi.fn() };
 const challenges = { issue: vi.fn(), read: vi.fn(), record: vi.fn(), readAccepted: vi.fn() };
 /** No model is being held back from this desktop unless a test says so. */
-const holds = { heldUntil: vi.fn(), clearWithdrawal: vi.fn() };
+const holds = { heldUntil: vi.fn(), clearWithdrawal: vi.fn(), workloadConcurrency: vi.fn() };
 let ctx: ControllerContext;
 let app: Express;
 const activation = { activate: vi.fn() };
@@ -614,4 +614,40 @@ it('holds back a desktop that lost a model for failing it: no new challenge and 
     accepted: true,
   });
   expect(broker.clearWithdrawal).toHaveBeenCalledExactlyOnceWith(id, profile.modelKey);
+});
+
+it('tells a desktop that can hold several leases how many of each kind of work the Jobs setting allows', async () => {
+  vi.mocked(getConfig).mockResolvedValue(structuredClone(defaults));
+  holds.workloadConcurrency.mockResolvedValue({ clip: 4, face: 2, ocr: 1 });
+  const ask = (extra: object) =>
+    post(
+      '/desktop/worker/models',
+      'models',
+      JSON.stringify({
+        provider: profile.spec.provider,
+        runtimeSourceRevision: profile.runtimeSourceRevision,
+        protocolVersion: 2,
+        ...extra,
+      }),
+    );
+  const response = await ask({ concurrentLeases: true });
+  expect(response.status).toBe(200);
+  const limits = Object.fromEntries(
+    response.body.workloads.map((item: { workload: string; state: string; concurrency?: number }) => [
+      item.workload,
+      item.state === 'eligible' ? item.concurrency : item.state,
+    ]),
+  );
+  // the limit of each task that has a model for this runtime; nothing for a task it cannot do
+  expect(limits.clip).toBe(4);
+  for (const [workload, limit] of [
+    ['face', 2],
+    ['ocr', 1],
+  ] as const)
+    expect([limit, 'unsupported']).toContain(limits[workload]);
+  expect(limits.enrichment).not.toEqual(expect.any(Number));
+  // a desktop that does not ask gets the reply it always got
+  const plain = await ask({});
+  expect(JSON.stringify(plain.body)).not.toContain('concurrency');
+  expect(holds.workloadConcurrency).toHaveBeenCalledOnce();
 });
