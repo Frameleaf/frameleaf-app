@@ -647,14 +647,18 @@ export class DesktopMlRepository {
    * Counts a task handed back (`cancelled`) by this desktop for this model, and returns how many hand-backs
    * the current window holds. The window is `DESKTOP_CANCEL_WINDOW_SECONDS` from its first hand-back.
    *
-   * Hand-backs with no lease given to the desktop in between are one: a stop, a pause, or the tasks a crash
-   * left, however many were in hand. A desktop that takes a task and hands it back is counted each time.
+   * Hand-backs with no lease of this model given to the desktop in between are one: a stop, a pause, or the
+   * tasks a crash left, however many were in hand. Only the first of them is counted and returns the count;
+   * the others return 0, so one stop is never more than one hand-back, below the cap or above it. A desktop
+   * that takes a task and hands it back is counted each time.
    */
   countCancel(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string): Promise<number> {
     const key = failureKey(grant.deviceId, taskModelKey);
     return this.db.transaction().execute(async (db) => {
-      const { rows } = await sql<{ at: Date | null }>`SELECT max("createdAt") AS at FROM desktop_ml_attempt
-        WHERE "deviceId"=${grant.deviceId}`.execute(db);
+      const { rows } = await sql<{ at: Date | null }>`SELECT max(a."createdAt") AS at FROM desktop_ml_attempt a
+        JOIN desktop_ml_task t ON t.id=a."taskId"
+        WHERE a."deviceId"=${grant.deviceId}
+          AND t."modelKey"=ANY(${[...equivalentDesktopModelKeys(taskModelKey)]}::text[])`.execute(db);
       const leasedAt = rows[0]?.at ? new Date(rows[0].at).getTime() : 0;
       let count = 0;
       await this.changeFailures(db, (failures, now) => {
@@ -663,14 +667,14 @@ export class DesktopMlRepository {
           !!known.cancelsFrom &&
           now.getTime() - new Date(known.cancelsFrom).getTime() < DESKTOP_CANCEL_WINDOW_SECONDS * 1000;
         const sameStop = open && !!known.cancelAt && leasedAt < new Date(known.cancelAt).getTime();
-        count = open ? (known.cancels ?? 0) + (sameStop ? 0 : 1) : 1;
-        if (!sameStop)
-          failures[key] = {
-            ...known,
-            cancels: count,
-            cancelsFrom: open ? known.cancelsFrom : now.toISOString(),
-            cancelAt: now.toISOString(),
-          };
+        if (sameStop) return;
+        count = open ? (known.cancels ?? 0) + 1 : 1;
+        failures[key] = {
+          ...known,
+          cancels: count,
+          cancelsFrom: open ? known.cancelsFrom : now.toISOString(),
+          cancelAt: now.toISOString(),
+        };
       });
       return count;
     });

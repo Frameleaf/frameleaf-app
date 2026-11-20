@@ -384,7 +384,8 @@ describe('a desktop that keeps failing a model', () => {
     expect(broker.countCancel).toHaveBeenLastCalledWith(grant, 'face:model');
     expect(broker.countFailure).not.toHaveBeenCalled();
     broker.countFailure.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
-    for (const cancels of [6, 7, 8]) {
+    // 0 is another task of a stop already counted: one stop is one hand-back past the cap too
+    for (const cancels of [6, 0, 0, 7, 8]) {
       broker.countCancel.mockResolvedValueOnce(cancels);
       await fail('cancelled');
     }

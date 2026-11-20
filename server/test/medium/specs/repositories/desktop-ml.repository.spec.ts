@@ -41,6 +41,7 @@ import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { desktopImageModelKey } from 'src/utils/desktop-model-catalogue.js';
 import {
+  DESKTOP_CANCELS_BEFORE_FAILURE,
   DESKTOP_CANCELS_PER_TASK,
   DESKTOP_CANCEL_WINDOW_SECONDS,
   DESKTOP_LEASE_SECONDS,
@@ -786,7 +787,7 @@ it('counts failures in a row in the database, per desktop and model, and holds a
   expect(await sut.withdrawnModels(two.deviceId, [request.modelKey])).toEqual([]);
   // the hold ends by itself
   await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${one.deviceId}:${request.modelKey},heldUntil}`}::text[],
-    to_jsonb(to_char(now() - interval '1 second', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+    to_jsonb(to_char(now() AT TIME ZONE 'UTC' - interval '1 second', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
     WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
   expect(await sut.heldUntil(one.deviceId, [request.modelKey])).toBeUndefined();
   // after the hold it is still known as withdrawn, until a report grants it again
@@ -836,9 +837,9 @@ describe('failures and hand-backs of a desktop holding several tasks', () => {
     const { sut, grants, request, lease } = await several();
     const [desktop] = grants;
     // a stop with three tasks in hand is one hand-back
-    for (const id of [await lease(), await lease(), await lease()]) {
+    for (const [index, id] of [await lease(), await lease(), await lease()].entries()) {
       expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
-      expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(index === 0 ? 1 : 0);
     }
     // a desktop that takes a task and hands it back, again and again, with other tasks still in hand
     const kept = [await lease(), await lease()];
@@ -850,7 +851,7 @@ describe('failures and hand-backs of a desktop holding several tasks', () => {
     // handing back the ones it kept, with no lease since, belongs to the last hand-back
     for (const id of kept) {
       expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
-      expect(await sut.countCancel(desktop, request.modelKey)).toBe(4);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(0);
     }
     // a result it got right ends the run
     await sut.clearFailures(desktop, request.modelKey);
@@ -860,10 +861,27 @@ describe('failures and hand-backs of a desktop holding several tasks', () => {
     expect(await sut.countCancel(desktop, request.modelKey)).toBe(2);
     // and so does the end of the window
     await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${desktop.deviceId}:${request.modelKey},cancelsFrom}`}::text[],
-      to_jsonb(to_char(now() - interval '${sql.raw(String(DESKTOP_CANCEL_WINDOW_SECONDS + 1))} seconds', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+      to_jsonb(to_char(now() AT TIME ZONE 'UTC' - interval '${sql.raw(String(DESKTOP_CANCEL_WINDOW_SECONDS + 1))} seconds', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
       WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
     await lease();
     expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+  });
+
+  it('counts one stop once above the cap too', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    // five pauses, each with one task in hand
+    for (let expected = 1; expected <= DESKTOP_CANCELS_BEFORE_FAILURE; expected++) {
+      expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(expected);
+    }
+    // then one stop with three in hand: one hand-back past the cap, not three
+    const counts: number[] = [];
+    for (const id of [await lease(), await lease(), await lease()]) {
+      expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+      counts.push(await sut.countCancel(desktop, request.modelKey));
+    }
+    expect(counts).toEqual([DESKTOP_CANCELS_BEFORE_FAILURE + 1, 0, 0]);
   });
 
   it('keeps the hand-backs of an open window when the failure they sit beside is an hour old', async () => {
@@ -873,7 +891,7 @@ describe('failures and hand-backs of a desktop holding several tasks', () => {
     await lease();
     expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
     await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${desktop.deviceId}:${request.modelKey},at}`}::text[],
-      to_jsonb(to_char(now() - interval '61 minutes', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+      to_jsonb(to_char(now() AT TIME ZONE 'UTC' - interval '61 minutes', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
       WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
     // the old failure is forgotten, the hand-backs of the last ten minutes are not
     await lease();
