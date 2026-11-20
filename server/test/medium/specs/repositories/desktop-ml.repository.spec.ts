@@ -23,7 +23,11 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
-import { DesktopMlRepository, type DesktopMlTables } from 'src/repositories/desktop-ml.repository.js';
+import {
+  DesktopMlRepository,
+  type DesktopMlTables,
+  MAX_DESKTOP_LEASES,
+} from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerRepository, type DesktopWorkerTables } from 'src/repositories/desktop-worker.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -37,6 +41,7 @@ import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { desktopImageModelKey } from 'src/utils/desktop-model-catalogue.js';
 import {
+  DESKTOP_FAILURE_BURST_SECONDS,
   DESKTOP_LEASE_SECONDS,
   DESKTOP_PRESENCE_SECONDS,
   DESKTOP_REQUALIFY_HOLD_SECONDS,
@@ -698,23 +703,73 @@ it('gives a desktop that asks several leases at once, up to the Jobs setting of 
   // a desktop that says nothing about slots still holds one lease, and is given it again
   const single = (await sut.claim(other, [request.modelKey]))!;
   expect([single.task.id, single.resumed]).toEqual([tasks[3].id, true]);
-  // taking the model away ends that model's leases only
+  // taking the model away ends that desktop's leases of that model, and the tasks go straight back in line
+  // for another desktop instead of waiting for those leases to run out
+  expect((await sut.result(tasks[2].id))?.state).toBe('running');
   await sut.withdraw(desktop, request.modelKey);
   expect(await sut.heartbeat(desktop, leases[2].attempt.id)).toBe(false);
+  expect(await sut.complete(desktop, again[0].attempt.id, { clip: '[1]' })).toBe(false);
+  expect(
+    await Promise.all([tasks[1], tasks[2], tasks[4]].map(async (task) => (await sut.result(task.id))?.state)),
+  ).toEqual(['pending', 'pending', 'pending']);
   expect(await sut.heartbeat(other, single.attempt.id)).toBe(true);
+  await setting(3);
+  expect((await sut.claim(other, [request.modelKey], 2))?.task.id).toBe(tasks[1].id);
   await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+  await sql`DELETE FROM job_queue WHERE name = 'smartSearch'`.execute(db);
+});
+
+it('never gives one desktop more than 64 leases, and bounds open tasks by their bytes as well as their number', async () => {
+  const profiles: DesktopModelProfile[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+  ).profiles;
+  const { sut, grants, request } = await setup(
+    true,
+    profiles.find((p) => p.workload === 'clip' && p.spec.fixtureKind === 'text')!,
+  );
+  await brokerDb.deleteFrom('desktop_ml_task').execute();
+  await sql`INSERT INTO job_queue (name, concurrency) VALUES ('smartSearch', 500)
+    ON CONFLICT (name) DO UPDATE SET concurrency = EXCLUDED.concurrency`.execute(db);
+  for (let n = 0; n < MAX_DESKTOP_LEASES + 2; n++) await sut.create(request);
+  let leased = 0;
+  while (await sut.claim(grants[0], [request.modelKey], 64)) leased++;
+  // the Jobs setting would allow 500 and the desktop asked for 64 more each time
+  expect(leased).toBe(MAX_DESKTOP_LEASES);
+  expect(await sut.claim(grants[1], [request.modelKey], 1)).toBeDefined();
+  // the inputs the open tasks hold are bounded together; a task alone always fits
+  const open = (MAX_DESKTOP_LEASES + 2) * request.input.length;
+  await expect(sut.create(request, open + request.input.length - 1)).rejects.toThrow('desktop_broker_busy');
+  await expect(sut.create(request, open + request.input.length)).resolves.toBeDefined();
+  await brokerDb.deleteFrom('desktop_ml_task').execute();
+  await expect(sut.create(request, 1)).resolves.toBeDefined();
+  await brokerDb.deleteFrom('desktop_ml_task').execute();
   await sql`DELETE FROM job_queue WHERE name = 'smartSearch'`.execute(db);
 });
 
 it('counts failures in a row in the database, per desktop and model, and holds a withdrawn model back', async () => {
   const { sut, second, grants, request } = await setup();
   const [one, two] = grants;
+  /** Lets the failures counted so far be more than a burst ago. */
+  const later = async () => {
+    const { rows } = await sql<{ value: Record<string, { at: string }> }>`SELECT value FROM system_metadata
+      WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+    const value = rows[0].value;
+    for (const entry of Object.values(value))
+      entry.at = new Date(new Date(entry.at).getTime() - (DESKTOP_FAILURE_BURST_SECONDS + 1) * 1000).toISOString();
+    await sql`UPDATE system_metadata SET value = ${JSON.stringify(value)}::text::jsonb
+      WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+  };
   // another API process, or the same one after a restart, sees the same count
   expect(await sut.countFailure(one, request.modelKey)).toBe(1);
+  // a runtime that crashes while holding several tasks fails them all at once: one event, counted once
+  expect(await second.countFailure(one, request.modelKey)).toBe(1);
+  expect(await sut.countFailure(one, request.modelKey)).toBe(1);
+  await later();
   expect(await second.countFailure(one, request.modelKey)).toBe(2);
   expect(await new DesktopMlRepository(db).countFailure(two, request.modelKey)).toBe(1);
   expect(await sut.countFailure(one, 'another-model')).toBe(1);
   // a new worker session for the same computer does not start the count again
+  await later();
   expect(await sut.countFailure({ deviceId: one.deviceId }, request.modelKey)).toBe(3);
   // a result it got right does
   await second.clearFailures(one, request.modelKey);
@@ -752,6 +807,7 @@ it('counts failures in a row in the database, per desktop and model, and holds a
   expect(await sut.withdrawnModels(one.deviceId, [request.modelKey])).toEqual([request.modelKey]);
   await second.clearWithdrawal(one.deviceId, request.modelKey);
   expect(await sut.withdrawnModels(one.deviceId, [request.modelKey])).toEqual([]);
+  await later();
   expect(await sut.countFailure(two, request.modelKey)).toBe(3);
 });
 

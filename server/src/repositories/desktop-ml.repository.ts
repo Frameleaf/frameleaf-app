@@ -22,6 +22,7 @@ import { desktopAccountPermitted, householdDevices } from 'src/utils/desktop-ass
 import { type DesktopMlDisclosure, desktopMlDisclosureSchema } from 'src/utils/desktop-ml-disclosure.js';
 import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import {
+  DESKTOP_FAILURE_BURST_SECONDS,
   DESKTOP_LEASE_SECONDS,
   DESKTOP_PRESENCE_SECONDS,
   DESKTOP_REQUALIFY_HOLD_SECONDS,
@@ -90,6 +91,8 @@ const failureKey = (deviceId: string, modelKey: string) => `${deviceId}:${modelK
  * ponytail: a fixed bound; scale it with the desktops' total capacity if 256 is ever the limit in practice.
  */
 export const MAX_OPEN_TASKS = 256;
+/** The most input bytes open desktop tasks hold in the database together. One task always fits. */
+export const MAX_OPEN_TASK_BYTES = 512 * 1024 * 1024;
 /** The most tasks one desktop is ever given at once, whatever it asks for. */
 export const MAX_DESKTOP_LEASES = 64;
 /** The kind of work a model key names: `clip`, `face` or `ocr`. */
@@ -132,7 +135,7 @@ export class DesktopMlRepository {
     this.db = db.withTables<DesktopMlTables & DesktopWorkerTables & DesktopQualificationTables>();
   }
 
-  async create(request: DesktopMlRequest): Promise<TaskMetadata> {
+  async create(request: DesktopMlRequest, maxOpenBytes = MAX_OPEN_TASK_BYTES): Promise<TaskMetadata> {
     if (request.input.length === 0 || request.input.length > 16 * 1024 * 1024)
       throw new Error('desktop_input_size_invalid');
     if (request.deadlineAt.getTime() <= Date.now() || request.deadlineAt.getTime() > Date.now() + 600_000)
@@ -152,9 +155,16 @@ export class DesktopMlRepository {
       const count = await db
         .selectFrom('desktop_ml_task')
         .select(db.fn.countAll<string>().as('count'))
+        .select(sql<string>`coalesce(sum(octet_length(input)), 0)`.as('bytes'))
         .where('state', '!=', 'consumed')
         .executeTakeFirstOrThrow();
-      if (Number(count.count) >= MAX_OPEN_TASKS) throw new Error('desktop_broker_busy');
+      // Bounded by how many and by how much: an input is usually a preview of a few hundred kilobytes, but
+      // may be 16 MB, and the count alone would let 256 of those hold 4 GB in the database.
+      if (
+        Number(count.count) >= MAX_OPEN_TASKS ||
+        (Number(count.count) > 0 && Number(count.bytes) + request.input.length > maxOpenBytes)
+      )
+        throw new Error('desktop_broker_busy');
       const row = await db
         .insertInto('desktop_ml_task')
         .values({
@@ -206,6 +216,8 @@ export class DesktopMlRepository {
       let open = qualifications;
       if (slots !== undefined) {
         const held = await this.heldModelKeys(db, grant);
+        // Whatever the settings and the desktop say, one desktop never holds more than this.
+        if (held.length >= MAX_DESKTOP_LEASES) return;
         const limits = await queueLimits(db);
         const holding = (workload: string) => held.filter((key) => workloadOf(key) === workload).length;
         open = qualifications.filter((q) => holding(workloadOf(q.modelKey)) < (limits[workloadOf(q.modelKey)] ?? 1));
@@ -564,6 +576,15 @@ export class DesktopMlRepository {
         .set({ modelKeys: sql<string[]>`${kept}::jsonb` })
         .where('id', '=', grant.sessionId)
         .execute();
+      // The other tasks of this model it still holds go straight back in line for another desktop: without
+      // its qualification it can no longer finish them, and they would wait for their leases to run out.
+      const { rows: stranded } = await sql<{ id: string }>`
+        UPDATE desktop_ml_attempt a SET outcome='cancelled' FROM desktop_ml_task t
+        WHERE t."attemptId"=a.id AND t.state='running' AND a."deviceId"=${grant.deviceId} AND a.outcome IS NULL
+          AND t."modelKey"=ANY(${keys}::text[]) RETURNING t.id`.execute(db);
+      if (stranded.length > 0)
+        await sql`UPDATE desktop_ml_task SET state='pending', "attemptId"=NULL
+          WHERE id=ANY(${stranded.map((row) => row.id)}::uuid[]) AND state='running'`.execute(db);
       await this.changeFailures(db, (failures, now) => {
         failures[failureKey(grant.deviceId, taskModelKey)] = {
           failures: 0,
@@ -584,8 +605,13 @@ export class DesktopMlRepository {
     return this.db.transaction().execute(async (db) => {
       let count = 0;
       await this.changeFailures(db, (failures, now) => {
-        count = (failures[key]?.failures ?? 0) + 1;
-        failures[key] = { ...failures[key], failures: count, at: now.toISOString() };
+        const known = failures[key];
+        // Failures that arrive together are one event (a runtime crash fails every task it held): the
+        // count moves on only once the burst is over, measured from the failure that started it.
+        const burst =
+          !!known?.failures && now.getTime() - new Date(known.at).getTime() < DESKTOP_FAILURE_BURST_SECONDS * 1000;
+        count = burst ? known.failures : (known?.failures ?? 0) + 1;
+        if (!burst) failures[key] = { ...known, failures: count, at: now.toISOString() };
       });
       return count;
     });
