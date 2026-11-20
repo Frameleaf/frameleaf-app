@@ -678,6 +678,13 @@ it('counts failures in a row in the database, per desktop and model, and holds a
   await sut.clearFailures(one, request.modelKey);
   expect(await sut.heldUntil(one.deviceId, [request.modelKey])).toEqual(until);
   expect(await sut.countFailure(one, request.modelKey)).toBe(1);
+  // the Computers data says so too (a made-up model key names no kind of work, so nothing is listed for it)
+  const listed = (await new MlDestinationRepository(db).getDesktopHelpers()).find((row) => row.id === one.deviceId)!;
+  expect(listed.withdrawn).toEqual([]);
+  await sut.withdraw(one, `face:${'f'.repeat(64)}`);
+  const held = (await new MlDestinationRepository(db).getDesktopHelpers()).find((row) => row.id === one.deviceId)!;
+  expect(held.withdrawn).toEqual([{ workload: 'face', until: expect.any(Date) }]);
+  await second.clearWithdrawal(one.deviceId, `face:${'f'.repeat(64)}`);
   // the desktop can be told which of its models were taken away, under any runtime revision's key
   expect(await second.withdrawnModels(one.deviceId, ['another-model', request.modelKey])).toEqual([request.modelKey]);
   expect(await sut.withdrawnModels(two.deviceId, [request.modelKey])).toEqual([]);

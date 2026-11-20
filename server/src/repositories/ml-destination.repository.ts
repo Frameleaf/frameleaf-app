@@ -58,6 +58,11 @@ export type DesktopHelperRow = {
   ownerName: string;
   /** FL-1484: it works on everyone's photos at home */
   household: boolean;
+  /**
+   * Work taken away from it after it failed that work three times in a row, and until when it is held back
+   * from qualifying again (null once the hold is over and it only has to qualify again).
+   */
+  withdrawn: Array<{ workload: 'clip' | 'face' | 'ocr'; until: Date | null }>;
 };
 export type MlCloudModelChoiceRow = Selectable<MlCloudModelChoiceTable>;
 export type MlWorkloadRouteRow = Selectable<MlWorkloadRouteTable>;
@@ -533,6 +538,23 @@ export class MlDestinationRepository {
       WHERE d.state = 'preparing' AND d.mode = 'client-worker' AND d."revokedAt" IS NULL
       ORDER BY d.name, d.id`.execute(this.db);
     const household = householdDevices(policy.data);
+    const failures =
+      ((await new SystemMetadataRepository(this.db).get(SystemMetadataKey.FrameleafDesktopModelFailures)) as Record<
+        string,
+        { heldUntil?: string }
+      > | null) ?? {};
+    const withdrawn = (id: string) => {
+      const workloads = new Map<'clip' | 'face' | 'ocr', Date | null>();
+      for (const [key, entry] of Object.entries(failures)) {
+        const [device, workload] = key.split(':', 2);
+        if (device !== id || !entry.heldUntil || !['clip', 'face', 'ocr'].includes(workload)) continue;
+        const until = new Date(entry.heldUntil);
+        const held = until.getTime() > Date.now() ? until : null;
+        const known = workloads.get(workload as 'clip');
+        workloads.set(workload as 'clip', held && (!known || held > known) ? held : (known ?? held));
+      }
+      return [...workloads].map(([workload, until]) => ({ workload, until }));
+    };
     return rows
       .filter((row) => desktopAccountPermitted(policy.data, row.userId, row.isAdmin))
       .map(({ id, name, platform, ready, lastSeenAt, ownerName }) => ({
@@ -543,6 +565,7 @@ export class MlDestinationRepository {
         lastSeenAt,
         ownerName,
         household: household.has(id),
+        withdrawn: withdrawn(id),
       }));
   }
 

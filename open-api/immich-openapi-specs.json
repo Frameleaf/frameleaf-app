@@ -107131,6 +107131,14 @@
         ],
         "type": "object"
       },
+      "DesktopWithdrawnWorkload": {
+        "enum": [
+          "clip",
+          "face",
+          "ocr"
+        ],
+        "type": "string"
+      },
       "DesktopWorkerAckDto": {
         "properties": {
           "accepted": {
@@ -187473,6 +187481,28 @@
           "ready": {
             "description": "Online now (seen within the last few minutes) with a current qualification, so it can take AI work now",
             "type": "boolean"
+          },
+          "withdrawn": {
+            "description": "Work taken away from it after it failed that work three times in a row",
+            "items": {
+              "properties": {
+                "until": {
+                  "description": "Held back from qualifying again until then; null once it only has to qualify again",
+                  "format": "date-time",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "workload": {
+                  "$ref": "#/components/schemas/DesktopWithdrawnWorkload"
+                }
+              },
+              "required": [
+                "workload",
+                "until"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [

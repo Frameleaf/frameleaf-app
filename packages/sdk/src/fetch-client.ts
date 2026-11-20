@@ -4919,6 +4919,12 @@ export type WorkerDesktopHelperDto = {
     platform: DesktopPlatform;
     /** Online now (seen within the last few minutes) with a current qualification, so it can take AI work now */
     ready: boolean;
+    /** Work taken away from it after it failed that work three times in a row */
+    withdrawn?: {
+        /** Held back from qualifying again until then; null once it only has to qualify again */
+        until: string | null;
+        workload: DesktopWithdrawnWorkload;
+    }[];
 };
 export type WorkerWorkloadAdmissionDto = {
     /** Whether the last check would admit this workload here */
@@ -45674,6 +45680,11 @@ export enum DesktopPlatform {
     Macos = "macos",
     Windows = "windows",
     Linux = "linux"
+}
+export enum DesktopWithdrawnWorkload {
+    Clip = "clip",
+    Face = "face",
+    Ocr = "ocr"
 }
 export enum MlWorkerAcceleration {
     Unknown = "unknown",
