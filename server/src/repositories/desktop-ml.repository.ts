@@ -90,7 +90,7 @@ const failuresSchema = z.record(
     cancelAt: z.iso.datetime().optional(),
     /** The newest lease of the model the desktop had when its last stop was counted (UTC, microseconds). */
     cancelLease: z.string().optional(),
-    /** That stop was a hand-back past the cap, so it is already a failure. */
+    /** Set when that stop was counted as a hand-back: true past the cap, where it is already a failure. */
     stopFailed: z.boolean().optional(),
   }),
 );
@@ -636,8 +636,9 @@ export class DesktopMlRepository {
    * Every failure counts. A runtime that crashes with several tasks in hand is one failure because the
    * desktop says so: it reports `model-unavailable` for one task and `cancelled` for the others. With
    * `stop`, the failure is that crash: the tasks handed back after it, with no lease in between, belong to
-   * it and are not counted as a hand-back (`countCancel`). The other order is one failure too: when a
-   * `cancelled` of the same stop was already counted as a failure, the crash report adds nothing.
+   * it and are not counted as a hand-back (`countCancel`). The other order is the same: a `cancelled` of
+   * the same stop that was counted as a hand-back is taken back, and one that was already counted as a
+   * failure is this failure. Only one crash report is taken that way: a second one counts.
    */
   countFailure(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string, stop = false): Promise<number> {
     const key = failureKey(grant.deviceId, taskModelKey);
@@ -646,16 +647,22 @@ export class DesktopMlRepository {
       let count = 0;
       await this.changeFailures(db, (failures, now) => {
         const known = failures[key];
-        if (cancelLease && known?.stopFailed && known.cancelLease === cancelLease) {
-          count = known.failures;
+        // A crash whose hand-backs were reported first: that stop is this failure, once, and no hand-back.
+        const { stopFailed, ...rest } = known ?? { failures: 0, at: now.toISOString() };
+        const handedBack = !!cancelLease && rest.cancelLease === cancelLease ? stopFailed : undefined;
+        if (handedBack) {
+          count = rest.failures;
+          failures[key] = rest;
           return;
         }
-        count = (known?.failures ?? 0) + 1;
+        count = rest.failures + 1;
         failures[key] = {
-          ...known,
+          ...rest,
+          ...(stopFailed !== undefined && !cancelLease && { stopFailed }),
+          ...(handedBack === false && { cancels: Math.max(0, (rest.cancels ?? 1) - 1) }),
           failures: count,
           at: now.toISOString(),
-          ...(cancelLease && { cancelLease, stopFailed: false }),
+          ...(cancelLease && { cancelLease }),
         };
       });
       return count;

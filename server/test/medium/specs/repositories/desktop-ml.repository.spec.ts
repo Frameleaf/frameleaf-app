@@ -915,11 +915,30 @@ describe('failures and hand-backs of a desktop holding several tasks', () => {
     expect(await sut.fail(desktop, other, 'cancelled')).toBe(true);
     expect(await sut.countCancel(desktop, request.modelKey)).toBe(DESKTOP_CANCELS_BEFORE_FAILURE + 1);
     expect(await sut.countFailure(desktop, request.modelKey)).toBe(1);
-    // the crash report of the same stop adds nothing; one after a new lease does
+    // the crash report of the same stop adds nothing; a second one for another task it held does
     expect(await sut.fail(desktop, crashed, 'model-unavailable')).toBe(true);
     expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(1);
-    expect(await sut.fail(desktop, await lease(), 'model-unavailable')).toBe(true);
     expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(2);
+    expect(await sut.fail(desktop, await lease(), 'model-unavailable')).toBe(true);
+    expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(3);
+  });
+
+  it('takes back the hand-back of a crash reported before its model-unavailable, below the cap', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    for (let expected = 1; expected < DESKTOP_CANCELS_BEFORE_FAILURE; expected++) {
+      expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(expected);
+    }
+    // a crash with two in hand, the hand-back reported first: one failure, no hand-back
+    const [crashed, other] = [await lease(), await lease()];
+    expect(await sut.fail(desktop, other, 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(DESKTOP_CANCELS_BEFORE_FAILURE);
+    expect(await sut.fail(desktop, crashed, 'model-unavailable')).toBe(true);
+    expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(1);
+    // so the next hand-back is the fifth, not a failure
+    expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(DESKTOP_CANCELS_BEFORE_FAILURE);
   });
 
   it('counts the hand-back of a lease made while the stop before it was being counted', async () => {
