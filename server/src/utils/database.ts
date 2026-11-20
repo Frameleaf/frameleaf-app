@@ -61,6 +61,7 @@ import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { assetColorPredicate, assetTransparencyPredicate } from 'src/utils/asset-palette-query.js';
 import { assetSourcePredicate } from 'src/utils/asset-source-query.js';
+import { clipSpaceOf } from 'src/utils/desktop-model-equivalents.js';
 import { DATABASE_POOL_SIZE, boundExecutionReservations } from 'src/utils/execution-database.js';
 import { favoriteFor } from 'src/utils/favorite.js';
 import { displayPathSql } from 'src/utils/library-path.js';
@@ -1930,7 +1931,7 @@ export const validLandmarkMatch = () => sql<boolean>`(asset_landmark.inference i
       else exists (
         select 1 from smart_search donor_embedding join smart_search target_embedding
           on target_embedding."assetId" = asset.id
-          and donor_embedding."producerModelKey" = target_embedding."producerModelKey"
+          and ${clipSpaceOf('donor_embedding.producerModelKey')} = ${clipSpaceOf('target_embedding.producerModelKey')}
         where donor_embedding."assetId" = donor.id and target_embedding."producerModelKey" is not null
           and (donor_embedding.embedding <=> target_embedding.embedding) <= 0.12
       ) end
