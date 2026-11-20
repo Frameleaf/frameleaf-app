@@ -941,6 +941,28 @@ describe('failures and hand-backs of a desktop holding several tasks', () => {
     expect(await sut.countCancel(desktop, request.modelKey)).toBe(DESKTOP_CANCELS_BEFORE_FAILURE);
   });
 
+  it('starts the window at the next hand-back when a crash takes back the only one', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    const [crashed, other] = [await lease(), await lease()];
+    expect(await sut.fail(desktop, other, 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+    expect(await sut.fail(desktop, crashed, 'model-unavailable')).toBe(true);
+    expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(1);
+    const record = async () => {
+      const { rows } = await sql<{ entry: { cancels?: number; cancelsFrom?: string } }>`
+        SELECT value -> ${`${desktop.deviceId}:${request.modelKey}`} AS entry FROM system_metadata
+        WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+      return rows[0].entry;
+    };
+    const crash = await record();
+    expect(crash.cancels).toBe(0);
+    expect(crash.cancelsFrom).toBeUndefined();
+    expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+    expect((await record()).cancelsFrom).toBeDefined();
+  });
+
   it('counts the hand-back of a lease made while the stop before it was being counted', async () => {
     const { sut, grants, request, lease } = await several();
     const [desktop] = grants;

@@ -659,7 +659,9 @@ export class DesktopMlRepository {
         failures[key] = {
           ...rest,
           ...(stopFailed !== undefined && !cancelLease && { stopFailed }),
-          ...(handedBack === false && { cancels: Math.max(0, (rest.cancels ?? 1) - 1) }),
+          // the window goes with its only hand-back, so the next one starts its own
+          ...(handedBack === false &&
+            ((rest.cancels ?? 1) > 1 ? { cancels: rest.cancels! - 1 } : { cancels: 0, cancelsFrom: undefined })),
           failures: count,
           at: now.toISOString(),
           ...(cancelLease && { cancelLease }),
