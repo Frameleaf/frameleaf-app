@@ -684,6 +684,8 @@ export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
 export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
   private desktopPoolSelector: DesktopPoolSelector | null = null;
+  /** Destination and admitted key → the equivalent key that destination's AI last answered under. */
+  private servedIdentity = new Map<string, string>();
   /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
   private cloudProber: CloudMlProber | null = null;
   private probeCache = new Map<
@@ -1921,9 +1923,9 @@ export class MachineLearningRepository implements RestorationInference {
       }
       if (bound && response.status === 409 && readDetail(body) === 'model_identity_unavailable') {
         throw new MachineLearningBindingRefusedError(
-          `model_identity_unavailable: the AI at ${target} does not hold the catalogue model a desktop was granted ` +
-            `(its build is not one of the catalogue's runtime revisions, or its model files differ), so it cannot ` +
-            `do '${this.redact(config)}'. Update this server's AI to a release whose catalogue names it.`,
+          `model_identity_unavailable: the AI at ${target} does not serve this model under any runtime revision ` +
+            `the model catalogue has for it (its build is not one of them, or its model files differ), so it ` +
+            `cannot do '${this.redact(config)}'. Its build and this server's catalogue must come from one release.`,
         );
       }
       if (response.status === 503) {
@@ -2250,27 +2252,49 @@ export class MachineLearningRepository implements RestorationInference {
   }
 
   /**
-   * Smart search once a desktop has been granted it: every vector is made under the admitted catalogue
-   * identity, by a desktop or by this server's own AI. There is no asking by model name any more. When this
-   * server's AI does not serve that identity (its build is not one of the catalogue's runtime revisions, or
-   * it lacks exactly those model files) the request fails, by name, and nothing is written.
+   * Smart search once a desktop has been granted it: every vector is made under a catalogue identity of the
+   * admitted embedding space, by a desktop or by this server's own AI. There is no asking by model name.
+   *
+   * The index was admitted under the keys of the first desktop's runtime revision. This server's AI is one
+   * build and answers only under the key of its own revision, so it is asked under each revision's key of
+   * the same encoder until it serves one, and that one is remembered for the destination. The vector is
+   * stored under the admitted key either way: the keys name one embedding space, and the library keeps one
+   * producer key. When the AI serves none of them (its build is not a catalogue runtime revision, or its
+   * model files differ) the request fails, by name, and nothing is written.
    */
   private async encodeAdmittedClip(
     selection: MlSelection,
     payload: ModelPayload,
-    selected: { binding: DesktopClipIndexBinding; profile: DesktopModelProfile },
+    selected: { binding: DesktopClipIndexBinding; profile: DesktopModelProfile; equivalents?: DesktopModelProfile[] },
   ) {
-    try {
-      const result = await this.encodeBoundClip(selection, payload, selected.profile);
+    const finish = async <T>(result: T) => {
       await this.clipIndex!.assertCurrent(selected.binding);
       return result;
-    } catch (error) {
-      if (error instanceof MachineLearningBindingRefusedError && !selection.desktopClip)
-        this.logger.warn(
-          `Smart search on ${selection.kind} destination ${selection.destinationId} failed: ${error.message}`,
-        );
-      throw error;
+    };
+    // A desktop is asked under the key its task was made for; the broker finds the desktop that holds it.
+    if (selection.desktopClip) return finish(await this.encodeBoundClip(selection, payload, selected.profile));
+    const memory = `${selection.endpoint.url}\u{0}${selected.profile.modelKey}`;
+    const served = this.servedIdentity.get(memory);
+    const profiles = [selected.profile, ...(selected.equivalents ?? [])].toSorted(
+      (a, b) => Number(b.modelKey === served) - Number(a.modelKey === served),
+    );
+    let refusal: MachineLearningBindingRefusedError | undefined;
+    for (const profile of profiles) {
+      try {
+        const result = await this.encodeBoundClip(selection, payload, profile);
+        if (this.servedIdentity.size > 256) this.servedIdentity.clear();
+        this.servedIdentity.set(memory, profile.modelKey);
+        return finish({ ...result, modelKey: selected.profile.modelKey });
+      } catch (error) {
+        if (!(error instanceof MachineLearningBindingRefusedError)) throw error;
+        refusal ??= error;
+      }
     }
+    this.servedIdentity.delete(memory);
+    this.logger.warn(
+      `Smart search on ${selection.kind} destination ${selection.destinationId} failed: ${refusal!.message}`,
+    );
+    throw refusal!;
   }
 
   async encodeBoundClip(selection: MlSelection, payload: ModelPayload, profile: DesktopModelProfile) {

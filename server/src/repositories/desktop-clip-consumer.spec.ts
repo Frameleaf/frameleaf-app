@@ -126,23 +126,71 @@ describe('this server’s own AI after a desktop was granted smart search', () =
       .mockResolvedValue({ clip: '[0.2]' });
   });
 
-  it('fails by name when its build is not a catalogue runtime revision, and never asks by model name', async () => {
+  /** The image encoder of the same model under two other runtime revisions: other keys, the same vectors. */
+  const others = profiles
+    .filter((p) => p.spec.fixtureKind === 'image' && p.modelName === image.modelName && p.modelKey !== image.modelKey)
+    .filter((p, at, all) => all.findIndex((item) => item.modelKey === p.modelKey) === at)
+    .slice(0, 2);
+  const encode = () =>
+    ml.encodeImage(selection, '/synthetic/image', { ...defaults.machineLearning.clip, modelName: image.modelName });
+
+  it('answers under its own runtime revision when the first desktop was on another one', async () => {
+    index.selectProfile.mockResolvedValue({ binding, profile: image, equivalents: others });
+    // this server's AI is the build of the second equivalent: it refuses every other key
+    const bound = vi
+      .spyOn(ml, 'encodeBoundClip')
+      .mockImplementation((_selection, _payload, profile) =>
+        profile.modelKey === others[1].modelKey
+          ? Promise.resolve({ embedding: '[0.3]', modelKey: profile.modelKey })
+          : Promise.reject(refused()),
+      );
+    // the vector is stored under the admitted key: one embedding space, one producer key in the library
+    expect(await encode()).toEqual({ embedding: '[0.3]', modelKey: image.modelKey });
+    expect(bound.mock.calls.map(([, , profile]) => profile.modelKey)).toEqual([
+      image.modelKey,
+      others[0].modelKey,
+      others[1].modelKey,
+    ]);
+    expect(index.assertCurrent).toHaveBeenCalledWith(binding);
+    // the key it answered under is remembered for that destination: the next photo asks once
+    bound.mockClear();
+    await encode();
+    expect(bound.mock.calls.map(([, , profile]) => profile.modelKey)).toEqual([others[1].modelKey]);
+    expect(plain).not.toHaveBeenCalled();
+  });
+
+  it('asks a desktop only under the key its task was made for', async () => {
+    index.selectProfile.mockResolvedValue({ binding, profile: image, equivalents: others });
+    const bound = vi.spyOn(ml, 'encodeBoundClip').mockRejectedValue(refused());
+    await expect(
+      ml.encodeImage({ ...selection, desktopClip: vi.fn() }, '/synthetic/image', {
+        ...defaults.machineLearning.clip,
+        modelName: image.modelName,
+      }),
+    ).rejects.toBeInstanceOf(MachineLearningBindingRefusedError);
+    expect(bound).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails by name when its build is no runtime revision the catalogue has, and never asks by model name', async () => {
     const warn = vi.spyOn(LoggingRepository.prototype, 'warn').mockImplementation(() => {});
+    index.selectProfile.mockImplementation((_name: string, kind: string) => ({
+      binding,
+      profile: kind === 'image' ? image : text,
+      equivalents: kind === 'image' ? others : [],
+    }));
     const bound = vi.spyOn(ml, 'encodeBoundClip').mockRejectedValue(refused());
     // a photo is not embedded, and nothing is written for it
-    await expect(
-      ml.encodeImage(selection, '/synthetic/image', { ...defaults.machineLearning.clip, modelName: image.modelName }),
-    ).rejects.toThrow('model_identity_unavailable');
+    await expect(encode()).rejects.toThrow('model_identity_unavailable');
+    expect(bound).toHaveBeenCalledTimes(3);
     // a search for words fails the same way
     await expect(ml.encodeText(selection, 'a dog', { modelName: image.modelName })).rejects.toBeInstanceOf(
       MachineLearningBindingRefusedError,
     );
     expect(plain).not.toHaveBeenCalled();
-    // asked again each time: nothing remembers the refusal, so a fixed AI works at once
-    expect(bound).toHaveBeenCalledTimes(2);
     expect(warn).toHaveBeenCalledWith(
       'Smart search on lan destination selected failed: model_identity_unavailable: the AI does not hold the catalogue model',
     );
+    // nothing remembers a refusal: an AI that is fixed works at once
     bound.mockResolvedValue({ embedding: '[0.1]', modelKey: text.modelKey });
     expect(await ml.encodeText(selection, 'a dog', { modelName: image.modelName })).toBe('[0.1]');
     warn.mockRestore();

@@ -8,7 +8,7 @@ import type { DB } from 'src/schema/index.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { type DesktopClipSpace, parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
 import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
-import { compatibleClipSpaces } from 'src/utils/desktop-model-equivalents.js';
+import { compatibleClipSpaces, equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 export type DesktopClipIndexBinding = { revisionId: string; space: DesktopClipSpace };
@@ -137,7 +137,13 @@ export class DesktopClipIndexRepository {
       (p) => allowed.includes(p.modelKey) && canonicalJson(p.spec.entries) === canonicalJson(entries),
     );
     if (!profile) throw new Error('desktop_clip_profile_unavailable');
-    return { binding, profile };
+    // The same encoder under the other runtime revisions of this model: one embedding space, other keys.
+    // This server's own AI is one build, and can only answer under the key of its own revision.
+    const equivalents = equivalentDesktopModelKeys(profile.modelKey)
+      .filter((key) => key !== profile.modelKey)
+      .map((key) => this.models.profiles.find((item) => item.modelKey === key))
+      .filter((item): item is NonNullable<typeof item> => !!item);
+    return { binding, profile, equivalents };
   }
 
   /** Call only after selected NAS producer/config verification; this does not grant worker scope. */
