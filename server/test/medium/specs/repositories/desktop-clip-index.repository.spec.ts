@@ -9,6 +9,7 @@ import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -262,4 +263,33 @@ it('refuses a publication transaction whose snapshot can predate admission', asy
       .execute((tx) => publicationTransaction.run(tx, () => read.publish(write))),
   ).rejects.toThrow('desktop_clip_publication_isolation');
   expect(write).not.toHaveBeenCalled();
+});
+
+describe('storageKey: the key a Frameleaf Cloud vector is stored under', () => {
+  // the newest released image encoder of the model, as the Cloud ingestion names it, and an older revision of it
+  const newest = spaces.findLast((item: typeof space) => modelOf(item).modelName === modelOf(space).modelName);
+  const olderKey = equivalentDesktopModelKeys(newest.visualModelKey).find((key) => key !== newest.visualModelKey)!;
+  const older = spaces.find((item: typeof space) => item.visualModelKey === olderKey);
+
+  it('is the encoder’s own key in a library with no vectors of it yet', async () => {
+    expect(olderKey).toBeDefined();
+    await expect(repository.storageKey(newest.visualModelKey)).resolves.toBe(newest.visualModelKey);
+  });
+
+  it('stays the key the library already carries when a release adds a newer one for the same encoder', async () => {
+    await write('smart_search', olderKey);
+    await expect(repository.storageKey(newest.visualModelKey)).resolves.toBe(olderKey);
+  });
+
+  it('is the admitted index’s key once a desktop was granted smart search', async () => {
+    await repository.admit(older.spaceKey);
+    await expect(repository.storageKey(newest.visualModelKey)).resolves.toBe(olderKey);
+    await write('smart_search', olderKey);
+    expect(await repository.getActive()).toBeDefined();
+  });
+
+  it('is nothing for an encoder of another embedding space than the admitted index', async () => {
+    await repository.admit(older.spaceKey);
+    await expect(repository.storageKey(foreign.visualModelKey)).resolves.toBeUndefined();
+  });
 });

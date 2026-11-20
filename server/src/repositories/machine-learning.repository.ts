@@ -2197,6 +2197,14 @@ export class MachineLearningRepository implements RestorationInference {
   }
 
   /**
+   * The producer key a Frameleaf Cloud vector of the image encoder `modelKey` is stored under, so the library
+   * keeps one key (`DesktopClipIndexRepository.storageKey`); undefined when it must not be stored.
+   */
+  async cloudClipStorageKey(modelKey: string): Promise<string | undefined> {
+    return this.clipIndex ? this.clipIndex.storageKey(modelKey) : modelKey;
+  }
+
+  /**
    * Ask the worker to check a person's own Hugging Face search model and report its embedding size.
    * A model the worker refused throws `CustomClipModelRefusedError` with its explanation for the person.
    */

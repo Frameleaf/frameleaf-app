@@ -146,6 +146,32 @@ export class DesktopClipIndexRepository {
     return { binding, profile, equivalents };
   }
 
+  /**
+   * The key a vector made outside this network (Frameleaf Cloud) by the image encoder `modelKey` is stored
+   * under. The features that compare photos only compare vectors of one producer key, and a release can add a
+   * newer key for the same encoder, so a library keeps the key it already has: the admitted index's, or
+   * before any desktop was granted, the one its vectors of this encoder already carry. Undefined when the
+   * admitted index is another embedding space; that vector must not be stored.
+   */
+  async storageKey(modelKey: string): Promise<string | undefined> {
+    const family = equivalentDesktopModelKeys(modelKey);
+    const binding = await this.getActive();
+    if (binding) {
+      return family.includes(binding.space.visualModelKey) ? binding.space.visualModelKey : undefined;
+    }
+    const rows = await this.db
+      .selectFrom('desktop_clip_producer')
+      .select('key')
+      .where(
+        'key',
+        'in',
+        family.map((key) => `image:${key}`),
+      )
+      .execute();
+    const used = new Set(rows.map((row) => row.key.slice('image:'.length)));
+    return family.find((key) => key !== modelKey && used.has(key)) ?? modelKey;
+  }
+
   /** Call only after selected NAS producer/config verification; this does not grant worker scope. */
   async admit(
     spaceKey: string,
