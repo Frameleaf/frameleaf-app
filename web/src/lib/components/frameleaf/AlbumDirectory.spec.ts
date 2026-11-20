@@ -370,7 +370,7 @@ describe('AlbumDirectory', () => {
       workspaceHref('/albums?create=album', LibraryViewScope.Design, 'http://localhost'),
       'http://localhost',
     );
-    sdkMock.createAlbum.mockResolvedValue(albumFactory.build({ libraryScope: LibraryScope.Design }));
+    sdkMock.createAlbum.mockResolvedValue(albumFactory.build({ id: 'packaging', kind: AlbumKind.Album, libraryScope: LibraryScope.Design }));
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
     const dialog = await screen.findByRole('dialog', { name: 'New album' });
     await fireEvent.input(within(dialog).getByRole('textbox', { name: 'Name' }), { target: { value: 'Packaging' } });
@@ -380,6 +380,8 @@ describe('AlbumDirectory', () => {
         createAlbumDto: expect.objectContaining({ albumName: 'Packaging', libraryScope: LibraryScope.Design }),
       }),
     );
+    // The new album opens instead of leaving you on the list.
+    await waitFor(() => expect(app.goto).toHaveBeenCalledWith(expect.stringContaining('packaging')));
   });
 
   it('opens no create dialog on a plain visit to All albums', () => {

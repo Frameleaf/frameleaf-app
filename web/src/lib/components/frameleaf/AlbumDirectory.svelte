@@ -1384,6 +1384,9 @@
     color: var(--fl-accent-text);
     background: var(--fl-accent);
     border-color: var(--fl-accent);
+    /* Select's spacing; 4px less before the plus, whose glyph is inset that much in its box. */
+    gap: 0.375rem;
+    padding-inline: 0.625rem 0.875rem;
   }
   .grid {
     display: grid;
