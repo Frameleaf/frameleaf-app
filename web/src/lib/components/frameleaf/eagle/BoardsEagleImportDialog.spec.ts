@@ -148,6 +148,26 @@ describe('Import from Eagle: a library in a folder the server can open', () => {
     expect(screen.queryByText('Choose the folder to import from')).not.toBeInTheDocument();
   });
 
+  it('keeps the server’s folders open when an earlier browse fails late', async () => {
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+    sdkMock.getEagleLibraries.mockResolvedValue({ available: true, roots: 1, libraries: [] });
+    let fail: (reason: Error) => void = () => {};
+    sdkMock.getTakeoutRoots
+      .mockReturnValueOnce(new Promise((_, reject) => (fail = reject)))
+      .mockResolvedValueOnce({ roots: [{ id: 'imports', path: '/data/imports', builtIn: true, hostPath: null }] });
+    render(BoardsEagleImportDialog);
+
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
+    const browse = await screen.findByRole('button', { name: 'Choose the library folder…' });
+    await fireEvent.click(browse);
+    await fireEvent.click(browse);
+    expect(await screen.findByText('Choose the folder to import from')).toBeInTheDocument();
+    fail(new Error('late'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('Choose the folder to import from')).toBeInTheDocument();
+    expect(screen.queryByText('The folders on your server couldn’t be read.')).not.toBeInTheDocument();
+  });
+
   it('lists the libraries on the server, checks one there and starts the import on the server', async () => {
     authManager.setUser(userAdminFactory.build({ isAdmin: true }));
     sdkMock.getEagleLibraries.mockResolvedValue({

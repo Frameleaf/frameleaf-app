@@ -301,10 +301,14 @@
     readError = undefined;
     const request = ++browseRequest;
     try {
-      serverRootList ??= (await getTakeoutRoots()).roots;
-      browsing = request === browseRequest;
+      const { roots } = await getTakeoutRoots();
+      // Only the latest browse counts: an earlier one neither opens, closes nor fails anything.
+      if (request === browseRequest) {
+        serverRootList = roots;
+        browsing = true;
+      }
     } catch {
-      serverListFailed = true;
+      serverListFailed ||= request === browseRequest;
     }
   };
   const isLibraryName = (name: string) => name.toLowerCase().endsWith('.library');
