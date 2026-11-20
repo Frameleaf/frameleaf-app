@@ -74,13 +74,19 @@ describe('isolated representative palette decoding', () => {
     expect(result.swatches).toEqual([expect.objectContaining({ hex: '#ff0000', weight: 1 })]);
   });
   it('reads the colours of a PNG that is cut short, as the thumbnail job does', async () => {
-    const whole = await sharp({ create: { width: 256, height: 256, channels: 4, background: '#ff0000' } })
+    // a logo: the left half of every row is transparent, the right half red
+    const row = Array.from({ length: 256 }, (_, x) => (x < 128 ? [0, 0, 0, 0] : [255, 0, 0, 255])).flat();
+    const whole = await sharp(Buffer.from(Array.from({ length: 256 }, () => row).flat()), {
+      raw: { width: 256, height: 256, channels: 4 },
+    })
       .png({ compressionLevel: 0 })
       .toBuffer();
     const cut = whole.subarray(0, Math.floor(whole.length / 2));
     await expect(sharp(cut, { failOn: 'error' }).raw().toBuffer()).rejects.toThrow();
-    const result = await pool.run('extractAssetPalette', [cut, options]);
-    expect(result.swatches[0]).toEqual(expect.objectContaining({ hex: '#ff0000' }));
+    expect(await pool.run('extractAssetPalette', [cut, options])).toEqual({
+      swatches: [expect.objectContaining({ hex: '#ff0000', weight: 1 })],
+      hasTransparency: true,
+    });
   });
   it('rejects corrupt and oversized sources within the existing child budget', async () => {
     await expect(pool.run('extractAssetPalette', [Buffer.from('corrupt'), options])).rejects.toThrow();
