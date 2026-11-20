@@ -171,6 +171,9 @@ jobs:
               mise run //server:test-runtime
               cd server
               node --test --test-timeout=15000 test/runtime/buddy-backup.test.mjs test/runtime/buddy-recovery.test.mjs
+              # FL-1715: the AI build in this tree must be a runtime revision of the desktop model catalogue
+              # for every search model, or the server's own smart search fails once a desktop is granted it.
+              node scripts/check-ml-catalogue-identity.mjs
               ;;
             *) echo "::error::Unknown server lane $LANE"; exit 1 ;;
           esac

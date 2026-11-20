@@ -1,13 +1,17 @@
 #!/usr/bin/env node
-// Is this tree's machine-learning service one of the runtime revisions the desktop model catalogue names?
+// Can this tree's machine-learning service do smart search for every search model in the desktop catalogue?
 //
 // A catalogue profile carries the hash of the service's preprocessing sources. The service only produces
 // under a model identity whose hash is its own (`preprocessing_identity()` in
-// machine-learning/frameleaf_ml/native_qualification.py). When the sources change after the catalogue was
-// cut, this server's own AI refuses every catalogue identity, and after a desktop is granted smart search
-// the server's own smart search (embedding photos and searching by words) fails until the two match.
+// machine-learning/frameleaf_ml/native_qualification.py). Once a desktop is granted smart search, this
+// server asks its own AI under a catalogue identity: any runtime revision's key of the same encoder will
+// do (they name one embedding space), but one of them has to be this build's. So for every search model,
+// and every request it has a profile for (the image encoder and each text encoder), the catalogue needs a
+// profile with this build's hash. When the sources change and the catalogue is not recut, the server's own
+// photo embedding and searching by words fail after the first desktop is granted smart search.
 //
-// Exits 1 when the hash is not in the catalogue. Run it when cutting a release, after the catalogue.
+// Exits 1 when a request of some model has no profile for this build. Recut with
+// machine-learning/scripts/recut_desktop_catalogue.py.
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -44,25 +48,27 @@ for (const file of files) {
 }
 const identity = digest.digest('hex');
 const catalogue = JSON.parse(readFileSync(join(server, 'resources', 'desktop', 'model-catalogue.json'), 'utf8'));
-const revisions = new Map();
+// Each smart-search request of each model, and whether some revision of it is this build.
+const requests = new Map();
 for (const profile of catalogue.profiles) {
-  const known = revisions.get(profile.spec.preprocessingSha256) ?? new Set();
-  known.add(profile.runtimeSourceRevision.slice(0, 8));
-  revisions.set(profile.spec.preprocessingSha256, known);
+  if (profile.workload !== 'clip') {
+    continue;
+  }
+  const request = `${profile.modelName} ${JSON.stringify(profile.spec.entries.clip)}`;
+  requests.set(request, requests.get(request) || profile.spec.preprocessingSha256 === identity);
 }
-const match = revisions.get(identity);
-if (match) {
-  console.log(`machine-learning ${identity.slice(0, 12)} is catalogue runtime revision ${[...match].join(', ')}`);
+const missing = [...requests].filter(([, served]) => !served).map(([request]) => request);
+if (missing.length === 0) {
+  console.log(
+    `machine-learning ${identity.slice(0, 12)} has a catalogue profile for all ${requests.size} smart-search requests`,
+  );
 } else {
   console.error(
-    `machine-learning ${identity.slice(0, 12)} is not in the desktop model catalogue (${revisions.size} revisions: ` +
-      `${revisions
-        .keys()
-        .map((hash) => hash.slice(0, 12))
-        .toArray()
-        .join(', ')}).\n` +
-      'Once a desktop is granted smart search, this server would refuse every catalogue model identity:\n' +
-      'its own photo embedding and searching by words would fail.',
+    `machine-learning ${identity.slice(0, 12)} has no catalogue profile for ${missing.length} of ${requests.size} ` +
+      `smart-search requests:\n${missing.map((request) => `  ${request}`).join('\n')}\n` +
+      'Once a desktop is granted smart search with one of these models, this server would refuse every\n' +
+      'catalogue identity for it: its own photo embedding and searching by words would fail.\n' +
+      'Recut the catalogue: machine-learning/scripts/recut_desktop_catalogue.py.',
   );
   process.exitCode = 1;
 }
