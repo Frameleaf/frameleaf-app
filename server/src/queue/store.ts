@@ -174,14 +174,14 @@ const wakeClaimLoops = (db: Kysely<DB>) => {
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
 
-/** The queues whose work desktop helpers can take, in the order a free helper is counted for them. */
+/** The queues whose work desktop helpers can take, in the order a helper's free slots are counted for them. */
 export const DESKTOP_QUEUES: readonly string[] = [QueueName.SmartSearch, QueueName.FaceDetection, QueueName.Ocr];
 
 /**
  * How many extra jobs a queue may start for desktop helpers now. The queue store knows nothing of models,
- * routes or approvals, so the desktop service supplies the count (`DesktopMlService.queueCapacity`): only
- * helpers that can take this queue's work now, each counted for one queue. Nothing registered means no extra
- * jobs, so the administrator's own concurrency is the limit.
+ * routes or approvals, so the desktop service supplies the count (`DesktopMlService.queueCapacity`): one per
+ * task a helper holds for this queue, and one per task it can still take, up to this queue's own setting.
+ * Nothing registered means no extra jobs, so the administrator's own concurrency is the limit.
  */
 let desktopQueueCapacity: ((queue: string) => Promise<number>) | null = null;
 export const setDesktopQueueCapacity = (capacity: ((queue: string) => Promise<number>) | null) => {
@@ -488,8 +488,8 @@ export class SqlQueueStore {
         rows: [{ active }],
       } = await sql<{ active: number }>`select count(*)::int active from job
         where queue = ${queue} and state = 'active'`.execute(tx);
-      // The ones started by hand already count as active. Each desktop helper that can take this queue's work
-      // now adds one: the job it lets start becomes a desktop task that helper claims
+      // The ones started by hand already count as active. Desktop helpers add one job for each task they hold
+      // or can still take for this queue: a job they let start becomes a desktop task one of them claims
       // (docs/desktop-worker-setup-protocol.md).
       const capacity = Math.min(
         QUEUE_BATCH - byHand.length,
