@@ -509,6 +509,7 @@ export const getMocks = () => {
   };
 
   mocks.machineLearning.selectBackgroundPool.mockImplementation((selection) => Promise.resolve(selection));
+  mocks.machineLearning.cloudClipStorageKey.mockImplementation((modelKey) => Promise.resolve(modelKey));
   mocks.machineLearning.captureClipRead.mockResolvedValue({
     assertCurrent: () => Promise.resolve(),
     publish: (write) => write(),

@@ -213,6 +213,11 @@ const qualifiedProfile = (
  * when the release does not pin that model (then the Cloud is never offered for it). Smart search uses
  * the image profile of the newest released CLIP space; faces use the release's face model key. A
  * model without a qualified profile is read from the release's Cloud pins (`model-pins.json`).
+ *
+ * The Cloud identity names the model files, their snapshot and the preprocessing version, not the hash of a
+ * runtime's sources, so every runtime revision of one encoder has the same identity: a Cloud result is
+ * accepted whichever revision the release added last. Only the producer key differs between revisions, and
+ * the ingestion picks the one the library already uses (`DesktopClipIndexRepository.storageKey`).
  */
 export const localPinnedProfile = (
   workload: CloudIdentityWorkload,

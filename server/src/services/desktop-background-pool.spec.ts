@@ -111,31 +111,27 @@ it.each(['interactive', 'other-account', 'other-workload'])('preserves %s select
   }
   await queueExecution.run(context, async () => expect(await select('asset')).toBe(selection));
 });
-it.each(['unknown', 'ambiguous', 'index'])('waits without falling back for %s authority', async (mode) => {
-  switch (mode) {
-    case 'unknown': {
-      context.sourceAuthorities!.clear();
-      break;
-    }
-    case 'ambiguous': {
-      context.sourceAuthorities!.set('other', {
-        ownerId: other,
-        snapshot: desktopSourceSnapshot(other),
-        assertCurrent: vi.fn(),
-      });
-      break;
-    }
-    case 'index': {
-      index.selectProfile.mockResolvedValue(undefined);
-      break;
-    }
-    default: {
-      break;
-    }
-  }
+it.each(['unknown', 'ambiguous'])('leaves a job with %s ownership on the destination itself', async (mode) => {
+  if (mode === 'unknown') context.sourceAuthorities!.clear();
+  else
+    context.sourceAuthorities!.set('other', {
+      ownerId: other,
+      snapshot: desktopSourceSnapshot(other),
+      assertCurrent: vi.fn(),
+    });
   await queueExecution.run(context, async () => {
-    await expect(select(mode === 'ambiguous' ? undefined : 'asset')).rejects.toThrow();
-    expect(context.dependencyReason).toBe(mode === 'index' ? 'destination-configuration' : 'source-unavailable');
+    // no desktop may be chosen without knowing whose photo it is; the job runs, it does not wait
+    expect(await select(mode === 'ambiguous' ? undefined : 'asset')).toBe(selection);
+    expect(context.dependencyReason).toBeUndefined();
+    expect(policies.assertCurrent).not.toHaveBeenCalled();
+  });
+});
+it('leaves smart search on the destination itself while no desktop has been granted it', async () => {
+  index.selectProfile.mockResolvedValue(undefined);
+  await queueExecution.run(context, async () => {
+    expect(await select('asset')).toBe(selection);
+    // nothing to wait for: a retry must not defer for an index no desktop has asked for
+    expect(context.dependencyReason).toBeUndefined();
   });
 });
 it('refuses changed source before constructing an inference descriptor', async () => {
@@ -207,6 +203,26 @@ it('selects a qualified face workload without changing the CLIP index', async ()
     expect(assertSource).toHaveBeenCalledOnce();
   });
 });
+it.each([MlWorkload.Face, MlWorkload.Ocr])(
+  'leaves %s on the destination itself when its settings have no desktop profile',
+  async (workload) => {
+    selection.workload = workload;
+    await queueExecution.run(context, async () => {
+      const chosen = await service.selectBackgroundPool(selection, {
+        jobId: 'asset',
+        modelName: 'model',
+        assertConfig,
+        // a slider moved off the value the release has a profile for
+        ...(workload === MlWorkload.Face
+          ? { face: { ...defaults.machineLearning.facialRecognition, minScore: 0.123 } }
+          : { ocr: { ...defaults.machineLearning.ocr, minDetectionScore: 0.123 } }),
+      });
+      expect(chosen).toBe(selection);
+      // nothing to wait for: the job runs where it was admitted
+      expect(context.dependencyReason).toBeUndefined();
+    });
+  },
+);
 describe('when the processing order sends the job to the helpers (FL-456)', () => {
   const ready = vi.fn();
   const selectReady = () =>
@@ -235,6 +251,61 @@ describe('when the processing order sends the job to the helpers (FL-456)', () =
   it('hands the job back for the next place when none is ready', async () => {
     ready.mockResolvedValue(false);
     await queueExecution.run(context, async () => expect(await selectReady()).toBe(selection));
+  });
+});
+
+describe('extra jobs a queue starts for desktops', () => {
+  const broker = { helperCapacity: vi.fn() };
+  const plans = { resolveRoutes: vi.fn() };
+  const ml = { desktopModelKeys: vi.fn() };
+  const here = { source: 'local', destinationId: 'nas', desktopPool: false, available: true };
+  const desktops = { source: 'desktops', destinationId: 'nas', desktopPool: true, available: true };
+  beforeEach(() => {
+    service = new DesktopMlService(broker as never, index as never, policies as never, plans as never, ml as never);
+    ml.desktopModelKeys.mockImplementation((workload: MlWorkload) => Promise.resolve([`${workload}-key`]));
+    broker.helperCapacity.mockImplementation((scopes: Record<string, string[]>) =>
+      Promise.resolve(Object.fromEntries(Object.entries(scopes).map(([queue, keys]) => [queue, keys.length * 2]))),
+    );
+  });
+
+  it('starts none while this server comes first and its AI is answering', async () => {
+    plans.resolveRoutes.mockResolvedValue(
+      new Map([
+        [MlWorkload.Clip, [here, desktops]],
+        [MlWorkload.Face, [here, desktops]],
+        [MlWorkload.Ocr, [here, desktops]],
+      ]),
+    );
+    expect(await service.queueCapacity('smartSearch')).toBe(0);
+    expect(broker.helperCapacity).toHaveBeenCalledWith({ smartSearch: [], faceDetection: [], ocr: [] });
+    expect(ml.desktopModelKeys).not.toHaveBeenCalled();
+  });
+
+  it('counts desktops only for a queue whose work goes to them first, for the models the settings ask for', async () => {
+    plans.resolveRoutes.mockResolvedValue(
+      new Map([
+        // desktops first in the order
+        [MlWorkload.Clip, [desktops, here]],
+        // this server first, but its AI is down: the first place that can take the work is the desktops
+        [MlWorkload.Face, [{ ...here, available: false }, desktops]],
+        // no desktop is ready: this server
+        [MlWorkload.Ocr, [{ ...desktops, available: false }, here]],
+      ]),
+    );
+    expect(await service.queueCapacity('smartSearch')).toBe(2);
+    expect(await service.queueCapacity('faceDetection')).toBe(2);
+    expect(await service.queueCapacity('ocr')).toBe(0);
+    expect(await service.queueCapacity('thumbnailGeneration')).toBe(0);
+    expect(broker.helperCapacity).toHaveBeenCalledExactlyOnceWith({
+      smartSearch: ['clip-key'],
+      faceDetection: ['face-key'],
+      ocr: [],
+    });
+    // read at most every two seconds for all queues, then again
+    vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 2500);
+    await service.queueCapacity('smartSearch');
+    expect(broker.helperCapacity).toHaveBeenCalledTimes(2);
+    vi.restoreAllMocks();
   });
 });
 

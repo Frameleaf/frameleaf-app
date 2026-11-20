@@ -7,9 +7,10 @@ import z from 'zod';
 import type { DB } from 'src/schema/index.js';
 import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 import { OnEvent } from 'src/decorators.js';
-import { MlDestinationKind, MlWorkload } from 'src/enum.js';
+import { MlDestinationKind, MlWorkload, QueueName } from 'src/enum.js';
 import { afterJobCommit, deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
+import { setDesktopQueueCapacity } from 'src/queue/store.js';
 import { QUEUE_TIMING } from 'src/queue/types.js';
 import {
   type DesktopClipIndexBinding,
@@ -46,8 +47,18 @@ import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 
+/** The queues desktops can work, in the order a free desktop is counted for them, and the work each does. */
+const QUEUE_WORKLOADS: ReadonlyArray<[string, MlWorkload]> = [
+  [QueueName.SmartSearch, MlWorkload.Clip],
+  [QueueName.FaceDetection, MlWorkload.Face],
+  [QueueName.Ocr, MlWorkload.Ocr],
+];
+const CAPACITY_FRESH_MS = 2000;
+
 @Injectable()
 export class DesktopMlService {
+  private capacity?: { at: number; value: Promise<Record<string, number>> };
+
   constructor(
     private repository: DesktopMlRepository,
     private index: DesktopClipIndexRepository,
@@ -60,11 +71,37 @@ export class DesktopMlService {
   onBootstrap() {
     if (!this.machineLearning) throw new Error('desktop_pool_authority_unavailable');
     this.machineLearning.setDesktopPoolSelector(this.selectBackgroundPool.bind(this));
+    setDesktopQueueCapacity(this.queueCapacity.bind(this));
   }
 
   @OnEvent({ name: 'AppShutdown' })
   onShutdown() {
     this.machineLearning?.setDesktopPoolSelector(null);
+    setDesktopQueueCapacity(null);
+  }
+
+  /**
+   * How many extra jobs `queue` may start for desktops now, on top of the administrator's concurrency.
+   * A queue gets none unless its work would go to desktops first (the first place in its processing order
+   * that is available now is the desktops), so with this server first and its AI answering, this server's
+   * AI never runs more jobs than the administrator set. Read at most every two seconds for all queues.
+   */
+  async queueCapacity(queue: string): Promise<number> {
+    const now = performance.now();
+    if (!this.capacity || now - this.capacity.at > CAPACITY_FRESH_MS)
+      this.capacity = { at: now, value: this.countCapacity() };
+    return (await this.capacity.value)[queue] ?? 0;
+  }
+
+  private async countCapacity(): Promise<Record<string, number>> {
+    if (!this.routes || !this.machineLearning) return {};
+    const plans = await this.routes.resolveRoutes(QUEUE_WORKLOADS.map(([, workload]) => workload));
+    const scopes: Record<string, string[]> = {};
+    for (const [queue, workload] of QUEUE_WORKLOADS) {
+      const first = plans.get(workload)?.find((candidate) => candidate.available);
+      scopes[queue] = first?.desktopPool ? await this.machineLearning.desktopModelKeys(workload) : [];
+    }
+    return this.repository.helperCapacity(scopes);
   }
 
   async selectBackgroundPool(selection: MlSelection, options: DesktopPoolOptions): Promise<MlSelection> {
@@ -86,13 +123,10 @@ export class DesktopMlService {
       : sources?.size === 1
         ? sources.values().next().value
         : undefined;
-    if (!source) {
-      if (Object.keys(policy.accounts).length > 0) {
-        deferJobUntilDependency('source-unavailable');
-        throw new Error('desktop_pool_source_required');
-      }
-      return selection;
-    }
+    // Whose photo this is cannot be told (no source was recorded for the job, or several were and the job did
+    // not say which): no desktop may be chosen for it, so the destination itself does the work. It must not
+    // wait: nothing that would settle the owner is coming.
+    if (!source) return selection;
     const ownerId = source.ownerId;
     // FL-1484: the owner's own desktop assistance, else a computer that works on everyone's photos at home
     const account = desktopAuthorityFor(policy, ownerId);
@@ -115,9 +149,10 @@ export class DesktopMlService {
       let profile: DesktopModelProfile;
       try {
         profile = desktopFaceProfile(options.face);
-      } catch (error) {
-        deferJobUntilDependency('destination-configuration');
-        throw error;
+      } catch {
+        // These settings have no desktop profile (a slider moved off its default): no desktop can run the job,
+        // so the destination itself does. It must not wait for settings no desktop will ever be offered.
+        return selection;
       }
       if (!(await ready(profile.modelKey))) return selection;
       return this.selectImagePool(selection, {
@@ -144,9 +179,10 @@ export class DesktopMlService {
       let profile: DesktopModelProfile;
       try {
         profile = desktopOcrProfile(options.ocr);
-      } catch (error) {
-        deferJobUntilDependency('destination-configuration');
-        throw error;
+      } catch {
+        // These settings have no desktop profile (a slider moved off its default): no desktop can run the job,
+        // so the destination itself does. It must not wait for settings no desktop will ever be offered.
+        return selection;
       }
       if (!(await ready(profile.modelKey))) return selection;
       return this.selectOcrPool(selection, {
@@ -169,10 +205,8 @@ export class DesktopMlService {
       });
     }
     const selected = await this.index.selectProfile(options.modelName, 'image');
-    if (!selected) {
-      deferJobUntilDependency('destination-configuration');
-      throw new Error('desktop_pool_index_required');
-    }
+    // No desktop has been granted smart search yet, so none can take this job: the destination itself does.
+    if (!selected) return selection;
     if (!(await ready(selected.binding.space.visualModelKey))) return selection;
     return this.selectClipPool(selection, {
       ownerId,
@@ -524,7 +558,9 @@ export class DesktopMlService {
       deferJobUntilDependency('destination-unavailable');
       throw new Error('desktop_helper_unavailable');
     }
-    const pendingUntil = performance.now() + Math.max(0, Math.min(QUEUE_TIMING.scan, remaining - cleanupReserve));
+    // How long a task may sit with no desktop holding it before the job stops waiting on desktops.
+    const unclaimedWindow = Math.max(0, Math.min(QUEUE_TIMING.scan, remaining - cleanupReserve));
+    let unclaimed = { generation: 0, since: performance.now() };
     const parent = jobSignal();
     const signal = AbortSignal.any([
       AbortSignal.timeout(remaining),
@@ -558,9 +594,15 @@ export class DesktopMlService {
             throw new Error('desktop_helper_unavailable');
           }
         }
-        if (canDefer && row.state === 'pending' && row.generation === 0 && performance.now() >= pendingUntil) {
-          deferJobUntilDependency('destination-unavailable');
-          throw new Error('desktop_helper_unavailable');
+        // Nobody took it, or the desktop that had it handed it back (paused, stopped) or failed it, and
+        // nobody has taken it since: the job goes back to its processing order instead of waiting here.
+        if (canDefer && row.state === 'pending') {
+          if (row.generation !== unclaimed.generation)
+            unclaimed = { generation: row.generation, since: performance.now() };
+          if (performance.now() - unclaimed.since >= unclaimedWindow) {
+            deferJobUntilDependency('destination-unavailable');
+            throw new Error('desktop_helper_unavailable');
+          }
         }
         if (row.state === 'completed') {
           if (row.authorityKey !== options.request.authorityKey || row.modelKey !== options.request.modelKey)

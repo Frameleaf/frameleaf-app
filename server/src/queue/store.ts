@@ -174,30 +174,29 @@ const wakeClaimLoops = (db: Kysely<DB>) => {
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
 
-/** The model-key prefix desktop helpers qualify for each queue whose work they can take. */
-const DESKTOP_QUEUE_MODELS: Partial<Record<string, string>> = {
-  [QueueName.SmartSearch]: 'clip:',
-  [QueueName.FaceDetection]: 'face:',
-  [QueueName.Ocr]: 'ocr:',
-};
+/** The queues whose work desktop helpers can take, in the order a helper's free slots are counted for them. */
+export const DESKTOP_QUEUES: readonly string[] = [QueueName.SmartSearch, QueueName.FaceDetection, QueueName.Ocr];
 
 /**
- * Desktop helpers online now (seen in the last 90 seconds) that hold a model for this queue's work.
- * ponytail: counts helpers of any account; a job whose owner has none of them falls back to this server,
- * so the server may briefly run more than its own concurrency. Per-owner counting if that matters.
+ * How many extra jobs a queue may start for desktop helpers now. The queue store knows nothing of models,
+ * routes or approvals, so the desktop service supplies the count (`DesktopMlService.queueCapacity`): one per
+ * task a helper holds for this queue, and one per task it can still take, up to this queue's own setting.
+ * Nothing registered means no extra jobs, so the administrator's own concurrency is the limit.
  */
-export const readyDesktopHelpers = async (db: Kysely<DB>, queue: string): Promise<number> => {
-  const prefix = DESKTOP_QUEUE_MODELS[queue];
-  if (!prefix) return 0;
-  const { rows } = await sql<{ ready: number }>`
-    SELECT count(DISTINCT d.id)::int AS ready FROM desktop_device d
-    JOIN desktop_worker_session w ON w."deviceId" = d.id AND w."authorizationEpoch" = d."authorizationEpoch"
-    WHERE d."revokedAt" IS NULL AND d.state = 'preparing' AND d.mode = 'client-worker' AND w."revokedAt" IS NULL
-      AND w."expiresAt" > clock_timestamp() AND w."lastSeenAt" > clock_timestamp() - interval '90 seconds'
-      AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(w."modelKeys") k WHERE starts_with(k, ${prefix}))`.execute(
-    db,
-  );
-  return Math.min(rows[0]?.ready ?? 0, QUEUE_BATCH);
+let desktopQueueCapacity: ((queue: string) => Promise<number>) | null = null;
+export const setDesktopQueueCapacity = (capacity: ((queue: string) => Promise<number>) | null) => {
+  desktopQueueCapacity = capacity;
+};
+
+export const readyDesktopHelpers = async (queue: string): Promise<number> => {
+  if (!desktopQueueCapacity || !DESKTOP_QUEUES.includes(queue)) return 0;
+  try {
+    const ready = await desktopQueueCapacity(queue);
+    return Number.isSafeInteger(ready) && ready > 0 ? Math.min(ready, QUEUE_BATCH) : 0;
+  } catch {
+    // Counting helpers must never stop a queue: without a count it runs at its own concurrency.
+    return 0;
+  }
 };
 
 export class SqlQueueStore {
@@ -465,6 +464,8 @@ export class SqlQueueStore {
         queuedCancellation: true,
       });
     }
+    // Counted before the queue row is locked: it reads routes and approvals on other connections.
+    const helpers = await readyDesktopHelpers(queue);
     return this.db.transaction().execute(async (tx) => {
       const {
         rows: [config],
@@ -487,9 +488,9 @@ export class SqlQueueStore {
         rows: [{ active }],
       } = await sql<{ active: number }>`select count(*)::int active from job
         where queue = ${queue} and state = 'active'`.execute(tx);
-      // The ones started by hand already count as active. Each ready desktop helper adds one: every job
-      // it lets start becomes a desktop task the next free helper claims (docs/desktop-worker-setup-protocol.md).
-      const helpers = await readyDesktopHelpers(tx, queue);
+      // The ones started by hand already count as active. Desktop helpers add one job for each task they hold
+      // or can still take for this queue: a job they let start becomes a desktop task one of them claims
+      // (docs/desktop-worker-setup-protocol.md).
       const capacity = Math.min(
         QUEUE_BATCH - byHand.length,
         maxClaims - byHand.length,

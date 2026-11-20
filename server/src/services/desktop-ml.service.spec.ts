@@ -224,6 +224,30 @@ it('preserves operation-owned execution instead of inventing a library dependenc
   expect(execution.dependencyReason).toBeUndefined();
 });
 
+it('stops waiting on desktops soon after one hands the task back and no other takes it', async () => {
+  const execution = queued();
+  const began = performance.now();
+  repository.result
+    // a desktop has it
+    .mockResolvedValueOnce({ state: 'running', generation: 1 })
+    // it paused and handed the task back: the wait for another desktop starts now, not when the job began
+    .mockImplementationOnce(() => {
+      vi.spyOn(performance, 'now').mockReturnValue(began + 60_000);
+      return Promise.resolve({ state: 'pending', generation: 1 });
+    })
+    // still nobody a few seconds later
+    .mockImplementationOnce(() => {
+      vi.spyOn(performance, 'now').mockReturnValue(began + 66_000);
+      return Promise.resolve({ state: 'pending', generation: 1 });
+    });
+  await expect(context.queueExecution.run(execution, () => service.dispatch(options()))).rejects.toBeInstanceOf(
+    JobDependencyUnavailable,
+  );
+  expect(repository.result).toHaveBeenCalledTimes(3);
+  expect(execution.dependencyReason).toBe('destination-unavailable');
+  expect(repository.cancel).toHaveBeenCalledWith('task');
+});
+
 it('defers a claimed task when its authenticated helper is no longer live, fencing late output', async () => {
   const execution = queued();
   repository.result.mockResolvedValue({ state: 'running', generation: 1 });

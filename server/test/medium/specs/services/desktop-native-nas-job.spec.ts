@@ -249,6 +249,7 @@ it.skipIf(!desktop || !pack || !cache)(
         activation,
         workers,
         policies,
+        new DesktopMlRepository(db!),
       );
       const { sut: authentication } = newMediumService(AuthService, {
         database: db,

@@ -594,6 +594,22 @@ describe('selectMlDestination', () => {
     expect(d.machineLearningRepository.probe).toHaveBeenCalledOnce();
   });
 
+  it.each([undefined, 'only'] as const)(
+    'asks for a desktop that is ready now, on a retry as on a first run (desktopPool: %s)',
+    async (desktopPool) => {
+      const d = deps({});
+      const selectBackgroundPool = vi.fn((selection: MlSelection) => Promise.resolve(selection));
+      const admit = selectMlDestination(
+        { ...d, selectBackgroundPool },
+        { workload: MlWorkload.Clip, destinationId: mlDestinationStub.local.id, desktopPool },
+      );
+      // no desktop is ready: a retried job runs on the destination itself, never waits on a switched-off computer
+      await (desktopPool ? expect(admit).rejects.toThrow('destination-unhealthy') : admit);
+      expect(selectBackgroundPool).toHaveBeenCalledWith(expect.anything(), { requireReady: true });
+      expect(d.machineLearningRepository.probe).toHaveBeenCalledTimes(desktopPool ? 0 : 1);
+    },
+  );
+
   it('propagates desktop pool authority refusal without probing or falling back', async () => {
     const d = deps({});
     const selectBackgroundPool = vi.fn().mockRejectedValue(new Error('desktop_pool_policy_changed'));

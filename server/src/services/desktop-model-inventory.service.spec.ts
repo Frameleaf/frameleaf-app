@@ -23,6 +23,7 @@ const service = new DesktopQualificationService(
   {} as never,
   workers as never,
   policies as never,
+  {} as never,
 );
 
 beforeEach(() => {

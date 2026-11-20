@@ -606,12 +606,25 @@ export class BaseService {
     const homeOnly = await this.isHomeOnly(routed);
     const request = { ...routed, homeOnly };
     const pinned = await this.jobRepository.pinnedDestination(request.workload);
-    if (pinned && !(homeOnly && (await this.isCloudDestinationId(pinned)))) {
+    if (pinned && (await this.isCloudDestinationId(pinned)) && !homeOnly) {
+      // Work already sent to Frameleaf Cloud goes back to the same place: its job there is the one to resume.
       return this.selectMlDestination({ ...request, destinationId: pinned });
     }
-    const candidates = ((await this.mlDestinationRepository.resolveRoute(request.workload)) ?? []).filter(
+    const ordered = ((await this.mlDestinationRepository.resolveRoute(request.workload)) ?? []).filter(
       (candidate) => !homeOnly || candidate.source !== MlProcessingSource.Cloud,
     );
+    // A retry walks the order as it is now, like a first run, starting with the place it ran on before (that
+    // destination itself and the desktops standing in for it, whichever of them the order still names). A
+    // place that has left the order is not asked again. With nothing else in the order, the job waits.
+    const candidates = pinned
+      ? [
+          ...ordered.filter((candidate) => candidate.destinationId === pinned),
+          ...ordered.filter((candidate) => candidate.destinationId !== pinned),
+        ]
+      : ordered;
+    // A job that already has a place recorded is admitted where the order says, not back at that record.
+    const admit = (admission: MlSelectionRequest) =>
+      pinned ? this.admitMlDestination(admission) : this.selectMlDestination(admission);
     const available = candidates.filter((candidate) => candidate.available);
     if (available.length === 0) {
       const destinationId =
@@ -619,8 +632,12 @@ export class BaseService {
         (homeOnly
           ? await homeMlDestinationId(this.mlDestinationRepository, request.workload)
           : await routedMlDestinationId(this.mlDestinationRepository, request.workload));
+      // The job waits on the first place in its order, and only there: when that place is the desktops, the
+      // destination they stand in for is not asked to do the work itself.
+      const [first] = candidates;
+      const desktopPool = first ? (first.desktopPool ? ('only' as const) : ('skip' as const)) : undefined;
       try {
-        return await this.selectMlDestination({ ...request, destinationId });
+        return await admit({ ...request, destinationId, ...(desktopPool && { desktopPool }) });
       } catch (error) {
         throw await this.computerAway(error, candidates[0]?.source);
       }

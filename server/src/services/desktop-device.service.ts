@@ -37,6 +37,10 @@ export class DesktopDeviceService {
         worker: false,
         workerSession: true,
         workerAutoSetup: true,
+        // A claim may carry `reportWithdrawn: true` and is then told when a model was taken away from it.
+        workerWithdrawalNotice: true,
+        // A claim may carry `slots`, and a desktop may then hold several leases at once.
+        workerConcurrentLeases: true,
         sources: false,
         nativeHost: false,
       },

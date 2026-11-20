@@ -4917,8 +4917,14 @@ export type WorkerDesktopHelperDto = {
     /** Name of the account signed in on it */
     ownerName?: string;
     platform: DesktopPlatform;
-    /** Online in the last 90 seconds with a current qualification, so it can take AI work now */
+    /** Online now (seen within the last few minutes) with a current qualification, so it can take AI work now */
     ready: boolean;
+    /** Work taken away from it after it failed that work three times in a row */
+    withdrawn?: {
+        /** Held back from qualifying again until then; null once it only has to qualify again */
+        until: string | null;
+        workload: DesktopWithdrawnWorkload;
+    }[];
 };
 export type WorkerWorkloadAdmissionDto = {
     /** Whether the last check would admit this workload here */
@@ -9637,7 +9643,9 @@ export type DesktopCapabilitiesDto = {
         sources: false;
         worker: false;
         workerAutoSetup: true;
+        workerConcurrentLeases: true;
         workerSession: true;
+        workerWithdrawalNotice: true;
     };
     protocolVersion: number;
     serverId: string;
@@ -9732,6 +9740,7 @@ export type DesktopModelInventoryDto = {
     provider: Provider;
     runtimeSourceRevision: string;
     workloads: {
+        concurrency?: number;
         modelKeys: string[];
         modelNames: string[];
         profiles?: {
@@ -45673,6 +45682,11 @@ export enum DesktopPlatform {
     Macos = "macos",
     Windows = "windows",
     Linux = "linux"
+}
+export enum DesktopWithdrawnWorkload {
+    Clip = "clip",
+    Face = "face",
+    Ocr = "ocr"
 }
 export enum MlWorkerAcceleration {
     Unknown = "unknown",

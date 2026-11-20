@@ -106660,7 +106660,19 @@
                 ],
                 "type": "boolean"
               },
+              "workerConcurrentLeases": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
               "workerSession": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
+              "workerWithdrawalNotice": {
                 "enum": [
                   true
                 ],
@@ -106672,6 +106684,8 @@
               "worker",
               "workerSession",
               "workerAutoSetup",
+              "workerWithdrawalNotice",
+              "workerConcurrentLeases",
               "sources",
               "nativeHost"
             ],
@@ -106926,6 +106940,11 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "concurrency": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
                 "modelKeys": {
                   "items": {
                     "pattern": "^(clip|ocr|face):[a-f0-9]{64}$",
@@ -107123,6 +107142,14 @@
           "timestamp"
         ],
         "type": "object"
+      },
+      "DesktopWithdrawnWorkload": {
+        "enum": [
+          "clip",
+          "face",
+          "ocr"
+        ],
+        "type": "string"
       },
       "DesktopWorkerAckDto": {
         "properties": {
@@ -187464,8 +187491,30 @@
             "$ref": "#/components/schemas/DesktopPlatform"
           },
           "ready": {
-            "description": "Online in the last 90 seconds with a current qualification, so it can take AI work now",
+            "description": "Online now (seen within the last few minutes) with a current qualification, so it can take AI work now",
             "type": "boolean"
+          },
+          "withdrawn": {
+            "description": "Work taken away from it after it failed that work three times in a row",
+            "items": {
+              "properties": {
+                "until": {
+                  "description": "Held back from qualifying again until then; null once it only has to qualify again",
+                  "format": "date-time",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "workload": {
+                  "$ref": "#/components/schemas/DesktopWithdrawnWorkload"
+                }
+              },
+              "required": [
+                "workload",
+                "until"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [
