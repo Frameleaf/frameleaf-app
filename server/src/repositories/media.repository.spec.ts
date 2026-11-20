@@ -11,6 +11,7 @@ import { SharpOperationError, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { cloudVideoClip, isPlainVideoStream } from 'src/utils/cloud-ml-job.js';
 import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { orientedToOriginal } from 'src/utils/develop-cleanup.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
@@ -1090,6 +1091,138 @@ describe(MediaRepository.name, () => {
       const chunk = join(dirPath, 'chunk-0-in.mp4');
       await transcode(fixture, chunk, ['-ss', '1.000', '-t', '2.000'], chunkClipOutputOptions());
       expectNoMetadata(chunk, ['video']);
+    });
+  });
+  /**
+   * FL-1725: Frameleaf Cloud's worker checks an uploaded clip's own size and packet count and then decodes
+   * it. Real clips, made by ffmpeg and prepared with the options the server uploads with.
+   */
+  describe.skipIf(!hasFfmpeg)('a video for Frameleaf Cloud restoration or Smooth motion (FL-1725)', () => {
+    let folder: string;
+    const make = (arguments_: string[]) =>
+      execFileSync('ffmpeg', ['-v', 'error', '-y', ...arguments_], { timeout: 60_000, stdio: 'ignore' });
+    const upload = (input: string, output: string, copy: boolean) =>
+      sut.transcode(input, output, {
+        inputOptions: [],
+        outputOptions: fullVideoUploadOutputOptions({ copy, bsf: copy ? 'filter_units=remove_types=6' : undefined }),
+        twoPass: false,
+        progress: { frameCount: 0, percentInterval: 5 },
+      });
+    /** What a decoder shows: the frames ffprobe reads when it decodes the stream. */
+    const decodedFrames = (file: string) =>
+      Number(
+        execFileSync(
+          'ffprobe',
+          [
+            '-v',
+            'error',
+            '-count_frames',
+            '-select_streams',
+            'v:0',
+            '-show_entries',
+            'stream=nb_read_frames',
+            '-of',
+            'csv=p=0',
+            file,
+          ],
+          { encoding: 'utf8' },
+        ).trim(),
+      );
+    const measured = async (file: string) => {
+      const stream = (await sut.probe(file, { countFrames: true })).videoStreams[0];
+      return { stream, packets: await sut.countPackets(file, stream.index) };
+    };
+
+    beforeAll(() => {
+      folder = mkdtempSync(join(tmpdir(), 'media-repository-cloud-video-'));
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-t',
+        '4',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-g',
+        '30',
+        join(folder, 'plain.mp4'),
+      ]);
+      for (const rotation of [90, 180, 270]) {
+        make([
+          '-display_rotation',
+          String(rotation),
+          '-i',
+          join(folder, 'plain.mp4'),
+          '-c',
+          'copy',
+          join(folder, `rotated-${rotation}.mp4`),
+        ]);
+      }
+      // a trim made by stream copy: the packets before the cut stay in the file, hidden by its edit list
+      make(['-ss', '1.5', '-i', join(folder, 'plain.mp4'), '-t', '2.1', '-c', 'copy', join(folder, 'trimmed.mp4')]);
+    });
+
+    afterAll(() => rmSync(folder, { recursive: true, force: true }));
+
+    it('copies a plain stream: every packet is a frame, and the declared length counts back to them', async () => {
+      const { stream, packets } = await measured(join(folder, 'plain.mp4'));
+      expect(isPlainVideoStream(stream, packets)).toBe(true);
+      const copy = join(folder, 'plain-upload.mp4');
+      await upload(join(folder, 'plain.mp4'), copy, true);
+      const uploaded = await measured(copy);
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(uploaded.packets).toEqual({ packets: 120, hidden: 0 });
+      expect(decodedFrames(copy)).toBe(120);
+      const clip = cloudVideoClip('v1', uploaded.stream)!;
+      expect(clip).toMatchObject({ fps: 30, width: 320, height: 240 });
+      expect(Math.floor(clip.durationSec * clip.fps + 0.5)).toBe(120);
+    });
+
+    it.each([
+      [90, 240, 320],
+      [180, 320, 240],
+      [270, 240, 320],
+    ])(
+      'never copies a source turned %i degrees: the upload is upright with no rotation',
+      async (rotation, width, height) => {
+        const source = join(folder, `rotated-${rotation}.mp4`);
+        const { stream, packets } = await measured(source);
+        expect(isPlainVideoStream(stream, packets)).toBe(false);
+        // what a copy would send: the rotation survives the metadata strip, against the stream's own size
+        const copied = join(folder, `rotated-${rotation}-copied.mp4`);
+        await upload(source, copied, true);
+        const kept = await measured(copied);
+        expect(isPlainVideoStream(kept.stream, kept.packets)).toBe(false);
+        // what is sent instead
+        const encoded = join(folder, `rotated-${rotation}-upload.mp4`);
+        await upload(source, encoded, false);
+        const uploaded = await measured(encoded);
+        expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+        expect(cloudVideoClip('v1', uploaded.stream)).toMatchObject({ width, height, fps: 30 });
+        expect(decodedFrames(encoded)).toBe(uploaded.packets.packets);
+      },
+    );
+
+    it('never copies a trimmed source: the upload holds only the frames the video shows', async () => {
+      const source = join(folder, 'trimmed.mp4');
+      const { stream, packets } = await measured(source);
+      // more packets than frames: no length could be declared that the worker both counts and decodes
+      expect(packets.hidden).toBeGreaterThan(0);
+      expect(decodedFrames(source)).toBe(packets.packets - packets.hidden);
+      expect(stream.frameCount).toBe(packets.packets);
+      expect(isPlainVideoStream(stream, packets)).toBe(false);
+
+      const encoded = join(folder, 'trimmed-upload.mp4');
+      await upload(source, encoded, false);
+      const uploaded = await measured(encoded);
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(uploaded.packets.packets).toBe(packets.packets - packets.hidden);
+      expect(decodedFrames(encoded)).toBe(uploaded.packets.packets);
+      const clip = cloudVideoClip('v1', uploaded.stream)!;
+      expect(Math.floor(clip.durationSec * clip.fps + 0.5)).toBe(uploaded.packets.packets);
     });
   });
 });

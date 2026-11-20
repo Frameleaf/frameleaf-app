@@ -119,6 +119,7 @@ import {
   cloudVideoRequest,
   cloudVideoSettingsRefusal,
   emptyCloudMlJobResult,
+  isPlainVideoStream,
   orderedOutputs,
   outputsComplete,
   parseCloudMlJobResult,
@@ -199,7 +200,8 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
 /** A whole video prepared for Frameleaf Cloud once, kept in its own folder for every estimate of it. */
 const PREPARED_INPUT_PREFIX = 'cloud_ml_input_';
 /** Bumped when the way a whole video is prepared changes, so an older copy is never reused. */
-const PREPARED_INPUT_VERSION = 2;
+// 3 (FL-1725): a source with a rotation or hidden packets is re-encoded, never copied
+const PREPARED_INPUT_VERSION = 3;
 /** The record written next to a prepared copy once it is complete. */
 const PREPARED_INPUT_RECORD = 'prepared.json';
 
@@ -533,7 +535,7 @@ export class CloudMlJobService {
             { viewerId: lockedViewerOf(auth) },
           );
       if (workload === 'restoration' || workload === 'interpolation') {
-        clip = await this.describeClip(workload, prepared.input);
+        clip = await this.describeClip(workload, prepared.input, settings.factor);
       }
     } catch (error) {
       await this.removeWorkDir(workDir);
@@ -3220,7 +3222,13 @@ export class CloudMlJobService {
       '.webm': { container: 'webm', contentType: 'video/webm', codecs: ['vp8', 'vp9', 'av1'] },
     };
     const plan = copyable[extension] ?? { container: 'mp4', contentType: 'video/mp4', codecs: ['h264', 'hevc', 'av1'] };
-    const copy = !!codec && plan.codecs.includes(codec);
+    const stream = probe.videoStreams[0];
+    // FL-1725: only a plain stream is copied. A rotation or packets the edit list hides are settled by the
+    // re-encode: upright pixels, and exactly the frames the video shows
+    const plain =
+      !!stream &&
+      isPlainVideoStream(stream, await this.mediaRepository.countPackets(source.originalPath, stream.index));
+    const copy = !!codec && plan.codecs.includes(codec) && plain;
     const container = copy ? plan.container : 'mp4';
     const file = path.join(workDir, `input.${container}`);
     // a stream copy keeps the stream's SEI messages, where cameras put their own data (serial numbers,
@@ -3245,9 +3253,19 @@ export class CloudMlJobService {
    * FC-47, FC-48: the clip a restoration or Smooth motion request describes, measured from the file that
    * is uploaded (its packets counted), and refused here by name when Frameleaf Cloud does not take it.
    */
-  private async describeClip(workload: 'restoration' | 'interpolation', input: CloudMlJobInput) {
+  private async describeClip(workload: 'restoration' | 'interpolation', input: CloudMlJobInput, factor: number | null) {
     const probe = await this.mediaRepository.probe(input.path, { countFrames: true });
-    const clip = cloudVideoClip(input.inputId, probe.videoStreams[0]);
+    const stream = probe.videoStreams[0];
+    // what is uploaded is a plain stream: the cloud's worker would otherwise turn the picture against its
+    // declared size, or decode fewer frames than were counted, after the job is admitted
+    if (stream && !isPlainVideoStream(stream, await this.mediaRepository.countPackets(input.path, stream.index))) {
+      throw new CloudMlJobFailure(
+        'cloud_ml_prepare_failed',
+        'The copy prepared for Frameleaf Cloud still carries a rotation or frames its picture never shows, so nothing was sent',
+        false,
+      );
+    }
+    const clip = cloudVideoClip(input.inputId, stream);
     if (!clip) {
       throw new CloudMlJobFailure(
         'cloud_ml_prepare_failed',
@@ -3255,7 +3273,7 @@ export class CloudMlJobService {
         false,
       );
     }
-    const refusal = cloudVideoClipRefusal(workload, clip);
+    const refusal = cloudVideoClipRefusal(workload, clip, factor);
     if (refusal) {
       throw new CloudMlJobFailure('cloud_ml_prepare_failed', refusal, false);
     }

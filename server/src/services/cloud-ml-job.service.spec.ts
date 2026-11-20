@@ -394,6 +394,7 @@ describe(CloudMlJobService.name, () => {
       videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30 }],
       audioStreams: [],
     } as never);
+    mocks.media.countPackets.mockResolvedValue({ packets: 150, hidden: 0 });
     mocks.crypto.hashFileDigests.mockResolvedValue({
       sha1: Buffer.alloc(20),
       sha256: Buffer.from(SHA, 'hex'),
@@ -762,6 +763,48 @@ describe(CloudMlJobService.name, () => {
       expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
     });
 
+    it('refuses Smooth motion the cloud would run at another factor, or not at all, before anything is sent', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 250, frameRate: 50 }],
+        audioStreams: [],
+      } as never);
+      // 4× of 50 frames a second passes 120: the cloud would make 2× and the version would be labelled 4×
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 4 }), now)).rejects.toThrow(
+        'This video has 50 frames a second, so 4× would pass 120 frames a second. Choose 2×.',
+      );
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 500, frameRate: 100 }],
+        audioStreams: [],
+      } as never);
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 2 }), now)).rejects.toThrow(
+        'This video has 100 frames a second. Frameleaf Cloud smooths motion up to 120 frames a second, so there is nothing it can add.',
+      );
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
+    it('refuses its own copy when it still carries a rotation or frames the picture never shows', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30, rotation: 90 }],
+        audioStreams: [],
+      } as never);
+      await expect(sut.estimate(owner, preview({ upscale: 2 }), now)).rejects.toThrow(
+        'still carries a rotation or frames its picture never shows',
+      );
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30 }],
+        audioStreams: [],
+      } as never);
+      mocks.media.countPackets.mockResolvedValue({ packets: 150, hidden: 15 });
+      await expect(sut.estimate(owner, preview({ upscale: 2 }), now)).rejects.toThrow(
+        'still carries a rotation or frames its picture never shows',
+      );
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
     it('estimates Smooth motion as interpolation with its frame-rate factor, and only for videos', async () => {
       mocks.frameleafCloudMl.createEstimate.mockResolvedValue({ ...sealed, modelSku: SMOOTH, modelRev: SMOOTH_REV });
 
@@ -837,6 +880,27 @@ describe(CloudMlJobService.name, () => {
       // a stream copy drops the camera's own SEI data too
       const options = mocks.media.transcode.mock.calls[0][2];
       expect(options.outputOptions).toEqual(expect.arrayContaining(['-bsf:v', 'filter_units=remove_types=6']));
+      expect(stripsVideoMetadata(options.outputOptions)).toBe(true);
+    });
+
+    it.each([
+      ['is turned', { rotation: 90 }, { packets: 150, hidden: 0 }],
+      ['has frames its edit list hides', {}, { packets: 150, hidden: 15 }],
+    ])('re-encodes a whole video that %s instead of copying its stream', async (_, stream, packets) => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30, ...stream }],
+        audioStreams: [],
+      } as never);
+      mocks.media.countPackets.mockResolvedValue(packets);
+      await expect(sut.estimate(owner, full(), now)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'input-preparing' }),
+      });
+      await prepared();
+
+      const options = mocks.media.transcode.mock.calls[0][2];
+      expect(options.outputOptions).toEqual(expect.arrayContaining(['-c:v', 'libx264']));
+      expect(options.outputOptions).not.toContain('copy');
       expect(stripsVideoMetadata(options.outputOptions)).toBe(true);
     });
 

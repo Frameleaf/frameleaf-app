@@ -975,6 +975,68 @@ export class MediaRepository {
    * Needed for accurate segments, especially when remuxing, seeking and/or VFR is involved.
    * Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
    */
+  /**
+   * FL-1725: how many packets a stream has, and how many of them its edit list hides (ffprobe's discard
+   * flag). A decoder shows `packets - hidden` frames; `probe` with `countFrames` counts them all.
+   */
+  countPackets(
+    input: string,
+    streamIndex: number,
+    signal: AbortSignal | undefined = executionSignal(),
+  ): Promise<{ packets: number; hidden: number }> {
+    signal?.throwIfAborted();
+    const ffprobe = spawn(
+      'ffprobe',
+      ['-v', 'error', '-select_streams', String(streamIndex), '-show_entries', 'packet=flags', '-of', 'csv=p=0', input],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const lifetime = superviseMediaProcess(ffprobe, { signal });
+    let packets = 0;
+    let hidden = 0;
+    let stderr = '';
+    let remainder = '';
+    let failure: Error | undefined;
+    const count = (line: string) => {
+      if (!line) {
+        return;
+      }
+      packets++;
+      // flags are `K`, `D` and `C` in fixed places: `_D_` is a packet the edit list drops
+      if (line.includes('D')) {
+        hidden++;
+      }
+      lifetime.progress(1);
+    };
+    ffprobe.stderr.setEncoding('utf8');
+    ffprobe.stderr.on('data', (chunk: string) => {
+      stderr = (stderr + chunk).slice(-65_536);
+    });
+    ffprobe.stdout.setEncoding('utf8');
+    ffprobe.stdout.on('data', (chunk: string) => {
+      const lines = chunk.split('\n');
+      lines[0] = remainder + lines[0];
+      remainder = lines.pop() as string;
+      for (const line of lines) {
+        count(line);
+      }
+    });
+    return new Promise((resolve, reject) => {
+      ffprobe.on('error', (error) => {
+        failure = error;
+      });
+      ffprobe.on('close', (code) => {
+        if (lifetime.error() || failure) {
+          return reject(lifetime.error() ?? failure);
+        }
+        if (code !== 0) {
+          return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
+        }
+        count(remainder);
+        resolve({ packets, hidden });
+      });
+    });
+  }
+
   probePackets(
     input: string,
     streamIndex: number,

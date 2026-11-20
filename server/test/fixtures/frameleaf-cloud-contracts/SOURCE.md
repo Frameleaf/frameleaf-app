@@ -280,3 +280,6 @@ them is a fixture value (`FIXTURE-ONLY`); no real Google or Microsoft app exists
   `mode`, `targetScale` and `items` (restoration) and `factor` and `items` (Smooth motion); `items` is measured from
   the uploaded file as the cloud's worker checks it (`apps/ml-worker/src/flc_worker/runtime/restore/__init__.py`
   `check_clip`: the stream's own size, the average rate within 0.01, the packet count).
+  The same worker decodes the clip after that check, so the server uploads a plain stream only (no rotation, no
+  packets an edit list hides: such a source is re-encoded, `isPlainVideoStream`), and sends Smooth motion only at the
+  factor `interpolationFactor` (`packages/contracts/src/ml/workloads.ts`) gives back unchanged.

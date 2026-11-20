@@ -142,10 +142,39 @@ export const cloudVideoSettingsRefusal = (
     : `Frameleaf Cloud smooths motion ${served.join('× or ')}×. Choose ${served.length > 1 ? 'one of those' : 'that'}.`;
 };
 
-/** Why Frameleaf Cloud would refuse this clip (its frame rate, size or length), in words for the person, or null. */
+/**
+ * The factor Frameleaf Cloud gives a clip (its `interpolationFactor`, with no `targetFps`): the one asked
+ * for, halved while the output would pass 120 frames a second. Null when even 2× passes it.
+ */
+export const cloudSmoothMotionFactor = (fps: number, factor: number): 2 | 4 | null => {
+  for (const candidate of factor === 4 ? ([4, 2] as const) : ([2] as const)) {
+    if (fps * candidate <= CLOUD_VIDEO_MAX_FPS + 1e-9) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
+/**
+ * Whether a stream can be uploaded as it is, packet for packet. Frameleaf Cloud's worker checks the
+ * stream's own size and its packet count and then decodes it, so a stream with a rotation (the decoder
+ * turns the picture, the size says otherwise) or with packets its edit list hides (fewer frames decode
+ * than were counted, and frames the owner trimmed away would leave the server) is never copied: it is
+ * re-encoded, which gives upright pixels and one packet for every frame shown.
+ */
+export const isPlainVideoStream = (
+  stream: Pick<VideoStreamInfo, 'rotation'> | undefined,
+  packets: { packets: number; hidden: number },
+): boolean => !!stream && !((Number(stream.rotation) || 0) % 360) && packets.packets > 0 && packets.hidden === 0;
+
+/**
+ * Why Frameleaf Cloud would refuse this clip (its frame rate, size or length), or would run Smooth motion
+ * at another factor than the one asked for, in words for the person, or null.
+ */
 export const cloudVideoClipRefusal = (
   workload: 'restoration' | 'interpolation',
   clip: CloudVideoClip,
+  factor: number | null = null,
 ): string | null => {
   const max = workload === 'restoration' ? { width: 7680, height: 4320 } : { width: 3840, height: 2160 };
   if (clip.fps < 1 || clip.fps > CLOUD_VIDEO_MAX_FPS) {
@@ -161,6 +190,19 @@ export const cloudVideoClipRefusal = (
   }
   if (clip.durationSec > CLOUD_VIDEO_MAX_SECONDS) {
     return `Frameleaf Cloud takes video up to ${CLOUD_VIDEO_MAX_SECONDS / 3600} hours long. Split the clip into shorter parts.`;
+  }
+  if (workload === 'interpolation') {
+    // the cloud halves a factor that would pass 120 frames a second and refuses when even 2× does: the
+    // owner is never shown, or charged for, a factor that was not made
+    const asked = factor ?? 2;
+    const given = cloudSmoothMotionFactor(clip.fps, asked);
+    const fps = Math.round(clip.fps * 100) / 100;
+    if (given === null) {
+      return `This video has ${fps} frames a second. Frameleaf Cloud smooths motion up to ${CLOUD_VIDEO_MAX_FPS} frames a second, so there is nothing it can add.`;
+    }
+    if (given !== asked) {
+      return `This video has ${fps} frames a second, so ${asked}× would pass ${CLOUD_VIDEO_MAX_FPS} frames a second. Choose ${given}×.`;
+    }
   }
   return null;
 };

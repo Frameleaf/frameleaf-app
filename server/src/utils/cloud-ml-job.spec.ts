@@ -1,8 +1,10 @@
 import {
+  cloudSmoothMotionFactor,
   cloudVideoClip,
   cloudVideoClipRefusal,
   cloudVideoRequest,
   cloudVideoSettingsRefusal,
+  isPlainVideoStream,
 } from 'src/utils/cloud-ml-job.js';
 import { estimateRequestSchema } from 'src/utils/frameleaf-cloud.js';
 
@@ -125,11 +127,63 @@ describe('what Frameleaf Cloud does not run, said before anything is sent (FL-17
         { ...clip, durationSec: 21_600.5 },
       ]) {
         const accepted = estimateRequestSchema.safeParse(body(workload, described)).success;
-        expect(cloudVideoClipRefusal(workload, described) === null, `${workload} ${JSON.stringify(described)}`).toBe(
-          accepted,
-        );
+        // the factor rule is the gateway's, not the schema's: 2× of these rates fits, or the rate is refused anyway
+        const refused = cloudVideoClipRefusal(workload, described, workload === 'interpolation' ? 2 : null) !== null;
+        const overSixty = workload === 'interpolation' && described.fps > 60 && described.fps <= 120;
+        expect(refused, `${workload} ${JSON.stringify(described)}`).toBe(!accepted || overSixty);
       }
     }
+  });
+});
+
+describe('the Smooth motion factor Frameleaf Cloud really gives (FL-1725)', () => {
+  /** Frameleaf Cloud's `interpolationFactor` (`packages/contracts/src/ml/workloads.ts`), with no `targetFps`. */
+  const cloudFactor = (fps: number, factor: 2 | 4) => {
+    for (const f of factor === 4 ? [4, 2] : [2]) {
+      if (fps * f <= 120 + 1e-9) {
+        return f;
+      }
+    }
+    return null;
+  };
+  const clip = { inputId: 'v1', durationSec: 5, fps: 30, width: 1920, height: 1080 };
+
+  it("gives the cloud's own answer at every rate", () => {
+    for (const fps of [
+      1, 23.976, 24, 25, 29.97, 30, 30.0000000001, 47.952, 50, 59.94, 60, 60.00000001, 90, 100, 119.88, 120,
+    ]) {
+      for (const factor of [2, 4] as const) {
+        expect(cloudSmoothMotionFactor(fps, factor), `${fps} ${factor}`).toBe(cloudFactor(fps, factor));
+      }
+    }
+  });
+
+  it('sends only a factor the cloud will run as asked', () => {
+    expect(cloudVideoClipRefusal('interpolation', clip, 4)).toBeNull();
+    expect(cloudVideoClipRefusal('interpolation', { ...clip, fps: 60 }, 2)).toBeNull();
+    expect(cloudVideoClipRefusal('interpolation', { ...clip, fps: 50 }, 4)).toBe(
+      'This video has 50 frames a second, so 4× would pass 120 frames a second. Choose 2×.',
+    );
+    expect(cloudVideoClipRefusal('interpolation', { ...clip, fps: 100 }, 2)).toBe(
+      'This video has 100 frames a second. Frameleaf Cloud smooths motion up to 120 frames a second, so there is nothing it can add.',
+    );
+    expect(cloudVideoClipRefusal('interpolation', { ...clip, fps: 100 }, 4)).toContain('nothing it can add');
+    // a restoration has no factor: its rate is only bounded
+    expect(cloudVideoClipRefusal('restoration', { ...clip, fps: 100 })).toBeNull();
+  });
+});
+
+describe('a stream that can be uploaded as it is (FL-1725)', () => {
+  it('is one with no rotation and no hidden packets', () => {
+    expect(isPlainVideoStream({ rotation: 0 }, { packets: 10, hidden: 0 })).toBe(true);
+    expect(isPlainVideoStream({ rotation: NaN }, { packets: 10, hidden: 0 })).toBe(true);
+    expect(isPlainVideoStream({ rotation: 360 }, { packets: 10, hidden: 0 })).toBe(true);
+    for (const rotation of [90, -90, 180, 270]) {
+      expect(isPlainVideoStream({ rotation }, { packets: 10, hidden: 0 })).toBe(false);
+    }
+    expect(isPlainVideoStream({ rotation: 0 }, { packets: 10, hidden: 1 })).toBe(false);
+    expect(isPlainVideoStream({ rotation: 0 }, { packets: 0, hidden: 0 })).toBe(false);
+    expect(isPlainVideoStream(undefined, { packets: 10, hidden: 0 })).toBe(false);
   });
 });
 
