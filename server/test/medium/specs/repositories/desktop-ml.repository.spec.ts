@@ -980,6 +980,27 @@ describe('failures and hand-backs of a desktop holding several tasks', () => {
     expect(await sut.countCancel(desktop, request.modelKey)).toBe(2);
   });
 
+  it('reads the newest lease under the lock, so a crash counted late does not put an older lease in the record', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    await lease();
+    let crash!: Promise<number>;
+    const id = await db.transaction().execute(async (held) => {
+      await sql`SELECT pg_advisory_xact_lock(912740, 2)`.execute(held);
+      crash = sut.countFailure(desktop, request.modelKey, true);
+      await vi.waitFor(async () => {
+        const { rows } = await sql`SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`.execute(db);
+        expect(rows).toHaveLength(1);
+      });
+      // a lease made while the crash report waits its turn
+      return lease();
+    });
+    expect(await crash).toBe(1);
+    // the crash is counted with that lease in hand: its hand-back is part of the crash, not a stop of its own
+    expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(0);
+  });
+
   it('keeps the hand-backs of an open window when the failure they sit beside is an hour old', async () => {
     const { sut, grants, request, lease } = await several();
     const [desktop] = grants;

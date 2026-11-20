@@ -643,6 +643,8 @@ export class DesktopMlRepository {
   countFailure(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string, stop = false): Promise<number> {
     const key = failureKey(grant.deviceId, taskModelKey);
     return this.db.transaction().execute(async (db) => {
+      // under the lock, so a stop counted meanwhile is seen and an older lease never replaces its mark
+      await this.lockFailures(db);
       const cancelLease = stop ? await this.lastLease(db, grant, taskModelKey) : undefined;
       let count = 0;
       await this.changeFailures(db, (failures, now) => {
@@ -701,6 +703,7 @@ export class DesktopMlRepository {
   countCancel(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string): Promise<number> {
     const key = failureKey(grant.deviceId, taskModelKey);
     return this.db.transaction().execute(async (db) => {
+      await this.lockFailures(db);
       const leasedAt = await this.lastLease(db, grant, taskModelKey);
       let count = 0;
       await this.changeFailures(db, (failures, now) => {
@@ -785,12 +788,17 @@ export class DesktopMlRepository {
     return parsed.success ? parsed.data : {};
   }
 
+  /** The record's lock, held to the end of the transaction. Taking it again in the same transaction is free. */
+  private async lockFailures(db: Transaction<DesktopMlDatabase>): Promise<void> {
+    await sql`SELECT pg_advisory_xact_lock(912740, 2)`.execute(db);
+  }
+
   /** Read, change and write the record under one lock; entries with nothing left to say are dropped. */
   private async changeFailures(
     db: Transaction<DesktopMlDatabase>,
     change: (failures: DesktopModelFailures, now: Date) => void,
   ): Promise<void> {
-    await sql`SELECT pg_advisory_xact_lock(912740, 2)`.execute(db);
+    await this.lockFailures(db);
     const failures = await this.readFailures(db);
     const { rows } = await sql<{ now: Date }>`SELECT clock_timestamp() AS now`.execute(db);
     const now = new Date(rows[0].now);
