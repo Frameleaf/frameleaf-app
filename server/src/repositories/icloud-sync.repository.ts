@@ -2,8 +2,8 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, RawBuilder, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import { ICLOUD_MAX_CONCURRENCY, type ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
 import { MediaOperationDestination, MediaOperationKind, NotificationLevel, NotificationType } from 'src/enum.js';
 import { recordSyncIdentity, releaseSyncClaim } from 'src/repositories/icloud-identity.repository.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
@@ -596,7 +596,7 @@ export class ICloudSyncRepository {
           .execute(db)
           .then(({ rows }) => rows[0]);
       }
-      const maxConcurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? 4);
+      const maxConcurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? ICLOUD_MAX_CONCURRENCY);
       const maxStagingBytes = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES') ?? 100 * 1024 ** 3);
       // Match service configuration validation: malformed administrator limits deny
       // new admission. Already committed cleanup above must remain recoverable.
