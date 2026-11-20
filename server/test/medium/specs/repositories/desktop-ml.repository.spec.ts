@@ -884,6 +884,39 @@ describe('failures and hand-backs of a desktop holding several tasks', () => {
     expect(counts).toEqual([DESKTOP_CANCELS_BEFORE_FAILURE + 1, 0, 0]);
   });
 
+  it('counts the tasks a crash hands back as part of its one failure, and the next hand-back again', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    for (let expected = 1; expected <= DESKTOP_CANCELS_BEFORE_FAILURE; expected++) {
+      expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(expected);
+    }
+    // a crash with three in hand: `model-unavailable` for one, `cancelled` for the others
+    const [crashed, ...rest] = [await lease(), await lease(), await lease()];
+    expect(await sut.fail(desktop, crashed, 'model-unavailable')).toBe(true);
+    expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(1);
+    for (const id of rest) {
+      expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(0);
+    }
+    expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(DESKTOP_CANCELS_BEFORE_FAILURE + 1);
+  });
+
+  it('counts the hand-back of a lease made while the stop before it was being counted', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+    // the stop was written after this lease was made: the record says so
+    const id = await lease();
+    await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${desktop.deviceId}:${request.modelKey},cancelAt}`}::text[],
+      to_jsonb(to_char(now() AT TIME ZONE 'UTC' + interval '1 minute', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+      WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+    expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(2);
+  });
+
   it('keeps the hand-backs of an open window when the failure they sit beside is an hour old', async () => {
     const { sut, grants, request, lease } = await several();
     const [desktop] = grants;

@@ -109,7 +109,7 @@ it('hands a task straight back when the desktop hung up while its lease was bein
   expect(broker.fail).toHaveBeenCalledExactlyOnceWith(grant, 'attempt', 'cancelled');
   // it is a hand-back like any other, and past the cap a failure
   expect(broker.countCancel).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
-  expect(broker.countFailure).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
+  expect(broker.countFailure).toHaveBeenCalledExactlyOnceWith(grant, 'face:model', false);
   // a lease the desktop already held and is working on is left alone
   broker.fail.mockClear();
   broker.claim.mockResolvedValue({ ...lease, resumed: true });
@@ -365,10 +365,11 @@ describe('a desktop that keeps failing a model', () => {
     broker.countFailure.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
     await fail('inference-failed');
     await fail('model-unavailable');
+    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model', true);
     expect(broker.withdraw).not.toHaveBeenCalled();
     await fail('inference-failed');
     expect(broker.countFailure).toHaveBeenCalledTimes(3);
-    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model');
+    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model', false);
     expect(broker.withdraw).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
     expect(warnings().at(-1)).toBe(
       'Desktop worker lost face:model after 3 failures in a row (device device): it must qualify again',

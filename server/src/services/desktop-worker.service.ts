@@ -274,7 +274,8 @@ export class DesktopWorkerService {
       code === 'model-unavailable' ||
       (code === 'cancelled' && (await this.broker.countCancel(grant, modelKey)) > DESKTOP_CANCELS_BEFORE_FAILURE);
     if (!counts) return;
-    const failures = await this.broker.countFailure(grant, modelKey);
+    // `model-unavailable` is a crash: what the desktop hands back after it is part of that one failure
+    const failures = await this.broker.countFailure(grant, modelKey, code === 'model-unavailable');
     if (failures >= DESKTOP_FAILURES_BEFORE_WITHDRAWAL && (await this.broker.withdraw(grant, modelKey)))
       this.logger.warn(
         `Desktop worker lost ${modelKey} after ${failures} failures in a row (device ${grant.deviceId}): it must qualify again`,
