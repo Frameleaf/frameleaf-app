@@ -18,7 +18,7 @@ import { DB } from 'src/schema/index.js';
 export type { DesktopWorkerGrant } from 'src/repositories/desktop-worker.repository.js';
 import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
 import { type DesktopQualificationTables } from 'src/schema/tables/desktop-worker-qualification.table.js';
-import { desktopAccountPermitted } from 'src/utils/desktop-assistance-policy.js';
+import { desktopAccountPermitted, householdDevices } from 'src/utils/desktop-assistance-policy.js';
 import { type DesktopMlDisclosure, desktopMlDisclosureSchema } from 'src/utils/desktop-ml-disclosure.js';
 import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import {
@@ -83,6 +83,8 @@ const failuresSchema = z.record(
 /** Per desktop and model: failures in a row, when the last one was, and a hold after the model was withdrawn. */
 export type DesktopModelFailures = z.infer<typeof failuresSchema>;
 const failureKey = (deviceId: string, modelKey: string) => `${deviceId}:${modelKey}`;
+/** How many of a queue's next jobs are looked at to see whose photos are coming up. */
+const UPCOMING_JOBS = 64;
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
 const leaseEnd = (deadline: Date, credentialExpiry: Date) =>
   sql<Date>`least(${deadline}, ${credentialExpiry}, clock_timestamp() + ${sql.raw(`interval '${DESKTOP_LEASE_SECONDS} seconds'`)})`;
@@ -644,7 +646,8 @@ export class DesktopMlRepository {
    * (`scopes`; a queue is left out when its route would not send work to desktops or its task is off).
    *
    * A desktop holds one lease across every queue, so it counts once: for the queue whose job it is running,
-   * or, while free, for the first queue in `scopes` that it is qualified for and that has work waiting. Only
+   * or, while free, for the first queue in `scopes` that it is qualified for and that has a job coming up
+   * for an account it works for. Only
    * a desktop that is online, of a permitted account, with an unexpired qualification for a key in that
    * queue's scope counts, so the number falls as soon as a model changes, a qualification runs out or the
    * desktop stops asking for work.
@@ -685,18 +688,34 @@ export class DesktopMlRepository {
     if (rows.length === 0) return capacity;
     const policy = await readDesktopAssistancePolicy(this.db);
     if (!policy) return capacity;
-    const { rows: waiting } = await sql<{ queue: string }>`
-      SELECT name AS queue FROM job_queue WHERE name=ANY(${queues}::text[]) AND EXISTS (
-        SELECT 1 FROM job WHERE job.queue=job_queue.name AND job.state='pending' AND job."availableAt"<=now())`.execute(
-      this.db,
-    );
-    const hasWork = new Set(waiting.map((row) => row.queue));
+    // Whose photos the next jobs of each queue are for (the next few in claim order, so a long backlog is
+    // never read). A free desktop is counted only for a queue where a job it may take is coming up: its own
+    // account's photo, or anyone's when it works on everyone's photos. A job nobody's desktop can take runs
+    // on the next place in the order, and must not start on top of that place's own concurrency.
+    // ponytail: another account's Locked photo is counted for a household desktop though it will not take
+    // it; such a job then runs on the next place, one above its concurrency at worst.
+    const { rows: waiting } = await sql<{ queue: string; owners: string[] }>`
+      SELECT q.queue, array_remove(array_agg(DISTINCT a."ownerId"::text), NULL) AS owners
+      FROM unnest(${queues}::text[]) AS q(queue)
+      CROSS JOIN LATERAL (
+        SELECT j.data->>'id' AS id FROM job j
+        WHERE j.queue=q.queue AND j.state='pending' AND j."availableAt"<=now()
+        ORDER BY j."availableAt", j."createdAt", j.id LIMIT ${UPCOMING_JOBS}
+      ) upcoming
+      LEFT JOIN asset a ON a.id = CASE WHEN upcoming.id ~ '^[0-9a-fA-F-]{36}$' THEN upcoming.id::uuid END
+      GROUP BY q.queue`.execute(this.db);
+    const owners = new Map(waiting.map((row) => [row.queue, new Set(row.owners)]));
+    const household = householdDevices(policy);
     for (const row of rows) {
       if (!desktopAccountPermitted(policy, row.userId, row.isAdmin)) continue;
       const qualified = (queue: string) => scopes[queue].some((key) => row.held.includes(key));
+      const wanted = (queue: string) => {
+        const upcoming = owners.get(queue);
+        return !!upcoming && (upcoming.has(row.userId) || (household.has(row.id) && upcoming.size > 0));
+      };
       const queue = row.busy
         ? queues.find((name) => name === row.busyQueue && qualified(name))
-        : queues.find((name) => hasWork.has(name) && qualified(name));
+        : queues.find((name) => wanted(name) && qualified(name));
       if (queue) capacity[queue]++;
     }
     return capacity;

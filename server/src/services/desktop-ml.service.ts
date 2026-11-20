@@ -85,8 +85,6 @@ export class DesktopMlService {
    * A queue gets none unless its work would go to desktops first (the first place in its processing order
    * that is available now is the desktops), so with this server first and its AI answering, this server's
    * AI never runs more jobs than the administrator set. Read at most every two seconds for all queues.
-   * ponytail: a job whose owner has no desktop of their own falls to the next place in the order, which can
-   * briefly be this server above its concurrency when desktops come first; per-owner counting if that matters.
    */
   async queueCapacity(queue: string): Promise<number> {
     const now = performance.now();

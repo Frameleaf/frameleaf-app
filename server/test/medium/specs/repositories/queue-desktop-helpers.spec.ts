@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { QueueName, SystemMetadataKey } from 'src/enum.js';
 import { SqlQueueStore, setDesktopQueueCapacity } from 'src/queue/store.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
@@ -79,27 +80,34 @@ describe('desktop helpers widen a queue', () => {
     await sql`UPDATE desktop_worker_session SET "lastSeenAt" = now() WHERE id = ${session.id}::uuid`.execute(db);
     return { ...grant, userId: user.id };
   };
-  const enqueue = (count: number, queue: QueueName = QueueName.SmartSearch) =>
-    store.enqueue(
-      Array.from({ length: count }, (_, i) => ({
+  /** Jobs for photos of these accounts, in turn. */
+  const enqueue = async (count: number, queue: QueueName, owners: string[]) => {
+    const assets = new AssetRepository(db);
+    const ids: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const asset = await assets.create(mediumFactory.assetInsert({ ownerId: owners[i % owners.length] }));
+      ids.push(asset.id);
+    }
+    await store.enqueue(
+      ids.map((id) => ({
         queue,
         name: queue,
-        data: { id: randomUUID(), i },
+        data: { id },
         safeToRetry: true,
         sensitive: false,
         deadlineMs: 600_000,
       })),
     );
+  };
   const claimed = async (queue: QueueName = QueueName.SmartSearch) => (await store.claim(queue, worker)).length;
   /** The jobs a queue would start now, without starting them. */
   const capacity = async () => new DesktopMlRepository(db).helperCapacity(scopes);
 
   it('starts one job per desktop that can take the queue’s work now, on top of the server’s own concurrency', async () => {
-    await enqueue(8);
-    await helper([clip]);
-    await helper([clip]);
-    await helper([ocr]); // holds no model for this queue
-    await helper([`clip:${'d'.repeat(64)}`]); // holds the model the settings asked for before, not the one they ask for now
+    const first = await helper([clip]);
+    const second = await helper([clip]);
+    const other = await helper([ocr]); // holds no model for this queue
+    const old = await helper([`clip:${'d'.repeat(64)}`]); // holds the model the settings asked for before, not the one they ask for now
     const stale = await helper([clip]);
     await sql`UPDATE desktop_worker_session SET "lastSeenAt" = now() - interval '5 minutes' WHERE id = ${stale.sessionId}::uuid`.execute(
       db,
@@ -111,25 +119,31 @@ describe('desktop helpers widen a queue', () => {
     // Desktop AI processing is no longer on for this one's account
     await sql`UPDATE system_metadata SET value = value #- ${`{accounts,${off.userId}}`}::text[]
       WHERE key = ${SystemMetadataKey.FrameleafDesktopAssistance}`.execute(db);
+    // every one of them has photos waiting, so only its own state decides whether it counts
+    await enqueue(
+      14,
+      QueueName.SmartSearch,
+      [first, second, other, old, stale, expired, off].map((desktop) => desktop.userId),
+    );
     expect(await claimed()).toBe(3);
     expect(await claimed()).toBe(0);
   });
 
   it('keeps the server’s own concurrency when no helper is ready, or nothing counts them', async () => {
-    await enqueue(3);
-    expect(await claimed()).toBe(1);
-    await helper([clip]);
+    const desktop = await helper([clip]);
     setDesktopQueueCapacity(null);
+    await enqueue(3, QueueName.SmartSearch, [desktop.userId]);
+    expect(await claimed()).toBe(1);
     expect((await capacity())[QueueName.SmartSearch]).toBe(1);
     // nothing registered (a process without the desktop service): the administrator's concurrency is the limit
     expect(await claimed()).toBe(0);
   });
 
   it('comes back down when the model changes, a qualification runs out or the desktop stops asking', async () => {
-    await enqueue(1);
     const one = await helper([clip]);
     const two = await helper([clip]);
     const three = await helper([clip]);
+    await enqueue(3, QueueName.SmartSearch, [one.userId, two.userId, three.userId]);
     expect((await capacity())[QueueName.SmartSearch]).toBe(3);
     // one desktop's qualification runs out
     await sql`UPDATE desktop_worker_qualification SET "createdAt" = now() - interval '2 hours',
@@ -152,13 +166,40 @@ describe('desktop helpers widen a queue', () => {
     expect(await claimed()).toBe(1);
   });
 
+  it('counts a desktop only when a photo it may take is coming up', async () => {
+    const desktop = await helper([clip]);
+    const someone = await helper([ocr]);
+    // the next jobs are all another account's photos: this desktop would not take them, so starting one more
+    // job would only put it on the next place in the order, on top of that place's own concurrency
+    await enqueue(3, QueueName.SmartSearch, [someone.userId]);
+    expect((await capacity())[QueueName.SmartSearch]).toBe(0);
+    expect(await claimed()).toBe(1);
+    // a computer that works on everyone's photos does take them
+    await sql`UPDATE system_metadata SET value = jsonb_set(value, '{household}',
+      ${JSON.stringify({ revisionId: randomUUID(), devices: [desktop.deviceId] })}::text::jsonb)
+      WHERE key = ${SystemMetadataKey.FrameleafDesktopAssistance}`.execute(db);
+    expect((await capacity())[QueueName.SmartSearch]).toBe(1);
+    await sql`UPDATE system_metadata SET value = value - 'household'
+      WHERE key = ${SystemMetadataKey.FrameleafDesktopAssistance}`.execute(db);
+    expect((await capacity())[QueueName.SmartSearch]).toBe(0);
+    // and so does its own account's photo, once one is among the next jobs
+    await enqueue(1, QueueName.SmartSearch, [desktop.userId]);
+    expect((await capacity())[QueueName.SmartSearch]).toBe(1);
+    // a job that is not for a photo at all is nobody's
+    scopes[QueueName.Ocr] = [clip];
+    await store.enqueue([
+      { queue: QueueName.Ocr, name: QueueName.Ocr, data: {}, safeToRetry: true, sensitive: false, deadlineMs: 600_000 },
+    ]);
+    expect((await capacity())[QueueName.Ocr]).toBe(0);
+  });
+
   it('counts a desktop once: it holds one lease across all three queues', async () => {
-    await helper([clip, face, ocr]);
-    await enqueue(3, QueueName.FaceDetection);
-    await enqueue(3, QueueName.Ocr);
+    const { userId } = await helper([clip, face, ocr]);
+    await enqueue(3, QueueName.FaceDetection, [userId]);
+    await enqueue(3, QueueName.Ocr, [userId]);
     // a free desktop is counted for the first queue it can work that has jobs waiting
     expect(await capacity()).toEqual({ [QueueName.SmartSearch]: 0, [QueueName.FaceDetection]: 1, [QueueName.Ocr]: 0 });
-    await enqueue(3);
+    await enqueue(3, QueueName.SmartSearch, [userId]);
     expect(await capacity()).toEqual({ [QueueName.SmartSearch]: 1, [QueueName.FaceDetection]: 0, [QueueName.Ocr]: 0 });
     expect(await claimed(QueueName.SmartSearch)).toBe(2);
     expect(await claimed(QueueName.FaceDetection)).toBe(1);
@@ -167,8 +208,8 @@ describe('desktop helpers widen a queue', () => {
 
   it('counts a desktop for the queue whose job it is running, so this server keeps its own slot there', async () => {
     const desktop = await helper([clip, face, ocr]);
-    await enqueue(3, QueueName.FaceDetection);
-    await enqueue(3, QueueName.Ocr);
+    await enqueue(3, QueueName.FaceDetection, [desktop.userId]);
+    await enqueue(3, QueueName.Ocr, [desktop.userId]);
     const [job] = await store.claim(QueueName.Ocr, worker, 1);
     // the job the desktop took became a desktop task, which it now holds a lease for
     const { rows } = await sql<{ id: string }>`
