@@ -14,6 +14,8 @@
 #   withdraw - kill switch: mark a release withdrawn so servers stop offering it, and restore an earlier
 #              release's verified, signed images as `release` and `latest`.
 # `dry-run` (the default) stops before anything is pushed, signed or edited.
+# Forgejo passes dispatch inputs as strings (FL-1687), where 'false' is truthy, so every condition
+# compares `dry-run` with both the boolean and the string.
 name: Deploy production
 
 on:
@@ -58,7 +60,7 @@ permissions: {}
 jobs:
   candidate:
     name: Verify the verified candidate
-    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && (github.ref == 'refs/heads/main' || inputs.dry-run)
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && (github.ref == 'refs/heads/main' || inputs.dry-run == true || inputs.dry-run == 'true')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -133,7 +135,7 @@ jobs:
   release:
     name: Promote, sign and publish
     needs: [candidate, deploy-test]
-    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && !inputs.dry-run && github.ref == 'refs/heads/main'
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && inputs.dry-run != true && inputs.dry-run != 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     environment: production
     permissions:
@@ -202,7 +204,7 @@ jobs:
   flags:
     name: Apply ${{ inputs.action }}
     needs: flags-plan
-    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release' && !inputs.dry-run && github.ref == 'refs/heads/main'
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action != 'release' && inputs.dry-run != true && inputs.dry-run != 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     environment: production
     permissions:
@@ -238,7 +240,7 @@ jobs:
   # FL-1678: copy the promoted images to Docker Hub and Forgejo (GHCR keeps them too).
   mirror:
     needs: [release, flags]
-    if: ${{ !cancelled() && github.server_url != 'https://github.com' && !inputs.dry-run && github.ref == 'refs/heads/main' && (needs.release.result == 'success' || needs.flags.result == 'success') }}
+    if: ${{ !cancelled() && github.server_url != 'https://github.com' && inputs.dry-run != true && inputs.dry-run != 'true' && github.ref == 'refs/heads/main' && (needs.release.result == 'success' || needs.flags.result == 'success') }}
     uses: ./.github/workflows/mirror-images.yml
     with:
       release-variants: true
