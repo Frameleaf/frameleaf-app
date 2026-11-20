@@ -110,18 +110,6 @@ it('shares the index between desktop runtime revisions of the same model', async
   await repository.assertCurrent(active);
   expect(await repository.modelName()).toBe(modelOf(space).modelName);
 });
-it('gives this server’s own vectors a place in an index an earlier release admitted', async () => {
-  const active = await repository.admit(space.spaceKey);
-  await sql`DELETE FROM desktop_clip_producer WHERE key = 'legacy'`.execute(db);
-  await expect(write('smart_search', null)).rejects.toThrow();
-  await repository.admitServerVectors(active);
-  await write('smart_search', null);
-  expect(await repository.getActive()).toEqual(active);
-  // only for the index it was asked for
-  await expect(
-    new DesktopClipIndexRepository(db).admitServerVectors({ ...active, revisionId: randomUUID() }),
-  ).rejects.toThrow('desktop_clip_index_changed');
-});
 it('lets an index admitted by an earlier release take the other revisions once one is granted', async () => {
   const active = await repository.admit(space.spaceKey);
   // as an earlier release left it: only the first desktop's three encoders, and no place for this server's own

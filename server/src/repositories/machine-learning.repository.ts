@@ -684,8 +684,6 @@ export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
 export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
   private desktopPoolSelector: DesktopPoolSelector | null = null;
-  /** Endpoint and model identity → until when this server's AI is known to refuse that identity. */
-  private bindingRefused = new Map<string, number>();
   /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
   private cloudProber: CloudMlProber | null = null;
   private probeCache = new Map<
@@ -1923,7 +1921,9 @@ export class MachineLearningRepository implements RestorationInference {
       }
       if (bound && response.status === 409 && readDetail(body) === 'model_identity_unavailable') {
         throw new MachineLearningBindingRefusedError(
-          `Machine learning request '${this.redact(config)}' to ${target} names a model identity this worker does not serve`,
+          `model_identity_unavailable: the AI at ${target} does not hold the catalogue model a desktop was granted ` +
+            `(its build is not one of the catalogue's runtime revisions, or its model files differ), so it cannot ` +
+            `do '${this.redact(config)}'. Update this server's AI to a release whose catalogue names it.`,
         );
       }
       if (response.status === 503) {
@@ -2242,48 +2242,35 @@ export class MachineLearningRepository implements RestorationInference {
 
   async encodeImage(selection: MlSelection, imagePath: string, { modelName }: MachineLearningConfig['clip']) {
     const selected = await this.clipIndex?.selectProfile(modelName, 'image');
+    if (selected) return this.encodeAdmittedClip(selection, { imagePath }, selected);
     const request = { [ModelTask.SEARCH]: { [ModelType.VISUAL]: { modelName } } };
-    const plain = async () =>
-      (await this.predictOrWait<ClipVisualResponse>(selection, { imagePath }, request))[ModelTask.SEARCH];
-    if (selected) return this.encodeAdmittedClip(selection, { imagePath }, selected, plain);
-    const embedding = await plain();
+    const response = await this.predictOrWait<ClipVisualResponse>(selection, { imagePath }, request);
     if (await this.clipIndex?.getActive()) throw new Error('desktop_clip_index_changed');
-    return embedding;
+    return response[ModelTask.SEARCH];
   }
 
   /**
-   * Smart search once a desktop has been granted it. A desktop produces under its qualified model identity.
-   * This server's own AI is asked under the admitted identity too, and when its build is not one of the
-   * catalogue's runtime revisions (it refuses the identity) it goes on with the plain request it used before
-   * any desktop helped: the same configured model, stored as this server's own vectors, which the admitted
-   * index accepts. The refusal is remembered for a while so every request does not ask twice.
+   * Smart search once a desktop has been granted it: every vector is made under the admitted catalogue
+   * identity, by a desktop or by this server's own AI. There is no asking by model name any more. When this
+   * server's AI does not serve that identity (its build is not one of the catalogue's runtime revisions, or
+   * it lacks exactly those model files) the request fails, by name, and nothing is written.
    */
-  private async encodeAdmittedClip<T>(
+  private async encodeAdmittedClip(
     selection: MlSelection,
     payload: ModelPayload,
     selected: { binding: DesktopClipIndexBinding; profile: DesktopModelProfile },
-    plain: () => Promise<T>,
   ) {
-    const key = `${selection.endpoint.url}\u{0}${selected.profile.modelKey}`;
-    if (selection.desktopClip || (this.bindingRefused.get(key) ?? 0) <= Date.now()) {
-      try {
-        const result = await this.encodeBoundClip(selection, payload, selected.profile);
-        await this.clipIndex!.assertCurrent(selected.binding);
-        return result;
-      } catch (error) {
-        if (selection.desktopClip || !(error instanceof MachineLearningBindingRefusedError)) throw error;
-        if (!this.bindingRefused.has(key))
-          this.logger.warn(
-            `The AI at ${selection.kind} destination ${selection.destinationId} is not a catalogue runtime revision; its smart search keeps using the configured model by name`,
-          );
-        if (this.bindingRefused.size > 256) this.bindingRefused.clear();
-        this.bindingRefused.set(key, Date.now() + MODEL_RUNTIME_UNAVAILABLE_TTL_MS);
-      }
+    try {
+      const result = await this.encodeBoundClip(selection, payload, selected.profile);
+      await this.clipIndex!.assertCurrent(selected.binding);
+      return result;
+    } catch (error) {
+      if (error instanceof MachineLearningBindingRefusedError && !selection.desktopClip)
+        this.logger.warn(
+          `Smart search on ${selection.kind} destination ${selection.destinationId} failed: ${error.message}`,
+        );
+      throw error;
     }
-    await this.clipIndex!.admitServerVectors(selected.binding);
-    const result = await plain();
-    await this.clipIndex!.assertCurrent(selected.binding);
-    return result;
   }
 
   async encodeBoundClip(selection: MlSelection, payload: ModelPayload, profile: DesktopModelProfile) {
@@ -2340,12 +2327,11 @@ export class MachineLearningRepository implements RestorationInference {
       throw new CloudJobsUnavailableError('search text');
     }
     const selected = await this.clipIndex?.selectProfile(modelName, 'text', language);
+    if (selected) return this.encodeAdmittedClip(selection, { text }, selected);
     const request = { [ModelTask.SEARCH]: { [ModelType.TEXTUAL]: { modelName, options: { language } } } };
-    const plain = async () => (await this.predict<ClipTextualResponse>(selection, { text }, request))[ModelTask.SEARCH];
-    if (selected) return this.encodeAdmittedClip(selection, { text }, selected, plain);
-    const embedding = await plain();
+    const response = await this.predict<ClipTextualResponse>(selection, { text }, request);
     if (await this.clipIndex?.getActive()) throw new Error('desktop_clip_index_changed');
-    return embedding;
+    return response[ModelTask.SEARCH];
   }
 
   async ocr(

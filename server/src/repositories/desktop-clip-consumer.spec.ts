@@ -22,13 +22,12 @@ const selection: MlSelection = {
   record: vi.fn(),
 };
 const binding = { revisionId: 'revision', space: {} };
-let index: Record<'selectProfile' | 'assertCurrent' | 'admitServerVectors', ReturnType<typeof vi.fn>>;
+let index: Record<'selectProfile' | 'assertCurrent', ReturnType<typeof vi.fn>>;
 let ml: MachineLearningRepository;
 beforeEach(() => {
   index = {
     selectProfile: vi.fn(),
     assertCurrent: vi.fn().mockResolvedValue(undefined),
-    admitServerVectors: vi.fn().mockResolvedValue(undefined),
   };
   ml = new MachineLearningRepository(
     LoggingRepository.create(),
@@ -114,9 +113,8 @@ it.each(['image', 'text'])('refuses legacy %s output when admission occurs durin
 describe('this server’s own AI after a desktop was granted smart search', () => {
   const image = profiles.find((p) => p.spec.fixtureKind === 'image')!;
   const text = profiles.find((p) => p.spec.fixtureKind === 'text' && p.modelName === image.modelName)!;
-  const refused = () => new MachineLearningBindingRefusedError('names a model identity this worker does not serve');
-  const encode = () =>
-    ml.encodeImage(selection, '/synthetic/image', { ...defaults.machineLearning.clip, modelName: image.modelName });
+  const refused = () =>
+    new MachineLearningBindingRefusedError('model_identity_unavailable: the AI does not hold the catalogue model');
   let plain: MockInstance;
   beforeEach(() => {
     index.selectProfile.mockImplementation((_name: string, kind: string) => ({
@@ -128,54 +126,25 @@ describe('this server’s own AI after a desktop was granted smart search', () =
       .mockResolvedValue({ clip: '[0.2]' });
   });
 
-  it('keeps embedding and searching by model name when its build is not a catalogue runtime revision', async () => {
+  it('fails by name when its build is not a catalogue runtime revision, and never asks by model name', async () => {
+    const warn = vi.spyOn(LoggingRepository.prototype, 'warn').mockImplementation(() => {});
     const bound = vi.spyOn(ml, 'encodeBoundClip').mockRejectedValue(refused());
-    // the vector is this server's own: no producer key, which the admitted index accepts
-    expect(await encode()).toBe('[0.2]');
-    expect(index.admitServerVectors).toHaveBeenCalledWith(binding);
-    expect(plain).toHaveBeenCalledWith(
-      selection,
-      { imagePath: '/synthetic/image' },
-      { clip: { visual: { modelName: image.modelName } } },
-      undefined,
-      undefined,
-    );
-    // the index is still the one the request started under
-    expect(index.assertCurrent).toHaveBeenLastCalledWith(binding);
-    // the refusal is remembered: the next photo does not ask twice
-    await encode();
-    expect(bound).toHaveBeenCalledTimes(1);
-    expect(plain).toHaveBeenCalledTimes(2);
-    // search text is its own identity, asked once, then by name too
-    expect(await ml.encodeText(selection, 'a dog', { modelName: image.modelName })).toBe('[0.2]');
-    expect(await ml.encodeText(selection, 'a cat', { modelName: image.modelName })).toBe('[0.2]');
-    expect(bound).toHaveBeenCalledTimes(2);
-  });
-
-  it('asks under the catalogue identity again after a while (a new build may serve it)', async () => {
-    const bound = vi.spyOn(ml, 'encodeBoundClip').mockRejectedValue(refused());
-    await encode();
-    vi.useFakeTimers({ now: Date.now() + 11 * 60 * 1000 });
-    try {
-      bound.mockResolvedValue({ embedding: '[0.1]', modelKey: image.modelKey });
-      expect(await encode()).toEqual({ embedding: '[0.1]', modelKey: image.modelKey });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('never answers for a desktop that refused, or after any other failure, or under a changed index', async () => {
-    const bound = vi.spyOn(ml, 'encodeBoundClip').mockRejectedValue(refused());
-    const desktop = { ...selection, desktopClip: vi.fn() };
+    // a photo is not embedded, and nothing is written for it
     await expect(
-      ml.encodeImage(desktop, '/synthetic/image', { ...defaults.machineLearning.clip, modelName: image.modelName }),
-    ).rejects.toBeInstanceOf(MachineLearningBindingRefusedError);
-    bound.mockRejectedValue(new Error('failed with status 500'));
-    await expect(encode()).rejects.toThrow('failed with status 500');
+      ml.encodeImage(selection, '/synthetic/image', { ...defaults.machineLearning.clip, modelName: image.modelName }),
+    ).rejects.toThrow('model_identity_unavailable');
+    // a search for words fails the same way
+    await expect(ml.encodeText(selection, 'a dog', { modelName: image.modelName })).rejects.toBeInstanceOf(
+      MachineLearningBindingRefusedError,
+    );
     expect(plain).not.toHaveBeenCalled();
-    bound.mockRejectedValue(refused());
-    index.admitServerVectors.mockRejectedValue(new Error('desktop_clip_index_changed'));
-    await expect(encode()).rejects.toThrow('desktop_clip_index_changed');
-    expect(plain).not.toHaveBeenCalled();
+    // asked again each time: nothing remembers the refusal, so a fixed AI works at once
+    expect(bound).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(
+      'Smart search on lan destination selected failed: model_identity_unavailable: the AI does not hold the catalogue model',
+    );
+    bound.mockResolvedValue({ embedding: '[0.1]', modelKey: text.modelKey });
+    expect(await ml.encodeText(selection, 'a dog', { modelName: image.modelName })).toBe('[0.1]');
+    warn.mockRestore();
   });
 });
