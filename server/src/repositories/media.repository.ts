@@ -995,7 +995,7 @@ export class MediaRepository {
         '-select_streams',
         String(streamIndex),
         '-show_entries',
-        'packet=duration,flags',
+        'packet=pts,flags',
         '-of',
         'csv=p=0',
         input,
@@ -1005,8 +1005,9 @@ export class MediaRepository {
     const lifetime = superviseMediaProcess(ffprobe, { signal });
     let packets = 0;
     let hidden = 0;
-    let shortest = Infinity;
-    let longest = 0;
+    // ponytail: every shown packet's time is kept (8 bytes each: 20 MB for 6 hours at 120 fps), since
+    // the grid is fitted to the first and last shown frame in presentation order
+    const shown: number[] = [];
     let unknown = false;
     let stderr = '';
     let remainder = '';
@@ -1020,14 +1021,10 @@ export class MediaRepository {
       // flags are `K`, `D` and `C` in fixed places: `_D_` is a packet the edit list drops
       if (flags.includes('D')) {
         hidden++;
+      } else if (/^-?\d+$/.test(stated)) {
+        shown.push(Number(stated));
       } else {
-        const duration = Number(stated);
-        if (duration > 0) {
-          shortest = Math.min(shortest, duration);
-          longest = Math.max(longest, duration);
-        } else {
-          unknown = true;
-        }
+        unknown = true;
       }
       lifetime.progress(1);
     };
@@ -1056,7 +1053,7 @@ export class MediaRepository {
           return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
         }
         count(remainder);
-        resolve({ packets, hidden, uneven: isUnevenCadence(shortest, longest, unknown) });
+        resolve({ packets, hidden, uneven: unknown || isUnevenCadence(shown) });
       });
     });
   }

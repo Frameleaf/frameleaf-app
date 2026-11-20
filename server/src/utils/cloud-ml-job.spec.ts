@@ -218,28 +218,73 @@ describe('the frame rate declared to Frameleaf Cloud (FL-1725)', () => {
   });
 });
 
-describe('a cadence that changes (FL-1725)', () => {
+describe('frames off an even grid (FL-1725)', () => {
+  /** Presentation times from per-frame durations, starting at `start`. */
+  const times = (durations: number[], start = 0) => {
+    const pts: number[] = [];
+    let at = start;
+    for (const duration of durations) {
+      pts.push(at);
+      at += duration;
+    }
+    return pts;
+  };
+  /** Frameleaf Cloud's own test (`check_clip`): every frame within one frame period of the grid. */
+  const cloudRefuses = (pts: number[]) => {
+    const sorted = pts.toSorted((a, b) => a - b);
+    const step = (sorted.at(-1)! - sorted[0]) / (sorted.length - 1);
+    return sorted.some((time, index) => Math.abs(time - (sorted[0] + index * step)) > step);
+  };
+
   it.each([
-    ['30 frames a second in milliseconds', 33, 34],
-    ['60 frames a second in milliseconds', 16, 17],
-    ['29.97 frames a second in 1/90000', 3003, 3003],
-    ['one frame rate', 512, 512],
-  ])('is not the rounding of %s', (_, shortest, longest) => {
-    expect(isUnevenCadence(shortest, longest, false)).toBe(false);
+    ['one frame rate', times(Array.from({ length: 300 }, () => 512))],
+    ['30 frames a second in milliseconds', times(Array.from({ length: 300 }, (_, i) => (i % 3 === 2 ? 34 : 33)))],
+    [
+      '29.97 frames a second in 1/90000',
+      times(
+        Array.from({ length: 300 }, () => 3003),
+        1001,
+      ),
+    ],
+    ['frames in decode order', [0, 1536, 512, 1024, 3072, 2048, 2560]],
+  ])('is not %s', (_, pts) => {
+    expect(isUnevenCadence(pts)).toBe(false);
   });
 
   it.each([
-    ['30 and 25 frames a second in 1/12000', 400, 480],
-    ['every third frame dropped', 512, 1536],
-    ['30 and 29 frames a second in 1/90000', 3000, 3103],
-  ])('is %s', (_, shortest, longest) => {
-    expect(isUnevenCadence(shortest, longest, false)).toBe(true);
+    [
+      '30 then 25 frames a second in 1/12000',
+      times([...Array.from({ length: 30 }, () => 400), ...Array.from({ length: 30 }, () => 480)]),
+    ],
+    [
+      'every third frame dropped',
+      times([...Array.from({ length: 30 }, () => 512), ...Array.from({ length: 30 }, () => 1536)]),
+    ],
+    [
+      '1× then 1.4× durations',
+      times([...Array.from({ length: 50 }, () => 100), ...Array.from({ length: 50 }, () => 140)]),
+    ],
+    // within 2% of each other frame to frame, yet many frames off the grid over a long clip
+    [
+      'a rate that drifts by 2%',
+      times([...Array.from({ length: 1000 }, () => 1000), ...Array.from({ length: 1000 }, () => 1020)]),
+    ],
+    ['all frames at one time', [5, 5, 5]],
+  ])('is %s', (_, pts) => {
+    expect(isUnevenCadence(pts)).toBe(true);
   });
 
-  it('is assumed when a shown packet has no duration', () => {
-    expect(isUnevenCadence(512, 512, true)).toBe(true);
-    expect(isUnevenCadence(Infinity, 0, true)).toBe(true);
-    expect(isUnevenCadence(Infinity, 0, false)).toBe(false);
+  it("is never looser than the cloud's test", () => {
+    let seed = 7;
+    const random = () => (seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648) / 2_147_483_648;
+    for (let run = 0; run < 500; run++) {
+      const pts = times(
+        Array.from({ length: 20 + Math.floor(random() * 200) }, () => 500 + Math.floor(random() * 400 * random())),
+      );
+      if (!isUnevenCadence(pts)) {
+        expect(cloudRefuses(pts)).toBe(false);
+      }
+    }
   });
 });
 

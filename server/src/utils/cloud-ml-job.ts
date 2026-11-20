@@ -238,14 +238,23 @@ export const cloudSmoothMotionRefusal = (fps: number, factor: number): string | 
 };
 
 /**
- * Whether a stream's frames last unevenly, from the shortest and longest shown packet durations in its own
- * time base ticks and whether any shown packet had no duration. A difference of one tick, or 2% of a frame,
- * is the rounding of a coarse time base (33 and 34 ticks of a millisecond at 30 frames a second); anything
- * more is a frame rate that changes (400 and 480 ticks of 1/12000 is 30 and 25 frames a second). A packet
- * without a duration tells nothing about the cadence, so it never counts as even.
+ * Whether a stream's shown frames are off an even grid, from their presentation times in any order.
+ * Frameleaf Cloud's worker refuses a clip, after the job is leased and charged, unless every shown frame
+ * is within one frame period of `t0 + i * step`, where `step = (tLast - t0) / (n - 1)`. This is the same
+ * test with half a frame period, so a stream copied here always passes there; a coarse time base's
+ * one-tick rounding passes, a rate that changes or drifts does not.
  */
-export const isUnevenCadence = (shortest: number, longest: number, unknown: boolean): boolean =>
-  unknown || (longest > 0 && longest - shortest > Math.max(1, shortest * 0.02));
+export const isUnevenCadence = (times: readonly number[]): boolean => {
+  if (times.length < 3) {
+    return false;
+  }
+  const sorted = times.toSorted((a, b) => a - b);
+  const step = (sorted.at(-1)! - sorted[0]) / (sorted.length - 1);
+  if (!(step > 0)) {
+    return true;
+  }
+  return sorted.some((time, index) => Math.abs(time - (sorted[0] + index * step)) > step / 2);
+};
 
 /** The `request` of a restoration or Smooth motion estimate and job (FC-47, FC-48). */
 export const cloudVideoRequest = (
