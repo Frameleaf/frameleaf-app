@@ -90,6 +90,21 @@ it('cancels a waiting claim when the outbound connection closes', async () => {
   controller.abort();
   await expect(result).rejects.toThrow();
 });
+it('hands a task straight back when the desktop hung up while its lease was being made', async () => {
+  const controller = new AbortController();
+  const lease = { task: { id: 'task' }, attempt: { id: 'attempt' }, resumed: false };
+  broker.claim.mockImplementation(() => {
+    controller.abort();
+    return Promise.resolve(lease);
+  });
+  await expect(service.claim('token', 'proof', '{"modelKeys":["m"],"waitMs":0}', controller.signal)).rejects.toThrow();
+  expect(broker.fail).toHaveBeenCalledExactlyOnceWith(grant, 'attempt', 'cancelled');
+  // a lease the desktop already held and is working on is left alone
+  broker.fail.mockClear();
+  broker.claim.mockResolvedValue({ ...lease, resumed: true });
+  await expect(service.claim('token', 'proof', '{"modelKeys":["m"],"waitMs":0}', controller.signal)).rejects.toThrow();
+  expect(broker.fail).not.toHaveBeenCalled();
+});
 it('binds input and result proofs to the exact attempt and passes only scoped input', async () => {
   broker.input.mockResolvedValue(Buffer.from('fixture'));
   broker.complete.mockResolvedValue(true);

@@ -125,13 +125,10 @@ export class DesktopMlService {
       : sources?.size === 1
         ? sources.values().next().value
         : undefined;
-    if (!source) {
-      if (Object.keys(policy.accounts).length > 0) {
-        deferJobUntilDependency('source-unavailable');
-        throw new Error('desktop_pool_source_required');
-      }
-      return selection;
-    }
+    // Whose photo this is cannot be told (no source was recorded for the job, or several were and the job did
+    // not say which): no desktop may be chosen for it, so the destination itself does the work. It must not
+    // wait: nothing that would settle the owner is coming.
+    if (!source) return selection;
     const ownerId = source.ownerId;
     // FL-1484: the owner's own desktop assistance, else a computer that works on everyone's photos at home
     const account = desktopAuthorityFor(policy, ownerId);
@@ -563,7 +560,9 @@ export class DesktopMlService {
       deferJobUntilDependency('destination-unavailable');
       throw new Error('desktop_helper_unavailable');
     }
-    const pendingUntil = performance.now() + Math.max(0, Math.min(QUEUE_TIMING.scan, remaining - cleanupReserve));
+    // How long a task may sit with no desktop holding it before the job stops waiting on desktops.
+    const unclaimedWindow = Math.max(0, Math.min(QUEUE_TIMING.scan, remaining - cleanupReserve));
+    let unclaimed = { generation: 0, since: performance.now() };
     const parent = jobSignal();
     const signal = AbortSignal.any([
       AbortSignal.timeout(remaining),
@@ -597,9 +596,15 @@ export class DesktopMlService {
             throw new Error('desktop_helper_unavailable');
           }
         }
-        if (canDefer && row.state === 'pending' && row.generation === 0 && performance.now() >= pendingUntil) {
-          deferJobUntilDependency('destination-unavailable');
-          throw new Error('desktop_helper_unavailable');
+        // Nobody took it, or the desktop that had it handed it back (paused, stopped) or failed it, and
+        // nobody has taken it since: the job goes back to its processing order instead of waiting here.
+        if (canDefer && row.state === 'pending') {
+          if (row.generation !== unclaimed.generation)
+            unclaimed = { generation: row.generation, since: performance.now() };
+          if (performance.now() - unclaimed.since >= unclaimedWindow) {
+            deferJobUntilDependency('destination-unavailable');
+            throw new Error('desktop_helper_unavailable');
+          }
         }
         if (row.state === 'completed') {
           if (row.authorityKey !== options.request.authorityKey || row.modelKey !== options.request.modelKey)

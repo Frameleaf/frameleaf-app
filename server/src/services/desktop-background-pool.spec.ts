@@ -111,7 +111,7 @@ it.each(['interactive', 'other-account', 'other-workload'])('preserves %s select
   }
   await queueExecution.run(context, async () => expect(await select('asset')).toBe(selection));
 });
-it.each(['unknown', 'ambiguous'])('waits without falling back for %s authority', async (mode) => {
+it.each(['unknown', 'ambiguous'])('leaves a job with %s ownership on the destination itself', async (mode) => {
   if (mode === 'unknown') context.sourceAuthorities!.clear();
   else
     context.sourceAuthorities!.set('other', {
@@ -120,8 +120,10 @@ it.each(['unknown', 'ambiguous'])('waits without falling back for %s authority',
       assertCurrent: vi.fn(),
     });
   await queueExecution.run(context, async () => {
-    await expect(select(mode === 'ambiguous' ? undefined : 'asset')).rejects.toThrow();
-    expect(context.dependencyReason).toBe('source-unavailable');
+    // no desktop may be chosen without knowing whose photo it is; the job runs, it does not wait
+    expect(await select(mode === 'ambiguous' ? undefined : 'asset')).toBe(selection);
+    expect(context.dependencyReason).toBeUndefined();
+    expect(policies.assertCurrent).not.toHaveBeenCalled();
   });
 });
 it('leaves smart search on the destination itself while no desktop has been granted it', async () => {

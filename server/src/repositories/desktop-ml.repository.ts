@@ -66,6 +66,8 @@ export type DesktopMlClaim = {
   qualificationId: string;
   workerModelKey: string;
   qualificationExpiresAt: Date;
+  /** The lease this desktop already held, returned again; not one made by this claim. */
+  resumed: boolean;
 };
 export type DesktopFailureCode = 'inference-failed' | 'input-invalid' | 'model-unavailable' | 'cancelled';
 export type DesktopMlRequest = Pick<Task, 'ownerId' | 'modelKey' | 'authorityKey' | 'config' | 'inputKind'> & {
@@ -190,6 +192,7 @@ export class DesktopMlRepository {
           qualificationId: qualification.id,
           workerModelKey: qualification.modelKey,
           qualificationExpiresAt: new Date(qualification.expiresAt),
+          resumed: true,
         };
       }
 
@@ -284,6 +287,7 @@ export class DesktopMlRepository {
         qualificationId: qualification.id,
         workerModelKey: qualification.modelKey,
         qualificationExpiresAt: new Date(qualification.expiresAt),
+        resumed: false,
       };
     });
   }

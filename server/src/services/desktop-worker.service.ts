@@ -125,6 +125,15 @@ export class DesktopWorkerService {
       do {
         signal.throwIfAborted();
         const claim = await this.broker.claim(grant, request.modelKeys);
+        // The desktop hung up while this lease was being made: it will never hear of it. Hand the task
+        // straight back, so another desktop takes it now instead of when the lease runs out.
+        if (claim && !claim.resumed && signal.aborted) {
+          try {
+            await this.broker.fail(grant, claim.attempt.id, 'cancelled');
+          } catch {
+            // The lease then runs out by itself, as it did before.
+          }
+        }
         signal.throwIfAborted();
         if (claim)
           return {
