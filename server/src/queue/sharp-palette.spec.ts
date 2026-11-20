@@ -73,6 +73,15 @@ describe('isolated representative palette decoding', () => {
     ]);
     expect(result.swatches).toEqual([expect.objectContaining({ hex: '#ff0000', weight: 1 })]);
   });
+  it('reads the colours of a PNG that is cut short, as the thumbnail job does', async () => {
+    const whole = await sharp({ create: { width: 256, height: 256, channels: 4, background: '#ff0000' } })
+      .png({ compressionLevel: 0 })
+      .toBuffer();
+    const cut = whole.subarray(0, Math.floor(whole.length / 2));
+    await expect(sharp(cut, { failOn: 'error' }).raw().toBuffer()).rejects.toThrow();
+    const result = await pool.run('extractAssetPalette', [cut, options]);
+    expect(result.swatches[0]).toEqual(expect.objectContaining({ hex: '#ff0000' }));
+  });
   it('rejects corrupt and oversized sources within the existing child budget', async () => {
     await expect(pool.run('extractAssetPalette', [Buffer.from('corrupt'), options])).rejects.toThrow();
     await pool.close();
