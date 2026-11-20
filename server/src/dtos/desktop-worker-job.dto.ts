@@ -9,6 +9,12 @@ export const DesktopClaimRequestSchema = z.strictObject({
    * 409 `desktop_qualification_hold` at once. Without it a claim answers as it always has.
    */
   reportWithdrawn: z.boolean().optional(),
+  /**
+   * How many more tasks this desktop can take now. With it a desktop may hold several leases: each claim
+   * returns one new lease (never one it already holds), while it holds fewer tasks of that kind of work than
+   * the queue's Jobs setting. Without it a desktop holds one lease, as it always has.
+   */
+  slots: z.number().int().min(1).max(64).optional(),
 });
 export const DesktopHeartbeatSchema = z.strictObject({ id: z.uuid() });
 export const DesktopResultSchema = z.strictObject({ result: z.record(z.string(), z.json()) });

@@ -83,6 +83,38 @@ const failuresSchema = z.record(
 /** Per desktop and model: failures in a row, when the last one was, and a hold after the model was withdrawn. */
 export type DesktopModelFailures = z.infer<typeof failuresSchema>;
 const failureKey = (deviceId: string, modelKey: string) => `${deviceId}:${modelKey}`;
+/**
+ * The most desktop tasks open at once. Each holds its input (a preview image, at most 16 MB) in the
+ * database until a desktop returns it. It was 32 when a desktop held one lease; with several leases per
+ * desktop that would cap a few desktops at a handful of tasks each.
+ * ponytail: a fixed bound; scale it with the desktops' total capacity if 256 is ever the limit in practice.
+ */
+export const MAX_OPEN_TASKS = 256;
+/** The most tasks one desktop is ever given at once, whatever it asks for. */
+export const MAX_DESKTOP_LEASES = 64;
+/** The kind of work a model key names: `clip`, `face` or `ocr`. */
+const workloadOf = (modelKey: string) => modelKey.split(':', 1)[0];
+/** The queue each kind of desktop work comes from. */
+const WORKLOAD_QUEUES: Record<string, string> = { clip: 'smartSearch', face: 'faceDetection', ocr: 'ocr' };
+/** The Jobs concurrency setting of each kind of work's queue; 1 where the queue has no row yet. */
+const queueLimits = async (db: Kysely<DesktopMlDatabase>): Promise<Record<string, number>> => {
+  const { rows } = await sql<{ name: string; concurrency: number }>`
+    SELECT name, concurrency FROM job_queue WHERE name=ANY(${Object.values(WORKLOAD_QUEUES)}::text[])`.execute(db);
+  return Object.fromEntries(
+    Object.entries(WORKLOAD_QUEUES).map(([workload, queue]) => [
+      workload,
+      Math.max(1, rows.find((row) => row.name === queue)?.concurrency ?? 1),
+    ]),
+  );
+};
+const capacitiesSchema = z.record(z.string(), z.object({ total: z.number().int().min(1), at: z.iso.datetime() }));
+/** How many tasks each desktop said it can run at once; a desktop that never said holds one. */
+const readCapacities = async (db: Kysely<DesktopMlDatabase>): Promise<z.infer<typeof capacitiesSchema>> => {
+  const { rows } = await sql<{ value: unknown }>`SELECT value FROM system_metadata
+    WHERE key=${SystemMetadataKey.FrameleafDesktopWorkerCapacity}`.execute(db);
+  const parsed = capacitiesSchema.safeParse(rows[0]?.value ?? {});
+  return parsed.success ? parsed.data : {};
+};
 /** How many of a queue's next jobs are looked at to see whose photos are coming up. */
 const UPCOMING_JOBS = 64;
 const sha256 = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
@@ -122,7 +154,7 @@ export class DesktopMlRepository {
         .select(db.fn.countAll<string>().as('count'))
         .where('state', '!=', 'consumed')
         .executeTakeFirstOrThrow();
-      if (Number(count.count) >= 32) throw new Error('desktop_broker_busy');
+      if (Number(count.count) >= MAX_OPEN_TASKS) throw new Error('desktop_broker_busy');
       const row = await db
         .insertInto('desktop_ml_task')
         .values({
@@ -141,8 +173,17 @@ export class DesktopMlRepository {
     });
   }
 
-  async claim(grant: DesktopWorkerGrant, modelKeys: string[]): Promise<DesktopMlClaim | undefined> {
+  /**
+   * Leases the oldest task this desktop's qualified models can run.
+   *
+   * Without `slots` a desktop holds one lease: while it holds one, a claim returns that lease again.
+   * With `slots` (how many more tasks the desktop says it can take now) it may hold several: each claim
+   * returns one new lease, never one it already holds, and only while it holds fewer leases of that kind of
+   * work than the administrator's Jobs setting for that work's queue allows.
+   */
+  async claim(grant: DesktopWorkerGrant, modelKeys: string[], slots?: number): Promise<DesktopMlClaim | undefined> {
     if (modelKeys.length === 0 || modelKeys.length > 64) return;
+    if (slots !== undefined && (!Number.isSafeInteger(slots) || slots < 1)) return;
     return this.db.transaction().execute(async (db) => {
       const worker = await this.device(db, grant);
       if (!worker) return;
@@ -160,19 +201,32 @@ export class DesktopMlRepository {
         .where('expiresAt', '>', sql<Date>`clock_timestamp()`)
         .execute();
       if (qualifications.length === 0) return;
-      const busy = await db
-        .selectFrom('desktop_ml_attempt as attempt')
-        .innerJoin('desktop_ml_task as task', 'task.attemptId', 'attempt.id')
-        .select(['attempt.id', 'task.modelKey'])
-        .forUpdate('task')
-        .where('attempt.deviceId', '=', grant.deviceId)
-        .where('attempt.authorizationEpoch', '=', grant.authorizationEpoch)
-        .where('attempt.expiresAt', '>', sql<Date>`clock_timestamp()`)
-        .where('attempt.outcome', 'is', null)
-        .where('task.state', '=', 'running')
-        .where('task.deadlineAt', '>', sql<Date>`clock_timestamp()`)
-        .limit(1)
-        .executeTakeFirst();
+      // The qualifications a new lease may be made under: all of them, or with several leases only those of
+      // work this desktop holds less of than its queue's Jobs setting.
+      let open = qualifications;
+      if (slots !== undefined) {
+        const held = await this.heldModelKeys(db, grant);
+        const limits = await queueLimits(db);
+        const holding = (workload: string) => held.filter((key) => workloadOf(key) === workload).length;
+        open = qualifications.filter((q) => holding(workloadOf(q.modelKey)) < (limits[workloadOf(q.modelKey)] ?? 1));
+        if (open.length === 0) return;
+      }
+      const busy =
+        slots !== undefined
+          ? undefined
+          : await db
+              .selectFrom('desktop_ml_attempt as attempt')
+              .innerJoin('desktop_ml_task as task', 'task.attemptId', 'attempt.id')
+              .select(['attempt.id', 'task.modelKey'])
+              .forUpdate('task')
+              .where('attempt.deviceId', '=', grant.deviceId)
+              .where('attempt.authorizationEpoch', '=', grant.authorizationEpoch)
+              .where('attempt.expiresAt', '>', sql<Date>`clock_timestamp()`)
+              .where('attempt.outcome', 'is', null)
+              .where('task.state', '=', 'running')
+              .where('task.deadlineAt', '>', sql<Date>`clock_timestamp()`)
+              .limit(1)
+              .executeTakeFirst();
       if (busy) {
         const attempt = await db
           .selectFrom('desktop_ml_attempt')
@@ -217,7 +271,7 @@ export class DesktopMlRepository {
         )
         .where((eb) =>
           eb.or(
-            qualifications.map((q) =>
+            open.map((q) =>
               eb.and([
                 eb('modelKey', 'in', [...equivalentDesktopModelKeys(q.modelKey)]),
                 eb('configSha256', '=', q.configSha256),
@@ -248,7 +302,7 @@ export class DesktopMlRepository {
         .skipLocked()
         .executeTakeFirst();
       if (!task) return;
-      const qualification = qualifications.find(
+      const qualification = open.find(
         (q) =>
           sameModel(task.modelKey, q.modelKey) &&
           q.configSha256 === task.configSha256 &&
@@ -291,6 +345,57 @@ export class DesktopMlRepository {
         qualificationExpiresAt: new Date(qualification.expiresAt),
         resumed: false,
       };
+    });
+  }
+
+  /** The model key of each task this desktop holds a live lease for. */
+  private async heldModelKeys(
+    db: Kysely<DesktopMlDatabase>,
+    grant: Pick<DesktopWorkerGrant, 'deviceId' | 'authorizationEpoch'>,
+  ): Promise<string[]> {
+    const rows = await db
+      .selectFrom('desktop_ml_attempt as attempt')
+      .innerJoin('desktop_ml_task as task', 'task.attemptId', 'attempt.id')
+      .select('task.modelKey')
+      .where('attempt.deviceId', '=', grant.deviceId)
+      .where('attempt.authorizationEpoch', '=', grant.authorizationEpoch)
+      .where('attempt.expiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where('attempt.outcome', 'is', null)
+      .where('task.state', '=', 'running')
+      .where('task.deadlineAt', '>', sql<Date>`clock_timestamp()`)
+      .execute();
+    return rows.map((row) => row.modelKey);
+  }
+
+  /** How many leases this desktop holds now. */
+  async heldLeases(grant: Pick<DesktopWorkerGrant, 'deviceId' | 'authorizationEpoch'>): Promise<number> {
+    return (await this.heldModelKeys(this.db, grant)).length;
+  }
+
+  /**
+   * The administrator's Jobs setting for each kind of work a desktop does: how many tasks of that work one
+   * desktop may hold at once, sent to it in the inventory.
+   */
+  workloadConcurrency(): Promise<Record<string, number>> {
+    return queueLimits(this.db);
+  }
+
+  /**
+   * Remembers how many tasks a desktop said it can run at once (what it holds plus the free slots of its
+   * last claim), so the queues start that many jobs for it. Kept for an hour from the last write.
+   */
+  async rememberCapacity(grant: Pick<DesktopWorkerGrant, 'deviceId'>, total: number): Promise<void> {
+    const capacity = Math.max(1, Math.min(MAX_DESKTOP_LEASES, Math.trunc(total)));
+    await this.db.transaction().execute(async (db) => {
+      await sql`SELECT pg_advisory_xact_lock(912740, 3)`.execute(db);
+      const now = new Date();
+      const known = await readCapacities(db);
+      for (const [device, entry] of Object.entries(known))
+        if (now.getTime() - new Date(entry.at).getTime() > 3_600_000) delete known[device];
+      known[grant.deviceId] = { total: capacity, at: now.toISOString() };
+      await sql`INSERT INTO system_metadata (key, value)
+        VALUES (${SystemMetadataKey.FrameleafDesktopWorkerCapacity}, ${JSON.stringify(known)}::text::jsonb)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(db);
     });
   }
 
@@ -645,9 +750,10 @@ export class DesktopMlRepository {
    * How many extra jobs each queue may start for desktops, given the model keys its work needs now
    * (`scopes`; a queue is left out when its route would not send work to desktops or its task is off).
    *
-   * A desktop holds one lease across every queue, so it counts once: for the queue whose job it is running,
-   * or, while free, for the first queue in `scopes` that it is qualified for and that has a job coming up
-   * for an account it works for. Only
+   * A desktop counts once per task it can run at once (one, unless it said it can run more): each lease it
+   * holds counts for the queue of the job it is for, and each free slot for the first queue in `scopes` that
+   * it is qualified for, that has a job coming up for an account it works for, and of whose work it holds
+   * fewer tasks than that queue's Jobs setting. Only
    * a desktop that is online, of a permitted account, with an unexpired qualification for a key in that
    * queue's scope counts, so the number falls as soon as a model changes, a qualification runs out or the
    * desktop stops asking for work.
@@ -657,16 +763,8 @@ export class DesktopMlRepository {
     const capacity: Record<string, number> = Object.fromEntries(Object.keys(scopes).map((queue) => [queue, 0]));
     if (queues.length === 0) return capacity;
     const keys = [...new Set(queues.flatMap((queue) => scopes[queue]))];
-    const { rows } = await sql<{
-      id: string;
-      userId: string;
-      isAdmin: boolean;
-      held: string[];
-      busyQueue: string | null;
-      busy: boolean;
-    }>`
-      SELECT d.id, u.id AS "userId", u."isAdmin", array_agg(DISTINCT q."modelKey") AS held,
-        lease.queue AS "busyQueue", lease.id IS NOT NULL AS busy
+    const { rows } = await sql<{ id: string; userId: string; isAdmin: boolean; held: string[] }>`
+      SELECT d.id, u.id AS "userId", u."isAdmin", array_agg(DISTINCT q."modelKey") AS held
       FROM desktop_device d
       JOIN "user" u ON u.id=d."userId" AND u."deletedAt" IS NULL
       JOIN desktop_worker_session w ON w."deviceId"=d.id AND w."authorizationEpoch"=d."authorizationEpoch"
@@ -674,28 +772,36 @@ export class DesktopMlRepository {
       JOIN desktop_worker_qualification q ON q."sessionId"=w.id AND q."deviceId"=d.id
         AND q."authorizationEpoch"=d."authorizationEpoch" AND q."modelKey"=ANY(${keys}::text[])
         AND q."expiresAt">clock_timestamp() AND w."modelKeys" @> jsonb_build_array(q."modelKey")
-      LEFT JOIN LATERAL (
-        SELECT a.id, j.queue FROM desktop_ml_attempt a
-        JOIN desktop_ml_task t ON t."attemptId"=a.id AND t.state='running' AND t."deadlineAt">clock_timestamp()
-        LEFT JOIN job j ON j.id=(t.disclosure->'job'->>'id')::uuid AND j.state='active'
-        WHERE a."deviceId"=d.id AND a.outcome IS NULL AND a."expiresAt">clock_timestamp() LIMIT 1
-      ) lease ON true
       WHERE d.state='preparing' AND d.mode='client-worker' AND d."revokedAt" IS NULL
         AND w."revokedAt" IS NULL AND w."expiresAt">clock_timestamp() AND w."lastSeenAt">${seenSince}
         AND (p."expiresAt" IS NULL OR p."expiresAt">clock_timestamp())
-      GROUP BY d.id, u.id, u."isAdmin", lease.queue, lease.id
+      GROUP BY d.id, u.id, u."isAdmin"
       ORDER BY d.id LIMIT 64`.execute(this.db);
     if (rows.length === 0) return capacity;
     const policy = await readDesktopAssistancePolicy(this.db);
     if (!policy) return capacity;
+    // The leases each of those desktops holds, and the queue of the job each is for (none for work that is
+    // not a queued job, such as a gallery guest's selfie: it takes a slot and adds no queue job).
+    const { rows: leases } = await sql<{ id: string; queue: string | null }>`
+      SELECT a."deviceId" AS id, j.queue FROM desktop_ml_attempt a
+      JOIN desktop_ml_task t ON t."attemptId"=a.id AND t.state='running' AND t."deadlineAt">clock_timestamp()
+      LEFT JOIN job j ON j.id=(t.disclosure->'job'->>'id')::uuid AND j.state='active'
+      WHERE a."deviceId"=ANY(${rows.map((row) => row.id)}::uuid[]) AND a.outcome IS NULL
+        AND a."expiresAt">clock_timestamp()`.execute(this.db);
+    // How many tasks each desktop said it can run at once (one, for a desktop that never said), and how many
+    // of one kind of work the administrator lets a desktop hold: the Jobs setting of that work's queue.
+    const capacities = await readCapacities(this.db);
+    const { rows: settings } = await sql<{ name: string; concurrency: number }>`
+      SELECT name, concurrency FROM job_queue WHERE name=ANY(${queues}::text[])`.execute(this.db);
+    const limit = (queue: string) => Math.max(1, settings.find((row) => row.name === queue)?.concurrency ?? 1);
     // Whose photos the next jobs of each queue are for (the next few in claim order, so a long backlog is
-    // never read). A free desktop is counted only for a queue where a job it may take is coming up: its own
-    // account's photo, or anyone's when it works on everyone's photos. A job nobody's desktop can take runs
-    // on the next place in the order, and must not start on top of that place's own concurrency.
+    // never read). A free slot is counted only for a queue where a job its desktop may take is coming up: its
+    // own account's photo, or anyone's when it works on everyone's photos. A job nobody's desktop can take
+    // runs on the next place in the order, and must not start on top of that place's own concurrency.
     // ponytail: another account's Locked photo is counted for a household desktop though it will not take
     // it; such a job then runs on the next place, one above its concurrency at worst.
-    const { rows: waiting } = await sql<{ queue: string; owners: string[] }>`
-      SELECT q.queue, array_remove(array_agg(DISTINCT a."ownerId"::text), NULL) AS owners
+    const { rows: waiting } = await sql<{ queue: string; owner: string | null; jobs: number }>`
+      SELECT q.queue, a."ownerId"::text AS owner, count(*)::int AS jobs
       FROM unnest(${queues}::text[]) AS q(queue)
       CROSS JOIN LATERAL (
         SELECT j.data->>'id' AS id FROM job j
@@ -703,20 +809,29 @@ export class DesktopMlRepository {
         ORDER BY j."availableAt", j."createdAt", j.id LIMIT ${UPCOMING_JOBS}
       ) upcoming
       LEFT JOIN asset a ON a.id = CASE WHEN upcoming.id ~ '^[0-9a-fA-F-]{36}$' THEN upcoming.id::uuid END
-      GROUP BY q.queue`.execute(this.db);
-    const owners = new Map(waiting.map((row) => [row.queue, new Set(row.owners)]));
+      GROUP BY q.queue, a."ownerId"`.execute(this.db);
     const household = householdDevices(policy);
+    /** The upcoming jobs of a queue this desktop may take. */
+    const upcoming = (queue: string, desktop: { id: string; userId: string }) =>
+      waiting
+        .filter(
+          (row) => row.queue === queue && row.owner && (row.owner === desktop.userId || household.has(desktop.id)),
+        )
+        .reduce((jobs, row) => jobs + row.jobs, 0);
     for (const row of rows) {
       if (!desktopAccountPermitted(policy, row.userId, row.isAdmin)) continue;
-      const qualified = (queue: string) => scopes[queue].some((key) => row.held.includes(key));
-      const wanted = (queue: string) => {
-        const upcoming = owners.get(queue);
-        return !!upcoming && (upcoming.has(row.userId) || (household.has(row.id) && upcoming.size > 0));
-      };
-      const queue = row.busy
-        ? queues.find((name) => name === row.busyQueue && qualified(name))
-        : queues.find((name) => wanted(name) && qualified(name));
-      if (queue) capacity[queue]++;
+      const own = leases.filter((lease) => lease.id === row.id);
+      const holding = (queue: string) => own.filter((lease) => lease.queue === queue).length;
+      let free = Math.max(0, Math.min(MAX_DESKTOP_LEASES, capacities[row.id]?.total ?? 1) - own.length);
+      for (const queue of queues) {
+        if (scopes[queue].every((key) => !row.held.includes(key))) continue;
+        // The jobs it is running in this queue keep their place beside this server's own...
+        capacity[queue] += holding(queue);
+        // ...and each free slot adds one, in queue order, while the queue's setting and its upcoming work allow.
+        const more = Math.max(0, Math.min(free, limit(queue) - holding(queue), upcoming(queue, row)));
+        capacity[queue] += more;
+        free -= more;
+      }
     }
     return capacity;
   }

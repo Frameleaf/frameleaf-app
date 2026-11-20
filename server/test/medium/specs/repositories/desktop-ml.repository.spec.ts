@@ -651,6 +651,61 @@ it('takes a model away from a desktop that keeps failing it, until it qualifies 
   await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
 });
 
+it('gives a desktop that asks several leases at once, up to the Jobs setting of that work', async () => {
+  const profiles: DesktopModelProfile[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+  ).profiles;
+  const { sut, grants, request } = await setup(
+    true,
+    profiles.find((p) => p.workload === 'clip' && p.spec.fixtureKind === 'text')!,
+  );
+  const [desktop, other] = grants;
+  const setting = (concurrency: number) =>
+    sql`INSERT INTO job_queue (name, concurrency) VALUES ('smartSearch', ${concurrency})
+      ON CONFLICT (name) DO UPDATE SET concurrency = EXCLUDED.concurrency`.execute(db);
+  await setting(3);
+  expect(await sut.workloadConcurrency()).toMatchObject({ clip: 3 });
+  const tasks = [];
+  for (let n = 0; n < 5; n++) tasks.push(await sut.create(request));
+  // each claim with free slots returns one new lease, oldest task first, never one it already holds
+  const leases = [];
+  for (let n = 0; n < 3; n++) leases.push((await sut.claim(desktop, [request.modelKey], 4))!);
+  expect(leases.map((lease) => lease.task.id)).toEqual(tasks.slice(0, 3).map((task) => task.id));
+  expect(leases.every((lease) => !lease.resumed)).toBe(true);
+  expect(await sut.heldLeases(desktop)).toBe(3);
+  // the administrator's setting is the ceiling, whatever the desktop says it can take
+  expect(await sut.claim(desktop, [request.modelKey], 4)).toBeUndefined();
+  // another desktop has its own three
+  expect((await sut.claim(other, [request.modelKey], 1))?.task.id).toBe(tasks[3].id);
+  // every lease stands alone: heartbeat, input, result and failure of one leave the others as they were
+  expect(await sut.heartbeat(desktop, leases[0].attempt.id)).toBe(true);
+  expect(await sut.input(desktop, leases[1].attempt.id, () => Promise.resolve())).toEqual(request.input);
+  expect(await sut.complete(desktop, leases[0].attempt.id, { clip: '[1]' })).toBe(true);
+  expect(await sut.fail(desktop, leases[1].attempt.id, 'cancelled')).toBe(true);
+  expect(await sut.heartbeat(desktop, leases[2].attempt.id)).toBe(true);
+  expect(await sut.hasLiveAttempt(tasks[2].id)).toBe(true);
+  expect(await sut.heldLeases(desktop)).toBe(1);
+  // the two free places are filled again: the task it handed back, then the next one
+  const again = [
+    (await sut.claim(desktop, [request.modelKey], 2))!,
+    (await sut.claim(desktop, [request.modelKey], 1))!,
+  ];
+  expect(again.map((lease) => lease.task.id)).toEqual([tasks[1].id, tasks[4].id]);
+  // a lower setting stops new leases and leaves the held ones alone
+  await setting(1);
+  expect(await sut.claim(desktop, [request.modelKey], 4)).toBeUndefined();
+  expect(await sut.heartbeat(desktop, leases[2].attempt.id)).toBe(true);
+  // a desktop that says nothing about slots still holds one lease, and is given it again
+  const single = (await sut.claim(other, [request.modelKey]))!;
+  expect([single.task.id, single.resumed]).toEqual([tasks[3].id, true]);
+  // taking the model away ends that model's leases only
+  await sut.withdraw(desktop, request.modelKey);
+  expect(await sut.heartbeat(desktop, leases[2].attempt.id)).toBe(false);
+  expect(await sut.heartbeat(other, single.attempt.id)).toBe(true);
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+  await sql`DELETE FROM job_queue WHERE name = 'smartSearch'`.execute(db);
+});
+
 it('counts failures in a row in the database, per desktop and model, and holds a withdrawn model back', async () => {
   const { sut, second, grants, request } = await setup();
   const [one, two] = grants;

@@ -561,6 +561,8 @@ export enum SystemMetadataKey {
   FrameleafDesktopAssistance = 'frameleaf-desktop-assistance',
   /** Failures in a row per desktop and model, and the hold before a withdrawn model can be qualified again. */
   FrameleafDesktopModelFailures = 'frameleaf-desktop-model-failures',
+  /** How many tasks each desktop said it can run at once. */
+  FrameleafDesktopWorkerCapacity = 'frameleaf-desktop-worker-capacity',
   SystemConfig = 'system-config',
   SystemFlags = 'system-flags',
   VersionCheckState = 'version-check-state',

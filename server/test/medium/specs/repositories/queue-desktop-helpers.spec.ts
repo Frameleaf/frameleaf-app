@@ -193,6 +193,32 @@ describe('desktop helpers widen a queue', () => {
     expect((await capacity())[QueueName.Ocr]).toBe(0);
   });
 
+  it('starts a job for each task a desktop can still take, up to the queue’s own setting', async () => {
+    const desktop = await helper([clip, face]);
+    const broker = new DesktopMlRepository(db);
+    await store.setConcurrency(QueueName.SmartSearch, 3);
+    await enqueue(10, QueueName.SmartSearch, [desktop.userId]);
+    await enqueue(10, QueueName.FaceDetection, [desktop.userId]);
+    // until it says otherwise a desktop runs one task at a time
+    expect(await capacity()).toMatchObject({ [QueueName.SmartSearch]: 1, [QueueName.FaceDetection]: 0 });
+    // it can run five at once: three for smart search (that queue's setting), and faces allow one
+    await broker.rememberCapacity(desktop, 5);
+    expect(await capacity()).toMatchObject({ [QueueName.SmartSearch]: 3, [QueueName.FaceDetection]: 1 });
+    // with only two photos of its own coming up, two jobs are started for it there, and the rest go to faces
+    await sql`DELETE FROM job WHERE queue = ${QueueName.SmartSearch} AND id NOT IN (
+      SELECT id FROM job WHERE queue = ${QueueName.SmartSearch} ORDER BY "createdAt", id LIMIT 2)`.execute(db);
+    expect(await capacity()).toMatchObject({ [QueueName.SmartSearch]: 2, [QueueName.FaceDetection]: 1 });
+    await store.setConcurrency(QueueName.FaceDetection, 4);
+    expect(await capacity()).toMatchObject({ [QueueName.SmartSearch]: 2, [QueueName.FaceDetection]: 3 });
+    // this server's own jobs start beside them: its setting, plus the desktop's
+    expect(await claimed(QueueName.SmartSearch)).toBe(2);
+    // nothing more is coming up for smart search, so its free slots now count for faces, up to that setting
+    expect(await claimed(QueueName.FaceDetection)).toBe(4 + 4);
+    // its capacity drops back: a claim with a lower number is enough
+    await broker.rememberCapacity(desktop, 1);
+    expect(await capacity()).toMatchObject({ [QueueName.SmartSearch]: 0, [QueueName.FaceDetection]: 1 });
+  });
+
   it('counts a desktop once: it holds one lease across all three queues', async () => {
     const { userId } = await helper([clip, face, ocr]);
     await enqueue(3, QueueName.FaceDetection, [userId]);
