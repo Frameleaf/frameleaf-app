@@ -774,6 +774,23 @@ export const usageSchema = z.object({ items: z.array(z.unknown()).max(1000) }).t
 export type CloudUsage = z.infer<typeof usageSchema>;
 
 /** One input a job uploads, described by its digest; the cloud never sees a file name (FC-66 `JobInput`). */
+/** The cloud's limits for a clip sent for restoration or Smooth motion (FC-47, FC-48). */
+export const CLOUD_VIDEO_MIN_SIDE = 16;
+export const CLOUD_VIDEO_MAX_FPS = 120;
+export const CLOUD_VIDEO_MAX_SECONDS = 21_600;
+
+/** `RestorationSource` / `InterpolationSource`: the clip's length, average frame rate and own pixel size. */
+const cloudVideoClipSchema = (maxWidth: number, maxHeight: number) =>
+  z.strictObject({
+    inputId: z.string().regex(/^[\w-]{1,64}$/),
+    durationSec: z.number().positive().max(CLOUD_VIDEO_MAX_SECONDS),
+    fps: z.number().min(1).max(CLOUD_VIDEO_MAX_FPS),
+    width: z.int().min(CLOUD_VIDEO_MIN_SIDE).max(maxWidth),
+    height: z.int().min(CLOUD_VIDEO_MIN_SIDE).max(maxHeight),
+  });
+
+const cloudVideoCodec = z.enum(['h264', 'hevc']);
+
 const jobInputSchema = z.strictObject({
   inputId: z.string().regex(/^[\w-]{1,64}$/),
   contentType: z.string().regex(/^[a-z]+\/[\d+.a-z-]{1,100}$/),
@@ -842,7 +859,38 @@ export const CLOUD_WORKLOAD_REQUESTS = {
         message: 'inputId must be unique',
       },
     ),
-  restoration: z.strictObject({ mode: z.enum(CLOUD_RESTORATION_MODES).optional(), scale: scale.optional() }),
+  // FC-47 `RestorationRequest`, as the cloud defines it: `targetScale` (1, 1.5 or 2: never `scale`) and
+  // `items`, the one clip as it was cut here. An estimate without `items` is refused (a video is not
+  // priced blind), and the cloud's worker refuses a clip that is not exactly what `items` says. This
+  // server sends `mode`, `targetScale` and `items`; the other keys are the cloud's and are never sent.
+  restoration: z
+    .strictObject({
+      mode: z.enum(CLOUD_RESTORATION_MODES).optional(),
+      targetScale: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),
+      preview: z
+        .strictObject({
+          enabled: z.boolean(),
+          startSec: z.number().min(0).max(CLOUD_VIDEO_MAX_SECONDS),
+          durationSec: z.literal(5),
+        })
+        .optional(),
+      previewModelRev: modelRevSchema.optional(),
+      outputMax: z.strictObject({ width: z.int().min(16).max(3840), height: z.int().min(16).max(2160) }).optional(),
+      chunkSec: z.int().min(20).max(30).optional(),
+      options: z.strictObject({ codec: cloudVideoCodec.optional() }).optional(),
+      items: z.array(cloudVideoClipSchema(7680, 4320)).length(1).optional(),
+    })
+    .refine((request) => !(request.preview?.enabled && request.previewModelRev), {
+      path: ['previewModelRev'],
+      message: 'a preview does not reference another preview',
+    })
+    .refine(
+      (request) =>
+        !request.preview?.enabled ||
+        !request.items ||
+        request.preview.startSec + request.preview.durationSec <= request.items[0].durationSec,
+      { path: ['preview'], message: 'the preview lies inside the clip' },
+    ),
   // FC-48 `TranscriptionRequest`: one item per audio input, priced by its length (never a video). No `diarize`.
   transcription: z.strictObject({
     language: z.union([z.literal('auto'), languageTag]).optional(),
@@ -871,7 +919,14 @@ export const CLOUD_WORKLOAD_REQUESTS = {
       .max(5000)
       .regex(/^(?:[^\p{Cc}]|\n)*$/u),
   }),
-  interpolation: z.strictObject({ factor: z.union([z.literal(2), z.literal(4), z.literal(8)]).optional() }),
+  // FC-48 `InterpolationRequest`: 2× or 4× (the FC-34 factor 8 is gone), the highest output rate wanted
+  // and `items`, the one clip, at most 4K. This server sends `factor` and `items`.
+  interpolation: z.strictObject({
+    factor: z.union([z.literal(2), z.literal(4)]).optional(),
+    targetFps: z.int().min(2).max(CLOUD_VIDEO_MAX_FPS).optional(),
+    options: z.strictObject({ codec: cloudVideoCodec.optional() }).optional(),
+    items: z.array(cloudVideoClipSchema(3840, 2160)).length(1).optional(),
+  }),
   // FL-455 `ClipRequest`: the model name this server expects; a SKU running another model is refused
   // (422 `request-invalid`, detail `model`), so a job never runs on another model
   clip: z.strictObject({ model: identityModelName.optional() }),

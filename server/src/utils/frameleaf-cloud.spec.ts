@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
 import { hardwareSchema } from 'src/repositories/frameleaf-cloud-ml.repository.js';
@@ -1183,8 +1185,12 @@ describe('Frameleaf Cloud ml contract fixtures (FC-34, FL-181, FL-183)', () => {
 
     it('keeps each workload to its own request allow-list', () => {
       const job = cloudContractFixture<Record<string, unknown>>('ml/job-request.json');
-      const restoration = { ...job, workload: 'restoration', request: { mode: 'creative', scale: 2 } };
+      const restoration = { ...job, workload: 'restoration', request: { mode: 'creative', targetScale: 2 } };
       expect(sendRefusal(jobCreateRequestSchema, restoration)).toBeNull();
+      // FL-1725: `scale` is the photo upscale's key; the cloud refuses it on a restoration, so it is never sent
+      expect(
+        sendRefusal(jobCreateRequestSchema, { ...restoration, request: { mode: 'creative', scale: 2 } }),
+      ).not.toBeNull();
       expect(sendRefusal(jobCreateRequestSchema, { ...restoration, request: { mode: 'vivid' } })).not.toBeNull();
       expect(sendRefusal(jobCreateRequestSchema, { ...job, request: { scale: 4 } })).not.toBeNull();
       const tts = { ...job, workload: 'tts' };
@@ -1389,6 +1395,73 @@ describe('Frameleaf Cloud descriptions contract (FC-44, FL-163)', () => {
     const request = cloudContractFixture<unknown>(`ml/descriptions/rejected/${name}`);
     const body = { ...cloudContractFixture<Record<string, unknown>>('ml/descriptions/estimate-request.json'), request };
     expect(() => cloudRequestBody(estimateRequestSchema, body, name)).toThrow(FrameleafCloudError);
+  });
+
+  // FL-1725: the cloud's own restoration and Smooth motion requests (frameleaf-cloud `c4403813`). Until
+  // these were copied nothing checked the two workloads' requests, and the server sent `scale` and no clip.
+  describe.each([
+    [
+      'restoration',
+      ['estimate-request.json', 'estimate-request-preview.json'],
+      [
+        'request-chunk-too-long.json',
+        'request-chunk-too-short.json',
+        'request-clip-over-six-hours.json',
+        'request-codec-unknown.json',
+        'request-fingerprint.json',
+        'request-legacy-scale.json',
+        'request-model-parameters.json',
+        'request-output-over-4k.json',
+        'request-preview-outside-clip.json',
+        'request-preview-referencing-preview.json',
+        'request-preview-ten-seconds.json',
+        'request-scale-four.json',
+        'request-two-clips.json',
+      ],
+    ],
+    [
+      'interpolation',
+      ['estimate-request.json'],
+      [
+        'request-chunk-length.json',
+        'request-factor-eight.json',
+        'request-factor-three.json',
+        'request-model-parameters.json',
+        'request-over-4k.json',
+        'request-source-over-120.json',
+        'request-target-over-120.json',
+        'request-two-clips.json',
+      ],
+    ],
+  ] as const)("the cloud's %s requests", (workload, accepted, rejected) => {
+    it.each(accepted)('sends %s as it is', (name) => {
+      const body = cloudContractFixture<unknown>(`ml/${workload}/${name}`);
+      expect(cloudRequestBody(estimateRequestSchema, body, name)).toEqual(body);
+    });
+
+    it('sends the job request as it is', () => {
+      const body = cloudContractFixture<unknown>(`ml/${workload}/job-request.json`);
+      expect(cloudRequestBody(jobCreateRequestSchema, body, 'job-request.json')).toEqual(body);
+    });
+
+    it.each(rejected)('never sends the rejected %s', (name) => {
+      const request = cloudContractFixture<unknown>(`ml/${workload}/rejected/${name}`);
+      const body = {
+        ...cloudContractFixture<Record<string, unknown>>(`ml/${workload}/estimate-request.json`),
+        request,
+      };
+      expect(() => cloudRequestBody(estimateRequestSchema, body, name)).toThrow(FrameleafCloudError);
+    });
+
+    it('copies every request the cloud publishes for it', () => {
+      const folder = join(import.meta.dirname, '../../test/fixtures/frameleaf-cloud-contracts/ml', workload);
+      expect(readdirSync(join(folder, 'rejected')).toSorted()).toEqual([...rejected]);
+      expect(
+        readdirSync(folder)
+          .filter((name) => name.endsWith('.json'))
+          .toSorted(),
+      ).toEqual([...accepted, 'job-request.json'].toSorted());
+    });
   });
 
   it('reads a described item, a failed item and one whose metadata the cloud removed', () => {

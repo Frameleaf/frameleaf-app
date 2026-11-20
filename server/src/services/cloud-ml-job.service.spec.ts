@@ -391,7 +391,7 @@ describe(CloudMlJobService.name, () => {
     mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(source as never);
     mocks.media.probe.mockResolvedValue({
       format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
-      videoStreams: [{ width: 960, height: 540, codecName: 'h264' }],
+      videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30 }],
       audioStreams: [],
     } as never);
     mocks.crypto.hashFileDigests.mockResolvedValue({
@@ -607,7 +607,12 @@ describe(CloudMlJobService.name, () => {
         workload: 'restoration',
         modelSku: FAITHFUL,
         inputs: [{ inputId: 'v1', contentType: 'video/mp4', bytes: BYTES, sha256: SHA }],
-        request: { mode: 'faithful', scale: 2 },
+        // FL-1725: `targetScale` and the clip as it was uploaded, counted from its packets
+        request: {
+          mode: 'faithful',
+          targetScale: 2,
+          items: [{ inputId: 'v1', durationSec: 5, fps: 30, width: 960, height: 540 }],
+        },
       });
       expect(estimates()[0]).toMatchObject({ id: ESTIMATE_ID, expiresAt: sealed.expiresAt, operationId: null });
       expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
@@ -726,6 +731,37 @@ describe(CloudMlJobService.name, () => {
       expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
     });
 
+    it('says what Frameleaf Cloud does not run before a copy is prepared or anything is asked of it', async () => {
+      await expect(sut.estimate(owner, preview({ upscale: 4 }), now)).rejects.toThrow(
+        'Frameleaf Cloud restores video at up to 2×. Choose 2×.',
+      );
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 8 }), now)).rejects.toThrow(
+        'Frameleaf Cloud smooths motion 2× or 4×. Choose one of those.',
+      );
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
+    it('refuses a clip Frameleaf Cloud would not take, by name, and sends nothing', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 1200, frameRate: 240 }],
+        audioStreams: [],
+      } as never);
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 2 }), now)).rejects.toThrow(
+        'Frameleaf Cloud takes video from 1 to 120 frames a second; this one has 240.',
+      );
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264' }],
+        audioStreams: [],
+      } as never);
+      await expect(sut.estimate(owner, preview({ upscale: 2 }), now)).rejects.toThrow(
+        'has no readable frame rate or frame count',
+      );
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
     it('estimates Smooth motion as interpolation with its frame-rate factor, and only for videos', async () => {
       mocks.frameleafCloudMl.createEstimate.mockResolvedValue({ ...sealed, modelSku: SMOOTH, modelRev: SMOOTH_REV });
 
@@ -734,8 +770,14 @@ describe(CloudMlJobService.name, () => {
       expect(estimate.model.sku).toBe(SMOOTH);
       expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ workload: 'interpolation', modelSku: SMOOTH, request: { factor: 4 } }),
+        expect.objectContaining({
+          workload: 'interpolation',
+          modelSku: SMOOTH,
+          request: { factor: 4, items: [{ inputId: 'v1', durationSec: 5, fps: 30, width: 960, height: 540 }] },
+        }),
       );
+      // the clip is measured from the file that is uploaded, with its packets counted
+      expect(mocks.media.probe).toHaveBeenCalledWith(expect.stringContaining('input.mp4'), { countFrames: true });
 
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({ ...source, type: AssetType.Image } as never);
       await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion' }), now)).rejects.toThrow(

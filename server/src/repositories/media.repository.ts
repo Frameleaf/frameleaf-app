@@ -785,6 +785,7 @@ export class MediaRepository {
             index: stream.index,
             height,
             width: dar ? Math.round(height * dar) : this.parseInt(stream.width),
+            codedWidth: this.parseInt(stream.width),
             codecName: stream.codec_name === 'h265' ? 'hevc' : (stream.codec_name ?? null),
             profile: this.parseVideoProfile(stream.codec_name, stream.profile as string | undefined) ?? null,
             level: this.parseOptionalInt(stream.level),

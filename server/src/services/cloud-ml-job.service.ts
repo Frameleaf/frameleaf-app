@@ -104,6 +104,7 @@ import {
   CloudMlJobUpgradeRecord,
   CloudMlJobUpscale,
   CloudMlJobWorkload,
+  CloudVideoClip,
   cloudMlJobActivity,
   cloudMlJobBackoffMs,
   cloudMlJobClientRef,
@@ -113,6 +114,10 @@ import {
   cloudMlJobRecordOf,
   cloudMlJobSpentUsd,
   cloudMlJobWorkload,
+  cloudVideoClip,
+  cloudVideoClipRefusal,
+  cloudVideoRequest,
+  cloudVideoSettingsRefusal,
   emptyCloudMlJobResult,
   orderedOutputs,
   outputsComplete,
@@ -480,6 +485,13 @@ export class CloudMlJobService {
 
     const chosen = await this.chooseModel(gateway, workload, settings.mode, dto.modelSku);
     const model = chosen.model;
+    if (workload === 'restoration' || workload === 'interpolation') {
+      // what this model does not run is said here, before a copy is prepared or an estimate is asked for
+      const refusal = cloudVideoSettingsRefusal(workload, settings, model.limits);
+      if (refusal) {
+        throw new BadRequestException(refusal);
+      }
+    }
     // a full render runs the model reviewed in its preview: the slider is only offered for a preview
     const offered = preview ? [model] : chosen.offered;
     if (preview) {
@@ -499,6 +511,7 @@ export class CloudMlJobService {
     const copy = video && dto.stage === 'full' ? await this.preparedWholeVideo(auth, source) : null;
     this.storageRepository.mkdirSync(workDir);
     let prepared: Awaited<ReturnType<CloudMlJobService['prepareInput']>>;
+    let clip: CloudVideoClip | null = null;
     try {
       prepared = copy
         ? this.fromPreparedCopy(copy, workload, sizes, durationSeconds, smooth ? 1 : settings.upscale)
@@ -519,6 +532,9 @@ export class CloudMlJobService {
               }),
             { viewerId: lockedViewerOf(auth) },
           );
+      if (workload === 'restoration' || workload === 'interpolation') {
+        clip = await this.describeClip(workload, prepared.input);
+      }
     } catch (error) {
       await this.removeWorkDir(workDir);
       throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
@@ -540,7 +556,7 @@ export class CloudMlJobService {
         workload,
         appWorkload,
         settings,
-        request: this.requestOf(workload, settings, prepared.size),
+        request: this.requestOf(workload, settings, prepared.size, clip),
         inputs: [prepared.input],
         workDir,
         beforePath: prepared.beforePath,
@@ -3226,6 +3242,27 @@ export class CloudMlJobService {
   }
 
   /**
+   * FC-47, FC-48: the clip a restoration or Smooth motion request describes, measured from the file that
+   * is uploaded (its packets counted), and refused here by name when Frameleaf Cloud does not take it.
+   */
+  private async describeClip(workload: 'restoration' | 'interpolation', input: CloudMlJobInput) {
+    const probe = await this.mediaRepository.probe(input.path, { countFrames: true });
+    const clip = cloudVideoClip(input.inputId, probe.videoStreams[0]);
+    if (!clip) {
+      throw new CloudMlJobFailure(
+        'cloud_ml_prepare_failed',
+        'The copy prepared for Frameleaf Cloud has no readable frame rate or frame count, so it cannot be estimated',
+        false,
+      );
+    }
+    const refusal = cloudVideoClipRefusal(workload, clip);
+    if (refusal) {
+      throw new CloudMlJobFailure('cloud_ml_prepare_failed', refusal, false);
+    }
+    return clip;
+  }
+
+  /**
    * FC-47 (owner decision 2026-09-27): audio is never sent to Frameleaf Cloud, and its worker refuses a
    * clip that still carries an audio stream. What is uploaded is probed first, and refused here when
    * ffprobe finds any audio stream in it; the audio stays on this server and is put back afterwards.
@@ -3347,14 +3384,20 @@ export class CloudMlJobService {
     workload: CloudMlJobWorkload,
     settings: { mode: AssetRestorationMode; upscale: number; factor: number | null },
     size?: { width: number; height: number },
+    clip?: CloudVideoClip | null,
   ): Record<string, unknown> {
     switch (workload) {
-      case 'interpolation': {
-        return { factor: settings.factor ?? 2 };
-      }
+      case 'interpolation':
       case 'restoration': {
-        const mode = settings.mode === AssetRestorationMode.Creative ? 'creative' : 'faithful';
-        return { mode, scale: settings.upscale };
+        if (!clip) {
+          // an estimate without the clip is refused by the cloud (a video is not priced blind)
+          throw new BadRequestException('The copy prepared for Frameleaf Cloud was not measured; estimate it again');
+        }
+        return cloudVideoRequest(workload, clip, {
+          creative: settings.mode === AssetRestorationMode.Creative,
+          upscale: settings.upscale,
+          factor: settings.factor,
+        });
       }
       case 'upscale': {
         // FC-46: the declared size prices the photo at the factor it really gets, and binds it

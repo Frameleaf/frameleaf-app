@@ -1,8 +1,12 @@
 import z from 'zod';
+import type { VideoStreamInfo } from 'src/types.js';
 import type { TranscriptionClip } from 'src/utils/studio-transcription.js';
 import { MediaOperationKind, MediaOperationStatus, MlWorkload } from 'src/enum.js';
 import {
   CLOUD_JOB_STATUSES,
+  CLOUD_VIDEO_MAX_FPS,
+  CLOUD_VIDEO_MAX_SECONDS,
+  CLOUD_VIDEO_MIN_SIDE,
   CloudEstimate,
   CloudJobRouting,
   CloudJobView,
@@ -77,9 +81,99 @@ export type CloudMlJobPurpose = (typeof CLOUD_ML_JOB_PURPOSES)[number];
 export const CLOUD_ML_JOB_STAGES = ['preview', 'full'] as const;
 export type CloudMlJobStage = (typeof CLOUD_ML_JOB_STAGES)[number];
 
-/** The Smooth motion frame-rate factors Frameleaf Cloud's interpolation request allows. */
+/** The Smooth motion frame-rate factors the estimate request accepts. Frameleaf Cloud runs the first two. */
 export const SMOOTH_MOTION_FACTORS = [2, 4, 8] as const;
 export type SmoothMotionFactor = (typeof SMOOTH_MOTION_FACTORS)[number];
+
+/** FC-48: the factors Frameleaf Cloud's interpolation request allows (the FC-34 factor 8 is gone). */
+export const CLOUD_SMOOTH_MOTION_FACTORS = [2, 4] as const;
+/** FC-47: the largest `targetScale` Frameleaf Cloud's video restoration takes. */
+export const CLOUD_VIDEO_RESTORATION_MAX_SCALE = 2;
+
+/** The clip a restoration or Smooth motion request describes (`RestorationSource`, `InterpolationSource`). */
+export type CloudVideoClip = { inputId: string; durationSec: number; fps: number; width: number; height: number };
+
+/**
+ * The uploaded clip as Frameleaf Cloud's worker will measure it, from a probe that counted its packets.
+ * The worker refuses a clip (`input-unsupported`) unless its own pixel size is the declared one, its
+ * average frame rate is within 0.01 of the declared one, and its frame count is the declared length
+ * times the rate, rounded half up, or one more. So the length is the frame count over the rate, not the
+ * container's duration, and the width is the stream's own, not the display width. Null when the probe
+ * has no frame count or rate.
+ */
+export const cloudVideoClip = (
+  inputId: string,
+  stream:
+    | Pick<VideoStreamInfo, 'width' | 'codedWidth' | 'height' | 'frameCount' | 'frameRate' | 'frameRateRational'>
+    | undefined,
+): CloudVideoClip | null => {
+  if (!stream) {
+    return null;
+  }
+  const rational = stream.frameRateRational;
+  const fps = rational && rational.num > 0 && rational.den > 0 ? rational.num / rational.den : stream.frameRate;
+  const frames = stream.frameCount;
+  const width = stream.codedWidth ?? stream.width;
+  if (!fps || !(fps > 0) || !Number.isSafeInteger(frames) || frames < 1 || !(width > 0) || !(stream.height > 0)) {
+    return null;
+  }
+  return { inputId, durationSec: frames / fps, fps, width, height: stream.height };
+};
+
+/**
+ * Why Frameleaf Cloud would refuse these settings, in words for the person, or null. Said here, before
+ * anything is prepared or estimated, since the cloud's own answer is a bare 422. `limits` is the chosen
+ * model's catalogue `limits` (`maxScale` for restoration, `maxFactor` for Smooth motion): a model that
+ * serves less than the contract allows says so there. A missing limit is the contract's own (2 and 4).
+ */
+export const cloudVideoSettingsRefusal = (
+  workload: 'restoration' | 'interpolation',
+  settings: { upscale: number; factor: number | null },
+  limits: Record<string, number> = {},
+): string | null => {
+  if (workload === 'restoration') {
+    const most = Math.min(limits.maxScale ?? CLOUD_VIDEO_RESTORATION_MAX_SCALE, CLOUD_VIDEO_RESTORATION_MAX_SCALE);
+    return settings.upscale > most ? `Frameleaf Cloud restores video at up to ${most}×. Choose ${most}×.` : null;
+  }
+  const most = limits.maxFactor ?? Math.max(...CLOUD_SMOOTH_MOTION_FACTORS);
+  const served = CLOUD_SMOOTH_MOTION_FACTORS.filter((factor) => factor <= most);
+  return (served as readonly number[]).includes(settings.factor ?? 2)
+    ? null
+    : `Frameleaf Cloud smooths motion ${served.join('× or ')}×. Choose ${served.length > 1 ? 'one of those' : 'that'}.`;
+};
+
+/** Why Frameleaf Cloud would refuse this clip (its frame rate, size or length), in words for the person, or null. */
+export const cloudVideoClipRefusal = (
+  workload: 'restoration' | 'interpolation',
+  clip: CloudVideoClip,
+): string | null => {
+  const max = workload === 'restoration' ? { width: 7680, height: 4320 } : { width: 3840, height: 2160 };
+  if (clip.fps < 1 || clip.fps > CLOUD_VIDEO_MAX_FPS) {
+    return `Frameleaf Cloud takes video from 1 to ${CLOUD_VIDEO_MAX_FPS} frames a second; this one has ${Math.round(clip.fps * 100) / 100}.`;
+  }
+  if (
+    clip.width < CLOUD_VIDEO_MIN_SIDE ||
+    clip.height < CLOUD_VIDEO_MIN_SIDE ||
+    clip.width > max.width ||
+    clip.height > max.height
+  ) {
+    return `Frameleaf Cloud takes video from ${CLOUD_VIDEO_MIN_SIDE} pixels a side up to ${max.width}×${max.height} for this; this one is ${clip.width}×${clip.height}.`;
+  }
+  if (clip.durationSec > CLOUD_VIDEO_MAX_SECONDS) {
+    return `Frameleaf Cloud takes video up to ${CLOUD_VIDEO_MAX_SECONDS / 3600} hours long. Split the clip into shorter parts.`;
+  }
+  return null;
+};
+
+/** The `request` of a restoration or Smooth motion estimate and job (FC-47, FC-48). */
+export const cloudVideoRequest = (
+  workload: 'restoration' | 'interpolation',
+  clip: CloudVideoClip,
+  settings: { creative: boolean; upscale: number; factor: number | null },
+): Record<string, unknown> =>
+  workload === 'interpolation'
+    ? { factor: settings.factor ?? 2, items: [clip] }
+    : { mode: settings.creative ? 'creative' : 'faithful', targetScale: settings.upscale, items: [clip] };
 
 /** The cloud workloads a job of this kind is sent as. */
 export type CloudMlJobWorkload = 'restoration' | 'upscale' | 'interpolation' | 'transcription';
