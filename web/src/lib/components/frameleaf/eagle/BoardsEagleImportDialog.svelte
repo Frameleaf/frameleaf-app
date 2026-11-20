@@ -251,6 +251,7 @@
       return;
     }
     source = next;
+    browseRequest++;
     browsing = false;
     library = undefined;
     plan = undefined;
@@ -294,12 +295,14 @@
   /** Browse the server's import folders for a library the list didn't find (deeper down, or the folder itself). */
   let serverRootList = $state<TakeoutRootDto[] | undefined>();
   let browsing = $state(false);
+  /** Changing where the library is drops a browse still waiting for the server's folders. */
+  let browseRequest = 0;
   const browseServer = async () => {
     readError = undefined;
+    const request = ++browseRequest;
     try {
       serverRootList ??= (await getTakeoutRoots()).roots;
-      // The answer may arrive after "On this computer" was chosen; the chooser is only for the server.
-      browsing = source === 'server';
+      browsing = request === browseRequest;
     } catch {
       serverListFailed = true;
     }

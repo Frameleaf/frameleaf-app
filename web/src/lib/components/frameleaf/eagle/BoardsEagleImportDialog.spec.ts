@@ -131,7 +131,7 @@ describe('Import from Eagle: a library in a folder the server can open', () => {
     );
   });
 
-  it('doesn’t open the server’s folders once the library is on this computer instead', async () => {
+  it('doesn’t open the server’s folders after where the library is was changed', async () => {
     authManager.setUser(userAdminFactory.build({ isAdmin: true }));
     sdkMock.getEagleLibraries.mockResolvedValue({ available: true, roots: 1, libraries: [] });
     let answer: (value: { roots: [] }) => void = () => {};
@@ -141,6 +141,8 @@ describe('Import from Eagle: a library in a folder the server can open', () => {
     await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Choose the library folder…' }));
     await fireEvent.click(screen.getByRole('radio', { name: /On this computer/ }));
+    // Back to the server before the answer: the earlier browse is still dropped.
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
     answer({ roots: [] });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByText('Choose the folder to import from')).not.toBeInTheDocument();
