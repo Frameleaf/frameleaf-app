@@ -2072,6 +2072,7 @@ module.exports = {
   forgejoAsGithub,
   githubJobNames,
   runFromUrl,
+  FORGEJO_SOURCE,
   chooseTag,
   previousReleaseTag,
   releaseNotesBody,
