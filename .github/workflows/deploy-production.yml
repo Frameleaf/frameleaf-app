@@ -132,9 +132,39 @@ jobs:
           SOURCE_ROOT: candidate
         run: node .github/frameleaf-deploy-test.cjs
 
+  # FL-1721: checks what the release job needs (tools, tokens, the signing key) beside the deployment
+  # test, in a dry run too, so a dry run rehearses the release's prerequisites. It pushes, signs and edits
+  # nothing. Main only: it reads the production environment's secrets.
+  preflight:
+    name: Release preflight (pushes nothing)
+    needs: candidate
+    if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.candidate.outputs.sha }}
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Check everything the release job needs
+        env:
+          TOOLS: gh git node npm docker cosign
+          GH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          REGISTRY_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          ACTOR: ${{ vars.GHCR_USERNAME || github.actor }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: .github/release-preflight.sh
+
   release:
     name: Promote, sign and publish
-    needs: [candidate, deploy-test]
+    needs: [candidate, deploy-test, preflight]
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && inputs.dry-run != true && inputs.dry-run != 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     environment: production
