@@ -146,7 +146,7 @@ describe('this server’s own AI after a desktop was granted smart search', () =
       );
     // the vector is stored under the admitted key: one embedding space, one producer key in the library
     expect(await encode()).toEqual({ embedding: '[0.3]', modelKey: image.modelKey });
-    expect(bound.mock.calls.map(([, , profile]) => profile.modelKey)).toEqual([
+    expect(bound.mock.calls.map((call) => call[2].modelKey)).toEqual([
       image.modelKey,
       others[0].modelKey,
       others[1].modelKey,
@@ -155,7 +155,7 @@ describe('this server’s own AI after a desktop was granted smart search', () =
     // the key it answered under is remembered for that destination: the next photo asks once
     bound.mockClear();
     await encode();
-    expect(bound.mock.calls.map(([, , profile]) => profile.modelKey)).toEqual([others[1].modelKey]);
+    expect(bound.mock.calls.map((call) => call[2].modelKey)).toEqual([others[1].modelKey]);
     expect(plain).not.toHaveBeenCalled();
   });
 
