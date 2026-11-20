@@ -104,7 +104,8 @@ test.describe('Trash across tabs', () => {
     await row.getByRole('button', { name: 'Restore', exact: true }).click();
     await expect(row).toHaveCount(0);
     socket.emit('on_asset_restore', [asset.id]);
-    await expect(thumbnailUtils.withAssetId(viewerTab, asset.id)).toBeVisible();
+    // FL-1720: an item that is new to this tab's timeline arrives once live changes go quiet (2.5 s + 5 s).
+    await expect(thumbnailUtils.withAssetId(viewerTab, asset.id)).toBeVisible({ timeout: 20_000 });
   });
 
   test('the trash viewer moves on when its item is restored in another tab', async ({ context }) => {
