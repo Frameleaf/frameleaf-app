@@ -1453,6 +1453,21 @@ describe('Frameleaf Cloud descriptions contract (FC-44, FL-163)', () => {
       expect(() => cloudRequestBody(estimateRequestSchema, body, name)).toThrow(FrameleafCloudError);
     });
 
+    it('refuses a request with no clip in its list as a rejected body, not a crash', () => {
+      const estimate = cloudContractFixture<{ request: Record<string, unknown> }>(
+        `ml/${workload}/estimate-request.json`,
+      );
+      const preview = { enabled: true, startSec: 0, durationSec: 5 };
+      for (const request of [
+        { ...estimate.request, items: [] },
+        { items: [], ...(workload === 'restoration' && { preview }) },
+      ]) {
+        expect(() => cloudRequestBody(estimateRequestSchema, { ...estimate, request }, 'no clip')).toThrow(
+          FrameleafCloudError,
+        );
+      }
+    });
+
     it('copies every request the cloud publishes for it', () => {
       const folder = join(import.meta.dirname, '../../test/fixtures/frameleaf-cloud-contracts/ml', workload);
       expect(readdirSync(join(folder, 'rejected')).toSorted()).toEqual([...rejected]);

@@ -888,6 +888,8 @@ export const CLOUD_WORKLOAD_REQUESTS = {
       (request) =>
         !request.preview?.enabled ||
         !request.items ||
+        // an empty or longer list is the length rule's to refuse; there is no one clip to compare with
+        request.items.length !== 1 ||
         request.preview.startSec + request.preview.durationSec <= request.items[0].durationSec,
       { path: ['preview'], message: 'the preview lies inside the clip' },
     ),
