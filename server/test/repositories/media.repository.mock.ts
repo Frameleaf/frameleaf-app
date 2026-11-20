@@ -44,7 +44,7 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     probeEmbeddedSubtitles: vitest.fn(),
     inspectPlaybackCopy: vitest.fn(),
     probeHdrMastering: vitest.fn().mockResolvedValue([]),
-    countPackets: vitest.fn().mockResolvedValue({ packets: 0, hidden: 0 }),
+    countPackets: vitest.fn().mockResolvedValue({ packets: 0, hidden: 0, uneven: false }),
     probePackets: vitest.fn().mockResolvedValue({
       totalDuration: 0,
       packetCount: 0,

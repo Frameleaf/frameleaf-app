@@ -1,4 +1,5 @@
 import {
+  cloudDeclaredFps,
   cloudSmoothMotionFactor,
   cloudVideoClip,
   cloudVideoClipRefusal,
@@ -173,6 +174,49 @@ describe('the Smooth motion factor Frameleaf Cloud really gives (FL-1725)', () =
   });
 });
 
+describe('the frame rate declared to Frameleaf Cloud (FL-1725)', () => {
+  it("is the limit itself for a rate within the worker's 0.01 over it", () => {
+    expect(cloudDeclaredFps(30.0003, 4)).toBe(30);
+    expect(cloudDeclaredFps(60.0001, 2)).toBe(60);
+    expect(cloudDeclaredFps(30.009, 4)).toBe(30);
+    expect(cloudDeclaredFps(120.004)).toBe(120);
+    expect(cloudDeclaredFps(120.004, 2)).toBe(120);
+  });
+
+  it('is the measured rate otherwise', () => {
+    expect(cloudDeclaredFps(30.011, 4)).toBe(30.011);
+    expect(cloudDeclaredFps(29.97, 4)).toBe(29.97);
+    expect(cloudDeclaredFps(30, 4)).toBe(30);
+    expect(cloudDeclaredFps(30.0003, 2)).toBe(30.0003);
+    expect(cloudDeclaredFps(30.0003)).toBe(30.0003);
+    expect(cloudDeclaredFps(120.02)).toBe(120.02);
+  });
+
+  it('keeps the declared length counting back to the same frames, and sends the job', () => {
+    const clip = cloudVideoClip(
+      'v1',
+      {
+        width: 1920,
+        height: 1080,
+        frameCount: 900,
+        frameRate: 30.0003,
+        frameRateRational: { num: 300_003, den: 10_000 },
+      },
+      4,
+    )!;
+    expect(clip).toMatchObject({ fps: 30, durationSec: 30 });
+    expect(Math.floor(clip.durationSec * clip.fps + 0.5)).toBe(900);
+    expect(cloudVideoClipRefusal('interpolation', clip, 4)).toBeNull();
+  });
+
+  it('names a rate that is really over, to three decimals', () => {
+    const clip = { inputId: 'v1', durationSec: 5, fps: 30.02, width: 1920, height: 1080 };
+    expect(cloudVideoClipRefusal('interpolation', clip, 4)).toBe(
+      'This video has 30.02 frames a second, so 4× would pass 120 frames a second. Choose 2×.',
+    );
+  });
+});
+
 describe('a stream that can be uploaded as it is (FL-1725)', () => {
   it('is one with no rotation and no hidden packets', () => {
     expect(isPlainVideoStream({ rotation: 0 }, { packets: 10, hidden: 0 })).toBe(true);
@@ -182,6 +226,7 @@ describe('a stream that can be uploaded as it is (FL-1725)', () => {
       expect(isPlainVideoStream({ rotation }, { packets: 10, hidden: 0 })).toBe(false);
     }
     expect(isPlainVideoStream({ rotation: 0 }, { packets: 10, hidden: 1 })).toBe(false);
+    expect(isPlainVideoStream({ rotation: 0 }, { packets: 10, hidden: 0, uneven: true })).toBe(false);
     expect(isPlainVideoStream({ rotation: 0 }, { packets: 0, hidden: 0 })).toBe(false);
     expect(isPlainVideoStream(undefined, { packets: 10, hidden: 0 })).toBe(false);
   });

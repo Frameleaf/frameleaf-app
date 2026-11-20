@@ -56,6 +56,16 @@ export const previewClipOutputOptions = (crop: readonly string[] = []): string[]
   '+faststart',
 ];
 
+/** Crops a frame to even sides, which 4:2:0 encoders need; a frame with even sides is untouched. */
+export const EVEN_SIDES_FILTER = 'crop=trunc(iw/2)*2:trunc(ih/2)*2';
+
+/**
+ * FL-1725: makes an encode constant-rate at `rate` (the source's average, as a fraction). Frameleaf Cloud's
+ * worker finds frames by the average rate, so a variable-rate clip would be restored from the wrong frames.
+ */
+export const constantRateOptions = (rate: string | null | undefined): string[] =>
+  rate && /^\d+\/\d+$/.test(rate) && !/^0+\/|\/0+$/.test(rate) ? ['-fps_mode', 'cfr', '-r', rate] : [];
+
 /** What is uploaded from a preview clip: its video stream copied, without audio or metadata. */
 export const uploadClipOutputOptions = (): string[] => [
   ...strippedVideoStreams(false),
@@ -73,11 +83,31 @@ export const uploadClipOutputOptions = (): string[] => [
  * the worker refuses a clip that still carries an audio stream) and never with metadata. `bsf` drops
  * a stream copy's SEI messages, where cameras put their own data.
  */
-export const fullVideoUploadOutputOptions = (options: { copy: boolean; bsf?: string; webm?: boolean }): string[] => [
+export const fullVideoUploadOutputOptions = (options: {
+  copy: boolean;
+  bsf?: string;
+  webm?: boolean;
+  /** FL-1725: the frame rate a re-encode is made constant at (`30000/1001`): the stream's average. */
+  constantRate?: string | null;
+}): string[] => [
   ...strippedVideoStreams(false),
   ...(options.copy
     ? ['-c:v', 'copy']
-    : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '12', '-pix_fmt', 'yuv420p']),
+    : [
+        // FL-1725: H.264 4:2:0 needs even sides (a 95×63 frame turned upright is 63×95): at most one row
+        // and one column are cropped, never scaled
+        '-vf',
+        EVEN_SIDES_FILTER,
+        ...constantRateOptions(options.constantRate),
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '12',
+        '-pix_fmt',
+        'yuv420p',
+      ]),
   ...(options.bsf ? ['-bsf:v', options.bsf] : []),
   ...STRIP_VIDEO_METADATA_OPTIONS,
   ...(options.webm ? [] : ['-movflags', '+faststart']),

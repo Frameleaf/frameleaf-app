@@ -1101,10 +1101,14 @@ describe(MediaRepository.name, () => {
     let folder: string;
     const make = (arguments_: string[]) =>
       execFileSync('ffmpeg', ['-v', 'error', '-y', ...arguments_], { timeout: 60_000, stdio: 'ignore' });
-    const upload = (input: string, output: string, copy: boolean) =>
+    const upload = (input: string, output: string, copy: boolean, constantRate?: string) =>
       sut.transcode(input, output, {
         inputOptions: [],
-        outputOptions: fullVideoUploadOutputOptions({ copy, bsf: copy ? 'filter_units=remove_types=6' : undefined }),
+        outputOptions: fullVideoUploadOutputOptions({
+          copy,
+          bsf: copy ? 'filter_units=remove_types=6' : undefined,
+          constantRate,
+        }),
         twoPass: false,
         progress: { frameCount: 0, percentInterval: 5 },
       });
@@ -1174,7 +1178,7 @@ describe(MediaRepository.name, () => {
       await upload(join(folder, 'plain.mp4'), copy, true);
       const uploaded = await measured(copy);
       expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
-      expect(uploaded.packets).toEqual({ packets: 120, hidden: 0 });
+      expect(uploaded.packets).toEqual({ packets: 120, hidden: 0, uneven: false });
       expect(decodedFrames(copy)).toBe(120);
       const clip = cloudVideoClip('v1', uploaded.stream)!;
       expect(clip).toMatchObject({ fps: 30, width: 320, height: 240 });
@@ -1205,6 +1209,84 @@ describe(MediaRepository.name, () => {
         expect(decodedFrames(encoded)).toBe(uploaded.packets.packets);
       },
     );
+
+    it('never copies a variable-rate source: the upload has one frame rate', async () => {
+      const source = join(folder, 'variable.mp4');
+      // the first second at 30 frames a second, then every third frame
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-t',
+        '4',
+        '-vf',
+        String.raw`select='lt(n\,30)+not(mod(n\,3))'`,
+        '-fps_mode',
+        'vfr',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        source,
+      ]);
+      const { stream, packets } = await measured(source);
+      expect(packets).toMatchObject({ hidden: 0, uneven: true });
+      expect(isPlainVideoStream(stream, packets)).toBe(false);
+
+      const rate = stream.frameRateRational!;
+      const encoded = join(folder, 'variable-upload.mp4');
+      await upload(source, encoded, false, `${rate.num}/${rate.den}`);
+      const uploaded = await measured(encoded);
+      expect(uploaded.packets).toMatchObject({ hidden: 0, uneven: false });
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(cloudVideoClip('v1', uploaded.stream)!.fps).toBeCloseTo(rate.num / rate.den, 6);
+      expect(decodedFrames(encoded)).toBe(uploaded.packets.packets);
+    });
+
+    it('does not take the one-tick jitter of a millisecond time base for a variable rate', async () => {
+      const source = join(folder, 'jitter.mkv');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=60',
+        '-t',
+        '2',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        source,
+      ]);
+      expect(await sut.countPackets(source, 0)).toEqual({ packets: 120, hidden: 0, uneven: false });
+    });
+
+    it('re-encodes a turned frame with odd sides by cropping to even ones', async () => {
+      const odd = join(folder, 'odd.mp4');
+      const source = join(folder, 'odd-rotated.mp4');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=96x64:rate=30',
+        '-t',
+        '1',
+        '-vf',
+        'crop=95:63',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv444p',
+        odd,
+      ]);
+      make(['-display_rotation', '90', '-i', odd, '-c', 'copy', source]);
+      const encoded = join(folder, 'odd-upload.mp4');
+      await upload(source, encoded, false, '30/1');
+      const uploaded = await measured(encoded);
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(cloudVideoClip('v1', uploaded.stream)).toMatchObject({ width: 62, height: 94 });
+    });
 
     it('never copies a trimmed source: the upload holds only the frames the video shows', async () => {
       const source = join(folder, 'trimmed.mp4');

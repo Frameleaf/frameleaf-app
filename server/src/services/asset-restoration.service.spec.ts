@@ -464,6 +464,19 @@ describe(AssetRestorationService.name, () => {
         });
       });
 
+      // FL-1725: Frameleaf Cloud's limits (2× restoration, 2× or 4× Smooth motion) are the cloud job's alone
+      it('still queues 8× Smooth motion on a worker on this network', async () => {
+        await sut.requestPreview(authStub.user1, video.id, { ...smooth, smoothMotionFactor: 8 as const });
+
+        expect(restorations.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            mode: AssetRestorationMode.SmoothMotion,
+            upscale: 8,
+            destinationKind: MlDestinationKind.Lan,
+          }),
+        );
+      });
+
       it('queues an interpolation preview on the named home worker, keeping the size and the original', async () => {
         await sut.requestPreview(authStub.user1, video.id, smooth);
 
@@ -627,6 +640,15 @@ describe(AssetRestorationService.name, () => {
           refusal: MlAdmissionRefusal.WorkloadNotAllowed,
         });
       });
+    });
+
+    // FL-1725: Frameleaf Cloud's 2× limit is the cloud job's alone
+    it('still queues a 4× restoration on a worker on this network', async () => {
+      await sut.requestPreview(authStub.user1, asset.id, { ...request, upscale: 4 as const });
+
+      expect(restorations.create).toHaveBeenCalledWith(
+        expect.objectContaining({ upscale: 4, destinationKind: MlDestinationKind.Lan }),
+      );
     });
 
     it('creates the next revision and a preview job bound to the named destination', async () => {

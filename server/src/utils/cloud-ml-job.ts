@@ -106,12 +106,15 @@ export const cloudVideoClip = (
   stream:
     | Pick<VideoStreamInfo, 'width' | 'codedWidth' | 'height' | 'frameCount' | 'frameRate' | 'frameRateRational'>
     | undefined,
+  /** The Smooth motion factor asked for, when the clip is for Smooth motion (see `cloudDeclaredFps`). */
+  factor: number | null = null,
 ): CloudVideoClip | null => {
   if (!stream) {
     return null;
   }
   const rational = stream.frameRateRational;
-  const fps = rational && rational.num > 0 && rational.den > 0 ? rational.num / rational.den : stream.frameRate;
+  const measured = rational && rational.num > 0 && rational.den > 0 ? rational.num / rational.den : stream.frameRate;
+  const fps = measured && measured > 0 ? cloudDeclaredFps(measured, factor) : measured;
   const frames = stream.frameCount;
   const width = stream.codedWidth ?? stream.width;
   if (!fps || !(fps > 0) || !Number.isSafeInteger(frames) || frames < 1 || !(width > 0) || !(stream.height > 0)) {
@@ -164,8 +167,32 @@ export const cloudSmoothMotionFactor = (fps: number, factor: number): 2 | 4 | nu
  */
 export const isPlainVideoStream = (
   stream: Pick<VideoStreamInfo, 'rotation'> | undefined,
-  packets: { packets: number; hidden: number },
-): boolean => !!stream && !((Number(stream.rotation) || 0) % 360) && packets.packets > 0 && packets.hidden === 0;
+  packets: { packets: number; hidden: number; uneven?: boolean },
+): boolean =>
+  !!stream &&
+  !((Number(stream.rotation) || 0) % 360) &&
+  packets.packets > 0 &&
+  packets.hidden === 0 &&
+  // a variable frame rate: the worker finds frames by the average rate and would restore the wrong ones
+  !packets.uneven;
+
+/** How far the cloud's worker lets a clip's real frame rate be from the declared one. */
+export const CLOUD_VIDEO_FPS_TOLERANCE = 0.01;
+
+/**
+ * The frame rate to declare for a clip measured at `fps`. A rate a hair over a limit (30.0003 for 4×
+ * Smooth motion, 60.0001 for 2×, 120.004 for anything) is the limit itself: the cloud's worker accepts a
+ * declared rate within 0.01 of the real one, and the estimate would otherwise refuse a 30 fps video for
+ * the way its container rounds its length.
+ */
+export const cloudDeclaredFps = (fps: number, factor: number | null = null): number => {
+  for (const limit of [...(factor ? [CLOUD_VIDEO_MAX_FPS / factor] : []), CLOUD_VIDEO_MAX_FPS]) {
+    if (fps > limit && fps - limit <= CLOUD_VIDEO_FPS_TOLERANCE) {
+      return limit;
+    }
+  }
+  return fps;
+};
 
 /**
  * Why Frameleaf Cloud would refuse this clip (its frame rate, size or length), or would run Smooth motion
@@ -178,7 +205,7 @@ export const cloudVideoClipRefusal = (
 ): string | null => {
   const max = workload === 'restoration' ? { width: 7680, height: 4320 } : { width: 3840, height: 2160 };
   if (clip.fps < 1 || clip.fps > CLOUD_VIDEO_MAX_FPS) {
-    return `Frameleaf Cloud takes video from 1 to ${CLOUD_VIDEO_MAX_FPS} frames a second; this one has ${Math.round(clip.fps * 100) / 100}.`;
+    return `Frameleaf Cloud takes video from 1 to ${CLOUD_VIDEO_MAX_FPS} frames a second; this one has ${Math.round(clip.fps * 1000) / 1000}.`;
   }
   if (
     clip.width < CLOUD_VIDEO_MIN_SIDE ||
@@ -196,7 +223,7 @@ export const cloudVideoClipRefusal = (
     // owner is never shown, or charged for, a factor that was not made
     const asked = factor ?? 2;
     const given = cloudSmoothMotionFactor(clip.fps, asked);
-    const fps = Math.round(clip.fps * 100) / 100;
+    const fps = Math.round(clip.fps * 1000) / 1000;
     if (given === null) {
       return `This video has ${fps} frames a second. Frameleaf Cloud smooths motion up to ${CLOUD_VIDEO_MAX_FPS} frames a second, so there is nothing it can add.`;
     }

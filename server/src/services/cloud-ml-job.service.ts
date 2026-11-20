@@ -159,7 +159,9 @@ import { isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
 import {
+  EVEN_SIDES_FILTER,
   audioReattachOffsetSeconds,
+  constantRateOptions,
   fullVideoUploadOutputOptions,
   previewClipOutputOptions,
   reattachAudioOutputOptions,
@@ -3178,11 +3180,13 @@ export class CloudMlJobService {
     const crop =
       options.crop && !isFullRegion(region)
         ? ['-vf', `crop=${even(rect.width)}:${even(rect.height)}:${rect.left}:${rect.top}`]
-        : [];
+        : // the whole frame: an odd side cannot be encoded (FL-1725)
+          ['-vf', EVEN_SIDES_FILTER];
     const beforePath = path.join(workDir, 'before.mp4');
     await this.mediaRepository.transcode(source.originalPath, beforePath, {
       inputOptions: ['-ss', start.toFixed(3), '-t', clip.toFixed(3)],
-      outputOptions: previewClipOutputOptions(crop),
+      // FL-1725: constant-rate at the source's average, so the clip that is uploaded has one frame rate
+      outputOptions: [...previewClipOutputOptions(crop), ...constantRateOptions(await this.averageRate(source))],
       twoPass: false,
       progress: { frameCount: 0, percentInterval: 5 },
     });
@@ -3223,14 +3227,9 @@ export class CloudMlJobService {
     };
     const plan = copyable[extension] ?? { container: 'mp4', contentType: 'video/mp4', codecs: ['h264', 'hevc', 'av1'] };
     const stream = probe.videoStreams[0];
-    // FL-1725: only a plain stream is copied. A rotation or packets the edit list hides are settled by the
-    // re-encode: upright pixels, and exactly the frames the video shows
-    const plain =
-      !!stream &&
-      isPlainVideoStream(stream, await this.mediaRepository.countPackets(source.originalPath, stream.index));
-    const copy = !!codec && plan.codecs.includes(codec) && plain;
-    const container = copy ? plan.container : 'mp4';
-    const file = path.join(workDir, `input.${container}`);
+    // FL-1725: only a plain stream is copied. A rotation, packets the edit list hides or a variable frame
+    // rate are settled by the re-encode: upright pixels, exactly the frames the video shows, one rate
+    let copy = !!codec && plan.codecs.includes(codec) && (await this.isPlainVideo(source.originalPath));
     // a stream copy keeps the stream's SEI messages, where cameras put their own data (serial numbers,
     // GPS, settings). Every SEI message is dropped (H.264 type 6, HEVC prefix and suffix types 39 and 40),
     // HDR mastering metadata carried there included; the colour description in the stream header stays
@@ -3238,15 +3237,45 @@ export class CloudMlJobService {
       h264: 'filter_units=remove_types=6',
       hevc: 'filter_units=remove_types=39|40',
     };
-    const filter = copy && codec ? sei[codec] : undefined;
-    await this.mediaRepository.transcode(source.originalPath, file, {
-      inputOptions: [],
-      outputOptions: fullVideoUploadOutputOptions({ copy, bsf: filter, webm: container === 'webm' }),
-      twoPass: false,
-      progress: { frameCount: 0, percentInterval: 5 },
-    });
+    const rate = stream?.frameRateRational;
+    const write = async () => {
+      const container = copy ? plan.container : 'mp4';
+      const file = path.join(workDir, `input.${container}`);
+      await this.mediaRepository.transcode(source.originalPath, file, {
+        inputOptions: [],
+        outputOptions: fullVideoUploadOutputOptions({
+          copy,
+          bsf: copy && codec ? sei[codec] : undefined,
+          webm: container === 'webm',
+          constantRate: rate ? `${rate.num}/${rate.den}` : null,
+        }),
+        twoPass: false,
+        progress: { frameCount: 0, percentInterval: 5 },
+      });
+      return file;
+    };
+    let file = await write();
+    if (copy && !(await this.isPlainVideo(file))) {
+      // the copy itself is what is uploaded: a container can hide packets its source did not (a transport
+      // stream cut inside a group of pictures). It is made again by re-encoding, never sent as it is
+      await this.storageRepository.unlink(file).catch(() => {});
+      copy = false;
+      file = await write();
+    }
     await this.requireSilentUpload(file);
     return { file, contentType: copy ? plan.contentType : 'video/mp4' };
+  }
+
+  /** The source's average frame rate as a fraction (`30000/1001`), or null when the probe has none. */
+  private async averageRate(source: Source): Promise<string | null> {
+    const rate = (await this.mediaRepository.probe(source.originalPath)).videoStreams[0]?.frameRateRational;
+    return rate ? `${rate.num}/${rate.den}` : null;
+  }
+
+  /** Whether this file's first video stream can be uploaded packet for packet (`isPlainVideoStream`). */
+  private async isPlainVideo(file: string): Promise<boolean> {
+    const stream = (await this.mediaRepository.probe(file)).videoStreams[0];
+    return !!stream && isPlainVideoStream(stream, await this.mediaRepository.countPackets(file, stream.index));
   }
 
   /**
@@ -3257,15 +3286,15 @@ export class CloudMlJobService {
     const probe = await this.mediaRepository.probe(input.path, { countFrames: true });
     const stream = probe.videoStreams[0];
     // what is uploaded is a plain stream: the cloud's worker would otherwise turn the picture against its
-    // declared size, or decode fewer frames than were counted, after the job is admitted
+    // declared size, decode fewer frames than were counted, or find the wrong frames, after the job is admitted
     if (stream && !isPlainVideoStream(stream, await this.mediaRepository.countPackets(input.path, stream.index))) {
       throw new CloudMlJobFailure(
         'cloud_ml_prepare_failed',
-        'The copy prepared for Frameleaf Cloud still carries a rotation or frames its picture never shows, so nothing was sent',
+        'The copy prepared for Frameleaf Cloud still carries a rotation, frames its picture never shows or an uneven frame rate, so nothing was sent',
         false,
       );
     }
-    const clip = cloudVideoClip(input.inputId, stream);
+    const clip = cloudVideoClip(input.inputId, stream, workload === 'interpolation' ? (factor ?? 2) : null);
     if (!clip) {
       throw new CloudMlJobFailure(
         'cloud_ml_prepare_failed',

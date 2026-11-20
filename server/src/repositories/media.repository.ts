@@ -976,23 +976,37 @@ export class MediaRepository {
    * Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
    */
   /**
-   * FL-1725: how many packets a stream has, and how many of them its edit list hides (ffprobe's discard
-   * flag). A decoder shows `packets - hidden` frames; `probe` with `countFrames` counts them all.
+   * FL-1725: how many packets a stream has, how many of them its edit list hides (ffprobe's discard
+   * flag), and whether its frames last unevenly (the longest shown packet more than half again as long as
+   * the shortest: a variable frame rate, not the one-tick jitter of a coarse time base). A decoder shows
+   * `packets - hidden` frames; `probe` with `countFrames` counts them all.
    */
   countPackets(
     input: string,
     streamIndex: number,
     signal: AbortSignal | undefined = executionSignal(),
-  ): Promise<{ packets: number; hidden: number }> {
+  ): Promise<{ packets: number; hidden: number; uneven: boolean }> {
     signal?.throwIfAborted();
     const ffprobe = spawn(
       'ffprobe',
-      ['-v', 'error', '-select_streams', String(streamIndex), '-show_entries', 'packet=flags', '-of', 'csv=p=0', input],
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        String(streamIndex),
+        '-show_entries',
+        'packet=duration,flags',
+        '-of',
+        'csv=p=0',
+        input,
+      ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     const lifetime = superviseMediaProcess(ffprobe, { signal });
     let packets = 0;
     let hidden = 0;
+    let shortest = Infinity;
+    let longest = 0;
     let stderr = '';
     let remainder = '';
     let failure: Error | undefined;
@@ -1001,9 +1015,16 @@ export class MediaRepository {
         return;
       }
       packets++;
+      const [stated, flags = ''] = line.split(',', 2);
       // flags are `K`, `D` and `C` in fixed places: `_D_` is a packet the edit list drops
-      if (line.includes('D')) {
+      if (flags.includes('D')) {
         hidden++;
+      } else {
+        const duration = Number(stated);
+        if (duration > 0) {
+          shortest = Math.min(shortest, duration);
+          longest = Math.max(longest, duration);
+        }
       }
       lifetime.progress(1);
     };
@@ -1032,7 +1053,7 @@ export class MediaRepository {
           return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
         }
         count(remainder);
-        resolve({ packets, hidden });
+        resolve({ packets, hidden, uneven: longest > shortest * 1.5 });
       });
     });
   }
