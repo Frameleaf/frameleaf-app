@@ -9,6 +9,8 @@
 #   REGISTRY_TOKEN      token for ghcr.io, with ACTOR as the user
 #   COSIGN_PRIVATE_KEY, COSIGN_PASSWORD   the Frameleaf signing key; must match the committed cosign.pub
 #   RELEASE_TAG         optional: a tag that must not exist yet
+# The checks below are functions handed to check() by name, which ShellCheck cannot follow.
+# shellcheck disable=SC2329
 set -uo pipefail
 failed=0
 out=$(mktemp)
@@ -47,7 +49,7 @@ registry_login() {
   printf '%s' "$REGISTRY_TOKEN" | docker --config "$config" login ghcr.io --username "$ACTOR" --password-stdin
   local status=$?
   rm -rf "$config"
-  return $status
+  return "$status"
 }
 check "ghcr.io accepts the registry token for ${ACTOR:-?}" registry_login
 
