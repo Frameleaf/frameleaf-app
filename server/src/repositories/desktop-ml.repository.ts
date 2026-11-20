@@ -22,6 +22,7 @@ import { desktopAccountPermitted, householdDevices } from 'src/utils/desktop-ass
 import { type DesktopMlDisclosure, desktopMlDisclosureSchema } from 'src/utils/desktop-ml-disclosure.js';
 import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import {
+  DESKTOP_CANCELS_BEFORE_FAILURE,
   DESKTOP_CANCELS_PER_TASK,
   DESKTOP_CANCEL_WINDOW_SECONDS,
   DESKTOP_LEASE_SECONDS,
@@ -89,6 +90,8 @@ const failuresSchema = z.record(
     cancelAt: z.iso.datetime().optional(),
     /** The newest lease of the model the desktop had when its last stop was counted (UTC, microseconds). */
     cancelLease: z.string().optional(),
+    /** That stop was a hand-back past the cap, so it is already a failure. */
+    stopFailed: z.boolean().optional(),
   }),
 );
 /**
@@ -633,7 +636,8 @@ export class DesktopMlRepository {
    * Every failure counts. A runtime that crashes with several tasks in hand is one failure because the
    * desktop says so: it reports `model-unavailable` for one task and `cancelled` for the others. With
    * `stop`, the failure is that crash: the tasks handed back after it, with no lease in between, belong to
-   * it and are not counted as a hand-back (`countCancel`).
+   * it and are not counted as a hand-back (`countCancel`). The other order is one failure too: when a
+   * `cancelled` of the same stop was already counted as a failure, the crash report adds nothing.
    */
   countFailure(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string, stop = false): Promise<number> {
     const key = failureKey(grant.deviceId, taskModelKey);
@@ -641,12 +645,17 @@ export class DesktopMlRepository {
       const cancelLease = stop ? await this.lastLease(db, grant, taskModelKey) : undefined;
       let count = 0;
       await this.changeFailures(db, (failures, now) => {
-        count = (failures[key]?.failures ?? 0) + 1;
+        const known = failures[key];
+        if (cancelLease && known?.stopFailed && known.cancelLease === cancelLease) {
+          count = known.failures;
+          return;
+        }
+        count = (known?.failures ?? 0) + 1;
         failures[key] = {
-          ...failures[key],
+          ...known,
           failures: count,
           at: now.toISOString(),
-          ...(cancelLease && { cancelLease }),
+          ...(cancelLease && { cancelLease, stopFailed: false }),
         };
       });
       return count;
@@ -702,6 +711,7 @@ export class DesktopMlRepository {
           cancelsFrom: open ? known.cancelsFrom : now.toISOString(),
           cancelAt: now.toISOString(),
           cancelLease: leasedAt,
+          stopFailed: count > DESKTOP_CANCELS_BEFORE_FAILURE,
         };
       });
       return count;
@@ -792,6 +802,7 @@ export class DesktopMlRepository {
             cancelsFrom: entry.cancelsFrom,
             cancelAt: entry.cancelAt,
             cancelLease: entry.cancelLease,
+            stopFailed: entry.stopFailed,
           };
         } else delete failures[key];
       } else if (!entry.heldUntil && entry.failures === 0 && !handingBack) delete failures[key];
