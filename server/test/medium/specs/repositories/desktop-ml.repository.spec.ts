@@ -181,6 +181,9 @@ it('knows when an online, qualified helper of the owner is ready for a model (FL
 
 it('two repository instances racing claim one task once and preserve scoped input', async () => {
   const { sut, second, grants, request } = await setup();
+  // Inside the lease length: a deadline of exactly one lease ends after the lease whenever the database
+  // clock is behind this process's clock.
+  request.deadlineAt = new Date(Date.now() + 60_000);
   const task = await sut.create(request);
   const claims = await Promise.all([
     sut.claim(grants[0], [request.modelKey]),
