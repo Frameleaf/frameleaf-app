@@ -218,21 +218,34 @@ export const cloudVideoClipRefusal = (
   if (clip.durationSec > CLOUD_VIDEO_MAX_SECONDS) {
     return `Frameleaf Cloud takes video up to ${CLOUD_VIDEO_MAX_SECONDS / 3600} hours long. Split the clip into shorter parts.`;
   }
-  if (workload === 'interpolation') {
-    // the cloud halves a factor that would pass 120 frames a second and refuses when even 2× does: the
-    // owner is never shown, or charged for, a factor that was not made
-    const asked = factor ?? 2;
-    const given = cloudSmoothMotionFactor(clip.fps, asked);
-    const fps = Math.round(clip.fps * 1000) / 1000;
-    if (given === null) {
-      return `This video has ${fps} frames a second. Frameleaf Cloud smooths motion up to ${CLOUD_VIDEO_MAX_FPS} frames a second, so there is nothing it can add.`;
-    }
-    if (given !== asked) {
-      return `This video has ${fps} frames a second, so ${asked}× would pass ${CLOUD_VIDEO_MAX_FPS} frames a second. Choose ${given}×.`;
-    }
-  }
-  return null;
+  return workload === 'interpolation' ? cloudSmoothMotionRefusal(clip.fps, factor ?? 2) : null;
 };
+
+/**
+ * Why Frameleaf Cloud would not smooth motion at `factor` for a clip declared at `fps`, or null. The cloud
+ * halves a factor that would pass 120 frames a second and refuses when even 2× does: the owner is never
+ * shown, or charged for, a factor that was not made.
+ */
+export const cloudSmoothMotionRefusal = (fps: number, factor: number): string | null => {
+  const given = cloudSmoothMotionFactor(fps, factor);
+  const rate = Math.round(fps * 1000) / 1000;
+  if (given === null) {
+    return `This video has ${rate} frames a second. Frameleaf Cloud smooths motion up to ${CLOUD_VIDEO_MAX_FPS} frames a second, so there is nothing it can add.`;
+  }
+  return given === factor
+    ? null
+    : `This video has ${rate} frames a second, so ${factor}× would pass ${CLOUD_VIDEO_MAX_FPS} frames a second. Choose ${given}×.`;
+};
+
+/**
+ * Whether a stream's frames last unevenly, from the shortest and longest shown packet durations in its own
+ * time base ticks and whether any shown packet had no duration. A difference of one tick, or 2% of a frame,
+ * is the rounding of a coarse time base (33 and 34 ticks of a millisecond at 30 frames a second); anything
+ * more is a frame rate that changes (400 and 480 ticks of 1/12000 is 30 and 25 frames a second). A packet
+ * without a duration tells nothing about the cadence, so it never counts as even.
+ */
+export const isUnevenCadence = (shortest: number, longest: number, unknown: boolean): boolean =>
+  unknown || (longest > 0 && longest - shortest > Math.max(1, shortest * 0.02));
 
 /** The `request` of a restoration or Smooth motion estimate and job (FC-47, FC-48). */
 export const cloudVideoRequest = (

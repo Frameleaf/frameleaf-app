@@ -49,6 +49,7 @@ import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { isUnevenCadence } from 'src/utils/cloud-ml-job.js';
 import { renderDarktable } from 'src/utils/darktable-renderer.js';
 import {
   DESIGN_PREVIEW_TAGS,
@@ -977,9 +978,8 @@ export class MediaRepository {
    */
   /**
    * FL-1725: how many packets a stream has, how many of them its edit list hides (ffprobe's discard
-   * flag), and whether its frames last unevenly (the longest shown packet more than half again as long as
-   * the shortest: a variable frame rate, not the one-tick jitter of a coarse time base). A decoder shows
-   * `packets - hidden` frames; `probe` with `countFrames` counts them all.
+   * flag), and whether its frames last unevenly (`isUnevenCadence`). A decoder shows `packets - hidden`
+   * frames; `probe` with `countFrames` counts them all.
    */
   countPackets(
     input: string,
@@ -1007,6 +1007,7 @@ export class MediaRepository {
     let hidden = 0;
     let shortest = Infinity;
     let longest = 0;
+    let unknown = false;
     let stderr = '';
     let remainder = '';
     let failure: Error | undefined;
@@ -1024,6 +1025,8 @@ export class MediaRepository {
         if (duration > 0) {
           shortest = Math.min(shortest, duration);
           longest = Math.max(longest, duration);
+        } else {
+          unknown = true;
         }
       }
       lifetime.progress(1);
@@ -1053,7 +1056,7 @@ export class MediaRepository {
           return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
         }
         count(remainder);
-        resolve({ packets, hidden, uneven: longest > shortest * 1.5 });
+        resolve({ packets, hidden, uneven: isUnevenCadence(shortest, longest, unknown) });
       });
     });
   }

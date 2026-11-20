@@ -6,6 +6,7 @@ import {
   cloudVideoRequest,
   cloudVideoSettingsRefusal,
   isPlainVideoStream,
+  isUnevenCadence,
 } from 'src/utils/cloud-ml-job.js';
 import { estimateRequestSchema } from 'src/utils/frameleaf-cloud.js';
 
@@ -214,6 +215,31 @@ describe('the frame rate declared to Frameleaf Cloud (FL-1725)', () => {
     expect(cloudVideoClipRefusal('interpolation', clip, 4)).toBe(
       'This video has 30.02 frames a second, so 4× would pass 120 frames a second. Choose 2×.',
     );
+  });
+});
+
+describe('a cadence that changes (FL-1725)', () => {
+  it.each([
+    ['30 frames a second in milliseconds', 33, 34],
+    ['60 frames a second in milliseconds', 16, 17],
+    ['29.97 frames a second in 1/90000', 3003, 3003],
+    ['one frame rate', 512, 512],
+  ])('is not the rounding of %s', (_, shortest, longest) => {
+    expect(isUnevenCadence(shortest, longest, false)).toBe(false);
+  });
+
+  it.each([
+    ['30 and 25 frames a second in 1/12000', 400, 480],
+    ['every third frame dropped', 512, 1536],
+    ['30 and 29 frames a second in 1/90000', 3000, 3103],
+  ])('is %s', (_, shortest, longest) => {
+    expect(isUnevenCadence(shortest, longest, false)).toBe(true);
+  });
+
+  it('is assumed when a shown packet has no duration', () => {
+    expect(isUnevenCadence(512, 512, true)).toBe(true);
+    expect(isUnevenCadence(Infinity, 0, true)).toBe(true);
+    expect(isUnevenCadence(Infinity, 0, false)).toBe(false);
   });
 });
 

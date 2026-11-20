@@ -105,6 +105,7 @@ import {
   CloudMlJobUpscale,
   CloudMlJobWorkload,
   CloudVideoClip,
+  cloudDeclaredFps,
   cloudMlJobActivity,
   cloudMlJobBackoffMs,
   cloudMlJobClientRef,
@@ -114,6 +115,7 @@ import {
   cloudMlJobRecordOf,
   cloudMlJobSpentUsd,
   cloudMlJobWorkload,
+  cloudSmoothMotionRefusal,
   cloudVideoClip,
   cloudVideoClipRefusal,
   cloudVideoRequest,
@@ -492,6 +494,16 @@ export class CloudMlJobService {
     if (workload === 'restoration' || workload === 'interpolation') {
       // what this model does not run is said here, before a copy is prepared or an estimate is asked for
       const refusal = cloudVideoSettingsRefusal(workload, settings, model.limits);
+      if (refusal) {
+        throw new BadRequestException(refusal);
+      }
+    }
+    const storedFps = Number(source.exifInfo?.fps);
+    if (workload === 'interpolation' && storedFps > 0) {
+      // the frame rate stored at metadata extraction answers the factor before a copy is made; the copy's
+      // own rate is checked again in `describeClip`
+      const factor = settings.factor ?? 2;
+      const refusal = cloudSmoothMotionRefusal(cloudDeclaredFps(storedFps, factor), factor);
       if (refusal) {
         throw new BadRequestException(refusal);
       }

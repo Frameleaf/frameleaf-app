@@ -1262,6 +1262,35 @@ describe(MediaRepository.name, () => {
       expect(await sut.countPackets(source, 0)).toEqual({ packets: 120, hidden: 0, uneven: false });
     });
 
+    it('takes a frame rate that changes by less than half for a variable rate', async () => {
+      const source = join(folder, 'thirty-then-twentyfive.mp4');
+      // 30 frames a second for a second, then 25: packet durations of 400 and 480 ticks of 1/12000
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-frames:v',
+        '60',
+        '-vf',
+        String.raw`settb=1/12000,setpts='if(lt(N\,30)\,N/30\,1+(N-30)/25)/TB'`,
+        '-fps_mode',
+        'passthrough',
+        '-enc_time_base',
+        '1/12000',
+        '-video_track_timescale',
+        '12000',
+        '-c:v',
+        'libx264',
+        '-bf',
+        '0',
+        '-pix_fmt',
+        'yuv420p',
+        source,
+      ]);
+      expect(await sut.countPackets(source, 0)).toMatchObject({ packets: 60, hidden: 0, uneven: true });
+    });
+
     it('re-encodes a turned frame with odd sides by cropping to even ones', async () => {
       const odd = join(folder, 'odd.mp4');
       const source = join(folder, 'odd-rotated.mp4');

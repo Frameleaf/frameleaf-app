@@ -801,6 +801,25 @@ describe(CloudMlJobService.name, () => {
       );
     });
 
+    it('refuses Smooth motion from the stored frame rate before a copy is made', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...source,
+        exifInfo: { ...source.exifInfo, fps: 50 },
+      } as never);
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 4 }), now)).rejects.toThrow(
+        'This video has 50 frames a second, so 4× would pass 120 frames a second. Choose 2×.',
+      );
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.media.probe).not.toHaveBeenCalled();
+      // a rate a hair over the limit is the limit here too
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...source,
+        exifInfo: { ...source.exifInfo, fps: 30.0003 },
+      } as never);
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({ ...sealed, modelSku: SMOOTH, modelRev: SMOOTH_REV });
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 4 }), now)).resolves.toBeDefined();
+    });
+
     it('refuses its own copy when it still carries a rotation or frames the picture never shows', async () => {
       mocks.media.probe.mockResolvedValue({
         format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
