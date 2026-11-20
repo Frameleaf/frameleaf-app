@@ -346,6 +346,8 @@ export class DesktopMlRepository {
           qualificationId: qualification.id,
           authorizationEpoch: grant.authorizationEpoch,
           generation: task.generation + 1,
+          // when the lease was made, not when this transaction began: failures are grouped by it
+          createdAt: sql<Date>`clock_timestamp()`,
           expiresAt: leaseEnd(
             new Date(task.deadlineAt),
             new Date(Math.min(new Date(worker.expiresAt).getTime(), new Date(qualification.expiresAt).getTime())),
@@ -626,20 +628,16 @@ export class DesktopMlRepository {
    * Counts one more failure in a row for this desktop and model, and returns the count. Kept in the database
    * (one small `system_metadata` record), so it is the same for every API process and survives a restart.
    *
-   * A runtime that crashes fails every task it held, and that is one crash: a failure of `attemptId` is not
-   * counted again when that task was already leased at the last counted failure. A task leased after it is
-   * a new failure, however soon it comes.
+   * Every failure counts. A runtime that crashes with several tasks in hand is one failure because the
+   * desktop says so: it reports `model-unavailable` for one task and `cancelled` for the others.
    */
-  countFailure(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string, attemptId?: string): Promise<number> {
+  countFailure(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string): Promise<number> {
     const key = failureKey(grant.deviceId, taskModelKey);
     return this.db.transaction().execute(async (db) => {
-      const leasedAt = await this.leasedAt(db, grant, attemptId);
       let count = 0;
       await this.changeFailures(db, (failures, now) => {
-        const known = failures[key];
-        const sameCrash = !!known?.failures && !!leasedAt && leasedAt.getTime() < new Date(known.at).getTime();
-        count = sameCrash ? known.failures : (known?.failures ?? 0) + 1;
-        if (!sameCrash) failures[key] = { ...known, failures: count, at: now.toISOString() };
+        count = (failures[key]?.failures ?? 0) + 1;
+        failures[key] = { ...failures[key], failures: count, at: now.toISOString() };
       });
       return count;
     });
@@ -647,27 +645,28 @@ export class DesktopMlRepository {
 
   /**
    * Counts a task handed back (`cancelled`) by this desktop for this model, and returns how many hand-backs
-   * the current window holds. Tasks that were in hand together are one hand-back, as for `countFailure`, so
-   * a stop with many tasks in hand counts once.
+   * the current window holds. The window is `DESKTOP_CANCEL_WINDOW_SECONDS` from its first hand-back.
+   *
+   * Hand-backs with no lease given to the desktop in between are one: a stop, a pause, or the tasks a crash
+   * left, however many were in hand. A desktop that takes a task and hands it back is counted each time.
    */
-  countCancel(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string, attemptId?: string): Promise<number> {
+  countCancel(grant: Pick<DesktopWorkerGrant, 'deviceId'>, taskModelKey: string): Promise<number> {
     const key = failureKey(grant.deviceId, taskModelKey);
     return this.db.transaction().execute(async (db) => {
-      const leasedAt = await this.leasedAt(db, grant, attemptId);
+      const { rows } = await sql<{ at: Date | null }>`SELECT max("createdAt") AS at FROM desktop_ml_attempt
+        WHERE "deviceId"=${grant.deviceId}`.execute(db);
+      const leasedAt = rows[0]?.at ? new Date(rows[0].at).getTime() : 0;
       let count = 0;
       await this.changeFailures(db, (failures, now) => {
         const known = failures[key] ?? { failures: 0, at: now.toISOString() };
         const open =
           !!known.cancelsFrom &&
           now.getTime() - new Date(known.cancelsFrom).getTime() < DESKTOP_CANCEL_WINDOW_SECONDS * 1000;
-        const sameStop =
-          open && !!known.cancelAt && !!leasedAt && leasedAt.getTime() < new Date(known.cancelAt).getTime();
+        const sameStop = open && !!known.cancelAt && leasedAt < new Date(known.cancelAt).getTime();
         count = open ? (known.cancels ?? 0) + (sameStop ? 0 : 1) : 1;
         if (!sameStop)
           failures[key] = {
             ...known,
-            // the record is kept for an hour from `at`
-            at: known.failures ? known.at : now.toISOString(),
             cancels: count,
             cancelsFrom: open ? known.cancelsFrom : now.toISOString(),
             cancelAt: now.toISOString(),
@@ -675,22 +674,6 @@ export class DesktopMlRepository {
       });
       return count;
     });
-  }
-
-  /** When this desktop was given the lease behind `attemptId`. */
-  private async leasedAt(
-    db: Kysely<DesktopMlDatabase>,
-    grant: Pick<DesktopWorkerGrant, 'deviceId'>,
-    attemptId: string | undefined,
-  ): Promise<Date | undefined> {
-    if (!attemptId) return;
-    const row = await db
-      .selectFrom('desktop_ml_attempt')
-      .select('createdAt')
-      .where('id', '=', attemptId)
-      .where('deviceId', '=', grant.deviceId)
-      .executeTakeFirst();
-    return row ? new Date(row.createdAt) : undefined;
   }
 
   /** A result the desktop got right ends its run of failures for that model. */
@@ -763,12 +746,22 @@ export class DesktopMlRepository {
     change(failures, now);
     for (const [key, entry] of Object.entries(failures)) {
       // A count and the record of a withdrawal are good for an hour (a qualification's life), by which time
-      // the desktop has qualified again; a count that went back to nothing is dropped at once.
-      if (
-        now.getTime() - new Date(entry.at).getTime() > 3_600_000 ||
-        (!entry.heldUntil && entry.failures === 0 && !entry.cancels)
-      )
-        delete failures[key];
+      // the desktop has qualified again. The hand-backs have a window of their own and outlive them.
+      const handingBack =
+        !!entry.cancels &&
+        !!entry.cancelsFrom &&
+        now.getTime() - new Date(entry.cancelsFrom).getTime() < DESKTOP_CANCEL_WINDOW_SECONDS * 1000;
+      if (now.getTime() - new Date(entry.at).getTime() > 3_600_000) {
+        if (handingBack) {
+          failures[key] = {
+            failures: 0,
+            at: entry.cancelAt ?? entry.cancelsFrom!,
+            cancels: entry.cancels,
+            cancelsFrom: entry.cancelsFrom,
+            cancelAt: entry.cancelAt,
+          };
+        } else delete failures[key];
+      } else if (!entry.heldUntil && entry.failures === 0 && !handingBack) delete failures[key];
     }
     await sql`INSERT INTO system_metadata (key, value)
       VALUES (${SystemMetadataKey.FrameleafDesktopModelFailures}, ${JSON.stringify(failures)}::text::jsonb)

@@ -10,8 +10,9 @@ export const DESKTOP_FAILURES_BEFORE_WITHDRAWAL = 3;
 /**
  * Tasks handed back (`cancelled`) for one model from one desktop: this many hand-backs within the window are
  * a person pausing and stopping. Each one after that counts as a failure, so a desktop that only ever hands
- * work back loses the model like one that fails it. Tasks handed back together (a stop with several in hand)
- * are one hand-back.
+ * work back loses the model like one that fails it. Hand-backs with no lease taken in between are one.
+ * The window runs from its first hand-back and then starts again, so up to this many hand-backs in every
+ * window are never counted: handing back one task every two minutes is tolerated on purpose.
  */
 export const DESKTOP_CANCELS_BEFORE_FAILURE = 5;
 export const DESKTOP_CANCEL_WINDOW_SECONDS = 600;

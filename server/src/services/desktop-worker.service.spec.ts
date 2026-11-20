@@ -97,13 +97,19 @@ it('cancels a waiting claim when the outbound connection closes', async () => {
 });
 it('hands a task straight back when the desktop hung up while its lease was being made', async () => {
   const controller = new AbortController();
-  const lease = { task: { id: 'task' }, attempt: { id: 'attempt' }, resumed: false };
+  const lease = { task: { id: 'task', modelKey: 'face:model' }, attempt: { id: 'attempt' }, resumed: false };
+  broker.fail.mockResolvedValue(true);
+  broker.countCancel.mockResolvedValue(6);
+  broker.countFailure.mockResolvedValue(1);
   broker.claim.mockImplementation(() => {
     controller.abort();
     return Promise.resolve(lease);
   });
   await expect(service.claim('token', 'proof', '{"modelKeys":["m"],"waitMs":0}', controller.signal)).rejects.toThrow();
   expect(broker.fail).toHaveBeenCalledExactlyOnceWith(grant, 'attempt', 'cancelled');
+  // it is a hand-back like any other, and past the cap a failure
+  expect(broker.countCancel).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
+  expect(broker.countFailure).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
   // a lease the desktop already held and is working on is left alone
   broker.fail.mockClear();
   broker.claim.mockResolvedValue({ ...lease, resumed: true });
@@ -362,7 +368,7 @@ describe('a desktop that keeps failing a model', () => {
     expect(broker.withdraw).not.toHaveBeenCalled();
     await fail('inference-failed');
     expect(broker.countFailure).toHaveBeenCalledTimes(3);
-    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model', 'attempt');
+    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model');
     expect(broker.withdraw).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
     expect(warnings().at(-1)).toBe(
       'Desktop worker lost face:model after 3 failures in a row (device device): it must qualify again',
@@ -375,7 +381,7 @@ describe('a desktop that keeps failing a model', () => {
       broker.countCancel.mockResolvedValueOnce(cancels);
       await fail('cancelled');
     }
-    expect(broker.countCancel).toHaveBeenLastCalledWith(grant, 'face:model', 'attempt');
+    expect(broker.countCancel).toHaveBeenLastCalledWith(grant, 'face:model');
     expect(broker.countFailure).not.toHaveBeenCalled();
     broker.countFailure.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
     for (const cancels of [6, 7, 8]) {

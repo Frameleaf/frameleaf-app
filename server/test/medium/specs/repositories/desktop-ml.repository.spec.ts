@@ -820,43 +820,67 @@ describe('failures and hand-backs of a desktop holding several tasks', () => {
     await sql`DELETE FROM job_queue WHERE name = 'smartSearch'`.execute(db);
   });
 
-  it('counts the tasks one crash failed once, and each failure of a task leased after it at once', async () => {
+  it('counts every failure, with several tasks in hand and a refill between them', async () => {
     const { sut, grants, request, lease } = await several();
     const [desktop] = grants;
-    const held = [await lease(), await lease(), await lease()];
-    // the runtime crashes with three tasks in hand: one crash
-    for (const id of held) {
-      expect(await sut.fail(desktop, id, 'model-unavailable')).toBe(true);
-      expect(await sut.countFailure(desktop, request.modelKey, id)).toBe(1);
+    // four tasks in hand, each fails by itself and its place is filled again: three failures are three
+    const held = [await lease(), await lease(), await lease(), await lease()];
+    for (const [index, id] of held.slice(0, 3).entries()) {
+      expect(await sut.fail(desktop, id, 'inference-failed')).toBe(true);
+      expect(await sut.countFailure(desktop, request.modelKey)).toBe(index + 1);
+      await lease();
     }
-    // a task it takes afterwards and fails is a new failure, with no wait in between
-    expect(await sut.countFailure(desktop, request.modelKey, await lease())).toBe(2);
-    expect(await sut.countFailure(desktop, request.modelKey, await lease())).toBe(3);
   });
 
-  it('counts tasks handed back together once, each later hand-back again, and starts over after the window', async () => {
+  it('counts hand-backs with no lease in between once, each later one again, and starts over after the window', async () => {
     const { sut, grants, request, lease } = await several();
     const [desktop] = grants;
     // a stop with three tasks in hand is one hand-back
     for (const id of [await lease(), await lease(), await lease()]) {
       expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
-      expect(await sut.countCancel(desktop, request.modelKey, id)).toBe(1);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
     }
-    // a desktop that takes a task and hands it back, again and again
+    // a desktop that takes a task and hands it back, again and again, with other tasks still in hand
+    const kept = [await lease(), await lease()];
     for (const expected of [2, 3, 4]) {
       const id = await lease();
       expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
-      expect(await sut.countCancel(desktop, request.modelKey, id)).toBe(expected);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(expected);
+    }
+    // handing back the ones it kept, with no lease since, belongs to the last hand-back
+    for (const id of kept) {
+      expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(4);
     }
     // a result it got right ends the run
     await sut.clearFailures(desktop, request.modelKey);
-    expect(await sut.countCancel(desktop, request.modelKey, await lease())).toBe(1);
-    expect(await sut.countCancel(desktop, request.modelKey, await lease())).toBe(2);
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(2);
     // and so does the end of the window
     await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${desktop.deviceId}:${request.modelKey},cancelsFrom}`}::text[],
       to_jsonb(to_char(now() - interval '${sql.raw(String(DESKTOP_CANCEL_WINDOW_SECONDS + 1))} seconds', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
       WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
-    expect(await sut.countCancel(desktop, request.modelKey, await lease())).toBe(1);
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+  });
+
+  it('keeps the hand-backs of an open window when the failure they sit beside is an hour old', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    expect(await sut.countFailure(desktop, request.modelKey)).toBe(1);
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+    await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${desktop.deviceId}:${request.modelKey},at}`}::text[],
+      to_jsonb(to_char(now() - interval '61 minutes', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+      WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+    // the old failure is forgotten, the hand-backs of the last ten minutes are not
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(2);
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(3);
+    expect(await sut.countFailure(desktop, request.modelKey)).toBe(1);
   });
 
   it('fails a task that is only ever handed back, after the hand-backs a person stopping would make', async () => {
@@ -880,7 +904,18 @@ describe('failures and hand-backs of a desktop holding several tasks', () => {
     await db.transaction().execute(async (tx) => {
       await sql`SELECT 1 FROM desktop_ml_task WHERE id = ${task.id}::uuid FOR UPDATE`.execute(tx);
       withdrawn = sut.withdraw(desktop, request.modelKey);
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // wait until the withdrawal is seen waiting for the task row, however slow the machine
+      for (let waited = 0; ; waited++) {
+        // the activity view is a snapshot kept for the whole transaction unless it is cleared
+        await sql`SELECT pg_stat_clear_snapshot()`.execute(tx);
+        const { rows } = await sql<{ waiting: string }>`SELECT count(*) AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%desktop_ml_task%'`.execute(
+          tx,
+        );
+        if (Number(rows[0].waiting) > 0) break;
+        if (waited > 300) throw new Error('the withdrawal never waited for the task row');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
       await expect(
         sql`SELECT 1 FROM desktop_ml_attempt WHERE id = ${claim.attempt.id}::uuid FOR UPDATE NOWAIT`.execute(tx),
       ).resolves.toBeDefined();

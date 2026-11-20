@@ -145,7 +145,10 @@ export class DesktopWorkerService {
         // straight back, so another desktop takes it now instead of when the lease runs out.
         if (claim && !claim.resumed && signal.aborted) {
           try {
-            await this.broker.fail(grant, claim.attempt.id, 'cancelled');
+            // It counts as a hand-back like any other: a desktop that keeps taking leases and hanging up
+            // would otherwise keep its model for ever.
+            if (await this.broker.fail(grant, claim.attempt.id, 'cancelled'))
+              await this.countGivenUp(grant, claim.task.modelKey, 'cancelled');
           } catch {
             // The lease then runs out by itself, as it did before.
           }
@@ -256,24 +259,26 @@ export class DesktopWorkerService {
         `Desktop worker reported a failed task (device ${grant.deviceId}, ${label}): ${code}` +
           (accepted ? '' : ', 200 accepted:false'),
       );
-      // A desktop whose model keeps failing stops being offered that work until it qualifies again.
-      // So does one that only ever hands work back: past a few hand-backs in a while, each is a failure.
-      const counts =
-        accepted &&
-        !!modelKey &&
-        (code === 'inference-failed' ||
-          code === 'model-unavailable' ||
-          (code === 'cancelled' &&
-            (await this.broker.countCancel(grant, modelKey, id)) > DESKTOP_CANCELS_BEFORE_FAILURE));
-      if (counts && modelKey) {
-        const failures = await this.broker.countFailure(grant, modelKey, id);
-        if (failures >= DESKTOP_FAILURES_BEFORE_WITHDRAWAL && (await this.broker.withdraw(grant, modelKey)))
-          this.logger.warn(
-            `Desktop worker lost ${modelKey} after ${failures} failures in a row (device ${grant.deviceId}): it must qualify again`,
-          );
-      }
+      if (accepted && modelKey) await this.countGivenUp(grant, modelKey, code);
       return { accepted };
     });
+  }
+
+  /**
+   * A desktop whose model keeps failing stops being offered that work until it qualifies again. So does one
+   * that only ever hands work back: past a few hand-backs in a while, each is a failure.
+   */
+  private async countGivenUp(grant: DesktopWorkerGrant, modelKey: string, code: string) {
+    const counts =
+      code === 'inference-failed' ||
+      code === 'model-unavailable' ||
+      (code === 'cancelled' && (await this.broker.countCancel(grant, modelKey)) > DESKTOP_CANCELS_BEFORE_FAILURE);
+    if (!counts) return;
+    const failures = await this.broker.countFailure(grant, modelKey);
+    if (failures >= DESKTOP_FAILURES_BEFORE_WITHDRAWAL && (await this.broker.withdraw(grant, modelKey)))
+      this.logger.warn(
+        `Desktop worker lost ${modelKey} after ${failures} failures in a row (device ${grant.deviceId}): it must qualify again`,
+      );
   }
 
   renew(authorization: string | undefined, proof: string | undefined, payload: string): Promise<DesktopSessionDto> {
