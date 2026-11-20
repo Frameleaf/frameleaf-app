@@ -25,7 +25,7 @@ import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { DesktopWorkerAuthService, proofSessionId } from 'src/services/desktop-worker-auth.service.js';
 import { logDesktopNotAccepted, logDesktopRefusals } from 'src/utils/desktop-refusal-log.js';
 import { assertDesktopResult } from 'src/utils/desktop-result.js';
-import { DESKTOP_FAILURES_BEFORE_WITHDRAWAL } from 'src/utils/desktop-worker-timing.js';
+import { DESKTOP_CANCELS_BEFORE_FAILURE, DESKTOP_FAILURES_BEFORE_WITHDRAWAL } from 'src/utils/desktop-worker-timing.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 const parse = <T>(schema: z.ZodType<T>, payload: string): T => {
@@ -257,8 +257,16 @@ export class DesktopWorkerService {
           (accepted ? '' : ', 200 accepted:false'),
       );
       // A desktop whose model keeps failing stops being offered that work until it qualifies again.
-      if (accepted && modelKey && (code === 'inference-failed' || code === 'model-unavailable')) {
-        const failures = await this.broker.countFailure(grant, modelKey);
+      // So does one that only ever hands work back: past a few hand-backs in a while, each is a failure.
+      const counts =
+        accepted &&
+        !!modelKey &&
+        (code === 'inference-failed' ||
+          code === 'model-unavailable' ||
+          (code === 'cancelled' &&
+            (await this.broker.countCancel(grant, modelKey, id)) > DESKTOP_CANCELS_BEFORE_FAILURE));
+      if (counts && modelKey) {
+        const failures = await this.broker.countFailure(grant, modelKey, id);
         if (failures >= DESKTOP_FAILURES_BEFORE_WITHDRAWAL && (await this.broker.withdraw(grant, modelKey)))
           this.logger.warn(
             `Desktop worker lost ${modelKey} after ${failures} failures in a row (device ${grant.deviceId}): it must qualify again`,

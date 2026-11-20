@@ -14,6 +14,7 @@ const broker = {
   attemptModelKey: vi.fn(),
   withdraw: vi.fn(),
   countFailure: vi.fn(),
+  countCancel: vi.fn(),
   clearFailures: vi.fn(),
   withdrawnModels: vi.fn(),
   heldLeases: vi.fn(),
@@ -361,14 +362,32 @@ describe('a desktop that keeps failing a model', () => {
     expect(broker.withdraw).not.toHaveBeenCalled();
     await fail('inference-failed');
     expect(broker.countFailure).toHaveBeenCalledTimes(3);
-    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model');
+    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model', 'attempt');
     expect(broker.withdraw).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
     expect(warnings().at(-1)).toBe(
       'Desktop worker lost face:model after 3 failures in a row (device device): it must qualify again',
     );
   });
 
+  it('counts a desktop that only ever hands work back as failing, past a few hand-backs in a while', async () => {
+    // five hand-backs in the window are a person pausing; the sixth, seventh and eighth are failures
+    for (const cancels of [1, 5]) {
+      broker.countCancel.mockResolvedValueOnce(cancels);
+      await fail('cancelled');
+    }
+    expect(broker.countCancel).toHaveBeenLastCalledWith(grant, 'face:model', 'attempt');
+    expect(broker.countFailure).not.toHaveBeenCalled();
+    broker.countFailure.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
+    for (const cancels of [6, 7, 8]) {
+      broker.countCancel.mockResolvedValueOnce(cancels);
+      await fail('cancelled');
+    }
+    expect(broker.countFailure).toHaveBeenCalledTimes(3);
+    expect(broker.withdraw).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
+  });
+
   it('does not count a paused desktop, an unreadable photo or a stale lease', async () => {
+    broker.countCancel.mockResolvedValueOnce(1);
     await fail('cancelled');
     await fail('input-invalid');
     broker.fail.mockResolvedValueOnce(false);
