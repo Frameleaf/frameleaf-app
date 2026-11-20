@@ -1144,9 +1144,11 @@ async function forgejoAsGithub(endpoint, request = forgejo) {
       await request(`actions/runs/${match[1]}`),
       await jobsOf(match[1]),
     );
-    const all = (await jobsOf(match[1])).filter(
-      (job) => (job.attempt || 1) === Number(match[2]),
-    );
+    // FL-1687: Forgejo reruns one job at a time and numbers attempts per job, where a GitHub
+    // attempt lists every job (rerun or carried over). The run's attempt is its highest job attempt,
+    // and its job list is each job's latest result; any other attempt is not evidence.
+    const all =
+      Number(match[2]) === run.run_attempt ? await jobsOf(match[1]) : [];
     const names = githubJobNames(all);
     const jobs = all.map((job) => ({
       id: job.id,
@@ -1158,7 +1160,7 @@ async function forgejoAsGithub(endpoint, request = forgejo) {
         run.path === ".github/workflows/test.yml" ? "Test" : run.path,
       status: FORGEJO_DONE.has(job.status) ? "completed" : job.status,
       conclusion: FORGEJO_DONE.has(job.status) ? job.status : null,
-      run_attempt: job.attempt || 1,
+      run_attempt: run.run_attempt,
     }));
     return { total_count: jobs.length, jobs };
   }
@@ -2070,6 +2072,7 @@ module.exports = {
   forgejoAsGithub,
   githubJobNames,
   runFromUrl,
+  FORGEJO_SOURCE,
   chooseTag,
   previousReleaseTag,
   releaseNotesBody,

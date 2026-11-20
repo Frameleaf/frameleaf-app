@@ -1035,7 +1035,7 @@ describe('TimelineManager', () => {
     });
 
     it('reloads once for a run of new uploads, not once per upload', async () => {
-      sdkMock.getTimelineDatesToCheck.mockResolvedValue({ count: 0, years: [], pages: [] });
+      sdkMock.getTimelineDatesToCheck.mockResolvedValue({ count: 0, timeBuckets: [], years: [], pages: [] });
       await timelineManager.updateOptions({ visibility: AssetVisibility.Timeline });
       expect(timelineManager.calendarPaged).toBe(true);
       const refresh = vi.spyOn(timelineManager, 'refresh').mockResolvedValue();

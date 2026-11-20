@@ -214,7 +214,9 @@ describe('/admin/database-backups', () => {
       await utils.connectDatabase();
     });
 
-    it('should restore a backup', { concurrent: false, timeout: 60_000 }, async () => {
+    // The test gets longer than its wait for the restore: with the same 60 s for both, the test's own
+    // timeout fired first and a restore on a loaded CI slot could never finish in what was left (FL-1721).
+    it('should restore a backup', { concurrent: false, timeout: 180_000 }, async () => {
       const asset = await utils.createAsset(admin.accessToken);
       await request(app)
         .put(`/assets/${asset.id}`)
@@ -268,7 +270,7 @@ describe('/admin/database-backups', () => {
           },
           {
             interval: 500,
-            timeout: 60_000,
+            timeout: 150_000,
           },
         )
         .toBeFalsy();
@@ -508,7 +510,7 @@ describe('/admin/database-backups', () => {
     });
 
     // FL-81: while a restore runs, a second restore or End (which would restart the worker mid-restore) is refused.
-    it('refuses conflicting actions while a restore runs', { concurrent: false, timeout: 60_000 }, async () => {
+    it('refuses conflicting actions while a restore runs', { concurrent: false, timeout: 180_000 }, async () => {
       const filename = await utils.createBackup(admin.accessToken);
 
       const { status, headers } = await request(app)
@@ -543,7 +545,7 @@ describe('/admin/database-backups', () => {
             expect(status).toBe(200);
             return body.maintenanceMode;
           },
-          { interval: 500, timeout: 60_000 },
+          { interval: 500, timeout: 150_000 },
         )
         .toBeFalsy();
     });

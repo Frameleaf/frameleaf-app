@@ -68,6 +68,7 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
     );
     const nas = JSON.parse(await readFile(join(bundle, 'nas-manifest.json'), 'utf8'));
     const authenticated: string[] = [];
+    let attested: typeof manifest = manifest;
     const run = (_binary: string, args: string[]) => {
       const reference = args.at(-1)!;
       authenticated.push(args[0]);
@@ -77,7 +78,7 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
         payload: Buffer.from(
           JSON.stringify({
             predicateType: ATTESTATION_TYPE,
-            predicate: manifest,
+            predicate: attested,
             subject: [{ name, digest: { sha256: digest.slice(7) } }],
           }),
         ).toString('base64'),
@@ -113,6 +114,34 @@ test('Manager acquires exactly the v3 release assets and uses the authenticated 
       }),
       /Build provenance is not trusted/,
     );
+    // FL-1722: a release built on Forgejo links a run that installs cannot read (the server is private).
+    // Without a Forgejo token the signature and signed attestation stand alone; with one the run is checked.
+    attested = { ...manifest, buildRun: 'https://code.heroapps.ca/Frameleaf/frameleaf-app/actions/runs/945' };
+    const forgejoBundle = join(root, 'forgejo-bundle');
+    await createBundle(forgejoBundle, root, tag, attested);
+    const savedToken = process.env.FORGEJO_TOKEN;
+    const lookup = t.mock.method(globalThis, 'fetch', async () => new Response('', { status: 404 }));
+    try {
+      delete process.env.FORGEJO_TOKEN;
+      assert.equal((await verifyBundle(forgejoBundle, tag, { authenticate: true, run })).tag, tag);
+      assert.equal(lookup.mock.callCount(), 0);
+      await assert.rejects(
+        verifyBundle(forgejoBundle, tag, {
+          authenticate: true,
+          run: () => {
+            throw new Error('signature refused');
+          },
+        }),
+        /signature refused/,
+      );
+      process.env.FORGEJO_TOKEN = 'ci';
+      await assert.rejects(verifyBundle(forgejoBundle, tag, { authenticate: true, run }), /Remote request failed \(404\)/);
+    } finally {
+      if (savedToken === undefined) delete process.env.FORGEJO_TOKEN;
+      else process.env.FORGEJO_TOKEN = savedToken;
+      lookup.mock.restore();
+      attested = manifest;
+    }
     assert.throws(() => verifyNasManifest({ ...nas, schemaVersion: 1 }, manifest));
     for (const image of ['postgres:19', postgres.replace(':19beta4-pgvector0.8.7', ':14'), postgres.replace(':19beta4-pgvector0.8.7', ':19.0-pgvector0.8.7')])
       assert.throws(
