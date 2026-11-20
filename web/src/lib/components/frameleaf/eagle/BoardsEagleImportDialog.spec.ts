@@ -78,6 +78,36 @@ describe('Import from Eagle: a library in a folder the server can open', () => {
     expect(screen.getByRole('button', { name: /Choose the library folder/ })).toBeEnabled();
   });
 
+  it('lets an administrator browse the server for a library the list didn’t find', async () => {
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+    sdkMock.getEagleLibraries.mockResolvedValue({ available: true, roots: 1, libraries: [] });
+    sdkMock.getTakeoutRoots.mockResolvedValue({
+      roots: [{ id: 'imports', path: '/data/imports', builtIn: true, hostPath: null }],
+    });
+    const none = { zip: 0, tgz: 0, bytes: 0, unpacked: false };
+    sdkMock.getTakeoutFolders.mockImplementation(({ path }) =>
+      Promise.resolve({ here: none, folders: path ? [] : [{ name: 'Refs.library', ...none }] }),
+    );
+    sdkMock.checkEagleLibrary.mockResolvedValue(library);
+    render(BoardsEagleImportDialog);
+
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
+    expect(await screen.findByText(/No Eagle library was found/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose the library folder…' }));
+    await fireEvent.click(await screen.findByRole('button', { name: /Imports/ }));
+    // A folder that isn't a library can be opened, not chosen.
+    expect(await screen.findByRole('button', { name: 'Choose this folder' })).toBeDisabled();
+    await fireEvent.click(await screen.findByRole('button', { name: /Refs\.library/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose this folder' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose this folder' }));
+    await waitFor(() =>
+      expect(sdkMock.checkEagleLibrary).toHaveBeenCalledWith(
+        { eagleLibraryCheckDto: { rootId: 'imports', path: 'Refs.library' } },
+        { signal: undefined },
+      ),
+    );
+  });
+
   it('lists the libraries on the server, checks one there and starts the import on the server', async () => {
     authManager.setUser(userAdminFactory.build({ isAdmin: true }));
     sdkMock.getEagleLibraries.mockResolvedValue({
