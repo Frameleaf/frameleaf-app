@@ -11,10 +11,11 @@ import {
   TimelineDatesToCheck,
   type AssetResponseDto,
 } from '@frameleaf/sdk';
-import { clamp, isEqual } from 'lodash-es';
+import { clamp, debounce, isEqual } from 'lodash-es';
 import { t } from 'svelte-i18n';
 import { SvelteDate, SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';
+import { LIVE_ADDITIONS_MAX_WAIT_MS, LIVE_ADDITIONS_QUIET_MS } from '$lib/constants';
 import { revealsLocks, sessionAccess, trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
 import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/VirtualScrollManager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -766,6 +767,7 @@ export class TimelineManager extends VirtualScrollManager {
   public override destroy() {
     this.#requestedOptions = TimelineManager.#INIT_OPTIONS;
     this.invalidateLiveProjection();
+    this.#refreshWhenQuiet.cancel();
     this.initTask.cancel();
     for (const month of this.months) {
       month.loader?.cancelToken?.abort();
@@ -936,7 +938,8 @@ export class TimelineManager extends VirtualScrollManager {
     // Retain unaffected tiles while reading new boundaries; changed tiles must be re-authorized.
     const result = this.#runAssetCallbackInPlace(new Set(assets.map(({ id }) => id)), () => ({ remove: true }));
     const excluded = assets.filter((asset) => this.isExcluded(asset)).map(({ id }) => id);
-    if (result.updated.size > 0 || excluded.length > 0) {
+    const changedOnScreen = result.updated.size > 0 || excluded.length > 0;
+    if (changedOnScreen) {
       this.#summaryGeneration++;
     }
     if (excluded.length > 0) {
@@ -944,8 +947,22 @@ export class TimelineManager extends VirtualScrollManager {
         listener(excluded);
       }
     }
-    void this.refresh();
+    if (changedOnScreen) {
+      this.#refreshWhenQuiet.cancel();
+      void this.refresh();
+    } else {
+      this.#refreshWhenQuiet();
+    }
   }
+
+  /**
+   * New items only (an upload in progress): one reload once they stop arriving, not one per photo.
+   * ponytail: a time window, not the upload queue, so imports from other devices settle the same way;
+   * maxWait keeps a long import showing progress.
+   */
+  #refreshWhenQuiet = debounce(() => void this.refresh(), LIVE_ADDITIONS_QUIET_MS, {
+    maxWait: LIVE_ADDITIONS_MAX_WAIT_MS,
+  });
 
   async findTimelineMonthForAsset(asset: AssetDescriptor | AssetResponseDto) {
     if (!this.isInitialized) {

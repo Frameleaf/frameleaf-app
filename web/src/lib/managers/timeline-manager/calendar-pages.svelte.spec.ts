@@ -22,6 +22,17 @@ vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 
 beforeEach(() => vi.resetAllMocks());
 
+/** New live items reload the timeline once they go quiet; the tests skip the wait. */
+const liveAdd = (manager: TimelineManager, added: Parameters<TimelineManager['upsertAssetsFromLiveEvent']>[0]) => {
+  vi.useFakeTimers();
+  try {
+    manager.upsertAssetsFromLiveEvent(added);
+    vi.advanceTimersByTime(5000);
+  } finally {
+    vi.useRealTimers();
+  }
+};
+
 it('keeps calendar dates while loading only the requested page and combining scrubber counts', async () => {
   sdkMock.getTimeBuckets.mockResolvedValue(pages);
   sdkMock.getTimeBucket.mockResolvedValue(toResponseDto(assets[1]));
@@ -144,7 +155,7 @@ it('refreshes page boundaries after a live insertion rather than inserting into 
   const manager = new TimelineManager();
   try {
     await manager.updateOptions({});
-    manager.upsertAssetsFromLiveEvent([assets[1]]);
+    liveAdd(manager, [assets[1]]);
     await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2));
     expect(manager.months.every((month) => month.getAssets().length === 0)).toBe(true);
   } finally {
@@ -279,10 +290,10 @@ it('keeps paging mode while live updates replace an in-flight refresh', async ()
         }),
     );
     sdkMock.getTimeBuckets.mockResolvedValue(pages);
-    manager.upsertAssetsFromLiveEvent([assets[0]]);
+    liveAdd(manager, [assets[0]]);
     await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2));
     expect(manager.calendarPaged).toBe(true);
-    manager.upsertAssetsFromLiveEvent([assets[1]]);
+    liveAdd(manager, [assets[1]]);
     resolve(pages);
     await vi.waitFor(() => expect(manager.months).toHaveLength(2));
     expect(manager.months.every((month) => month.calendarPage !== undefined)).toBe(true);
@@ -308,12 +319,12 @@ it('retains the scroll surface and connection while coalescing live refreshes', 
     );
     sdkMock.getTimeBuckets.mockResolvedValue(pages);
     const inserted = timelineAssetFactory.build({ localDateTime: date, fileCreatedAt: date });
-    manager.upsertAssetsFromLiveEvent([inserted]);
+    liveAdd(manager, [inserted]);
     await vi.waitFor(() => expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2));
     expect(manager.months).toBe(previous);
     expect(manager.bodySectionHeight).toBeGreaterThanOrEqual(1000);
     for (let n = 0; n < 20; n++) {
-      manager.upsertAssetsFromLiveEvent([inserted]);
+      liveAdd(manager, [inserted]);
     }
     expect(sdkMock.getTimeBuckets).toHaveBeenCalledTimes(2);
     resolve(pages);

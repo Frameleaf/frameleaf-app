@@ -1,5 +1,6 @@
 <script lang="ts">
   import { debounce } from 'lodash-es';
+  import { LIVE_ADDITIONS_MAX_WAIT_MS, LIVE_ADDITIONS_QUIET_MS } from '$lib/constants';
   import { goto } from '$app/navigation';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
@@ -342,6 +343,8 @@
   const requestKey = $derived(JSON.stringify(request));
 
   const refresh = debounce(() => generation++, 250);
+  /** Uploads and processing elsewhere: one reload once they go quiet, not one per photo. */
+  const refreshLive = debounce(() => generation++, LIVE_ADDITIONS_QUIET_MS, { maxWait: LIVE_ADDITIONS_MAX_WAIT_MS });
   /** A removal or an access change clears what is shown; any other live refresh keeps it until the new page lands. */
   let clearOnReload = false;
   const restrict = () => {
@@ -353,8 +356,8 @@
     refresh();
   };
   const unsubscribers = [
-    websocketEvents.on('on_upload_success', refresh),
-    websocketEvents.on('on_asset_update', refresh),
+    websocketEvents.on('on_upload_success', refreshLive),
+    websocketEvents.on('on_asset_update', refreshLive),
     websocketEvents.on('on_asset_restore', refresh),
     websocketEvents.on('on_asset_delete', restrict),
     websocketEvents.on('on_asset_hidden', restrict),
@@ -375,6 +378,7 @@
   ];
   onDestroy(() => {
     refresh.cancel();
+    refreshLive.cancel();
     for (const stop of unsubscribers) {
       stop();
     }
