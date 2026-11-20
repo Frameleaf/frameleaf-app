@@ -64,6 +64,10 @@ for (const [job, ref, action, dryRun, allowed] of [
   ["flags", "refs/heads/main", "withdraw", "true", false],
   ["candidate", "refs/heads/feature", "release", "true", true],
   ["candidate", "refs/heads/feature", "release", "false", false],
+  ["preflight", "refs/heads/main", "release", true, true],
+  ["preflight", "refs/heads/main", "release", false, true],
+  ["preflight", "refs/heads/feature", "release", true, false],
+  ["preflight", "refs/heads/main", "withdraw", false, false],
 ]) {
   assert.equal(
     admitted(job, { ref, action, dryRun }),
@@ -112,7 +116,12 @@ for (const [id, job] of Object.entries(workflow.jobs)) {
   }
 }
 const release = workflow.jobs.release;
-assert.deepEqual(release.needs, ["candidate", "deploy-test"]);
+assert.deepEqual(release.needs, ["candidate", "deploy-test", "preflight"]);
+// FL-1721: the preflight reads the production secrets, so it is main-only, and it only runs the checker.
+const preflight = workflow.jobs.preflight;
+assert.equal(preflight.environment, "production");
+assert.deepEqual(preflight.permissions, { contents: "read" });
+assert.equal(preflight.steps.at(-1).run, ".github/release-preflight.sh");
 assert.equal(
   release.steps.find((s) => s.uses?.startsWith("actions/checkout@")).with.ref,
   "${{ needs.candidate.outputs.sha }}",
