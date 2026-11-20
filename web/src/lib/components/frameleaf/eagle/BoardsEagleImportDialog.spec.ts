@@ -108,6 +108,44 @@ describe('Import from Eagle: a library in a folder the server can open', () => {
     );
   });
 
+  it('chooses an import folder that is itself the library', async () => {
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+    sdkMock.getEagleLibraries.mockResolvedValue({ available: true, roots: 2, libraries: [] });
+    sdkMock.getTakeoutRoots.mockResolvedValue({
+      roots: [{ id: '0', path: '/mnt/design/Refs.library/', builtIn: false, hostPath: null }],
+    });
+    sdkMock.getTakeoutFolders.mockResolvedValue({ here: { zip: 0, tgz: 0, bytes: 0, unpacked: false }, folders: [] });
+    sdkMock.checkEagleLibrary.mockResolvedValue(library);
+    render(BoardsEagleImportDialog);
+
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Choose the library folder…' }));
+    await fireEvent.click(await screen.findByRole('button', { name: /Refs\.library/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose this folder' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose this folder' }));
+    await waitFor(() =>
+      expect(sdkMock.checkEagleLibrary).toHaveBeenCalledWith(
+        { eagleLibraryCheckDto: { rootId: '0', path: '.' } },
+        { signal: undefined },
+      ),
+    );
+  });
+
+  it('doesn’t open the server’s folders once the library is on this computer instead', async () => {
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+    sdkMock.getEagleLibraries.mockResolvedValue({ available: true, roots: 1, libraries: [] });
+    let answer: (value: { roots: [] }) => void = () => {};
+    sdkMock.getTakeoutRoots.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    render(BoardsEagleImportDialog);
+
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Choose the library folder…' }));
+    await fireEvent.click(screen.getByRole('radio', { name: /On this computer/ }));
+    answer({ roots: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('Choose the folder to import from')).not.toBeInTheDocument();
+  });
+
   it('lists the libraries on the server, checks one there and starts the import on the server', async () => {
     authManager.setUser(userAdminFactory.build({ isAdmin: true }));
     sdkMock.getEagleLibraries.mockResolvedValue({

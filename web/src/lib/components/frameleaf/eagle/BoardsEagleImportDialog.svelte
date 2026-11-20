@@ -251,6 +251,7 @@
       return;
     }
     source = next;
+    browsing = false;
     library = undefined;
     plan = undefined;
     serverLocation = undefined;
@@ -297,7 +298,8 @@
     readError = undefined;
     try {
       serverRootList ??= (await getTakeoutRoots()).roots;
-      browsing = true;
+      // The answer may arrive after "On this computer" was chosen; the chooser is only for the server.
+      browsing = source === 'server';
     } catch {
       serverListFailed = true;
     }
@@ -1372,7 +1374,8 @@
     onClose={() => (browsing = false)}
     onChoose={({ rootId, parts }) => {
       browsing = false;
-      void pickServer({ rootId, path: parts.join('/') });
+      // An import folder that is itself the library is "." below it: the server's check needs a path.
+      void pickServer({ rootId, path: parts.join('/') || '.' });
     }}
   />
 {/if}
