@@ -288,3 +288,11 @@ export enum BackupFileStatus {
 }
 
 export const assetViewerFadeDuration: number = 150;
+
+/**
+ * New uploads reload a library view once they stop arriving, not once per photo. Live events reach the
+ * timeline in 2.5 s batches (WebsocketSupport), so quiet has to outlast one; maxWait keeps a long import
+ * showing progress.
+ */
+export const LIVE_ADDITIONS_QUIET_MS = 5000;
+export const LIVE_ADDITIONS_MAX_WAIT_MS = 30_000;
