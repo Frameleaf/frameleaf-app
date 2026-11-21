@@ -1,6 +1,6 @@
 /**
  * Frameleaf
- * 1.2.25
+ * 1.2.26
  * DO NOT MODIFY - This file has been generated using oazapfts.
  * See https://www.npmjs.com/package/oazapfts
  */
