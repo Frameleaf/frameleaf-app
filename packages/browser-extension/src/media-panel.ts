@@ -19,6 +19,10 @@ import type {
  */
 
 type SaveId = keyof MediaSaveChoices;
+const picturesAndVideos: { id: SaveId; label: string; on: boolean }[] = [
+  { id: 'images', label: 'Pictures', on: true },
+  { id: 'videos', label: 'Videos', on: true },
+];
 /** The "What to save" switches of each platform (the Creators platform table in web/). */
 export const MEDIA_PLATFORMS: Record<
   MediaPlatform,
@@ -70,6 +74,15 @@ export const MEDIA_PLATFORMS: Record<
       { id: 'videos', label: 'Videos', on: true },
     ],
   },
+  redgifs: { name: 'RedGIFs', saves: picturesAndVideos },
+  instagram: { name: 'Instagram', saves: picturesAndVideos },
+  tiktok: { name: 'TikTok', saves: picturesAndVideos },
+  tumblr: { name: 'Tumblr', saves: picturesAndVideos },
+  vimeo: { name: 'Vimeo', saves: [] },
+  twitch: { name: 'Twitch', saves: [] },
+  imgur: { name: 'Imgur', saves: picturesAndVideos },
+  flickr: { name: 'Flickr', saves: picturesAndVideos },
+  deviantart: { name: 'DeviantArt', saves: picturesAndVideos },
   other: { name: '', saves: [] },
 };
 export const defaultSaves = (platform: MediaPlatform): MediaSaveChoices =>
@@ -183,7 +196,9 @@ export const savesVideo = (
 ) =>
   operation && operation.items.length > 0
     ? operation.items.some((item) => item.kind === 'video')
-    : platform === 'youtube' || platform === 'facebook';
+    : ['youtube', 'facebook', 'vimeo', 'twitch', 'tiktok', 'redgifs'].includes(
+        platform,
+      );
 /** "1 video and 2 pictures". */
 export function itemSummary(operation: MediaOperationView | null): string {
   const words = { video: 'video', image: 'picture', audio: 'sound' } as const;
@@ -244,6 +259,27 @@ export function creatorAddress(
       name(path[0])
     )
       address = `https://www.facebook.com/${path[0]}`;
+  } else if (read.platform === 'tiktok') {
+    if (path[0]?.startsWith('@') && name(path[0].slice(1)))
+      address = `https://www.tiktok.com/${path[0]}`;
+  } else if (read.platform === 'instagram') {
+    // instagram.com/name/p/… names its account; instagram.com/p/… does not
+    if (['p', 'reel', 'reels', 'tv'].includes(path[1]) && name(path[0]))
+      address = `https://www.instagram.com/${path[0]}`;
+  } else if (read.platform === 'tumblr') {
+    const blog = site.endsWith('.tumblr.com')
+      ? site.slice(0, -'.tumblr.com'.length)
+      : path[0];
+    if (name(blog)) address = `https://${blog}.tumblr.com/`;
+  } else if (read.platform === 'twitch') {
+    if (path[1] === 'clip' && name(path[0]))
+      address = `https://www.twitch.tv/${path[0]}`;
+  } else if (read.platform === 'flickr') {
+    if (path[0] === 'photos' && name(path[1]))
+      address = `https://www.flickr.com/photos/${path[1]}`;
+  } else if (read.platform === 'deviantart') {
+    if (path[1] === 'art' && name(path[0]))
+      address = `https://www.deviantart.com/${path[0]}`;
   } else if (read.platform === 'youtube' && creatorId) {
     if (/^UC[\w-]{22}$/.test(creatorId))
       address = `https://www.youtube.com/channel/${creatorId}`;

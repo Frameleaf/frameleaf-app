@@ -109,7 +109,7 @@
   const hasVideo = $derived(
     items.length > 0
       ? items.some(({ kind }) => kind === MediaItemKind.Video)
-      : platform === 'youtube' || platform === 'facebook',
+      : ['youtube', 'facebook', 'vimeo', 'twitch', 'tiktok', 'redgifs'].includes(platform),
   );
   const kept = $derived(
     hasVideo ? (['thumbnail', 'title', 'tags', 'posted'] as const) : (['words', 'tags', 'posted'] as const),

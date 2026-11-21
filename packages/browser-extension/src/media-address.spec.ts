@@ -13,6 +13,20 @@ describe('readMediaAddress', () => {
     ['https://www.facebook.com/alpinelodge', 'facebook', 'page'],
     ['https://www.reddit.com/user/someone', 'reddit', 'account'],
     ['https://bsky.app/profile/someone.bsky.social', 'bluesky', 'account'],
+    ['https://www.reddit.com/r/woodworking', 'reddit', 'subreddit'],
+    ['https://www.redgifs.com/users/someone', 'redgifs', 'profile'],
+    ['https://www.instagram.com/northtimber/', 'instagram', 'account'],
+    ['https://www.tiktok.com/@northtimber', 'tiktok', 'account'],
+    ['https://northtimber.tumblr.com/', 'tumblr', 'blog'],
+    ['https://www.tumblr.com/northtimber', 'tumblr', 'blog'],
+    ['https://vimeo.com/northtimber', 'vimeo', 'account'],
+    ['https://vimeo.com/channels/staffpicks', 'vimeo', 'channel'],
+    ['https://www.twitch.tv/northtimber', 'twitch', 'channel'],
+    ['https://www.twitch.tv/northtimber/videos', 'twitch', 'channel'],
+    ['https://imgur.com/user/northtimber', 'imgur', 'account'],
+    ['https://www.flickr.com/photos/northtimber/', 'flickr', 'account'],
+    ['https://www.deviantart.com/northtimber', 'deviantart', 'account'],
+    ['https://www.deviantart.com/northtimber/gallery', 'deviantart', 'account'],
   ])('follows a whole channel, account, profile or page: %s', (address, platform, what) => {
     expect(readMediaAddress(address)).toEqual({ platform, action: 'follow', what });
   });
@@ -40,6 +54,13 @@ describe('readMediaAddress', () => {
     'ftp://example.com/a',
     'https://www.youtube.com/',
     'https://x.com/a/b/c',
+    'https://www.instagram.com/explore/',
+    'https://www.tiktok.com/explore',
+    'https://www.tumblr.com/dashboard',
+    'https://www.twitch.tv/directory',
+    'https://vimeo.com/search',
+    'https://www.deviantart.com/search',
+    'https://www.flickr.com/photos/tags/larch',
   ])('refuses what is not a page rather than guessing: %s', (address) => {
     expect(readMediaAddress(address)).toBeNull();
   });

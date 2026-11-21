@@ -30,7 +30,9 @@ FEED_CATEGORIES = frozenset(
     "album archive author board bookmark bookmarks channel collection favorites feed favorites following gallery "
     "group hashtag history home likes list media playlist posts profile replies saved search stories subreddit tag timeline tweets user with-replies".split()
 )
-SECTIONS = {"twitter": "post", "bluesky": "post", "reddit": "post", "pinterest": "pin"}
+SECTIONS = {"twitter": "post", "bluesky": "post", "reddit": "post", "pinterest": "pin", "redgifs": "post",
+            "instagram": "post", "tiktok": "post", "tumblr": "post", "imgur": "post", "flickr": "post",
+            "deviantart": "post"}
 TABS = {"videos": "video", "shorts": "short", "streams": "live"}
 FORMATS = {
     "1080": "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b",
@@ -279,7 +281,7 @@ class Extraction:
             raise BridgeError("unsupported_session")
         with self.youtube(flat=True, feed=enumerate_feed) as ydl:
             try:
-                metadata = ydl.extract_info(url, download=False)
+                metadata = ydl.extract_info(video_feed(url), download=False)
             except DownloadError as error:
                 # The generic extractor's expected no-video path can still be a direct image.
                 classified = error_code(error)
@@ -420,6 +422,18 @@ def creator_feed(url):
         if match:
             return urlunsplit((parts.scheme, parts.netloc, f"/user/{match[1]}/submitted", parts.query, ""))
     return url
+
+
+def video_feed(url):
+    """A Twitch channel's own address is its live stream; its past broadcasts are what to save."""
+    parts = urlsplit(url)
+    if (parts.hostname or "").removeprefix("www.") != "twitch.tv":
+        return url
+    match = re.fullmatch(r"/([a-zA-Z0-9_]{1,25})", parts.path.rstrip("/"))
+    if not match or match[1].lower() in {"directory", "downloads", "jobs", "p", "search", "settings",
+                                         "subscriptions", "turbo", "wallet", "inventory", "drops", "videos"}:
+        return url
+    return urlunsplit((parts.scheme, parts.netloc, f"/{match[1]}/videos", "", ""))
 
 
 def url_extension(url):
