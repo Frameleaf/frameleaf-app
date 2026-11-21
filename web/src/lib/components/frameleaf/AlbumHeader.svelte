@@ -45,6 +45,7 @@
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
+  import { libraryKey } from '$lib/frameleaf/libraries';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { workspaceHref } from '$lib/frameleaf/search-context';
   import {
@@ -107,6 +108,7 @@
     mdiTextBoxCheckOutline,
     mdiTuneVariant,
     mdiAutoFix,
+    mdiFolderOutline,
     mdiUpload,
   } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
@@ -700,6 +702,12 @@
         {#if album.isSmart}
           <span class="badge-pill"><Icon icon={mdiAutoFix} size="14" />{$t('frameleaf_album_smart_badge')}</span>
         {/if}
+        {#if album.folderAlbum}
+          <!-- FL-838: an album made from a folder in the viewer's library, kept in step with it. -->
+          <span class="badge-pill" title={$t('frameleaf_album_folder_mark')} data-testid="album-folder-badge"
+            ><Icon icon={mdiFolderOutline} size="14" />{$t('frameleaf_album_folder_badge')}</span
+          >
+        {/if}
         {#if !owner && albumOwner}
           <!-- CollectionHeader.jsx:1164-1170: who shared it, and whether this member may only view. -->
           <span class="shared-by">
@@ -720,6 +728,23 @@
           placeholder={$t('frameleaf_album_add_description')}
           onSave={(description) => save({ description }, $t('frameleaf_album_description_saved'))}
         />{/if}
+
+      {#if album.folderAlbum}
+        <p class="rule-row folder-note">
+          <span class="muted"
+            >{$t('frameleaf_album_folder_note', {
+              values: { path: album.folderAlbum.folderPath.split('/').filter(Boolean).slice(-4).join(' › ') },
+            })}</span
+          >
+          {#if authManager.user.isAdmin}
+            <a
+              class="link"
+              href={commandCenterUrl('libraries', undefined, { selected: libraryKey(album.folderAlbum.libraryId) })}
+              >{$t('frameleaf_album_folder_settings')}</a
+            >
+          {/if}
+        </p>
+      {/if}
 
       {#if rule}
         <div class="rule-row">

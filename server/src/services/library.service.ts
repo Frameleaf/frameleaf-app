@@ -11,6 +11,7 @@ import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  FOLDER_ESTIMATE_FOLDERS,
   LibraryFolderBrowseDto,
   LibraryFolderBrowseResponseDto,
   LibraryFolderEstimateDto,
@@ -345,6 +346,7 @@ export class LibraryService extends BaseService {
       name: dto.name ?? 'New External Library',
       importPaths,
       exclusionPatterns,
+      folderAlbums: dto.folderAlbums ?? false,
     });
     await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryCreated)]);
     if (importPaths.length > 0) {
@@ -418,6 +420,7 @@ export class LibraryService extends BaseService {
     let count = 0;
     let bytes = 0;
     let complete = true;
+    const folders = new Map<string, number>();
     try {
       const batches = this.storageRepository.walkLibrary({
         pathsToCrawl: [folder],
@@ -428,6 +431,10 @@ export class LibraryService extends BaseService {
       for await (const batch of batches) {
         for (const file of batch) {
           count++;
+          const parent = path.posix.dirname(file);
+          if (folders.has(parent) || folders.size < FOLDER_ESTIMATE_FOLDERS) {
+            folders.set(parent, (folders.get(parent) ?? 0) + 1);
+          }
           bytes += await this.storageRepository
             .stat(file)
             .then((stats) => stats.size)
@@ -440,9 +447,16 @@ export class LibraryService extends BaseService {
       }
     } catch (error) {
       const found = !['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '');
-      return { readable: false, found, count: 0, bytes: 0, complete: true };
+      return { readable: false, found, count: 0, bytes: 0, complete: true, folders: [] };
     }
-    return { readable: true, found: true, count, bytes, complete };
+    return {
+      readable: true,
+      found: true,
+      count,
+      bytes,
+      complete,
+      folders: [...folders].map(([folderPath, folderCount]) => ({ path: folderPath, count: folderCount })),
+    };
   }
 
   /** Every account's managed uploads, for the Libraries list (FL-78). */

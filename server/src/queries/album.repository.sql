@@ -688,36 +688,53 @@ where
 order by
   "id"
 for no key update
+WITH
+  seen AS (
+    INSERT INTO
+      library_folder_album_asset ("folderAlbumId", "assetId")
+    SELECT
+      link.id,
+      asset.id
+    FROM
+      asset
+      JOIN unnest($1::text[], $2::uuid[]) AS folder (path, "albumId") ON folder.path = coalesce(
+        nullif(
+          substring("asset"."originalPath", '^(.*)/[^/]*$'),
+          ''
+        ),
+        '/'
+      )
+      JOIN library_folder_album link ON link."albumId" = folder."albumId"
+      AND link."libraryId" = $3::uuid
+    WHERE
+      asset."libraryId" = $4::uuid
+      AND (
+        "asset"."isOffline" = false
+        AND "asset"."deletedAt" IS NULL
+        AND "asset"."visibility" IN ('timeline', 'archive')
+        AND "asset"."type" IN ('IMAGE', 'VIDEO')
+        AND not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+    ON CONFLICT DO NOTHING
+    RETURNING
+      "folderAlbumId",
+      "assetId"
+  )
 INSERT INTO
   album_asset ("albumId", "assetId")
 SELECT
-  folder."albumId",
-  asset.id
+  link."albumId",
+  seen."assetId"
 FROM
-  asset
-  JOIN unnest($1::text[], $2::uuid[]) AS folder (path, "albumId") ON folder.path = coalesce(
-    nullif(
-      substring("asset"."originalPath", '^(.*)/[^/]*$'),
-      ''
-    ),
-    '/'
-  )
-WHERE
-  asset."libraryId" = $3::uuid
-  AND (
-    "asset"."isOffline" = false
-    AND "asset"."deletedAt" IS NULL
-    AND "asset"."visibility" IN ('timeline', 'archive')
-    AND "asset"."type" IN ('IMAGE', 'VIDEO')
-    AND not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
-    )
-  )
+  seen
+  JOIN library_folder_album link ON link.id = seen."folderAlbumId"
 ON CONFLICT DO NOTHING
 RETURNING
   "albumId",

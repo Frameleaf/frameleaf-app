@@ -82,3 +82,34 @@ describe('AddFolderPage folder list (FL-1495)', () => {
     expect(screen.queryByText(en.frameleaf_libraries_browse_none_title)).not.toBeInTheDocument();
   });
 });
+
+describe('AddFolderPage folder albums (FL-838)', () => {
+  it('is off by default, and adds the folder with folder albums once switched on', async () => {
+    sdkMock.getManagerAccess.mockResolvedValue({ url: null } as never);
+    sdkMock.estimateLibraryFolder.mockResolvedValue({
+      readable: true,
+      found: true,
+      count: 2,
+      bytes: 10,
+      complete: true,
+      folders: [{ path: '/mnt/photos/trip', count: 2 }],
+    });
+    sdkMock.createLibrary.mockResolvedValue({ id: 'library-1' } as never);
+    sdkMock.scanLibrary.mockResolvedValue(undefined as never);
+    render(AddFolderPage, props);
+
+    await fireEvent.input(screen.getByRole('textbox', { name: en.frameleaf_addfolder_path }), {
+      target: { value: '/mnt/photos' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_addfolder_use_path }));
+    const albums = screen.getByRole('switch', { name: en.frameleaf_folder_albums_switch });
+    expect(albums).toHaveAttribute('aria-checked', 'false');
+    await fireEvent.click(albums);
+    expect(await screen.findByText('trip')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_addfolder_add }));
+    expect(sdkMock.createLibrary).toHaveBeenCalledWith({
+      createLibraryDto: expect.objectContaining({ importPaths: ['/mnt/photos'], folderAlbums: true }),
+    });
+  });
+});
