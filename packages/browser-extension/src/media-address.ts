@@ -115,10 +115,11 @@ const redgifs = (path: string[]) => {
 
 const instagram = (path: string[]) => {
   const at = ['p', 'reel', 'reels', 'tv'].includes(path[1]) ? 1 : 0;
-  if (path[at] === 'p' && path[at + 1]) {
+  const named = path.length > at + 1;
+  if (path[at] === 'p' && named) {
     return download('instagram', 'post');
   }
-  if (['reel', 'reels', 'tv'].includes(path[at]) && path[at + 1]) {
+  if (['reel', 'reels', 'tv'].includes(path[at]) && named) {
     return download('instagram', 'reel');
   }
   const pages = ['explore', 'accounts', 'direct', 'stories', 'about', 'legal', 'developer', 'reels', 'p', 'tv'];
@@ -325,7 +326,7 @@ export const readMediaAddress = (text: string): MediaAddress | null => {
   if (site === 'instagram.com') {
     return instagram(path);
   }
-  if (site === 'tiktok.com' || site === 'vm.tiktok.com' || site === 'vt.tiktok.com') {
+  if (['tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com'].includes(site)) {
     return tiktok(site, path);
   }
   if (site === 'tumblr.com' || site.endsWith('.tumblr.com')) {
