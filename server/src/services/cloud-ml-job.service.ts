@@ -3242,7 +3242,8 @@ export class CloudMlJobService {
     const stream = probe.videoStreams[0];
     // FL-1725: only a plain stream is copied. A rotation, packets the edit list hides or a variable frame
     // rate are settled by the re-encode: upright pixels, exactly the frames the video shows, one rate
-    let copy = !!codec && plan.codecs.includes(codec) && (await this.isPlainVideo(source.originalPath));
+    const facts = await this.plainFacts(source.originalPath);
+    let copy = !!codec && plan.codecs.includes(codec) && facts.plain;
     // a stream copy keeps the stream's SEI messages, where cameras put their own data (serial numbers,
     // GPS, settings). Every SEI message is dropped (H.264 type 6, HEVC prefix and suffix types 39 and 40),
     // HDR mastering metadata carried there included; the colour description in the stream header stays
@@ -3261,6 +3262,7 @@ export class CloudMlJobService {
           bsf: copy && codec ? sei[codec] : undefined,
           webm: container === 'webm',
           constantRate: rate ? `${rate.num}/${rate.den}` : null,
+          renumber: facts.unordered,
         }),
         twoPass: false,
         progress: { frameCount: 0, percentInterval: 5 },
@@ -3268,7 +3270,7 @@ export class CloudMlJobService {
       return file;
     };
     let file = await write();
-    if (copy && !(await this.isPlainVideo(file))) {
+    if (copy && !(await this.plainFacts(file)).plain) {
       // the copy itself is what is uploaded: a container can hide packets its source did not (a transport
       // stream cut inside a group of pictures). It is made again by re-encoding, never sent as it is
       await this.storageRepository.unlink(file).catch(() => {});
@@ -3285,10 +3287,14 @@ export class CloudMlJobService {
     return rate ? `${rate.num}/${rate.den}` : null;
   }
 
-  /** Whether this file's first video stream can be uploaded packet for packet (`isPlainVideoStream`). */
-  private async isPlainVideo(file: string): Promise<boolean> {
+  /** Whether this file's first video stream can be uploaded packet for packet (`isPlainVideoStream`), and whether its times are only decode order. */
+  private async plainFacts(file: string): Promise<{ plain: boolean; unordered: boolean }> {
     const stream = (await this.mediaRepository.probe(file)).videoStreams[0];
-    return !!stream && isPlainVideoStream(stream, await this.mediaRepository.countPackets(file, stream.index));
+    if (!stream) {
+      return { plain: false, unordered: false };
+    }
+    const packets = await this.mediaRepository.countPackets(file, stream.index);
+    return { plain: isPlainVideoStream(stream, packets), unordered: !!packets.unordered };
   }
 
   /**

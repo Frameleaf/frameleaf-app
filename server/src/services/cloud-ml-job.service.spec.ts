@@ -933,6 +933,11 @@ describe(CloudMlJobService.name, () => {
       ['is turned', { rotation: 90 }, { packets: 150, hidden: 0, uneven: false, unordered: false, keyGap: 1 }],
       ['has frames its edit list hides', {}, { packets: 150, hidden: 15, uneven: false, unordered: false, keyGap: 1 }],
       ['has a variable frame rate', {}, { packets: 150, hidden: 0, uneven: true, unordered: false, keyGap: 1 }],
+      [
+        'has B-frames timed by decode order',
+        {},
+        { packets: 150, hidden: 0, uneven: false, unordered: true, keyGap: 1 },
+      ],
     ])('re-encodes a whole video that %s instead of copying its stream', async (_, stream, packets) => {
       mocks.media.probe.mockResolvedValue({
         format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
@@ -978,7 +983,11 @@ describe(CloudMlJobService.name, () => {
       const [copied, encoded] = mocks.media.transcode.mock.calls.map((call) => call[2].outputOptions);
       expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
       expect(copied).toEqual(expect.arrayContaining(['-c:v', 'copy']));
-      expect(encoded).toEqual(expect.arrayContaining(['-c:v', 'libx264', '-fps_mode', 'cfr', '-r', '30000/1001']));
+      expect(encoded).toEqual(
+        expect.arrayContaining(['-c:v', 'libx264', '-fps_mode', 'cfr', '-r', '30000/1001', '-bf', '0']),
+      );
+      // the stream's own times, moved to start at 0, not renumbered: they are real presentation times
+      expect(encoded).toEqual(expect.arrayContaining(['-vf', `${EVEN_SIDES_FILTER},setpts=PTS-STARTPTS`]));
       expect(encoded).not.toContain('copy');
       // and the copy made that way is what the estimate uses
       await expect(sut.estimate(owner, full(), now)).resolves.toBeDefined();

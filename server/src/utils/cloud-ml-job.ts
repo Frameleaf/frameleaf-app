@@ -259,7 +259,8 @@ export const isPlainVideoStream = (
   packets.hidden === 0 &&
   !packets.uneven &&
   !packets.unordered &&
-  (packets.keyGap ?? 0) <= CLOUD_VIDEO_MAX_KEY_GAP_SECONDS;
+  // a microsecond of slack: 10 s measures 10 in MP4 and 10.000000000000002 in a transport stream
+  (packets.keyGap ?? 0) <= CLOUD_VIDEO_MAX_KEY_GAP_SECONDS + 1e-6;
 
 /** How far the cloud's worker lets a clip's real frame rate be from the declared one. */
 export const CLOUD_VIDEO_FPS_TOLERANCE = 0.01;

@@ -66,6 +66,12 @@ export const EVEN_SIDES_FILTER = 'crop=trunc(iw/2)*2:trunc(ih/2)*2';
 export const constantRateOptions = (rate: string | null | undefined): string[] =>
   rate && /^\d+\/\d+$/.test(rate) && !/^0+\/|\/0+$/.test(rate) ? ['-fps_mode', 'cfr', '-r', rate] : [];
 
+/** Each frame's time from its number at `rate` (`30000/1001`), or the stream's own times moved to start at 0. */
+export const restampFilter = (rate: string | null | undefined): string => {
+  const [num, den] = (rate ?? '').split('/').map(Number);
+  return num > 0 && den > 0 ? `setpts=N*${den}/${num}/TB` : 'setpts=PTS-STARTPTS';
+};
+
 /** What is uploaded from a preview clip: its video stream copied, without audio or metadata. */
 export const uploadClipOutputOptions = (): string[] => [
   ...strippedVideoStreams(false),
@@ -89,15 +95,22 @@ export const fullVideoUploadOutputOptions = (options: {
   webm?: boolean;
   /** FL-1725: the frame rate a re-encode is made constant at (`30000/1001`): the stream's average. */
   constantRate?: string | null;
+  /**
+   * FL-1725: the stream's times are only its decode order (B-frames remuxed by copy), so each frame is
+   * given its place from its number at `constantRate` instead.
+   */
+  renumber?: boolean;
 }): string[] => [
   ...strippedVideoStreams(false),
   ...(options.copy
     ? ['-c:v', 'copy']
     : [
         // FL-1725: H.264 4:2:0 needs even sides (a 95×63 frame turned upright is 63×95): at most one row
-        // and one column are cropped, never scaled
+        // and one column are cropped, never scaled. The first frame is put at 0 before the rate is made
+        // constant, or the rate filter repeats it to fill the stream's start (a frame or two ahead of the
+        // audio put back later); a stream timed by decode order is renumbered
         '-vf',
-        EVEN_SIDES_FILTER,
+        `${EVEN_SIDES_FILTER},${restampFilter(options.renumber ? options.constantRate : null)}`,
         ...constantRateOptions(options.constantRate),
         // FL-1725: a keyframe every 2 seconds (closed groups, x264's default), so Frameleaf Cloud's worker
         // seeks straight to every chunk instead of decoding from the start for each one
@@ -109,6 +122,10 @@ export const fullVideoUploadOutputOptions = (options: {
         'veryfast',
         '-crf',
         '12',
+        // no B-frames: presentation order is decode order, which Frameleaf Cloud's worker reads plainly
+        // and this server's own check accepts however short the clip
+        '-bf',
+        '0',
         '-pix_fmt',
         'yuv420p',
       ]),

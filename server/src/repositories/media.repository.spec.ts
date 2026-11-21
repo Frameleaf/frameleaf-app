@@ -1101,13 +1101,14 @@ describe(MediaRepository.name, () => {
     let folder: string;
     const make = (arguments_: string[]) =>
       execFileSync('ffmpeg', ['-v', 'error', '-y', ...arguments_], { timeout: 60_000, stdio: 'ignore' });
-    const upload = (input: string, output: string, copy: boolean, constantRate?: string) =>
+    const upload = (input: string, output: string, copy: boolean, constantRate?: string, renumber?: boolean) =>
       sut.transcode(input, output, {
         inputOptions: [],
         outputOptions: fullVideoUploadOutputOptions({
           copy,
           bsf: copy ? 'filter_units=remove_types=6' : undefined,
           constantRate,
+          renumber,
         }),
         twoPass: false,
         progress: { frameCount: 0, percentInterval: 5 },
@@ -1347,6 +1348,96 @@ describe(MediaRepository.name, () => {
       const uploaded = await measured(encoded);
       expect(uploaded.packets).toMatchObject({ unordered: false });
       expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+    });
+
+    /** The first frame's time and the frame count a decoder shows. */
+    const timing = (file: string) => {
+      const [start, frames] = execFileSync(
+        'ffprobe',
+        [
+          '-v',
+          'error',
+          '-count_frames',
+          '-select_streams',
+          'v:0',
+          '-show_entries',
+          'stream=start_time,nb_read_frames',
+          '-of',
+          'csv=p=0',
+          file,
+        ],
+        { encoding: 'utf8' },
+      )
+        .trim()
+        .split(',')
+        .map(Number);
+      return { start, frames };
+    };
+
+    it.each([
+      ['an AVI with B-frames, remuxed by copy', true],
+      ['an AVI with B-frames', false],
+    ])('re-encodes %s frame for frame, starting where the audio expects it', async (_, remux) => {
+      const avi = join(folder, 'with-audio.avi');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:sample_rate=48000',
+        '-t',
+        '6',
+        '-c:v',
+        'libx264',
+        '-bf',
+        '2',
+        '-g',
+        '30',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'pcm_s16le',
+        avi,
+      ]);
+      const source = remux ? join(folder, 'with-audio-remuxed.mp4') : avi;
+      if (remux) {
+        make(['-i', avi, '-c', 'copy', source]);
+      }
+      const { packets } = await measured(source);
+      expect(packets.unordered).toBe(remux);
+
+      const encoded = join(folder, `with-audio-upload-${remux}.mp4`);
+      await upload(source, encoded, false, '30/1', packets.unordered);
+      // no frame repeated at the start or lost at the end: 6 s at 30 frames a second, the first at 0,
+      // which is where the audio is put back against the source's own first frame
+      expect(timing(encoded)).toEqual({ start: 0, frames: 180 });
+    });
+
+    it('accepts its own re-encode of a clip too short for B-frames', async () => {
+      const source = join(folder, 'two-frames.mp4');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-frames:v',
+        '2',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        source,
+      ]);
+      // x264 declares B-frames it never made: the times say nothing about their order
+      expect((await measured(source)).packets.unordered).toBe(true);
+      const encoded = join(folder, 'two-frames-upload.mp4');
+      await upload(source, encoded, false, '30/1', true);
+      const uploaded = await measured(encoded);
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(timing(encoded)).toEqual({ start: 0, frames: 2 });
     });
 
     it('never copies a stream with keyframes far apart: the upload has one every 2 seconds', async () => {

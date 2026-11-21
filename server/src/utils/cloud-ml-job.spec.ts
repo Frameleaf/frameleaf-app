@@ -305,6 +305,8 @@ describe('a stream that can be uploaded as it is (FL-1725)', () => {
     expect(isPlainVideoStream({ ...even, rotation: NaN }, facts)).toBe(true);
     expect(isPlainVideoStream({ ...even, rotation: 360 }, facts)).toBe(true);
     expect(isPlainVideoStream({ ...even, rotation: 0 }, { ...facts, keyGap: 10 })).toBe(true);
+    // ten seconds as a transport stream's times add it up
+    expect(isPlainVideoStream({ ...even, rotation: 0 }, { ...facts, keyGap: 10.000000000000002 })).toBe(true);
   });
 
   it.each([
