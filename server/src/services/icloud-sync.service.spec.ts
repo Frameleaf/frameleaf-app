@@ -923,6 +923,55 @@ describe(ICloudSyncService.name, () => {
       }
     });
 
+    it('does not list the library again behind a download that holds the session (FL-1724)', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      try {
+        repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 2 } });
+        const item = (id: string) => ({ ...resource, id, sourceAssetId: id });
+        repository.claim.mockReset();
+        repository.claim
+          .mockResolvedValueOnce(item('held'))
+          .mockResolvedValueOnce(item('quick'))
+          .mockResolvedValue(undefined);
+        // a download keeps the connection's session (its row lock) until the answer starts; listing needs it too
+        let releaseHeld!: () => void;
+        const held = new Promise<void>((resolve) => (releaseHeld = resolve));
+        let sessionTaken: Promise<void> | undefined;
+        const inner = repository.withSession.getMockImplementation()!;
+        repository.withSession.mockImplementation(async (...args) => {
+          await sessionTaken;
+          return inner(...args);
+        });
+        staging.download.mockImplementation((_connection: unknown, current: { id: string }) => {
+          if (current.id === 'held') {
+            sessionTaken = held;
+            return held.then(() => '/private/complete');
+          }
+          return Promise.resolve('/private/complete');
+        });
+        let recordsWhileHeld = 0;
+        let heldDone = false;
+        void held.then(() => (heldDone = true));
+        operations.setBulkResult.mockImplementation(() => {
+          if (!heldDone) {
+            recordsWhileHeld++;
+          }
+          return Promise.resolve(working);
+        });
+
+        const done = sut.run(operation(), 'token');
+        await vi.advanceTimersByTimeAsync(ICLOUD_RECORD_INTERVAL_MS * 3);
+        // the run keeps recording while the held download keeps the session
+        expect(recordsWhileHeld).toBeGreaterThanOrEqual(2);
+        releaseHeld();
+        await vi.runAllTimersAsync();
+        await done;
+        expect(operations.complete).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('allows up to 100 downloads at a time and defaults to 10 (FL-1724)', () => {
       expect(ICloudConfigSchema.parse({}).concurrency).toBe(10);
       expect(ICloudConfigSchema.safeParse({ concurrency: 100 }).success).toBe(true);
