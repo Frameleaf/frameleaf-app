@@ -119,7 +119,15 @@
         });
     });
     void activeTabAddress()
-      .then((address) => (tabAddress = address))
+      .then((address) => {
+        tabAddress = address;
+        // FL-1729: on a video, channel, account or post page the toolbar opens on what you'd save
+        // from it (prototype media states): the Page tab, with Download or Follow already chosen.
+        if (tab === "images" && pageChoice(address).kind !== "other") {
+          tab = "page";
+          pageHalf = "media";
+        }
+      })
       .catch(() => {});
     void sendRequest({ type: "refresh" })
       .then(accept)
