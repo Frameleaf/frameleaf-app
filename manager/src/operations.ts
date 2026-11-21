@@ -200,6 +200,8 @@ type RestoreReview = {
 };
 /** FL-973: how long after an update Manager offers to go back to the release before it. */
 export const ROLLBACK_DAYS = 14;
+/** FL-1732 (owner 2026-11-21): recovery points kept automatically; older ones are pruned unless protected. */
+export const KEPT_RECOVERY_POINTS = 5;
 /** Operations after which the pre-update checkpoint no longer describes this library. */
 const ROLLBACK_INVALIDATING_KINDS: OperationKind[] = ['restore', 'import', 'move-library', 'move-thumbnails', 'thumbnails-home', 'move-database', 'rollback'];
 /** FL-973: recorded when an update finishes; going back restores `snapshot`, the checkpoint taken just before it. */
@@ -576,9 +578,42 @@ export class Operations {
   installation(): Installation | null {
     return this.store.get('installation');
   }
-  /** Removes dumps, recovery records, restore reviews and old release bundles no open operation needs. */
-  prune(): Promise<string[]> {
-    return this.retention.sweep();
+  /**
+   * Removes dumps, recovery records, restore reviews and old release bundles no open operation needs, then
+   * (FL-1732) every recovery point beyond the newest few that nothing still needs. Never throws.
+   */
+  async prune(): Promise<string[]> {
+    const removed = await this.retention.sweep();
+    if (this.executing.size) return removed; // the running operation's own settle prunes again
+    try {
+      const keep = this.protectedRecoveryPoints();
+      const points = await this.backups.list();
+      const surplus = points.slice(KEPT_RECOVERY_POINTS).map((point) => point.id).filter((id) => !keep.has(id));
+      if (surplus.length) await this.backups.forget(surplus);
+      removed.push(...surplus);
+    } catch (error) {
+      // Not set up or locked yet, or restic failed: nothing is lost by waiting for the next settle.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+        console.error(`manager: recovery point pruning did not finish: ${error instanceof Refusal ? error.code : ((error as NodeJS.ErrnoException).code ?? error)}`);
+    }
+    return removed;
+  }
+  /** FL-1732: recovery points that are never pruned or deleted: the one rollback would restore, and any an open operation recorded. */
+  protectedRecoveryPoints(): Set<string> {
+    const ids = new Set<string>();
+    const point = this.store.get<RollbackPoint>('rollback-point');
+    if (point && this.rollbackOffer()) ids.add(point.snapshot);
+    for (const operation of [...this.store.history(), this.store.locked()])
+      if (operation && operation.state !== 'complete')
+        for (const value of Object.values(operation.receipts)) if (typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)) ids.add(value);
+    return ids;
+  }
+  /** FL-1732: the owner deletes one recovery point; protected ones and any while an operation runs are refused. */
+  async deleteRecoveryPoint(id: string): Promise<void> {
+    if (this.executing.size) throw new Refusal('operation_in_progress');
+    if (this.protectedRecoveryPoints().has(id))
+      throw new Refusal('recovery_point_protected', 409, 'This recovery point is still needed to undo the last update or finish an operation.');
+    await this.backups.forget([id]);
   }
   /** A new installation id whose container number no other installation on this host uses. */
   private async newInstallationId(): Promise<string> {
@@ -1436,7 +1471,7 @@ export class Operations {
           );
         this.executing.delete(operation.id);
         // A settled operation no longer needs its plaintext dump, recovery record or restored snapshot.
-        void this.retention.sweep();
+        void this.prune();
       });
   }
   resume(id: string, bootstrap?: unknown): Operation {
@@ -3484,7 +3519,7 @@ export class Operations {
       throw error;
     } finally {
       this.executing.delete(id);
-      void this.retention.sweep();
+      void this.prune();
     }
   }
   private async cancelOperation(operation: Operation): Promise<void> {

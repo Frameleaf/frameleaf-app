@@ -544,6 +544,13 @@ class Api {
   @Get('backups') async snapshots() {
     return (await backups.list()).map(({ id, time }) => ({ id, time }));
   }
+  /** FL-1732: delete one recovery point; the password is asked again because this cannot be undone. */
+  @Post('backup-delete') async backupDelete(@Body() input: unknown) {
+    const { id, password } = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), password: z.string().max(256) }).strict().parse(input);
+    await security.confirm(password);
+    await operations.deleteRecoveryPoint(id);
+    return backups.status();
+  }
   @Get('backup-status') backupStatus() {
     return backups.status();
   }
