@@ -142,7 +142,7 @@ describe('sync preferences', () => {
     const draft = icloudDraft(connection());
     expect(icloudDraftProblems(draft)).toEqual([]);
     expect(
-      icloudDraftProblems({ ...draft, label: ' ', intervalHours: '0', concurrency: '5', stagingGb: '0.0001' }),
+      icloudDraftProblems({ ...draft, label: ' ', intervalHours: '0', concurrency: '101', stagingGb: '0.0001' }),
     ).toEqual(['label', 'interval', 'concurrency', 'staging']);
     expect(icloudDraftProblems({ ...draft, intervalHours: '1.5' })).toEqual(['interval']);
     expect(icloudDraftProblems({ ...draft, librariesAll: false, libraries: [] })).toEqual(['libraries']);

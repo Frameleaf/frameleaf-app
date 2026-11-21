@@ -116061,8 +116061,8 @@
                 "type": "boolean"
               },
               "concurrency": {
-                "default": 1,
-                "maximum": 4,
+                "default": 10,
+                "maximum": 100,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -116147,7 +116147,7 @@
                 "type": "boolean"
               },
               "concurrency": {
-                "maximum": 4,
+                "maximum": 100,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -116293,7 +116293,7 @@
                 "type": "boolean"
               },
               "concurrency": {
-                "maximum": 4,
+                "maximum": 100,
                 "minimum": 1,
                 "type": "integer"
               },
