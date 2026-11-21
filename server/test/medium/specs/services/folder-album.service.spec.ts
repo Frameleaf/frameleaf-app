@@ -87,7 +87,7 @@ beforeAll(async () => {
 });
 
 describe(FolderAlbumService.name, () => {
-  it('makes nested albums for nested folders, owned by the library owner, each with its own photos', async () => {
+  it("makes nested albums for nested folders, owned by the library owner, with the import folder's own photos beside them", async () => {
     const { sut, ctx } = setup();
     const { user, library, file } = await newLibrary(ctx, ['/fl838/nested']);
     const a = await file('/fl838/nested/a.jpg');
@@ -100,8 +100,10 @@ describe(FolderAlbumService.name, () => {
     const top = await folderAlbum(defaultDatabase, library.id, '/fl838/nested');
     const trip = await folderAlbum(defaultDatabase, library.id, '/fl838/nested/trip');
     const day1 = await folderAlbum(defaultDatabase, library.id, '/fl838/nested/trip/day1');
-    expect(top).toMatchObject({ albumName: 'nested', parentId: null, kind: AlbumKind.Album });
-    expect(trip).toMatchObject({ albumName: 'trip', parentId: top!.id, kind: AlbumKind.Album });
+    // FL-838 decision 2: the import folder's own photos are in an album named after the library, beside the
+    // folders' albums rather than above them
+    expect(top).toMatchObject({ albumName: 'Folder albums', parentId: null, kind: AlbumKind.Album });
+    expect(trip).toMatchObject({ albumName: 'trip', parentId: null, kind: AlbumKind.Album });
     expect(day1).toMatchObject({ albumName: 'day1', parentId: trip!.id, kind: AlbumKind.Album });
     expect(await membersOf(defaultDatabase, top!.id)).toEqual([a.id]);
     expect(await membersOf(defaultDatabase, trip!.id)).toEqual([b.id]);
@@ -118,9 +120,7 @@ describe(FolderAlbumService.name, () => {
       .select('id_ancestor')
       .where('id_descendant', '=', day1!.id)
       .execute();
-    expect(ancestors.map(({ id_ancestor }) => id_ancestor).toSorted()).toEqual(
-      [top!.id, trip!.id, day1!.id].toSorted(),
-    );
+    expect(ancestors.map(({ id_ancestor }) => id_ancestor).toSorted()).toEqual([trip!.id, day1!.id].toSorted());
 
     // a second run changes nothing
     await expect(sut.sync(library.id)).resolves.toEqual({
@@ -206,8 +206,9 @@ describe(FolderAlbumService.name, () => {
         .execute(),
     ).toEqual([]);
 
+    // only trip has an album: no photo is loose in the import folder, so it has none (FL-838 decision 2)
     await sut.sync(library.id);
-    await expect(sut.removeAll(library.id, { removeAlbums: true })).resolves.toBe(2);
+    await expect(sut.removeAll(library.id, { removeAlbums: true })).resolves.toBe(1);
     expect(
       await defaultDatabase
         .selectFrom('library_folder_album')
