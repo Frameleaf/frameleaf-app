@@ -48,7 +48,7 @@ import {
   jobCreateRequestSchema,
   jobViewSchema,
 } from 'src/utils/frameleaf-cloud.js';
-import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
+import { EVEN_SIDES_FILTER, stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import { tryPromise } from 'src/utils/promise.js';
 import { transcriptionClipOf } from 'src/utils/studio-transcription.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
@@ -395,7 +395,7 @@ describe(CloudMlJobService.name, () => {
       videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30 }],
       audioStreams: [],
     } as never);
-    mocks.media.countPackets.mockResolvedValue({ packets: 150, hidden: 0, uneven: false });
+    mocks.media.countPackets.mockResolvedValue({ packets: 150, hidden: 0, uneven: false, unordered: false, keyGap: 1 });
     mocks.crypto.hashFileDigests.mockResolvedValue({
       sha1: Buffer.alloc(20),
       sha256: Buffer.from(SHA, 'hex'),
@@ -666,6 +666,14 @@ describe(CloudMlJobService.name, () => {
       expect(record.beforePath).toBe(first[1]);
     });
 
+    it('crops a whole-frame preview clip to even sides, so an odd-sized video can be encoded', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({ ...sealed, modelSku: SMOOTH, modelRev: SMOOTH_REV });
+      await sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 2 }), now);
+
+      const [first] = mocks.media.transcode.mock.calls;
+      expect(first[2].outputOptions).toEqual(expect.arrayContaining(['-vf', EVEN_SIDES_FILTER]));
+    });
+
     it('allows a fully promoted job with no wallet balance and approves only its net spending', async () => {
       mocks.frameleafCloudMl.getWallet.mockResolvedValue(wallet(0));
       mocks.frameleafCloudMl.createEstimate.mockResolvedValue({
@@ -826,18 +834,20 @@ describe(CloudMlJobService.name, () => {
         videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30, rotation: 90 }],
         audioStreams: [],
       } as never);
-      await expect(sut.estimate(owner, preview({ upscale: 2 }), now)).rejects.toThrow(
-        'still carries a rotation, frames its picture never shows or an uneven frame rate',
-      );
+      await expect(sut.estimate(owner, preview({ upscale: 2 }), now)).rejects.toThrow('is still not a plain stream');
       mocks.media.probe.mockResolvedValue({
         format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
         videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30 }],
         audioStreams: [],
       } as never);
-      mocks.media.countPackets.mockResolvedValue({ packets: 150, hidden: 15, uneven: false });
-      await expect(sut.estimate(owner, preview({ upscale: 2 }), now)).rejects.toThrow(
-        'still carries a rotation, frames its picture never shows or an uneven frame rate',
-      );
+      mocks.media.countPackets.mockResolvedValue({
+        packets: 150,
+        hidden: 15,
+        uneven: false,
+        unordered: false,
+        keyGap: 1,
+      });
+      await expect(sut.estimate(owner, preview({ upscale: 2 }), now)).rejects.toThrow('is still not a plain stream');
       expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
     });
 
@@ -920,9 +930,9 @@ describe(CloudMlJobService.name, () => {
     });
 
     it.each([
-      ['is turned', { rotation: 90 }, { packets: 150, hidden: 0, uneven: false }],
-      ['has frames its edit list hides', {}, { packets: 150, hidden: 15, uneven: false }],
-      ['has a variable frame rate', {}, { packets: 150, hidden: 0, uneven: true }],
+      ['is turned', { rotation: 90 }, { packets: 150, hidden: 0, uneven: false, unordered: false, keyGap: 1 }],
+      ['has frames its edit list hides', {}, { packets: 150, hidden: 15, uneven: false, unordered: false, keyGap: 1 }],
+      ['has a variable frame rate', {}, { packets: 150, hidden: 0, uneven: true, unordered: false, keyGap: 1 }],
     ])('re-encodes a whole video that %s instead of copying its stream', async (_, stream, packets) => {
       mocks.media.probe.mockResolvedValue({
         format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
@@ -958,8 +968,8 @@ describe(CloudMlJobService.name, () => {
       } as never);
       // the source shows every packet; its copy hides one (a transport stream cut inside a group of pictures)
       mocks.media.countPackets
-        .mockResolvedValueOnce({ packets: 150, hidden: 0, uneven: false })
-        .mockResolvedValueOnce({ packets: 150, hidden: 1, uneven: false });
+        .mockResolvedValueOnce({ packets: 150, hidden: 0, uneven: false, unordered: false, keyGap: 1 })
+        .mockResolvedValueOnce({ packets: 150, hidden: 1, uneven: false, unordered: false, keyGap: 1 });
       await expect(sut.estimate(owner, full(), now)).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'input-preparing' }),
       });
@@ -975,7 +985,7 @@ describe(CloudMlJobService.name, () => {
       expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
     });
 
-    it('does not reuse a whole-video copy prepared before rotated and trimmed sources were re-encoded', async () => {
+    it('does not reuse a whole-video copy prepared under an earlier copy rule', async () => {
       await expect(sut.estimate(owner, full(), now)).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'input-preparing' }),
       });
@@ -988,8 +998,8 @@ describe(CloudMlJobService.name, () => {
           .digest('hex')
           .slice(0, 32);
       const [input] = estimates().at(-1)!.inputs;
-      expect(input.path).toContain(`cloud_ml_input_${key(3)}`);
-      expect(input.path).not.toContain(key(2));
+      expect(input.path).toContain(`cloud_ml_input_${key(4)}`);
+      expect(input.path).not.toContain(key(3));
     });
 
     it('quotes the whole file without a reviewed preview, and refuses to confirm the quote (FL-348)', async () => {

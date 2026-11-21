@@ -99,6 +99,10 @@ export const fullVideoUploadOutputOptions = (options: {
         '-vf',
         EVEN_SIDES_FILTER,
         ...constantRateOptions(options.constantRate),
+        // FL-1725: a keyframe every 2 seconds (closed groups, x264's default), so Frameleaf Cloud's worker
+        // seeks straight to every chunk instead of decoding from the start for each one
+        '-force_key_frames',
+        'expr:gte(t,n_forced*2)',
         '-c:v',
         'libx264',
         '-preset',

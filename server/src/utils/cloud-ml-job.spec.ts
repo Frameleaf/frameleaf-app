@@ -7,6 +7,7 @@ import {
   cloudVideoSettingsRefusal,
   isPlainVideoStream,
   isUnevenCadence,
+  packetSummary,
 } from 'src/utils/cloud-ml-job.js';
 import { estimateRequestSchema } from 'src/utils/frameleaf-cloud.js';
 
@@ -251,6 +252,13 @@ describe('frames off an even grid (FL-1725)', () => {
     expect(isUnevenCadence(pts)).toBe(false);
   });
 
+  it('allows half a frame period off the grid, never more', () => {
+    const grid = Array.from({ length: 20 }, (_, n) => n * 100);
+    expect(isUnevenCadence(grid.map((time, n) => (n === 10 ? time + 49 : time)))).toBe(false);
+    // the cloud would still take this (it allows a whole period); the server re-encodes it instead
+    expect(isUnevenCadence(grid.map((time, n) => (n === 10 ? time + 70 : time)))).toBe(true);
+  });
+
   it.each([
     [
       '30 then 25 frames a second in 1/12000',
@@ -289,17 +297,92 @@ describe('frames off an even grid (FL-1725)', () => {
 });
 
 describe('a stream that can be uploaded as it is (FL-1725)', () => {
-  it('is one with no rotation and no hidden packets', () => {
-    expect(isPlainVideoStream({ rotation: 0 }, { packets: 10, hidden: 0 })).toBe(true);
-    expect(isPlainVideoStream({ rotation: NaN }, { packets: 10, hidden: 0 })).toBe(true);
-    expect(isPlainVideoStream({ rotation: 360 }, { packets: 10, hidden: 0 })).toBe(true);
-    for (const rotation of [90, -90, 180, 270]) {
-      expect(isPlainVideoStream({ rotation }, { packets: 10, hidden: 0 })).toBe(false);
+  const even = { width: 320, height: 240 };
+  const facts = { packets: 10, hidden: 0, uneven: false, unordered: false, keyGap: 2 };
+
+  it('is upright, even-sided, with every packet shown on an even grid, real times and close keyframes', () => {
+    expect(isPlainVideoStream({ ...even, rotation: 0 }, facts)).toBe(true);
+    expect(isPlainVideoStream({ ...even, rotation: NaN }, facts)).toBe(true);
+    expect(isPlainVideoStream({ ...even, rotation: 360 }, facts)).toBe(true);
+    expect(isPlainVideoStream({ ...even, rotation: 0 }, { ...facts, keyGap: 10 })).toBe(true);
+  });
+
+  it.each([
+    ['turned', { ...even, rotation: 90 }, facts],
+    ['turned the other way', { ...even, rotation: -90 }, facts],
+    ['upside down', { ...even, rotation: 180 }, facts],
+    ['odd wide', { width: 95, height: 64, rotation: 0 }, facts],
+    ['odd high', { width: 96, height: 63, rotation: 0 }, facts],
+    ['odd in its own pixels', { width: 96, codedWidth: 95, height: 64, rotation: 0 }, facts],
+    ['hiding packets', { ...even, rotation: 0 }, { ...facts, hidden: 1 }],
+    ['off its grid', { ...even, rotation: 0 }, { ...facts, uneven: true }],
+    ['timed by decode order', { ...even, rotation: 0 }, { ...facts, unordered: true }],
+    ['short of keyframes', { ...even, rotation: 0 }, { ...facts, keyGap: 10.01 }],
+    ['without a keyframe', { ...even, rotation: 0 }, { ...facts, keyGap: Infinity }],
+    ['empty', { ...even, rotation: 0 }, { ...facts, packets: 0 }],
+  ])('is not one that is %s', (_, stream, packets) => {
+    expect(isPlainVideoStream(stream, packets)).toBe(false);
+  });
+
+  it('is not a missing stream', () => {
+    expect(isPlainVideoStream(undefined, facts)).toBe(false);
+  });
+});
+
+describe("what a stream's packets say (FL-1725)", () => {
+  const read = (lines: string[]) => {
+    const summary = packetSummary();
+    for (const line of lines) {
+      summary.add(line);
     }
-    expect(isPlainVideoStream({ rotation: 0 }, { packets: 10, hidden: 1 })).toBe(false);
-    expect(isPlainVideoStream({ rotation: 0 }, { packets: 10, hidden: 0, uneven: true })).toBe(false);
-    expect(isPlainVideoStream({ rotation: 0 }, { packets: 0, hidden: 0 })).toBe(false);
-    expect(isPlainVideoStream(undefined, { packets: 10, hidden: 0 })).toBe(false);
+    return summary.done();
+  };
+  /** 30 frames a second with B-frames: shown in another order than decoded, a keyframe every second. */
+  const reordered = Array.from({ length: 90 }, (_, n) => {
+    const shownAt = n % 3 === 1 ? n + 1 : n % 3 === 2 ? n - 1 : n;
+    return `packet,${(shownAt / 30).toFixed(6)},${((n - 2) / 30).toFixed(6)},${n % 30 === 0 ? 'K__' : '___'}`;
+  });
+
+  it('reads a phone video as plain', () => {
+    expect(read(['stream,2', ...reordered])).toEqual({
+      packets: 90,
+      hidden: 0,
+      uneven: false,
+      unordered: false,
+      keyGap: 1,
+    });
+  });
+
+  it('sees B-frames timed by their decode order (an AVI remuxed by copy)', () => {
+    const decodeTimed = reordered.map((line) => {
+      const fields = line.split(',');
+      return `packet,${fields[2]},${fields[2]},${fields[3]}`;
+    });
+    expect(read(['stream,2', ...decodeTimed]).unordered).toBe(true);
+    // without B-frames, presentation and decode times are rightly the same
+    expect(read(['stream,0', ...decodeTimed]).unordered).toBe(false);
+  });
+
+  it('takes a shown packet with no time as an uneven rate', () => {
+    const lines = [
+      'stream,0',
+      'packet,0.000000,0.000000,K__',
+      'packet,N/A,0.033333,___',
+      'packet,0.066667,0.066667,___',
+    ];
+    expect(read(lines).uneven).toBe(true);
+  });
+
+  it('counts hidden packets apart, and measures keyframes over the shown ones', () => {
+    const facts = read([
+      'stream,0',
+      'packet,-0.500000,-0.500000,KD_',
+      'packet,0.000000,0.000000,K__',
+      ...Array.from({ length: 359 }, (_, n) => `packet,${((n + 1) / 30).toFixed(6)},${((n + 1) / 30).toFixed(6)},___`),
+    ]);
+    expect(facts).toMatchObject({ packets: 361, hidden: 1, uneven: false });
+    // one keyframe at the start of a 12-second clip
+    expect(facts.keyGap).toBeCloseTo(11.966667, 5);
   });
 });
 

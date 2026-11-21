@@ -158,23 +158,103 @@ export const cloudSmoothMotionFactor = (fps: number, factor: number): 2 | 4 | nu
   return null;
 };
 
+/** The longest stretch, in seconds, a stream copied for Frameleaf Cloud may go without a keyframe. */
+export const CLOUD_VIDEO_MAX_KEY_GAP_SECONDS = 10;
+
+/** What a stream's packets say about copying it (`packetSummary`). */
+export type PacketFacts = {
+  packets: number;
+  /** Packets the edit list hides (ffprobe's discard flag). */
+  hidden: number;
+  /** Shown frames off an even grid (`isUnevenCadence`), or a shown packet with no time. */
+  uneven: boolean;
+  /** B-frames whose packets all carry their decode time as presentation time (an AVI remuxed by copy). */
+  unordered?: boolean;
+  /** The longest stretch of shown frames, in seconds, without a keyframe; Infinity with none. */
+  keyGap?: number;
+};
+
+/**
+ * Reads `ffprobe -show_entries stream=has_b_frames:packet=pts_time,dts_time,flags -of csv=p=1` line by
+ * line and answers what the packets say about copying the stream. Only the shown packets' times are kept.
+ */
+export const packetSummary = () => {
+  let packets = 0;
+  let hidden = 0;
+  let unknown = false;
+  let reordered = false;
+  let bFrames = 0;
+  // ponytail: every shown packet's time is kept (8 bytes each: 20 MB for 6 hours at 120 fps), since the
+  // grid is fitted to the first and last shown frame in presentation order
+  const shown: number[] = [];
+  const keys: number[] = [];
+  return {
+    add(line: string) {
+      const [section, ...fields] = line.split(',');
+      if (section === 'stream') {
+        bFrames = Number(fields[0]) || 0;
+        return;
+      }
+      if (section !== 'packet') {
+        return;
+      }
+      packets++;
+      const [pts = '', dts = '', flags = ''] = fields;
+      // flags are `K`, `D` and `C` in fixed places: `_D_` is a packet the edit list drops
+      if (flags.includes('D')) {
+        hidden++;
+        return;
+      }
+      const time = Number(pts);
+      if (!pts || !Number.isFinite(time)) {
+        unknown = true;
+        return;
+      }
+      reordered ||= pts !== dts;
+      shown.push(time);
+      if (flags.includes('K')) {
+        keys.push(time);
+      }
+    },
+    done(): Required<PacketFacts> {
+      const sortedKeys = keys.toSorted((a, b) => a - b);
+      const first = Math.min(...shown);
+      const last = Math.max(...shown);
+      let keyGap = sortedKeys.length === 0 ? Infinity : Math.max(sortedKeys[0] - first, last - sortedKeys.at(-1)!);
+      for (let index = 1; index < sortedKeys.length; index++) {
+        keyGap = Math.max(keyGap, sortedKeys[index] - sortedKeys[index - 1]);
+      }
+      return {
+        packets,
+        hidden,
+        uneven: unknown || isUnevenCadence(shown),
+        unordered: bFrames > 0 && shown.length > 1 && !reordered,
+        keyGap: shown.length === 0 ? Infinity : keyGap,
+      };
+    },
+  };
+};
+
 /**
  * Whether a stream can be uploaded as it is, packet for packet. Frameleaf Cloud's worker checks the
- * stream's own size and its packet count and then decodes it, so a stream with a rotation (the decoder
- * turns the picture, the size says otherwise) or with packets its edit list hides (fewer frames decode
- * than were counted, and frames the owner trimmed away would leave the server) is never copied: it is
- * re-encoded, which gives upright pixels and one packet for every frame shown.
+ * stream's own size, its shown frames and their grid, then seeks to keyframes and decodes, and refuses or
+ * misreads (after the job is leased and charged) a stream with a rotation, packets an edit list hides,
+ * frames off an even grid, presentation times that are only decode times, keyframes far apart, or an odd
+ * side. Such a stream is re-encoded instead: upright, even-sided, one rate, a keyframe every 2 seconds.
  */
 export const isPlainVideoStream = (
-  stream: Pick<VideoStreamInfo, 'rotation'> | undefined,
-  packets: { packets: number; hidden: number; uneven?: boolean },
+  stream: Pick<VideoStreamInfo, 'rotation' | 'width' | 'codedWidth' | 'height'> | undefined,
+  packets: PacketFacts,
 ): boolean =>
   !!stream &&
   !((Number(stream.rotation) || 0) % 360) &&
+  (stream.codedWidth ?? stream.width) % 2 === 0 &&
+  stream.height % 2 === 0 &&
   packets.packets > 0 &&
   packets.hidden === 0 &&
-  // a variable frame rate: the worker finds frames by the average rate and would restore the wrong ones
-  !packets.uneven;
+  !packets.uneven &&
+  !packets.unordered &&
+  (packets.keyGap ?? 0) <= CLOUD_VIDEO_MAX_KEY_GAP_SECONDS;
 
 /** How far the cloud's worker lets a clip's real frame rate be from the declared one. */
 export const CLOUD_VIDEO_FPS_TOLERANCE = 0.01;

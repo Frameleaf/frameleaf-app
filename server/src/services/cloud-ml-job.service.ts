@@ -204,8 +204,9 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
 /** A whole video prepared for Frameleaf Cloud once, kept in its own folder for every estimate of it. */
 const PREPARED_INPUT_PREFIX = 'cloud_ml_input_';
 /** Bumped when the way a whole video is prepared changes, so an older copy is never reused. */
-// 3 (FL-1725): a source with a rotation or hidden packets is re-encoded, never copied
-const PREPARED_INPUT_VERSION = 3;
+// 3, 4 (FL-1725): a source is copied only when it is a plain stream (`isPlainVideoStream`); 4 when that rule
+// gained real presentation times, close keyframes and even sides
+const PREPARED_INPUT_VERSION = 4;
 /** The record written next to a prepared copy once it is complete. */
 const PREPARED_INPUT_RECORD = 'prepared.json';
 
@@ -3302,7 +3303,7 @@ export class CloudMlJobService {
     if (stream && !isPlainVideoStream(stream, await this.mediaRepository.countPackets(input.path, stream.index))) {
       throw new CloudMlJobFailure(
         'cloud_ml_prepare_failed',
-        'The copy prepared for Frameleaf Cloud still carries a rotation, frames its picture never shows or an uneven frame rate, so nothing was sent',
+        'The copy prepared for Frameleaf Cloud is still not a plain stream (a rotation, hidden frames, an uneven frame rate, keyframes far apart or an odd size), so nothing was sent',
         false,
       );
     }

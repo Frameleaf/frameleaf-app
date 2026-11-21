@@ -49,7 +49,7 @@ import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { isUnevenCadence } from 'src/utils/cloud-ml-job.js';
+import { type PacketFacts, packetSummary } from 'src/utils/cloud-ml-job.js';
 import { renderDarktable } from 'src/utils/darktable-renderer.js';
 import {
   DESIGN_PREVIEW_TAGS,
@@ -977,15 +977,15 @@ export class MediaRepository {
    * Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
    */
   /**
-   * FL-1725: how many packets a stream has, how many of them its edit list hides (ffprobe's discard
-   * flag), and whether its frames last unevenly (`isUnevenCadence`). A decoder shows `packets - hidden`
-   * frames; `probe` with `countFrames` counts them all.
+   * FL-1725: what a stream's packets say about copying it for Frameleaf Cloud (`packetSummary`): how many
+   * there are, how many its edit list hides, whether its shown frames sit on an even grid with real
+   * presentation times, and how far apart its keyframes are.
    */
   countPackets(
     input: string,
     streamIndex: number,
     signal: AbortSignal | undefined = executionSignal(),
-  ): Promise<{ packets: number; hidden: number; uneven: boolean }> {
+  ): Promise<Required<PacketFacts>> {
     signal?.throwIfAborted();
     const ffprobe = spawn(
       'ffprobe',
@@ -995,38 +995,23 @@ export class MediaRepository {
         '-select_streams',
         String(streamIndex),
         '-show_entries',
-        'packet=pts,flags',
+        'stream=has_b_frames:packet=pts_time,dts_time,flags',
         '-of',
-        'csv=p=0',
+        'csv=p=1',
         input,
       ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     const lifetime = superviseMediaProcess(ffprobe, { signal });
-    let packets = 0;
-    let hidden = 0;
-    // ponytail: every shown packet's time is kept (8 bytes each: 20 MB for 6 hours at 120 fps), since
-    // the grid is fitted to the first and last shown frame in presentation order
-    const shown: number[] = [];
-    let unknown = false;
+    const summary = packetSummary();
     let stderr = '';
     let remainder = '';
     let failure: Error | undefined;
     const count = (line: string) => {
-      if (!line) {
-        return;
+      if (line) {
+        summary.add(line);
+        lifetime.progress(1);
       }
-      packets++;
-      const [stated, flags = ''] = line.split(',', 2);
-      // flags are `K`, `D` and `C` in fixed places: `_D_` is a packet the edit list drops
-      if (flags.includes('D')) {
-        hidden++;
-      } else if (/^-?\d+$/.test(stated)) {
-        shown.push(Number(stated));
-      } else {
-        unknown = true;
-      }
-      lifetime.progress(1);
     };
     ffprobe.stderr.setEncoding('utf8');
     ffprobe.stderr.on('data', (chunk: string) => {
@@ -1053,7 +1038,7 @@ export class MediaRepository {
           return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
         }
         count(remainder);
-        resolve({ packets, hidden, uneven: unknown || isUnevenCadence(shown) });
+        resolve(summary.done());
       });
     });
   }
