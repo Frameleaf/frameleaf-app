@@ -8525,7 +8525,7 @@ export type BrowserExtensionSignInExchangeResponseDto = {
     grant: BrowserExtensionGrant;
     /** How the access is listed in API keys */
     name: string;
-    /** The new access key, shown once; it can only save captures and list collections and tags */
+    /** The new access key, shown once; it can only save captures and list collections and tags, plus media downloads when grant is media */
     secret: string;
     serverId: string;
     userId: string;
