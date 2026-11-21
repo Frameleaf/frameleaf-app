@@ -1,0 +1,17 @@
+{
+  "preview": {
+    "enabled": true,
+    "startSec": 0,
+    "durationSec": 5
+  },
+  "previewModelRev": "mr_C3J258SCKCR1",
+  "items": [
+    {
+      "inputId": "v1",
+      "durationSec": 300,
+      "fps": 30,
+      "width": 1920,
+      "height": 1080
+    }
+  ]
+}

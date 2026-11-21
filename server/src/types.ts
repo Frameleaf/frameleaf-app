@@ -107,6 +107,11 @@ export interface VideoStreamInfo {
   index: number;
   height: number;
   width: number;
+  /**
+   * The stream's own pixel width as ffprobe reports it. `width` above is the display width (the height
+   * times the display aspect ratio), which differs for non-square pixels. Optional and additive.
+   */
+  codedWidth?: number;
   rotation: number;
   codecName: string | null;
   profile: H264Profile | HevcProfile | Av1Profile | null;

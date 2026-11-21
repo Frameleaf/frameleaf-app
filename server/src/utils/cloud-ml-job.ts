@@ -1,8 +1,12 @@
 import z from 'zod';
+import type { VideoStreamInfo } from 'src/types.js';
 import type { TranscriptionClip } from 'src/utils/studio-transcription.js';
 import { MediaOperationKind, MediaOperationStatus, MlWorkload } from 'src/enum.js';
 import {
   CLOUD_JOB_STATUSES,
+  CLOUD_VIDEO_MAX_FPS,
+  CLOUD_VIDEO_MAX_SECONDS,
+  CLOUD_VIDEO_MIN_SIDE,
   CloudEstimate,
   CloudJobRouting,
   CloudJobView,
@@ -77,9 +81,276 @@ export type CloudMlJobPurpose = (typeof CLOUD_ML_JOB_PURPOSES)[number];
 export const CLOUD_ML_JOB_STAGES = ['preview', 'full'] as const;
 export type CloudMlJobStage = (typeof CLOUD_ML_JOB_STAGES)[number];
 
-/** The Smooth motion frame-rate factors Frameleaf Cloud's interpolation request allows. */
+/** The Smooth motion frame-rate factors the estimate request accepts. Frameleaf Cloud runs the first two. */
 export const SMOOTH_MOTION_FACTORS = [2, 4, 8] as const;
 export type SmoothMotionFactor = (typeof SMOOTH_MOTION_FACTORS)[number];
+
+/** FC-48: the factors Frameleaf Cloud's interpolation request allows (the FC-34 factor 8 is gone). */
+export const CLOUD_SMOOTH_MOTION_FACTORS = [2, 4] as const;
+/** FC-47: the largest `targetScale` Frameleaf Cloud's video restoration takes. */
+export const CLOUD_VIDEO_RESTORATION_MAX_SCALE = 2;
+
+/** The clip a restoration or Smooth motion request describes (`RestorationSource`, `InterpolationSource`). */
+export type CloudVideoClip = { inputId: string; durationSec: number; fps: number; width: number; height: number };
+
+/**
+ * The uploaded clip as Frameleaf Cloud's worker will measure it, from a probe that counted its packets.
+ * The worker refuses a clip (`input-unsupported`) unless its own pixel size is the declared one, its
+ * average frame rate is within 0.01 of the declared one, and its frame count is the declared length
+ * times the rate, rounded half up, or one more. So the length is the frame count over the rate, not the
+ * container's duration, and the width is the stream's own, not the display width. Null when the probe
+ * has no frame count or rate.
+ */
+export const cloudVideoClip = (
+  inputId: string,
+  stream:
+    | Pick<VideoStreamInfo, 'width' | 'codedWidth' | 'height' | 'frameCount' | 'frameRate' | 'frameRateRational'>
+    | undefined,
+  /** The Smooth motion factor asked for, when the clip is for Smooth motion (see `cloudDeclaredFps`). */
+  factor: number | null = null,
+): CloudVideoClip | null => {
+  if (!stream) {
+    return null;
+  }
+  const rational = stream.frameRateRational;
+  const measured = rational && rational.num > 0 && rational.den > 0 ? rational.num / rational.den : stream.frameRate;
+  const fps = measured && measured > 0 ? cloudDeclaredFps(measured, factor) : measured;
+  const frames = stream.frameCount;
+  const width = stream.codedWidth ?? stream.width;
+  if (!fps || !(fps > 0) || !Number.isSafeInteger(frames) || frames < 1 || !(width > 0) || !(stream.height > 0)) {
+    return null;
+  }
+  return { inputId, durationSec: frames / fps, fps, width, height: stream.height };
+};
+
+/**
+ * Why Frameleaf Cloud would refuse these settings, in words for the person, or null. Said here, before
+ * anything is prepared or estimated, since the cloud's own answer is a bare 422. `limits` is the chosen
+ * model's catalogue `limits` (`maxScale` for restoration, `maxFactor` for Smooth motion): a model that
+ * serves less than the contract allows says so there. A missing limit is the contract's own (2 and 4).
+ */
+export const cloudVideoSettingsRefusal = (
+  workload: 'restoration' | 'interpolation',
+  settings: { upscale: number; factor: number | null },
+  limits: Record<string, number> = {},
+): string | null => {
+  if (workload === 'restoration') {
+    const most = Math.min(limits.maxScale ?? CLOUD_VIDEO_RESTORATION_MAX_SCALE, CLOUD_VIDEO_RESTORATION_MAX_SCALE);
+    return settings.upscale > most ? `Frameleaf Cloud restores video at up to ${most}×. Choose ${most}×.` : null;
+  }
+  const most = limits.maxFactor ?? Math.max(...CLOUD_SMOOTH_MOTION_FACTORS);
+  const served = CLOUD_SMOOTH_MOTION_FACTORS.filter((factor) => factor <= most);
+  return (served as readonly number[]).includes(settings.factor ?? 2)
+    ? null
+    : `Frameleaf Cloud smooths motion ${served.join('× or ')}×. Choose ${served.length > 1 ? 'one of those' : 'that'}.`;
+};
+
+/**
+ * The factor Frameleaf Cloud gives a clip (its `interpolationFactor`, with no `targetFps`): the one asked
+ * for, halved while the output would pass 120 frames a second. Null when even 2× passes it.
+ */
+export const cloudSmoothMotionFactor = (fps: number, factor: number): 2 | 4 | null => {
+  for (const candidate of factor === 4 ? ([4, 2] as const) : ([2] as const)) {
+    if (fps * candidate <= CLOUD_VIDEO_MAX_FPS + 1e-9) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
+/** The longest stretch, in seconds, a stream copied for Frameleaf Cloud may go without a keyframe. */
+export const CLOUD_VIDEO_MAX_KEY_GAP_SECONDS = 10;
+
+/** What a stream's packets say about copying it (`packetSummary`). */
+export type PacketFacts = {
+  packets: number;
+  /** Packets the edit list hides (ffprobe's discard flag). */
+  hidden: number;
+  /** Shown frames off an even grid (`isUnevenCadence`), or a shown packet with no time. */
+  uneven: boolean;
+  /** B-frames whose packets all carry their decode time as presentation time (an AVI remuxed by copy). */
+  unordered?: boolean;
+  /** The longest stretch of shown frames, in seconds, without a keyframe; Infinity with none. */
+  keyGap?: number;
+};
+
+/**
+ * Reads `ffprobe -show_entries stream=has_b_frames:packet=pts_time,dts_time,flags -of csv=p=1` line by
+ * line and answers what the packets say about copying the stream. Only the shown packets' times are kept.
+ */
+export const packetSummary = () => {
+  let packets = 0;
+  let hidden = 0;
+  let unknown = false;
+  let reordered = false;
+  let bFrames = 0;
+  // ponytail: every shown packet's time is kept (8 bytes each: 20 MB for 6 hours at 120 fps), since the
+  // grid is fitted to the first and last shown frame in presentation order
+  const shown: number[] = [];
+  const keys: number[] = [];
+  return {
+    add(line: string) {
+      const [section, ...fields] = line.split(',');
+      if (section === 'stream') {
+        bFrames = Number(fields[0]) || 0;
+        return;
+      }
+      if (section !== 'packet') {
+        return;
+      }
+      packets++;
+      const [pts = '', dts = '', flags = ''] = fields;
+      // flags are `K`, `D` and `C` in fixed places: `_D_` is a packet the edit list drops
+      if (flags.includes('D')) {
+        hidden++;
+        return;
+      }
+      const time = Number(pts);
+      if (!pts || !Number.isFinite(time)) {
+        unknown = true;
+        return;
+      }
+      reordered ||= pts !== dts;
+      shown.push(time);
+      if (flags.includes('K')) {
+        keys.push(time);
+      }
+    },
+    done(): Required<PacketFacts> {
+      const sortedKeys = keys.toSorted((a, b) => a - b);
+      // a loop, not a spread: six hours at 120 frames a second is 2.6 million times, past the argument limit
+      let first = Infinity;
+      let last = -Infinity;
+      for (const time of shown) {
+        first = Math.min(first, time);
+        last = Math.max(last, time);
+      }
+      let keyGap = sortedKeys.length === 0 ? Infinity : Math.max(sortedKeys[0] - first, last - sortedKeys.at(-1)!);
+      for (let index = 1; index < sortedKeys.length; index++) {
+        keyGap = Math.max(keyGap, sortedKeys[index] - sortedKeys[index - 1]);
+      }
+      return {
+        packets,
+        hidden,
+        uneven: unknown || isUnevenCadence(shown),
+        unordered: bFrames > 0 && shown.length > 1 && !reordered,
+        keyGap: shown.length === 0 ? Infinity : keyGap,
+      };
+    },
+  };
+};
+
+/**
+ * Whether a stream can be uploaded as it is, packet for packet. Frameleaf Cloud's worker checks the
+ * stream's own size, its shown frames and their grid, then seeks to keyframes and decodes, and refuses or
+ * misreads (after the job is leased and charged) a stream with a rotation, packets an edit list hides,
+ * frames off an even grid, presentation times that are only decode times, keyframes far apart, or an odd
+ * side. Such a stream is re-encoded instead: upright, even-sided, one rate, a keyframe every 2 seconds.
+ */
+export const isPlainVideoStream = (
+  stream: Pick<VideoStreamInfo, 'rotation' | 'width' | 'codedWidth' | 'height'> | undefined,
+  packets: PacketFacts,
+): boolean =>
+  !!stream &&
+  !((Number(stream.rotation) || 0) % 360) &&
+  (stream.codedWidth ?? stream.width) % 2 === 0 &&
+  stream.height % 2 === 0 &&
+  packets.packets > 0 &&
+  packets.hidden === 0 &&
+  !packets.uneven &&
+  !packets.unordered &&
+  // a microsecond of slack: 10 s measures 10 in MP4 and 10.000000000000002 in a transport stream
+  (packets.keyGap ?? 0) <= CLOUD_VIDEO_MAX_KEY_GAP_SECONDS + 1e-6;
+
+/** How far the cloud's worker lets a clip's real frame rate be from the declared one. */
+export const CLOUD_VIDEO_FPS_TOLERANCE = 0.01;
+
+/**
+ * The frame rate to declare for a clip measured at `fps`. A rate a hair over a limit (30.0003 for 4×
+ * Smooth motion, 60.0001 for 2×, 120.004 for anything) is the limit itself: the cloud's worker accepts a
+ * declared rate within 0.01 of the real one, and the estimate would otherwise refuse a 30 fps video for
+ * the way its container rounds its length.
+ */
+export const cloudDeclaredFps = (fps: number, factor: number | null = null): number => {
+  for (const limit of [...(factor ? [CLOUD_VIDEO_MAX_FPS / factor] : []), CLOUD_VIDEO_MAX_FPS]) {
+    if (fps > limit && fps - limit <= CLOUD_VIDEO_FPS_TOLERANCE) {
+      return limit;
+    }
+  }
+  return fps;
+};
+
+/**
+ * Why Frameleaf Cloud would refuse this clip (its frame rate, size or length), or would run Smooth motion
+ * at another factor than the one asked for, in words for the person, or null.
+ */
+export const cloudVideoClipRefusal = (
+  workload: 'restoration' | 'interpolation',
+  clip: CloudVideoClip,
+  factor: number | null = null,
+): string | null => {
+  const max = workload === 'restoration' ? { width: 7680, height: 4320 } : { width: 3840, height: 2160 };
+  if (clip.fps < 1 || clip.fps > CLOUD_VIDEO_MAX_FPS) {
+    return `Frameleaf Cloud takes video from 1 to ${CLOUD_VIDEO_MAX_FPS} frames a second; this one has ${Math.round(clip.fps * 1000) / 1000}.`;
+  }
+  if (
+    clip.width < CLOUD_VIDEO_MIN_SIDE ||
+    clip.height < CLOUD_VIDEO_MIN_SIDE ||
+    clip.width > max.width ||
+    clip.height > max.height
+  ) {
+    return `Frameleaf Cloud takes video from ${CLOUD_VIDEO_MIN_SIDE} pixels a side up to ${max.width}×${max.height} for this; this one is ${clip.width}×${clip.height}.`;
+  }
+  if (clip.durationSec > CLOUD_VIDEO_MAX_SECONDS) {
+    return `Frameleaf Cloud takes video up to ${CLOUD_VIDEO_MAX_SECONDS / 3600} hours long. Split the clip into shorter parts.`;
+  }
+  return workload === 'interpolation' ? cloudSmoothMotionRefusal(clip.fps, factor ?? 2) : null;
+};
+
+/**
+ * Why Frameleaf Cloud would not smooth motion at `factor` for a clip declared at `fps`, or null. The cloud
+ * halves a factor that would pass 120 frames a second and refuses when even 2× does: the owner is never
+ * shown, or charged for, a factor that was not made.
+ */
+export const cloudSmoothMotionRefusal = (fps: number, factor: number): string | null => {
+  const given = cloudSmoothMotionFactor(fps, factor);
+  const rate = Math.round(fps * 1000) / 1000;
+  if (given === null) {
+    return `This video has ${rate} frames a second. Frameleaf Cloud smooths motion up to ${CLOUD_VIDEO_MAX_FPS} frames a second, so there is nothing it can add.`;
+  }
+  return given === factor
+    ? null
+    : `This video has ${rate} frames a second, so ${factor}× would pass ${CLOUD_VIDEO_MAX_FPS} frames a second. Choose ${given}×.`;
+};
+
+/**
+ * Whether a stream's shown frames are off an even grid, from their presentation times in any order.
+ * Frameleaf Cloud's worker refuses a clip, after the job is leased and charged, unless every shown frame
+ * is within one frame period of `t0 + i * step`, where `step = (tLast - t0) / (n - 1)`. This is the same
+ * test with half a frame period, so a stream copied here always passes there; a coarse time base's
+ * one-tick rounding passes, a rate that changes or drifts does not.
+ */
+export const isUnevenCadence = (times: readonly number[]): boolean => {
+  if (times.length < 3) {
+    return false;
+  }
+  const sorted = times.toSorted((a, b) => a - b);
+  const step = (sorted.at(-1)! - sorted[0]) / (sorted.length - 1);
+  if (!(step > 0)) {
+    return true;
+  }
+  return sorted.some((time, index) => Math.abs(time - (sorted[0] + index * step)) > step / 2);
+};
+
+/** The `request` of a restoration or Smooth motion estimate and job (FC-47, FC-48). */
+export const cloudVideoRequest = (
+  workload: 'restoration' | 'interpolation',
+  clip: CloudVideoClip,
+  settings: { creative: boolean; upscale: number; factor: number | null },
+): Record<string, unknown> =>
+  workload === 'interpolation'
+    ? { factor: settings.factor ?? 2, items: [clip] }
+    : { mode: settings.creative ? 'creative' : 'faithful', targetScale: settings.upscale, items: [clip] };
 
 /** The cloud workloads a job of this kind is sent as. */
 export type CloudMlJobWorkload = 'restoration' | 'upscale' | 'interpolation' | 'transcription';
