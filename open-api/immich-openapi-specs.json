@@ -105476,6 +105476,10 @@
             "maxItems": 128,
             "type": "array"
           },
+          "folderAlbums": {
+            "description": "Keep an album for each folder of the library, made after its first scan. Off when left out.",
+            "type": "boolean"
+          },
           "importPaths": {
             "description": "Import paths (max 128)",
             "items": {
@@ -121596,6 +121600,25 @@
         ],
         "type": "object"
       },
+      "LibraryFolderEstimateFolderDto": {
+        "properties": {
+          "count": {
+            "description": "Photos and videos directly in it",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "description": "A folder holding photos or videos, without a trailing slash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "path"
+        ],
+        "type": "object"
+      },
       "LibraryFolderEstimateResponseDto": {
         "properties": {
           "bytes": {
@@ -121614,6 +121637,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "folders": {
+            "description": "The folders holding photos or videos, for the folder albums preview (FL-838); at most 2000",
+            "items": {
+              "$ref": "#/components/schemas/LibraryFolderEstimateFolderDto"
+            },
+            "type": "array"
+          },
           "found": {
             "description": "False when this server cannot see the folder at all, rather than being refused access",
             "type": "boolean"
@@ -121627,6 +121657,7 @@
           "bytes",
           "complete",
           "count",
+          "folders",
           "found",
           "readable"
         ],

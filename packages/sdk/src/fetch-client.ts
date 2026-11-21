@@ -3148,6 +3148,12 @@ export type LibraryFolderBrowseResponseDto = {
     /** Whether there were more folders than listed */
     truncated: boolean;
 };
+export type LibraryFolderEstimateFolderDto = {
+    /** Photos and videos directly in it */
+    count: number;
+    /** A folder holding photos or videos, without a trailing slash */
+    path: string;
+};
 export type LibraryFolderEstimateResponseDto = {
     /** Their combined size, in bytes */
     bytes: number;
@@ -3155,6 +3161,8 @@ export type LibraryFolderEstimateResponseDto = {
     complete: boolean;
     /** Photos and videos found */
     count: number;
+    /** The folders holding photos or videos, for the folder albums preview (FL-838); at most 2000 */
+    folders: LibraryFolderEstimateFolderDto[];
     /** False when this server cannot see the folder at all, rather than being refused access */
     found: boolean;
     /** Whether the folder could be read */
@@ -11762,6 +11770,8 @@ export type LibraryResponseDto = {
 export type CreateLibraryDto = {
     /** Exclusion patterns (max 128) */
     exclusionPatterns?: string[];
+    /** Keep an album for each folder of the library, made after its first scan. Off when left out. */
+    folderAlbums?: boolean;
     /** Import paths (max 128) */
     importPaths?: string[];
     /** Library name */
