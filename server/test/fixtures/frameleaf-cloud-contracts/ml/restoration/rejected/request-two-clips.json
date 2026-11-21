@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "inputId": "v1",
+      "durationSec": 300,
+      "fps": 30,
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "inputId": "v2",
+      "durationSec": 300,
+      "fps": 30,
+      "width": 1920,
+      "height": 1080
+    }
+  ]
+}

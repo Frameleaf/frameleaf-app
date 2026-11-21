@@ -107,6 +107,11 @@ export interface VideoStreamInfo {
   index: number;
   height: number;
   width: number;
+  /**
+   * The stream's own pixel width as ffprobe reports it. `width` above is the display width (the height
+   * times the display aspect ratio), which differs for non-square pixels. Optional and additive.
+   */
+  codedWidth?: number;
   rotation: number;
   codecName: string | null;
   profile: H264Profile | HevcProfile | Av1Profile | null;
@@ -1687,6 +1692,8 @@ export const CUSTOM_CLIP_MODELS_KEY = 'custom-clip-models' as SystemMetadataKey;
 
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.FrameleafDesktopAssistance]: import('src/services/desktop-assistance-policy.service.js').DesktopAssistancePolicyRegistry;
+  [SystemMetadataKey.FrameleafDesktopModelFailures]: import('src/repositories/desktop-ml.repository.js').DesktopModelFailures;
+  [SystemMetadataKey.FrameleafDesktopWorkerCapacity]: Record<string, { total: number; at: string }>;
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
   [SystemMetadataKey.FaceModelState]: { modelName: string };

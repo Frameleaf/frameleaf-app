@@ -374,6 +374,9 @@ type MatchedAssets = SelectQueryBuilder<DB, 'asset', any>;
 /** How many items a tag's cover shows. */
 const TAG_COVER_ASSETS = 4;
 
+/** ponytail: cover candidates per landmark; places sharing photos past this many may repeat a cover. */
+const LANDMARK_COVER_CANDIDATES = 12;
+
 const asUuidLiteral = (id: string) => sql`${id}::uuid`;
 
 const trimmed = (column: string) => sql`nullif(trim(${sql.ref(column)}), '')`;
@@ -889,7 +892,12 @@ export class SearchRepository {
           eb.fn.countAll<number>().as('assetCount'),
           eb.fn.min('matched.localDateTime').as('firstTakenAt'),
           eb.fn.max('matched.localDateTime').as('lastTakenAt'),
-          sql<string>`(array_agg(matched."assetId" order by ${bestCover}))[1]`.as('coverAssetId'),
+          // the best few, so the service can give overlapping places (a resort and its park) different covers
+          sql<
+            string[]
+          >`(array_agg(matched."assetId" order by ${bestCover}))[1:${sql.lit(LANDMARK_COVER_CANDIDATES)}]`.as(
+            'coverAssetIds',
+          ),
           sql<
             string | null
           >`mode() within group (order by asset_exif.city) filter (where matched.inference is null)`.as('city'),

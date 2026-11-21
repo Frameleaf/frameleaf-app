@@ -1,4 +1,6 @@
 import { Kysely, sql } from 'kysely';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { AssetLockReason, AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -6,6 +8,7 @@ import { MapRepository } from 'src/repositories/map.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
 
@@ -44,6 +47,17 @@ const makeAsset = async (
 };
 const vector = (second = 0) => JSON.stringify([1, second, ...Array.from({ length: 766 }, () => 0)]);
 const modelKey = `clip:${'a'.repeat(64)}`;
+/** Two keys the release gives one image encoder (two runtime revisions): one embedding space. */
+const [keyA, keyB] = (() => {
+  const profiles: { modelKey: string; workload: string; spec: { fixtureKind: string } }[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+  ).profiles;
+  for (const profile of profiles) {
+    const family = equivalentDesktopModelKeys(profile.modelKey);
+    if (profile.workload === 'clip' && profile.spec.fixtureKind === 'image' && family.length > 1) return family;
+  }
+  throw new Error('the catalogue has no encoder under two keys');
+})();
 const embed = (assetId: string, embedding = vector(), producerModelKey: string | null = modelKey) =>
   db.insertInto('smart_search').values({ assetId, embedding, producerModelKey }).execute();
 const matches = (assetId: string) => search.getAssetLandmarks(assetId);
@@ -213,6 +227,15 @@ describe('landmarks inferred from local photos (FL-358)', () => {
     await expect(search.getVisitedLandmarks([ownerId])).resolves.toMatchObject([
       { id: 'Q243', assetCount: 5, city: 'Paris', state: 'Île-de-France', country: 'France' },
     ]);
+  });
+
+  it('compares vectors stored under two keys of one encoder (two runtime revisions) as one space', async () => {
+    const donors = [await makeAsset({ located: true }), await makeAsset({ located: true, minute: 60 })];
+    const target = await makeAsset({ minute: 120 });
+    for (const id of donors) await embed(id, vector(), keyA);
+    await embed(target, vector(), keyB);
+    await sut.inferLandmarks();
+    await expect(matches(target)).resolves.toMatchObject([{ id: 'Q243', inference: 'visual' }]);
   });
 
   it('does not compare unknown or different embedding producers', async () => {

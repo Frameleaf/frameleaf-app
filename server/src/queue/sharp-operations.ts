@@ -459,16 +459,16 @@ export class SharpOperations {
       throw new SharpResourceLimitError('palette source exceeds the decoded surface budget');
     }
     this.progress();
-    const { data, info } = await this.getImageDecodingPipeline(bytes, {
-      ...options,
-      size: undefined,
-      processInvalidImages: false,
-    })
-      .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
-      .ensureAlpha()
-      .toColourspace('srgb')
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    const decode = (processInvalidImages: boolean) =>
+      this.getImageDecodingPipeline(bytes, { ...options, size: undefined, processInvalidImages })
+        .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
+        .ensureAlpha()
+        .toColourspace('srgb')
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    // The thumbnail job reads a file leniently when the strict read complains (`decodeImage`), so a transparent
+    // PNG that is cut short has a preview. Its colours are read the same way, not failed as "libpng read error".
+    const { data, info } = await decode(false).catch(() => decode(true));
     this.progress();
     return {
       swatches: extractPalette(data, info.width, info.height),

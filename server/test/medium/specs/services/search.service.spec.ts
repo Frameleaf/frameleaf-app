@@ -110,7 +110,7 @@ describe(SearchService.name, () => {
         await ctx.newExif({ assetId: created.id, ...exif });
         return created;
       };
-      await at(user.id, inPark, { localDateTime: new Date('2024-06-03T10:00:00Z') });
+      const earlier = await at(user.id, inPark, { localDateTime: new Date('2024-06-03T10:00:00Z') });
       const latest = await at(user.id, inPark, { localDateTime: new Date('2024-06-05T10:00:00Z') });
       const paris = await at(user.id, atTower, { localDateTime: new Date('2023-01-01T10:00:00Z') });
       await at(user.id, inPark, { deletedAt: new Date() });
@@ -139,7 +139,8 @@ describe(SearchService.name, () => {
           assetCount: 2,
           firstTakenAt: '2024-06-03T10:00:00.000Z',
           lastTakenAt: '2024-06-05T10:00:00.000Z',
-          coverAssetId: latest.id,
+          // the resort already shows the latest photo, so the park, which shares it, takes its next best
+          coverAssetId: earlier.id,
           city: 'Anaheim',
           state: 'California',
           country: 'USA',

@@ -32,6 +32,11 @@ export class SyncController {
       await this.service.stream(auth, res, dto);
     } catch (error: Error | any) {
       this.errorService.handleError(req, res, error);
+      // Lines were already sent, so no error response can follow: end the connection, or the client waits on an idle
+      // stream until its own timeout (ten minutes on iPhone) before it retries.
+      if (res.headersSent && !res.destroyed) {
+        res.destroy();
+      }
     }
   }
 

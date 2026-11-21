@@ -3148,6 +3148,12 @@ export type LibraryFolderBrowseResponseDto = {
     /** Whether there were more folders than listed */
     truncated: boolean;
 };
+export type LibraryFolderEstimateFolderDto = {
+    /** Photos and videos directly in it */
+    count: number;
+    /** A folder holding photos or videos, without a trailing slash */
+    path: string;
+};
 export type LibraryFolderEstimateResponseDto = {
     /** Their combined size, in bytes */
     bytes: number;
@@ -3155,6 +3161,8 @@ export type LibraryFolderEstimateResponseDto = {
     complete: boolean;
     /** Photos and videos found */
     count: number;
+    /** The folders holding photos or videos, for the folder albums preview (FL-838); at most 2000 */
+    folders: LibraryFolderEstimateFolderDto[];
     /** False when this server cannot see the folder at all, rather than being refused access */
     found: boolean;
     /** Whether the folder could be read */
@@ -4917,8 +4925,14 @@ export type WorkerDesktopHelperDto = {
     /** Name of the account signed in on it */
     ownerName?: string;
     platform: DesktopPlatform;
-    /** Online in the last 90 seconds with a current qualification, so it can take AI work now */
+    /** Online now (seen within the last few minutes) with a current qualification, so it can take AI work now */
     ready: boolean;
+    /** Work taken away from it after it failed that work three times in a row */
+    withdrawn?: {
+        /** Held back from qualifying again until then; null once it only has to qualify again */
+        until: string | null;
+        workload: DesktopWithdrawnWorkload;
+    }[];
 };
 export type WorkerWorkloadAdmissionDto = {
     /** Whether the last check would admit this workload here */
@@ -9637,7 +9651,9 @@ export type DesktopCapabilitiesDto = {
         sources: false;
         worker: false;
         workerAutoSetup: true;
+        workerConcurrentLeases: true;
         workerSession: true;
+        workerWithdrawalNotice: true;
     };
     protocolVersion: number;
     serverId: string;
@@ -9732,6 +9748,7 @@ export type DesktopModelInventoryDto = {
     provider: Provider;
     runtimeSourceRevision: string;
     workloads: {
+        concurrency?: number;
         modelKeys: string[];
         modelNames: string[];
         profiles?: {
@@ -11753,6 +11770,8 @@ export type LibraryResponseDto = {
 export type CreateLibraryDto = {
     /** Exclusion patterns (max 128) */
     exclusionPatterns?: string[];
+    /** Keep an album for each folder of the library, made after its first scan. Off when left out. */
+    folderAlbums?: boolean;
     /** Import paths (max 128) */
     importPaths?: string[];
     /** Library name */
@@ -45673,6 +45692,11 @@ export enum DesktopPlatform {
     Macos = "macos",
     Windows = "windows",
     Linux = "linux"
+}
+export enum DesktopWithdrawnWorkload {
+    Clip = "clip",
+    Face = "face",
+    Ocr = "ocr"
 }
 export enum MlWorkerAcceleration {
     Unknown = "unknown",

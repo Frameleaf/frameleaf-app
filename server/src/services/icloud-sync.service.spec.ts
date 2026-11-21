@@ -25,7 +25,7 @@ describe(ICloudSyncService.name, () => {
     ownerId: 'owner',
     label: 'Photos',
     state: 'connected',
-    config: ICloudConfigSchema.parse({}),
+    config: ICloudConfigSchema.parse({ concurrency: 1 }),
     encryptedSession: 'ciphertext',
     lastError: null as string | null,
     nextRunAt: null as Date | null,
@@ -819,6 +819,72 @@ describe(ICloudSyncService.name, () => {
       expect(operations.acknowledgeCancel).toHaveBeenCalledWith('run', 'token', { released: false });
       expect(repository.endRun).toHaveBeenCalledWith('connection', 'cancelled');
       expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('starts the next download when any one finishes, not when the whole batch does (FL-1724)', async () => {
+      repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 2 } });
+      const item = (id: string) => ({ ...resource, id, sourceAssetId: id });
+      repository.claim.mockReset();
+      repository.claim
+        .mockResolvedValueOnce(item('slow'))
+        .mockResolvedValueOnce(item('fast'))
+        .mockResolvedValueOnce(item('next'))
+        .mockResolvedValue(undefined);
+      let releaseSlow!: () => void;
+      let slowDone = false;
+      const slow = new Promise<void>((resolve) => (releaseSlow = resolve));
+      let nextStartedBeforeSlowFinished: boolean | undefined;
+      staging.download.mockImplementation(async (_connection: unknown, current: { id: string }) => {
+        if (current.id === 'slow') {
+          await slow;
+          slowDone = true;
+        } else if (current.id === 'next') {
+          nextStartedBeforeSlowFinished = !slowDone;
+          releaseSlow();
+        }
+        return '/private/complete';
+      });
+
+      await sut.run(operation(), 'token');
+
+      expect(nextStartedBeforeSlowFinished).toBe(true);
+      expect(staging.download).toHaveBeenCalledTimes(3);
+      expect(operations.complete).toHaveBeenCalled();
+    });
+
+    it('waits for downloads still in flight before handing a failed step back (FL-1724)', async () => {
+      repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 2 } });
+      const item = (id: string) => ({ ...resource, id, sourceAssetId: id });
+      repository.claim.mockReset();
+      repository.claim
+        .mockResolvedValueOnce(item('slow'))
+        .mockResolvedValueOnce(item('throttled'))
+        .mockResolvedValue(undefined);
+      let slowDone = false;
+      staging.download.mockImplementation(async (_connection: unknown, current: { id: string }) => {
+        if (current.id === 'throttled') {
+          throw new ICloudTransportError('rate_limited');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        slowDone = true;
+        return '/private/complete';
+      });
+      let slowDoneAtRequeue: boolean | undefined;
+      operations.requeue.mockImplementation(() => {
+        slowDoneAtRequeue = slowDone;
+        return Promise.resolve(true);
+      });
+
+      await sut.run(operation(), 'token');
+
+      expect(repository.defer).toHaveBeenCalledWith('connection', 'owner', 'rate_limited');
+      expect(slowDoneAtRequeue).toBe(true);
+    });
+
+    it('allows up to 100 downloads at a time and defaults to 10 (FL-1724)', () => {
+      expect(ICloudConfigSchema.parse({}).concurrency).toBe(10);
+      expect(ICloudConfigSchema.safeParse({ concurrency: 100 }).success).toBe(true);
+      expect(ICloudConfigSchema.safeParse({ concurrency: 101 }).success).toBe(false);
     });
 
     it('hands the claim back at the next boundary when its owner pauses', async () => {

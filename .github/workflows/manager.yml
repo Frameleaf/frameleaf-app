@@ -33,7 +33,7 @@ on:
       tag:
         description: Manager component version matching manager/package.json
         type: string
-        default: manager-v1.2.25
+        default: manager-v1.2.26
 permissions:
   contents: read
 concurrency:
@@ -62,7 +62,7 @@ jobs:
   manager:
     env:
       FRAMELEAF_CI_NODE_IMAGE: mirror.gcr.io/library/node@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
-      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:e698169ffdd3c23af2a1675d30f48eeab6883fb277bf5be6911ceac5cfaf760f
+      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:7b1e213e9680e7838da5ea2a929427901b866e69d08735186b72bddfe73c0453
     name: Manager (${{ matrix.architecture }})
     if: github.repository == 'Frameleaf/frameleaf-app'
     runs-on: ${{ matrix.runner }}
@@ -219,9 +219,38 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 3
+  # FL-1721: checks what the publish job needs (tools, tokens, the signing key, a free tag) in the first
+  # minute, beside the builds, instead of after them. It pushes, signs and edits nothing.
+  preflight:
+    name: Manager Publish preflight
+    environment: production
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Check everything the publish job needs
+        env:
+          TOOLS: gh jq git tar sha256sum oras cosign docker
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          REGISTRY_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          ACTOR: ${{ vars.GHCR_USERNAME || github.actor }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: .github/release-preflight.sh
   publish:
     name: Manager Publish
-    needs: manager
+    needs: [manager, preflight]
     environment: production
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04

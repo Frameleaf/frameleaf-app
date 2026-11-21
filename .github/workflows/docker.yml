@@ -60,6 +60,10 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.server == 'true'
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -79,6 +83,10 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs['machine-learning'] == 'true'
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -100,6 +108,10 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.assistant-variant == 'openvino'
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -229,6 +241,10 @@ jobs:
     # !cancelled(): the other image's build may be skipped, which would otherwise skip this job too.
     if: ${{ !cancelled() && needs.changes.outputs.server == 'true' && needs.server.result == 'success' && needs['deploy-test'].result == 'success' }}
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -248,6 +264,10 @@ jobs:
     needs: [changes, deploy-test, machine-learning, assistant-qualification]
     if: ${{ !cancelled() && needs.changes.outputs['machine-learning'] == 'true' && needs['machine-learning'].result == 'success' && needs['deploy-test'].result == 'success' }}
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -291,6 +311,10 @@ jobs:
             platforms: linux/amd64
             target: prod
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -314,6 +338,10 @@ jobs:
       !cancelled() && needs['deploy-test'].result == 'success' &&
       (needs.changes.outputs['machine-learning'] == 'true' || needs.changes.outputs.assistant-variant == 'openvino')
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read

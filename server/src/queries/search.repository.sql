@@ -1196,7 +1196,13 @@ with
                   from
                     smart_search donor_embedding
                     join smart_search target_embedding on target_embedding."assetId" = asset.id
-                    and donor_embedding."producerModelKey" = target_embedding."producerModelKey"
+                    and coalesce(
+                      $11::text::jsonb ->> "donor_embedding"."producerModelKey",
+                      "donor_embedding"."producerModelKey"
+                    ) = coalesce(
+                      $12::text::jsonb ->> "target_embedding"."producerModelKey",
+                      "target_embedding"."producerModelKey"
+                    )
                   where
                     donor_embedding."assetId" = donor.id
                     and target_embedding."producerModelKey" is not null
@@ -1208,7 +1214,7 @@ with
           )
         )
       )
-      and "asset"."ownerId" = any ($11::uuid[])
+      and "asset"."ownerId" = any ($13::uuid[])
       and (
         "asset"."visibility" = 'timeline'
         and not exists (
@@ -1220,7 +1226,7 @@ with
             asset_lock."assetId" = "asset"."id"
         )
       )
-      and "asset"."libraryScope" in ($12, $13)
+      and "asset"."libraryScope" in ($14, $15)
       and "asset"."deletedAt" is null
   )
 select
@@ -1246,7 +1252,7 @@ select
         matched."localDateTime" desc,
         matched."assetId"
     )
-  ) [1] as "coverAssetId",
+  ) [1:12] as "coverAssetIds",
   mode() within group (
     order by
       asset_exif.city
@@ -1277,7 +1283,7 @@ group by
   "landmark"."id"
 having
   bool_or(matched.position = 1)
-  or landmark."radiusM" > $14
+  or landmark."radiusM" > $16
 order by
   "assetCount" desc,
   "landmark"."id"
@@ -1924,7 +1930,13 @@ where
               from
                 smart_search donor_embedding
                 join smart_search target_embedding on target_embedding."assetId" = asset.id
-                and donor_embedding."producerModelKey" = target_embedding."producerModelKey"
+                and coalesce(
+                  $11::text::jsonb ->> "donor_embedding"."producerModelKey",
+                  "donor_embedding"."producerModelKey"
+                ) = coalesce(
+                  $12::text::jsonb ->> "target_embedding"."producerModelKey",
+                  "target_embedding"."producerModelKey"
+                )
               where
                 donor_embedding."assetId" = donor.id
                 and target_embedding."producerModelKey" is not null
@@ -1938,7 +1950,7 @@ where
   )
 order by
   asset_landmark.inference is not null,
-  (landmark."radiusM" > $11),
+  (landmark."radiusM" > $13),
   landmark.rank desc,
   landmark."radiusM",
   landmark.id

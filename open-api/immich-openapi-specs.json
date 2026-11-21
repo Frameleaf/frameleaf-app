@@ -105476,6 +105476,10 @@
             "maxItems": 128,
             "type": "array"
           },
+          "folderAlbums": {
+            "description": "Keep an album for each folder of the library, made after its first scan. Off when left out.",
+            "type": "boolean"
+          },
           "importPaths": {
             "description": "Import paths (max 128)",
             "items": {
@@ -106660,7 +106664,19 @@
                 ],
                 "type": "boolean"
               },
+              "workerConcurrentLeases": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
               "workerSession": {
+                "enum": [
+                  true
+                ],
+                "type": "boolean"
+              },
+              "workerWithdrawalNotice": {
                 "enum": [
                   true
                 ],
@@ -106672,6 +106688,8 @@
               "worker",
               "workerSession",
               "workerAutoSetup",
+              "workerWithdrawalNotice",
+              "workerConcurrentLeases",
               "sources",
               "nativeHost"
             ],
@@ -106926,6 +106944,11 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "concurrency": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
                 "modelKeys": {
                   "items": {
                     "pattern": "^(clip|ocr|face):[a-f0-9]{64}$",
@@ -107123,6 +107146,14 @@
           "timestamp"
         ],
         "type": "object"
+      },
+      "DesktopWithdrawnWorkload": {
+        "enum": [
+          "clip",
+          "face",
+          "ocr"
+        ],
+        "type": "string"
       },
       "DesktopWorkerAckDto": {
         "properties": {
@@ -116034,8 +116065,8 @@
                 "type": "boolean"
               },
               "concurrency": {
-                "default": 1,
-                "maximum": 4,
+                "default": 10,
+                "maximum": 100,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -116120,7 +116151,7 @@
                 "type": "boolean"
               },
               "concurrency": {
-                "maximum": 4,
+                "maximum": 100,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -116266,7 +116297,7 @@
                 "type": "boolean"
               },
               "concurrency": {
-                "maximum": 4,
+                "maximum": 100,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -121569,6 +121600,25 @@
         ],
         "type": "object"
       },
+      "LibraryFolderEstimateFolderDto": {
+        "properties": {
+          "count": {
+            "description": "Photos and videos directly in it",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "description": "A folder holding photos or videos, without a trailing slash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "path"
+        ],
+        "type": "object"
+      },
       "LibraryFolderEstimateResponseDto": {
         "properties": {
           "bytes": {
@@ -121587,6 +121637,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "folders": {
+            "description": "The folders holding photos or videos, for the folder albums preview (FL-838); at most 2000",
+            "items": {
+              "$ref": "#/components/schemas/LibraryFolderEstimateFolderDto"
+            },
+            "type": "array"
+          },
           "found": {
             "description": "False when this server cannot see the folder at all, rather than being refused access",
             "type": "boolean"
@@ -121600,6 +121657,7 @@
           "bytes",
           "complete",
           "count",
+          "folders",
           "found",
           "readable"
         ],
@@ -187464,8 +187522,30 @@
             "$ref": "#/components/schemas/DesktopPlatform"
           },
           "ready": {
-            "description": "Online in the last 90 seconds with a current qualification, so it can take AI work now",
+            "description": "Online now (seen within the last few minutes) with a current qualification, so it can take AI work now",
             "type": "boolean"
+          },
+          "withdrawn": {
+            "description": "Work taken away from it after it failed that work three times in a row",
+            "items": {
+              "properties": {
+                "until": {
+                  "description": "Held back from qualifying again until then; null once it only has to qualify again",
+                  "format": "date-time",
+                  "nullable": true,
+                  "type": "string"
+                },
+                "workload": {
+                  "$ref": "#/components/schemas/DesktopWithdrawnWorkload"
+                }
+              },
+              "required": [
+                "workload",
+                "until"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [

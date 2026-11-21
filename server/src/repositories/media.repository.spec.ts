@@ -1,5 +1,5 @@
 import { exiftool } from 'exiftool-vendored';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ import { SharpOperationError, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { cloudVideoClip, isPlainVideoStream } from 'src/utils/cloud-ml-job.js';
 import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { orientedToOriginal } from 'src/utils/develop-cleanup.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
@@ -1090,6 +1091,520 @@ describe(MediaRepository.name, () => {
       const chunk = join(dirPath, 'chunk-0-in.mp4');
       await transcode(fixture, chunk, ['-ss', '1.000', '-t', '2.000'], chunkClipOutputOptions());
       expectNoMetadata(chunk, ['video']);
+    });
+  });
+  /**
+   * FL-1725: Frameleaf Cloud's worker checks an uploaded clip's own size and packet count and then decodes
+   * it. Real clips, made by ffmpeg and prepared with the options the server uploads with.
+   */
+  describe.skipIf(!hasFfmpeg)('a video for Frameleaf Cloud restoration or Smooth motion (FL-1725)', () => {
+    let folder: string;
+    const make = (arguments_: string[]) =>
+      execFileSync('ffmpeg', ['-v', 'error', '-y', ...arguments_], { timeout: 60_000, stdio: 'ignore' });
+    const upload = (input: string, output: string, copy: boolean, constantRate?: string, renumber?: boolean) =>
+      sut.transcode(input, output, {
+        inputOptions: [],
+        outputOptions: fullVideoUploadOutputOptions({
+          copy,
+          bsf: copy ? 'filter_units=remove_types=6' : undefined,
+          constantRate,
+          renumber,
+        }),
+        twoPass: false,
+        progress: { frameCount: 0, percentInterval: 5 },
+      });
+    /** What a decoder shows: the frames ffprobe reads when it decodes the stream. */
+    const decodedFrames = (file: string) =>
+      Number(
+        execFileSync(
+          'ffprobe',
+          [
+            '-v',
+            'error',
+            '-count_frames',
+            '-select_streams',
+            'v:0',
+            '-show_entries',
+            'stream=nb_read_frames',
+            '-of',
+            'csv=p=0',
+            file,
+          ],
+          { encoding: 'utf8' },
+        ).trim(),
+      );
+    const measured = async (file: string) => {
+      const stream = (await sut.probe(file, { countFrames: true })).videoStreams[0];
+      return { stream, packets: await sut.countPackets(file, stream.index) };
+    };
+
+    beforeAll(() => {
+      folder = mkdtempSync(join(tmpdir(), 'media-repository-cloud-video-'));
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-t',
+        '4',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-g',
+        '30',
+        join(folder, 'plain.mp4'),
+      ]);
+      for (const rotation of [90, 180, 270]) {
+        make([
+          '-display_rotation',
+          String(rotation),
+          '-i',
+          join(folder, 'plain.mp4'),
+          '-c',
+          'copy',
+          join(folder, `rotated-${rotation}.mp4`),
+        ]);
+      }
+      // a trim made by stream copy: the packets before the cut stay in the file, hidden by its edit list
+      make(['-ss', '1.5', '-i', join(folder, 'plain.mp4'), '-t', '2.1', '-c', 'copy', join(folder, 'trimmed.mp4')]);
+    });
+
+    afterAll(() => rmSync(folder, { recursive: true, force: true }));
+
+    it('copies a plain stream: every packet is a frame, and the declared length counts back to them', async () => {
+      const { stream, packets } = await measured(join(folder, 'plain.mp4'));
+      expect(isPlainVideoStream(stream, packets)).toBe(true);
+      const copy = join(folder, 'plain-upload.mp4');
+      await upload(join(folder, 'plain.mp4'), copy, true);
+      const uploaded = await measured(copy);
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(uploaded.packets).toMatchObject({ packets: 120, hidden: 0, uneven: false, unordered: false });
+      expect(decodedFrames(copy)).toBe(120);
+      const clip = cloudVideoClip('v1', uploaded.stream)!;
+      expect(clip).toMatchObject({ fps: 30, width: 320, height: 240 });
+      expect(Math.floor(clip.durationSec * clip.fps + 0.5)).toBe(120);
+    });
+
+    it.each([
+      [90, 240, 320],
+      [180, 320, 240],
+      [270, 240, 320],
+    ])(
+      'never copies a source turned %i degrees: the upload is upright with no rotation',
+      async (rotation, width, height) => {
+        const source = join(folder, `rotated-${rotation}.mp4`);
+        const { stream, packets } = await measured(source);
+        expect(isPlainVideoStream(stream, packets)).toBe(false);
+        // what a copy would send: the rotation survives the metadata strip, against the stream's own size
+        const copied = join(folder, `rotated-${rotation}-copied.mp4`);
+        await upload(source, copied, true);
+        const kept = await measured(copied);
+        expect(isPlainVideoStream(kept.stream, kept.packets)).toBe(false);
+        // what is sent instead
+        const encoded = join(folder, `rotated-${rotation}-upload.mp4`);
+        await upload(source, encoded, false);
+        const uploaded = await measured(encoded);
+        expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+        expect(cloudVideoClip('v1', uploaded.stream)).toMatchObject({ width, height, fps: 30 });
+        expect(decodedFrames(encoded)).toBe(uploaded.packets.packets);
+      },
+    );
+
+    it('never copies a variable-rate source: the upload has one frame rate', async () => {
+      const source = join(folder, 'variable.mp4');
+      // the first second at 30 frames a second, then every third frame
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-t',
+        '4',
+        '-vf',
+        String.raw`select='lt(n\,30)+not(mod(n\,3))'`,
+        '-fps_mode',
+        'vfr',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        source,
+      ]);
+      const { stream, packets } = await measured(source);
+      expect(packets).toMatchObject({ hidden: 0, uneven: true });
+      expect(isPlainVideoStream(stream, packets)).toBe(false);
+
+      const rate = stream.frameRateRational!;
+      const encoded = join(folder, 'variable-upload.mp4');
+      await upload(source, encoded, false, `${rate.num}/${rate.den}`);
+      const uploaded = await measured(encoded);
+      expect(uploaded.packets).toMatchObject({ hidden: 0, uneven: false });
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(cloudVideoClip('v1', uploaded.stream)!.fps).toBeCloseTo(rate.num / rate.den, 6);
+      expect(decodedFrames(encoded)).toBe(uploaded.packets.packets);
+    });
+
+    it('does not take the one-tick jitter of a millisecond time base for a variable rate', async () => {
+      const source = join(folder, 'jitter.mkv');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=60',
+        '-t',
+        '2',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        source,
+      ]);
+      expect(await sut.countPackets(source, 0)).toMatchObject({ packets: 120, hidden: 0, uneven: false });
+    });
+
+    it('takes a frame rate that changes by less than half for a variable rate', async () => {
+      const source = join(folder, 'thirty-then-twentyfive.mp4');
+      // 30 frames a second for a second, then 25: packet durations of 400 and 480 ticks of 1/12000
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-frames:v',
+        '60',
+        '-vf',
+        String.raw`settb=1/12000,setpts='if(lt(N\,30)\,N/30\,1+(N-30)/25)/TB'`,
+        '-fps_mode',
+        'passthrough',
+        '-enc_time_base',
+        '1/12000',
+        '-video_track_timescale',
+        '12000',
+        '-c:v',
+        'libx264',
+        '-bf',
+        '0',
+        '-pix_fmt',
+        'yuv420p',
+        source,
+      ]);
+      expect(await sut.countPackets(source, 0)).toMatchObject({ packets: 60, hidden: 0, uneven: true });
+    });
+
+    it('re-encodes a turned frame with odd sides by cropping to even ones', async () => {
+      const odd = join(folder, 'odd.mp4');
+      const source = join(folder, 'odd-rotated.mp4');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=96x64:rate=30',
+        '-t',
+        '1',
+        '-vf',
+        'crop=95:63',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv444p',
+        odd,
+      ]);
+      make(['-display_rotation', '90', '-i', odd, '-c', 'copy', source]);
+      const encoded = join(folder, 'odd-upload.mp4');
+      await upload(source, encoded, false, '30/1');
+      const uploaded = await measured(encoded);
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(cloudVideoClip('v1', uploaded.stream)).toMatchObject({ width: 62, height: 94 });
+    });
+
+    it('never copies B-frames whose times are only their decode order (an AVI remuxed by copy)', async () => {
+      const avi = join(folder, 'b-frames.avi');
+      const source = join(folder, 'b-frames-remuxed.mp4');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-t',
+        '4',
+        '-c:v',
+        'libx264',
+        '-bf',
+        '2',
+        '-g',
+        '30',
+        '-pix_fmt',
+        'yuv420p',
+        avi,
+      ]);
+      make(['-i', avi, '-c', 'copy', source]);
+      const { stream, packets } = await measured(source);
+      expect(packets).toMatchObject({ hidden: 0, uneven: false, unordered: true });
+      expect(isPlainVideoStream(stream, packets)).toBe(false);
+
+      const encoded = join(folder, 'b-frames-upload.mp4');
+      await upload(source, encoded, false, '30/1');
+      const uploaded = await measured(encoded);
+      expect(uploaded.packets).toMatchObject({ unordered: false });
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+    });
+
+    /** The first frame's time and the frame count a decoder shows. */
+    const timing = (file: string) => {
+      const [start, frames] = execFileSync(
+        'ffprobe',
+        [
+          '-v',
+          'error',
+          '-count_frames',
+          '-select_streams',
+          'v:0',
+          '-show_entries',
+          'stream=start_time,nb_read_frames',
+          '-of',
+          'csv=p=0',
+          file,
+        ],
+        { encoding: 'utf8' },
+      )
+        .trim()
+        .split(',')
+        .map(Number);
+      return { start, frames };
+    };
+
+    it.each([
+      ['an AVI with B-frames, remuxed by copy', true],
+      ['an AVI with B-frames', false],
+    ])('re-encodes %s frame for frame, starting where the audio expects it', async (_, remux) => {
+      const avi = join(folder, 'with-audio.avi');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:sample_rate=48000',
+        '-t',
+        '6',
+        '-c:v',
+        'libx264',
+        '-bf',
+        '2',
+        '-g',
+        '30',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'pcm_s16le',
+        avi,
+      ]);
+      const source = remux ? join(folder, 'with-audio-remuxed.mp4') : avi;
+      if (remux) {
+        make(['-i', avi, '-c', 'copy', source]);
+      }
+      const { packets } = await measured(source);
+      expect(packets.unordered).toBe(remux);
+
+      const encoded = join(folder, `with-audio-upload-${remux}.mp4`);
+      await upload(source, encoded, false, '30/1', packets.unordered);
+      // no frame repeated at the start or lost at the end: 6 s at 30 frames a second, the first at 0,
+      // which is where the audio is put back against the source's own first frame
+      expect(timing(encoded)).toEqual({ start: 0, frames: 180 });
+    });
+
+    it.each([
+      ['an MP4, whose edit list shifts the video', 'mp4'],
+      ['a Matroska file', 'mkv'],
+    ])(
+      'keeps picture and sound together when the video starts half a second after the audio, in %s',
+      async (_, ext) => {
+        // a flash in the picture and a beep in the sound at the same moment of the source (2 s)
+        const base = join(folder, `marked-${ext}.mkv`);
+        make([
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=black:s=320x240:r=30:d=1.5',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=white:s=320x240:r=30:d=4.5',
+          '-f',
+          'lavfi',
+          '-i',
+          String.raw`aevalsrc=if(gte(t\,2)\,0.5*sin(2*PI*440*t)\,0):s=48000:d=6`,
+          '-filter_complex',
+          '[0:v][1:v]concat=n=2:v=1:a=0[v]',
+          '-map',
+          '[v]',
+          '-map',
+          '2:a',
+          '-c:v',
+          'libx264',
+          '-bf',
+          '2',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:a',
+          'aac',
+          base,
+        ]);
+        const source = join(folder, `marked.${ext}`);
+        make(['-itsoffset', '0.5', '-i', base, '-i', base, '-map', '0:v', '-map', '1:a', '-c', 'copy', source]);
+        /** When the picture turns white and when the sound starts. */
+        const marks = (file: string) => {
+          const { stderr } = spawnSync(
+            'ffmpeg',
+            [
+              '-hide_banner',
+              '-nostats',
+              '-i',
+              file,
+              '-vf',
+              'blackdetect=d=0.1:pix_th=0.1',
+              '-af',
+              'silencedetect=n=-40dB:d=0.1',
+              '-f',
+              'null',
+              '-',
+            ],
+            { encoding: 'utf8', timeout: 60_000 },
+          );
+          return {
+            flash: Number(/black_end:([\d.]+)/.exec(stderr)?.[1]),
+            beep: Number(/silence_end: ([\d.]+)/.exec(stderr)?.[1]),
+          };
+        };
+        const before = marks(source);
+        expect(before.flash).toBeCloseTo(2, 2);
+        expect(before.beep).toBeCloseTo(2, 2);
+        const probed = await sut.probe(source);
+        const original = { video: probed.videoStreams[0].startTime!, audio: probed.audioStreams[0].startTime! };
+        expect(original.video - original.audio).toBeCloseTo(0.5, 3);
+
+        // what is uploaded: re-encoded from its first frame at 0
+        const uploaded = join(folder, `marked-upload-${ext}.mp4`);
+        await upload(source, uploaded, false, '30/1');
+        // a stand-in for Frameleaf Cloud's result: the same frames, picture only
+        const returned = join(folder, `marked-returned-${ext}.mp4`);
+        make(['-i', uploaded, '-map', '0:v:0', '-c:v', 'libx264', '-bf', '0', '-pix_fmt', 'yuv420p', returned]);
+        // the version, as the server builds it: the original's audio put back at its own offset
+        const version = join(folder, `marked-version-${ext}.mp4`);
+        await sut.transcode(returned, version, {
+          inputOptions: [],
+          outputOptions: reattachAudioOutputOptions(source, audioReattachOffsetSeconds(original.video, original.audio)),
+          twoPass: false,
+          progress: { frameCount: 0, percentInterval: 5 },
+        });
+        // the flash and the beep still come together, within one frame; the sound from before the first
+        // picture is not kept, so both come half a second earlier than in the source
+        const after = marks(version);
+        expect(Math.abs(after.flash - after.beep)).toBeLessThanOrEqual(1 / 30);
+        expect(after.flash).toBeCloseTo(1.5, 2);
+      },
+    );
+
+    it('accepts its own re-encode of a clip too short for B-frames', async () => {
+      const source = join(folder, 'two-frames.mp4');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-frames:v',
+        '2',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        source,
+      ]);
+      // x264 declares B-frames it never made: the times say nothing about their order
+      expect((await measured(source)).packets.unordered).toBe(true);
+      const encoded = join(folder, 'two-frames-upload.mp4');
+      await upload(source, encoded, false, '30/1', true);
+      const uploaded = await measured(encoded);
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(timing(encoded)).toEqual({ start: 0, frames: 2 });
+    });
+
+    it('never copies a stream with keyframes far apart: the upload has one every 2 seconds', async () => {
+      const source = join(folder, 'long-gop.mp4');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=320x240:rate=30',
+        '-t',
+        '12',
+        '-c:v',
+        'libx264',
+        '-g',
+        '1000',
+        '-sc_threshold',
+        '0',
+        '-pix_fmt',
+        'yuv420p',
+        source,
+      ]);
+      const { stream, packets } = await measured(source);
+      expect(packets.keyGap).toBeGreaterThan(10);
+      expect(isPlainVideoStream(stream, packets)).toBe(false);
+
+      const encoded = join(folder, 'long-gop-upload.mp4');
+      await upload(source, encoded, false, '30/1');
+      const uploaded = await measured(encoded);
+      expect(uploaded.packets.keyGap).toBeCloseTo(2, 3);
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+    });
+
+    it('never copies a frame with odd sides, turned or not', async () => {
+      const source = join(folder, 'odd-plain.mp4');
+      make([
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=size=96x64:rate=30',
+        '-t',
+        '1',
+        '-vf',
+        'crop=95:63',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv444p',
+        source,
+      ]);
+      const { stream, packets } = await measured(source);
+      expect(isPlainVideoStream(stream, packets)).toBe(false);
+      const encoded = join(folder, 'odd-plain-upload.mp4');
+      await upload(source, encoded, false, '30/1');
+      const uploaded = await measured(encoded);
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(cloudVideoClip('v1', uploaded.stream)).toMatchObject({ width: 94, height: 62 });
+    });
+
+    it('never copies a trimmed source: the upload holds only the frames the video shows', async () => {
+      const source = join(folder, 'trimmed.mp4');
+      const { stream, packets } = await measured(source);
+      // more packets than frames: no length could be declared that the worker both counts and decodes
+      expect(packets.hidden).toBeGreaterThan(0);
+      expect(decodedFrames(source)).toBe(packets.packets - packets.hidden);
+      expect(stream.frameCount).toBe(packets.packets);
+      expect(isPlainVideoStream(stream, packets)).toBe(false);
+
+      const encoded = join(folder, 'trimmed-upload.mp4');
+      await upload(source, encoded, false);
+      const uploaded = await measured(encoded);
+      expect(isPlainVideoStream(uploaded.stream, uploaded.packets)).toBe(true);
+      expect(uploaded.packets.packets).toBe(packets.packets - packets.hidden);
+      expect(decodedFrames(encoded)).toBe(uploaded.packets.packets);
+      const clip = cloudVideoClip('v1', uploaded.stream)!;
+      expect(Math.floor(clip.durationSec * clip.fps + 0.5)).toBe(uploaded.packets.packets);
     });
   });
 });

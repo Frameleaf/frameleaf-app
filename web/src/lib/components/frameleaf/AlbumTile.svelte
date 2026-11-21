@@ -10,7 +10,13 @@
   import { getAlbumDragData, isAlbumDrag, setAlbumDragData } from '$lib/utils/album-drag';
   import { AlbumKind, AssetMediaSize, type AlbumResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAccountArrowLeftOutline, mdiAccountMultipleOutline, mdiAutoFix, mdiBackupRestore } from '@mdi/js';
+  import {
+    mdiAccountArrowLeftOutline,
+    mdiAccountMultipleOutline,
+    mdiAutoFix,
+    mdiBackupRestore,
+    mdiFolderOutline,
+  } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
@@ -165,6 +171,18 @@
       {#if album.isSmart}
         <span class="mark" title={$t('frameleaf_albums_smart_mark')} aria-hidden="true">
           <Icon icon={mdiAutoFix} size={ICON_SIZE.xs} />
+        </span>
+      {/if}
+      {#if album.folderAlbum}
+        <!-- FL-838: made from a folder in the viewer's library; worded like the header badge -->
+        <span
+          class="mark folder"
+          class:labelled={layout === 'grid'}
+          title={$t('frameleaf_album_folder_mark')}
+          data-testid="album-folder-mark"
+        >
+          <Icon icon={mdiFolderOutline} size={ICON_SIZE.xs} aria-hidden />
+          {#if layout === 'grid'}<span>{$t('frameleaf_album_folder_badge')}</span>{/if}
         </span>
       {/if}
       {#if album.kind === AlbumKind.Space}
@@ -378,6 +396,14 @@
   .tile.list .actions {
     position: static;
     opacity: 1;
+  }
+  .mark.folder.labelled {
+    gap: var(--fl-space-1);
+    width: auto;
+    padding-inline: var(--fl-space-2);
+    border-radius: 999px;
+    font-size: var(--fl-font-small);
+    font-weight: 600;
   }
   .tile.list .marks {
     top: auto;

@@ -25,6 +25,7 @@
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import {
     GB,
+    ICLOUD_MAX_CONCURRENCY,
     ICLOUD_MAX_CONNECTIONS,
     icloudAuthStep,
     icloudBlankDraft,
@@ -747,12 +748,17 @@
         {/if}
         <Advanced summary={$t('frameleaf_icloud_download_limits')}>
           <Row label={$t('frameleaf_icloud_concurrency')} help={$t('frameleaf_icloud_at_once_help')}>
-            <SegmentedControl
-              label={$t('frameleaf_icloud_concurrency')}
+            <input
+              class="ic-amount"
+              type="number"
+              aria-label={$t('frameleaf_icloud_concurrency')}
+              min={1}
+              max={ICLOUD_MAX_CONCURRENCY}
+              step={1}
               value={draft.concurrency}
+              oninput={(event) => (draft.concurrency = event.currentTarget.value)}
               disabled={busy}
-              options={['1', '2', '3', '4'].map((value) => ({ value, label: value }))}
-              onChange={(value) => (draft.concurrency = value)}
+              aria-invalid={problems.includes('concurrency')}
             />
           </Row>
           <Row

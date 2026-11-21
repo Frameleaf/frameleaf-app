@@ -26,7 +26,7 @@ const compose = (path) =>
   load(read(path).replace(/!(?:reset|override)\b/g, ""));
 // FL-191: Frameleaf publishes its own database image, built from docker/postgres.
 const databaseImage =
-  "ghcr.io/frameleaf/frameleaf-postgres:19rc1-pgvector0.8.7@sha256:3efd98096adf147872590ebdb31ffd58ee18de5e54e2309ca431417279b629ff";
+  "ghcr.io/frameleaf/frameleaf-postgres:19.0-pgvector0.8.7@sha256:2f2403e2215ffbdec795220b63fd0c8bbbf52f5dc6114e2e2f7ecf651c95fde7";
 
 test("server identifiers use Frameleaf throughout the tracked source", () => {
   const result = spawnSync(
@@ -966,7 +966,7 @@ test("the server base is built in-repo and identical in the production and devel
 
 test("the owned Postgres image uses PG19 and pgvector only", () => {
   const dockerfile = read("docker/postgres/Dockerfile");
-  assert.match(dockerfile, /postgres:19rc1-bookworm@sha256:/);
+  assert.match(dockerfile, /postgres:19rc2-bookworm@sha256:/);
   assert.match(dockerfile, /0\.8\.7/);
   // FL-1265: publication tags the image with the version its Dockerfile declares.
   assert.equal(

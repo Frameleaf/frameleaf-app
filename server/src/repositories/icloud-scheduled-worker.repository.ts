@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { VerifiedMedia } from 'src/repositories/media-recovery.repository.js';
 import type { ValidationInputEnvelope } from 'src/utils/icloud-private-copy.js';
+import { ICLOUD_MAX_CONCURRENCY } from 'src/dtos/icloud-sync.dto.js';
 import { ICloudAuditRow } from 'src/repositories/icloud-audit.repository.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import { ScheduledAuditAuthority, guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
@@ -190,7 +191,7 @@ export class ICloudScheduledWorkerRepository {
         db,
       );
       const globalLimit = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES') ?? 100 * 1024 ** 3);
-      const concurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? 4);
+      const concurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? ICLOUD_MAX_CONCURRENCY);
       const {
         rows: [global],
       } = await sql<{ used: number; active: number }>`SELECT coalesce(sum("reservedBytes"),0)::float8 AS used,

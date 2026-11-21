@@ -98,6 +98,30 @@ test("Test qualification on Forgejo passes every lane but the Windows one it has
   assert.equal(evidence.jobs.length, required.length - 1);
 });
 
+test("Test qualification on Forgejo accepts a lane that passed on a single-job rerun", async (t) => {
+  t.after(() => delete process.env.GITHUB_SERVER_URL);
+  process.env.GITHUB_SERVER_URL = "https://code.heroapps.ca";
+  const { request } = forgejoFixture((name) =>
+    name === "Unit Test CLI (Windows)" ? "skipped" : "success",
+  );
+  // Forgejo numbers attempts per job: only the rerun job moves to attempt 3.
+  const rerun = async (endpoint) => {
+    const result = await request(endpoint);
+    return Array.isArray(result)
+      ? result.map((job) =>
+          job.name === "Server Lane-2" ? { ...job, attempt: 3 } : job,
+        )
+      : result;
+  };
+  const evidence = await requireTestQualification(sha, (endpoint) =>
+    forgejoAsGithub(endpoint, rerun),
+  );
+  assert.equal(evidence.attempt, 3);
+  assert.equal(evidence.jobs.length, required.length - 1);
+  const stale = await forgejoAsGithub("actions/runs/65/attempts/1/jobs", rerun);
+  assert.equal(stale.jobs.length, 0);
+});
+
 test("Test qualification on Forgejo refuses a failed lane", async (t) => {
   t.after(() => delete process.env.GITHUB_SERVER_URL);
   process.env.GITHUB_SERVER_URL = "https://code.heroapps.ca";
@@ -137,4 +161,35 @@ test("runners on Forgejo's LAN addresses count as Forgejo; GitHub and unknown se
   for (const url of ["https://github.com", "", "http://192.168.176.9:3000"])
     assert.equal(onForgejo({ GITHUB_SERVER_URL: url }), false, url);
   assert.ok(typeof validateBuildInput === "function");
+});
+
+test("on Forgejo a called build workflow's workflow_call counts as the dispatch that started Deploy (FL-1683)", () => {
+  const { buildEvent } = require("./frameleaf-release.cjs");
+  const lan = "http://192.168.176.2:3000";
+  assert.equal(
+    buildEvent({ GITHUB_SERVER_URL: lan, GITHUB_EVENT_NAME: "workflow_call" }),
+    "workflow_dispatch",
+  );
+  assert.equal(
+    buildEvent({
+      GITHUB_SERVER_URL: "https://code.heroapps.ca",
+      GITHUB_EVENT_NAME: "workflow_call",
+    }),
+    "workflow_dispatch",
+  );
+  assert.equal(
+    buildEvent({ GITHUB_SERVER_URL: lan, GITHUB_EVENT_NAME: "push" }),
+    "push",
+  );
+  assert.equal(
+    buildEvent({
+      GITHUB_SERVER_URL: "https://github.com",
+      GITHUB_EVENT_NAME: "workflow_call",
+    }),
+    "workflow_call",
+  );
+  assert.equal(
+    buildEvent({ GITHUB_SERVER_URL: lan, GITHUB_EVENT_NAME: "pull_request" }),
+    "pull_request",
+  );
 });

@@ -8,6 +8,7 @@ import sirv from 'sirv';
 import type { RequestHandler } from 'express';
 import { IMMICH_SERVER_START, excludePaths, excludeRoutePatterns, serverVersion } from 'src/constants.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
+import { desktopResultSize } from 'src/middleware/desktop-result-size.middleware.js';
 import { expressTrustProxy, frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
 import { requestLogMiddleware } from 'src/middleware/logging.interceptor.js';
 import { WebSocketAdapter } from 'src/middleware/websocket.adapter.js';
@@ -82,6 +83,8 @@ export async function configureExpress(
   app.use(/^\/api\/mcp(?:\/assistant)?\/?$/i, requireMcpJson, json({ limit: '32kb' }));
   // FL-1558: a Studio document save may be up to the graph limit, above the general body limit.
   app.use(STUDIO_DOCUMENT_ROUTES, json({ limit: STUDIO_DOCUMENT_BODY_MAX_BYTES }));
+  // A desktop result over its cap gets its own named refusal, ahead of validation and the request proof.
+  app.use(desktopResultSize());
   app.use(
     json({
       limit: '10mb',

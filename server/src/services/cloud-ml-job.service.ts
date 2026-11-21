@@ -104,6 +104,8 @@ import {
   CloudMlJobUpgradeRecord,
   CloudMlJobUpscale,
   CloudMlJobWorkload,
+  CloudVideoClip,
+  cloudDeclaredFps,
   cloudMlJobActivity,
   cloudMlJobBackoffMs,
   cloudMlJobClientRef,
@@ -113,7 +115,13 @@ import {
   cloudMlJobRecordOf,
   cloudMlJobSpentUsd,
   cloudMlJobWorkload,
+  cloudSmoothMotionRefusal,
+  cloudVideoClip,
+  cloudVideoClipRefusal,
+  cloudVideoRequest,
+  cloudVideoSettingsRefusal,
   emptyCloudMlJobResult,
+  isPlainVideoStream,
   orderedOutputs,
   outputsComplete,
   parseCloudMlJobResult,
@@ -153,7 +161,9 @@ import { isLockedPath, withPlainCopy } from 'src/utils/locked-read.js';
 import { queueLockedSealOf } from 'src/utils/locked-seal-queue.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
 import {
+  EVEN_SIDES_FILTER,
   audioReattachOffsetSeconds,
+  constantRateOptions,
   fullVideoUploadOutputOptions,
   previewClipOutputOptions,
   reattachAudioOutputOptions,
@@ -194,7 +204,9 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
 /** A whole video prepared for Frameleaf Cloud once, kept in its own folder for every estimate of it. */
 const PREPARED_INPUT_PREFIX = 'cloud_ml_input_';
 /** Bumped when the way a whole video is prepared changes, so an older copy is never reused. */
-const PREPARED_INPUT_VERSION = 2;
+// 3, 4 (FL-1725): a source is copied only when it is a plain stream (`isPlainVideoStream`); 4 when that rule
+// gained real presentation times, close keyframes and even sides
+const PREPARED_INPUT_VERSION = 4;
 /** The record written next to a prepared copy once it is complete. */
 const PREPARED_INPUT_RECORD = 'prepared.json';
 
@@ -480,6 +492,23 @@ export class CloudMlJobService {
 
     const chosen = await this.chooseModel(gateway, workload, settings.mode, dto.modelSku);
     const model = chosen.model;
+    if (workload === 'restoration' || workload === 'interpolation') {
+      // what this model does not run is said here, before a copy is prepared or an estimate is asked for
+      const refusal = cloudVideoSettingsRefusal(workload, settings, model.limits);
+      if (refusal) {
+        throw new BadRequestException(refusal);
+      }
+    }
+    const storedFps = Number(source.exifInfo?.fps);
+    if (workload === 'interpolation' && storedFps > 0) {
+      // the frame rate stored at metadata extraction answers the factor before a copy is made; the copy's
+      // own rate is checked again in `describeClip`
+      const factor = settings.factor ?? 2;
+      const refusal = cloudSmoothMotionRefusal(cloudDeclaredFps(storedFps, factor), factor);
+      if (refusal) {
+        throw new BadRequestException(refusal);
+      }
+    }
     // a full render runs the model reviewed in its preview: the slider is only offered for a preview
     const offered = preview ? [model] : chosen.offered;
     if (preview) {
@@ -499,6 +528,7 @@ export class CloudMlJobService {
     const copy = video && dto.stage === 'full' ? await this.preparedWholeVideo(auth, source) : null;
     this.storageRepository.mkdirSync(workDir);
     let prepared: Awaited<ReturnType<CloudMlJobService['prepareInput']>>;
+    let clip: CloudVideoClip | null = null;
     try {
       prepared = copy
         ? this.fromPreparedCopy(copy, workload, sizes, durationSeconds, smooth ? 1 : settings.upscale)
@@ -519,6 +549,9 @@ export class CloudMlJobService {
               }),
             { viewerId: lockedViewerOf(auth) },
           );
+      if (workload === 'restoration' || workload === 'interpolation') {
+        clip = await this.describeClip(workload, prepared.input, settings.factor);
+      }
     } catch (error) {
       await this.removeWorkDir(workDir);
       throw error instanceof CloudMlJobFailure ? new BadRequestException(error.message) : error;
@@ -540,7 +573,7 @@ export class CloudMlJobService {
         workload,
         appWorkload,
         settings,
-        request: this.requestOf(workload, settings, prepared.size),
+        request: this.requestOf(workload, settings, prepared.size, clip),
         inputs: [prepared.input],
         workDir,
         beforePath: prepared.beforePath,
@@ -3160,11 +3193,13 @@ export class CloudMlJobService {
     const crop =
       options.crop && !isFullRegion(region)
         ? ['-vf', `crop=${even(rect.width)}:${even(rect.height)}:${rect.left}:${rect.top}`]
-        : [];
+        : // the whole frame: an odd side cannot be encoded (FL-1725)
+          ['-vf', EVEN_SIDES_FILTER];
     const beforePath = path.join(workDir, 'before.mp4');
     await this.mediaRepository.transcode(source.originalPath, beforePath, {
       inputOptions: ['-ss', start.toFixed(3), '-t', clip.toFixed(3)],
-      outputOptions: previewClipOutputOptions(crop),
+      // FL-1725: constant-rate at the source's average, so the clip that is uploaded has one frame rate
+      outputOptions: [...previewClipOutputOptions(crop), ...constantRateOptions(await this.averageRate(source))],
       twoPass: false,
       progress: { frameCount: 0, percentInterval: 5 },
     });
@@ -3204,9 +3239,11 @@ export class CloudMlJobService {
       '.webm': { container: 'webm', contentType: 'video/webm', codecs: ['vp8', 'vp9', 'av1'] },
     };
     const plan = copyable[extension] ?? { container: 'mp4', contentType: 'video/mp4', codecs: ['h264', 'hevc', 'av1'] };
-    const copy = !!codec && plan.codecs.includes(codec);
-    const container = copy ? plan.container : 'mp4';
-    const file = path.join(workDir, `input.${container}`);
+    const stream = probe.videoStreams[0];
+    // FL-1725: only a plain stream is copied. A rotation, packets the edit list hides or a variable frame
+    // rate are settled by the re-encode: upright pixels, exactly the frames the video shows, one rate
+    const facts = await this.plainFacts(source.originalPath);
+    let copy = !!codec && plan.codecs.includes(codec) && facts.plain;
     // a stream copy keeps the stream's SEI messages, where cameras put their own data (serial numbers,
     // GPS, settings). Every SEI message is dropped (H.264 type 6, HEVC prefix and suffix types 39 and 40),
     // HDR mastering metadata carried there included; the colour description in the stream header stays
@@ -3214,15 +3251,81 @@ export class CloudMlJobService {
       h264: 'filter_units=remove_types=6',
       hevc: 'filter_units=remove_types=39|40',
     };
-    const filter = copy && codec ? sei[codec] : undefined;
-    await this.mediaRepository.transcode(source.originalPath, file, {
-      inputOptions: [],
-      outputOptions: fullVideoUploadOutputOptions({ copy, bsf: filter, webm: container === 'webm' }),
-      twoPass: false,
-      progress: { frameCount: 0, percentInterval: 5 },
-    });
+    const rate = stream?.frameRateRational;
+    const write = async () => {
+      const container = copy ? plan.container : 'mp4';
+      const file = path.join(workDir, `input.${container}`);
+      await this.mediaRepository.transcode(source.originalPath, file, {
+        inputOptions: [],
+        outputOptions: fullVideoUploadOutputOptions({
+          copy,
+          bsf: copy && codec ? sei[codec] : undefined,
+          webm: container === 'webm',
+          constantRate: rate ? `${rate.num}/${rate.den}` : null,
+          renumber: facts.unordered,
+        }),
+        twoPass: false,
+        progress: { frameCount: 0, percentInterval: 5 },
+      });
+      return file;
+    };
+    let file = await write();
+    if (copy && !(await this.plainFacts(file)).plain) {
+      // the copy itself is what is uploaded: a container can hide packets its source did not (a transport
+      // stream cut inside a group of pictures). It is made again by re-encoding, never sent as it is
+      await this.storageRepository.unlink(file).catch(() => {});
+      copy = false;
+      file = await write();
+    }
     await this.requireSilentUpload(file);
     return { file, contentType: copy ? plan.contentType : 'video/mp4' };
+  }
+
+  /** The source's average frame rate as a fraction (`30000/1001`), or null when the probe has none. */
+  private async averageRate(source: Source): Promise<string | null> {
+    const rate = (await this.mediaRepository.probe(source.originalPath)).videoStreams[0]?.frameRateRational;
+    return rate ? `${rate.num}/${rate.den}` : null;
+  }
+
+  /** Whether this file's first video stream can be uploaded packet for packet (`isPlainVideoStream`), and whether its times are only decode order. */
+  private async plainFacts(file: string): Promise<{ plain: boolean; unordered: boolean }> {
+    const stream = (await this.mediaRepository.probe(file)).videoStreams[0];
+    if (!stream) {
+      return { plain: false, unordered: false };
+    }
+    const packets = await this.mediaRepository.countPackets(file, stream.index);
+    return { plain: isPlainVideoStream(stream, packets), unordered: !!packets.unordered };
+  }
+
+  /**
+   * FC-47, FC-48: the clip a restoration or Smooth motion request describes, measured from the file that
+   * is uploaded (its packets counted), and refused here by name when Frameleaf Cloud does not take it.
+   */
+  private async describeClip(workload: 'restoration' | 'interpolation', input: CloudMlJobInput, factor: number | null) {
+    const probe = await this.mediaRepository.probe(input.path, { countFrames: true });
+    const stream = probe.videoStreams[0];
+    // what is uploaded is a plain stream: the cloud's worker would otherwise turn the picture against its
+    // declared size, decode fewer frames than were counted, or find the wrong frames, after the job is admitted
+    if (stream && !isPlainVideoStream(stream, await this.mediaRepository.countPackets(input.path, stream.index))) {
+      throw new CloudMlJobFailure(
+        'cloud_ml_prepare_failed',
+        'The copy prepared for Frameleaf Cloud is still not a plain stream (a rotation, hidden frames, an uneven frame rate, keyframes far apart or an odd size), so nothing was sent',
+        false,
+      );
+    }
+    const clip = cloudVideoClip(input.inputId, stream, workload === 'interpolation' ? (factor ?? 2) : null);
+    if (!clip) {
+      throw new CloudMlJobFailure(
+        'cloud_ml_prepare_failed',
+        'The copy prepared for Frameleaf Cloud has no readable frame rate or frame count, so it cannot be estimated',
+        false,
+      );
+    }
+    const refusal = cloudVideoClipRefusal(workload, clip, factor);
+    if (refusal) {
+      throw new CloudMlJobFailure('cloud_ml_prepare_failed', refusal, false);
+    }
+    return clip;
   }
 
   /**
@@ -3347,14 +3450,20 @@ export class CloudMlJobService {
     workload: CloudMlJobWorkload,
     settings: { mode: AssetRestorationMode; upscale: number; factor: number | null },
     size?: { width: number; height: number },
+    clip?: CloudVideoClip | null,
   ): Record<string, unknown> {
     switch (workload) {
-      case 'interpolation': {
-        return { factor: settings.factor ?? 2 };
-      }
+      case 'interpolation':
       case 'restoration': {
-        const mode = settings.mode === AssetRestorationMode.Creative ? 'creative' : 'faithful';
-        return { mode, scale: settings.upscale };
+        if (!clip) {
+          // an estimate without the clip is refused by the cloud (a video is not priced blind)
+          throw new BadRequestException('The copy prepared for Frameleaf Cloud was not measured; estimate it again');
+        }
+        return cloudVideoRequest(workload, clip, {
+          creative: settings.mode === AssetRestorationMode.Creative,
+          upscale: settings.upscale,
+          factor: settings.factor,
+        });
       }
       case 'upscale': {
         // FC-46: the declared size prices the photo at the factor it really gets, and binds it

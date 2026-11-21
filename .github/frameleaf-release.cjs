@@ -204,11 +204,7 @@ function validateBuildInput(env) {
   assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`, "Wrong build branch");
   assert(
     // FL-1683: Forgejo reports `workflow_call` inside the reusable build workflow that Deploy calls.
-    [
-      "push",
-      "workflow_dispatch",
-      ...(onForgejo(env) ? ["workflow_call"] : []),
-    ].includes(env.GITHUB_EVENT_NAME),
+    ["push", "workflow_dispatch"].includes(buildEvent(env)),
     "Unsupported build event",
   );
   for (const [key, expected] of Object.entries({
@@ -903,7 +899,7 @@ async function planReuse(env = process.env, registry = new Registry(env)) {
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
   assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
   assert(SHA.test(env.GITHUB_SHA));
-  if (env.GITHUB_EVENT_NAME === "workflow_dispatch") {
+  if (buildEvent(env) === "workflow_dispatch") {
     // Commit tags are immutable. A manual refresh needs an unpublished source
     // revision; reject before spending runners on digests we cannot publish.
     for (const spec of VARIANTS) {
@@ -964,7 +960,7 @@ function reuseAnnotations(spec, image, env) {
 async function reuseCandidate(env = process.env) {
   assert.equal(env.GITHUB_REPOSITORY, REPOSITORY);
   assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
-  assert(["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME));
+  assert(["push", "workflow_dispatch"].includes(buildEvent(env)));
   const spec = variant(env.IMAGE, env.SUFFIX);
   assert(/^frameleaf-v/.test(env.REUSE_RELEASE || ""), "Missing reuse release");
   const registry = new Registry(env);
@@ -1031,6 +1027,13 @@ function onForgejo(env = process.env) {
   return FORGEJO_SERVER_URLS.has(
     (env.GITHUB_SERVER_URL || "").replace(/\/+$/, ""),
   );
+}
+// FL-1683: Forgejo reports `workflow_call` inside a called workflow where GitHub reports the caller's
+// event. Deploy (docker.yml) is dispatch-only, so on Forgejo that is a dispatch.
+function buildEvent(env = process.env) {
+  return onForgejo(env) && env.GITHUB_EVENT_NAME === "workflow_call"
+    ? "workflow_dispatch"
+    : env.GITHUB_EVENT_NAME;
 }
 async function forgejo(endpoint) {
   const response = await fetch(
@@ -1141,9 +1144,11 @@ async function forgejoAsGithub(endpoint, request = forgejo) {
       await request(`actions/runs/${match[1]}`),
       await jobsOf(match[1]),
     );
-    const all = (await jobsOf(match[1])).filter(
-      (job) => (job.attempt || 1) === Number(match[2]),
-    );
+    // FL-1687: Forgejo reruns one job at a time and numbers attempts per job, where a GitHub
+    // attempt lists every job (rerun or carried over). The run's attempt is its highest job attempt,
+    // and its job list is each job's latest result; any other attempt is not evidence.
+    const all =
+      Number(match[2]) === run.run_attempt ? await jobsOf(match[1]) : [];
     const names = githubJobNames(all);
     const jobs = all.map((job) => ({
       id: job.id,
@@ -1155,7 +1160,7 @@ async function forgejoAsGithub(endpoint, request = forgejo) {
         run.path === ".github/workflows/test.yml" ? "Test" : run.path,
       status: FORGEJO_DONE.has(job.status) ? "completed" : job.status,
       conclusion: FORGEJO_DONE.has(job.status) ? job.status : null,
-      run_attempt: job.attempt || 1,
+      run_attempt: run.run_attempt,
     }));
     return { total_count: jobs.length, jobs };
   }
@@ -1213,7 +1218,7 @@ async function mergeCandidate(env = process.env) {
   assert.equal(env.GITHUB_REF, `refs/heads/${MAIN}`);
   assert.equal(env.SOURCE_SHA, env.GITHUB_SHA);
   assert(SHA.test(env.SOURCE_SHA));
-  assert(["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME));
+  assert(["push", "workflow_dispatch"].includes(buildEvent(env)));
   const spec = variant(env.IMAGE, env.SUFFIX);
   const registry = new Registry(env);
   const files = await fs.readdir(env.DIGEST_DIR);
@@ -2059,6 +2064,7 @@ module.exports = {
   variant,
   validateBuildInput,
   onForgejo,
+  buildEvent,
   validateIndex,
   validateImageConfig,
   trustedRun,
@@ -2066,6 +2072,7 @@ module.exports = {
   forgejoAsGithub,
   githubJobNames,
   runFromUrl,
+  FORGEJO_SOURCE,
   chooseTag,
   previousReleaseTag,
   releaseNotesBody,
