@@ -14,6 +14,7 @@ const broker = {
   attemptModelKey: vi.fn(),
   withdraw: vi.fn(),
   countFailure: vi.fn(),
+  countCancel: vi.fn(),
   clearFailures: vi.fn(),
   withdrawnModels: vi.fn(),
   heldLeases: vi.fn(),
@@ -96,13 +97,19 @@ it('cancels a waiting claim when the outbound connection closes', async () => {
 });
 it('hands a task straight back when the desktop hung up while its lease was being made', async () => {
   const controller = new AbortController();
-  const lease = { task: { id: 'task' }, attempt: { id: 'attempt' }, resumed: false };
+  const lease = { task: { id: 'task', modelKey: 'face:model' }, attempt: { id: 'attempt' }, resumed: false };
+  broker.fail.mockResolvedValue(true);
+  broker.countCancel.mockResolvedValue(6);
+  broker.countFailure.mockResolvedValue(1);
   broker.claim.mockImplementation(() => {
     controller.abort();
     return Promise.resolve(lease);
   });
   await expect(service.claim('token', 'proof', '{"modelKeys":["m"],"waitMs":0}', controller.signal)).rejects.toThrow();
   expect(broker.fail).toHaveBeenCalledExactlyOnceWith(grant, 'attempt', 'cancelled');
+  // it is a hand-back like any other, and past the cap a failure
+  expect(broker.countCancel).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
+  expect(broker.countFailure).toHaveBeenCalledExactlyOnceWith(grant, 'face:model', false);
   // a lease the desktop already held and is working on is left alone
   broker.fail.mockClear();
   broker.claim.mockResolvedValue({ ...lease, resumed: true });
@@ -358,17 +365,37 @@ describe('a desktop that keeps failing a model', () => {
     broker.countFailure.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
     await fail('inference-failed');
     await fail('model-unavailable');
+    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model', true);
     expect(broker.withdraw).not.toHaveBeenCalled();
     await fail('inference-failed');
     expect(broker.countFailure).toHaveBeenCalledTimes(3);
-    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model');
+    expect(broker.countFailure).toHaveBeenLastCalledWith(grant, 'face:model', false);
     expect(broker.withdraw).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
     expect(warnings().at(-1)).toBe(
       'Desktop worker lost face:model after 3 failures in a row (device device): it must qualify again',
     );
   });
 
+  it('counts a desktop that only ever hands work back as failing, past a few hand-backs in a while', async () => {
+    // five hand-backs in the window are a person pausing; the sixth, seventh and eighth are failures
+    for (const cancels of [1, 5]) {
+      broker.countCancel.mockResolvedValueOnce(cancels);
+      await fail('cancelled');
+    }
+    expect(broker.countCancel).toHaveBeenLastCalledWith(grant, 'face:model');
+    expect(broker.countFailure).not.toHaveBeenCalled();
+    broker.countFailure.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
+    // 0 is another task of a stop already counted: one stop is one hand-back past the cap too
+    for (const cancels of [6, 0, 0, 7, 8]) {
+      broker.countCancel.mockResolvedValueOnce(cancels);
+      await fail('cancelled');
+    }
+    expect(broker.countFailure).toHaveBeenCalledTimes(3);
+    expect(broker.withdraw).toHaveBeenCalledExactlyOnceWith(grant, 'face:model');
+  });
+
   it('does not count a paused desktop, an unreadable photo or a stale lease', async () => {
+    broker.countCancel.mockResolvedValueOnce(1);
     await fail('cancelled');
     await fail('input-invalid');
     broker.fail.mockResolvedValueOnce(false);

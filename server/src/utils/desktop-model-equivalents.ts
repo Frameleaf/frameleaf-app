@@ -1,3 +1,4 @@
+import { type RawBuilder, sql } from 'kysely';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type DesktopClipSpace, type DesktopClipSpaces, parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
@@ -74,4 +75,24 @@ export const equivalentDesktopModelKeys = (modelKey: string): readonly string[] 
   const frozen = Object.freeze(keys);
   equivalents.set(modelKey, frozen);
   return frozen;
+};
+
+let spaceOfKey: string | undefined;
+/**
+ * SQL for the embedding space a stored vector's producer key (`column`) stands for: one value for every key
+ * of the same encoder, whichever runtime revision made the vector. Photos are compared by this, not by the
+ * key itself, so vectors a library holds under two keys of one encoder still match each other.
+ */
+export const clipSpaceOf = (column: string): RawBuilder<string | null> => {
+  if (spaceOfKey === undefined) {
+    const { catalogue } = load();
+    const map: Record<string, string> = {};
+    for (const profile of catalogue.profiles) {
+      if (profile.workload !== 'clip') continue;
+      const first = [...equivalentDesktopModelKeys(profile.modelKey)].sort()[0];
+      if (first !== profile.modelKey) map[profile.modelKey] = first;
+    }
+    spaceOfKey = JSON.stringify(map);
+  }
+  return sql<string | null>`coalesce(${spaceOfKey}::text::jsonb ->> ${sql.ref(column)}, ${sql.ref(column)})`;
 };

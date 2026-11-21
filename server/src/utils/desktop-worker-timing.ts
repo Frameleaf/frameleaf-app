@@ -8,9 +8,15 @@ export const DESKTOP_PRESENCE_SECONDS = DESKTOP_LEASE_SECONDS + 30;
 /** Failures in a row, for one model, after which a desktop loses that model and must qualify again. */
 export const DESKTOP_FAILURES_BEFORE_WITHDRAWAL = 3;
 /**
- * Failures of one model from one desktop this close together are one event: a runtime that crashes while
- * holding several tasks fails all of them at once, and that is one crash, not several failures in a row.
+ * Tasks handed back (`cancelled`) for one model from one desktop: this many hand-backs within the window are
+ * a person pausing and stopping. Each one after that counts as a failure, so a desktop that only ever hands
+ * work back loses the model like one that fails it. Hand-backs with no lease taken in between are one.
+ * The window runs from its first hand-back and then starts again, so up to this many hand-backs in every
+ * window are never counted: handing back one task every two minutes is tolerated on purpose.
  */
-export const DESKTOP_FAILURE_BURST_SECONDS = 10;
+export const DESKTOP_CANCELS_BEFORE_FAILURE = 5;
+export const DESKTOP_CANCEL_WINDOW_SECONDS = 600;
+/** One task may be handed back this many times; a hand-back after that is a failed attempt of the task. */
+export const DESKTOP_CANCELS_PER_TASK = 5;
 /** How long a desktop that lost a model waits before it can qualify for it again. */
 export const DESKTOP_REQUALIFY_HOLD_SECONDS = 300;

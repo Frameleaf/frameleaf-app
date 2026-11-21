@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { landmarkInferenceEligible } from 'src/utils/database.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import {
   LANDMARK_INFERENCE_WINDOW_MS,
   selectTemporalReference,
@@ -139,7 +140,7 @@ const inferOne = async (db: Kysely<DB>, id: string): Promise<void> => {
         await sql`set local hnsw.iterative_scan = strict_order`.execute(tx);
         const neighbours = await donors
           .innerJoin('smart_search', 'smart_search.assetId', 'donor.id')
-          .where('smart_search.producerModelKey', '=', embedding.producerModelKey)
+          .where('smart_search.producerModelKey', 'in', [...equivalentDesktopModelKeys(embedding.producerModelKey!)])
           .where('donor.checksum', '!=', target.checksum)
           .select(['donor.id', 'donor.checksum'])
           .select(sql<number>`smart_search.embedding <=> ${embedding.embedding}::vector`.as('distance'))

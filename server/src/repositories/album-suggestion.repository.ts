@@ -13,6 +13,7 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { dateSetByHand } from 'src/utils/date-sanity.js';
+import { clipSpaceOf, equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked, isNotLocked, isTimelineVisible, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
@@ -327,13 +328,17 @@ export class AlbumSuggestionRepository {
       ]);
   }
 
-  /** Closest stored-embedding distance from each candidate to the album photos (same CLIP model only). */
+  /** Closest stored-embedding distance from each candidate to the album photos (same CLIP encoder only, under any of its keys). */
   async getVisualDistances(candidateIds: string[], albumPhotoIds: string[]): Promise<Map<string, number>> {
     if (candidateIds.length === 0 || albumPhotoIds.length === 0) return new Map();
     const references = sample(albumPhotoIds, MAX_VISUAL_REFERENCES);
     const rows = await this.db
       .selectFrom('smart_search as candidate')
-      .innerJoin('smart_search as reference', 'reference.producerModelKey', 'candidate.producerModelKey')
+      .innerJoin('smart_search as reference', (join) =>
+        join.on(
+          sql<boolean>`${clipSpaceOf('reference.producerModelKey')} = ${clipSpaceOf('candidate.producerModelKey')}`,
+        ),
+      )
       .where('candidate.assetId', 'in', candidateIds)
       .where('reference.assetId', 'in', references)
       .where('candidate.producerModelKey', 'is not', null)
@@ -370,7 +375,7 @@ export class AlbumSuggestionRepository {
           .selectFrom('smart_search')
           .innerJoin('asset as candidate', 'candidate.id', 'smart_search.assetId')
           .leftJoin('asset_exif as candidate_exif', 'candidate_exif.assetId', 'candidate.id')
-          .where('smart_search.producerModelKey', '=', reference.producerModelKey)
+          .where('smart_search.producerModelKey', 'in', [...equivalentDesktopModelKeys(reference.producerModelKey!)])
           .where('candidate.ownerId', '=', ownerId)
           .where(suggestible('candidate'))
           .where(
