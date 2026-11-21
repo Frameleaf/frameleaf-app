@@ -116041,7 +116041,7 @@
             "default": {
               "albums": [],
               "automatic": true,
-              "concurrency": 1,
+              "concurrency": 10,
               "includeEdits": true,
               "includeHidden": false,
               "intervalHours": 24,
