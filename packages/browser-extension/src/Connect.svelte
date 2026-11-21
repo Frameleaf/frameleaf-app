@@ -6,7 +6,7 @@
    * "Switch server" (with Back), a sign-in problem said above the form with the address kept, and
    * "Use a key instead" for a server too old to sign in.
    */
-  import { CaptureFailure } from "./api";
+  import { CaptureFailure, homeHost } from "./api";
   import Icon from "./Icon.svelte";
   import LocalSwitch from "./LocalSwitch.svelte";
   import Promises from "./Promises.svelte";
@@ -166,6 +166,10 @@
       <p class="hint">
         If your server uses the certificate it made for itself, open it and
         accept the certificate when the browser asks, then try again here.
+        {#if homeHost(new URL(currentProblem.origin).hostname)}
+          If it’s on your home network without HTTPS, use http:// with “Allow a
+          local server without HTTPS” turned on.
+        {/if}
         <button
           type="button"
           class="link-button"
