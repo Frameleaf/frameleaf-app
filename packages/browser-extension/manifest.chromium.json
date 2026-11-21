@@ -11,6 +11,26 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "commands": {
+    "_execute_action": {
+      "description": "Open Save to Frameleaf",
+      "suggested_key": {
+        "default": "Alt+Shift+F"
+      }
+    },
+    "screenshot": {
+      "description": "Take a screenshot",
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      }
+    },
+    "save-page-link": {
+      "description": "Save this page as a link",
+      "suggested_key": {
+        "default": "Alt+Shift+L"
+      }
+    }
+  },
   "content_security_policy": {
     "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src https: http: blob: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
   },
@@ -37,5 +57,5 @@
     "contextMenus",
     "identity"
   ],
-  "version": "1.1.1"
+  "version": "1.2.0"
 }

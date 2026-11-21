@@ -258,6 +258,49 @@ describe('the server address (FL-655)', () => {
       expect.objectContaining({ ok: false }),
     );
   });
+  it('takes plain http for a home-network server with the switch on (FL-1498)', () => {
+    for (const address of [
+      'http://192.168.1.10:2283',
+      'http://10.0.0.5:2283',
+      'http://nas.local:2283',
+      'http://tower:2283',
+      'http://tower',
+      'http://[fd12:3456:789a::1]:2283',
+    ]) {
+      expect(checkServerAddress(address, true)).toEqual(
+        expect.objectContaining({ ok: true, origin: address }),
+      );
+      expect(checkServerAddress(address, false)).toEqual(
+        expect.objectContaining({ ok: false }),
+      );
+    }
+    // with the switch on, a typed home address without a scheme gets http://
+    expect(checkServerAddress('192.168.1.10:2283', true)).toEqual(
+      expect.objectContaining({ ok: true, origin: 'http://192.168.1.10:2283' }),
+    );
+    expect(checkServerAddress('192.168.1.10:2283', false)).toEqual(
+      expect.objectContaining({
+        ok: true,
+        origin: 'https://192.168.1.10:2283',
+      }),
+    );
+    expect(checkServerAddress('photos.example.com', true)).toEqual(
+      expect.objectContaining({
+        ok: true,
+        origin: 'https://photos.example.com',
+      }),
+    );
+    for (const address of [
+      'http://8.8.8.8',
+      'http://nas.local.evil.test',
+      'ftp://nas.local',
+      'https://user@photos.example.com',
+      'https://photos.example.com/?a',
+    ])
+      expect(checkServerAddress(address, true)).toEqual(
+        expect.objectContaining({ ok: false }),
+      );
+  });
   it('says when a server was last used', () => {
     const now = new Date('2026-10-29T12:00:00');
     expect(

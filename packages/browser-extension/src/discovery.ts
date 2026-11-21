@@ -15,6 +15,10 @@ export interface PageDiscovery {
   title: string;
   candidates: CaptureCandidate[];
   bookmarkUrl?: string;
+  /** FL-1729: saved from the right-click menu on a link or on selected text. */
+  menu?: 'link' | 'selection';
+  /** FL-1729: the selected text, quoted, as the link's note. */
+  note?: string;
 }
 export class DiscoveryFailure extends Error {
   constructor() {
