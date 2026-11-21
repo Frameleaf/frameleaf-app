@@ -8,7 +8,7 @@ from unittest.mock import patch
 import requests
 from gallery_dl.extractor.nozomi import NozomiExtractor
 
-from bridge import BridgeError, Extraction, creator_feed, creator_profile, gallery_entry, inspection, list_entries, public_page, youtube_candidates
+from bridge import BridgeError, Extraction, creator_feed, video_feed, creator_profile, gallery_entry, inspection, list_entries, public_page, youtube_candidates
 from transport import cookie_policy, gallery_session_factory, load_session_cookies
 
 
@@ -124,6 +124,10 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(creator_feed("https://bsky.app/profile/fixture.example"), "https://bsky.app/profile/fixture.example/replies")
         self.assertEqual(creator_feed("https://www.reddit.com/u/fixture/"), "https://www.reddit.com/user/fixture/submitted")
         self.assertEqual(creator_feed("https://x.com/fixture/status/123"), "https://x.com/fixture/status/123")
+        self.assertEqual(video_feed("https://www.twitch.tv/fixture"), "https://www.twitch.tv/fixture/videos")
+        self.assertEqual(video_feed("https://www.twitch.tv/videos/2000"), "https://www.twitch.tv/videos/2000")
+        self.assertEqual(video_feed("https://www.twitch.tv/directory"), "https://www.twitch.tv/directory")
+        self.assertEqual(video_feed("https://vimeo.com/fixture"), "https://vimeo.com/fixture")
         self.assertEqual(creator_feed("https://x.com/fixture/likes"), "https://x.com/fixture/likes")
 
     def test_youtube_channel_flattening_defers_live_and_keeps_archives(self):
