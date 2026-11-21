@@ -1,5 +1,5 @@
 import { exiftool } from 'exiftool-vendored';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1415,6 +1415,98 @@ describe(MediaRepository.name, () => {
       // which is where the audio is put back against the source's own first frame
       expect(timing(encoded)).toEqual({ start: 0, frames: 180 });
     });
+
+    it.each([
+      ['an MP4, whose edit list shifts the video', 'mp4'],
+      ['a Matroska file', 'mkv'],
+    ])(
+      'keeps picture and sound together when the video starts half a second after the audio, in %s',
+      async (_, ext) => {
+        // a flash in the picture and a beep in the sound at the same moment of the source (2 s)
+        const base = join(folder, `marked-${ext}.mkv`);
+        make([
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=black:s=320x240:r=30:d=1.5',
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=white:s=320x240:r=30:d=4.5',
+          '-f',
+          'lavfi',
+          '-i',
+          String.raw`aevalsrc=if(gte(t\,2)\,0.5*sin(2*PI*440*t)\,0):s=48000:d=6`,
+          '-filter_complex',
+          '[0:v][1:v]concat=n=2:v=1:a=0[v]',
+          '-map',
+          '[v]',
+          '-map',
+          '2:a',
+          '-c:v',
+          'libx264',
+          '-bf',
+          '2',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:a',
+          'aac',
+          base,
+        ]);
+        const source = join(folder, `marked.${ext}`);
+        make(['-itsoffset', '0.5', '-i', base, '-i', base, '-map', '0:v', '-map', '1:a', '-c', 'copy', source]);
+        /** When the picture turns white and when the sound starts. */
+        const marks = (file: string) => {
+          const { stderr } = spawnSync(
+            'ffmpeg',
+            [
+              '-hide_banner',
+              '-nostats',
+              '-i',
+              file,
+              '-vf',
+              'blackdetect=d=0.1:pix_th=0.1',
+              '-af',
+              'silencedetect=n=-40dB:d=0.1',
+              '-f',
+              'null',
+              '-',
+            ],
+            { encoding: 'utf8', timeout: 60_000 },
+          );
+          return {
+            flash: Number(/black_end:([\d.]+)/.exec(stderr)?.[1]),
+            beep: Number(/silence_end: ([\d.]+)/.exec(stderr)?.[1]),
+          };
+        };
+        const before = marks(source);
+        expect(before.flash).toBeCloseTo(2, 2);
+        expect(before.beep).toBeCloseTo(2, 2);
+        const probed = await sut.probe(source);
+        const original = { video: probed.videoStreams[0].startTime!, audio: probed.audioStreams[0].startTime! };
+        expect(original.video - original.audio).toBeCloseTo(0.5, 3);
+
+        // what is uploaded: re-encoded from its first frame at 0
+        const uploaded = join(folder, `marked-upload-${ext}.mp4`);
+        await upload(source, uploaded, false, '30/1');
+        // a stand-in for Frameleaf Cloud's result: the same frames, picture only
+        const returned = join(folder, `marked-returned-${ext}.mp4`);
+        make(['-i', uploaded, '-map', '0:v:0', '-c:v', 'libx264', '-bf', '0', '-pix_fmt', 'yuv420p', returned]);
+        // the version, as the server builds it: the original's audio put back at its own offset
+        const version = join(folder, `marked-version-${ext}.mp4`);
+        await sut.transcode(returned, version, {
+          inputOptions: [],
+          outputOptions: reattachAudioOutputOptions(source, audioReattachOffsetSeconds(original.video, original.audio)),
+          twoPass: false,
+          progress: { frameCount: 0, percentInterval: 5 },
+        });
+        // the flash and the beep still come together, within one frame; the sound from before the first
+        // picture is not kept, so both come half a second earlier than in the source
+        const after = marks(version);
+        expect(Math.abs(after.flash - after.beep)).toBeLessThanOrEqual(1 / 30);
+        expect(after.flash).toBeCloseTo(1.5, 2);
+      },
+    );
 
     it('accepts its own re-encode of a clip too short for B-frames', async () => {
       const source = join(folder, 'two-frames.mp4');
