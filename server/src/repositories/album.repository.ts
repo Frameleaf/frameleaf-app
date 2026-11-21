@@ -1105,9 +1105,10 @@ export class AlbumRepository {
 
   /**
    * FL-838: one library's folder albums take their folders' photos. `add` puts each folder's photos (see
-   * `isFolderPhoto`) in its album; `remove` takes out of an album the items of its folder whose file is gone
-   * (offline). Nothing else an album holds is touched, so photos the owner put in by hand stay. Returns the
-   * memberships made and ended.
+   * `isFolderPhoto`) in its album, each only once (`library_folder_album_asset` remembers it), so a photo the owner
+   * took out stays out; `remove` takes out of an album the items of its folder whose file is gone (offline) and
+   * forgets them, so they join again if their file comes back. Nothing else an album holds is touched, so photos the
+   * owner put in by hand stay. Returns the memberships made and ended.
    */
   @GenerateSql({
     params: [
@@ -1131,12 +1132,22 @@ export class AlbumRepository {
           ? []
           : (
               await sql<{ albumId: string; assetId: string }>`
+                WITH seen AS (
+                  INSERT INTO library_folder_album_asset ("folderAlbumId", "assetId")
+                  SELECT link.id, asset.id
+                  FROM asset
+                  JOIN unnest(${add.map(({ folderPath }) => folderPath)}::text[], ${add.map(({ albumId }) => albumId)}::uuid[])
+                    AS folder(path, "albumId") ON folder.path = ${folderOf('asset')}
+                  JOIN library_folder_album link
+                    ON link."albumId" = folder."albumId" AND link."libraryId" = ${asUuid(libraryId)}
+                  WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isFolderPhoto('asset')}
+                  ON CONFLICT DO NOTHING
+                  RETURNING "folderAlbumId", "assetId"
+                )
                 INSERT INTO album_asset ("albumId", "assetId")
-                SELECT folder."albumId", asset.id
-                FROM asset
-                JOIN unnest(${add.map(({ folderPath }) => folderPath)}::text[], ${add.map(({ albumId }) => albumId)}::uuid[])
-                  AS folder(path, "albumId") ON folder.path = ${folderOf('asset')}
-                WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isFolderPhoto('asset')}
+                SELECT link."albumId", seen."assetId"
+                FROM seen
+                JOIN library_folder_album link ON link.id = seen."folderAlbumId"
                 ON CONFLICT DO NOTHING
                 RETURNING "albumId", "assetId"`.execute(tx)
             ).rows;
@@ -1154,6 +1165,16 @@ export class AlbumRepository {
                   AND folder.path = ${folderOf('asset')}
                 RETURNING member."albumId", member."assetId"`.execute(tx)
             ).rows;
+      if (removed.length > 0) {
+        await sql`
+          DELETE FROM library_folder_album_asset seen
+          USING library_folder_album link,
+            unnest(${removed.map(({ albumId }) => albumId)}::uuid[], ${removed.map(({ assetId }) => assetId)}::uuid[])
+              AS gone("albumId", "assetId")
+          WHERE seen."folderAlbumId" = link.id AND link."albumId" = gone."albumId" AND seen."assetId" = gone."assetId"`.execute(
+          tx,
+        );
+      }
       await repository.invalidateSourceMemberships(removed);
       return { added, removed };
     });

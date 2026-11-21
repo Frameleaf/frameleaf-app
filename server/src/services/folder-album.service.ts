@@ -6,7 +6,14 @@ import { AlbumKind, AlbumUserRole, AssetOrder, DatabaseLock, JobName, JobStatus,
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { queueAlbumCopies, recordAlbumEdit } from 'src/services/partner-copy.service.js';
-import { FolderNode, buildFolderTree, fileKey, folderName, matchMovedFolders } from 'src/utils/folder-albums.js';
+import {
+  FolderNode,
+  buildFolderTree,
+  fileKey,
+  folderKind,
+  folderName,
+  matchMovedFolders,
+} from 'src/utils/folder-albums.js';
 import { normalizeImportPath } from 'src/utils/library-paths.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
@@ -31,8 +38,10 @@ export type FolderAlbumSyncResult = {
 /**
  * FL-838: an album for each folder of a library, kept in sync after every scan.
  *
- * The albums belong to the library's owner and nest as the folders do. Each holds its folder's own photos and videos
- * (not those of its subfolders); a folder holding only folders is a collection. Nothing here writes to the library's
+ * The albums belong to the library's owner and nest as the folders do, with the folders directly in an import folder
+ * at the top. Each holds its folder's own photos and videos (not those of its subfolders); photos loose in an import
+ * folder go to an album named after the library. A top-level folder holding only folders is a collection; deeper, it
+ * is an album that holds albums. Nothing here writes to the library's
  * folders, so read-only libraries work the same, and nothing deletes or trashes a photo: removing an album or a
  * membership never touches the item.
  *
@@ -40,8 +49,8 @@ export type FolderAlbumSyncResult = {
  * name is not its folder's name was renamed, and an album holding an item that is not one of its folder's own items
  * had photos put in by hand. Either marks the album `isUserEdited` for good: it keeps its name when the folder is
  * renamed, keeps the photos put in by hand (a sync only ever takes out items of its folder whose file is gone), and
- * stays when its folder empties. Its folder's photos still sync. A photo taken out of an album by hand comes back
- * with the next sync while it is still in the folder.
+ * stays when its folder empties. Its folder's photos still sync. Each folder photo goes into its album once: the sync
+ * remembers it (`library_folder_album_asset`), so a photo taken out of the album by hand stays out.
  */
 @Injectable()
 export class FolderAlbumService extends BaseService {
@@ -88,10 +97,14 @@ export class FolderAlbumService extends BaseService {
       return;
     }
     const ownerId = library.ownerId;
-    const nameOf = (folderPath: string) => folderName(folderPath, library.name);
+    const roots = [...new Set(library.importPaths.map((importPath) => normalizeImportPath(importPath)))];
+    const nameOf = (folderPath: string) => folderName(folderPath, library.name, roots);
+    // before FL-838 decision 2 an import folder's album was named after the folder; that name is not an edit
+    const isAutoName = (link: FolderAlbumLink) =>
+      link.albumName === nameOf(link.folderPath) ||
+      (roots.includes(link.folderPath) && link.albumName === path.posix.basename(link.folderPath));
     const result: FolderAlbumSyncResult = { created: 0, moved: 0, removed: 0, photosAdded: 0, photosRemoved: 0 };
 
-    const roots = [...new Set(library.importPaths.map((importPath) => normalizeImportPath(importPath)))];
     const tree = buildFolderTree(roots, await this.libraryRepository.getFolderPhotoCounts(libraryId));
 
     const byPath = new Map<string, FolderAlbumLink>();
@@ -103,11 +116,20 @@ export class FolderAlbumService extends BaseService {
       }
       byPath.set(link.folderPath, link);
     }
+    const changed = new Set<string>();
+    // An import folder's album from before decision 2 takes the library's name.
+    for (const root of roots) {
+      const link = byPath.get(root);
+      if (link && tree.has(root) && !link.isUserEdited && link.albumName !== nameOf(root) && isAutoName(link)) {
+        await this.albumRepository.update(link.albumId, { id: link.albumId, albumName: nameOf(root) }, ownerId);
+        byPath.set(root, { ...link, albumName: nameOf(root) });
+        changed.add(link.albumId);
+      }
+    }
     const original = new Map(byPath);
 
     // Folders renamed or moved: their albums follow, so nothing the owner did to them is lost.
     const moves = await this.findMovedFolders(libraryId, tree, byPath);
-    const changed = new Set<string>();
     const previousPaths: { folderPath: string; albumId: string }[] = [];
     for (const [from, to] of moves) {
       const link = byPath.get(from)!;
@@ -133,8 +155,8 @@ export class FolderAlbumService extends BaseService {
     for (const node of nodes) {
       const link = byPath.get(node.folderPath);
       if (link) {
-        if (link.kind === AlbumKind.Collection && node.photos > 0) {
-          // a folder of folders that now holds photos of its own
+        if (link.kind === AlbumKind.Collection && folderKind(node) === AlbumKind.Album) {
+          // a folder of folders that now holds photos of its own, or one below the top
           await this.albumRepository.update(link.albumId, { id: link.albumId, kind: AlbumKind.Album }, ownerId);
           byPath.set(node.folderPath, { ...link, kind: AlbumKind.Album });
         }
@@ -149,7 +171,7 @@ export class FolderAlbumService extends BaseService {
 
     // A moved folder's album follows it to its new parent folder, unless the owner moved the album elsewhere.
     for (const [from, to] of moves) {
-      await this.followMove(original, byPath, tree, from, to);
+      await this.followMove(original, byPath, tree, roots, from, to);
     }
 
     // Each folder's photos: new ones in, ones whose file is gone out.
@@ -177,7 +199,7 @@ export class FolderAlbumService extends BaseService {
     ]);
     const edited = new Set<string>();
     for (const link of byPath.values()) {
-      if (link.isUserEdited || link.albumName !== nameOf(link.folderPath) || withOtherItems.has(link.albumId)) {
+      if (link.isUserEdited || !isAutoName(link) || withOtherItems.has(link.albumId)) {
         edited.add(link.folderPath);
         if (!link.isUserEdited) {
           await this.libraryRepository.updateFolderAlbum(link.id, { isUserEdited: true });
@@ -185,7 +207,8 @@ export class FolderAlbumService extends BaseService {
       }
     }
 
-    // Folders that are gone: their albums go too, unless the owner made them their own (or one inside them).
+    // Folders that are gone: their albums go too, unless the owner made them their own (or one inside them). An import
+    // folder's album holds no folder's album, so it goes once no photo is loose in the import folder.
     const gone = byPath
       .values()
       .filter((link) => !tree.has(link.folderPath))
@@ -193,7 +216,8 @@ export class FolderAlbumService extends BaseService {
       .toSorted((a, b) => b.folderPath.length - a.folderPath.length);
     const kept = new Set(byPath.keys().filter((folderPath) => tree.has(folderPath) || edited.has(folderPath)));
     for (const link of gone) {
-      const keepsSomething = [...kept].some((folderPath) => folderPath.startsWith(`${link.folderPath}/`));
+      const keepsSomething =
+        !roots.includes(link.folderPath) && [...kept].some((folderPath) => folderPath.startsWith(`${link.folderPath}/`));
       if (edited.has(link.folderPath) || keepsSomething) {
         kept.add(link.folderPath);
         continue;
@@ -245,7 +269,7 @@ export class FolderAlbumService extends BaseService {
     order: AssetOrder,
     byPath: Map<string, FolderAlbumLink>,
   ): Promise<FolderAlbumLink> {
-    const kind = node.photos > 0 ? AlbumKind.Album : AlbumKind.Collection;
+    const kind = folderKind(node);
     const parentId = node.parentPath ? (byPath.get(node.parentPath)?.albumId ?? null) : null;
     const album = await this.albumRepository.create(
       { albumName, parentId, kind, order },
@@ -269,11 +293,14 @@ export class FolderAlbumService extends BaseService {
     original: Map<string, FolderAlbumLink>,
     byPath: Map<string, FolderAlbumLink>,
     tree: Map<string, FolderNode>,
+    roots: string[],
     from: string,
     to: string,
   ) {
     const link = byPath.get(to)!;
-    const oldParentId = original.get(path.posix.dirname(from))?.albumId ?? null;
+    // a folder directly in an import folder has no parent album
+    const oldParentPath = path.posix.dirname(from);
+    const oldParentId = roots.includes(oldParentPath) ? null : (original.get(oldParentPath)?.albumId ?? null);
     const newParentPath = tree.get(to)?.parentPath;
     const newParentId = newParentPath ? (byPath.get(newParentPath)?.albumId ?? null) : null;
     if (link.parentId !== oldParentId || oldParentId === newParentId) {
