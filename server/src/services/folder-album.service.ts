@@ -217,7 +217,8 @@ export class FolderAlbumService extends BaseService {
     const kept = new Set(byPath.keys().filter((folderPath) => tree.has(folderPath) || edited.has(folderPath)));
     for (const link of gone) {
       const keepsSomething =
-        !roots.includes(link.folderPath) && [...kept].some((folderPath) => folderPath.startsWith(`${link.folderPath}/`));
+        !roots.includes(link.folderPath) &&
+        [...kept].some((folderPath) => folderPath.startsWith(`${link.folderPath}/`));
       if (edited.has(link.folderPath) || keepsSomething) {
         kept.add(link.folderPath);
         continue;

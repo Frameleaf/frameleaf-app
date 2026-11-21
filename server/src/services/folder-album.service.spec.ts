@@ -230,7 +230,7 @@ describe(FolderAlbumService.name, () => {
   });
 
   describe('sync', () => {
-    it('makes an album for each folder, with the import folder\'s own photos in one named after the library', async () => {
+    it("makes an album for each folder, with the import folder's own photos in one named after the library", async () => {
       const world = fakeWorld(mocks, ['/photos/2020']);
       world.addFile('/photos/2020/a.jpg');
       world.addFile('/photos/2020/trip/b.jpg');
@@ -290,7 +290,7 @@ describe(FolderAlbumService.name, () => {
       expect(world.photosOf('/photos')).toEqual(['/photos/loose.jpg']);
     });
 
-    it('drops the library\'s own album once no photo is loose in the import folder', async () => {
+    it("drops the library's own album once no photo is loose in the import folder", async () => {
       const world = fakeWorld(mocks, ['/photos']);
       world.addFile('/photos/loose.jpg');
       world.addFile('/photos/trip/a.jpg');

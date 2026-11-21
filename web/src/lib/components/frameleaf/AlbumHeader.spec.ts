@@ -712,4 +712,25 @@ describe('AlbumHeader in Boards', () => {
     expect(lines).toHaveTextContent('Moodboard moves up to the top level.');
     expect(lines).not.toHaveTextContent('access');
   });
+  it("says a folder album follows its folder, and keeps the owner's changes (FL-838)", () => {
+    renderHeader(
+      albumAs(AlbumUserRole.Owner, {
+        folderAlbum: { libraryId: 'library-1', folderPath: '/mnt/nas/Family photos/2026/Summer in the Rockies' },
+      }),
+    );
+
+    expect(screen.getByTestId('album-folder-badge')).toHaveTextContent('Folder album');
+    expect(
+      screen.getByText(
+        'Follows nas › Family photos › 2026 › Summer in the Rockies and updates at each folder check. A new name, photos you add and your cover are kept.',
+      ),
+    ).toBeInTheDocument();
+    // Libraries is an administrator's page
+    expect(screen.queryByRole('link', { name: 'Folder settings' })).toBeNull();
+  });
+
+  it('shows no folder badge on an ordinary album', () => {
+    renderHeader(albumAs(AlbumUserRole.Owner));
+    expect(screen.queryByTestId('album-folder-badge')).toBeNull();
+  });
 });
