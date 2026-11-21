@@ -241,7 +241,6 @@ describe(ICloudSyncRepository.name, () => {
     expect(await repository.claim(connection.id, 1000)).toMatchObject({ status: 'committed' });
   });
   it('roundtrips typed JSON, keeps split-page master joins and opaque checkpoints, and materializes idempotently', async () => {
-    // FL-1724: a new connection downloads 10 at a time
     expect(connection.config.concurrency).toBe(10);
     await repository.savePage(connection.id, 'assets:library', 'library', [asset], 'cursor-page-2', false);
     expect(await repository.checkpoint(connection.id, 'assets:library')).toMatchObject({
@@ -413,39 +412,6 @@ describe(ICloudSyncRepository.name, () => {
       cursor: '',
       complete: true,
     });
-  });
-
-  it('a slow download holds no lock, so the listing goes on, and an older session never replaces a newer one (FL-1728)', async () => {
-    let answer!: () => void;
-    const apple = new Promise<void>((resolve) => (answer = resolve));
-    let asked!: () => void;
-    const waiting = new Promise<void>((resolve) => (asked = resolve));
-    const read = (await repository.get(connection.id))!.encryptedSession;
-    // a download waiting on Apple
-    const download = repository.useSession(connection.id, connection.ownerId, async (current) => {
-      expect(current.encryptedSession).toBe(read);
-      asked();
-      await apple;
-      return { value: 'downloaded', encryptedSession: 'from-download' };
-    });
-    await waiting;
-    // the listing takes the session and refreshes it while the download still waits
-    await expect(
-      repository.withSession(connection.id, connection.ownerId, () =>
-        Promise.resolve({ value: 'listed', encryptedSession: 'from-listing' }),
-      ),
-    ).resolves.toBe('listed');
-    answer();
-    await expect(download).resolves.toBe('downloaded');
-    expect((await repository.get(connection.id))?.encryptedSession).toBe('from-listing');
-
-    // nobody changed it meanwhile: the download's session is kept
-    await expect(
-      repository.useSession(connection.id, connection.ownerId, () =>
-        Promise.resolve({ value: 'downloaded', encryptedSession: 'from-download' }),
-      ),
-    ).resolves.toBe('downloaded');
-    expect((await repository.get(connection.id))?.encryptedSession).toBe('from-download');
   });
 
   it('selection changes revoke pending leases and cleanup cannot run for a stale lease', async () => {

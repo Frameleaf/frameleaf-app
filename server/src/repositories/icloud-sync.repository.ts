@@ -2,8 +2,8 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, RawBuilder, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
-import { ICLOUD_MAX_CONCURRENCY, type ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
 import { MediaOperationDestination, MediaOperationKind, NotificationLevel, NotificationType } from 'src/enum.js';
 import { recordSyncIdentity, releaseSyncClaim } from 'src/repositories/icloud-identity.repository.js';
 import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
@@ -253,32 +253,6 @@ export class ICloudSyncRepository {
         state = ${result.state ?? connection.state}, "updatedAt" = now() WHERE id = ${id}::uuid`.execute(db);
       return result.value;
     });
-  }
-  /**
-   * Runs `callback` with the connection's session without holding its row lock, for a call that may wait long on
-   * Apple (a download). Holding the lock there stopped the listing behind every slow download (FL-1728). The
-   * session the call returns is written back only if nobody changed it meanwhile, so it never replaces a newer one.
-   */
-  async useSession<T>(
-    id: string,
-    ownerId: string,
-    callback: (connection: ICloudConnection) => Promise<{ value: T; encryptedSession?: string }>,
-  ): Promise<T> {
-    const connection = (
-      await sql<ICloudConnection>`SELECT * FROM public.icloud_connection WHERE id = ${id}::uuid
-        AND "ownerId" = ${ownerId}::uuid AND "lastError" IS DISTINCT FROM 'owner_removed'`.execute(this.db)
-    ).rows[0];
-    if (!connection) {
-      throw new Error('icloud_connection_not_found');
-    }
-    const result = await callback(connection);
-    if (result.encryptedSession && result.encryptedSession !== connection.encryptedSession) {
-      await sql`UPDATE public.icloud_connection SET "encryptedSession" = ${result.encryptedSession}, "updatedAt" = now()
-        WHERE id = ${id}::uuid AND "encryptedSession" IS NOT DISTINCT FROM ${connection.encryptedSession}`.execute(
-        this.db,
-      );
-    }
-    return result.value;
   }
   async admitAuth(id: string, ownerId: string): Promise<boolean> {
     return this.active(
@@ -622,7 +596,7 @@ export class ICloudSyncRepository {
           .execute(db)
           .then(({ rows }) => rows[0]);
       }
-      const maxConcurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? ICLOUD_MAX_CONCURRENCY);
+      const maxConcurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? 4);
       const maxStagingBytes = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES') ?? 100 * 1024 ** 3);
       // Match service configuration validation: malformed administrator limits deny
       // new admission. Already committed cleanup above must remain recoverable.
