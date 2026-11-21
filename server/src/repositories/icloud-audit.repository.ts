@@ -6,7 +6,6 @@ import type { VerifiedMedia } from 'src/repositories/media-recovery.repository.j
 import type { MediaIntegrityResult } from 'src/services/media-integrity.service.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudVerifyDto, ICloudVerifyResponseDto } from 'src/dtos/icloud-identity.dto.js';
-import { ICLOUD_MAX_CONCURRENCY } from 'src/dtos/icloud-sync.dto.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, UserMetadataKey } from 'src/enum.js';
 import { AuditExecutionAuthority, guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
 import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
@@ -629,7 +628,7 @@ export class ICloudAuditRepository {
         db,
       );
       const globalLimit = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES') ?? 100 * 1024 ** 3);
-      const concurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? ICLOUD_MAX_CONCURRENCY);
+      const concurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? 4);
       const {
         rows: [global],
       } = await sql<{
