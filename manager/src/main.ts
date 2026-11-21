@@ -549,10 +549,10 @@ class Api {
     const { id, password } = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), password: z.string().max(256) }).strict().parse(input);
     await security.confirm(password);
     await operations.deleteRecoveryPoint(id);
-    return backups.status();
+    return { ...(await backups.status()), protected: [...operations.protectedRecoveryPoints()] };
   }
-  @Get('backup-status') backupStatus() {
-    return backups.status();
+  @Get('backup-status') async backupStatus() {
+    return { ...(await backups.status()), protected: [...operations.protectedRecoveryPoints()] };
   }
   @Post('backup-key') async backupKey(@Body() input: unknown, @Res() response: Response) {
     const { password } = z
