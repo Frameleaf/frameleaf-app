@@ -1246,7 +1246,7 @@ select
         matched."localDateTime" desc,
         matched."assetId"
     )
-  ) [1] as "coverAssetId",
+  ) [1:12] as "coverAssetIds",
   mode() within group (
     order by
       asset_exif.city

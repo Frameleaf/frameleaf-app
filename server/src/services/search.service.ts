@@ -463,13 +463,21 @@ export class SearchService extends BaseService {
     const userIds = this.getUserIdsToSearch(auth);
     const rows = await this.landmarkReads({ userIds, options: getHiddenContentQueryOptions(auth) });
     const icons = this.mapRepository.getLandmarkIcons();
-    return rows.map((row) => ({
-      ...row,
-      icon: icons.get(row.id),
-      assetCount: Number(row.assetCount),
-      firstTakenAt: new Date(row.firstTakenAt).toISOString(),
-      lastTakenAt: new Date(row.lastTakenAt).toISOString(),
-    }));
+    // Overlapping places (a resort and its park, the Eiffel Tower and Champ de Mars) share their best photo:
+    // in list order, each takes its best cover that an earlier card has not already shown.
+    const shown = new Set<string>();
+    return rows.map(({ coverAssetIds, ...row }) => {
+      const coverAssetId = coverAssetIds.find((id) => !shown.has(id)) ?? coverAssetIds[0];
+      shown.add(coverAssetId);
+      return {
+        ...row,
+        coverAssetId,
+        icon: icons.get(row.id),
+        assetCount: Number(row.assetCount),
+        firstTakenAt: new Date(row.firstTakenAt).toISOString(),
+        lastTakenAt: new Date(row.lastTakenAt).toISOString(),
+      };
+    });
   }
 
   /** A landmark's brand icon. The pack is the same for everyone, so any signed-in caller may read it. */
