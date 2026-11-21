@@ -719,7 +719,7 @@
     <label for="note">Note</label><textarea
       id="note"
       rows="2"
-      maxlength="10000"
+      maxlength="20000"
       placeholder="Optional"
       disabled={busy}
       bind:value={note}></textarea>

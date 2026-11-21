@@ -1244,10 +1244,14 @@ export async function handleCommand(command: string) {
     }),
   );
 }
-/** FL-1729: the toolbar badge follows the queue of this server and account. */
+/**
+ * FL-1729: the toolbar badge follows the queue of this server and account. Refreshes run one
+ * after another, so an older one can't overwrite a newer count or a signed-out clear.
+ */
+let badgeRefresh: Promise<void> = Promise.resolve();
 function updateBadge() {
-  void connectionStatus()
-    .then((current) => showBadge(current?.binding ?? null))
+  badgeRefresh = badgeRefresh
+    .then(async () => showBadge((await connectionStatus())?.binding ?? null))
     .catch(() => {});
 }
 onDeliverySettled(updateBadge);

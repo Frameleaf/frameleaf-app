@@ -231,8 +231,24 @@ describe('trusted extension operations', () => {
     vi.mocked(listCaptures).mockResolvedValue([{ state: 'queued' }] as never);
     vi.mocked(onDeliverySettled).mock.calls[0][0]();
     await vi.waitFor(() =>
-      expect(chrome.action.setBadgeText).toHaveBeenLastCalledWith({ text: '1' }),
+      expect(chrome.action.setBadgeText).toHaveBeenLastCalledWith({
+        text: '1',
+      }),
     );
+    // an older, slower refresh never overwrites a newer one
+    let finishStale: (value: never) => void = () => {};
+    vi.mocked(listCaptures)
+      .mockReturnValueOnce(new Promise((done) => (finishStale = done)))
+      .mockResolvedValueOnce([]);
+    const settled = vi.mocked(onDeliverySettled).mock.calls[0][0];
+    settled();
+    settled();
+    await new Promise((done) => setTimeout(done, 10));
+    finishStale([{ state: 'queued' }, { state: 'queued' }] as never);
+    await vi.waitFor(() =>
+      expect(chrome.action.setBadgeText).toHaveBeenLastCalledWith({ text: '' }),
+    );
+    expect(chrome.action.setBadgeText).toHaveBeenCalledWith({ text: '2' });
   });
   it('routes menu events through the bound preview, shows connection settings when disconnected and exposes only static failure URLs', async () => {
     const { handleMessage } = await import('./background');
