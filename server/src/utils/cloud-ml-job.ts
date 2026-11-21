@@ -218,8 +218,13 @@ export const packetSummary = () => {
     },
     done(): Required<PacketFacts> {
       const sortedKeys = keys.toSorted((a, b) => a - b);
-      const first = Math.min(...shown);
-      const last = Math.max(...shown);
+      // a loop, not a spread: six hours at 120 frames a second is 2.6 million times, past the argument limit
+      let first = Infinity;
+      let last = -Infinity;
+      for (const time of shown) {
+        first = Math.min(first, time);
+        last = Math.max(last, time);
+      }
       let keyGap = sortedKeys.length === 0 ? Infinity : Math.max(sortedKeys[0] - first, last - sortedKeys.at(-1)!);
       for (let index = 1; index < sortedKeys.length; index++) {
         keyGap = Math.max(keyGap, sortedKeys[index] - sortedKeys[index - 1]);

@@ -373,6 +373,17 @@ describe("what a stream's packets say (FL-1725)", () => {
     expect(read(lines).uneven).toBe(true);
   });
 
+  it('reads the longest clip the cloud takes: six hours at 120 frames a second', () => {
+    const summary = packetSummary();
+    summary.add('stream,0');
+    const frames = 6 * 3600 * 120;
+    for (let n = 0; n < frames; n++) {
+      const time = String(n / 120);
+      summary.add(`packet,${time},${time},${n % 240 === 0 ? 'K__' : '___'}`);
+    }
+    expect(summary.done()).toMatchObject({ packets: frames, hidden: 0, uneven: false, unordered: false, keyGap: 2 });
+  });
+
   it('counts hidden packets apart, and measures keyframes over the shown ones', () => {
     const facts = read([
       'stream,0',

@@ -1037,8 +1037,12 @@ export class MediaRepository {
         if (code !== 0) {
           return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
         }
-        count(remainder);
-        resolve(summary.done());
+        try {
+          count(remainder);
+          resolve(summary.done());
+        } catch (error) {
+          reject(error);
+        }
       });
     });
   }
