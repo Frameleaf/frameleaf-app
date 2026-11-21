@@ -104,7 +104,11 @@ release: asyncio.TimerHandle | None = None
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
-    global thread_pool, load_pool
+    global thread_pool, load_pool, last_called
+    # A new worker has not been called yet. A `last_called` left by an earlier lifespan in this process (each
+    # test client is one) made the idle task's first poll SIGINT the process at once (FL-1733).
+    last_called = None
+    idle_task: asyncio.Task[None] | None = None
     source_url, source_setting = model_source()
     log.info(f"Downloading Frameleaf models from {source_url} ({source_setting}).")
     log.info(
@@ -124,12 +128,14 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
             )
             log.info(f"Initialized request thread pool with {settings.request_threads} threads.")
         if settings.model_ttl > 0 and settings.model_ttl_poll_s > 0:
-            asyncio.ensure_future(idle_shutdown_task())
+            idle_task = asyncio.ensure_future(idle_shutdown_task())
         if settings.preload is not None:
             await preload_models(settings.preload)
             allocator.release()
         yield
     finally:
+        if idle_task is not None:
+            idle_task.cancel()
         # IMPORTANT ordering for actual GPU memory release:
         #   1. Quiesce the thread pool so no in-flight `predict` thread still
         #      holds a model instance via its local stack.

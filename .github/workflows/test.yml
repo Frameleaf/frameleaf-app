@@ -1086,6 +1086,7 @@ jobs:
             case "$BUDDY_ROOT" in "$RUNNER_TEMP"/fl310-buddy.*) ;; *) exit 1 ;; esac
             test -f "$BUDDY_ROOT/.fl310-buddy-fixture"
             docker compose -f docker-compose.buddy.yml down --volumes --remove-orphans
+            if mountpoint -q "$BUDDY_ROOT"; then sudo umount "$BUDDY_ROOT"; fi
             rm -rf -- "$BUDDY_ROOT"
           fi
       # FL-201: the same image, now pointed at the fake Frameleaf Cloud (vendored contract fixtures), for the

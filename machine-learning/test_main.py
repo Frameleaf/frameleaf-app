@@ -3702,3 +3702,32 @@ def test_semantic_mask_requests_leave_the_device_to_the_worker_setting() -> None
 
     assert validate_options(ModelTask.SEMANTIC_MASK, ModelType.VISUAL, {"target": "sky"}) == {"target": "sky"}
     assert validate_options(ModelTask.SEMANTIC_MASK, ModelType.VISUAL, {"device": "cuda"})["device"] == "cuda"
+
+
+def test_a_new_lifespan_never_judges_idleness_by_an_earlier_lifespans_last_call(monkeypatch: MonkeyPatch) -> None:
+    """FL-1733: each test client is a new lifespan in one pytest process. A `last_called` left by an earlier test
+    made the idle task's first poll send SIGINT to pytest (Unit Test ML died at test_voice_cleanup on slow runners).
+    """
+    from frameleaf_ml import main
+
+    monkeypatch.setattr(main.settings, "model_ttl", 300)
+    monkeypatch.setattr(main.settings, "model_ttl_poll_s", 10)
+    monkeypatch.setattr(main, "last_called", time.time() - 3600)
+    tasks: list[asyncio.Task[None]] = []
+    real_ensure_future = asyncio.ensure_future
+
+    def recording_ensure_future(coro: Any) -> Any:
+        task = real_ensure_future(coro)
+        tasks.append(task)
+        return task
+
+    with (
+        mock.patch("frameleaf_ml.main.os.kill") as kill,
+        mock.patch("frameleaf_ml.main.asyncio.ensure_future", side_effect=recording_ensure_future),
+    ):
+        with TestClient(main.app) as client:
+            # Several round trips through the event loop, so the idle task has polled at least once.
+            for _ in range(3):
+                assert client.get("/ping").status_code == 200
+        kill.assert_not_called()
+    assert len(tasks) == 1 and tasks[0].cancelled(), "the idle task must not outlive its lifespan"
