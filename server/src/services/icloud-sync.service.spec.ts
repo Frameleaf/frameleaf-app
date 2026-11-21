@@ -13,6 +13,7 @@ import { ICloudTransportError } from 'src/repositories/icloud-transport.reposito
 import {
   ICLOUD_IDLE_WAIT_MS,
   ICLOUD_MAX_IDLE_WAITS,
+  ICLOUD_RECORD_INTERVAL_MS,
   ICLOUD_SIGN_IN_WAIT_MS,
   ICloudSyncService,
   mapICloudRun,
@@ -879,6 +880,47 @@ describe(ICloudSyncService.name, () => {
 
       expect(repository.defer).toHaveBeenCalledWith('connection', 'owner', 'rate_limited');
       expect(slowDoneAtRequeue).toBe(true);
+    });
+
+    it('records progress while a long download holds every slot, within the record interval (FL-1724)', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      try {
+        repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 2 } });
+        const item = (id: string) => ({ ...resource, id, sourceAssetId: id });
+        repository.claim.mockReset();
+        repository.claim
+          .mockResolvedValueOnce(item('long'))
+          .mockResolvedValueOnce(item('short'))
+          .mockResolvedValue(undefined);
+        let releaseLong!: () => void;
+        const long = new Promise<void>((resolve) => (releaseLong = resolve));
+        let longDone = false;
+        staging.download.mockImplementation(async (_connection: unknown, current: { id: string }) => {
+          if (current.id === 'long') {
+            await long;
+            longDone = true;
+          }
+          return '/private/complete';
+        });
+        let recordsWhileLong = 0;
+        operations.setBulkResult.mockImplementation(() => {
+          if (!longDone) {
+            recordsWhileLong++;
+          }
+          return Promise.resolve(working);
+        });
+
+        const done = sut.run(operation(), 'token');
+        await vi.advanceTimersByTimeAsync(ICLOUD_RECORD_INTERVAL_MS * 3);
+        // the run still records while the long download is in flight, not only once it finishes
+        expect(recordsWhileLong).toBeGreaterThanOrEqual(2);
+        releaseLong();
+        await vi.runAllTimersAsync();
+        await done;
+        expect(operations.complete).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('allows up to 100 downloads at a time and defaults to 10 (FL-1724)', () => {

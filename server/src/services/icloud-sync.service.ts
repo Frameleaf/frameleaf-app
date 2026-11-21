@@ -868,8 +868,8 @@ export class ICloudSyncService {
    * One unit of work. Every part of it is safe to repeat: leases, checkpoints and receipts decide.
    *
    * FL-1724: transfers are a rolling pool, not a batch. The step tops it up to the connection's
-   * concurrency and, once the inventory is listed, waits only for the first transfer to finish, so
-   * one large video never holds the other slots idle. While the inventory is still being listed it
+   * concurrency and, once the inventory is listed, waits only for the first transfer to finish (or the
+   * record interval, whichever comes first), so one large video never holds the other slots idle. While the inventory is still being listed it
    * does not wait at all: the next page is the step's work.
    */
   private async step(connection: ICloudConnection, claim: Claim, pool: TransferPool): Promise<StepOutcome> {
@@ -892,7 +892,14 @@ export class ICloudSyncService {
       );
     }
     if (inventoryComplete && pool.running.size > 0) {
-      await Promise.race(pool.running.values());
+      // ...or the record interval passes: a long download holding every slot must not freeze progress, nor
+      // keep a cancel or a pause from being noticed
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        ...pool.running.values(),
+        new Promise<void>((resolve) => (timer = setTimeout(resolve, ICLOUD_RECORD_INTERVAL_MS))),
+      ]);
+      clearTimeout(timer);
     }
     if (pool.error) {
       const { reason } = pool.error;
