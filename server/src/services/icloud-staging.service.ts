@@ -139,7 +139,7 @@ export class ICloudStagingService {
     }, 15_000);
     let received = 0;
     try {
-      const response = await this.repository.withSession(connection.id, connection.ownerId, async (current) => {
+      const response = await this.repository.useSession(connection.id, connection.ownerId, async (current) => {
         if (current.state !== 'connected') {
           throw new Error('connection_paused');
         }

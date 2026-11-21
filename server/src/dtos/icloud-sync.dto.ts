@@ -16,7 +16,7 @@ export const ICloudConfigSchema = z
     intervalHours: z.number().int().min(1).max(8760).default(24),
     /** FL-539: "By itself" (checked in the overnight run) or "Only when I ask" (false). */
     automatic: z.boolean().default(true),
-    concurrency: z.number().int().min(1).max(ICLOUD_MAX_CONCURRENCY).default(1),
+    concurrency: z.number().int().min(1).max(ICLOUD_MAX_CONCURRENCY).default(10),
     stagingBytes: z
       .number()
       .int()

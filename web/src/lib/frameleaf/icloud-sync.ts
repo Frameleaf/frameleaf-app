@@ -271,7 +271,7 @@ export const icloudBlankDraft = (): ICloudDraft => ({
   includeEdits: true,
   intervalHours: '24',
   automatic: true,
-  concurrency: '1',
+  concurrency: '10',
   stagingGb: '20',
 });
 
