@@ -15,7 +15,7 @@ describe(ICloudStagingService.name, () => {
   let resource: ICloudResource;
   let connection: ICloudConnection;
   let sut: ICloudStagingService;
-  const repository = { progress: vi.fn(), get: vi.fn(), useSession: vi.fn() };
+  const repository = { progress: vi.fn(), get: vi.fn(), withSession: vi.fn() };
   const transport = { download: vi.fn(), decodeSession: vi.fn(), encodeSession: vi.fn() };
   const libraries = { getAll: vi.fn() };
   beforeEach(async () => {
@@ -49,7 +49,7 @@ describe(ICloudStagingService.name, () => {
     } as ICloudResource;
     repository.progress.mockResolvedValue(true);
     repository.get.mockResolvedValue(connection);
-    repository.useSession.mockImplementation(async (_id, _owner, callback) => {
+    repository.withSession.mockImplementation(async (_id, _owner, callback) => {
       const result = await callback(connection);
       return result.value;
     });
