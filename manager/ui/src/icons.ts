@@ -1,4 +1,5 @@
 export const icons: Record<string, string> = {
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4"/>',
   minus: '<path d="M5 12h14"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
