@@ -2,12 +2,7 @@ import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
-import {
-  ICLOUD_SESSION_BUSY,
-  ICloudConnection,
-  ICloudLibrary,
-  ICloudSyncRepository,
-} from 'src/repositories/icloud-sync.repository.js';
+import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
@@ -420,35 +415,37 @@ describe(ICloudSyncRepository.name, () => {
     });
   });
 
-  it('answers busy at once for nowait while another caller holds the session, and waits otherwise (FL-1724)', async () => {
-    let release!: () => void;
-    const holding = new Promise<void>((resolve) => (release = resolve));
-    let entered!: () => void;
-    const inside = new Promise<void>((resolve) => (entered = resolve));
-    // a download waiting for its answer holds the connection's row lock
-    const download = repository.withSession(connection.id, connection.ownerId, async () => {
-      entered();
-      await holding;
-      return { value: 'downloaded' };
+  it('a slow download holds no lock, so the listing goes on, and an older session never replaces a newer one (FL-1728)', async () => {
+    let answer!: () => void;
+    const apple = new Promise<void>((resolve) => (answer = resolve));
+    let asked!: () => void;
+    const waiting = new Promise<void>((resolve) => (asked = resolve));
+    const read = (await repository.get(connection.id))!.encryptedSession;
+    // a download waiting on Apple
+    const download = repository.useSession(connection.id, connection.ownerId, async (current) => {
+      expect(current.encryptedSession).toBe(read);
+      asked();
+      await apple;
+      return { value: 'downloaded', encryptedSession: 'from-download' };
     });
-    await inside;
+    await waiting;
+    // the listing takes the session and refreshes it while the download still waits
     await expect(
-      repository.withSession(connection.id, connection.ownerId, () => Promise.resolve({ value: 'listed' }), {
-        nowait: true,
-      }),
-    ).rejects.toThrow(ICLOUD_SESSION_BUSY);
-    const waiting = repository.withSession(connection.id, connection.ownerId, () =>
-      Promise.resolve({ value: 'listed' }),
-    );
-    release();
-    await expect(download).resolves.toBe('downloaded');
-    await expect(waiting).resolves.toBe('listed');
-    // free again: nowait takes it
-    await expect(
-      repository.withSession(connection.id, connection.ownerId, () => Promise.resolve({ value: 'listed' }), {
-        nowait: true,
-      }),
+      repository.withSession(connection.id, connection.ownerId, () =>
+        Promise.resolve({ value: 'listed', encryptedSession: 'from-listing' }),
+      ),
     ).resolves.toBe('listed');
+    answer();
+    await expect(download).resolves.toBe('downloaded');
+    expect((await repository.get(connection.id))?.encryptedSession).toBe('from-listing');
+
+    // nobody changed it meanwhile: the download's session is kept
+    await expect(
+      repository.useSession(connection.id, connection.ownerId, () =>
+        Promise.resolve({ value: 'downloaded', encryptedSession: 'from-download' }),
+      ),
+    ).resolves.toBe('downloaded');
+    expect((await repository.get(connection.id))?.encryptedSession).toBe('from-download');
   });
 
   it('selection changes revoke pending leases and cleanup cannot run for a stale lease', async () => {

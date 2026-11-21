@@ -9,7 +9,6 @@ import {
   MetadataKey,
   NotificationLevel,
 } from 'src/enum.js';
-import { ICLOUD_SESSION_BUSY } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportError } from 'src/repositories/icloud-transport.repository.js';
 import {
   ICLOUD_IDLE_WAIT_MS,
@@ -963,61 +962,6 @@ describe(ICloudSyncService.name, () => {
         const done = sut.run(operation(), 'token');
         await vi.advanceTimersByTimeAsync(ICLOUD_RECORD_INTERVAL_MS * 3);
         // the run keeps recording while the held download keeps the session
-        expect(recordsWhileHeld).toBeGreaterThanOrEqual(2);
-        releaseHeld();
-        await vi.runAllTimersAsync();
-        await done;
-        expect(operations.complete).toHaveBeenCalled();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('lets listing step aside while a download holds the session, so progress goes on (FL-1724)', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-      try {
-        repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 2 } });
-        const item = (id: string) => ({ ...resource, id, sourceAssetId: id });
-        repository.claim.mockReset();
-        repository.claim
-          .mockResolvedValueOnce(item('held'))
-          .mockResolvedValueOnce(item('quick'))
-          .mockResolvedValue(undefined);
-        let releaseHeld!: () => void;
-        const held = new Promise<void>((resolve) => (releaseHeld = resolve));
-        let heldDone = false;
-        void held.then(() => (heldDone = true));
-        let downloading = false;
-        // the inventory is still being listed; a download holds the session (its row lock) until it answers
-        let listings = 0;
-        const inner = repository.withSession.getMockImplementation()!;
-        repository.withSession.mockImplementation(async (id, owner, callback, options) => {
-          if (downloading && !heldDone) {
-            if (options?.nowait) {
-              throw new Error(ICLOUD_SESSION_BUSY);
-            }
-            await held;
-          }
-          listings++;
-          return listings === 1 ? false : inner(id, owner, callback, options);
-        });
-        staging.download.mockImplementation((_connection: unknown, current: { id: string }) => {
-          if (current.id === 'held') {
-            downloading = true;
-            return held.then(() => '/private/complete');
-          }
-          return Promise.resolve('/private/complete');
-        });
-        let recordsWhileHeld = 0;
-        operations.setBulkResult.mockImplementation(() => {
-          if (!heldDone) {
-            recordsWhileHeld++;
-          }
-          return Promise.resolve(working);
-        });
-
-        const done = sut.run(operation(), 'token');
-        await vi.advanceTimersByTimeAsync(ICLOUD_RECORD_INTERVAL_MS * 3);
         expect(recordsWhileHeld).toBeGreaterThanOrEqual(2);
         releaseHeld();
         await vi.runAllTimersAsync();

@@ -122,9 +122,6 @@ export type ICloudRecord = {
 /** FL-1472: the item's library photo has an open missing or damaged file problem (`r` is the resource). */
 const hasOpenFileProblem = sql`EXISTS (SELECT 1 FROM public.asset_health h WHERE h."assetId" = r."assetId"
   AND h.category IN ('missing', 'corrupt') AND h."resolvedAt" IS NULL AND h."dismissedAt" IS NULL)`;
-/** `withSession({ nowait: true })` found the session held by another caller. */
-export const ICLOUD_SESSION_BUSY = 'icloud_session_busy';
-
 @Injectable()
 export class ICloudSyncRepository {
   constructor(
@@ -232,10 +229,6 @@ export class ICloudSyncRepository {
       }
     });
   }
-  /**
-   * Runs `callback` holding the connection's session (its row lock). With `nowait`, a session another caller
-   * holds (a download waiting for its answer) fails at once with `ICLOUD_SESSION_BUSY` instead of waiting.
-   */
   async withSession<T>(
     id: string,
     ownerId: string,
@@ -247,17 +240,10 @@ export class ICloudSyncRepository {
       encryptedSession?: string;
       state?: string;
     }>,
-    options: { nowait?: boolean } = {},
   ): Promise<T> {
     return this.active(async (db) => {
-      const lock = sql.raw(options.nowait ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE');
       const rows = await sql<ICloudConnection>`SELECT * FROM public.icloud_connection WHERE id = ${id}::uuid
-        AND "ownerId" = ${ownerId}::uuid AND "lastError" IS DISTINCT FROM 'owner_removed' ${lock}`
-        .execute(db)
-        .catch((error: unknown) => {
-          // 55P03 lock_not_available: only NOWAIT raises it
-          throw (error as { code?: string }).code === '55P03' ? new Error(ICLOUD_SESSION_BUSY) : error;
-        });
+        AND "ownerId" = ${ownerId}::uuid AND "lastError" IS DISTINCT FROM 'owner_removed' FOR UPDATE`.execute(db);
       const connection = rows.rows[0];
       if (!connection) {
         throw new Error('icloud_connection_not_found');
@@ -267,6 +253,32 @@ export class ICloudSyncRepository {
         state = ${result.state ?? connection.state}, "updatedAt" = now() WHERE id = ${id}::uuid`.execute(db);
       return result.value;
     });
+  }
+  /**
+   * Runs `callback` with the connection's session without holding its row lock, for a call that may wait long on
+   * Apple (a download). Holding the lock there stopped the listing behind every slow download (FL-1728). The
+   * session the call returns is written back only if nobody changed it meanwhile, so it never replaces a newer one.
+   */
+  async useSession<T>(
+    id: string,
+    ownerId: string,
+    callback: (connection: ICloudConnection) => Promise<{ value: T; encryptedSession?: string }>,
+  ): Promise<T> {
+    const connection = (
+      await sql<ICloudConnection>`SELECT * FROM public.icloud_connection WHERE id = ${id}::uuid
+        AND "ownerId" = ${ownerId}::uuid AND "lastError" IS DISTINCT FROM 'owner_removed'`.execute(this.db)
+    ).rows[0];
+    if (!connection) {
+      throw new Error('icloud_connection_not_found');
+    }
+    const result = await callback(connection);
+    if (result.encryptedSession && result.encryptedSession !== connection.encryptedSession) {
+      await sql`UPDATE public.icloud_connection SET "encryptedSession" = ${result.encryptedSession}, "updatedAt" = now()
+        WHERE id = ${id}::uuid AND "encryptedSession" IS NOT DISTINCT FROM ${connection.encryptedSession}`.execute(
+        this.db,
+      );
+    }
+    return result.value;
   }
   async admitAuth(id: string, ownerId: string): Promise<boolean> {
     return this.active(
