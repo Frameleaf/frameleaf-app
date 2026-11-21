@@ -122,6 +122,9 @@ export type ICloudRecord = {
 /** FL-1472: the item's library photo has an open missing or damaged file problem (`r` is the resource). */
 const hasOpenFileProblem = sql`EXISTS (SELECT 1 FROM public.asset_health h WHERE h."assetId" = r."assetId"
   AND h.category IN ('missing', 'corrupt') AND h."resolvedAt" IS NULL AND h."dismissedAt" IS NULL)`;
+/** `withSession({ nowait: true })` found the session held by another caller. */
+export const ICLOUD_SESSION_BUSY = 'icloud_session_busy';
+
 @Injectable()
 export class ICloudSyncRepository {
   constructor(
@@ -229,6 +232,10 @@ export class ICloudSyncRepository {
       }
     });
   }
+  /**
+   * Runs `callback` holding the connection's session (its row lock). With `nowait`, a session another caller
+   * holds (a download waiting for its answer) fails at once with `ICLOUD_SESSION_BUSY` instead of waiting.
+   */
   async withSession<T>(
     id: string,
     ownerId: string,
@@ -240,10 +247,17 @@ export class ICloudSyncRepository {
       encryptedSession?: string;
       state?: string;
     }>,
+    options: { nowait?: boolean } = {},
   ): Promise<T> {
     return this.active(async (db) => {
+      const lock = sql.raw(options.nowait ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE');
       const rows = await sql<ICloudConnection>`SELECT * FROM public.icloud_connection WHERE id = ${id}::uuid
-        AND "ownerId" = ${ownerId}::uuid AND "lastError" IS DISTINCT FROM 'owner_removed' FOR UPDATE`.execute(db);
+        AND "ownerId" = ${ownerId}::uuid AND "lastError" IS DISTINCT FROM 'owner_removed' ${lock}`
+        .execute(db)
+        .catch((error: unknown) => {
+          // 55P03 lock_not_available: only NOWAIT raises it
+          throw (error as { code?: string }).code === '55P03' ? new Error(ICLOUD_SESSION_BUSY) : error;
+        });
       const connection = rows.rows[0];
       if (!connection) {
         throw new Error('icloud_connection_not_found');
