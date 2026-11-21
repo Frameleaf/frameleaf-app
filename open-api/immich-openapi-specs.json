@@ -116065,7 +116065,7 @@
                 "type": "boolean"
               },
               "concurrency": {
-                "default": 10,
+                "default": 1,
                 "maximum": 100,
                 "minimum": 1,
                 "type": "integer"
