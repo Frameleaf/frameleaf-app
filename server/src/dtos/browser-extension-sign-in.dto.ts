@@ -81,7 +81,9 @@ const BrowserExtensionSignInExchangeResponseSchema = z
   .object({
     secret: z
       .string()
-      .describe('The new access key, shown once; it can only save captures and list collections and tags'),
+      .describe(
+        'The new access key, shown once; it can only save captures and list collections and tags, plus media downloads when grant is media',
+      ),
     apiKeyId: z.uuidv4().describe('The access, as listed in API keys'),
     name: z.string().describe('How the access is listed in API keys'),
     userId: z.uuidv4(),
