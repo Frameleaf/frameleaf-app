@@ -241,7 +241,8 @@ describe(ICloudSyncRepository.name, () => {
     expect(await repository.claim(connection.id, 1000)).toMatchObject({ status: 'committed' });
   });
   it('roundtrips typed JSON, keeps split-page master joins and opaque checkpoints, and materializes idempotently', async () => {
-    expect(connection.config.concurrency).toBe(1);
+    // FL-1724: a new connection downloads 10 at a time
+    expect(connection.config.concurrency).toBe(10);
     await repository.savePage(connection.id, 'assets:library', 'library', [asset], 'cursor-page-2', false);
     expect(await repository.checkpoint(connection.id, 'assets:library')).toMatchObject({
       cursor: 'cursor-page-2',

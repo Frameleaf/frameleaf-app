@@ -96,7 +96,13 @@ export const ICLOUD_MAX_CONNECTIONS = 20;
 export const ICLOUD_RECORD_INTERVAL_MS = 5000;
 
 /** The run's transfers in flight, keyed by resource. A transfer never rejects here; its error waits in `error`. */
-type TransferPool = { running: Map<string, Promise<void>>; error?: { reason: unknown }; reconciledAt: number };
+type TransferPool = {
+  running: Map<string, Promise<void>>;
+  error?: { reason: unknown };
+  reconciledAt: number;
+  /** The inventory is listed for this run: later steps need not take the connection's session again. */
+  inventoryComplete?: boolean;
+};
 
 /** Resource statuses still owed work. Everything else is settled, one way or another. */
 const OPEN_RESOURCE_STATUSES = ['pending', 'retry', 'staging', 'validated', 'promoted', 'committed'];
@@ -874,7 +880,10 @@ export class ICloudSyncService {
    */
   private async step(connection: ICloudConnection, claim: Claim, pool: TransferPool): Promise<StepOutcome> {
     const { id } = connection;
-    const inventoryComplete = await this.enumerate(connection);
+    // Listing takes the connection's session, and so does each download until its answer starts: once the
+    // inventory is complete, asking again would wait behind a slow download and stall the whole run.
+    const inventoryComplete = pool.inventoryComplete || (await this.enumerate(connection));
+    pool.inventoryComplete = inventoryComplete;
     let claimed = 0;
     while (pool.running.size < connection.config.concurrency) {
       const resource = await this.repository.claim(id, connection.config.stagingBytes);
