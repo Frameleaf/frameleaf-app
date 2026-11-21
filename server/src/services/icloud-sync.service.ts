@@ -33,6 +33,7 @@ import { CronRepository } from 'src/repositories/cron.repository.js';
 import { editAuthorityReviewReason } from 'src/repositories/icloud-edit-authority.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import {
+  ICLOUD_SESSION_BUSY,
   ICloudConnection,
   ICloudLibrary,
   ICloudResource,
@@ -880,9 +881,16 @@ export class ICloudSyncService {
    */
   private async step(connection: ICloudConnection, claim: Claim, pool: TransferPool): Promise<StepOutcome> {
     const { id } = connection;
-    // Listing takes the connection's session, and so does each download until its answer starts: once the
-    // inventory is complete, asking again would wait behind a slow download and stall the whole run.
-    const inventoryComplete = pool.inventoryComplete || (await this.enumerate(connection));
+    // Listing takes the connection's session, and so does each download until its answer starts. Once the
+    // inventory is complete it is not listed again; while downloads are in flight, listing steps aside when
+    // one of them holds the session, so a slow download never stalls the run's progress, cancel or pause.
+    let inventoryComplete = pool.inventoryComplete ?? false;
+    let sessionBusy = false;
+    if (!inventoryComplete) {
+      const listed = await this.enumerate(connection, pool.running.size > 0);
+      sessionBusy = listed === 'busy';
+      inventoryComplete = listed === true;
+    }
     pool.inventoryComplete = inventoryComplete;
     let claimed = 0;
     while (pool.running.size < connection.config.concurrency) {
@@ -900,7 +908,7 @@ export class ICloudSyncService {
           .finally(() => pool.running.delete(resource.id)),
       );
     }
-    if (inventoryComplete && pool.running.size > 0) {
+    if ((inventoryComplete || sessionBusy) && pool.running.size > 0) {
       // ...or the record interval passes: a long download holding every slot must not freeze progress, nor
       // keep a cancel or a pause from being noticed
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1040,175 +1048,190 @@ export class ICloudSyncService {
   }
 
   /** One inventory page or one keyset materialization batch per step. */
-  private async enumerate(connection: ICloudConnection): Promise<boolean> {
-    return this.repository.withSession(connection.id, connection.ownerId, async (current, db) => {
-      if (current.state !== 'connected') {
-        return { value: false };
+  /** One page of the inventory; `'busy'` when `nowait` and a download holds the session (try again later). */
+  private async enumerate(connection: ICloudConnection, nowait = false): Promise<boolean | 'busy'> {
+    return this.listInventory(connection, nowait).catch((error: unknown) => {
+      if (error instanceof Error && error.message === ICLOUD_SESSION_BUSY) {
+        return 'busy' as const;
       }
-      let encryptedSession = current.encryptedSession!;
-      const page = async (
-        kind: 'libraries' | 'albums' | 'assets' | 'changes' | 'memberships',
-        scope: string,
-        libraryKey: string,
-        library?: ICloudLibrary,
-        albumId?: string,
-        smartAlbum?: ICloudSmartAlbum,
-      ): Promise<boolean> => {
-        const checkpoint = await this.repository.checkpoint(current.id, scope, db);
-        if (checkpoint?.complete) {
-          return true;
+      throw error;
+    });
+  }
+
+  private async listInventory(connection: ICloudConnection, nowait: boolean): Promise<boolean> {
+    return this.repository.withSession(
+      connection.id,
+      connection.ownerId,
+      async (current, db) => {
+        if (current.state !== 'connected') {
+          return { value: false };
         }
-        // FL-1289: a bridge from before smart albums refuses the field, so it is asked what it supports first
-        if (smartAlbum && (await this.transport.capabilities()).smartAlbums !== true) {
-          await this.repository.savePage(current.id, scope, libraryKey, [], null, true, db);
-          return false;
-        }
-        let response: ICloudPage;
-        try {
-          response = await this.transport.inventory({
-            session: await this.transport.decodeSession(current.id, encryptedSession),
-            kind,
-            library,
-            albumId,
-            smartAlbum,
-            cursor: checkpoint?.cursor,
-          });
-        } catch (error) {
-          // ponytail: kinds are an extra, so Apple refusing a smart album (or the bridge failing on one)
-          // skips it for this run instead of failing the sync; the next run asks again.
-          // the bridge supports smart albums here, so invalid_request (session, cursor) stays visible
-          if (!smartAlbum || !(error instanceof ICloudTransportError && error.code === 'icloud_transport_failed')) {
-            throw error;
+        let encryptedSession = current.encryptedSession!;
+        const page = async (
+          kind: 'libraries' | 'albums' | 'assets' | 'changes' | 'memberships',
+          scope: string,
+          libraryKey: string,
+          library?: ICloudLibrary,
+          albumId?: string,
+          smartAlbum?: ICloudSmartAlbum,
+        ): Promise<boolean> => {
+          const checkpoint = await this.repository.checkpoint(current.id, scope, db);
+          if (checkpoint?.complete) {
+            return true;
           }
-          await this.repository.savePage(current.id, scope, libraryKey, [], null, true, db);
-          return false;
-        }
-        encryptedSession = await this.transport.encodeSession(current.id, response.session);
-        // Never use a smart album page from a bridge that doesn't say it lists them.
-        if (smartAlbum && response.capabilities?.smartAlbums !== true) {
-          await this.repository.savePage(current.id, scope, libraryKey, [], null, true, db);
-          return false;
-        }
-        let records = response.records;
-        switch (smartAlbum ? 'memberships' : kind) {
-          case 'libraries': {
-            records = records.map((raw) => {
-              const zone = raw as unknown as ICloudLibrary;
-              if (!zone.zoneID?.zoneName || !['private', 'shared'].includes(zone.area)) {
-                throw new Error('icloud_library_invalid');
-              }
-              const id = createHash('sha256')
-                .update(
-                  JSON.stringify([
-                    zone.area,
-                    zone.zoneID.zoneName,
-                    zone.zoneID.ownerRecordName ?? '',
-                    zone.zoneID.zoneType ?? '',
-                  ]),
-                )
-                .digest('hex');
-              return { recordName: id, recordType: 'Library', fields: zone as unknown as Record<string, unknown> };
+          // FL-1289: a bridge from before smart albums refuses the field, so it is asked what it supports first
+          if (smartAlbum && (await this.transport.capabilities()).smartAlbums !== true) {
+            await this.repository.savePage(current.id, scope, libraryKey, [], null, true, db);
+            return false;
+          }
+          let response: ICloudPage;
+          try {
+            response = await this.transport.inventory({
+              session: await this.transport.decodeSession(current.id, encryptedSession),
+              kind,
+              library,
+              albumId,
+              smartAlbum,
+              cursor: checkpoint?.cursor,
             });
-
-            break;
-          }
-          case 'albums': {
-            await this.repository.saveAlbums(current.id, libraryKey, records, db);
-
-            break;
-          }
-          case 'memberships': {
-            const snapshotId = checkpoint?.snapshotId ?? randomUUID();
-            // Initialize a stable snapshot before any page can mark memberships absent.
-            if (!checkpoint) {
-              await this.repository.initializeCheckpoint(current.id, scope, snapshotId, db);
+          } catch (error) {
+            // ponytail: kinds are an extra, so Apple refusing a smart album (or the bridge failing on one)
+            // skips it for this run instead of failing the sync; the next run asks again.
+            // the bridge supports smart albums here, so invalid_request (session, cursor) stays visible
+            if (!smartAlbum || !(error instanceof ICloudTransportError && error.code === 'icloud_transport_failed')) {
+              throw error;
             }
-            await this.repository.saveMembershipPage(
-              current.id,
-              libraryKey,
-              smartAlbum ? `smart:${smartAlbum}` : albumId!,
-              records,
-              snapshotId,
-              response.complete,
-              db,
-            );
-            // A smart album page carries full CPLAsset/CPLMaster records; only its memberships are kept,
-            // so it never overwrites the library inventory's own copies.
-            if (smartAlbum) {
-              records = [];
-            }
-
-            break;
+            await this.repository.savePage(current.id, scope, libraryKey, [], null, true, db);
+            return false;
           }
-          // No default
-        }
-        await this.repository.savePage(
-          current.id,
-          scope,
-          libraryKey,
-          records,
-          response.nextCursor,
-          response.complete,
-          db,
-        );
-        if ((kind === 'assets' || kind === 'changes') && !smartAlbum && library) {
-          // FL-1685: this page's photos go in line for download now, not after the whole library is listed
-          const assets = records.filter((record) => record.recordType === 'CPLAsset' && !record.deleted);
-          await this.repository.materializeEarly(
-            current,
+          encryptedSession = await this.transport.encodeSession(current.id, response.session);
+          // Never use a smart album page from a bridge that doesn't say it lists them.
+          if (smartAlbum && response.capabilities?.smartAlbums !== true) {
+            await this.repository.savePage(current.id, scope, libraryKey, [], null, true, db);
+            return false;
+          }
+          let records = response.records;
+          switch (smartAlbum ? 'memberships' : kind) {
+            case 'libraries': {
+              records = records.map((raw) => {
+                const zone = raw as unknown as ICloudLibrary;
+                if (!zone.zoneID?.zoneName || !['private', 'shared'].includes(zone.area)) {
+                  throw new Error('icloud_library_invalid');
+                }
+                const id = createHash('sha256')
+                  .update(
+                    JSON.stringify([
+                      zone.area,
+                      zone.zoneID.zoneName,
+                      zone.zoneID.ownerRecordName ?? '',
+                      zone.zoneID.zoneType ?? '',
+                    ]),
+                  )
+                  .digest('hex');
+                return { recordName: id, recordType: 'Library', fields: zone as unknown as Record<string, unknown> };
+              });
+
+              break;
+            }
+            case 'albums': {
+              await this.repository.saveAlbums(current.id, libraryKey, records, db);
+
+              break;
+            }
+            case 'memberships': {
+              const snapshotId = checkpoint?.snapshotId ?? randomUUID();
+              // Initialize a stable snapshot before any page can mark memberships absent.
+              if (!checkpoint) {
+                await this.repository.initializeCheckpoint(current.id, scope, snapshotId, db);
+              }
+              await this.repository.saveMembershipPage(
+                current.id,
+                libraryKey,
+                smartAlbum ? `smart:${smartAlbum}` : albumId!,
+                records,
+                snapshotId,
+                response.complete,
+                db,
+              );
+              // A smart album page carries full CPLAsset/CPLMaster records; only its memberships are kept,
+              // so it never overwrites the library inventory's own copies.
+              if (smartAlbum) {
+                records = [];
+              }
+
+              break;
+            }
+            // No default
+          }
+          await this.repository.savePage(
+            current.id,
+            scope,
             libraryKey,
-            library,
-            assets.map((record) => record.recordName),
+            records,
+            response.nextCursor,
+            response.complete,
             db,
           );
-        }
-        return false;
-      };
-      if (!(await page('libraries', 'libraries', ''))) {
-        return { value: false, encryptedSession };
-      }
-      const inventory = await this.repository.inventory(current.id, db);
-      for (const { id: libraryKey, fields: library } of inventory.libraries) {
-        if (current.config.libraries.length > 0 && !current.config.libraries.includes(libraryKey)) {
-          continue;
-        }
-        if (!(await page('albums', `albums:${libraryKey}`, libraryKey, library))) {
+          if ((kind === 'assets' || kind === 'changes') && !smartAlbum && library) {
+            // FL-1685: this page's photos go in line for download now, not after the whole library is listed
+            const assets = records.filter((record) => record.recordType === 'CPLAsset' && !record.deleted);
+            await this.repository.materializeEarly(
+              current,
+              libraryKey,
+              library,
+              assets.map((record) => record.recordName),
+              db,
+            );
+          }
+          return false;
+        };
+        if (!(await page('libraries', 'libraries', ''))) {
           return { value: false, encryptedSession };
         }
-        if (!(await page('assets', `assets:${libraryKey}`, libraryKey, library))) {
-          return { value: false, encryptedSession };
-        }
-        if (!(await page('changes', `changes:${libraryKey}`, libraryKey, library))) {
-          return { value: false, encryptedSession };
-        }
-        // FL-1289: iCloud's Media Types smart albums, recorded as memberships of a reserved `smart:` album
-        // (no icloud_album row, so album reconciliation never sees them) and added to the photo's kinds.
-        for (const smartAlbum of Object.keys(ICLOUD_SMART_ALBUM_KINDS) as ICloudSmartAlbum[]) {
-          if (
-            !(await page('assets', `smart:${libraryKey}:${smartAlbum}`, libraryKey, library, undefined, smartAlbum))
-          ) {
+        const inventory = await this.repository.inventory(current.id, db);
+        for (const { id: libraryKey, fields: library } of inventory.libraries) {
+          if (current.config.libraries.length > 0 && !current.config.libraries.includes(libraryKey)) {
+            continue;
+          }
+          if (!(await page('albums', `albums:${libraryKey}`, libraryKey, library))) {
+            return { value: false, encryptedSession };
+          }
+          if (!(await page('assets', `assets:${libraryKey}`, libraryKey, library))) {
+            return { value: false, encryptedSession };
+          }
+          if (!(await page('changes', `changes:${libraryKey}`, libraryKey, library))) {
+            return { value: false, encryptedSession };
+          }
+          // FL-1289: iCloud's Media Types smart albums, recorded as memberships of a reserved `smart:` album
+          // (no icloud_album row, so album reconciliation never sees them) and added to the photo's kinds.
+          for (const smartAlbum of Object.keys(ICLOUD_SMART_ALBUM_KINDS) as ICloudSmartAlbum[]) {
+            if (
+              !(await page('assets', `smart:${libraryKey}:${smartAlbum}`, libraryKey, library, undefined, smartAlbum))
+            ) {
+              return { value: false, encryptedSession };
+            }
+          }
+          for (const album of inventory.albums) {
+            if (album.libraryId !== libraryKey) {
+              continue;
+            }
+            if (current.config.albums.length > 0 && !current.config.albums.includes(album.id)) {
+              continue;
+            }
+            const sourceId = album.id.slice(libraryKey.length + 1);
+            if (!(await page('memberships', `memberships:${album.id}`, libraryKey, library, sourceId))) {
+              return { value: false, encryptedSession };
+            }
+          }
+          if (!(await this.repository.materialize(current, libraryKey, library, db))) {
             return { value: false, encryptedSession };
           }
         }
-        for (const album of inventory.albums) {
-          if (album.libraryId !== libraryKey) {
-            continue;
-          }
-          if (current.config.albums.length > 0 && !current.config.albums.includes(album.id)) {
-            continue;
-          }
-          const sourceId = album.id.slice(libraryKey.length + 1);
-          if (!(await page('memberships', `memberships:${album.id}`, libraryKey, library, sourceId))) {
-            return { value: false, encryptedSession };
-          }
-        }
-        if (!(await this.repository.materialize(current, libraryKey, library, db))) {
-          return { value: false, encryptedSession };
-        }
-      }
-      await this.repository.savePage(current.id, 'inventory-complete', '', [], null, true, db);
-      return { value: true, encryptedSession };
-    });
+        await this.repository.savePage(current.id, 'inventory-complete', '', [], null, true, db);
+        return { value: true, encryptedSession };
+      },
+      { nowait },
+    );
   }
 
   private async finishResource(resource: ICloudResource, status: string, error: string | null = null) {
