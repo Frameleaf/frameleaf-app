@@ -230,6 +230,8 @@
         creationNeedsRefresh = false;
         queuedAny = false;
         sourceTitle = (nextPreview?.discovery.title ?? "").slice(0, 2000);
+        // FL-1729: Save selection starts the note as the quoted text; you can change it first.
+        if (nextPreview?.discovery.note) note = nextPreview.discovery.note;
       }
       // A reload can land before the background has released what was just queued; keep it gone.
       if (nextPreview && savedCandidates.size)
@@ -868,7 +870,12 @@
             >
             <span>
               <strong>{preview.discovery.title || "Untitled page"}</strong>
-              <small class="address">{preview.discovery.pageUrl}</small>
+              <small class="address"
+                >{preview.discovery.menu === "link"
+                  ? (sanitizeSourceUrl(preview.discovery.bookmarkUrl) ??
+                    preview.discovery.bookmarkUrl)
+                  : preview.discovery.pageUrl}</small
+              >
             </span>
           </div>
           <div class="field">
@@ -895,8 +902,17 @@
             >
           </div>
           <p class="hint">
-            Saves the address and title as a link in Boards. The page itself
-            isn’t copied.
+            {#if preview.discovery.menu === "link"}
+              Saves the linked page as a link in Boards without opening it. The
+              title starts as the link’s own words; your Library adds the page’s
+              picture once it’s saved.
+            {:else if preview.discovery.menu === "selection"}
+              Saves this page as a link in Boards, with the text you selected as
+              its note. You can change the note before saving.
+            {:else}
+              Saves the address and title as a link in Boards. The page itself
+              isn’t copied.
+            {/if}
           </p>
         </section>
         {@render destination()}

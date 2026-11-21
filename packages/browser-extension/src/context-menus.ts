@@ -6,6 +6,10 @@ import {
 } from './discovery';
 const imageMenu = 'frameleaf-save-image';
 const pageMenu = 'frameleaf-save-page';
+const linkMenu = 'frameleaf-save-link';
+const selectionMenu = 'frameleaf-save-selection';
+/** The capture API keeps a note of up to 20,000 characters; the selection is quoted. */
+const NOTE_LIMIT = 20000;
 let initialization: Promise<void> | undefined;
 export function initializeCaptureMenus(): Promise<void> {
   return (initialization ??= (async () => {
@@ -16,16 +20,19 @@ export function initializeCaptureMenus(): Promise<void> {
         else resolve();
       }),
     );
-    for (const [id, title, context] of [
-      [imageMenu, 'Save image to Frameleaf', 'image'],
-      [pageMenu, 'Save page bookmark to Frameleaf', 'page'],
+    // FL-1729: Save page sits beside Save link and Save selection, as on the image menu.
+    for (const [id, title, contexts] of [
+      [imageMenu, 'Save image to Frameleaf', ['image']],
+      [linkMenu, 'Save link to Frameleaf', ['link']],
+      [selectionMenu, 'Save selection to Frameleaf', ['selection']],
+      [pageMenu, 'Save page to Frameleaf', ['page', 'image', 'link', 'selection']],
     ] as const) {
       await new Promise<void>((resolve, reject) => {
         chrome.contextMenus.create(
           {
             id,
             title,
-            contexts: [context],
+            contexts: [...contexts],
             documentUrlPatterns: ['https://*/*', 'http://*/*'],
           },
           () => {
@@ -62,7 +69,9 @@ export async function discoverMenuPage(
       info.pageUrl !== tab.url ||
       (info.frameId !== undefined && info.frameId !== 0) ||
       (info.frameUrl !== undefined && info.frameUrl !== tab.url) ||
-      (info.menuItemId !== imageMenu && info.menuItemId !== pageMenu)
+      ![imageMenu, pageMenu, linkMenu, selectionMenu].includes(
+        String(info.menuItemId),
+      )
     )
       throw new DiscoveryFailure();
     const url = new URL(tab.url);
@@ -80,16 +89,55 @@ export async function discoverMenuPage(
       image = candidateUrl(info.srcUrl, tab.url, tab.url);
       if (!image) throw new DiscoveryFailure();
     }
+    // FL-1729: the linked address is held to the same rules as a page address. It is never fetched.
+    let link: string | null = null;
+    if (info.menuItemId === linkMenu) {
+      if (typeof info.linkUrl !== 'string' || info.linkUrl.length > 8192)
+        throw new DiscoveryFailure();
+      const linked = new URL(info.linkUrl);
+      if (
+        !['https:', 'http:'].includes(linked.protocol) ||
+        linked.username ||
+        linked.password
+      )
+        throw new DiscoveryFailure();
+      link = info.linkUrl;
+    }
+    let note: string | undefined;
+    if (info.menuItemId === selectionMenu) {
+      const text =
+        typeof info.selectionText === 'string' ? info.selectionText.trim() : '';
+      if (!text) throw new DiscoveryFailure();
+      note = `“${text.slice(0, NOTE_LIMIT - 2)}”`;
+    }
     const current = await chrome.tabs.get(tab.id);
     if (current.url !== tab.url) throw new DiscoveryFailure();
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       world: 'ISOLATED',
-      func: () => ({
-        documentUrl: document.URL,
-        title: document.title.slice(0, 2000),
-        candidates: [],
-      }),
+      // A saved link is titled with the link's own words, read from this page's matching link.
+      func: (linked: string | null) => {
+        let title = document.title;
+        if (linked) {
+          const anchor = [
+            ...document.querySelectorAll<HTMLAnchorElement>('a[href]'),
+          ].find((value) => value.href === linked);
+          title = (
+            anchor?.innerText ||
+            anchor?.getAttribute('aria-label') ||
+            anchor?.getAttribute('title') ||
+            ''
+          )
+            .replaceAll(/\s+/g, ' ')
+            .trim();
+        }
+        return {
+          documentUrl: document.URL,
+          title: title.slice(0, 2000),
+          candidates: [],
+        };
+      },
+      args: [link],
     });
     if (!result?.documentId || result.frameId !== 0)
       throw new DiscoveryFailure();
@@ -97,6 +145,7 @@ export async function discoverMenuPage(
       ...parseDiscovery(result.result, tab.url),
       candidates: [],
     };
+    if (link && !metadata.title) metadata.title = link.slice(0, 2000);
     return {
       tabId: tab.id,
       documentId: result.documentId,
@@ -113,7 +162,9 @@ export async function discoverMenuPage(
               },
             ],
           }
-        : { bookmarkUrl: tab.url }),
+        : { bookmarkUrl: link ?? tab.url }),
+      ...(link && { menu: 'link' as const }),
+      ...(note && { menu: 'selection' as const, note }),
     };
   } catch {
     throw new DiscoveryFailure();

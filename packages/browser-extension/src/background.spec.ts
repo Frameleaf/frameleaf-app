@@ -8,12 +8,13 @@ vi.mock('./context-menus', async (original) => ({
   ...(await original<typeof import('./context-menus')>()),
   discoverMenuPage: vi.fn(),
 }));
-import { wakeDelivery, stopDelivery } from './delivery';
+import { wakeDelivery, stopDelivery, onDeliverySettled } from './delivery';
 import { listCaptures } from './queue';
 vi.mock('./delivery', () => ({
   wakeDelivery: vi.fn().mockResolvedValue(undefined),
   stopDelivery: vi.fn(),
   deliveryError: vi.fn().mockReturnValue(null),
+  onDeliverySettled: vi.fn(),
 }));
 vi.mock('./queue', async (original) => ({
   ...(await original<typeof import('./queue')>()),
@@ -89,6 +90,12 @@ beforeEach(() => {
       onClicked: event(),
     },
     alarms: { create: vi.fn().mockResolvedValue(undefined), onAlarm: event() },
+    commands: { onCommand: event() },
+    action: {
+      setBadgeText: vi.fn().mockResolvedValue(undefined),
+      setBadgeBackgroundColor: vi.fn().mockResolvedValue(undefined),
+      setTitle: vi.fn().mockResolvedValue(undefined),
+    },
   });
   vi.mocked(discoverActivePage).mockResolvedValue({
     tabId: 42,
@@ -191,6 +198,41 @@ describe('trusted extension operations', () => {
     expect(signal?.aborted).toBe(true);
     expect((await pending).ok).toBe(false);
     expect(chrome.tabs.create).not.toHaveBeenCalled();
+  });
+  it('runs the screenshot and page-link shortcuts through the toolbar paths and keeps the badge on the queue (FL-1729)', async () => {
+    const { handleCommand, handleMessage } = await import('./background');
+    expect(chrome.commands.onCommand.addListener).toHaveBeenCalledOnce();
+    await handleCommand('save-page-link');
+    expect(chrome.runtime.openOptionsPage).toHaveBeenCalledOnce();
+    expect(discoverActivePage).not.toHaveBeenCalled();
+    await handleMessage(
+      { type: 'connect', address: binding.origin, token: 'private-key' },
+      sender,
+    );
+    await handleCommand('save-page-link');
+    expect(discoverActivePage).toHaveBeenCalledWith('bookmark');
+    const opened = vi.mocked(chrome.tabs.create).mock.calls.at(-1)![0].url!;
+    expect(opened).toContain('capture.html?id=');
+    vi.mocked(takeScreenshot).mockRejectedValueOnce(new Error('private'));
+    await handleCommand('screenshot');
+    expect(takeScreenshot).toHaveBeenCalledWith('visible', expect.anything());
+    expect(chrome.tabs.create).toHaveBeenLastCalledWith({
+      url: 'chrome-extension://frameleaf/capture.html?error=screenshot',
+    });
+    vi.mocked(discoverActivePage).mockRejectedValueOnce(new Error('private'));
+    await handleCommand('save-page-link');
+    expect(chrome.tabs.create).toHaveBeenLastCalledWith({
+      url: 'chrome-extension://frameleaf/capture.html?error=page',
+    });
+    const calls = vi.mocked(chrome.tabs.create).mock.calls.length;
+    await handleCommand('unknown');
+    expect(chrome.tabs.create).toHaveBeenCalledTimes(calls);
+    // delivery stopping, and each message, refresh the badge from the queue
+    vi.mocked(listCaptures).mockResolvedValue([{ state: 'queued' }] as never);
+    vi.mocked(onDeliverySettled).mock.calls[0][0]();
+    await vi.waitFor(() =>
+      expect(chrome.action.setBadgeText).toHaveBeenLastCalledWith({ text: '1' }),
+    );
   });
   it('routes menu events through the bound preview, shows connection settings when disconnected and exposes only static failure URLs', async () => {
     const { handleMessage } = await import('./background');
@@ -434,6 +476,8 @@ describe('trusted extension operations', () => {
     expect(JSON.stringify(view)).not.toContain('private-note');
     expect(JSON.stringify(view)).not.toContain('private-source');
     expect(JSON.stringify(view)).not.toContain('private-key');
+    // let the badge finish reading the queue after the last message
+    await new Promise((done) => setTimeout(done, 0));
     const calls = vi.mocked(listCaptures).mock.calls.length;
     expect(
       (

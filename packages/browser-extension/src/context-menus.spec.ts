@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   initializeCaptureMenus,
@@ -65,9 +66,21 @@ describe('invoked context menus', () => {
         documentUrlPatterns: ['https://*/*', 'http://*/*'],
       },
       {
+        id: 'frameleaf-save-link',
+        title: 'Save link to Frameleaf',
+        contexts: ['link'],
+        documentUrlPatterns: ['https://*/*', 'http://*/*'],
+      },
+      {
+        id: 'frameleaf-save-selection',
+        title: 'Save selection to Frameleaf',
+        contexts: ['selection'],
+        documentUrlPatterns: ['https://*/*', 'http://*/*'],
+      },
+      {
         id: 'frameleaf-save-page',
-        title: 'Save page bookmark to Frameleaf',
-        contexts: ['page'],
+        title: 'Save page to Frameleaf',
+        contexts: ['page', 'image', 'link', 'selection'],
         documentUrlPatterns: ['https://*/*', 'http://*/*'],
       },
     ]);
@@ -135,6 +148,96 @@ describe('invoked context menus', () => {
     get.mockResolvedValue({ ...tab, url: 'https://navigated.example/' });
     await expect(discoverMenuPage(image, tab)).rejects.toThrow();
     expect(executeScript).not.toHaveBeenCalled();
+  });
+  it('saves a link without fetching it, titled with the words the page reads for it', async () => {
+    const linkUrl = 'https://alpinelodge.example/dining?ref=1';
+    const link = {
+      menuItemId: 'frameleaf-save-link',
+      pageUrl: page,
+      frameId: 0,
+      linkUrl,
+    } as chrome.contextMenus.OnClickData;
+    executeScript.mockResolvedValue([
+      {
+        frameId: 0,
+        documentId: 'doc',
+        result: { documentUrl: page, title: 'Dining', candidates: [] },
+      },
+    ]);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await discoverMenuPage(link, tab);
+    expect(result).toMatchObject({
+      bookmarkUrl: linkUrl,
+      title: 'Dining',
+      menu: 'link',
+      pageUrl: 'https://page.example/work',
+      candidates: [],
+    });
+    expect(executeScript.mock.calls[0][0].args).toEqual([linkUrl]);
+    // the injected reader takes the matching link's own words, or nothing
+    const read = executeScript.mock.calls[0][0].func;
+    document.title = 'Alpine Lodge';
+    document.body.innerHTML = `<a href="https://alpinelodge.example/rooms">Rooms</a><a href="${linkUrl}"> Dining
+      room </a>`;
+    expect(read(linkUrl).title).toBe('Dining room');
+    expect(read('https://elsewhere.example/').title).toBe('');
+    expect(read(null).title).toBe('Alpine Lodge');
+    expect(fetchMock).not.toHaveBeenCalled();
+    // a link without words of its own is titled with its address
+    executeScript.mockResolvedValue([
+      {
+        frameId: 0,
+        documentId: 'doc',
+        result: { documentUrl: page, title: '', candidates: [] },
+      },
+    ]);
+    expect((await discoverMenuPage(link, tab)).title).toBe(linkUrl);
+  });
+  it('holds a linked address to the page address rules', async () => {
+    for (const linkUrl of [
+      undefined,
+      'javascript:alert(1)',
+      'file:///private/file',
+      'mailto:someone@example.com',
+      'https://user:secret@alpinelodge.example/',
+      'not an address',
+      'https://alpinelodge.example/' + 'x'.repeat(8192),
+    ])
+      await expect(
+        discoverMenuPage(
+          {
+            menuItemId: 'frameleaf-save-link',
+            pageUrl: page,
+            frameId: 0,
+            linkUrl,
+          } as chrome.contextMenus.OnClickData,
+          tab,
+        ),
+      ).rejects.toThrow('Could not inspect');
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+  it('saves the current page with the quoted selection as its note, within the note limit', async () => {
+    const selection = {
+      menuItemId: 'frameleaf-save-selection',
+      pageUrl: page,
+      frameId: 0,
+      selectionText: '  Two floors of timber and glass above the lake.  ',
+    } as chrome.contextMenus.OnClickData;
+    expect(await discoverMenuPage(selection, tab)).toMatchObject({
+      bookmarkUrl: page,
+      title: 'Selected page',
+      menu: 'selection',
+      note: '“Two floors of timber and glass above the lake.”',
+    });
+    const long = await discoverMenuPage(
+      { ...selection, selectionText: 'x'.repeat(30000) },
+      tab,
+    );
+    expect(long.note).toHaveLength(20000);
+    await expect(
+      discoverMenuPage({ ...selection, selectionText: '   ' }, tab),
+    ).rejects.toThrow('Could not inspect');
   });
   it('rejects navigation during metadata read and unexpected frame or document results', async () => {
     for (const result of [

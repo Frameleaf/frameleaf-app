@@ -9,7 +9,13 @@ import {
   registerCaptureMenus,
   discoverMenuPage,
 } from './context-menus';
-import { wakeDelivery, stopDelivery, deliveryError } from './delivery';
+import {
+  wakeDelivery,
+  stopDelivery,
+  deliveryError,
+  onDeliverySettled,
+} from './delivery';
+import { showBadge } from './badge';
 import {
   listCaptures,
   retryCapture,
@@ -343,6 +349,22 @@ async function runMedia(message: { type: string }): Promise<ExtensionReply> {
     };
   }
 }
+/** The Page tab's Save this page, and Find images: the active tab, opened as a preview. */
+async function previewActivePage(mode: 'bookmark' | 'images') {
+  const current = await connectionStatus();
+  if (!current || current.status !== 'connected')
+    throw new CaptureFailure('credential');
+  const discovery = await discoverActivePage(mode);
+  const latest = await connectionStatus();
+  if (
+    !latest ||
+    latest.status !== 'connected' ||
+    !sameBinding(current.binding, latest.binding)
+  )
+    throw new CaptureFailure('credential');
+  const preview = createPreview(current.binding, discovery);
+  await openCapturePreview(preview.id);
+}
 async function refresh() {
   const current = await connectionStatus();
   if (!current || current.status !== 'connected') return;
@@ -435,7 +457,7 @@ export function handleMessage(
         : startScreenshot(message.mode);
     }
   }
-  return serialize(async () => {
+  return serialize(async (): Promise<ExtensionReply> => {
     try {
       if (!message || typeof message !== 'object' || !('type' in message))
         throw new Error();
@@ -480,21 +502,9 @@ export function handleMessage(
         case 'discover':
         case 'bookmark': {
           if (!trustedSender(sender, ['/popup.html'])) throw new Error();
-          const current = await connectionStatus();
-          if (!current || current.status !== 'connected')
-            throw new CaptureFailure('credential');
-          const discovery = await discoverActivePage(
+          await previewActivePage(
             message.type === 'bookmark' ? 'bookmark' : 'images',
           );
-          const latest = await connectionStatus();
-          if (
-            !latest ||
-            latest.status !== 'connected' ||
-            !sameBinding(current.binding, latest.binding)
-          )
-            throw new CaptureFailure('credential');
-          const preview = createPreview(current.binding, discovery);
-          await openCapturePreview(preview.id);
           break;
         }
         case 'preview': {
@@ -734,7 +744,7 @@ export function handleMessage(
         return { ok: false, error: reason };
       }
     }
-  });
+  }).finally(updateBadge);
 }
 /**
  * FL-655: sign out of the current server. An access added by signing in removes itself on the
@@ -1209,6 +1219,41 @@ async function handleMenu(
     }
   });
 }
+/**
+ * FL-1729: the keyboard shortcuts. Opening the toolbar is Chrome's own (_execute_action); these
+ * take the same screenshot and page-link paths as the toolbar's buttons.
+ */
+export async function handleCommand(command: string) {
+  if (command !== 'screenshot' && command !== 'save-page-link') return;
+  const current = await connectionStatus().catch(() => null);
+  if (current?.status !== 'connected') {
+    await openOptions();
+    return;
+  }
+  if (command === 'screenshot') {
+    const reply = await startScreenshot('visible');
+    if (!reply.ok && !screenshotController)
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL('capture.html?error=screenshot'),
+      });
+    return;
+  }
+  await serialize(() => previewActivePage('bookmark')).catch(() =>
+    chrome.tabs.create({
+      url: chrome.runtime.getURL('capture.html?error=page'),
+    }),
+  );
+}
+/** FL-1729: the toolbar badge follows the queue of this server and account. */
+function updateBadge() {
+  void connectionStatus()
+    .then((current) => showBadge(current?.binding ?? null))
+    .catch(() => {});
+}
+onDeliverySettled(updateBadge);
+chrome.commands.onCommand.addListener((command) => {
+  void handleCommand(command).catch(() => {});
+});
 registerCaptureMenus(handleMenu);
 registerMediaWatch();
 registerDeliveryAlarm(() => {
