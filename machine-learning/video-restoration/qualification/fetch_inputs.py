@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 
-# Wikimedia answers 429 to the default curl agent. Generic on purpose: no personal details.
+# Generic on purpose: no personal details.
 USER_AGENT = "photo-qualification-fetch/1.0 (public-domain test images; sequential)"
 
 
@@ -33,10 +33,12 @@ def fetch(url: str, target: Path, expected: str) -> bool:
         return True
     curl = shutil.which("curl") or "curl"
     partial = target.with_name(target.name + ".part")
-    for wait in (0, 20, 90):
+    for wait in (0, 20):
         time.sleep(wait)
+        # With no --retry-delay, curl waits as long as a 429's Retry-After header asks.
         done = subprocess.run(
-            [curl, "-sS", "--fail", "-L", "-A", USER_AGENT, "--max-time", "1800", "-o", str(partial), url],
+            [curl, "-sS", "--fail", "-L", "-A", USER_AGENT, "--retry", "2", "--max-time", "1800"]
+            + ["-o", str(partial), url],
             check=False,
         )
         if done.returncode == 0 and sha256(partial) == expected:
@@ -66,9 +68,16 @@ def main() -> int:
 
     scans = manifest["scans"][: args.limit or None]
     missing = []
-    for scan in scans:
-        if not fetch(scan["url"], args.directory / f"{scan['id']}.jpg", scan["sha256"]):
+    failed_in_a_row = 0
+    for index, scan in enumerate(scans):
+        if fetch(scan["url"], args.directory / f"{scan['id']}.jpg", scan["sha256"]):
+            failed_in_a_row = 0
+        else:
             missing.append(scan["id"])
+            failed_in_a_row += 1
+        if failed_in_a_row == 2:  # the host is refusing us: stop asking
+            missing.extend(later["id"] for later in scans[index + 1 :])
+            break
         time.sleep(3.0)
     print(json.dumps({"scans": len(scans), "fetched": len(scans) - len(missing), "missing": missing}))
     return 0 if len(missing) <= len(scans) // 10 else 1
