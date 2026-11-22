@@ -451,13 +451,22 @@
 >
   <ul class="icr-summary">
     {#if allEffects.useExisting > 0}
-      <li><strong>{number(allEffects.useExisting)}</strong> {$t('frameleaf_icloud_review_done_use_existing')}</li>
+      <li>
+        <strong>{number(allEffects.useExisting)}</strong>
+        {$t('frameleaf_icloud_review_done_use_existing', { values: { count: allEffects.useExisting } })}
+      </li>
     {/if}
     {#if allEffects.keepCurrent > 0}
-      <li><strong>{number(allEffects.keepCurrent)}</strong> {$t('frameleaf_icloud_review_done_keep_current')}</li>
+      <li>
+        <strong>{number(allEffects.keepCurrent)}</strong>
+        {$t('frameleaf_icloud_review_done_keep_current', { values: { count: allEffects.keepCurrent } })}
+      </li>
     {/if}
     {#if allEffects.tryAgain > 0}
-      <li><strong>{number(allEffects.tryAgain)}</strong> {$t('frameleaf_icloud_review_done_try_again')}</li>
+      <li>
+        <strong>{number(allEffects.tryAgain)}</strong>
+        {$t('frameleaf_icloud_review_done_try_again', { values: { count: allEffects.tryAgain } })}
+      </li>
     {/if}
   </ul>
   <p class="icr-dialog-note">
