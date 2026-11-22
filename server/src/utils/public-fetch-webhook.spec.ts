@@ -110,7 +110,7 @@ describe('sendWebhook', () => {
     fetchMock.mockResolvedValue(new Response('ok'));
     await expect(
       sendWebhook('http://192.168.1.20:8123/api/webhook/x', message, { allowHomeNetwork: true }),
-    ).resolves.toEqual({ ok: true, status: 200, body: 'ok' });
+    ).resolves.toEqual({ ok: true, status: 200, body: 'ok', headers: expect.any(Headers) });
     expect(fetchMock).toHaveBeenCalledWith(
       new URL('http://192.168.1.20:8123/api/webhook/x'),
       expect.objectContaining({ method: 'POST', redirect: 'manual', body: '{}' }),
@@ -123,8 +123,18 @@ describe('sendWebhook', () => {
       ok: false,
       status: 302,
       body: '',
+      headers: expect.any(Headers),
     });
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the status when the caller discards a body that fails to arrive', async () => {
+    const cancel = vi.fn().mockRejectedValue(new Error('connection reset'));
+    fetchMock.mockResolvedValue({ ok: true, status: 201, headers: new Headers(), body: { cancel } });
+    await expect(
+      sendWebhook('https://example.com/hook', message, { allowHomeNetwork: false, discardBody: true }),
+    ).resolves.toMatchObject({ ok: true, status: 201, body: '' });
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it('refuses methods other than POST and PUT, and oversized messages', async () => {

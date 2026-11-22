@@ -21,6 +21,7 @@ describe(PushController.name, () => {
     remove: vi.fn(),
     setActivityToken: vi.fn(),
     removeActivityToken: vi.fn(),
+    sendTest: vi.fn(),
   };
 
   beforeAll(async () => {
@@ -46,7 +47,8 @@ describe(PushController.name, () => {
     expect(options('removePushActivityToken')).toMatchObject({ permission: Permission.SessionUpdate });
     expect(options('unregisterPushDevice')).toMatchObject({ permission: Permission.SessionDelete });
     expect(options('removePushDevice')).toMatchObject({ permission: Permission.SessionDelete });
-    for (const method of ['getPushStatus', 'registerPushDevice', 'removePushDevice'] as const) {
+    expect(options('testPushDevice')).toMatchObject({ permission: Permission.SessionUpdate });
+    for (const method of ['getPushStatus', 'registerPushDevice', 'removePushDevice', 'testPushDevice'] as const) {
       expect(options(method)).not.toMatchObject({ admin: true });
     }
   });
@@ -101,6 +103,32 @@ describe(PushController.name, () => {
     it('should require a UUID', async () => {
       const { status } = await request(ctx.getHttpServer()).delete('/push/devices/123');
       expect(status).toBe(400);
+    });
+  });
+
+  describe('POST /push/devices/:id/test (FL-926)', () => {
+    it('should require a UUID', async () => {
+      const { status } = await request(ctx.getHttpServer()).post('/push/devices/123/test');
+      expect(status).toBe(400);
+    });
+
+    it('should send a test to the device and answer what happened', async () => {
+      const id = '00000000-0000-4000-8000-000000000001';
+      service.sendTest.mockResolvedValue({ transport: 'unifiedpush', status: 'sent', message: null });
+      const { status, body } = await request(ctx.getHttpServer()).post(`/push/devices/${id}/test`);
+      expect(status).toBe(200);
+      expect(body).toEqual({ transport: 'unifiedpush', status: 'sent', message: null });
+      expect(service.sendTest).toHaveBeenCalledWith(undefined, id);
+    });
+  });
+
+  describe('PUT /push/devices/current (FL-926)', () => {
+    it('should refuse a UnifiedPush endpoint that is not an http(s) URL', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .put('/push/devices/current')
+        .send({ platform: 'android', publicKey: key, unifiedPushEndpoint: 'ftp://ntfy.example.net/up' });
+      expect(status).toBe(400);
+      expect(service.register).not.toHaveBeenCalled();
     });
   });
 });

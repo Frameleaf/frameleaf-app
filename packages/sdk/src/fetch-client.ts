@@ -2263,8 +2263,15 @@ export type AdminConfigSmtpDto = {
     replyTo: string;
     transport: AdminConfigSmtpTransportDto;
 };
+export type AdminConfigUnifiedPushDto = {
+    /** Let phones use a UnifiedPush server on this network (a private address). Loopback and link-local addresses stay out of reach. */
+    allowLocalTargets?: boolean;
+    /** Who may use UnifiedPush: `all` (default) or `licensed` (only a server with an active licence) */
+    availability?: string;
+};
 export type AdminConfigNotificationsDto = {
     smtp: AdminConfigSmtpDto;
+    unifiedPush?: AdminConfigUnifiedPushDto;
 };
 export type AdminConfigOAuthDto = {
     /** Account management URL */
@@ -5667,6 +5674,16 @@ export type AlbumDescendantCountResponseDto = {
     /** Number of descendant albums (children, grandchildren, etc.) */
     count: number;
 };
+export type PlaceNamesLocalizedDto = {
+    /** City name in `lang`, or the English `city` where it has no translation */
+    city: string | null;
+    /** Country name in `lang`, or the English `country` where it has no translation */
+    country: string | null;
+    /** Language of the translated names: fr, es, de, it, pt, nl, pl, sv, da or nb (Norwegian Bokmål) */
+    lang: string;
+    /** State/province name in `lang`, or the English `state` where it has no translation */
+    state: string | null;
+};
 export type ExifResponseDto = {
     /** Artist credit */
     artist?: string | null;
@@ -5722,6 +5739,8 @@ export type ExifResponseDto = {
     modifyDate?: string | null;
     /** Image orientation */
     orientation?: string | null;
+    /** City, state and country in the language of the signed-in account, when it is not English and at least one of the three has a translation. Null otherwise: show `city`, `state` and `country` */
+    placeNamesLocalized?: (PlaceNamesLocalizedDto) | null;
     /** Color profile description */
     profileDescription?: string | null;
     /** Projection type */
@@ -6086,6 +6105,8 @@ export type MapMarkerResponseDto = {
     lon: number;
     /** Original file name */
     originalFileName?: string;
+    /** FL-987: city, state and country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `city`, `state` and `country` */
+    placeNamesLocalized?: PlaceNamesLocalizedDto;
     /** State/Province name */
     state: string | null;
     "type"?: AssetTypeEnum;
@@ -12587,6 +12608,8 @@ export type MapClusterResponseDto = {
     lon: number;
     /** Northernmost latitude of the items */
     north: number;
+    /** FL-987: city, state and country of the preview item in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise */
+    placeNamesLocalized?: PlaceNamesLocalizedDto;
     /** Southernmost latitude of the items */
     south: number;
     /** State/Province of the preview item */
@@ -18357,6 +18380,14 @@ export type PushPreferencesResponseDto = {
     renderProgress: boolean;
     sharedActivity: boolean;
 };
+export type PushDeviceUnifiedPushDto = {
+    /** Whether this server delivers to UnifiedPush now (the administrator may limit it to licensed servers) */
+    available: boolean;
+    /** The host of the device's UnifiedPush endpoint; never the full address */
+    endpointHost: string;
+    /** Why UnifiedPush is unavailable (`licence-required`); null when available. Open-ended. */
+    reason: string | null;
+};
 export type PushDeviceResponseDto = {
     activities: PushDeviceActivityDto[];
     /** iOS: the APNs environment; null for Android */
@@ -18372,6 +18403,10 @@ export type PushDeviceResponseDto = {
     preferences: PushPreferencesResponseDto;
     /** A short fingerprint of the registered public key; never the token */
     publicKeyFingerprint: string;
+    /** How pushes reach this device: `cloud` (the Frameleaf Cloud gateway) or `unifiedpush`. Open-ended: treat an unfamiliar value as cloud. */
+    transport: string;
+    /** The UnifiedPush state; null when the device has no UnifiedPush endpoint */
+    unifiedPush: (PushDeviceUnifiedPushDto) | null;
     updatedAt: string;
 };
 export type PushDeviceListResponseDto = {
@@ -18397,6 +18432,12 @@ export type PushDeviceUpdateDto = {
     pushToStartToken?: string | null;
     /** A rotated APNs or FCM token */
     pushToken?: string;
+    /** The Web Push authentication secret (`auth`): 16 bytes, base64url (RFC 8291) */
+    unifiedPushAuth?: string | null;
+    /** A new UnifiedPush endpoint (with its keys), or null to stop using UnifiedPush and go back to the Cloud gateway */
+    unifiedPushEndpoint?: string | null;
+    /** The Web Push P-256 public key (`p256dh`): the 65-byte uncompressed point, base64url (RFC 8291) */
+    unifiedPushPublicKey?: string | null;
 };
 export type PushDeviceRegisterDto = {
     apnsEnvironment?: PushApnsEnvironment;
@@ -18408,8 +18449,14 @@ export type PushDeviceRegisterDto = {
     publicKey: string;
     /** iOS only: the ActivityKit push-to-start token */
     pushToStartToken?: string | null;
-    /** The APNs device token or FCM registration token */
-    pushToken: string;
+    /** The APNs device token or FCM registration token. Optional only for an Android device that registers a UnifiedPush endpoint. */
+    pushToken?: string;
+    /** The Web Push authentication secret (`auth`): 16 bytes, base64url (RFC 8291) */
+    unifiedPushAuth?: string | null;
+    /** Android only: the device's UnifiedPush endpoint (the distributor's push address, such as an ntfy topic URL). When set, pushes go there instead of through the Frameleaf Cloud gateway, and the server need not be linked. Needs unifiedPushPublicKey and unifiedPushAuth. */
+    unifiedPushEndpoint?: string | null;
+    /** The Web Push P-256 public key (`p256dh`): the 65-byte uncompressed point, base64url (RFC 8291) */
+    unifiedPushPublicKey?: string | null;
 };
 export type PushActivityTokenDto = {
     /** The Live Activity type: `cloud-backup-activation` (ActivationAttributes) or `studio-render` (RenderAttributes) */
@@ -18418,6 +18465,22 @@ export type PushActivityTokenDto = {
     operationId?: string;
     /** The ActivityKit push token of this activity */
     token: string;
+};
+export type PushDeviceTestResponseDto = {
+    /** Why it was not sent, in plain words; null when sent */
+    message: string | null;
+    /** `sent`: accepted for delivery; `gone`: the push service no longer knows the device, so it was unregistered; `retry`: the push service is busy, try again later; `refused`: the push service or this server refused it (see message); `unavailable`: this server cannot deliver to the device now. Open-ended. */
+    status: string;
+    /** The way the test went: `cloud` or `unifiedpush`. Open-ended. */
+    transport: string;
+};
+export type PushUnifiedPushStatusDto = {
+    /** Whether this server delivers to a UnifiedPush endpoint; it need not be linked to Frameleaf Cloud */
+    available: boolean;
+    /** The Web Push content coding UnifiedPush messages are encrypted in (RFC 8291, RFC 8188): `aes128gcm` */
+    encoding: string;
+    /** Why UnifiedPush is unavailable (`licence-required`); null when available. Open-ended. */
+    reason: string | null;
 };
 export type PushStatusResponseDto = {
     /** Whether this server delivers push notifications now (it must be linked) */
@@ -18435,6 +18498,7 @@ export type PushStatusResponseDto = {
     reason: (PushUnavailableReason) | null;
     /** Whether the session asking has registered its device */
     registered: boolean;
+    unifiedPush: PushUnifiedPushStatusDto;
 };
 export type QueueResponseDto = {
     /** Whether durable work remains, including delayed, paused and unadmitted work */
@@ -19235,6 +19299,8 @@ export type PlacesResponseDto = {
     longitude: number;
     /** Place name */
     name: string;
+    /** FL-987: the place (as `city`), its state/province and its country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `name` and `admin1name` */
+    placeNamesLocalized?: PlaceNamesLocalizedDto;
 };
 export type RandomSearchDto = {
     /** Filter by album IDs */
@@ -39978,6 +40044,20 @@ export function removePushDevice({ id }: {
     return oazapfts.ok(oazapfts.fetchText(`/push/devices/${encodeURIComponent(id)}`, {
         ...opts,
         method: "DELETE"
+    }));
+}
+/**
+ * Send a test push notification
+ */
+export function testPushDevice({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PushDeviceTestResponseDto;
+    }>(`/push/devices/${encodeURIComponent(id)}/test`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**

@@ -57105,7 +57105,7 @@
         "x-immich-permission": "session.update"
       },
       "put": {
-        "description": "Registers or replaces the push registration of the calling session: platform, APNs or FCM token, the ActivityKit push-to-start token (iOS), the device's X25519 public key and notification preferences. Registering again rotates the tokens and key. Every payload is encrypted to the key (frameleaf-push-v1, specified in docs/developer/push-envelope-v1: envelope layout, key agreement, plaintext and test vectors); the Frameleaf push gateway receives only the target and the encrypted blob. Needs a signed-in device session (not an API key).",
+        "description": "Registers or replaces the push registration of the calling session: platform, APNs or FCM token, the ActivityKit push-to-start token (iOS), the device's X25519 public key and notification preferences. FL-926: an Android device may also register a UnifiedPush endpoint with its Web Push keys (p256dh and auth, RFC 8291); pushes then go there, encrypted in the aes128gcm coding, with or without a Cloud link, and the FCM token is optional. Registering again rotates the tokens and key. Every payload is encrypted to the key (frameleaf-push-v1, specified in docs/developer/push-envelope-v1: envelope layout, key agreement, plaintext and test vectors); the Frameleaf push gateway receives only the target and the encrypted blob. Needs a signed-in device session (not an API key).",
         "operationId": "registerPushDevice",
         "parameters": [],
         "requestBody": {
@@ -57305,6 +57305,58 @@
           }
         ],
         "x-immich-permission": "session.delete"
+      }
+    },
+    "/push/devices/{id}/test": {
+      "post": {
+        "description": "FL-926: sends a test notification to one push device now, the way that device is reached (its UnifiedPush endpoint, or the Frameleaf Cloud gateway), and answers what happened. The device’s owner or an administrator may. A device its push service reports gone is unregistered.",
+        "operationId": "testPushDevice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushDeviceTestResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Send a test push notification",
+        "tags": [
+          "Push"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "session.update"
       }
     },
     "/push/status": {
@@ -85169,6 +85221,9 @@
         "properties": {
           "smtp": {
             "$ref": "#/components/schemas/AdminConfigSmtpDto"
+          },
+          "unifiedPush": {
+            "$ref": "#/components/schemas/AdminConfigUnifiedPushDto"
           }
         },
         "required": [
@@ -85831,6 +85886,21 @@
           "days",
           "enabled"
         ],
+        "type": "object"
+      },
+      "AdminConfigUnifiedPushDto": {
+        "properties": {
+          "allowLocalTargets": {
+            "description": "Let phones use a UnifiedPush server on this network (a private address). Loopback and link-local addresses stay out of reach.",
+            "type": "boolean"
+          },
+          "availability": {
+            "default": "all",
+            "description": "Who may use UnifiedPush: `all` (default) or `licensed` (only a server with an active licence)",
+            "pattern": "^(all|licensed)$",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AdminConfigUserDto": {
@@ -115138,6 +115208,16 @@
             "nullable": true,
             "type": "string"
           },
+          "placeNamesLocalized": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlaceNamesLocalizedDto"
+              }
+            ],
+            "default": null,
+            "description": "City, state and country in the language of the signed-in account, when it is not English and at least one of the three has a translation. Null otherwise: show `city`, `state` and `country`",
+            "nullable": true
+          },
           "profileDescription": {
             "default": null,
             "description": "Color profile description",
@@ -130462,6 +130542,10 @@
             "format": "double",
             "type": "number"
           },
+          "placeNamesLocalized": {
+            "$ref": "#/components/schemas/PlaceNamesLocalizedDto",
+            "description": "FL-987: city, state and country of the preview item in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise"
+          },
           "south": {
             "description": "Southernmost latitude of the items",
             "format": "double",
@@ -130635,6 +130719,10 @@
           "originalFileName": {
             "description": "Original file name",
             "type": "string"
+          },
+          "placeNamesLocalized": {
+            "$ref": "#/components/schemas/PlaceNamesLocalizedDto",
+            "description": "FL-987: city, state and country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `city`, `state` and `country`"
           },
           "state": {
             "description": "State/Province name",
@@ -161427,6 +161515,37 @@
         ],
         "type": "object"
       },
+      "PlaceNamesLocalizedDto": {
+        "description": "Place names in the viewer’s language",
+        "properties": {
+          "city": {
+            "description": "City name in `lang`, or the English `city` where it has no translation",
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "description": "Country name in `lang`, or the English `country` where it has no translation",
+            "nullable": true,
+            "type": "string"
+          },
+          "lang": {
+            "description": "Language of the translated names: fr, es, de, it, pt, nl, pl, sv, da or nb (Norwegian Bokmål)",
+            "type": "string"
+          },
+          "state": {
+            "description": "State/province name in `lang`, or the English `state` where it has no translation",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "city",
+          "country",
+          "lang",
+          "state"
+        ],
+        "type": "object"
+      },
       "PlacesResponseDto": {
         "properties": {
           "admin1name": {
@@ -161450,6 +161569,10 @@
           "name": {
             "description": "Place name",
             "type": "string"
+          },
+          "placeNamesLocalized": {
+            "$ref": "#/components/schemas/PlaceNamesLocalizedDto",
+            "description": "FL-987: the place (as `city`), its state/province and its country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `name` and `admin1name`"
           }
         },
         "required": [
@@ -163623,21 +163746,41 @@
             "type": "string"
           },
           "pushToken": {
-            "description": "The APNs device token or FCM registration token",
+            "description": "The APNs device token or FCM registration token. Optional only for an Android device that registers a UnifiedPush endpoint.",
             "maxLength": 4096,
             "minLength": 1,
+            "type": "string"
+          },
+          "unifiedPushAuth": {
+            "description": "The Web Push authentication secret (`auth`): 16 bytes, base64url (RFC 8291)",
+            "maxLength": 64,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "unifiedPushEndpoint": {
+            "description": "Android only: the device's UnifiedPush endpoint (the distributor's push address, such as an ntfy topic URL). When set, pushes go there instead of through the Frameleaf Cloud gateway, and the server need not be linked. Needs unifiedPushPublicKey and unifiedPushAuth.",
+            "format": "uri",
+            "maxLength": 2048,
+            "nullable": true,
+            "type": "string"
+          },
+          "unifiedPushPublicKey": {
+            "description": "The Web Push P-256 public key (`p256dh`): the 65-byte uncompressed point, base64url (RFC 8291)",
+            "maxLength": 128,
+            "minLength": 1,
+            "nullable": true,
             "type": "string"
           }
         },
         "required": [
           "platform",
-          "publicKey",
-          "pushToken"
+          "publicKey"
         ],
         "type": "object"
       },
       "PushDeviceResponseDto": {
-        "description": "A registered push device. Push tokens are never returned.",
+        "description": "A registered push device. Push tokens and the UnifiedPush endpoint and keys are never returned.",
         "properties": {
           "activities": {
             "items": {
@@ -163691,6 +163834,19 @@
             "description": "A short fingerprint of the registered public key; never the token",
             "type": "string"
           },
+          "transport": {
+            "description": "How pushes reach this device: `cloud` (the Frameleaf Cloud gateway) or `unifiedpush`. Open-ended: treat an unfamiliar value as cloud.",
+            "type": "string"
+          },
+          "unifiedPush": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PushDeviceUnifiedPushDto"
+              }
+            ],
+            "description": "The UnifiedPush state; null when the device has no UnifiedPush endpoint",
+            "nullable": true
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
@@ -163708,7 +163864,56 @@
           "platform",
           "preferences",
           "publicKeyFingerprint",
+          "transport",
+          "unifiedPush",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PushDeviceTestResponseDto": {
+        "properties": {
+          "message": {
+            "description": "Why it was not sent, in plain words; null when sent",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "description": "`sent`: accepted for delivery; `gone`: the push service no longer knows the device, so it was unregistered; `retry`: the push service is busy, try again later; `refused`: the push service or this server refused it (see message); `unavailable`: this server cannot deliver to the device now. Open-ended.",
+            "type": "string"
+          },
+          "transport": {
+            "description": "The way the test went: `cloud` or `unifiedpush`. Open-ended.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "status",
+          "transport"
+        ],
+        "type": "object"
+      },
+      "PushDeviceUnifiedPushDto": {
+        "description": "FL-926: the UnifiedPush state of a device that registered an endpoint",
+        "properties": {
+          "available": {
+            "description": "Whether this server delivers to UnifiedPush now (the administrator may limit it to licensed servers)",
+            "type": "boolean"
+          },
+          "endpointHost": {
+            "description": "The host of the device's UnifiedPush endpoint; never the full address",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why UnifiedPush is unavailable (`licence-required`); null when available. Open-ended.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "endpointHost",
+          "reason"
         ],
         "type": "object"
       },
@@ -163743,6 +163948,27 @@
             "description": "A rotated APNs or FCM token",
             "maxLength": 4096,
             "minLength": 1,
+            "type": "string"
+          },
+          "unifiedPushAuth": {
+            "description": "The Web Push authentication secret (`auth`): 16 bytes, base64url (RFC 8291)",
+            "maxLength": 64,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "unifiedPushEndpoint": {
+            "description": "A new UnifiedPush endpoint (with its keys), or null to stop using UnifiedPush and go back to the Cloud gateway",
+            "format": "uri",
+            "maxLength": 2048,
+            "nullable": true,
+            "type": "string"
+          },
+          "unifiedPushPublicKey": {
+            "description": "The Web Push P-256 public key (`p256dh`): the 65-byte uncompressed point, base64url (RFC 8291)",
+            "maxLength": 128,
+            "minLength": 1,
+            "nullable": true,
             "type": "string"
           }
         },
@@ -163914,6 +164140,9 @@
           "registered": {
             "description": "Whether the session asking has registered its device",
             "type": "boolean"
+          },
+          "unifiedPush": {
+            "$ref": "#/components/schemas/PushUnifiedPushStatusDto"
           }
         },
         "required": [
@@ -163921,7 +164150,8 @@
           "encryption",
           "events",
           "reason",
-          "registered"
+          "registered",
+          "unifiedPush"
         ],
         "type": "object"
       },
@@ -163933,6 +164163,30 @@
           "clone-suspected"
         ],
         "type": "string"
+      },
+      "PushUnifiedPushStatusDto": {
+        "description": "FL-926: UnifiedPush delivery, for Android devices without Google services",
+        "properties": {
+          "available": {
+            "description": "Whether this server delivers to a UnifiedPush endpoint; it need not be linked to Frameleaf Cloud",
+            "type": "boolean"
+          },
+          "encoding": {
+            "description": "The Web Push content coding UnifiedPush messages are encrypted in (RFC 8291, RFC 8188): `aes128gcm`",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why UnifiedPush is unavailable (`licence-required`); null when available. Open-ended.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "encoding",
+          "reason"
+        ],
+        "type": "object"
       },
       "QueueCommand": {
         "description": "Queue command to execute",

@@ -63,6 +63,18 @@ COPY --from=frameleaf licenses/texts/ofl-1.1.txt /opt/frameleaf-studio/fonts/OFL
 
 FROM ${NODE_RUNTIME_IMAGE} AS node-runtime
 
+# FL-806: llama.cpp for the Library Assistant planner. The Vulkan build serves NVIDIA, AMD and Intel GPUs; its arm64
+# build needs a newer glibc than the CUDA image has, so arm64 images go without and report no planner runtime.
+FROM ${CPU_IMAGE} AS llama-server
+ADD --checksum=sha256:b6f9e4dbdebaa1d196111fc01b19f9f2447ba991004908f65c5f1431cfa0426d \
+    https://github.com/ggml-org/llama.cpp/releases/download/b12477/llama-b12477-bin-ubuntu-vulkan-x64.tar.gz \
+    /tmp/llama.tar.gz
+RUN mkdir -p /opt/llama.cpp && \
+    if [ "$(uname -m)" = x86_64 ]; then \
+      tar -xzf /tmp/llama.tar.gz --strip-components=1 -C /opt/llama.cpp && \
+      find /opt/llama.cpp -mindepth 1 ! -name llama-server ! -name 'lib*.so*' ! -name LICENSE -delete; \
+    fi
+
 FROM builder-${DEVICE} AS builder
 
 ARG DEVICE
@@ -84,6 +96,8 @@ FROM ${CPU_IMAGE} AS prod-cpu
 ENV MACHINE_LEARNING_MODEL_ARENA=false
 
 FROM python:3.13.16-slim-trixie@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f AS prod-openvino
+
+COPY --from=llama-server /opt/llama.cpp /opt/llama.cpp
 
 RUN apt-get update && \
     apt-get install --no-install-recommends -yqq ocl-icd-libopencl1 wget && \
@@ -122,6 +136,8 @@ RUN mkdir /tmp/npu-driver && \
 
 FROM ${CUDA_IMAGE} AS prod-cuda
 
+COPY --from=llama-server /opt/llama.cpp /opt/llama.cpp
+
 # CI only: GitHub runners stopped resolving *.ubuntu.com (FL-1453); empty keeps the default archive.
 ARG UBUNTU_MIRROR=
 RUN if [ -n "$UBUNTU_MIRROR" ]; then sed -i -E "s#https?://(archive|security)\.ubuntu\.com/ubuntu/?#${UBUNTU_MIRROR}#g" /etc/apt/sources.list; fi
@@ -138,6 +154,8 @@ COPY --from=builder-cuda /opt/python /opt/python
 RUN ln -s /opt/python/cpython-3.12.15-linux-$(uname -m)-gnu/bin/python3 /usr/local/bin/python3
 
 FROM rocm/dev-ubuntu-24.04:7.2-complete@sha256:86e11093b4a7ec2a79b1b6701d10e840a6994f21c7e05929b51eb9be361c683a AS prod-rocm
+
+COPY --from=llama-server /opt/llama.cpp /opt/llama.cpp
 
 RUN apt-get update && apt-get install --no-install-recommends -yqq migraphx miopen-hip && \
     apt-get clean && \
@@ -214,7 +232,7 @@ ENV TRANSFORMERS_CACHE=/cache \
     SCARF_NO_ANALYTICS=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:$PATH" \
+    PATH="/opt/venv/bin:/opt/llama.cpp:$PATH" \
     PYTHONPATH=/usr/src \
     DEVICE=${DEVICE} \
     VIRTUAL_ENV=/opt/venv \

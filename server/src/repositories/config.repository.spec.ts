@@ -486,7 +486,15 @@ describe('getEnv', () => {
         localUrl: null,
         trustedLanCidrs: [],
         licenseExtraJwksFile: null,
+        pushRequiresPlan: false,
       });
+    });
+
+    it('reads the Cloud push plan switch, off unless set (FL-926)', () => {
+      expect(getEnv().frameleafCloud.pushRequiresPlan).toBe(false);
+      process.env.FRAMELEAF_CLOUD_PUSH_REQUIRES_PLAN = 'true';
+      expect(getEnv().frameleafCloud.pushRequiresPlan).toBe(true);
+      delete process.env.FRAMELEAF_CLOUD_PUSH_REQUIRES_PLAN;
     });
 
     it('parses the deployment configuration', () => {
@@ -515,6 +523,7 @@ describe('getEnv', () => {
         localUrl: 'http://192.168.1.10:2283',
         trustedLanCidrs: ['100.64.0.0/10', 'fd00:1234::/32'],
         licenseExtraJwksFile: '/run/secrets/frameleaf-dev-keys.json',
+        pushRequiresPlan: false,
       });
     });
 

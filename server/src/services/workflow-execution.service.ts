@@ -376,7 +376,12 @@ export class WorkflowExecutionService extends BaseService {
         }
         const allowHomeNetwork =
           context.event?.allowHomeNetwork ?? (await this.getConfig({ withCache: true })).server.automationsLocalNetwork;
-        return sendWebhook(url.href, { method: request.method, headers, body: request.body }, { allowHomeNetwork });
+        const { ok, status, body } = await sendWebhook(
+          url.href,
+          { method: request.method, headers, body: request.body },
+          { allowHomeNetwork },
+        );
+        return { ok, status, body };
       }
       // FL-1420: unsigned requests follow redirects, but every hop goes only where an automation may
       const { automationsLocalNetwork: allowHomeNetwork } = (await this.getConfig({ withCache: true })).server;

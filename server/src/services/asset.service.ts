@@ -262,6 +262,7 @@ export class AssetService extends BaseService {
     await this.withLandmarks(data);
     // FL-949: the viewer's own name for the spot; never through a shared link
     await this.withNamedPlace(data, auth.sharedLink ? undefined : auth.user.id);
+    await this.localizeAssetPlaces(auth, [data]);
 
     data.fileProblem = await this.fileProblemFor(auth, asset);
 

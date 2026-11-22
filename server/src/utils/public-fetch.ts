@@ -294,7 +294,8 @@ const isHomeDestination = (host: string): boolean => {
   return !host.includes('.') || /\.(local|internal|lan|home\.arpa)$/i.test(host);
 };
 
-const checkWebhookUrl = (value: string, allowHomeNetwork: boolean): URL => {
+/** The checks an automation (or UnifiedPush) address passes before any connection; throws `PublicFetchError`. */
+export const checkWebhookUrl = (value: string, allowHomeNetwork: boolean): URL => {
   const url = new URL(value);
   // plain http only reaches the home network; anywhere else the message is sent encrypted
   const protocols = allowHomeNetwork ? ['http:', 'https:'] : ['https:'];
@@ -326,7 +327,8 @@ const checkWebhookUrl = (value: string, allowHomeNetwork: boolean): URL => {
   return url;
 };
 
-export type WebhookResponse = { ok: boolean; status: number; body: string };
+/** `headers` is for callers that read an answer's own headers (UnifiedPush `Retry-After`). */
+export type WebhookResponse = { ok: boolean; status: number; body: string; headers?: Headers };
 
 /**
  * FL-1420: one hop of a plugin's HTTP request that is not a signed automation message (a photo
@@ -371,8 +373,8 @@ export const readAutomationAnswer = async (response: { body: AsyncIterable<Uint8
 /** Sends one bounded automation message without redirects, using plain HTTP only on the home network. */
 export const sendWebhook = async (
   address: string,
-  { method = 'POST', headers, body = '' }: { method?: string; headers: Headers; body?: string },
-  { allowHomeNetwork }: { allowHomeNetwork: boolean },
+  { method = 'POST', headers, body = '' }: { method?: string; headers: Headers; body?: string | Uint8Array },
+  { allowHomeNetwork, discardBody = false }: { allowHomeNetwork: boolean; discardBody?: boolean },
 ): Promise<WebhookResponse> => {
   const url = checkWebhookUrl(address, allowHomeNetwork);
   if (!['POST', 'PUT'].includes(method.toUpperCase())) {
@@ -394,7 +396,12 @@ export const sendWebhook = async (
   });
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel();
-    return { ok: false, status: response.status, body: '' };
+    return { ok: false, status: response.status, body: '', headers: response.headers as unknown as Headers };
+  }
+  if (discardBody) {
+    // the status is the answer (UnifiedPush): a body that fails to arrive must not turn it into a failure
+    await response.body?.cancel().catch(() => {});
+    return { ok: response.ok, status: response.status, body: '', headers: response.headers as unknown as Headers };
   }
   const chunks: Buffer[] = [];
   if (response.body) {
@@ -408,5 +415,10 @@ export const sendWebhook = async (
       chunks.push(Buffer.from(chunk));
     }
   }
-  return { ok: response.ok, status: response.status, body: Buffer.concat(chunks).toString('utf8') };
+  return {
+    ok: response.ok,
+    status: response.status,
+    body: Buffer.concat(chunks).toString('utf8'),
+    headers: response.headers as unknown as Headers,
+  };
 };

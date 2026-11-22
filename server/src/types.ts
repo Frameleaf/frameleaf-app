@@ -787,6 +787,7 @@ export type JobItem =
   | { name: JobName.MemoryGenerate; data?: IBaseJob }
   | { name: JobName.LandmarkMatchAll; data?: IBaseJob }
   | { name: JobName.LandmarkInfer; data?: IBaseJob & { id?: string; trigger?: 'metadata' | 'embedding' } }
+  | { name: JobName.PlaceNameBackfill; data?: IBaseJob }
   | { name: JobName.AlbumSuggestionAutoAdd; data: IEntityJob }
   | { name: JobName.AlbumSuggestionOutfit; data: IEntityJob }
   | { name: JobName.AlbumCleanupScan; data: { userId: string } }
@@ -1720,6 +1721,8 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafLibraryMovePause]: LibraryMovePauseState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
   [SystemMetadataKey.IdenticalFiles]: IdenticalFilesState;
+  /** FL-987: the SHA-256 of the place-name pack whose names are in `geodata_place_name`. */
+  [SystemMetadataKey.PlaceNamesState]: { sha256?: string };
   [SystemMetadataKey.ReverseGeocodingState]: {
     lastUpdate?: string;
     lastImportFileName?: string;

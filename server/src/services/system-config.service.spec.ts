@@ -399,6 +399,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     newUserStorageQuota: null,
   },
   notifications: {
+    unifiedPush: { allowLocalTargets: false, availability: 'all' },
     smtp: {
       enabled: false,
       from: '',

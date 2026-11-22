@@ -155,6 +155,19 @@ export const LANDMARK_ICON_PACK = {
   sha256: 'e6139ccd9995a2a74638688bb905ee7ddea173818c3920a3b58b72ecd60dd6fa',
 };
 
+/**
+ * The place-name pack (FL-987), made by bin/build-place-names-pack.mjs: city, region and country names in
+ * Frameleaf's ten languages, from GeoNames (CC BY 4.0). A server downloads the whole file once and checks
+ * it against this SHA-256. A new pack goes in a new folder; change the address and the checksum together.
+ */
+export const PLACE_NAME_PACK = {
+  url: 'https://static.frameleaf.cloud/place-names/2026-11-22/place-names.tsv.gz',
+  sha256: 'c88af5a15d5a23780603453136d2a2262539faf741f3fc875adab3797efeeccc',
+};
+/** FL-987: how many items one slice of the place-name backfill links, and how long it rests between slices. */
+export const PLACE_NAME_BACKFILL_SLICE = 500;
+export const PLACE_NAME_BACKFILL_PAUSE_MS = 250;
+
 export const MOBILE_REDIRECT = 'app.immich:///oauth-callback';
 /**
  * The Frameleaf mobile app's own sign-in callback (FL-131, REL-102). Kept apart from the Immich
