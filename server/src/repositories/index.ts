@@ -137,6 +137,7 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
+import { PrintBackRepository } from 'src/repositories/print-back.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { PushDeviceRepository } from 'src/repositories/push-device.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
@@ -192,6 +193,7 @@ export const repositories = [
   SpeechRepository,
   AssetAnnotationRepository,
   AssetPaletteRepository,
+  PrintBackRepository,
   ScanSplitRepository,
   CaptureRepository,
   BrowserExtensionSignInRepository,

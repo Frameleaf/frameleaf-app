@@ -86,6 +86,28 @@ export class OcrRepository {
     }
   }
 
+  /** FL-967: the owner's decisions about a print back's text, which its search text is built from. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getDocumentEdits(assetId: string) {
+    return this.db
+      .selectFrom('asset_document_edit')
+      .selectAll()
+      .where('assetId', '=', assetId)
+      .orderBy('createdAt', 'asc')
+      .execute();
+  }
+
+  /** FL-967: files a print back's text under its front. Part of the OCR job's publication when it runs in one. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
+  async setPrintBackSearchText(backAssetId: string, searchText: string): Promise<void> {
+    const adopt = async (db: Kysely<DB>) => {
+      await db.updateTable('asset_print_back').set({ searchText }).where('backAssetId', '=', backAssetId).execute();
+    };
+    if (!deferJobAdoption(adopt)) {
+      await adopt(this.db);
+    }
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, [], []] })
   async updateOcrVisibilities(
     assetId: string,

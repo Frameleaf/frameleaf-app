@@ -122,19 +122,19 @@ export class ScanSplitService {
   async offer(auth: AuthDto, id: string): Promise<ScanSplitOfferResponseDto> {
     await requireAccess(this.access, { auth, permission: Permission.AssetEditGet, ids: [id] });
     if (!(await this.repository.isInScanAlbum(id))) {
-      return { printCount: 0 };
+      return { printCount: 0, inScanAlbum: false };
     }
     const earlier = await this.repository.getCrops(id);
     if (earlier.some((crop) => !crop.trashed)) {
-      return { printCount: 0 };
+      return { printCount: 0, inScanAlbum: true };
     }
     try {
       const { prints } = await this.detect(auth, id);
-      return { printCount: prints.length };
+      return { printCount: prints.length, inScanAlbum: true };
     } catch (error) {
       // An offer is optional: no worker, or a file that cannot be read, is simply no offer.
       if (error instanceof ServiceUnavailableException || error instanceof BadRequestException) {
-        return { printCount: 0 };
+        return { printCount: 0, inScanAlbum: true };
       }
       throw error;
     }

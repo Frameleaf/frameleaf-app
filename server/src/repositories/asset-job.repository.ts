@@ -23,6 +23,7 @@ import { DB } from 'src/schema/index.js';
 import {
   anyUuid,
   asUuid,
+  isPrintBack,
   withAudioStream,
   withDefaultVisibility,
   withEdits,
@@ -498,6 +499,7 @@ export class AssetJobRepository {
           // `checksum` identifies the exact original a still edited master was rendered from (FL-39 lineage).
           'asset.checksum',
           'asset.checksumAlgorithm',
+          isPrintBack('asset').as('isPrintBack'),
         ])
         .select((eb) =>
           jsonArrayFrom(
@@ -697,7 +699,11 @@ export class AssetJobRepository {
   getForOcr(id: string) {
     return this.db
       .selectFrom('asset')
-      .select((eb) => ['asset.visibility', withFilePath(eb, AssetFileType.Preview).as('previewFile')])
+      .select((eb) => [
+        'asset.visibility',
+        withFilePath(eb, AssetFileType.Preview).as('previewFile'),
+        isPrintBack('asset').as('isPrintBack'),
+      ])
       .where('asset.id', '=', id)
       .executeTakeFirst();
   }
@@ -1148,17 +1154,20 @@ export class AssetJobRepository {
   }
 
   selectionForOcrJob(force?: boolean) {
-    return this.db
-      .selectFrom('asset')
-      .select(['asset.id'])
-      .$if(!force, (qb) =>
-        qb
-          .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
-          .where('asset_job_status.ocrAt', 'is', null),
-      )
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.type', '!=', sql.lit(AssetType.Other))
-      .where('asset.visibility', '!=', AssetVisibility.Hidden);
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(['asset.id'])
+        .$if(!force, (qb) =>
+          qb
+            .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
+            .where('asset_job_status.ocrAt', 'is', null),
+        )
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.type', '!=', sql.lit(AssetType.Other))
+        // FL-967: the back of a print is hidden and is still read
+        .where((eb) => eb.or([eb('asset.visibility', '!=', AssetVisibility.Hidden), isPrintBack('asset')]))
+    );
   }
 
   private selectionForImageEnrichmentTask(force: boolean | undefined, task: 'description' | 'nsfwDetection') {
