@@ -130,7 +130,7 @@ Cloud has no workload for this yet. FL-871 adds one (`generative-edit`) to the w
 
 ## Sources
 
-Read in November 2026. These are the pages the spike read; the figures were not re-checked against them when the links were added. The FLUX 3 Image Klein, Fibo 2.0 and H3-Image cards are gated and need a signed-in account that has accepted the model's terms; arena.ai refuses automated requests but opens in a browser.
+Read in November 2026. These are the pages the spike read; the figures were not re-checked against them when the links were added. The FLUX 3 Image Klein, Fibo 2.0 and H3-Image cards are gated and need a signed-in account that has accepted the model's terms; arena.ai refuses automated requests but opens in a browser; it was re-read on 2026-11-22 and still names Qwen-Image-2.1 the best open model for single-image editing. The three gated cards have not been re-read.
 
 - Model cards, for size, steps, licence, file sizes and the maker's VRAM and speed figures: [Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1), [Qwen-Image-Edit-2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509), [FLUX 3 Image Klein](https://huggingface.co/black-forest-labs/FLUX.3-Image-klein) and its [release post](https://bfl.ai/blog/flux-3-image-klein), [FLUX.2 [klein] 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B), [Fibo 2.0](https://huggingface.co/briaai/FIBO-2.0), [H3-Image](https://huggingface.co/MiniMaxAI/H3-Image).
 - Edit rank: the [Artificial Analysis image editing leaderboard, open weights](https://artificialanalysis.ai/image/leaderboard/editing/open-weights). Second leaderboard: [arena.ai image edit](https://arena.ai/leaderboard/image-edit), 16 November 2026.
