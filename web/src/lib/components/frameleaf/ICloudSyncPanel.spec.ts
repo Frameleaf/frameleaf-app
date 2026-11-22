@@ -279,37 +279,14 @@ describe('ICloudSyncPanel', () => {
     expect(code).toHaveValue('');
   });
 
-  it('asks consent before hidden photos, then unlocks before saving', async () => {
-    mocks.getAuthStatus.mockResolvedValue({ isElevated: false });
-    render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
-    await fireEvent.click(screen.getByRole('switch', { name: en.frameleaf_icloud_hidden }));
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_save }));
-    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_icloud_consent_confirm }));
-    await waitFor(() =>
-      expect(mocks.goto).toHaveBeenCalledWith(
-        '/auth/pin-prompt?continue=%2Fuser-settings%3Farea%3Dutilities%26section%3Dicloud',
-      ),
-    );
-    expect(mocks.updateICloudConnection).not.toHaveBeenCalled();
-    expect(JSON.parse(sessionStorage.getItem('frameleaf.icloud.pending-save')!)).toMatchObject({
-      connectionId: id,
-      draft: { includeHidden: true },
-    });
-  });
-
-  it('brings the draft back after unlocking and saves it without asking consent twice', async () => {
-    sessionStorage.setItem(
-      'frameleaf.icloud.pending-save',
-      JSON.stringify({ connectionId: id, draft: { label: 'Personal iCloud', includeHidden: true } }),
-    );
-    mocks.getAuthStatus.mockResolvedValue({ isElevated: true });
+  it('always brings hidden photos in as Locked, with no switch or unlock to save', async () => {
     mocks.updateICloudConnection.mockResolvedValue(connection());
     render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
-    expect(screen.getByRole('switch', { name: en.frameleaf_icloud_hidden })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByRole('switch', { name: 'Hidden photos' })).not.toBeInTheDocument();
+    expect(screen.getByText(en.frameleaf_icloud_hidden_always_locked)).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_save }));
     await waitFor(() => expect(mocks.updateICloudConnection).toHaveBeenCalled());
-    expect(mocks.updateICloudConnection.mock.calls[0][0].iCloudConnectionUpdateDto.config.includeHidden).toBe(true);
-    expect(sessionStorage.getItem('frameleaf.icloud.pending-save')).toBeNull();
+    expect(mocks.goto).not.toHaveBeenCalled();
   });
 
   it('checks by itself or only when asked, per connection (FL-539)', async () => {
@@ -350,12 +327,12 @@ describe('ICloudSyncPanel', () => {
     );
   });
 
-  it('lists reconciliation findings and sends a Live Photo pair to its review', async () => {
-    render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
-    expect(await screen.findByText('IMG_1104.MOV')).toBeInTheDocument();
-    expect(screen.getByText(en.frameleaf_icloud_reason_live_photo)).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_review }));
-    expect(mocks.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=live-photos');
+  it('opens the review page from the count of photos waiting', async () => {
+    render(ICloudSyncPanel, {
+      initial: { enabled: true, connections: [connection({ counts: { ...connection().counts, 'needs-review': 3 } })] },
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_icloud_review_cta }));
+    expect(String(mocks.goto.mock.calls.at(-1)?.[0])).toContain(`review=${id}`);
   });
 
   it('removes a disconnected connection and says its photos stay', async () => {

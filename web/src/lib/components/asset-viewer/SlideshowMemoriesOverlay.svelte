@@ -8,6 +8,7 @@
    * next run opens with the title card again. Under Reduce Motion the transition is a fade, and
    * none of this shows.
    */
+  import { formatApproximateDate } from '$lib/frameleaf/approximate-date';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import { memoryLowerThird, memoryTitleCard } from '$lib/frameleaf/memory-engine';
   import { prefersReducedMotion } from '$lib/frameleaf/motion';
@@ -68,6 +69,11 @@
   });
 
   const day = $derived.by(() => {
+    // FL-936: a photo dated to a year or a decade never shows a made-up day
+    const approximate = formatApproximateDate(asset.localDateTime, asset.dateAccuracy, $locale, { heading: true });
+    if (approximate) {
+      return approximate;
+    }
     const date =
       asset.exifInfo?.timeZone && asset.exifInfo.dateTimeOriginal
         ? fromISODateTime(asset.exifInfo.dateTimeOriginal, asset.exifInfo.timeZone)

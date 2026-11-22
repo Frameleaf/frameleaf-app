@@ -543,6 +543,11 @@ export const getMocks = () => {
   mocks.partnerOrigin.shareGeneratedFiles.mockResolvedValue([]);
   mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => write(undefined));
+  // FL-842: nobody is related and nothing is a partner copy unless a test says so
+  mocks.partnerOrigin.getPersonCopies.mockResolvedValue([]);
+  mocks.partnerOrigin.getPersonFollowers.mockResolvedValue([]);
+  mocks.person.getRelationships.mockResolvedValue([]);
+  mocks.person.getOwnPeople.mockResolvedValue([]);
   // Write wrappers run their callback by default so a test cannot pass while silently skipping the write.
   mocks.partnerOrigin.withOwnerTagEdit.mockImplementation(async (_owner, write) => write());
   mocks.person.withMergeWrite.mockImplementation(async (write) => write());

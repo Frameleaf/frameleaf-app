@@ -594,6 +594,29 @@ describe(PersonService.name, () => {
       expect(mocks.person.getPersonCategoryIds).not.toHaveBeenCalled();
     });
 
+    it("carries the person's family on the single-person read only (FL-842)", async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ ownerId: auth.user.id });
+      const mum = PersonFactory.create({ ownerId: auth.user.id, name: 'Mum' });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.getRelationships.mockResolvedValue([
+        {
+          personGroupId: mum.personGroupId,
+          relatedPersonGroupId: person.personGroupId,
+          kind: 'parent',
+          parentRole: 'mother',
+        },
+      ]);
+      mocks.person.getOwnPeople.mockResolvedValue([mum]);
+      mocks.access.person.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+
+      const result = await sut.getById(auth, person.personGroupId);
+
+      expect(result.relationships?.parents).toEqual([
+        { person: expect.objectContaining({ id: mum.personGroupId, name: 'Mum' }), parentRole: 'mother' },
+      ]);
+    });
+
     it('should get a person by id', async () => {
       const auth = AuthFactory.create();
       const person = PersonFactory.create();

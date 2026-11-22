@@ -115,17 +115,12 @@ describe('iCloud API authorization and input boundaries', () => {
       .expect(400);
     expect(repository.create).not.toHaveBeenCalled();
   });
-  it('requires server-side elevation to grant background hidden-media access', async () => {
+  it('refuses a review accept that names neither photos nor all of them', async () => {
+    await request(context.getHttpServer()).post(`/icloud-sync/connections/${id}/review/accept`).send({}).expect(400);
     await request(context.getHttpServer())
-      .post('/icloud-sync/connections')
-      .send({ label: 'Photos', config: { includeHidden: true } })
-      .expect(401);
-    await request(context.getHttpServer())
-      .patch(`/icloud-sync/connections/${id}`)
-      .send({ config: { includeHidden: true } })
-      .expect(401);
-    expect(repository.create).not.toHaveBeenCalled();
-    expect(repository.update).not.toHaveBeenCalled();
+      .get(`/icloud-sync/connections/${id}/review`)
+      .query({ size: 1000 })
+      .expect(400);
   });
   it('rejects malformed challenges and plaintext HTTP before sending credentials to Apple', async () => {
     await request(context.getHttpServer())

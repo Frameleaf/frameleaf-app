@@ -14,6 +14,7 @@ import {
 } from 'src/repositories/media-recovery.repository.js';
 import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
 import { MediaIntegrityResult, MediaIntegrityService } from 'src/services/media-integrity.service.js';
+import { isICloudReviewAccepted } from 'src/utils/icloud-review.js';
 
 export type MediaRecoveryInput = RecoveryAuthority & {
   stagedPath: string;
@@ -183,10 +184,12 @@ export class MediaRecoveryService {
       const exact = candidates.filter(({ matchesContent, isExternal }) => matchesContent && !isExternal);
       const matchedExternal = candidates.find(({ matchesContent, isExternal }) => matchesContent && isExternal);
       const mapped = exact.find(({ id }) => id === resource.assetId);
-      if (exact.length > 1 && !mapped) {
+      // The owner accepted a match in review: use the visible copy, since the same bytes are stored only once.
+      const accepted = isICloudReviewAccepted(resource.source, 'multiple_content_matches');
+      if (exact.length > 1 && !mapped && !accepted) {
         return { outcome: 'needs-review', reason: 'multiple_content_matches' };
       }
-      const candidate = mapped ?? exact[0];
+      const candidate = mapped ?? exact.find(({ hidden }) => !hidden) ?? exact[0];
       if (input.audit && input.sourceHidden && candidate && !candidate.hidden) {
         return { outcome: 'needs-review', reason: 'audit_private_copy_requires_review' };
       }

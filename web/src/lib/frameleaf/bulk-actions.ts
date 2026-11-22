@@ -111,6 +111,8 @@ export type BulkAsset = {
   localDateTime?: string;
   /** The item's UTC offset in minutes, so "keep each item's time zone" can keep it (FL-32). */
   utcOffsetMinutes?: number;
+  /** FL-936: the date is known only to a year or a decade; the dialog opens on that. */
+  dateAccuracy?: string | null;
 };
 
 export const toBulkAsset = (asset: AssetResponseDto): BulkAsset => ({

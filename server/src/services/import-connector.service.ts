@@ -27,6 +27,7 @@ import {
   remoteSourceProvider,
   remoteSourceProviders,
 } from 'src/import-connectors/remote-source.js';
+import { webdavRemoteSourceProvider } from 'src/import-connectors/webdav.source.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -44,10 +45,11 @@ import {
   TakeoutRepository,
   takeoutOperationFor,
 } from 'src/repositories/takeout.repository.js';
+import { ImportSignInService } from 'src/services/import-sign-in.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { TAKEOUT_MAX_ATTEMPTS } from 'src/services/takeout.service.js';
 import { checkAccess, requireUploadsNotPaused } from 'src/utils/access.js';
-import { openImportConnection, sealImportCredentials } from 'src/utils/import-connector.js';
+import { openImportConnection, readImportCredentials, sealImportCredentials } from 'src/utils/import-connector.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -118,13 +120,16 @@ export class ImportConnectorService {
     private access: AccessRepository,
     private crypto: CryptoRepository,
     private config: ConfigRepository,
+    private signIn: ImportSignInService,
   ) {
     this.logger.setContext(ImportConnectorService.name);
   }
 
-  /** The in-memory test source exists only on a server started for tests (the e2e stack). */
+  /** Real sources are registered here. The in-memory test source exists only on a server started for tests. */
   @OnEvent({ name: 'AppBootstrap' })
   onBootstrap() {
+    registerRemoteSource(webdavRemoteSourceProvider);
+    registerRemoteSource(this.signIn.dropbox);
     if (this.config.getEnv().environment === FrameleafEnvironment.Testing) {
       registerRemoteSource(fakeRemoteSourceProvider);
     }
@@ -157,7 +162,7 @@ export class ImportConnectorService {
   /** Connect: the source is asked for its top folders once, so a wrong sign-in is refused here. */
   async create(auth: AuthDto, dto: ImportConnectionCreateDto): Promise<ImportConnectionResponseDto> {
     this.requireSession(auth);
-    const credentials = await this.checkCredentials(dto.provider, dto.credentials);
+    const credentials = await this.checkCredentials(auth, dto.provider, dto.credentials);
     const id = this.crypto.randomUUID();
     const connection = await this.repository.create({
       id,
@@ -175,7 +180,7 @@ export class ImportConnectorService {
   async update(auth: AuthDto, id: string, dto: ImportConnectionUpdateDto): Promise<ImportConnectionResponseDto> {
     this.requireSession(auth);
     const connection = await this.findOwned(auth, id);
-    const credentials = dto.credentials && (await this.checkCredentials(connection.provider, dto.credentials));
+    const credentials = dto.credentials && (await this.checkCredentials(auth, connection.provider, dto.credentials));
     await this.repository.update(id, {
       displayName: dto.displayName,
       dailyCheck: dto.dailyCheck,
@@ -194,6 +199,7 @@ export class ImportConnectorService {
   /** Disconnect. The connection and its runs go; every photo it brought in stays in the library. */
   async remove(auth: AuthDto, id: string): Promise<void> {
     this.requireSession(auth);
+    const connection = await this.repository.get(auth.user.id, id);
     const outcome = await this.repository.delete(auth.user.id, id);
     if (outcome === 'missing') {
       throw new NotFoundException('Connection not found');
@@ -202,6 +208,27 @@ export class ImportConnectorService {
       throw new BadRequestException('Cancel the running job before removing this connection');
     }
     this.logger.log(`Import connection ${id} removed`);
+    if (connection) {
+      await this.giveUpAccess(connection);
+    }
+  }
+
+  /** Ask the source to end the access a removed connection held. It is gone here whatever the answer. */
+  private async giveUpAccess(connection: ImportConnection) {
+    const provider = remoteSourceProvider(connection.provider);
+    if (!provider?.revoke) {
+      return;
+    }
+    try {
+      const credentials = await readImportCredentials(this.sealDeps, connection);
+      if (credentials) {
+        await provider.revoke(credentials);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Import connection ${connection.id}: access was not revoked at the source (${error instanceof Error ? error.name : 'error'})`,
+      );
+    }
   }
 
   /** The folders inside a folder at the source, for choosing what to import. */
@@ -373,14 +400,18 @@ export class ImportConnectorService {
   }
 
   private get sealDeps() {
-    return { crypto: this.crypto, config: this.config };
+    return { crypto: this.crypto, config: this.config, repository: this.repository };
   }
 
   /** What is sealed for a connection, after the source accepted it. */
-  private async checkCredentials(providerName: string, input: Record<string, unknown>) {
+  private async checkCredentials(auth: AuthDto, providerName: string, input: Record<string, unknown>) {
     const provider = remoteSourceProvider(providerName);
     if (!provider) {
       throw new BadRequestException('This kind of connection is not available on this server');
+    }
+    // Reaching the home network from the server is an administrator's call, checked before any request is sent.
+    if (input.allowPrivateAddress === true && !auth.user.isAdmin) {
+      throw new ForbiddenException('Only an administrator can connect to an address on the home network');
     }
     return this.asking(async () => {
       const credentials = await provider.credentials(input);

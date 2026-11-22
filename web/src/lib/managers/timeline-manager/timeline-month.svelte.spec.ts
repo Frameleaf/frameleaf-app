@@ -2,6 +2,7 @@ import { TimeBucketDateType, type TimeBucketAssetResponseDto } from '@frameleaf/
 import { SvelteSet } from 'svelte/reactivity';
 import { getOrderingDate } from '$lib/utils/timeline-util';
 import { timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
+import { GroupInsertionCache } from './group-insertion-cache.svelte';
 import type { TimelineDay } from './timeline-day.svelte';
 import type { TimelineManager } from './timeline-manager.svelte';
 import { bucketTimelineAssets, TimelineMonth } from './timeline-month.svelte';
@@ -97,4 +98,44 @@ it('keeps upload and capture dates distinct when loading a bucket', () => {
   });
   expect(asset.fileCreatedAt).toMatchObject({ year: 2019, month: 6, day: 1, hour: 12 });
   expect(getOrderingDate(asset, TimeBucketDateType.Taken)).toMatchObject({ year: 2019, month: 6, day: 1, hour: 7 });
+});
+
+describe('a year or a decade on the timeline (FL-936)', () => {
+  const at = (id: string, day: number, dateAccuracy: 'year' | 'decade' | null) =>
+    timelineAssetFactory.build({
+      id,
+      dateAccuracy,
+      localDateTime: { year: 1970, month: 1, day, hour: 0, minute: 0, second: 0, millisecond: 0 },
+    });
+
+  it('gives each its own group after the real days of the month, newest first', () => {
+    const month = new TimelineMonth({} as TimelineManager, { year: 1970, month: 1 }, 0, false);
+    const cache = new GroupInsertionCache();
+    for (const asset of [
+      at('decade', 1, 'decade'),
+      at('exact', 1, null),
+      at('year', 1, 'year'),
+      at('later', 9, null),
+    ]) {
+      month.addTimelineAsset(asset, cache);
+    }
+    month.sortTimelineDays();
+    expect(month.timelineDays.map((day) => day.viewerAssets.map(({ id }) => id))).toEqual([
+      ['later'],
+      ['exact'],
+      ['year'],
+      ['decade'],
+    ]);
+    expect(month.timelineDays[2].groupTitle).toBe('1970');
+    expect(month.timelineDays[3].groupTitle).not.toMatch(/January|Jan/);
+  });
+
+  it('reads the column, and adds nothing to an asset when it is null', () => {
+    const response = toResponseDto(timelineAssetFactory.build());
+    expect(
+      [...bucketTimelineAssets({ ...response, dateAccuracy: null } as TimeBucketAssetResponseDto)][0],
+    ).not.toHaveProperty('dateAccuracy');
+    const dated = { ...response, dateAccuracy: ['decade'] } as TimeBucketAssetResponseDto;
+    expect([...bucketTimelineAssets(dated)][0].dateAccuracy).toBe('decade');
+  });
 });

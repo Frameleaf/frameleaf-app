@@ -187,7 +187,7 @@ const homeNetwork = subnets([
 ]);
 
 /** `::ffff:a.b.c.d` (either spelling) as `a.b.c.d`; any other address as it is. */
-const unmapped = (address: string): string => {
+export const unmapped = (address: string): string => {
   const dotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
   if (dotted) {
     return dotted[1];
@@ -218,6 +218,13 @@ export const isWebhookAddressAllowed = (address: string, allowHomeNetwork: boole
     return true;
   }
   return allowHomeNetwork && family !== 0 && homeNetwork.check(plain, family === 4 ? 'ipv4' : 'ipv6');
+};
+
+/** FL-944: whether `address` is on a private network a person can explicitly allow (LAN, VPN, unique-local). */
+export const isHomeNetworkAddress = (address: string): boolean => {
+  const plain = unmapped(address);
+  const family = isIP(plain);
+  return family !== 0 && homeNetwork.check(plain, family === 4 ? 'ipv4' : 'ipv6');
 };
 
 const plainHttpError = 'Plain http only reaches devices on your network; use an https address for anything else';
@@ -270,6 +277,9 @@ const METADATA_HOSTS = new Set([
   'instance-data',
   'instance-data.ec2.internal',
 ]);
+
+/** FL-944: a name a cloud provider gives its metadata service. */
+export const isCloudMetadataHost = (host: string): boolean => METADATA_HOSTS.has(host.toLowerCase().replace(/\.$/, ''));
 
 const WEBHOOK_REQUEST_BYTES = 256_000;
 const WEBHOOK_RESPONSE_BYTES = 64_000;

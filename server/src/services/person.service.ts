@@ -80,6 +80,7 @@ import { AssetOriginField } from 'src/repositories/partner-origin.repository.js'
 import { BaseService } from 'src/services/base.service.js';
 import { queueScopedCopies } from 'src/services/partner-copy.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
+import { PersonRelationshipService } from 'src/services/person-relationship.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { CloudLibraryQueueWriter, cloudLibraryDestination } from 'src/utils/cloud-library-batch.js';
@@ -1000,7 +1001,10 @@ export class PersonService extends BaseService {
 
   async getById(auth: AuthDto, personGroupId: string): Promise<PersonResponseDto> {
     await this.requirePerson(auth, Permission.PersonRead, personGroupId);
-    return this.mapOwnPerson(auth, await this.findOrFail(auth, personGroupId));
+    const person = await this.mapOwnPerson(auth, await this.findOrFail(auth, personGroupId));
+    // FL-842: only this single-person read carries the family, so no list pays for it
+    const relationships = await BaseService.create(PersonRelationshipService, this).forPerson(auth, personGroupId);
+    return { ...person, relationships };
   }
 
   /**
@@ -2141,6 +2145,8 @@ export class PersonService extends BaseService {
 
         try {
           const affected = await this.workflowPersonAssets(targetPerson.ownerId, [mergeId, targetPerson.personGroupId]);
+          const relationships = BaseService.create(PersonRelationshipService, this);
+          let relationshipsChanged = false as boolean;
           const people = await this.personRepository.withMergeWrite(async () => {
             const survivor = await this.personRepository.getByGroupId({
               ownerId: targetPerson.ownerId,
@@ -2169,11 +2175,23 @@ export class PersonService extends BaseService {
             );
             // FL-874: the person who stays is also in the merged-away person's categories
             await this.personRepository.copyCategoryMembers(targetPerson.ownerId, mergeId, targetPerson.personGroupId);
+            // FL-842: the person who stays keeps the merged-away person's relationships too
+            relationshipsChanged = await relationships.onMerge(
+              targetPerson.ownerId,
+              mergeId,
+              targetPerson.personGroupId,
+            );
             return this.personRepository.delete([mergeId], targetPerson.ownerId);
           }, targetPerson.ownerId);
           await this.emitAssetsChanged(affected);
           await this.queueFaceSidecars(affected);
           await this.cleanupRemovedPeople(people, targetPerson.ownerId);
+          if (relationshipsChanged) {
+            // the merge is done: a partner's copies catching up must not report it as failed
+            await relationships.afterMerge(targetPerson.ownerId, targetPerson.personGroupId).catch((error: any) => {
+              this.logger.error(`Unable to update copied relationships after a merge: ${error}`, error?.stack);
+            });
+          }
 
           this.logger.log(`Merged ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
           results.push({ id: mergeId, success: true });
