@@ -109,6 +109,7 @@ import { IdenticalFilesService } from 'src/services/identical-files.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { ImportConnectorWorkerService } from 'src/services/import-connector-worker.service.js';
 import { ImportConnectorService } from 'src/services/import-connector.service.js';
+import { ImportSignInService } from 'src/services/import-sign-in.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
 import { JobService } from 'src/services/job.service.js';
@@ -481,6 +482,7 @@ export const services = [
   TakeoutWorkerService,
   ImportConnectorService,
   ImportConnectorWorkerService,
+  ImportSignInService,
   TidyUpService,
   TimelineService,
   TranscodingService,

@@ -11,6 +11,7 @@ import {
 import { ImportConnection } from 'src/repositories/import-connector.repository.js';
 import { TakeoutImport } from 'src/repositories/takeout.repository.js';
 import { ImportConnectorService } from 'src/services/import-connector.service.js';
+import { sealImportCredentials } from 'src/utils/import-connector.js';
 import { TAKEOUT_DEFAULT_OPTIONS, TakeoutPhase } from 'src/utils/takeout.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newAccessRepositoryMock } from 'test/repositories/access.repository.mock.js';
@@ -129,15 +130,47 @@ describe(ImportConnectorService.name, () => {
       access as never,
       { randomUUID: () => connectionId, serverKeyedHash: vi.fn().mockResolvedValue('keyed-hash') } as never,
       { getEnv: () => ({ environment, frameleafCloud: { identityDir: '/identity' } }) } as never,
+      { dropbox: { ...fakeRemoteSourceProvider, provider: 'dropbox' } } as never,
     );
   });
 
   afterEach(() => {
     unregisterRemoteSource(FAKE_PROVIDER);
+    unregisterRemoteSource('dropbox');
   });
 
   const everythingSaid = (...answers: unknown[]) =>
     JSON.stringify([answers, Object.values(logger).flatMap((fn) => fn.mock.calls)]);
+
+  describe('removing a connection', () => {
+    const deps = {
+      crypto: { serverKeyedHash: vi.fn().mockResolvedValue('keyed-hash') },
+      config: { getEnv: () => ({ frameleafCloud: { identityDir: '/identity' } }) },
+    };
+
+    it('gives up the access it held at the source, and a refusal there does not undo the removal', async () => {
+      const revoke = vi.fn().mockRejectedValue(new Error('refused with a secret in it'));
+      registerRemoteSource({ ...fakeRemoteSourceProvider, revoke });
+      const sealedCredentials = await sealImportCredentials(deps as never, connectionId, { refreshToken: 'kept' });
+      repository.get.mockResolvedValue(connectionOf({ sealedCredentials }));
+      repository.delete = vi.fn().mockResolvedValue('deleted');
+
+      await expect(sut.remove(authStub.user1, connectionId)).resolves.toBeUndefined();
+
+      expect(revoke).toHaveBeenCalledWith({ refreshToken: 'kept' });
+      expect(everythingSaid()).not.toContain('secret in it');
+    });
+
+    it('does not revoke while a job keeps the connection', async () => {
+      const revoke = vi.fn();
+      registerRemoteSource({ ...fakeRemoteSourceProvider, revoke });
+      repository.delete = vi.fn().mockResolvedValue('busy');
+
+      await expect(sut.remove(authStub.user1, connectionId)).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(revoke).not.toHaveBeenCalled();
+    });
+  });
 
   describe('the test source', () => {
     it('is registered only on a server started for tests', () => {
@@ -148,7 +181,7 @@ describe(ImportConnectorService.name, () => {
 
       environment = FrameleafEnvironment.Testing;
       sut.onBootstrap();
-      expect(sut.providers()).toEqual({ providers: [FAKE_PROVIDER, 'webdav'] });
+      expect(sut.providers()).toEqual({ providers: ['dropbox', FAKE_PROVIDER, 'webdav'] });
     });
   });
 

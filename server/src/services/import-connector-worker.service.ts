@@ -299,7 +299,10 @@ export class ImportConnectorWorkerService {
       throw new TakeoutJobError('import_connection_missing', 'This connection was removed', false);
     }
     try {
-      const source = await openImportConnection({ crypto: this.crypto, config: this.config }, connection);
+      const source = await openImportConnection(
+        { crypto: this.crypto, config: this.config, repository: this.repository },
+        connection,
+      );
       return { connection, source };
     } catch (error) {
       throw await this.sourceFailure(connection, undefined, error, 'The source could not be opened');

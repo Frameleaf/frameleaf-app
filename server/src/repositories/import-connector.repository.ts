@@ -72,6 +72,7 @@ const mapItem = (row: Record<string, unknown>): ImportConnectionItem => ({
   albumHint: (row.albumHint as string | null) ?? null,
   caption: (row.caption as string | null) ?? null,
   favourite: row.favourite === true,
+  contentHash: (row.contentHash as string | null) ?? null,
   state: row.state as TakeoutItemState,
   assetId: (row.assetId as string | null) ?? null,
   error: (row.error as string | null) ?? null,
@@ -181,6 +182,29 @@ export class ImportConnectorRepository {
       })
       .where('id', '=', id)
       .execute();
+  }
+
+  /**
+   * Change a connection's sealed credentials with its row locked, so two workers renewing a rotating
+   * refresh token take turns. `change` gets the current value and returns the new one, or null to keep
+   * it. The status is left alone: a renewal is not the owner signing in again. False when the row is gone.
+   */
+  async withSealedCredentials(id: string, change: (sealed: Buffer) => Promise<Buffer | null>): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const { rows } = await sql<{ sealedCredentials: Buffer }>`
+        select "sealedCredentials" from import_connection where id = ${id}::uuid for update
+      `.execute(tx);
+      if (!rows[0]) {
+        return false;
+      }
+      const next = await change(rows[0].sealedCredentials);
+      if (next) {
+        await sql`
+          update import_connection set "sealedCredentials" = ${next}, "updatedAt" = now() where id = ${id}::uuid
+        `.execute(tx);
+      }
+      return true;
+    });
   }
 
   async setStatus(id: string, status: string): Promise<void> {

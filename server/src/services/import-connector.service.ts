@@ -45,10 +45,11 @@ import {
   TakeoutRepository,
   takeoutOperationFor,
 } from 'src/repositories/takeout.repository.js';
+import { ImportSignInService } from 'src/services/import-sign-in.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { TAKEOUT_MAX_ATTEMPTS } from 'src/services/takeout.service.js';
 import { checkAccess, requireUploadsNotPaused } from 'src/utils/access.js';
-import { openImportConnection, sealImportCredentials } from 'src/utils/import-connector.js';
+import { openImportConnection, readImportCredentials, sealImportCredentials } from 'src/utils/import-connector.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import {
@@ -119,6 +120,7 @@ export class ImportConnectorService {
     private access: AccessRepository,
     private crypto: CryptoRepository,
     private config: ConfigRepository,
+    private signIn: ImportSignInService,
   ) {
     this.logger.setContext(ImportConnectorService.name);
   }
@@ -127,6 +129,7 @@ export class ImportConnectorService {
   @OnEvent({ name: 'AppBootstrap' })
   onBootstrap() {
     registerRemoteSource(webdavRemoteSourceProvider);
+    registerRemoteSource(this.signIn.dropbox);
     if (this.config.getEnv().environment === FrameleafEnvironment.Testing) {
       registerRemoteSource(fakeRemoteSourceProvider);
     }
@@ -196,6 +199,7 @@ export class ImportConnectorService {
   /** Disconnect. The connection and its runs go; every photo it brought in stays in the library. */
   async remove(auth: AuthDto, id: string): Promise<void> {
     this.requireSession(auth);
+    const connection = await this.repository.get(auth.user.id, id);
     const outcome = await this.repository.delete(auth.user.id, id);
     if (outcome === 'missing') {
       throw new NotFoundException('Connection not found');
@@ -204,6 +208,27 @@ export class ImportConnectorService {
       throw new BadRequestException('Cancel the running job before removing this connection');
     }
     this.logger.log(`Import connection ${id} removed`);
+    if (connection) {
+      await this.giveUpAccess(connection);
+    }
+  }
+
+  /** Ask the source to end the access a removed connection held. It is gone here whatever the answer. */
+  private async giveUpAccess(connection: ImportConnection) {
+    const provider = remoteSourceProvider(connection.provider);
+    if (!provider?.revoke) {
+      return;
+    }
+    try {
+      const credentials = await readImportCredentials(this.sealDeps, connection);
+      if (credentials) {
+        await provider.revoke(credentials);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Import connection ${connection.id}: access was not revoked at the source (${error instanceof Error ? error.name : 'error'})`,
+      );
+    }
   }
 
   /** The folders inside a folder at the source, for choosing what to import. */
@@ -375,7 +400,7 @@ export class ImportConnectorService {
   }
 
   private get sealDeps() {
-    return { crypto: this.crypto, config: this.config };
+    return { crypto: this.crypto, config: this.config, repository: this.repository };
   }
 
   /** What is sealed for a connection, after the source accepted it. */

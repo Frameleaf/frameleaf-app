@@ -62,6 +62,26 @@ export interface RemoteSource {
   open(remoteId: string, range: { start: number; contentHash?: string }, signal: AbortSignal): Promise<Readable>;
 }
 
+/**
+ * What a source may ask of the connection it reads for (FL-959). `renewCredentials` runs `renew` with
+ * the connection's current credentials, one caller at a time across every worker; what it returns is
+ * sealed and stored in their place, and null leaves them as they are. A provider that rotates refresh
+ * tokens saves the new one here. It never changes the connection's status.
+ */
+export type RemoteSourceSession = {
+  renewCredentials(renew: (current: Record<string, unknown>) => Promise<Record<string, unknown> | null>): Promise<void>;
+};
+
+/** A source connected by signing in through the Frameleaf Cloud broker (FL-959). */
+export type RemoteSourceSignIn = {
+  /** The broker's name for the provider. */
+  service: string;
+  /** The provider's name, for messages to the owner. */
+  label: string;
+  /** Who signed in: a stable account id, and a name to show. */
+  account(accessToken: string): Promise<{ id: string; name: string }>;
+};
+
 /** A kind of source: `webdav`, `dropbox`. Registered once at startup by the story that adds it. */
 export interface RemoteSourceProvider {
   /** Stored on the connection and named in the API. Lower-case, stable. */
@@ -73,7 +93,11 @@ export interface RemoteSourceProvider {
    */
   credentials(input: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
   /** A source that reads with these credentials. Makes no request by itself. */
-  open(credentials: Record<string, unknown>): RemoteSource;
+  open(credentials: Record<string, unknown>, session?: RemoteSourceSession): RemoteSource;
+  /** Present on a provider connected by signing in; its `credentials` then refuses typed-in details. */
+  readonly signIn?: RemoteSourceSignIn;
+  /** Give up the access these credentials hold, when the connection is removed. Best effort. */
+  revoke?(credentials: Record<string, unknown>): Promise<void>;
 }
 
 /** The source refused or could not answer. The message is shown to the owner and must hold no secret. */

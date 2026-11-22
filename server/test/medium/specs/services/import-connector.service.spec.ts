@@ -100,6 +100,7 @@ const setup = async () => {
     ctx.get(AccessRepository),
     crypto as never,
     config as never,
+    {} as never,
   );
   const connectors = new ImportConnectorWorkerService(
     logger as never,

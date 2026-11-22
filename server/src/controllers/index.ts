@@ -79,6 +79,7 @@ import { ICloudIdentityController } from 'src/controllers/icloud-identity.contro
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IdenticalFilesController } from 'src/controllers/identical-files.controller.js';
 import { ImportConnectorController } from 'src/controllers/import-connector.controller.js';
+import { ImportSignInController } from 'src/controllers/import-sign-in.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
@@ -369,6 +370,7 @@ export const controllers = [
   EagleImportController,
   TakeoutController,
   ImportConnectorController,
+  ImportSignInController,
   TidyUpController,
   TimelineController,
   TrashController,
