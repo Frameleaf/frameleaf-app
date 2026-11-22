@@ -741,7 +741,11 @@ export class AssistantActionService {
         // only photos still on the timeline take part: a video or an archived frame is not culled
         const frames = ids
           .map((id) => items.get(id)!)
-          .filter((item) => item.type === AssetType.Image && item.visibility === AssetVisibility.Timeline);
+          // FL-936: nor a photo dated to a year or a decade: scans that share one were not taken in one burst
+          .filter(
+            (item) =>
+              item.type === AssetType.Image && item.visibility === AssetVisibility.Timeline && !item.dateAccuracy,
+          );
         const frameIds = new Set(frames.map(({ id }) => id));
         const cull = planCull(
           frames.map((item) => ({

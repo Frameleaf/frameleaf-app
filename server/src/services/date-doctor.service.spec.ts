@@ -7,6 +7,7 @@ import type { EventRepository } from 'src/repositories/event.repository.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { DateDoctorFixDto } from 'src/dtos/date-doctor.dto.js';
 import { AccountEventAction, JobName } from 'src/enum.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
 import { DateFindingCause, type DateScanRow, dateFromFileName, detectDateFindings } from 'src/utils/date-doctor.js';
@@ -406,7 +407,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
           newZone: 'Europe/Paris',
         }),
       ],
-      { cause: null, shiftMinutes: 10, timeZone: null },
+      { cause: null, shiftMinutes: 10, timeZone: null, dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
   });
@@ -433,7 +434,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: null, shiftMinutes: null, timeZone: 'Europe/Paris' },
+      { cause: null, shiftMinutes: null, timeZone: 'Europe/Paris', dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
     // partner copies and sidecars commit in the transaction that wrote the dates
@@ -470,7 +471,13 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: DateFindingCause.GpsZoneMismatch, shiftMinutes: null, timeZone: null },
+      {
+        cause: DateFindingCause.GpsZoneMismatch,
+        shiftMinutes: null,
+        timeZone: null,
+        dateAccuracy: null,
+        periodStart: null,
+      },
       expect.any(Function),
     );
   });
@@ -489,7 +496,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: null, shiftMinutes: null, timeZone: null },
+      { cause: null, shiftMinutes: null, timeZone: null, dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
   });
@@ -740,7 +747,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
           newZone: 'Europe/Paris',
         }),
       ],
-      { cause: null, shiftMinutes: 10, timeZone: null },
+      { cause: null, shiftMinutes: 10, timeZone: null, dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
   });
@@ -767,7 +774,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: null, shiftMinutes: null, timeZone: 'Europe/Paris' },
+      { cause: null, shiftMinutes: null, timeZone: 'Europe/Paris', dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
     // partner copies and sidecars commit in the transaction that wrote the dates
@@ -804,7 +811,13 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: DateFindingCause.GpsZoneMismatch, shiftMinutes: null, timeZone: null },
+      {
+        cause: DateFindingCause.GpsZoneMismatch,
+        shiftMinutes: null,
+        timeZone: null,
+        dateAccuracy: null,
+        periodStart: null,
+      },
       expect.any(Function),
     );
   });
@@ -823,7 +836,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: null, shiftMinutes: null, timeZone: null },
+      { cause: null, shiftMinutes: null, timeZone: null, dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
   });
@@ -912,5 +925,30 @@ describe('DateDoctorService fixes (FL-930)', () => {
     await sut.onNightlyDatabaseCleanup();
     const [before] = repository.pruneBatches.mock.calls[0];
     expect(Date.now() - before.getTime()).toBeGreaterThanOrEqual(30 * 24 * 3_600_000 - 1000);
+  });
+});
+
+describe('a fix that dates photos to a year or a decade (FL-936)', () => {
+  const assetIds = ['3fa85f64-5717-4562-b3fc-2c963f66afa6'];
+  const accepted = (dto: object) => DateDoctorFixDto.schema.safeParse({ assetIds, ...dto }).success;
+
+  it('is a dateAccuracy with its year, from 1800 to this year, and nothing else', () => {
+    const thisYear = new Date().getUTCFullYear();
+    expect(accepted({ dateAccuracy: 'decade', year: 1975 })).toBe(true);
+    expect(accepted({ dateAccuracy: 'year', year: 1800 })).toBe(true);
+    expect(accepted({ dateAccuracy: 'year', year: thisYear })).toBe(true);
+    expect(accepted({ dateAccuracy: 'year', year: thisYear + 1 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1799 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year' })).toBe(false);
+    expect(accepted({ year: 1975 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'month', year: 1975 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1975, shiftMinutes: 60 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1975, timeZone: 'Europe/Paris' })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1975, useProposal: true })).toBe(false);
+    // what was accepted before still is
+    expect(accepted({ useProposal: true })).toBe(true);
+    expect(accepted({ shiftMinutes: 60 })).toBe(true);
+    expect(accepted({ timeZone: 'Europe/Paris', keepWallTime: true })).toBe(true);
+    expect(accepted({})).toBe(false);
   });
 });

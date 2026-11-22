@@ -177,6 +177,39 @@ describe(TimelineService.name, () => {
       expect(response).toEqual(expect.objectContaining({ id: [offline.id, online.id], isOffline: [true, false] }));
     });
 
+    it('FL-936: says which assets are dated to a year or a decade, and nothing on a page without one', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: sometimeIn1975 } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('1975-01-01T00:00:00.000Z'),
+        localDateTime: new Date('1975-01-01T00:00:00.000Z'),
+        dateAccuracy: 'year',
+      });
+      const { asset: later } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('1975-01-20T10:00:00.000Z'),
+        localDateTime: new Date('1975-01-20T10:00:00.000Z'),
+      });
+      const { asset: february } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: new Date('1975-02-02T10:00:00.000Z'),
+        localDateTime: new Date('1975-02-02T10:00:00.000Z'),
+      });
+      for (const asset of [sometimeIn1975, later, february]) {
+        await ctx.newExif({ assetId: asset.id, make: 'Epson' });
+      }
+      const auth = factory.auth({ user: { id: user.id } });
+
+      const january = JSON.parse(await sut.getTimeBucket(auth, { timeBucket: '1975-01-01' }));
+      expect(january).toEqual(
+        expect.objectContaining({ id: [later.id, sometimeIn1975.id], dateAccuracy: [null, 'year'] }),
+      );
+      const next = JSON.parse(await sut.getTimeBucket(auth, { timeBucket: '1975-02-01' }));
+      expect(next.id).toEqual([february.id]);
+      expect(next.dateAccuracy).toBeNull();
+    });
+
     it('should return the exif rating for each asset (FL-33)', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

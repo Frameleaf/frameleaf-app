@@ -1,5 +1,6 @@
 import {
   AfterDeleteTrigger,
+  Check,
   Column,
   CreateDateColumn,
   DeleteDateColumn,
@@ -11,6 +12,7 @@ import {
   UpdateDateColumn,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { DateAccuracy } from 'src/utils/date.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, LibraryScope } from 'src/enum.js';
 import {
@@ -32,6 +34,10 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 
 @Table('asset')
+@Check({
+  name: 'asset_dateAccuracy_check',
+  expression: `"dateAccuracy" = ANY (ARRAY['year'::text, 'decade'::text])`,
+})
 @Trigger({
   name: 'asset_library_scope_refresh_trigger',
   timing: 'after',
@@ -197,6 +203,13 @@ export class AssetTable {
 
   @Column({ type: 'timestamp with time zone' })
   localDateTime!: Timestamp;
+
+  /**
+   * FL-936: how exact the capture date is. Null is an exact date; for `year` and `decade` the date above is the
+   * start of that period (1 January, midnight, UTC), so everything that sorts or groups by date needs no change.
+   */
+  @Column({ type: 'text', nullable: true })
+  dateAccuracy!: DateAccuracy | null;
 
   @ForeignKeyColumn(() => StackTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
   stackId!: string | null;

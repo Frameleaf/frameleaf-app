@@ -283,6 +283,21 @@ describe('bulk-operation', () => {
         }),
       ).toEqual({ dateTimeOriginal: '2026-09-22T10:00:00.000Z', timeZone: 'America/Edmonton' });
     });
+
+    it('FL-936: carries a year or a decade with the date, and refuses one that is not', () => {
+      const payload = { dateMode: 'set' as const, dateTimeOriginal: '1975-06-15T10:00:00', dateAccuracy: 'decade' };
+      expect(bulkAssetUpdate(MediaOperationBulkAction.ChangeDate, payload)).toEqual({
+        dateTimeOriginal: '1975-06-15T10:00:00',
+        dateAccuracy: 'decade',
+      });
+      const problem = (change: object) =>
+        bulkPayloadProblem(MediaOperationBulkAction.ChangeDate, { ...payload, ...change }, ['a']);
+      expect(problem({})).toBeNull();
+      expect(problem({ dateAccuracy: 'year' })).toBeNull();
+      expect(problem({ dateAccuracy: 'month' })).not.toBeNull();
+      expect(problem({ dateTimeOriginal: '1799-06-15T10:00:00' })).not.toBeNull();
+      expect(problem({ dateTimeOriginal: '2999-06-15T10:00:00' })).not.toBeNull();
+    });
   });
 
   describe(bulkPayloadProblem.name, () => {
