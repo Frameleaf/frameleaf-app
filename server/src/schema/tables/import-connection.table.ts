@@ -6,7 +6,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
  * A remote place one account imports photos from (FL-920): a WebDAV server, a Dropbox. Mirrors
- * migration 1794870000000-ImportConnection.
+ * migration 1794875920000-ImportConnection.
  *
  * Each scan of a connection is a `takeout_import` row that names it (`takeout_import.connectionId`),
  * so a run is scanned, reviewed, imported, paused and cancelled by the Google Photos import's own
