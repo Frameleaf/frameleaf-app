@@ -174,7 +174,12 @@ def main() -> int:
 
     def measure(name: str, rgb: np.ndarray) -> tuple[dict[str, Any], np.ndarray | None]:
         height, width = rgb.shape[:2]
-        entry: dict[str, Any] = {"id": name, "width": width, "height": height, "megapixels": round(width * height / 1e6, 3)}
+        entry: dict[str, Any] = {
+            "id": name,
+            "width": width,
+            "height": height,
+            "megapixels": round(width * height / 1e6, 3),
+        }
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
         begun = time.monotonic()
@@ -230,7 +235,10 @@ def main() -> int:
             if index % SHEET_EVERY == 0:
                 strips.append(strip(rgb, output))
         results.append(entry)
-        print(json.dumps({k: entry.get(k) for k in ("id", "megapixels", "seconds", "devicePeakMiB", "failure")}), flush=True)
+        print(
+            json.dumps({k: entry.get(k) for k in ("id", "megapixels", "seconds", "devicePeakMiB", "failure")}),
+            flush=True,
+        )
 
     stress: list[dict[str, Any]] = []
     if first is not None:
@@ -259,12 +267,17 @@ def main() -> int:
         "modelLoadSeconds": round(load_seconds, 2),
         "scans": len(results),
         "succeeded": len(done),
-        "failures": [{"id": entry["id"], "failure": entry["failure"]} for entry in results + stress if "failure" in entry],
+        "failures": [
+            {"id": entry["id"], "failure": entry["failure"]} for entry in results + stress if "failure" in entry
+        ],
         "outputSizeEqual": sum(1 for entry in done if entry["outputSizeEqual"]),
         "orientationKept": sum(1 for e in done if e["orientation"]["sourceTag"] == e["orientation"]["outputTag"]),
         "scansWithOrientationTag": sum(1 for entry in done if entry["orientation"]["sourceTag"] != 1),
         "repeatsIdentical": [entry["repeatIdentical"] for entry in done if "repeatIdentical" in entry],
-        "megapixels": {"min": min((e["megapixels"] for e in done), default=0), "max": max((e["megapixels"] for e in done), default=0)},
+        "megapixels": {
+            "min": min((e["megapixels"] for e in done), default=0),
+            "max": max((e["megapixels"] for e in done), default=0),
+        },
         "seconds": {
             "median": round(statistics.median(e["seconds"] for e in done), 3) if done else None,
             "max": max((e["seconds"] for e in done), default=None),

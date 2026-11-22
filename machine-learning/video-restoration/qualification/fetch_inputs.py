@@ -16,6 +16,9 @@ import sys
 import time
 from pathlib import Path
 
+# Wikimedia answers 429 to the default curl agent. Generic on purpose: no personal details.
+USER_AGENT = "photo-qualification-fetch/1.0 (public-domain test images; sequential)"
+
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -33,7 +36,8 @@ def fetch(url: str, target: Path, expected: str) -> bool:
     for wait in (0, 20, 90):
         time.sleep(wait)
         done = subprocess.run(
-            [curl, "-sS", "--fail", "-L", "--max-time", "1800", "-o", str(partial), url], check=False
+            [curl, "-sS", "--fail", "-L", "-A", USER_AGENT, "--max-time", "1800", "-o", str(partial), url],
+            check=False,
         )
         if done.returncode == 0 and sha256(partial) == expected:
             partial.replace(target)
@@ -65,7 +69,7 @@ def main() -> int:
     for scan in scans:
         if not fetch(scan["url"], args.directory / f"{scan['id']}.jpg", scan["sha256"]):
             missing.append(scan["id"])
-        time.sleep(1.0)
+        time.sleep(3.0)
     print(json.dumps({"scans": len(scans), "fetched": len(scans) - len(missing), "missing": missing}))
     return 0 if len(missing) <= len(scans) // 10 else 1
 
