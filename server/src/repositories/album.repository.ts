@@ -322,8 +322,12 @@ export class AlbumRepository {
    * ponytail: reads the user's album memberships on each picker open; add an (albumId, createdAt)
    * index or a stored value if this shows up as slow on very large libraries.
    */
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async getRecentlyAddedIds(userId: string, options: AlbumReadOptions = {}, limit = 30): Promise<string[]> {
+  @GenerateSql({ params: [DummyValue.UUID, { libraryScope: LibraryScope.Personal }] })
+  async getRecentlyAddedIds(
+    userId: string,
+    options: AlbumReadOptions & { libraryScope?: LibraryViewScope; excludeLocked?: boolean } = {},
+    limit = 30,
+  ): Promise<string[]> {
     const rows = await this.db
       .selectFrom('asset')
       .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
@@ -336,6 +340,18 @@ export class AlbumRepository {
       .where('album_user.role', 'in', [AlbumUserRole.Owner, AlbumUserRole.Editor])
       .where('album.deletedAt', 'is', null)
       .where('asset.deletedAt', 'is', null)
+      .$if(options.excludeLocked === true, (qb) => qb.where('album.isLocked', '=', false))
+      // As the album list: an album shared with this user counts as Personal, whatever its owner's scope.
+      .$if(!!options.libraryScope, (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            libraryScopePredicate(options.libraryScope!, 'album'),
+            ...(options.libraryScope === LibraryScope.Personal
+              ? [eb('album_user.role', '!=', AlbumUserRole.Owner)]
+              : []),
+          ]),
+        ),
+      )
       .groupBy('album_asset.albumId')
       .orderBy((eb) => eb.fn.max('album_asset.createdAt'), 'desc')
       .limit(limit)

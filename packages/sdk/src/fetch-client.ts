@@ -29311,11 +29311,15 @@ export function setAlbumOrder({ albumOrderDto }: {
 /**
  * List albums that recently received items
  */
-export function getRecentlyAddedAlbums(opts?: Oazapfts.RequestOpts) {
+export function getRecentlyAddedAlbums({ libraryScope }: {
+    libraryScope?: LibraryViewScope;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AlbumRecentlyAddedResponseDto;
-    }>("/albums/recently-added", {
+    }>(`/albums/recently-added${QS.query(QS.explode({
+        libraryScope
+    }))}`, {
         ...opts
     }));
 }

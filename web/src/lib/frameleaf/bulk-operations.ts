@@ -835,30 +835,42 @@ export const runBulkAction = async (
         const added: Record<string, string[]> = Object.fromEntries(payload!.albumIds!.map((id) => [id, []]));
         return finish(
           await runInChunks(runner, async (batch) => {
-            const byId = new Map<string, BulkOutcome>();
-            let refused: unknown;
+            // An album that refuses an item fails that item, so it stays selected for a retry,
+            // even when another album took it. Already being in an album is not a refusal.
+            const refused = new Map<string, BulkOutcome>();
+            const duplicate = new Map<string, BulkOutcome>();
+            const accepted = new Set<string>();
             for (const albumId of payload!.albumIds!) {
               try {
                 const responses = await gateway.addAssetsToAlbum({ id: albumId, bulkIdsDto: { ids: batch } });
                 for (const [index, outcome] of fromBulkIdResponses(responses).entries()) {
                   if (responses[index].success) {
                     added[albumId].push(outcome.id);
-                    byId.set(outcome.id, outcome);
-                  } else if (!byId.has(outcome.id)) {
-                    byId.set(outcome.id, outcome);
+                    accepted.add(outcome.id);
+                  } else if (responses[index].error === BulkIdErrorReason.Duplicate) {
+                    duplicate.set(outcome.id, outcome);
+                  } else if (!refused.has(outcome.id)) {
+                    refused.set(outcome.id, outcome);
                   }
                 }
               } catch (error) {
-                refused = error;
+                for (const id of batch) {
+                  if (!refused.has(id)) {
+                    refused.set(id, failed(id, error));
+                  }
+                }
               }
             }
-            // Thrown only when no album took anything, so the retry can't add an item twice over.
-            if (refused && byId.size === 0) {
-              throw refused;
-            }
-            return batch.map((id) => byId.get(id) ?? failed(id, refused));
+            return batch.map(
+              (id) => refused.get(id) ?? (accepted.has(id) ? ok(id) : (duplicate.get(id) ?? failed(id, undefined))),
+            );
           }),
-          (succeeded) => ({ action: 'remove-from-album', ids: succeeded, payload: { addedByAlbum: added } }),
+          // Undo covers every item an album took, including one another album refused.
+          () => ({
+            action: 'remove-from-album',
+            ids: [...new Set(Object.values(added).flat())],
+            payload: { addedByAlbum: added },
+          }),
         );
       }
       const albumId = requirePayload(payload, 'albumId');
@@ -878,9 +890,19 @@ export const runBulkAction = async (
             for (const [albumId, added] of albums) {
               const inAlbum = batch.filter((id) => added.has(id));
               if (inAlbum.length > 0) {
-                const responses = await gateway.removeAssetFromAlbum({ id: albumId, bulkIdsDto: { ids: inAlbum } });
-                for (const outcome of fromBulkIdResponses(responses)) {
-                  byId.set(outcome.id, outcome);
+                try {
+                  const responses = await gateway.removeAssetFromAlbum({ id: albumId, bulkIdsDto: { ids: inAlbum } });
+                  for (const outcome of fromBulkIdResponses(responses)) {
+                    if (outcome.status !== 'ok' && !byId.has(outcome.id)) {
+                      byId.set(outcome.id, outcome);
+                    }
+                  }
+                } catch (error) {
+                  for (const id of inAlbum) {
+                    if (!byId.has(id)) {
+                      byId.set(id, failed(id, error));
+                    }
+                  }
                 }
               }
             }

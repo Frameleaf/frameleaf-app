@@ -50,15 +50,6 @@
   const PAGE = 60;
   const RECENT_ALBUMS = 5;
 
-  /** Best effort: the picker works the same, without a Recent group, if this can't be read. */
-  const loadRecentIds = async () => {
-    try {
-      const { albumIds } = await getRecentlyAddedAlbums();
-      return albumIds;
-    } catch {
-      return [];
-    }
-  };
   const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
   let {
@@ -71,7 +62,8 @@
     count: number;
     libraryScope?: LibraryViewScope;
     open?: boolean;
-    onSubmit: (payload: BulkPayload) => void;
+    /** Giving false keeps the dialog open with its choices, for a retry. */
+    onSubmit: (payload: BulkPayload) => void | Promise<boolean>;
     onClosed?: () => void;
   } = $props();
 
@@ -88,6 +80,15 @@
   let recentIds = $state<string[]>([]);
   let limit = $state(PAGE);
 
+  /** Best effort: the picker works the same, without a Recent group, if this can't be read. */
+  const loadRecentIds = async () => {
+    try {
+      const { albumIds } = await getRecentlyAddedAlbums(libraryScope ? { libraryScope } : {});
+      return albumIds;
+    } catch {
+      return [];
+    }
+  };
   let generation = 0;
   onDestroy(() => generation++);
   const load = async () => {
@@ -190,8 +191,13 @@
   const createThenSend = async () => {
     const current = authManager.captureSession();
     const scope = libraryScope === LibraryViewScope.Design ? { libraryScope: LibraryScope.Design } : {};
+    const creating = drafts.length > 0;
     try {
       for (const albumName of drafts) {
+        // Cancel stops here: nothing further is created or added.
+        if (!open) {
+          return false;
+        }
         const album = await createAlbum({ createAlbumDto: { albumName, ...scope } });
         if (!current()) {
           return false;
@@ -205,7 +211,16 @@
       void load();
       return false;
     }
-    send();
+    if (!open) {
+      return false;
+    }
+    if ((await send()) === false) {
+      // The albums just made need rows, so they stay ticked and visible for the retry.
+      if (creating) {
+        void load();
+      }
+      return false;
+    }
     return true;
   };
 </script>
@@ -240,7 +255,8 @@
     : $t('frameleaf_bulk_add_to_album_apply', { values: { count } })}
   valid={total > 0}
   {preview}
-  onSubmit={() => (drafts.length > 0 ? createThenSend() : send())}
+  waitForSubmit
+  onSubmit={createThenSend}
   {onClosed}
 >
   <label class="search">

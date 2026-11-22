@@ -86,13 +86,20 @@
     if (albumIds.length === 0) {
       return;
     }
+    // The panel can move to another item while a request is pending.
+    const { assetId } = item;
     return run(async () => {
+      let refused = false;
       for (const albumId of albumIds) {
-        const result = await addAssetsToAlbum({ id: albumId, bulkIdsDto: { ids: [item.assetId] } });
+        const result = await addAssetsToAlbum({ id: albumId, bulkIdsDto: { ids: [assetId] } });
         if (result.some((row) => !row.success && row.error !== BulkIdErrorReason.Duplicate)) {
-          throw new Error('The item could not be added');
+          refused = true;
+          continue;
         }
-        eventManager.emit('AlbumAddAssets', { assetIds: [item.assetId], albumIds: [albumId] });
+        eventManager.emit('AlbumAddAssets', { assetIds: [assetId], albumIds: [albumId] });
+      }
+      if (refused) {
+        throw new Error('The item could not be added');
       }
       toastManager.primary($t('frameleaf_creators_added_to_collection'));
     }, 'frameleaf_creators_action_error');

@@ -737,8 +737,20 @@
     const name = collectionName;
     return runSelection(
       async (keys, owner, current) => {
+        let refused: unknown;
         for (const albumId of payload.albumIds ?? [payload.albumId]) {
-          await organizeLibraryItems(results.items, keys, owner, { ...payload, albumId }, current, operation);
+          try {
+            await organizeLibraryItems(results.items, keys, owner, { ...payload, albumId }, current, operation);
+          } catch (error) {
+            // One album refusing doesn't stop the others, but a changed account or page does.
+            if (!current()) {
+              throw error;
+            }
+            refused = error;
+          }
+        }
+        if (refused) {
+          throw refused;
         }
       },
       operation === 'remove'

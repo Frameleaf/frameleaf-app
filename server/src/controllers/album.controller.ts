@@ -65,8 +65,8 @@ export class AlbumController {
     description: 'Returns the albums the user may add to, the one that most recently received an item first.',
     history: new HistoryBuilder().added('v2').beta('v2'),
   })
-  getRecentlyAddedAlbums(@Auth() auth: AuthDto): Promise<AlbumRecentlyAddedResponseDto> {
-    return this.service.getRecentlyAdded(auth);
+  getRecentlyAddedAlbums(@Auth() auth: AuthDto, @Query() dto: AlbumViewDto): Promise<AlbumRecentlyAddedResponseDto> {
+    return this.service.getRecentlyAdded(auth, dto);
   }
 
   @Get('statistics')

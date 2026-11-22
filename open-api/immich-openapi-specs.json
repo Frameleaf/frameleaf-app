@@ -14270,7 +14270,16 @@
       "get": {
         "description": "Returns the albums the user may add to, the one that most recently received an item first.",
         "operationId": "getRecentlyAddedAlbums",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

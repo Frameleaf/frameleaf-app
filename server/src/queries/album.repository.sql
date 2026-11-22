@@ -279,12 +279,16 @@ where
   and "album_user"."role" in ($2, $3)
   and "album"."deletedAt" is null
   and "asset"."deletedAt" is null
+  and (
+    "album"."libraryScope" in ($4, $5)
+    or "album_user"."role" != $6
+  )
 group by
   "album_asset"."albumId"
 order by
   max("album_asset"."createdAt") desc
 limit
-  $4
+  $7
 
 -- AlbumRepository.getOwnerAssetCounts
 select

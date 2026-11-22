@@ -1,5 +1,6 @@
 <script lang="ts">
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { handleError } from '$lib/utils/handle-error';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -16,6 +17,7 @@
     preview,
     open = $bindable(true),
     onSubmit,
+    waitForSubmit = false,
     onClosed,
     children,
   }: {
@@ -25,8 +27,9 @@
     danger?: boolean;
     preview?: string;
     open?: boolean;
-    /** A promise keeps the dialog open until it settles; it closes when the promise gives true. */
-    onSubmit: () => void | Promise<boolean>;
+    onSubmit: () => unknown;
+    /** Stay open until `onSubmit`'s promise settles, and close only if it gives true. */
+    waitForSubmit?: boolean;
     /** Runs once the exit has finished, for a `modalManager.show` wrapper to unmount. */
     onClosed?: () => void;
     children: Snippet;
@@ -40,18 +43,25 @@
     if (!valid || saving) {
       return;
     }
-    const result = onSubmit();
-    if (!(result instanceof Promise)) {
+    if (!waitForSubmit) {
+      onSubmit();
       open = false;
       return;
     }
+    void submitAndWait();
+  };
+
+  const submitAndWait = async () => {
     saving = true;
-    void result.then((done) => {
-      saving = false;
-      if (done) {
+    try {
+      if ((await onSubmit()) === true) {
         open = false;
       }
-    });
+    } catch (error) {
+      handleError(error, $t('error'));
+    } finally {
+      saving = false;
+    }
   };
 </script>
 
