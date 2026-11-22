@@ -21,7 +21,7 @@ FL-775 chooses the model behind Generative Develop (FL-748): edit by instruction
 
 The roadmap named Qwen-Image-Edit-2509 and FLUX.1 Kontext [dev]. Both have been overtaken by newer open-weight editors that are smaller, faster and rank higher, so neither is recommended.
 
-The owner agrees the default on FL-775 before FL-823 builds on it.
+The owner agreed Qwen-Image-2.1 as the default on FL-775 on 2026-11-22.
 
 ## What was measured and what was not
 
@@ -104,7 +104,7 @@ The server needs 32 GB of system memory for the local path, because the encoder 
 
 ## Mirror and container image
 
-- **Mirror.** Not published yet. Publishing waits for the owner to agree the default. The local profile is the 8-bit set, about 17 GB, as `frameleaf/qwen-image-2.1` on the models mirror; the Cloud image bakes in the 16-bit set, about 33 GB. Together they are five times the size of the largest model on the mirror today (4.6 GB), and a mirror release holds two copies while it switches, so check free space on the 150 GB models volume before publishing.
+- **Mirror.** Not published yet; FL-823 publishes it. The local profile is the 8-bit set, about 17 GB, as `frameleaf/qwen-image-2.1` on the models mirror; the Cloud image bakes in the 16-bit set, about 33 GB. Together they are five times the size of the largest model on the mirror today (4.6 GB), and a mirror release holds two copies while it switches, so check free space on the 150 GB models volume before publishing.
 - **ML container image.** Only the NVIDIA image changes. It gains the `diffusers` package (tens of megabytes); PyTorch and `transformers` are already there at versions the model accepts. The base image does not change. Weights are downloaded on first use, as for every other model, and are not in the image.
 - **Server.** A local install that turns this on needs about 17 GB more model storage.
 - **Cloud worker image.** About 33 GB of weights baked in. Set `containerDiskGb` to 60, as the 34 GB restoration model already does.
