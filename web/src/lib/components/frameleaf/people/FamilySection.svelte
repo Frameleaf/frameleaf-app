@@ -25,7 +25,8 @@
     person: PersonResponseDto;
   }
 
-  type Relative = { person: PersonRelativeDto; label: string; removable: boolean };
+  type Relation = 'mother' | 'father' | 'parent' | 'child' | 'partner' | 'sibling';
+  type Relative = { person: PersonRelativeDto; relation: Relation; removable: boolean };
 
   let { person }: Props = $props();
 
@@ -37,10 +38,13 @@
   const family = $derived(fetched?.id === person.id ? fetched.family : person.relationships);
   const name = $derived(person.name);
 
-  const relationLabel = (role: string) =>
-    role === 'mother' || role === 'father'
-      ? $t(`frameleaf_people_family_relation_${role}`)
-      : $t('frameleaf_people_family_relation_parent');
+  const parentRelation = (role: string): Relation => (role === 'mother' || role === 'father' ? role : 'parent');
+  // the form that reads correctly inside a sentence; a label's capitals can't simply be lowered (German "Mutter")
+  const sentenceValues = (relative: Relative) => ({
+    name: relative.person.name,
+    person: name,
+    relation: $t(`frameleaf_people_family_relation_inline_${relative.relation}`),
+  });
 
   const groups = $derived.by(() => {
     if (!family) {
@@ -54,7 +58,7 @@
         title: $t('frameleaf_people_family_group_parents'),
         relatives: family.parents.map(({ person, parentRole }) => ({
           person,
-          label: relationLabel(parentRole),
+          relation: parentRelation(parentRole),
           removable: true,
         })),
       },
@@ -63,7 +67,7 @@
         title: $t(`frameleaf_people_family_group_${partnerTitle}`),
         relatives: family.partners.map((person) => ({
           person,
-          label: $t('frameleaf_people_family_relation_partner'),
+          relation: 'partner',
           removable: true,
         })),
       },
@@ -72,7 +76,7 @@
         title: $t('frameleaf_people_family_group_children'),
         relatives: family.children.map(({ person }) => ({
           person,
-          label: $t('frameleaf_people_family_relation_child'),
+          relation: 'child',
           removable: true,
         })),
       },
@@ -82,7 +86,7 @@
         // someone who only shares a parent has no relationship of their own to remove
         relatives: family.siblings.map((person) => ({
           person,
-          label: $t('frameleaf_people_family_relation_sibling'),
+          relation: 'sibling',
           removable: !inferred.has(person.id),
         })),
       },
@@ -110,14 +114,12 @@
   });
 
   const remove = async (relative: Relative) => {
-    const relation = relative.label.toLocaleLowerCase();
+    const values = sentenceValues(relative);
     try {
       await deletePersonRelationship({ id: person.id, relatedPersonId: relative.person.id });
       // read it back: removing a parent can also change who counts as a sibling
       await load(person.id);
-      status = $t('frameleaf_people_family_removed', {
-        values: { name: relative.person.name, person: name, relation },
-      });
+      status = $t('frameleaf_people_family_removed', { values });
     } catch (error) {
       handleError(error, $t('frameleaf_people_family_remove_failed'));
     }
@@ -159,11 +161,7 @@
             <h3>{group.title}</h3>
             <ul>
               {#each group.relatives as relative (relative.person.id)}
-                {@const values = {
-                  name: relative.person.name,
-                  person: name,
-                  relation: relative.label.toLocaleLowerCase(),
-                }}
+                {@const values = sentenceValues(relative)}
                 <li class="chip">
                   <a
                     class="chip-main"
@@ -173,7 +171,7 @@
                     <PersonAvatar person={relative.person as PersonResponseDto} size={44} />
                     <span>
                       <strong>{relative.person.name}</strong>
-                      <small>{relative.label}</small>
+                      <small>{$t(`frameleaf_people_family_relation_${relative.relation}`)}</small>
                     </span>
                   </a>
                   {#if relative.removable}

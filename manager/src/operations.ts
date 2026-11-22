@@ -3,7 +3,7 @@ import { lstat, mkdir, readFile, writeFile, stat, statfs, rename, open, realpath
 import { basename, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
-import { importedGallery } from './gallery-preview.js';
+import { galleryImportRefused, importedGallery } from './gallery-preview.js';
 import { Docker, type ImportInspection } from './docker.js';
 import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
@@ -664,6 +664,8 @@ export class Operations {
     const source = this.editedSource(stored);
     // Review still opens so the administrator can see and edit the settings; cutover cannot start.
     if (requireCompatible && source.unsupportedSettings.length) throw new Refusal('incompatible_settings_require_review');
+    // FL-1752: the importer would refuse this Gallery, or Manager could not tell, so it is never stopped for an import.
+    if (requireCompatible && galleryImportRefused(source)) throw new Refusal('source_database_dump_failed');
     if (source.platform === 'unraid') {
       if (!this.autostartFile) throw new Refusal('unraid_autostart_file_required');
       await this.fencing.readAutostart(true);

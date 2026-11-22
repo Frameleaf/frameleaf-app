@@ -236,8 +236,8 @@ export class Discovery {
     if (mappings.some((m) => mounts(dbContainer).some((d) => m.type === d.type && m.source === d.source)))
       throw new Refusal('database_and_media_overlap');
     const product = facts.noodle || GALLERY.test(app.Config.Image) ? 'Noodle Gallery' : 'Immich';
-    // FL-1742: counted now, so the review shows what comes across before anything is stopped. A source these
-    // two read-only statements cannot answer is still importable; its review then shows no counts.
+    // FL-1742: counted now, so the review shows what comes across before anything is stopped. FL-1752: without a
+    // readable structure there is no preview here, and reviewedSource refuses the import before Gallery is stopped.
     const gallery =
       product === 'Noodle Gallery'
         ? await readGalleryPreview((statement) => this.docker.sql(database, statement, 60_000)).catch(() => undefined)

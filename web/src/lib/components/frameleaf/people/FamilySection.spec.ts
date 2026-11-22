@@ -1,7 +1,7 @@
 import type { PersonResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { init, register, waitLocale } from 'svelte-i18n';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { init, locale, register, waitLocale } from 'svelte-i18n';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { personFactory } from '@test-data/factories/person-factory';
 import FamilySection from './FamilySection.svelte';
 
@@ -129,6 +129,51 @@ describe('FamilySection (FL-842)', () => {
     expect(api.createPersonRelationship).toHaveBeenCalledWith({
       id: person.id,
       personRelationshipCreateDto: { relatedPersonId: 'emma', relation: 'parent' },
+    });
+  });
+
+  describe('in German, where nouns keep their capital', () => {
+    beforeAll(async () => {
+      register('de', () => import('$i18n/de.json'));
+      await locale.set('de');
+    });
+
+    afterAll(async () => {
+      await locale.set('en-US');
+    });
+
+    it('keeps the capital in the link, remove and removed sentences', async () => {
+      const person = personWith({
+        ...none,
+        parents: [{ person: relative('m', 'Margaret'), parentRole: 'mother' }],
+      });
+      api.deletePersonRelationship.mockResolvedValue(undefined);
+      api.getPersonRelationships.mockResolvedValue(none);
+      render(FamilySection, { person });
+
+      expect(screen.getByRole('link', { name: 'Margaret öffnen (Mutter von Taylor)' })).toBeTruthy();
+      await fireEvent.click(screen.getByRole('button', { name: 'Margaret entfernen (Mutter von Taylor)' }));
+
+      await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Margaret (Mutter)'));
+    });
+
+    it('keeps the capital in the added sentence', async () => {
+      api.createPersonRelationship.mockResolvedValue({
+        ...none,
+        parents: [{ person: relative('emma', 'Emma'), parentRole: 'parent' }],
+      });
+      render(FamilySection, { person: personWith(none) });
+
+      await fireEvent.click(screen.getByRole('button', { name: 'Verwandtschaft hinzufügen' }));
+      await fireEvent.click(await screen.findByRole('button', { name: /Emma/ }));
+      await fireEvent.click(screen.getByRole('radio', { name: 'Elternteil' }));
+      await fireEvent.click(screen.getAllByRole('button', { name: 'Verwandtschaft hinzufügen' }).at(-1)!);
+
+      await waitFor(() =>
+        expect(screen.getByRole('status').textContent).toBe(
+          'Verwandtschaft für Taylor hinzugefügt: Emma (Elternteil).',
+        ),
+      );
     });
   });
 

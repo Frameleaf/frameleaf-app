@@ -1,6 +1,7 @@
-import type { SourceStructure } from 'src/immich-import/schema.js';
-import { frozenSource } from 'src/immich-import/adapters.js';
+import { CONTENT_TABLES, frozenSource } from 'src/immich-import/adapters.js';
+import frozen from 'src/immich-import/fixtures/frozen-sources.json' with { type: 'json' };
 import { GALLERY_READS, withGalleryContent } from 'src/immich-import/gallery.js';
+import { type SourceStructure, verifyReadableStructure } from 'src/immich-import/schema.js';
 import { NOODLE_ONLY, OTHERS_FAVOURITES } from 'src/immich-import/source.js';
 
 const column = { type: 'uuid', not_null: true, default: null, identity: '', generated: '' };
@@ -35,6 +36,10 @@ const managerReads = async (): Promise<{
   OTHERS_FAVOURITES_NAME: string;
   galleryReads: (has: (table: string, ...columns: string[]) => boolean) => Record<string, string>;
 }> => import(new URL('../../../manager/src/gallery-reads.ts', import.meta.url).href);
+const managerRequired = async (): Promise<{
+  galleryColumnType: (table: string, column: string, type: string) => string;
+  galleryRequiredColumns: (ledger: readonly string[]) => Record<string, Record<string, string>> | undefined;
+}> => import(new URL('../../../manager/src/gallery-required.ts', import.meta.url).href);
 const sql = (text: string) => text.replaceAll(/\s+/gu, ' ').trim();
 
 describe('Manager’s copy of the Noodle Gallery reads', () => {
@@ -61,6 +66,30 @@ describe('Manager’s copy of the Noodle Gallery reads', () => {
     expect(manager.GALLERY_ONLY).toEqual(NOODLE_ONLY);
     expect(sql(manager.OTHERS_FAVOURITES)).toBe(sql(OTHERS_FAVOURITES));
     expect(manager.OTHERS_FAVOURITES_NAME).toBe('favourites set by other people');
+  });
+
+  // FL-1752: Manager refuses before it stops Gallery, so it must require exactly what the importer does.
+  it.each(Object.keys(frozen.versions))('requires the importer’s columns for %s', async (version) => {
+    const { galleryColumnType, galleryRequiredColumns } = await managerRequired();
+    const source = frozenSource(version);
+    const expected = Object.fromEntries(
+      CONTENT_TABLES.filter((table) => source.tables[table]).map((table) => [
+        table,
+        Object.fromEntries(
+          Object.entries(source.structure.tables[table] ?? {}).map(([name, { type }]) => [
+            name,
+            galleryColumnType(table, name, type),
+          ]),
+        ),
+      ]),
+    );
+    expect(galleryRequiredColumns(source.migrations)).toEqual(expected);
+    expect(() => verifyReadableStructure(source.structure, source)).not.toThrow();
+  });
+
+  it('has no required columns for a ledger the importer does not recognise', async () => {
+    const { galleryRequiredColumns } = await managerRequired();
+    expect(galleryRequiredColumns([])).toBeUndefined();
   });
 });
 

@@ -229,9 +229,11 @@ export function databaseImageMove(current: string, release: Pick<NasManifest, 'i
   return from !== null && to !== null && to >= from;
 }
 export function publicSource(source: Source) {
-  const { database, environment, settings, restart, settingsBase, ...safe } = source;
+  const { database, environment, settings, restart, settingsBase, gallery, ...safe } = source;
   return {
     ...safe,
+    // FL-1752: without counts the review has nothing true to list, so it keeps its no-preview notice.
+    ...(gallery && !gallery.uncounted && { gallery }),
     settingsEdited: !!settingsBase,
     configuration: [
       {

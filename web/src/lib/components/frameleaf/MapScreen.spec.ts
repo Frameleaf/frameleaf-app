@@ -6,6 +6,7 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import MapScreen from '$lib/components/frameleaf/MapScreen.svelte';
 import { BUBBLE_NAME_LAYER, CLUSTER_OBSTACLE_LAYER, clusterObstacleLayer } from '$lib/frameleaf/map-clusters';
 import { namedPlaces } from '$lib/frameleaf/named-places.svelte';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { mapSettings } from '$lib/stores/preferences.store';
 import { getMapLibreStubProps, resetMapLibreStub, setMapLibreStubMap } from '@test-data/frameleaf/map-libre-stub';
 import en from '../../../../../i18n/en.json';
@@ -62,6 +63,58 @@ beforeEach(() => {
   sdkMock.getVisitedLandmarks.mockResolvedValue([]);
   sdkMock.getUserPlaces.mockResolvedValue([]);
   namedPlaces.reset();
+});
+
+describe('MapScreen search box (FL-1027)', () => {
+  const searchBox = () => screen.queryByRole('combobox', { name: en.frameleaf_map_search_label });
+
+  it('is on the library map', () => {
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    expect(searchBox()).toBeInTheDocument();
+  });
+
+  it('is not on an album map, where the viewer’s places are not shown', () => {
+    sdkMock.getAlbumMapMarkers.mockResolvedValue([]);
+    render(MapScreen, { title: 'Map', albumId: 'album-1', onOpenAsset: vi.fn() });
+    expect(searchBox()).not.toBeInTheDocument();
+  });
+
+  it('is not on a shared link, whose visitor does not own the places', () => {
+    const shared = vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    expect(searchBox()).not.toBeInTheDocument();
+    shared.mockRestore();
+  });
+
+  it('flies to a result without offering "Search this area" for the move', async () => {
+    const flyTo = vi.fn();
+    setMapLibreStubMap({
+      getBounds: () => ({ getWest: () => -180, getEast: () => 180, getSouth: () => -90, getNorth: () => 90 }),
+      getZoom: () => 3,
+      fitBounds: vi.fn(),
+      setStyle: vi.fn(),
+      flyTo,
+    });
+    sdkMock.getUserPlaces.mockResolvedValue([
+      {
+        id: 'p1',
+        name: 'Home',
+        latitude: 51,
+        longitude: -116,
+        radiusMeters: 500,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn(), onSearchArea: vi.fn() });
+    await waitFor(() => expect(namedPlaces.places).toHaveLength(1));
+
+    await fireEvent.focus(searchBox()!);
+    await fireEvent.click(await screen.findByRole('option'));
+
+    expect(flyTo).toHaveBeenCalledWith(expect.objectContaining({ center: [-116, 51] }));
+    expect(screen.queryByText(en.frameleaf_map_search_this_area)).not.toBeInTheDocument();
+  });
 });
 
 describe('MapScreen (FL-193)', () => {
