@@ -408,6 +408,9 @@ describe(SharedSpaceService.name, () => {
       ]);
       // supporter option (b): the tag follows each member's own Individual licence on an unlicensed server
       expect(members.filter(({ supporter }) => supporter).map(({ user }) => user.id)).toEqual([invitedUser.id]);
+      // FL-1743: nobody on the roster, joined or invited, comes with their email address (Noodle Gallery bug #890)
+      expect(members.map(({ user }) => user.email)).toEqual(['', '', '']);
+      expect(invitedUser.email).not.toBe('');
     });
   });
 

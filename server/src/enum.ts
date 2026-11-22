@@ -2366,6 +2366,8 @@ export enum JobName {
   AssetEditThumbnailGeneration = 'AssetEditThumbnailGeneration',
   AssetDevelopRender = 'AssetDevelopRender',
   DevelopImport = 'DevelopImport',
+  /** FL-923: cut the confirmed prints out of a flatbed scan as new photos. */
+  ScanSplit = 'ScanSplit',
   AssetPaletteExtract = 'AssetPaletteExtract',
   AssetPaletteQueueAll = 'AssetPaletteQueueAll',
   PhotographyWorkflowRender = 'PhotographyWorkflowRender',
@@ -2594,6 +2596,8 @@ export const JobNameSchema = z
     JobName.WorkflowEventDispatch,
     JobName.WorkflowEventTrigger,
     JobName.LibraryFolderAlbumSync,
+    // FL-923: observed through the photos it adds
+    JobName.ScanSplit,
     // the member's key: its value is 'media-import', unlike the names above
     'MediaImport',
   ])

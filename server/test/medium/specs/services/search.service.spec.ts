@@ -1090,6 +1090,52 @@ describe(SearchService.name, () => {
       const byUtc = await sut.searchMetadata(auth, { filter: { takenAt: localDateTime } });
       expect(byUtc.assets.items.map(({ id }) => id).sort()).toEqual([lateJuly.id, august.id].sort());
     });
+
+    it('FL-936: a photo dated to a year or a decade is in every range that overlaps it, and in its decade', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const at = async (iso: string, dateAccuracy?: 'year' | 'decade') => {
+        const { asset } = await ctx.newAsset({
+          ownerId: user.id,
+          fileCreatedAt: new Date(iso),
+          localDateTime: new Date(iso),
+          ...(dateAccuracy && { dateAccuracy }),
+        });
+        await ctx.newExif({ assetId: asset.id, make: 'Epson' });
+        return asset.id;
+      };
+      const seventies = await at('1970-01-01T00:00:00.000Z', 'decade');
+      const in1975 = await at('1975-01-01T00:00:00.000Z', 'year');
+      const in1969 = await at('1969-01-01T00:00:00.000Z', 'year');
+      const july1976 = await at('1976-07-04T12:00:00.000Z');
+      const march1982 = await at('1982-03-01T12:00:00.000Z');
+      const auth = factory.auth({ user });
+      const found = async (dto: Parameters<typeof sut.searchMetadata>[1]) =>
+        (await sut.searchMetadata(auth, dto)).assets.items.map(({ id }) => id).sort();
+      const day = (date: string) => new Date(`${date}T00:00:00.000Z`);
+
+      // the summer of 1975 is inside the year 1975 and the 1970s; no photo is dated in it
+      const summer = { gte: day('1975-06-01'), lt: day('1975-09-01') };
+      expect(await found({ filter: { takenAt: summer } })).toEqual([seventies, in1975].sort());
+      expect(await found({ filter: { localDateTime: summer } })).toEqual([seventies, in1975].sort());
+      expect(await found({ takenAfter: summer.gte, takenBefore: summer.lt })).toEqual([seventies, in1975].sort());
+      // 1976: the decade and the photo of that July, not the year before
+      expect(await found({ filter: { takenAt: { gte: day('1976-01-01'), lt: day('1977-01-01') } } })).toEqual(
+        [seventies, july1976].sort(),
+      );
+      // a year or a decade ends when the next one starts
+      expect(await found({ filter: { takenAt: { gte: day('1980-01-01') } } })).toEqual([march1982]);
+      expect(await found({ filter: { takenAt: { gt: new Date('1979-12-31T23:59:59.999Z') } } })).toEqual([march1982]);
+      expect(await found({ filter: { takenAt: { gte: new Date('1979-12-31T23:59:59.000Z') } } })).toEqual(
+        [seventies, march1982].sort(),
+      );
+      // and does not begin before its first day
+      expect(await found({ filter: { takenAt: { lt: day('1970-01-01') } } })).toEqual([in1969]);
+
+      expect(await found({ filter: { takenDecade: { eq: 1970 } } })).toEqual([seventies, in1975, july1976].sort());
+      expect(await found({ filter: { takenDecade: { eq: 1960 } } })).toEqual([in1969]);
+      expect(await found({ filter: { takenDecade: { eq: 1990 } } })).toEqual([]);
+    });
   });
 
   describe('getSearchSuggestions', () => {

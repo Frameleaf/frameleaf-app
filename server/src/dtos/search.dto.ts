@@ -15,6 +15,7 @@ import {
   SearchOrderField,
   SearchOrderFieldSchema,
 } from 'src/enum.js';
+import { MIN_APPROXIMATE_YEAR } from 'src/utils/date.js';
 import { MEDIA_KINDS } from 'src/utils/media-kinds.js';
 import { isoDatetimeToDate, nonEmptyPartial, stringToBool } from 'src/validation.js';
 
@@ -297,6 +298,13 @@ const DateFilterNullableSchema = nonEmptyPartial({
 
 const BoolFilterSchema = z.object({ eq: z.boolean() }).meta({ id: 'BoolFilter' });
 
+/** FL-936: a decade by its first year: 1970 is 1970 to 1979. */
+const DecadeFilterSchema = z
+  .object({
+    eq: z.int().min(MIN_APPROXIMATE_YEAR).max(9990).multipleOf(10).describe('The first year of the decade'),
+  })
+  .meta({ id: 'DecadeFilter' });
+
 const enumFilterSchema = <T extends z.core.util.EnumLike>(values: z.ZodEnum<T>, id: string) =>
   nonEmptyPartial({
     eq: values,
@@ -398,6 +406,9 @@ const searchFilterBranchShape = {
   // FL-49: the local capture date and time (the wall clock where the photo was taken, written as UTC), the
   // date the timeline and the search histogram bucket by; year:, month:, after: and before: narrow on it
   localDateTime: DateFilterSchema,
+  // FL-936: everything taken in a decade, by local date: photos dated to a day, to a year or to the decade itself.
+  // takenAt and localDateTime ranges also count a photo dated to a year or a decade as taken throughout it
+  takenDecade: DecadeFilterSchema.describe('Taken in this decade, whether dated to a day, a year or the decade'),
   createdAt: DateFilterSchema,
   updatedAt: DateFilterSchema,
   trashedAt: DateFilterNullableSchema,

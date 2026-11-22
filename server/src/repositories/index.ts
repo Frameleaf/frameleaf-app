@@ -85,6 +85,7 @@ import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { IdenticalFilesRepository } from 'src/repositories/identical-files.repository.js';
+import { ImportConnectorRepository } from 'src/repositories/import-connector.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
@@ -137,6 +138,7 @@ import { PushDeviceRepository } from 'src/repositories/push-device.repository.js
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { RawSupportRepository } from 'src/repositories/raw-support.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
+import { ScanSplitRepository } from 'src/repositories/scan-split.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -186,6 +188,7 @@ export const repositories = [
   SpeechRepository,
   AssetAnnotationRepository,
   AssetPaletteRepository,
+  ScanSplitRepository,
   CaptureRepository,
   BrowserExtensionSignInRepository,
   OAuthAppRepository,
@@ -337,6 +340,7 @@ export const repositories = [
   TagRepository,
   TakeoutRepository,
   TakeoutStagingRepository,
+  ImportConnectorRepository,
   EagleImportRepository,
   EagleLibraryRepository,
   TrashRepository,

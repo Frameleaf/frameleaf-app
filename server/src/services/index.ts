@@ -107,6 +107,8 @@ import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
 import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
 import { IdenticalFilesService } from 'src/services/identical-files.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { ImportConnectorWorkerService } from 'src/services/import-connector-worker.service.js';
+import { ImportConnectorService } from 'src/services/import-connector.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
 import { JobService } from 'src/services/job.service.js';
@@ -181,6 +183,7 @@ import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { RunningJobService } from 'src/services/running-job.service.js';
 import { SafetyService } from 'src/services/safety.service.js';
+import { ScanSplitService } from 'src/services/scan-split.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { SeenLabelsService } from 'src/services/seen-labels.service.js';
 import { ServerService } from 'src/services/server.service.js';
@@ -252,6 +255,7 @@ export const services = [
   LibraryItemService,
   AssetAnnotationService,
   AssetPaletteService,
+  ScanSplitService,
   CaptureService,
   BrowserExtensionSignInService,
   McpService,
@@ -470,6 +474,8 @@ export const services = [
   EagleImportWorkerService,
   TakeoutService,
   TakeoutWorkerService,
+  ImportConnectorService,
+  ImportConnectorWorkerService,
   TidyUpService,
   TimelineService,
   TranscodingService,

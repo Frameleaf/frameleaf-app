@@ -3,6 +3,7 @@ import { Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { DateLock } from 'src/schema/tables/date-fix.table.js';
 import type { DateFinding, DateFindingCause, DateScanRow } from 'src/utils/date-doctor.js';
+import type { DateAccuracy } from 'src/utils/date.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { JobName, QueueName } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
@@ -19,11 +20,20 @@ export type DateFixCurrent = {
   localDateTime: Date;
   dateTimeOriginal: Date | null;
   timeZone: string | null;
+  /** FL-936: `year` or `decade` when that is all the date says. */
+  dateAccuracy: DateAccuracy | null;
   /** Which of the date and zone are locked now. */
   locks: DateLock[];
   earlier: Omit<
     DateFixWrite,
-    'assetId' | 'currentTakenAt' | 'currentLocalDateTime' | 'currentZone' | 'newDate' | 'newZone' | 'newLocalDateTime'
+    | 'assetId'
+    | 'currentTakenAt'
+    | 'currentLocalDateTime'
+    | 'currentZone'
+    | 'newDate'
+    | 'newZone'
+    | 'newLocalDateTime'
+    | 'newDateAccuracy'
   > | null;
 };
 
@@ -38,9 +48,12 @@ export type DateFixWrite = {
   previousTakenAt: Date;
   previousLocalDateTime: Date;
   previousLocks: DateLock[];
+  previousDateAccuracy: DateAccuracy | null;
   newDate: Date;
   newZone: string | null;
   newLocalDateTime: Date;
+  /** FL-936: null for an exact date, which every fix but a year or a decade gives. */
+  newDateAccuracy: DateAccuracy | null;
 };
 
 /** FL-930: an open proposal, with the date and zone the photo had when the scan made it. */
@@ -54,7 +67,13 @@ export type DateProposal = {
 };
 
 /** FL-930: what an Apply was asked to do, kept with its batch. */
-export type DateFixAsked = { cause: DateFindingCause | null; shiftMinutes: number | null; timeZone: string | null };
+export type DateFixAsked = {
+  cause: DateFindingCause | null;
+  shiftMinutes: number | null;
+  timeZone: string | null;
+  dateAccuracy: DateAccuracy | null;
+  periodStart: number | null;
+};
 
 /** FL-930: work that commits with the date change: partner copies, sidecars. */
 export type DateFixEffects = (tx: Transaction<DB>, assetIds: string[]) => Promise<void>;
@@ -83,33 +102,37 @@ export class DateDoctorRepository {
    */
   @GenerateSql({ params: [DummyValue.UUID] })
   getScanRows(ownerId: string): Promise<DateScanRow[]> {
-    return this.db
-      .selectFrom('asset')
-      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select([
-        'asset.id',
-        'asset.originalFileName',
-        'asset.fileCreatedAt as takenAt',
-        'asset.localDateTime',
-        'asset_exif.timeZone',
-        'asset_exif.latitude',
-        'asset_exif.longitude',
-        'asset_exif.make',
-        'asset_exif.model',
-        'asset_exif.offsetTimeOriginal',
-        'asset_exif.offsetTime',
-        sql<boolean>`coalesce('dateTimeOriginal' = any(asset_exif."lockedProperties"), false)`.as('dateLocked'),
-        sql<boolean>`coalesce('timeZone' = any(asset_exif."lockedProperties"), false)`.as('zoneLocked'),
-        hasDateToCheck('asset').as('toCheck'),
-      ])
-      .where('asset.ownerId', '=', ownerId)
-      .where('asset.deletedAt', 'is', null)
-      .where(isDefaultVisible('asset'))
-      .where(
-        sql<boolean>`not exists (select 1 from public.asset_origin o where o."assetId" = asset.id and o.following
+    return (
+      this.db
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .select([
+          'asset.id',
+          'asset.originalFileName',
+          'asset.fileCreatedAt as takenAt',
+          'asset.localDateTime',
+          'asset_exif.timeZone',
+          'asset_exif.latitude',
+          'asset_exif.longitude',
+          'asset_exif.make',
+          'asset_exif.model',
+          'asset_exif.offsetTimeOriginal',
+          'asset_exif.offsetTime',
+          sql<boolean>`coalesce('dateTimeOriginal' = any(asset_exif."lockedProperties"), false)`.as('dateLocked'),
+          sql<boolean>`coalesce('timeZone' = any(asset_exif."lockedProperties"), false)`.as('zoneLocked'),
+          hasDateToCheck('asset').as('toCheck'),
+        ])
+        .where('asset.ownerId', '=', ownerId)
+        .where('asset.deletedAt', 'is', null)
+        // FL-936: a photo dated to a year or a decade has no clock to doubt, and vouches for no neighbour's zone
+        .where('asset.dateAccuracy', 'is', null)
+        .where(isDefaultVisible('asset'))
+        .where(
+          sql<boolean>`not exists (select 1 from public.asset_origin o where o."assetId" = asset.id and o.following
           and o."sourceAssetId" is not null and not ('dateTimeOriginal' = any(o."overriddenFields")))`,
-      )
-      .execute() as Promise<DateScanRow[]>;
+        )
+        .execute() as Promise<DateScanRow[]>
+    );
   }
 
   /**
@@ -234,6 +257,7 @@ export class DateDoctorRepository {
               'date_fix_item.previousTakenAt',
               'date_fix_item.previousLocalDateTime',
               'date_fix_item.previousLocks',
+              'date_fix_item.previousDateAccuracy',
             ])
             .whereRef('date_fix_item.assetId', '=', 'asset.id')
             .whereRef('date_fix_batch.userId', '=', 'asset.ownerId')
@@ -252,6 +276,7 @@ export class DateDoctorRepository {
         'asset.localDateTime',
         'asset_exif.dateTimeOriginal',
         'asset_exif.timeZone',
+        'asset.dateAccuracy',
         sql<DateLock[]>`array(select property from unnest(coalesce(asset_exif."lockedProperties", '{}')) property
           where property in ('dateTimeOriginal', 'timeZone') order by property)`.as('locks'),
         'earlier.previousDate',
@@ -259,13 +284,22 @@ export class DateDoctorRepository {
         'earlier.previousTakenAt',
         'earlier.previousLocalDateTime',
         'earlier.previousLocks',
+        'earlier.previousDateAccuracy',
       ])
       .where(sql<boolean>`asset.id = any(${ids}::uuid[])`)
       .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
       .execute();
     return rows.map(
-      ({ previousDate, previousZone, previousTakenAt, previousLocalDateTime, previousLocks, ...row }) => ({
+      ({
+        previousDate,
+        previousZone,
+        previousTakenAt,
+        previousLocalDateTime,
+        previousLocks,
+        previousDateAccuracy,
+        ...row
+      }) => ({
         ...(row as Omit<DateFixCurrent, 'earlier'>),
         earlier:
           previousTakenAt && previousLocalDateTime
@@ -275,6 +309,7 @@ export class DateDoctorRepository {
                 previousTakenAt: previousTakenAt as Date,
                 previousLocalDateTime: previousLocalDateTime as Date,
                 previousLocks: (previousLocks ?? []) as DateLock[],
+                previousDateAccuracy: previousDateAccuracy ?? null,
               }
             : null,
       }),
@@ -292,9 +327,11 @@ export class DateDoctorRepository {
         order by "assetId" for update`.execute(tx);
       const { rows } = await sql<{
         id: string;
-      }>`update asset set "fileCreatedAt" = v."newDate", "localDateTime" = v."newLocalDateTime"
+      }>`update asset set "fileCreatedAt" = v."newDate", "localDateTime" = v."newLocalDateTime",
+          "dateAccuracy" = v."newDateAccuracy"
         from jsonb_to_recordset(${asJson(items)}::text::jsonb) as v("assetId" uuid, "currentTakenAt" timestamptz,
-          "currentLocalDateTime" timestamptz, "currentZone" text, "newDate" timestamptz, "newLocalDateTime" timestamptz)
+          "currentLocalDateTime" timestamptz, "currentZone" text, "newDate" timestamptz, "newLocalDateTime" timestamptz,
+          "newDateAccuracy" text)
         where asset.id = v."assetId" and asset."ownerId" = ${ownerId}::uuid and asset."deletedAt" is null
           and asset."fileCreatedAt" = v."currentTakenAt" and asset."localDateTime" = v."currentLocalDateTime"
           and exists (select 1 from asset_exif exif where exif."assetId" = asset.id
@@ -328,9 +365,11 @@ export class DateDoctorRepository {
               previousTakenAt: item.previousTakenAt,
               previousLocalDateTime: item.previousLocalDateTime,
               previousLocks: item.previousLocks,
+              previousDateAccuracy: item.previousDateAccuracy,
               newDate: item.newDate,
               newZone: item.newZone,
               newLocalDateTime: item.newLocalDateTime,
+              newDateAccuracy: item.newDateAccuracy,
             })),
           )
           .execute();
@@ -367,7 +406,8 @@ export class DateDoctorRepository {
         return { batch, restored: [], alreadyUndone: true };
       }
       const { rows: restored } = await sql<{ assetId: string; previousLocks: DateLock[] }>`update asset
-        set "fileCreatedAt" = item."previousTakenAt", "localDateTime" = item."previousLocalDateTime"
+        set "fileCreatedAt" = item."previousTakenAt", "localDateTime" = item."previousLocalDateTime",
+          "dateAccuracy" = item."previousDateAccuracy"
         from date_fix_item item join asset_exif exif on exif."assetId" = item."assetId"
         where item."batchId" = ${batchId}::uuid and asset.id = item."assetId" and asset."ownerId" = ${ownerId}::uuid
           and asset."fileCreatedAt" = item."newDate" and asset."localDateTime" = item."newLocalDateTime"

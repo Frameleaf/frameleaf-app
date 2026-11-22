@@ -14,6 +14,18 @@ export const OAUTH_ACCESS_TTL_SECONDS = 60 * 60;
 export const OAUTH_USE_RECORD_INTERVAL_MS = 60 * 60 * 1000;
 /** At most this many self-registered apps are kept; unused ones are tidied away first. */
 export const OAUTH_DYNAMIC_CLIENT_LIMIT = 500;
+/**
+ * FL-1636 (TM-13): at the limit, only a self-registered app nobody allowed in this long makes room for
+ * a new one. A day let registrations from many addresses push out an app someone was about to allow.
+ */
+export const OAUTH_UNUSED_CLIENT_DAYS = 7;
+/**
+ * FL-1633 (TM-9): an app that has not refreshed for this long after its access token ran out has to be
+ * allowed again. An app in use refreshes every hour, so it never gets near this.
+ */
+export const OAUTH_REFRESH_IDLE_DAYS = 90;
+/** FL-1633: revoked grants (and the spent refresh tokens of any grant) are deleted after this long. */
+export const OAUTH_PURGE_AFTER_DAYS = 30;
 
 /**
  * Prefixes that tell app tokens apart from session tokens, which are base64 without `_`. An
@@ -103,6 +115,7 @@ export const scopePermissions = (scopes: readonly string[]): Permission[] => [
   ),
 ];
 
+/** Loopback hosts a request may come back to. `localhost` is here for apps registered before FL-1635. */
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
 
 const parseUrl = (value: unknown): URL | null => {
@@ -118,11 +131,15 @@ const parseUrl = (value: unknown): URL | null => {
 
 /**
  * A return address an app may register: `https://` anywhere, or `http://` on a loopback address
- * (127.0.0.1, [::1] or localhost) for apps on the person's own computer (RFC 8252 §7.3). No user
+ * (127.0.0.1 or [::1]) for apps on the person's own computer (RFC 8252 §7.3). No user
  * name or password, no fragment, no dot segments or encoded slashes, and already in canonical form
  * so it can be compared exactly. Returns the address or null.
+ *
+ * FL-1635 (TM-11): the name `localhost` can resolve somewhere else (RFC 8252 §8.3), so an app can no
+ * longer register it for itself. Apps that already did keep working (`matchRedirectUri`), and an
+ * administrator may still register one by hand (`allowLocalhost`).
  */
-export const checkRegisteredRedirectUri = (value: unknown): string | null => {
+export const checkRegisteredRedirectUri = (value: unknown, { allowLocalhost = false } = {}): string | null => {
   if (value === 'lightroom://net.frameleaf.connect/oauth/callback') return value;
   const url = parseUrl(value);
   if (!url || typeof value !== 'string') {
@@ -130,6 +147,8 @@ export const checkRegisteredRedirectUri = (value: unknown): string | null => {
   }
   const loopback = url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname);
   if (
+    // whatever the scheme: `https://localhost` is the same name
+    (url.hostname === 'localhost' && !allowLocalhost) ||
     !(url.protocol === 'https:' || loopback) ||
     !url.hostname ||
     url.username ||

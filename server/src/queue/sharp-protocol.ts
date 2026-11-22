@@ -14,6 +14,7 @@ export const SHARP_OPERATIONS = [
   'writeCloudUpload',
   'writeStrippedStill',
   'renderDownloadJpeg',
+  'renderScanCrop',
   'repairJpeg',
   'pictureSaved',
   'composeImageGrid',

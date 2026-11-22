@@ -78,6 +78,7 @@ import { HouseholdPeerController } from 'src/controllers/household-peer.controll
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IdenticalFilesController } from 'src/controllers/identical-files.controller.js';
+import { ImportConnectorController } from 'src/controllers/import-connector.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
@@ -140,6 +141,7 @@ import { QueueController } from 'src/controllers/queue.controller.js';
 import { RawSupportController } from 'src/controllers/raw-support.controller.js';
 import { RenderWorkerAdminController, RenderWorkerController } from 'src/controllers/render-worker.controller.js';
 import { SafetyController } from 'src/controllers/safety.controller.js';
+import { ScanSplitController } from 'src/controllers/scan-split.controller.js';
 import { SearchController } from 'src/controllers/search.controller.js';
 import { ServerController } from 'src/controllers/server.controller.js';
 import { SessionController } from 'src/controllers/session.controller.js';
@@ -201,6 +203,7 @@ export const controllers = [
   LibraryItemController,
   AssetAnnotationController,
   AssetPaletteController,
+  ScanSplitController,
   CaptureController,
   BrowserExtensionSignInController,
   McpController,
@@ -360,6 +363,7 @@ export const controllers = [
   TagController,
   EagleImportController,
   TakeoutController,
+  ImportConnectorController,
   TidyUpController,
   TimelineController,
   TrashController,

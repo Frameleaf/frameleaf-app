@@ -84,7 +84,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
     },
   },
   signInPolicy: { require: 'administrators-away', applyToOlderApps: false },
-  connectedApps: { allowMcp: true, allowRegistration: true },
+  // FL-1632 (TM-8): apps register themselves only once the administrator allows it
+  connectedApps: { allowMcp: true, allowRegistration: false },
   analytics: {
     enabled: true,
     historyDays: 730,

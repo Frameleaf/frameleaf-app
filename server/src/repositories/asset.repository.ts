@@ -806,17 +806,32 @@ export class AssetRepository {
   }
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.NUMBER, DummyValue.STRING] })
   @Chunked()
-  updateDateTimeOriginal(ids: string[], delta?: number, timeZone?: string) {
-    return this.db
-      .updateTable('asset_exif')
-      .set((eb) => ({
-        dateTimeOriginal: sql`"dateTimeOriginal" + ${(delta ?? 0) + ' minute'}::interval`,
-        timeZone,
-        lockedProperties: distinctLocked(eb, ['dateTimeOriginal', 'timeZone']),
-      }))
-      .where('assetId', 'in', ids)
-      .returning(['assetId', 'dateTimeOriginal', 'timeZone'])
-      .execute();
+  updateDateTimeOriginal(ids: string[], delta?: number, timeZone?: string, exactOnly = false) {
+    return (
+      this.db
+        .updateTable('asset_exif')
+        .set((eb) => ({
+          dateTimeOriginal: sql`"dateTimeOriginal" + ${(delta ?? 0) + ' minute'}::interval`,
+          timeZone,
+          lockedProperties: distinctLocked(eb, ['dateTimeOriginal', 'timeZone']),
+        }))
+        .where('assetId', 'in', ids)
+        // FL-936: `exactOnly` leaves out photos dated to a year or a decade, which have no clock to move
+        .$if(exactOnly, (qb) =>
+          qb.where((eb) =>
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom('asset')
+                  .whereRef('asset.id', '=', 'asset_exif.assetId')
+                  .where('asset.dateAccuracy', 'is not', null),
+              ),
+            ),
+          ),
+        )
+        .returning(['assetId', 'dateTimeOriginal', 'timeZone'])
+        .execute()
+    );
   }
   /**
    * Set one asset's capture date outright, locking it as `updateDateTimeOriginal` does (FL-32).
@@ -1077,6 +1092,8 @@ export class AssetRepository {
         // FL-195 follow-up: Locked items make memories too; the memory is then hidden while locked
         .where(isOnTimelineWhateverLock('asset'))
         .where('asset.deletedAt', 'is', null)
+        // FL-936: a photo dated to a year or a decade was not taken on the day that period starts
+        .where('asset.dateAccuracy', 'is', null)
         .where('asset.localDateTime', '>=', from)
         .where('asset.localDateTime', '<=', to)
         .where((eb) =>
@@ -1208,6 +1225,8 @@ export class AssetRepository {
                 .where('asset.deletedAt', 'is', null)
                 // FL-1410: a camera's reset day is not a day to look back on
                 .where(hasGoodDate('asset'))
+                // FL-936: nor is the first day of a year or decade that is all the photo's date says
+                .where('asset.dateAccuracy', 'is', null)
                 .orderBy(sql`(asset."localDateTime" at time zone 'UTC')::date`, 'desc')
                 .limit(20)
                 .as('a'),
@@ -3489,6 +3508,7 @@ export class AssetRepository {
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
             'asset.isOffline',
+            'asset.dateAccuracy',
             livePhotoVideoId,
             localOffsetHours.as('localOffsetHours'),
             'asset.ownerId',
@@ -3720,6 +3740,10 @@ export class AssetRepository {
             // TODO: isTrashed is redundant as it will always be all true or false depending on the options
             eb.fn.coalesce(eb.fn('array_agg', ['isTrashed']), sql.lit('{}')).as('isTrashed'),
             eb.fn.coalesce(eb.fn('array_agg', ['isOffline']), sql.lit('{}')).as('isOffline'),
+            // FL-936: null unless a photo here is dated to a year or a decade, which few pages have
+            sql<(string | null)[] | null>`case when count("dateAccuracy") > 0 then array_agg("dateAccuracy") end`.as(
+              'dateAccuracy',
+            ),
             eb.fn.coalesce(eb.fn('array_agg', ['livePhotoVideoId']), sql.lit('{}')).as('livePhotoVideoId'),
             eb.fn.coalesce(eb.fn('array_agg', ['fileCreatedAt']), sql.lit('{}')).as('fileCreatedAt'),
             eb.fn.coalesce(eb.fn('array_agg', ['createdAt']), sql.lit('{}')).as('createdAt'),

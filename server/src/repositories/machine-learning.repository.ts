@@ -628,6 +628,15 @@ export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
 /** No local worker can fill an area: ML is off, remote-only, or its worker cannot get the inpainting model. */
 export class InpaintUnavailableError extends Error {}
 
+/** FL-923: the worker task that finds the prints on a flatbed scan. It is plain image processing: no model file. */
+export const SCAN_SPLIT_MODEL_NAME = 'frameleaf-scan-split';
+
+/** FL-923: no local worker can look for prints: ML is off, remote-only, or its worker is older than the task. */
+export class ScanSplitUnavailableError extends Error {}
+
+/** FL-923: one print found on a scan, its corners in the pixels of the image that was sent. */
+export type ScanSplitPrint = { quad: [number, number][]; rotation: number; confidence: number };
+
 /** FL-863: the local worker can't score eyes now (an older worker without the route, or no landmark model). */
 export class EyeScoresUnavailableError extends Error {}
 
@@ -938,6 +947,63 @@ export class MachineLearningRepository implements RestorationInference {
       .parse(JSON.parse(Buffer.concat(chunks).toString()));
     await this.authorize({ url });
     return Buffer.from(result.inpaint.png, 'base64');
+  }
+
+  /**
+   * FL-923: ask the instance-local ML worker where the prints lie on a flatbed scan. `image` is an upright
+   * JPEG or PNG of the scan; the worker answers `{ "scan-split": [{ quad, rotation, confidence }], imageWidth,
+   * imageHeight }` with each quad's corners (top-left, top-right, bottom-right, bottom-left) in that image's
+   * pixels. The task needs no model, so only a worker that is off, remote or older than the task (422) is
+   * unavailable, which surfaces as `ScanSplitUnavailableError`.
+   */
+  async scanSplitLocal(
+    image: Buffer,
+    signal?: AbortSignal,
+  ): Promise<{ prints: ScanSplitPrint[]; width: number; height: number }> {
+    if (!this.config.enabled) throw new ScanSplitUnavailableError('Local machine learning is disabled');
+    const url = this.getLocalUrls()[0];
+    if (!url || url === FRAMELEAF_CLOUD_ENDPOINT.url) throw new ScanSplitUnavailableError('No local worker');
+    await this.authorize({ url });
+    const endpoint = new URL('predict', url.endsWith('/') ? url : `${url}/`);
+    if (!['http:', 'https:'].includes(endpoint.protocol) || /(^|\.)frameleaf\.(app|cloud)$/i.test(endpoint.hostname))
+      throw new ScanSplitUnavailableError('Splitting a scan requires an instance-local worker');
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({ 'scan-split': { visual: { modelName: SCAN_SPLIT_MODEL_NAME, options: {} } } }),
+    );
+    form.append('image', new Blob([new Uint8Array(image)]));
+    const deadline = AbortSignal.timeout(60_000);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      body: form,
+      redirect: 'error',
+      headers: this.authHeaders({ url, authToken: process.env.FRAMELEAF_ML_AUTH_TOKEN?.trim() }),
+      signal: signal ? AbortSignal.any([deadline, signal]) : deadline,
+    });
+    if (!response.ok) {
+      // an unknown task (422), no such route (404) or a worker that is starting (503): nothing can look today
+      if ([404, 422, 501, 503].includes(response.status))
+        throw new ScanSplitUnavailableError(`Local scan splitting unavailable (${response.status})`);
+      throw new Error(`Local scan splitting failed (${response.status})`);
+    }
+    const point = z.tuple([z.number(), z.number()]);
+    const result = z
+      .object({
+        'scan-split': z
+          .array(
+            z.object({
+              quad: z.array(point).length(4),
+              rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
+              confidence: z.number().min(0).max(1),
+            }),
+          )
+          .max(50),
+        imageWidth: z.int().min(1),
+        imageHeight: z.int().min(1),
+      })
+      .parse(await response.json());
+    return { prints: result['scan-split'], width: result.imageWidth, height: result.imageHeight };
   }
 
   /**

@@ -97,6 +97,7 @@ import { AssetOriginalTable } from 'src/schema/tables/asset-original.table.js';
 import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
 import { AssetProcessingFailureTable } from 'src/schema/tables/asset-processing-failure.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
+import { AssetScanCropTable } from 'src/schema/tables/asset-scan-crop.table.js';
 import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { AssetUploadSkipExceptionTable } from 'src/schema/tables/asset-upload-skip-exception.table.js';
@@ -171,6 +172,7 @@ import {
   ICloudEditVersionTable,
 } from 'src/schema/tables/icloud-edit-authority.table.js';
 import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-change.table.js';
+import { ImportConnectionItemTable, ImportConnectionTable } from 'src/schema/tables/import-connection.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { LibraryFolderAlbumAssetTable } from 'src/schema/tables/library-folder-album-asset.table.js';
@@ -515,6 +517,7 @@ export class ImmichDatabase {
     LibraryTable,
     LibraryFolderAlbumTable,
     LibraryFolderAlbumAssetTable,
+    AssetScanCropTable,
     HouseholdLinkTable,
     HouseholdPeerRequestTable,
     HouseholdShareTable,
@@ -609,6 +612,8 @@ export class ImmichDatabase {
     TakeoutItemTable,
     TakeoutPairTable,
     TakeoutAlbumTable,
+    ImportConnectionTable,
+    ImportConnectionItemTable,
     DevelopPresetTable,
     DevelopExportTable,
     SessionSyncCheckpointTable,
@@ -821,6 +826,8 @@ export interface DB extends QueueDatabase {
   date_fix_item: DateFixItemTable;
   asset_ledger: AssetLedgerTable;
   found_file: FoundFileTable;
+  import_connection: ImportConnectionTable;
+  import_connection_item: ImportConnectionItemTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;
@@ -840,6 +847,10 @@ export interface DB extends QueueDatabase {
   library: LibraryTable;
   library_folder_album: LibraryFolderAlbumTable;
   library_folder_album_asset: LibraryFolderAlbumAssetTable;
+  asset_scan_crop: AssetScanCropTable;
+
+  household_link: HouseholdLinkTable;
+  household_peer_request: HouseholdPeerRequestTable;
 
   household_link: HouseholdLinkTable;
   household_peer_request: HouseholdPeerRequestTable;

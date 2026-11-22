@@ -22,7 +22,7 @@ import {
 
 // Gallery-only data by source table. Preflight lists those holding rows, unless the named read carries them
 // (src/immich-import/gallery.ts); the rest have no Frameleaf counterpart yet.
-const NOODLE_ONLY: Record<string, { name: string; carriedBy?: (typeof GALLERY_READS)[number] }> = {
+export const NOODLE_ONLY: Record<string, { name: string; carriedBy?: (typeof GALLERY_READS)[number] }> = {
   shared_space: { name: 'Spaces', carriedBy: 'gallery_space' },
   shared_space_person: { name: 'people named in Spaces', carriedBy: 'gallery_space_person' },
   shared_space_library: { name: 'libraries linked to Spaces' },
@@ -35,12 +35,35 @@ const NOODLE_ONLY: Record<string, { name: string; carriedBy?: (typeof GALLERY_RE
   cleanup_decision: { name: 'clean-up review decisions' },
 };
 // Each owner's favourite is asset."isFavorite"; asset_favorite also holds favourites other people set.
-const OTHERS_FAVOURITES = `SELECT EXISTS (SELECT 1 FROM public.asset_favorite f JOIN public.asset a ON a.id = f."assetId"
+export const OTHERS_FAVOURITES = `SELECT EXISTS (SELECT 1 FROM public.asset_favorite f JOIN public.asset a ON a.id = f."assetId"
   WHERE f."userId" <> a."ownerId") AS rows`;
+
+/** Rows each Gallery read yields (FL-1742); null where this release's tables cannot be read. */
+export type GalleryCounts = {
+  spaces: number | null;
+  /** People who are in at least one Space. */
+  members: number | null;
+  /** Memberships: one for each person in each Space. */
+  memberships: number | null;
+  spacePhotos: number | null;
+  people: number | null;
+  favourites: number | null;
+  pets: number | null;
+};
+const GALLERY_COUNTS: Record<Exclude<keyof GalleryCounts, 'members'>, (typeof GALLERY_READS)[number]> = {
+  spaces: 'gallery_space',
+  memberships: 'gallery_space_member',
+  spacePhotos: 'gallery_space_asset',
+  people: 'gallery_space_person',
+  favourites: 'gallery_favorite',
+  pets: 'gallery_pet',
+};
 
 export class ImmichSource {
   /** Noodle Gallery data that stays in the source, named for people. */
   notImported: string[] = [];
+  /** What each Gallery read will carry, counted through the read's own SELECT. Set with `gallery`. */
+  galleryCounts: GalleryCounts | null = null;
   /** Set once preflight has recognised the source as Noodle Gallery. */
   gallery = false;
   private frozen: FrozenSource;
@@ -106,6 +129,7 @@ export class ImmichSource {
     if (this.gallery) {
       this.fixture = withGalleryContent(this.fixture, structure);
       this.notImported = await this.noodleOnlyData();
+      this.galleryCounts = await this.countGallery();
     }
     const identity = await this.db.query(`SELECT current_database() AS database,
       (SELECT oid::text FROM pg_database WHERE datname=current_database()) AS database_oid,
@@ -173,6 +197,25 @@ export class ImmichSource {
       names.push('favourites set by other people');
     }
     return names;
+  }
+
+  /** Count queries over the reads the importer will run; a read this source does not offer counts as null. */
+  private async countGallery(): Promise<GalleryCounts> {
+    const rows = async (read: (typeof GALLERY_READS)[number], what = '*') => {
+      if (!this.fixture.tables[read]) return null;
+      const [row] = await this.db.query(
+        `SELECT count(${what})::text AS count FROM (${this.fixture.views[read]}) AS rows`,
+      );
+      return Number(row?.count ?? 0);
+    };
+    const counts = { members: await rows('gallery_space_member', 'DISTINCT rows."userId"') } as GalleryCounts;
+    for (const [name, read] of Object.entries(GALLERY_COUNTS) as [
+      keyof typeof GALLERY_COUNTS,
+      (typeof GALLERY_READS)[number],
+    ][]) {
+      counts[name] = await rows(read);
+    }
+    return counts;
   }
 
   /** Rows one Gallery read yields, for the verification count. */

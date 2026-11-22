@@ -43,6 +43,7 @@ import type {
 } from 'src/types.js';
 import type { DevelopBitmap, DevelopLinearFill } from 'src/utils/develop-cleanup.js';
 import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
+import type { ScanCropRect } from 'src/utils/scan-split.js';
 
 /** Recipe projection and owner-verified artifacts supplied by the existing Develop admission. */
 export type HdrDevelopRender = {
@@ -715,6 +716,74 @@ export class SharpOperations {
       .flatten({ background: '#ffffff' })
       .jpeg({ quality: 92, chromaSubsampling: '4:4:4' })
       .toFile(output);
+  }
+
+  /**
+   * FL-923: one print cut out of a flatbed scan at the scan's full resolution: the box around the turned
+   * print is taken from the upright scan, turned straight (and by `rotation` quarter turns) with white where
+   * the turn reaches past the scan, and its middle written as a JPEG (quality 95, no chroma subsampling) with
+   * the scan's colour profile. Nothing else of the scan's metadata is kept. Returns the photo's size.
+   */
+  async renderScanCrop(input: string, output: string, rect: ScanCropRect, rotation: number): Promise<ImageDimensions> {
+    const numbers = [rect.centerX, rect.centerY, rect.width, rect.height, rect.angle];
+    if (
+      resolve(input) === resolve(output) ||
+      ![0, 90, 180, 270].includes(rotation) ||
+      numbers.some((value) => !Number.isFinite(value)) ||
+      rect.width < 1 ||
+      rect.height < 1
+    )
+      throw new Error('INVALID_SCAN_CROP');
+    const options = { failOn: 'error' as const, limitInputPixels: this.maxPixels };
+    const scan = await this.getOrientedSize(input);
+    const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
+    const radians = (rect.angle * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(radians));
+    const sin = Math.abs(Math.sin(radians));
+    // the upright box around the turned print, two pixels wider for the resampler, kept inside the scan
+    const halfWidth = (rect.width * cos + rect.height * sin) / 2 + 2;
+    const halfHeight = (rect.width * sin + rect.height * cos) / 2 + 2;
+    const left = clamp(Math.floor(rect.centerX - halfWidth), 0, scan.width - 1);
+    const top = clamp(Math.floor(rect.centerY - halfHeight), 0, scan.height - 1);
+    const boxWidth = clamp(Math.ceil(rect.centerX + halfWidth), left + 1, scan.width) - left;
+    const boxHeight = clamp(Math.ceil(rect.centerY + halfHeight), top + 1, scan.height) - top;
+    // Each step is its own pipeline: sharp fixes the order of operations inside one, and an extract,
+    // a turn and a second extract in one pipeline do not run in the order they are written.
+    const box = await sharp(input, options)
+      .rotate()
+      .extract({ left, top, width: boxWidth, height: boxHeight })
+      .keepIccProfile()
+      .png({ compressionLevel: 0 })
+      .toBuffer();
+    this.progress();
+    const turn = rotation - rect.angle;
+    const turned = await sharp(box, options)
+      .rotate(turn, { background: '#ffffff' })
+      .keepIccProfile()
+      .png({ compressionLevel: 0 })
+      .toBuffer({ resolveWithObject: true });
+    this.progress();
+    // sharp turns about the middle of the box; the print's centre moves with it
+    const turnRadians = (turn * Math.PI) / 180;
+    const offsetX = rect.centerX - left - boxWidth / 2;
+    const offsetY = rect.centerY - top - boxHeight / 2;
+    const centerX = turned.info.width / 2 + offsetX * Math.cos(turnRadians) - offsetY * Math.sin(turnRadians);
+    const centerY = turned.info.height / 2 + offsetX * Math.sin(turnRadians) + offsetY * Math.cos(turnRadians);
+    const quarter = rotation === 90 || rotation === 270;
+    const width = clamp(Math.round(quarter ? rect.height : rect.width), 1, turned.info.width);
+    const height = clamp(Math.round(quarter ? rect.width : rect.height), 1, turned.info.height);
+    await sharp(turned.data, options)
+      .extract({
+        left: clamp(Math.round(centerX - width / 2), 0, turned.info.width - width),
+        top: clamp(Math.round(centerY - height / 2), 0, turned.info.height - height),
+        width,
+        height,
+      })
+      .flatten({ background: '#ffffff' })
+      .keepIccProfile()
+      .jpeg({ quality: 95, chromaSubsampling: '4:4:4' })
+      .toFile(output);
+    return { width, height };
   }
 
   async writeStrippedStill(

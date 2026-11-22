@@ -424,6 +424,9 @@ export interface IPartnerPropagateJob {
   fields: string[];
 }
 
+/** FL-923: one print on a scan: its corners in the scan's displayed pixels and the quarter turns to apply. */
+export type ScanCropJobItem = { quad: [number, number][]; rotation: number };
+
 export interface IEntityJob extends IBaseJob {
   id: string;
   source?: JobSource;
@@ -958,6 +961,7 @@ export type JobItem =
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }
   | { name: JobName.DevelopImport; data: IEntityJob & IDelayedJob }
+  | { name: JobName.ScanSplit; data: IEntityJob & { crops: ScanCropJobItem[] } }
   | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob & IEditOperationJob };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
