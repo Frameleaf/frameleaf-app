@@ -66,7 +66,7 @@
         "sdr"
       ],
       "requiresGpu": true,
-      "notes": "NOT QUALIFIED (run 1296). Revision and sha256 values are those measured; minVramBytes is the cap the run was held to. The weights came from their upstream pins and are not on the Frameleaf model source."
+      "notes": "Owner sign-off 2026-11-22 on run 1296. Revision and sha256 values are those measured; minVramBytes is the cap the run was held to. The weights came from their upstream pins and are not on the Frameleaf model source."
     },
     {
       "id": "ddcolor-colourise",
@@ -121,7 +121,7 @@
         "sdr"
       ],
       "requiresGpu": true,
-      "notes": "NOT QUALIFIED (run 1296). Revision and sha256 values are those measured; minVramBytes is the cap the run was held to. The weights came from their upstream pins and are not on the Frameleaf model source."
+      "notes": "Owner sign-off 2026-11-22 on run 1296. Revision and sha256 values are those measured; minVramBytes is the cap the run was held to. The weights came from their upstream pins and are not on the Frameleaf model source."
     }
   ]
 }

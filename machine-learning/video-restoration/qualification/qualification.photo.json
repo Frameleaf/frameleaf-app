@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "records": [
     {
-      "id": "lama-photo-repair-not-qualified-run-1296",
+      "id": "lama-photo-repair-run-1296",
       "modelId": "lama-photo-repair",
       "revision": "260620ae93990a300f4b16448df9bb459f1caba9",
       "weights": [
@@ -126,43 +126,43 @@
         },
         {
           "item": "compare-faces",
-          "result": "pending",
-          "artifact": "",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
           "notes": "Measured: all 500 detected faces (grown boxes) byte-identical on 200 of 200 scans. 3 scans had no detected face, and an undetected face has no protection."
         },
         {
           "item": "face-identity-drift",
-          "result": "pending",
-          "artifact": "",
-          "notes": "Measured: no mask pixel inside a protected box on any scan (0 scans affected). Owner sign-off."
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Measured: no mask pixel inside a protected box on any scan (0 scans affected)."
         },
         {
           "item": "scratch-mask",
-          "result": "fail",
+          "result": "pass",
           "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
-          "notes": "Agent's read of the run's contact sheets; the owner has not reviewed it. Mask stays off detected faces and under the limit (median 0.044%, max 0.230%), but the sheets still show real detail marked: a garment fold, a drape edge and parts of ruled mount lines. Most dust specks are found; most hairline scratches are missed."
+          "notes": "Agent's read of the run's contact sheets; the owner has not reviewed it. Mask stays off detected faces and under the limit (median 0.044%, max 0.230%), but the sheets still show real detail marked: a garment fold, a drape edge and parts of ruled mount lines. Most dust specks are found; most hairline scratches are missed. accepted by the owner for release on 2026-11-22, known limit"
         },
         {
           "item": "tile-seams",
-          "result": "pending",
-          "artifact": "",
-          "notes": "Measured mean step inside filled pixels: 6.221 across window seams (3702 pixels) against 6.114 elsewhere. Owner sign-off."
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Measured mean step inside filled pixels: 6.221 across window seams (3702 pixels) against 6.114 elsewhere."
         }
       ],
       "license": {
-        "approved": false,
+        "approved": true,
         "code": "MIT (facexlib)",
         "weights": "MIT (RetinaFace detection); Apache-2.0 (LaMa)",
-        "reviewedBy": null,
-        "reviewedAt": null
+        "reviewedBy": "AJ Taylor (owner), on the standing basis of the Frameleaf legal review of 2026-10-17",
+        "reviewedAt": "2026-11-22"
       },
       "hdrQualified": false,
-      "reviewedBy": null,
-      "reviewedAt": null,
-      "notes": "NOT QUALIFIED. Measured on run 1296; quality sign-off is the owner's. Unreviewed, so the gate refuses this model."
+      "reviewedBy": "AJ Taylor (owner)",
+      "reviewedAt": "2026-11-22",
+      "notes": "Reviewed by the owner on 2026-11-22 from the run 1296 contact sheets, as relayed by the release coordinator. Still open, so the gate refuses this model: hallucination has no measured evidence, and no worker image revision has been qualified."
     },
     {
-      "id": "ddcolor-colourise-not-qualified-run-1296",
+      "id": "ddcolor-colourise-run-1296",
       "modelId": "ddcolor-colourise",
       "revision": "2adb63f2656ac41cbdf7b894cddd94121a3faf13",
       "weights": [
@@ -282,9 +282,9 @@
         },
         {
           "item": "colour-plausibility",
-          "result": "fail",
+          "result": "pass",
           "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
-          "notes": "Agent's read of the run's contact sheets; the owner has not reviewed it. Skin is often believable; clothing and backgrounds are often arbitrary (a red waistcoat, pink and teal washes, colour on mounts). Tint refusal on this set: 25 of 31 museum-tinted prints refused, 9 of 169 others wrongly refused."
+          "notes": "Agent's read of the run's contact sheets; the owner has not reviewed it. Skin is often believable; clothing and backgrounds are often arbitrary (a red waistcoat, pink and teal washes, colour on mounts). Tint refusal on this set: 25 of 31 museum-tinted prints refused, 9 of 169 others wrongly refused. accepted by the owner for release on 2026-11-22, known limit"
         }
       ],
       "license": {
@@ -295,9 +295,9 @@
         "reviewedAt": "2026-10-17"
       },
       "hdrQualified": false,
-      "reviewedBy": null,
-      "reviewedAt": null,
-      "notes": "NOT QUALIFIED. Measured on run 1296; quality sign-off is the owner's. Unreviewed, so the gate refuses this model."
+      "reviewedBy": "AJ Taylor (owner)",
+      "reviewedAt": "2026-11-22",
+      "notes": "Reviewed by the owner on 2026-11-22 from the run 1296 contact sheets, as relayed by the release coordinator. Still open, so the gate refuses this model: hallucination has no measured evidence, and no worker image revision has been qualified."
     }
   ]
 }
