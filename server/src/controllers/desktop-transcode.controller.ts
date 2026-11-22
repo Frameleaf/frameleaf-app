@@ -20,7 +20,7 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   DesktopTranscodeClaimDto,
   DesktopTranscodeInputQueryDto,
-  DesktopTranscodeUploadQueryDto,
+  DesktopTranscodeUploadGrantDto,
 } from 'src/dtos/desktop-transcode.dto.js';
 import { DesktopWorkerAckDto, DesktopWorkerHeartbeatDto } from 'src/dtos/desktop-worker-job.dto.js';
 import { DesktopWorkerPayloadDto } from 'src/dtos/desktop-worker.dto.js';
@@ -92,19 +92,38 @@ export class DesktopTranscodeController {
     return this.service.heartbeat(authorization, proof, id, dto.payload);
   }
 
+  @Post(':id/upload-grant')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ public: true })
+  @Endpoint({ summary: 'Get the token for uploading a converted video', history: history() })
+  grantDesktopTranscodeUpload(
+    @Headers('authorization') authorization: string | undefined,
+    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: DesktopWorkerPayloadDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DesktopTranscodeUploadGrantDto> {
+    response.setHeader('Cache-Control', 'no-store');
+    return this.service.grantUpload(authorization, proof, id, dto.payload);
+  }
+
+  /** Not a signed request: those go one at a time, and a long upload would hold up its own heartbeats. */
   @Put(':id/output')
+  @ApiHeader({
+    name: 'x-frameleaf-transcode-upload',
+    required: true,
+    description: 'Token from the upload grant, bound to this conversion and its current claim.',
+  })
   @ApiConsumes('application/octet-stream')
   @ApiBody({ schema: { type: 'string', format: 'binary' } })
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Upload a converted video for server validation', history: history() })
   uploadDesktopTranscode(
-    @Headers('authorization') authorization: string | undefined,
-    @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
+    @Headers('x-frameleaf-transcode-upload') uploadToken: string | undefined,
     @Param() { id }: UUIDParamDto,
-    @Query() query: DesktopTranscodeUploadQueryDto,
     @Req() request: Request,
   ): Promise<DesktopWorkerAckDto> {
-    return this.service.upload(authorization, proof, id, query, request);
+    return this.service.upload(uploadToken, id, request);
   }
 
   @Post(':id/fail')

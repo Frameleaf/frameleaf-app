@@ -11,13 +11,12 @@ export const DesktopTranscodeFailureSchema = z.strictObject({
     .meta({ id: 'DesktopTranscodeFailureCode' }),
 });
 
-export class DesktopTranscodeUploadQueryDto extends createZodDto(
-  z.strictObject({
-    claimToken: z.uuid(),
-    checksum: digest,
-    sizeInBytes: z.string().regex(/^[1-9]\d{0,15}$/),
-  }),
-) {}
+export const DesktopTranscodeUploadRequestSchema = z.strictObject({
+  claimToken: z.uuid(),
+  checksum: digest,
+  sizeInBytes: z.string().regex(/^[1-9]\d{0,15}$/),
+});
+export class DesktopTranscodeUploadGrantDto extends createZodDto(z.object({ uploadToken: z.string() })) {}
 
 export class DesktopTranscodeInputQueryDto extends createZodDto(z.strictObject({ claimToken: z.uuid() })) {}
 

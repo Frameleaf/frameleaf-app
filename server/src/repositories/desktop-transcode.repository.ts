@@ -16,6 +16,7 @@ const claimant = (deviceId: string) => `desktop:${deviceId}`;
 const kind = MediaOperationKind.PlaybackTranscode;
 
 export type DesktopTranscodeResult = { outputPath: string; checksum: string; sizeInBytes: number };
+export type DesktopTranscodeUpload = { tokenHash: string; checksum: string; sizeInBytes: string };
 
 /** Leases of `playback_transcode` operations; every read and write rechecks the desktop's live authority. */
 @Injectable()
@@ -101,6 +102,37 @@ export class DesktopTranscodeRepository {
         ? operation
         : undefined;
     });
+  }
+
+  /** Replaces any earlier upload grant: only the newest token can upload, and only while this claim holds. */
+  async setUploadGrant(id: string, claimToken: string, upload: DesktopTranscodeUpload) {
+    const row = await this.db
+      .updateTable('media_operation')
+      .set({ settings: sql`${JSON.stringify({ upload })}::jsonb` })
+      .where('id', '=', id)
+      .where('kind', '=', kind)
+      .where('claimToken', '=', claimToken)
+      .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
+      .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where('cancelRequestedAt', 'is', null)
+      .returning('id')
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  /** The operation an upload token opens, while its claim is live. */
+  getByUploadToken(id: string, tokenHash: string) {
+    return this.db
+      .selectFrom('media_operation')
+      .selectAll()
+      .where('id', '=', id)
+      .where('kind', '=', kind)
+      .where(sql<boolean>`"settings"->'upload'->>'tokenHash' = ${tokenHash}`)
+      .where('claimToken', 'is not', null)
+      .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
+      .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where('cancelRequestedAt', 'is', null)
+      .executeTakeFirst();
   }
 
   /** Records the uploaded file for validation. An identical repeat of a lost answer is `duplicate`. */

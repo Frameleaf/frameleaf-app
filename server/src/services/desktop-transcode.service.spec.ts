@@ -24,7 +24,14 @@ const snapshot = {
 
 describe(DesktopTranscodeService.name, () => {
   const auth = { authenticate: vi.fn() };
-  const repository = { claim: vi.fn(), getClaimed: vi.fn(), stageResult: vi.fn(), ownerOf: vi.fn() };
+  const repository = {
+    claim: vi.fn(),
+    getClaimed: vi.fn(),
+    stageResult: vi.fn(),
+    ownerOf: vi.fn(),
+    setUploadGrant: vi.fn(),
+    getByUploadToken: vi.fn(),
+  };
   const operations = { heartbeat: vi.fn(), fail: vi.fn() };
   const assets = { getById: vi.fn() };
   const metadata = { setEntry: vi.fn() };
@@ -60,26 +67,28 @@ describe(DesktopTranscodeService.name, () => {
     expect(assets.getById).not.toHaveBeenCalled();
   });
 
-  it('binds the upload size and checksum into the signed request', async () => {
-    repository.getClaimed.mockResolvedValue(undefined);
-    const query = { claimToken, checksum: 'a'.repeat(64), sizeInBytes: '5' };
-    await expect(sut.upload('Bearer x', 'proof', id, query, Readable.from([]))).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
-    expect(auth.authenticate).toHaveBeenCalledWith(
-      'Bearer x',
-      'proof',
-      `transcode-upload:${id}:${claimToken}:${query.checksum}:5`,
-      '',
-    );
+  it('signs the upload size and checksum and stores only a hash of the token', async () => {
+    repository.getClaimed.mockResolvedValue({ ownerId, snapshot });
+    repository.setUploadGrant.mockResolvedValue(true);
+    const payload = JSON.stringify({ claimToken, checksum: 'a'.repeat(64), sizeInBytes: '5' });
+    const { uploadToken } = await sut.grantUpload('Bearer x', 'proof', id, payload);
+    expect(auth.authenticate).toHaveBeenCalledWith('Bearer x', 'proof', `transcode-upload-grant:${id}`, payload);
+    const stored = repository.setUploadGrant.mock.calls[0][2];
+    expect(stored).toMatchObject({ checksum: 'a'.repeat(64), sizeInBytes: '5' });
+    expect(stored.tokenHash).not.toBe(uploadToken);
   });
 
-  it('refuses an upload over the size allowance before reading it', async () => {
+  it('refuses a grant over the size allowance', async () => {
     repository.getClaimed.mockResolvedValue({ ownerId, snapshot });
-    const query = { claimToken, checksum: 'a'.repeat(64), sizeInBytes: String(2 * 1024 ** 3) };
-    await expect(sut.upload('Bearer x', 'proof', id, query, Readable.from([]))).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    const payload = JSON.stringify({ claimToken, checksum: 'a'.repeat(64), sizeInBytes: String(2 * 1024 ** 3) });
+    await expect(sut.grantUpload('Bearer x', 'proof', id, payload)).rejects.toBeInstanceOf(BadRequestException);
+    expect(repository.setUploadGrant).not.toHaveBeenCalled();
+  });
+
+  it('refuses an upload without a live token before reading it', async () => {
+    repository.getByUploadToken.mockResolvedValue(undefined);
+    await expect(sut.upload('stale', id, Readable.from([]))).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(sut.upload(undefined, id, Readable.from([]))).rejects.toBeInstanceOf(ForbiddenException);
     expect(repository.stageResult).not.toHaveBeenCalled();
   });
 

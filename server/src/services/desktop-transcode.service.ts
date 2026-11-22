@@ -1,15 +1,17 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { createHash, randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import {
   DesktopTranscodeClaimDto,
   DesktopTranscodeFailureSchema,
   DesktopTranscodeLeaseSchema,
-  DesktopTranscodeUploadQueryDto,
+  DesktopTranscodeUploadGrantDto,
+  DesktopTranscodeUploadRequestSchema,
 } from 'src/dtos/desktop-transcode.dto.js';
 import { DesktopWorkerAckDto, DesktopWorkerHeartbeatDto } from 'src/dtos/desktop-worker-job.dto.js';
 import { CacheControl } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
-import { DesktopTranscodeRepository } from 'src/repositories/desktop-transcode.repository.js';
+import { DesktopTranscodeRepository, DesktopTranscodeUpload } from 'src/repositories/desktop-transcode.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
@@ -33,6 +35,7 @@ type TranscodeSnapshot = {
   command: { inputOptions: string[]; outputOptions: string[]; twoPass: boolean; frameCount: number };
 };
 
+const tokenHash = (token: string) => createHash('sha256').update(token).digest('hex');
 const leaseLost = () => new ForbiddenException('desktop_lease_invalid');
 
 @Injectable()
@@ -113,33 +116,45 @@ export class DesktopTranscodeService {
     };
   }
 
-  /** The size and checksum are part of the signed request; the file is staged, never published here. */
-  async upload(
+  /** The size and checksum are signed here, and the upload that follows must match them. */
+  async grantUpload(
     authorization: string | undefined,
     proof: string | undefined,
     id: string,
-    query: DesktopTranscodeUploadQueryDto,
-    body: Readable,
-  ): Promise<DesktopWorkerAckDto> {
-    const { claimToken, checksum, sizeInBytes } = query;
-    const grant = await this.auth.authenticate(
-      authorization,
-      proof,
-      `transcode-upload:${id}:${claimToken}:${checksum}:${sizeInBytes}`,
-      '',
-    );
+    payload: string,
+  ): Promise<DesktopTranscodeUploadGrantDto> {
+    const grant = await this.auth.authenticate(authorization, proof, `transcode-upload-grant:${id}`, payload);
+    const { claimToken, checksum, sizeInBytes } = this.parse(DesktopTranscodeUploadRequestSchema, payload);
     const operation = await this.repository.getClaimed(grant, id, claimToken);
     if (!operation) throw leaseLost();
     const { sourceBytes } = operation.snapshot as TranscodeSnapshot;
     if (Number(sizeInBytes) > desktopTranscodeMaxOutputBytes(sourceBytes)) {
       throw new BadRequestException('desktop_transcode_too_large');
     }
+    const uploadToken = randomBytes(32).toString('base64url');
+    const stored = await this.repository.setUploadGrant(id, claimToken, {
+      tokenHash: tokenHash(uploadToken),
+      checksum,
+      sizeInBytes,
+    });
+    if (!stored) throw leaseLost();
+    return { uploadToken };
+  }
+
+  /** The file is staged, never published here. */
+  async upload(uploadToken: string | undefined, id: string, body: Readable): Promise<DesktopWorkerAckDto> {
+    if (!uploadToken || uploadToken.length > 128) throw leaseLost();
+    const hash = tokenHash(uploadToken);
+    const operation = await this.repository.getByUploadToken(id, hash);
+    if (!operation?.claimToken) throw leaseLost();
+    const claimToken = operation.claimToken;
+    const { checksum, sizeInBytes } = (operation.settings as { upload: DesktopTranscodeUpload }).upload;
     const accepted = await receiveRenderArtifact(
       desktopTranscodeStagingFolder(operation.ownerId, id),
       body,
       { checksum, sizeInBytes },
       async () => {
-        if (!(await this.repository.getClaimed(grant, id, claimToken))) throw leaseLost();
+        if (!(await this.repository.getByUploadToken(id, hash))) throw leaseLost();
       },
       (artifact) =>
         this.repository.stageResult(id, claimToken, {
