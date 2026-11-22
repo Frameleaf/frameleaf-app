@@ -301,7 +301,7 @@ describe(LocationFillService.name, () => {
     await expect(exifOf(other)).resolves.toMatchObject({ latitude: 51.178 });
   });
 
-  it('keeps runs, proposals and the history behind them to their owner; a partner sees only the filled location', async () => {
+  it('keeps runs, proposals and the history behind them to their owner', async () => {
     const { sut, assets, ctx } = setup();
     const { user } = await ctx.newUser();
     const { user: partner } = await ctx.newUser();
@@ -329,9 +329,9 @@ describe(LocationFillService.name, () => {
       await expect(read()).rejects.toBeInstanceOf(NotFoundException);
     }
     await expect(exifOf(partners)).resolves.toMatchObject({ latitude: null });
-    // like any other location on a shared photo
-    const seen = await assets.get(partnerAuth, filled);
-    expect(seen.exifInfo).toMatchObject({ latitude: 51.178, longitude: -115.571 });
+    // the filled location is an ordinary edit, so the partner's copy follows it as any location does (FL-326);
+    // the owner's own row, like the history, is never read by the partner
+    await expect(assets.get(partnerAuth, filled)).rejects.toThrow();
   });
 
   it('has nothing to propose without history in reach, and says so by an empty run', async () => {
