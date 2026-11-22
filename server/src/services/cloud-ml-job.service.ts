@@ -484,7 +484,7 @@ export class CloudMlJobService {
     }
     if (photoOperation) {
       if (video || smooth) {
-        throw new BadRequestException('Repair and Colourise work on photos');
+        throw new BadRequestException('Repair and Suggested colours work on photos');
       }
       const refusal =
         photoOperation === 'colourise'

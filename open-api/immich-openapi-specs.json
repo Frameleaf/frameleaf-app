@@ -96325,6 +96325,10 @@
             "description": "Frameleaf Cloud: the person agreed the photos leave",
             "type": "boolean"
           },
+          "allowHandTinted": {
+            "description": "FL-955: colourise only. Include hand-tinted prints, which are skipped by default.",
+            "type": "boolean"
+          },
           "assetIds": {
             "description": "The photos to repair or colourise",
             "items": {
@@ -96395,6 +96399,12 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "handTinted": {
+            "description": "FL-955: colourise only: hand-tinted prints in the selection, whether skipped or included",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "operation": {
             "$ref": "#/components/schemas/AssetRestorationOperation"
           },
@@ -96436,7 +96446,7 @@
             "type": "string"
           },
           "reason": {
-            "description": "already-in-colour, colour-unknown, not-a-photo or unavailable",
+            "description": "hand-tinted, already-in-colour, colour-unknown, not-a-photo or unavailable",
             "type": "string"
           }
         },
@@ -96702,6 +96712,10 @@
             "description": "FL-955: colourise only: why this photo cannot be colourised, in words for the owner",
             "type": "string"
           },
+          "colourRefusalReason": {
+            "description": "FL-955: the same refusal as a stable word: hand-tinted, already-in-colour or colour-unknown",
+            "type": "string"
+          },
           "destinations": {
             "items": {
               "$ref": "#/components/schemas/AssetRestorationDestinationDto"
@@ -96870,6 +96884,10 @@
       },
       "AssetRestorationRequestDto": {
         "properties": {
+          "allowHandTinted": {
+            "description": "FL-955: colourise only. The owner chose Suggest colours anyway for a hand-tinted print. A photo already in colour is still refused.",
+            "type": "boolean"
+          },
           "destinationId": {
             "description": "The processing destination this restoration runs on. Required; never inferred.",
             "format": "uuid",

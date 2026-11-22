@@ -70,7 +70,7 @@ describe('ICloudReview', () => {
     await show();
     await fireEvent.click(screen.getByRole('button', { name: 'Leave IMG_2.HEIC for later' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Accept all (2)' }));
-    expect(await screen.findByText(en.frameleaf_icloud_review_done_use_existing)).toBeInTheDocument();
+    expect(await screen.findByText(/will use the matching photo in your library/)).toBeInTheDocument();
     await fireEvent.click(await screen.findByRole('button', { name: 'Accept 2 photos' }));
     await waitFor(() => expect(mocks.acceptICloudReview).toHaveBeenCalled());
     expect(accepted()).toEqual({ all: true, exceptResourceIds: [resource(2)] });

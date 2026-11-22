@@ -7010,6 +7010,8 @@ export type ProcessingFailureActionDto = {
 export type AssetRestorationBatchRequestDto = {
     /** Frameleaf Cloud: the person agreed the photos leave */
     acknowledgeDataLeaves?: boolean;
+    /** FL-955: colourise only. Include hand-tinted prints, which are skipped by default. */
+    allowHandTinted?: boolean;
     /** The photos to repair or colourise */
     assetIds: string[];
     /** The batchId of the estimate being confirmed. Confirming it again queues nothing twice. */
@@ -7048,7 +7050,7 @@ export type AssetRestorationBatchDestinationDto = {
 };
 export type AssetRestorationBatchSkipDto = {
     assetId: string;
-    /** already-in-colour, colour-unknown, not-a-photo or unavailable */
+    /** hand-tinted, already-in-colour, colour-unknown, not-a-photo or unavailable */
     reason: string;
 };
 export type AssetRestorationBatchResponseDto = {
@@ -7058,6 +7060,8 @@ export type AssetRestorationBatchResponseDto = {
     destinations: AssetRestorationBatchDestinationDto[];
     /** Photos that would be, or were, queued */
     eligible: number;
+    /** FL-955: colourise only: hand-tinted prints in the selection, whether skipped or included */
+    handTinted?: number;
     operation: AssetRestorationOperation;
     /** Photos queued by this request; 0 for an estimate */
     queued: number;
@@ -7974,6 +7978,8 @@ export type AssetRestorationListResponseDto = {
     items: AssetRestorationResponseDto[];
 };
 export type AssetRestorationRequestDto = {
+    /** FL-955: colourise only. The owner chose Suggest colours anyway for a hand-tinted print. A photo already in colour is still refused. */
+    allowHandTinted?: boolean;
     /** The processing destination this restoration runs on. Required; never inferred. */
     destinationId: string;
     /** Preserve fine film grain instead of smoothing it */
@@ -8034,6 +8040,8 @@ export type AssetRestorationOptionsDto = {
     assetId: string;
     /** FL-955: colourise only: why this photo cannot be colourised, in words for the owner */
     colourRefusal?: string;
+    /** FL-955: the same refusal as a stable word: hand-tinted, already-in-colour or colour-unknown */
+    colourRefusalReason?: string;
     destinations: AssetRestorationDestinationDto[];
     /** Video length; null for stills */
     durationSeconds: number | null;

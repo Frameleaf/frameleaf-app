@@ -16,7 +16,7 @@ are not compatible with each other or with the worker.
 
 `photo_repair.py` and `colourise.py` are the entry points of the two photo workloads. They
 run with the photo runtime's interpreter (`photo.lock`: PyTorch, torchvision, OpenCV, NumPy,
-Pillow and ONNX Runtime with CUDA), take the network classes from the pinned CodeFormer or
+Pillow and ONNX Runtime with CUDA), take the network classes from the pinned facexlib or
 DDColor checkout passed as `--runtime-root`, and load only tensor weights from local files.
 Each reads one `00000001.png` and writes one of the same size plus a small `report.json`
 whose warnings the worker passes on. They need a CUDA device and make no network requests.

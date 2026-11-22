@@ -2604,7 +2604,7 @@ describe(CloudMlJobService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([photo.id]));
       mocks.media.decodeImage.mockResolvedValue({
         data: Buffer.alloc(300, 120),
-        info: { width: 4000, height: 3000, channels: 3 },
+        info: { width: 10, height: 10, channels: 3 },
       } as never);
       mocks.media.getImageMetadata.mockResolvedValue({ width: 4000, height: 3000 } as never);
       mocks.frameleafCloudMl.createEstimate.mockResolvedValue(priced);
@@ -2673,9 +2673,15 @@ describe(CloudMlJobService.name, () => {
     });
 
     it('refuses to send a colour photo to Colourise', async () => {
+      // Blocks of equal brightness and different colour, which no single print tone can make.
+      const blocks = Buffer.alloc(400 * 400 * 3);
+      for (let pixel = 0; pixel < 400 * 400; pixel++) {
+        const warm = (Math.floor(pixel / 400 / 25) + Math.floor((pixel % 400) / 25)) % 2 === 0;
+        blocks.set(warm ? [200, 90, 90] : [70, 130, 190], pixel * 3);
+      }
       mocks.media.decodeImage.mockResolvedValue({
-        data: Buffer.from(Array.from({ length: 300 }, (_, index) => [200, 40, 40, 40, 180, 60][index % 6])),
-        info: { width: 64, height: 48, channels: 3 },
+        data: blocks,
+        info: { width: 400, height: 400, channels: 3 },
       } as never);
 
       await expect(sut.estimate(owner, repair({ operation: 'colourise' as never }), now)).rejects.toThrow(

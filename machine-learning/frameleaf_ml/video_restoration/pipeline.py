@@ -244,6 +244,7 @@ def restore(
         interpolation_factor=factor,
         source_video=source_video,
         kind=request.kind,
+        allow_hand_tinted=request.allowHandTinted,
     )
     if smooth and frame_count < 2:
         raise _unsupported("smooth motion needs at least two frames", model_id)

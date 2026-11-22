@@ -1,0 +1,303 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "id": "lama-photo-repair-run-1296",
+      "modelId": "lama-photo-repair",
+      "revision": "260620ae93990a300f4b16448df9bb459f1caba9",
+      "weights": [
+        {
+          "role": "detection",
+          "sha256": "6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d"
+        },
+        {
+          "role": "lama",
+          "sha256": "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6"
+        }
+      ],
+      "containerRevisions": [],
+      "hardware": [
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "driverVersion": "610.88",
+          "cudaVersion": "12.4"
+        }
+      ],
+      "measurements": [
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 3296,
+          "inputHeight": 2512,
+          "frames": 1,
+          "framesPerSecond": 0.1706,
+          "peakVramBytes": 2276458496
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 3635,
+          "inputHeight": 3951,
+          "frames": 1,
+          "framesPerSecond": 0.0853,
+          "peakVramBytes": 2387607552
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 6000,
+          "inputHeight": 7000,
+          "frames": 1,
+          "framesPerSecond": 0.1455,
+          "peakVramBytes": 2341470208
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 8192,
+          "inputHeight": 8192,
+          "frames": 1,
+          "framesPerSecond": 0.0998,
+          "peakVramBytes": 2435842048
+        }
+      ],
+      "evidence": [
+        {
+          "item": "weights-hashed",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Every weight matched its pinned sha256 before the run and was hashed again after it."
+        },
+        {
+          "item": "resource-profile",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "200 scans processed, 0 refused, 0 failed, under an 8 GiB cap. Device peak 2323 MiB including 675 MiB already in use; median 0.77 s/MP, max 1.746 s/MP. 42 and 67 MP inputs completed."
+        },
+        {
+          "item": "output-size",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "200 of 200 outputs equal their input size."
+        },
+        {
+          "item": "orientation",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "7 of 7 fixtures with real EXIF tags 2 to 8 kept the tag, size and stored picture. The tag was written by the qualification script the way the worker writes it; the worker's own path is covered by the pipeline test."
+        },
+        {
+          "item": "deterministic-repeat",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "3 scans run twice with byte-identical output."
+        },
+        {
+          "item": "fault-out-of-memory",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "A real CUDA out-of-memory under a tightened cap failed cleanly and the next input worked."
+        },
+        {
+          "item": "fault-nan",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Injected non-finite model output was refused."
+        },
+        {
+          "item": "fault-changed-weights",
+          "result": "pass",
+          "artifact": "machine-learning/test_photo_restoration.py (real hash and git checks on temporary files, not on the GPU runner)",
+          "notes": "A changed weight file is found by its hash."
+        },
+        {
+          "item": "fault-dirty-checkout",
+          "result": "pass",
+          "artifact": "machine-learning/test_photo_restoration.py (real hash and git checks on temporary files, not on the GPU runner)",
+          "notes": "A modified runtime checkout is reported as not clean."
+        },
+        {
+          "item": "fault-unsupported-input",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "A frame with transparency was refused by the runtime."
+        },
+        {
+          "item": "hallucination",
+          "result": "pending",
+          "artifact": "",
+          "notes": "No face, hair or skin is generated. LaMa still invents the pixels under each mark; the owner judges those from the sheets."
+        },
+        {
+          "item": "compare-faces",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Measured: all 500 detected faces (grown boxes) byte-identical on 200 of 200 scans. 3 scans had no detected face, and an undetected face has no protection."
+        },
+        {
+          "item": "face-identity-drift",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Measured: no mask pixel inside a protected box on any scan (0 scans affected)."
+        },
+        {
+          "item": "scratch-mask",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Agent's read of the run's contact sheets; the owner has not reviewed it. Mask stays off detected faces and under the limit (median 0.044%, max 0.230%), but the sheets still show real detail marked: a garment fold, a drape edge and parts of ruled mount lines. Most dust specks are found; most hairline scratches are missed. accepted by the owner for release on 2026-11-22, known limit"
+        },
+        {
+          "item": "tile-seams",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Measured mean step inside filled pixels: 6.221 across window seams (3702 pixels) against 6.114 elsewhere."
+        }
+      ],
+      "license": {
+        "approved": true,
+        "code": "MIT (facexlib)",
+        "weights": "MIT (RetinaFace detection); Apache-2.0 (LaMa)",
+        "reviewedBy": "AJ Taylor (owner), on the standing basis of the Frameleaf legal review of 2026-10-17",
+        "reviewedAt": "2026-11-22"
+      },
+      "hdrQualified": false,
+      "reviewedBy": "AJ Taylor (owner)",
+      "reviewedAt": "2026-11-22",
+      "notes": "Reviewed by the owner on 2026-11-22 from the run 1296 contact sheets, as relayed by the release coordinator. Still open, so the gate refuses this model: hallucination has no measured evidence, and no worker image revision has been qualified."
+    },
+    {
+      "id": "ddcolor-colourise-run-1296",
+      "modelId": "ddcolor-colourise",
+      "revision": "2adb63f2656ac41cbdf7b894cddd94121a3faf13",
+      "weights": [
+        {
+          "role": "ddcolor",
+          "sha256": "17c460d7e55b32a598370621d77173be59e03c24b0823f06821db23a50c263ce"
+        }
+      ],
+      "containerRevisions": [],
+      "hardware": [
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "driverVersion": "610.88",
+          "cudaVersion": "12.4"
+        }
+      ],
+      "measurements": [
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 2275,
+          "inputHeight": 3689,
+          "frames": 1,
+          "framesPerSecond": 2.2075,
+          "peakVramBytes": 3025141760
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 3635,
+          "inputHeight": 3951,
+          "frames": 1,
+          "framesPerSecond": 1.5244,
+          "peakVramBytes": 3062890496
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 6000,
+          "inputHeight": 7000,
+          "frames": 1,
+          "framesPerSecond": 0.5423,
+          "peakVramBytes": 3088056320
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 8192,
+          "inputHeight": 8192,
+          "frames": 1,
+          "framesPerSecond": 0.3184,
+          "peakVramBytes": 3025141760
+        }
+      ],
+      "evidence": [
+        {
+          "item": "weights-hashed",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Every weight matched its pinned sha256 before the run and was hashed again after it."
+        },
+        {
+          "item": "resource-profile",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "166 scans processed, 34 refused, 0 failed, under an 8 GiB cap. Device peak 2981 MiB including 675 MiB already in use; median 0.054 s/MP, max 0.124 s/MP. 42 and 67 MP inputs completed."
+        },
+        {
+          "item": "output-size",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "166 of 166 outputs equal their input size."
+        },
+        {
+          "item": "orientation",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "7 of 7 fixtures with real EXIF tags 2 to 8 kept the tag, size and stored picture. The tag was written by the qualification script the way the worker writes it; the worker's own path is covered by the pipeline test."
+        },
+        {
+          "item": "deterministic-repeat",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "3 scans run twice with byte-identical output."
+        },
+        {
+          "item": "fault-out-of-memory",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "A real CUDA out-of-memory under a tightened cap failed cleanly and the next input worked."
+        },
+        {
+          "item": "fault-nan",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Injected non-finite model output was refused."
+        },
+        {
+          "item": "fault-changed-weights",
+          "result": "pass",
+          "artifact": "machine-learning/test_photo_restoration.py (real hash and git checks on temporary files, not on the GPU runner)",
+          "notes": "A changed weight file is found by its hash."
+        },
+        {
+          "item": "fault-dirty-checkout",
+          "result": "pass",
+          "artifact": "machine-learning/test_photo_restoration.py (real hash and git checks on temporary files, not on the GPU runner)",
+          "notes": "A modified runtime checkout is reported as not clean."
+        },
+        {
+          "item": "fault-unsupported-input",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "A frame with transparency was refused by the runtime."
+        },
+        {
+          "item": "hallucination",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Every colour is a model guess and the result is marked as suggested. Owner sign-off."
+        },
+        {
+          "item": "colour-plausibility",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Agent's read of the run's contact sheets; the owner has not reviewed it. Skin is often believable; clothing and backgrounds are often arbitrary (a red waistcoat, pink and teal washes, colour on mounts). Tint refusal on this set: 25 of 31 museum-tinted prints refused, 9 of 169 others wrongly refused. accepted by the owner for release on 2026-11-22, known limit"
+        }
+      ],
+      "license": {
+        "approved": true,
+        "code": "Apache-2.0",
+        "weights": "Apache-2.0",
+        "reviewedBy": "Frameleaf legal review",
+        "reviewedAt": "2026-10-17"
+      },
+      "hdrQualified": false,
+      "reviewedBy": "AJ Taylor (owner)",
+      "reviewedAt": "2026-11-22",
+      "notes": "Reviewed by the owner on 2026-11-22 from the run 1296 contact sheets, as relayed by the release coordinator. Still open, so the gate refuses this model: hallucination has no measured evidence, and no worker image revision has been qualified."
+    }
+  ]
+}

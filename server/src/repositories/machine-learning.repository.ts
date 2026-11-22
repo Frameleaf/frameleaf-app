@@ -2698,6 +2698,8 @@ export class MachineLearningRepository implements RestorationInference {
       requestId: `${options.jobId}:${basename(outputPath)}`.slice(0, 200),
       // FL-933: a photo operation is named instead of a mode, never beside one
       ...(options.operation ? { operation: options.operation } : { mode: options.mode }),
+      // FL-955: sent only when asked for, so a worker from before it is never handed an unknown field
+      ...(options.allowHandTinted && { allowHandTinted: true }),
       // FL-423: the chosen model, which the worker runs exactly or refuses; left out, the worker chooses
       ...(options.modelId && { modelId: options.modelId }),
       ...(options.modelFingerprint && { modelFingerprint: options.modelFingerprint }),

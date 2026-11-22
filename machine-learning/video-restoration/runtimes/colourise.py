@@ -1,4 +1,8 @@
-"""Colourise a black-and-white photo with DDColor (FL-933).
+"""Suggest colours for a black-and-white photo with DDColor (FL-933).
+
+True and toned monochrome (sepia, albumen, selenium) are accepted. A hand-tinted print or a colour
+photo is refused, because its real colour would be replaced. The report marks every result as
+suggested colours.
 
 One decoded RGB frame in, one RGB frame of exactly the same size out. The model only ever
 sees a 512 x 512 copy and answers with two colour channels (Lab a and b). Those are enlarged
@@ -28,6 +32,27 @@ REPORT = "report.json"
 MAX_INPUT_EDGE = 8192
 MODEL_SIZE = 512
 STRIP_ROWS = 1024  # the Lab merge runs in strips so a large scan never needs several float copies
+UNUSED_CLASSIFIER_KEYS = frozenset({"encoder.arch.head_cls.weight", "encoder.arch.head_cls.bias"})
+
+# The worker reads this exit status as "this input is not supported" and passes the message on.
+REFUSED_EXIT = 65
+HAND_TINTED_MESSAGE = "this photo already has colour (hand-tinted or a colour print), so it was not colourised"
+# The worker passes this on as a warning: the output is a suggestion, never a recovered original.
+SUGGESTED_COLOURS = "suggested-colours: these colours are a model's suggestion, not the photo's original colours"
+
+# Measured on the 200-scan set against the museum's "applied color" wording (FL-933): see README.
+TINT_WORK_EDGE = 384
+TINT_LEVELS = 24  # brightness bands
+TINT_DISTANCE = 6.0  # Lab a/b distance from the band's usual colour
+TINT_OUTER_INSET = 0.15
+TINT_OUTER_SHARE = 0.05
+TINT_INNER_INSET = 0.25
+TINT_INNER_SHARE = 0.001
+# FL-955: of the photos above, more off-tone picture than this is a colour photo, which no override
+# can send through. Set from 43 real colour photos; not yet measured on the 31 tinted scans.
+TINT_COLOUR_SHARE = 0.25
+# Set by the worker only when the owner chose "Suggest colours anyway" for a hand-tinted print.
+ALLOW_HAND_TINTED_ENV = "FRAMELEAF_ALLOW_HAND_TINTED"
 
 Predict = Callable[[np.ndarray], np.ndarray]
 
@@ -62,11 +87,45 @@ def colourise(rgb: np.ndarray, predict: Predict) -> np.ndarray:
     return merge_colour(rgb, predict(model_input(rgb)))
 
 
-def is_greyscale(rgb: np.ndarray, tolerance: int = 6) -> bool:
-    """Whether a photo carries no colour worth keeping (a neutral or evenly toned scan)."""
-    small = cv2.resize(rgb, (256, 256), interpolation=cv2.INTER_AREA).astype(np.int16)
-    spread = small.max(axis=-1) - small.min(axis=-1)
-    return bool(np.percentile(spread, 99) <= tolerance)
+def off_tone_share(rgb: np.ndarray, inset: float) -> float:
+    """Of the picture inside ``inset``, the share of pixels whose colour differs from the usual colour
+    of pixels equally bright. A toned print (sepia, albumen, selenium) has one colour per brightness,
+    however strong; paint adds a second."""
+    height, width = rgb.shape[:2]
+    top, left = int(height * inset), int(width * inset)
+    crop = rgb[top : height - top, left : width - left]
+    scale = TINT_WORK_EDGE / max(crop.shape[:2])
+    size = (max(1, round(crop.shape[1] * scale)), max(1, round(crop.shape[0] * scale)))
+    small = cv2.GaussianBlur(cv2.resize(crop, size, interpolation=cv2.INTER_AREA), (0, 0), 1.0)
+    lab = cv2.cvtColor(small.astype(np.float32) / 255.0, cv2.COLOR_RGB2Lab).reshape(-1, 3)
+    levels = np.clip((lab[:, 0] / 100.0 * TINT_LEVELS).astype(np.int32), 0, TINT_LEVELS - 1)
+    distance = np.zeros(len(lab), np.float32)
+    for level in np.unique(levels):
+        chosen = levels == level
+        usual = np.median(lab[chosen, 1:], axis=0)
+        distance[chosen] = np.hypot(*(lab[chosen, 1:] - usual).T)
+    return float((distance > TINT_DISTANCE).mean())
+
+
+def photo_colour(rgb: np.ndarray) -> str:
+    """``monochrome``, ``hand-tinted`` or ``in-colour``. The second, tighter crop keeps a coloured
+    mount or a gilt case from counting: paint is on the picture itself. The server's port of this
+    rule (``server/src/utils/photo-monochrome.ts``) is held to it by ``qualification/tint-vectors.json``."""
+    outer = off_tone_share(rgb, TINT_OUTER_INSET)
+    if outer <= TINT_OUTER_SHARE or off_tone_share(rgb, TINT_INNER_INSET) <= TINT_INNER_SHARE:
+        return "monochrome"
+    return "in-colour" if outer > TINT_COLOUR_SHARE else "hand-tinted"
+
+
+def is_hand_tinted(rgb: np.ndarray) -> bool:
+    """Whether a photo already carries applied colour (or is a colour photo)."""
+    return photo_colour(rgb) != "monochrome"
+
+
+def refuses(rgb: np.ndarray, allow_hand_tinted: bool) -> bool:
+    """The override reaches a hand-tinted print only: a colour photo is always refused."""
+    kind = photo_colour(rgb)
+    return kind == "in-colour" or (kind == "hand-tinted" and not allow_hand_tinted)
 
 
 def stub_package(name: str, path: Path) -> None:
@@ -74,6 +133,15 @@ def stub_package(name: str, path: Path) -> None:
     module = types.ModuleType(name)
     module.__path__ = [str(path)]
     sys.modules[name] = module
+
+
+def model_weights(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    """The checkpoint's weights without the ConvNeXt classifier head, which DDColor never builds.
+
+    Only those two keys are dropped, so the strict load still refuses any other mismatch.
+    """
+    weights = checkpoint["params"] if "params" in checkpoint else checkpoint
+    return {name: value for name, value in weights.items() if name not in UNUSED_CLASSIFIER_KEYS}
 
 
 def load_model(args: argparse.Namespace) -> Predict:
@@ -103,7 +171,7 @@ def load_model(args: argparse.Namespace) -> Predict:
         dec_layers=9,
     )
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    model.load_state_dict(checkpoint["params"] if "params" in checkpoint else checkpoint, strict=True)
+    model.load_state_dict(model_weights(checkpoint), strict=True)
     model.eval().to(device)
 
     @torch.inference_mode()
@@ -149,11 +217,12 @@ def main() -> None:
         if args.output_dir.is_symlink() or any(args.output_dir.iterdir()):
             raise ValueError("the output directory must be empty")
         source = read_frame(args.input_dir / FRAME)
+        if refuses(source, os.environ.get(ALLOW_HAND_TINTED_ENV) == "1"):
+            parser.exit(REFUSED_EXIT, f"{HAND_TINTED_MESSAGE}\n")
         result = colourise(source, load_model(args))
         if result.shape != source.shape:
             raise ValueError("the colourised frame changed size")
-        warnings = [] if is_greyscale(source) else ["the photo already had colour; its colour was replaced"]
-        write_outputs(args.output_dir, result, {"warnings": warnings})
+        write_outputs(args.output_dir, result, {"warnings": [SUGGESTED_COLOURS]})
     except (OSError, ValueError, RuntimeError, Image.DecompressionBombError) as error:
         parser.exit(1, f"{error}\n")
 
