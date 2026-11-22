@@ -44,7 +44,12 @@ export type RemoteItem = {
 export type RemoteCursor = Record<string, unknown>;
 
 /** Some of a scan's files, and the cursor that stands for everything listed so far. */
-export type RemoteScanBatch = { items: RemoteItem[]; cursor?: RemoteCursor | null };
+export type RemoteScanBatch = {
+  items: RemoteItem[];
+  cursor?: RemoteCursor | null;
+  /** Folders this scan could not read and went past. Their files are looked for again by the next scan. */
+  skippedFolders?: number;
+};
 
 export interface RemoteSource {
   /** The folders directly inside `path`; an empty path is the top. */
@@ -57,9 +62,14 @@ export interface RemoteSource {
   scan(roots: string[], cursor: RemoteCursor | null, signal: AbortSignal): AsyncIterable<RemoteScanBatch>;
   /**
    * The file's bytes from `range.start` on; a download that was interrupted resumes there.
-   * `range.contentHash` is what the scan saw, so a source can refuse to splice a file that changed since.
+   * `range.contentHash` and `range.size` are what the scan saw, so a source can refuse to splice a file
+   * that changed since.
    */
-  open(remoteId: string, range: { start: number; contentHash?: string }, signal: AbortSignal): Promise<Readable>;
+  open(
+    remoteId: string,
+    range: { start: number; contentHash?: string; size?: number },
+    signal: AbortSignal,
+  ): Promise<Readable>;
 }
 
 /**
@@ -70,7 +80,14 @@ export interface RemoteSource {
  */
 export type RemoteSourceSession = {
   renewCredentials(renew: (current: Record<string, unknown>) => Promise<Record<string, unknown> | null>): Promise<void>;
+  /** Where an access token outlives one opened source, so a long import does not renew it per batch. */
+  accessToken?: {
+    read(): RemoteAccessToken | undefined;
+    write(token: RemoteAccessToken): void;
+  };
 };
+
+export type RemoteAccessToken = { token: string; expiresAt: number };
 
 /** A source connected by signing in through the Frameleaf Cloud broker (FL-959). */
 export type RemoteSourceSignIn = {
@@ -100,6 +117,8 @@ export interface RemoteSourceProvider {
   readonly signIn?: RemoteSourceSignIn;
   /** Give up the access these credentials hold, when the connection is removed. Best effort. */
   revoke?(credentials: Record<string, unknown>): Promise<void>;
+  /** Revoking ends this app's access for the whole account, not just the one token (Google). */
+  readonly revokeEndsAccountGrant?: boolean;
 }
 
 /** The source refused or could not answer. The message is shown to the owner and must hold no secret. */
@@ -110,6 +129,12 @@ export class RemoteSourceError extends Error {}
  * connection is marked "sign in again" and is not tried again until the owner renews it.
  */
 export class RemoteSourceAuthError extends RemoteSourceError {}
+
+/**
+ * The whole connection cannot be read for now (a rate limit, a daily limit, Frameleaf Cloud down), so
+ * this says nothing about the file being read. The job stops with its files still to do and is retried.
+ */
+export class RemoteSourceUnavailableError extends RemoteSourceError {}
 
 const providers = new Map<string, RemoteSourceProvider>();
 

@@ -224,7 +224,8 @@ export const webdavRequest = async (
       url = next;
       continue;
     }
-    if (response.status === 401 || response.status === 403) {
+    // A 403 from the typed origin refuses this one resource and says nothing about the saved password.
+    if (response.status === 401 || (response.status === 403 && !sameOrigin)) {
       await response.body?.cancel();
       if (!sameOrigin) {
         // The password was not sent there, so this says nothing about the saved sign-in.

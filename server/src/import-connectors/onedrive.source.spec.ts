@@ -8,7 +8,12 @@ import {
   onedriveRoots,
 } from 'src/import-connectors/onedrive.source.js';
 import { forgetProviderPauses, retryAfterMs } from 'src/import-connectors/provider-http.js';
-import { type RemoteItem, RemoteSourceAuthError, RemoteSourceError } from 'src/import-connectors/remote-source.js';
+import {
+  type RemoteItem,
+  RemoteSourceAuthError,
+  RemoteSourceError,
+  RemoteSourceUnavailableError,
+} from 'src/import-connectors/remote-source.js';
 import { TakeoutStagingError } from 'src/repositories/takeout-staging.repository.js';
 
 /** Every Graph answer here is a hand-written fixture shaped from Microsoft's documentation, not a recording. */
@@ -103,6 +108,7 @@ describe('OneDrive source', () => {
   it('accepts only the documented download hosts, over https', () => {
     expect(isOneDriveDownloadUrl(DOWNLOAD)).toBe(true);
     expect(isOneDriveDownloadUrl('https://contoso-my.sharepoint.com/personal/a/download.aspx')).toBe(true);
+    expect(isOneDriveDownloadUrl('https://my.microsoftpersonalcontent.com/personal/a/download')).toBe(true);
     for (const bad of [
       // eslint-disable-next-line unicorn/prefer-https -- the plain-http address is what is being refused
       'http://public.dm.files.1drv.com/x',
@@ -110,7 +116,7 @@ describe('OneDrive source', () => {
       'https://evilsharepoint.com/x',
       'https://user@contoso.sharepoint.com/x',
       'https://contoso.sharepoint.com:8443/x',
-      'https://my.microsoftpersonalcontent.com/x',
+      'https://microsoftpersonalcontent.com.example.org/x',
       'https://169.254.169.254/x',
       undefined,
     ]) {
@@ -165,6 +171,45 @@ describe('OneDrive source', () => {
     expect(items.map((item) => item.remoteId)).toEqual(['new']);
     expect(calls[2].url).toBe(`${GRAPH}/root/delta?token=2`);
     expect(cursor.deltaLink).toBe(`${GRAPH}/root/delta?token=3`);
+  });
+
+  it('lists everything when a folder arrives under a chosen folder, for the files delta leaves out', async () => {
+    const moved = folder('italy', 'Italy', 'trips');
+    const { source, calls } = setup(
+      () => json({ id: 'trips' }),
+      noCameraRoll,
+      () => delta([rootItem, folder('trips', 'Trips'), moved], `${GRAPH}/root/delta?token=3`),
+      () => delta([rootItem, folder('trips', 'Trips'), moved, file('old', 'old.jpg', 'italy')]),
+    );
+    const { items, cursor } = await collect(source, ['Trips'], {
+      version: 1,
+      deltaLink: `${GRAPH}/root/delta?token=2`,
+      roots: ['Trips'],
+    });
+    expect(calls[3].url).toContain('/root/delta?$select=');
+    expect(items.map((item) => item.path)).toEqual(['Trips/Italy/old.jpg']);
+    expect(cursor.deltaLink).toBe(`${GRAPH}/root/delta?token=next`);
+  });
+
+  it('fails the scan when one chosen folder has gone, even if another is still there', async () => {
+    const { source } = setup(
+      () => json({ id: 'trips' }),
+      () => json({}, 404),
+    );
+    await expect(collect(source, ['Trips', 'Renamed'])).rejects.toThrow('no longer in OneDrive');
+  });
+
+  it('refuses a chosen folder that climbs out of the drive', async () => {
+    const { source, calls } = setup();
+    await expect(collect(source, ['../../../me/messages'])).rejects.toThrow('no longer in OneDrive');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('calls a long rate limit connection-wide, so no file is blamed for it', async () => {
+    const { source } = setup(() => json({}, 429, { 'retry-after': '100000' }));
+    await expect(collect(source, [])).rejects.toThrow('slow down');
+    const next = setup();
+    await expect(collect(next.source, [])).rejects.toBeInstanceOf(RemoteSourceUnavailableError);
   });
 
   it('lists everything again when a folder was added since the last scan', async () => {

@@ -114,7 +114,7 @@ describe('Google Drive source', () => {
       ['c', 'Trips/c.jpg', 'Trips'],
     ]);
     expect(items[0].contentHash).toBe('md5-a');
-    expect(cursor).toEqual({ version: 1, pageToken: 'start-1', roots: ['trips'] });
+    expect(cursor).toEqual({ version: 2, pageToken: 'start-1', roots: ['trips'] });
     expect(query(calls[2]).get('q')).toBe("'trips' in parents and trashed=false");
     expect(calls.every((call) => call.method === 'GET' && call.redirect === 'manual')).toBe(true);
     expect(calls.every((call) => call.url.startsWith(`${API}/`))).toBe(true);
@@ -245,7 +245,7 @@ describe('Google Drive source', () => {
         }),
       () => json({}, 404),
     );
-    const { items, cursor } = await collect(source, ['trips'], { version: 1, pageToken: 'token-2', roots: ['trips'] });
+    const { items, cursor } = await collect(source, ['trips'], { version: 2, pageToken: 'token-2', roots: ['trips'] });
     expect(items.map((item) => [item.remoteId, item.path])).toEqual([['new', 'Trips/new.jpg']]);
     expect(query(calls[1]).get('pageToken')).toBe('token-2');
     expect(cursor.pageToken).toBe('token-3');
@@ -257,7 +257,7 @@ describe('Google Drive source', () => {
       startToken,
       () => listing([file('f', 'f.jpg', 'family')]),
     );
-    await collect(source, ['family'], { version: 1, pageToken: 'token-2', roots: ['trips'] });
+    await collect(source, ['family'], { version: 2, pageToken: 'token-2', roots: ['trips'] });
     expect(calls[1].url).toContain('/changes/startPageToken');
   });
 
@@ -268,7 +268,7 @@ describe('Google Drive source', () => {
       startToken,
       () => listing([file('a', 'a.jpg')]),
     );
-    const { items, cursor } = await collect(source, ['trips'], { version: 1, pageToken: 'old', roots: ['trips'] });
+    const { items, cursor } = await collect(source, ['trips'], { version: 2, pageToken: 'old', roots: ['trips'] });
     expect(items).toHaveLength(1);
     expect(cursor.pageToken).toBe('start-1');
     expect(calls).toHaveLength(4);

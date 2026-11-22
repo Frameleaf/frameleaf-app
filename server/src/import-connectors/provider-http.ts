@@ -1,7 +1,11 @@
 import { PassThrough, type Readable, pipeline } from 'node:stream';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { BrokerAccessToken } from 'src/import-connectors/broker-sign-in.js';
-import { RemoteSourceAuthError, RemoteSourceError } from 'src/import-connectors/remote-source.js';
+import {
+  RemoteSourceAuthError,
+  RemoteSourceError,
+  RemoteSourceUnavailableError,
+} from 'src/import-connectors/remote-source.js';
 
 /**
  * The request loop OneDrive and Google Drive share (FL-972, FL-974), with the rules Dropbox set: a
@@ -104,13 +108,14 @@ export class ProviderHttp {
       return;
     }
     if (remaining > MAX_WAIT_MS) {
-      throw new RemoteSourceError(`${this.label} asked Frameleaf to slow down. Try again later.`);
+      throw new RemoteSourceUnavailableError(`${this.label} asked Frameleaf to slow down. Try again later.`);
     }
     await this.wait(remaining, signal);
   }
 
   private pause(response: Response, attempt: number) {
-    const delay = retryAfterMs(response.headers.get('retry-after'), this.now()) ?? 2 ** attempt * 1000;
+    // Never less than the backoff: `Retry-After: 0` would otherwise spend every try at once.
+    const delay = Math.max(retryAfterMs(response.headers.get('retry-after'), this.now()) ?? 0, 2 ** attempt * 1000);
     const until = this.now() + delay;
     pausedUntil.set(this.pauseKey, Math.max(until, pausedUntil.get(this.pauseKey) ?? 0));
   }
@@ -166,11 +171,9 @@ export class ProviderHttp {
         }
         await discard(response);
         if (attempt >= MAX_ATTEMPTS) {
-          throw new RemoteSourceError(
-            paused
-              ? `${this.label} asked Frameleaf to slow down. Try again later.`
-              : `${this.label} is not answering right now`,
-          );
+          throw paused
+            ? new RemoteSourceUnavailableError(`${this.label} asked Frameleaf to slow down. Try again later.`)
+            : new RemoteSourceError(`${this.label} is not answering right now`);
         }
         if (!paused) {
           await this.wait(2 ** attempt * 1000, signal);

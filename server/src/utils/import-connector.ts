@@ -1,5 +1,6 @@
 import type { ImportConnection, ImportConnectorRepository } from 'src/repositories/import-connector.repository.js';
 import {
+  type RemoteAccessToken,
   type RemoteSource,
   RemoteSourceAuthError,
   RemoteSourceError,
@@ -20,7 +21,7 @@ import { mailSealKey, openMailSecret, sealMailSecret } from 'src/utils/frameleaf
 export const IMPORT_CONNECTION_SEAL_PURPOSE = 'import-connection-seal';
 
 type SealDeps = { crypto: CryptoRepository; config: ConfigRepository };
-type OpenDeps = SealDeps & { repository: Pick<ImportConnectorRepository, 'withSealedCredentials'> };
+type OpenDeps = SealDeps & { repository: Pick<ImportConnectorRepository, 'withSealedCredentials' | 'isAdmin'> };
 
 const sealKey = async ({ crypto, config }: SealDeps) =>
   mailSealKey(await crypto.serverKeyedHash(identityDirectory(config), IMPORT_CONNECTION_SEAL_PURPOSE, 'v1'));
@@ -46,6 +47,24 @@ export const readImportCredentials = async (
 const unreadable = () => new RemoteSourceAuthError('The saved sign-in can no longer be read. Sign in again.');
 
 /**
+ * Access tokens by connection and account, in this process only. A source is opened for each batch of
+ * files, and Cloud limits token requests per server, so a token that is still good is used again.
+ */
+const accessTokens = new Map<string, RemoteAccessToken>();
+
+const sharedAccessToken = (key: string): NonNullable<RemoteSourceSession['accessToken']> => ({
+  read: () => accessTokens.get(key),
+  write: (token) => {
+    for (const [other, { expiresAt }] of accessTokens) {
+      if (expiresAt <= Date.now()) {
+        accessTokens.delete(other);
+      }
+    }
+    accessTokens.set(key, token);
+  },
+});
+
+/**
  * The hook a source renews its credentials through (FL-959). The row is locked while `renew` runs, so
  * a rotated refresh token is never spent twice, and `renew` always sees the latest one, including one
  * the owner saved by signing in again while this source was reading.
@@ -53,7 +72,9 @@ const unreadable = () => new RemoteSourceAuthError('The saved sign-in can no lon
 const connectionSession = (
   deps: OpenDeps,
   connection: Pick<ImportConnection, 'id' | 'sealedCredentials'>,
+  accountId: unknown,
 ): RemoteSourceSession => ({
+  ...(typeof accountId === 'string' && { accessToken: sharedAccessToken(`${connection.id}:${accountId}`) }),
   renewCredentials: async (renew) => {
     const found = await deps.repository.withSealedCredentials(connection.id, async (sealedCredentials) => {
       const current = await readImportCredentials(deps, { id: connection.id, sealedCredentials });
@@ -72,7 +93,7 @@ const connectionSession = (
 /** The connection's source, ready to read. Throws `RemoteSourceError` when it cannot be opened here. */
 export const openImportConnection = async (
   deps: OpenDeps,
-  connection: Pick<ImportConnection, 'id' | 'provider' | 'sealedCredentials'>,
+  connection: Pick<ImportConnection, 'id' | 'ownerId' | 'provider' | 'sealedCredentials'>,
 ): Promise<RemoteSource> => {
   const provider = remoteSourceProvider(connection.provider);
   if (!provider) {
@@ -83,7 +104,12 @@ export const openImportConnection = async (
     // Another server's key file, or a damaged value: only the owner signing in again mends it.
     throw unreadable();
   }
-  return provider.open(credentials, connectionSession(deps, connection));
+  // Reaching the home network is an administrator's call, and it lasts only as long as they are one.
+  const allowed =
+    credentials.allowPrivateAddress === true && !(await deps.repository.isAdmin(connection.ownerId))
+      ? { ...credentials, allowPrivateAddress: false }
+      : credentials;
+  return provider.open(allowed, connectionSession(deps, connection, credentials.accountId));
 };
 
 const signInContext = (userId: string) => `import-sign-in:${userId}`;

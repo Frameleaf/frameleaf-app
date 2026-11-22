@@ -8,6 +8,7 @@ import {
   type RemoteSource,
   RemoteSourceAuthError,
   RemoteSourceError,
+  RemoteSourceUnavailableError,
 } from 'src/import-connectors/remote-source.js';
 import { importFilePathSchema } from 'src/library-import/manifest.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -36,6 +37,7 @@ export const IMPORT_CONNECTION_TICK_MS = 60 * 60_000;
 export const IMPORT_CONNECTION_DAILY_MS = 24 * 60 * 60_000;
 
 const CAPTION_MAX = 100_000;
+const NO_SPACE = 'The server ran out of space for staging this import. Free some space, then retry.';
 
 /** A file the framework can import: a safe relative path naming a photo or video, with a sane size and date. */
 const acceptable = ({ remoteId, path: filePath, albumHint, size, modifiedAt }: RemoteItem) =>
@@ -102,6 +104,7 @@ export class ImportConnectorWorkerService {
   /** Start a scan for every connection whose daily check is due. Returns how many were started. */
   async dailyCheck(now = new Date()): Promise<number> {
     let started = 0;
+    await this.resumeDailyImports();
     try {
       const dueBefore = new Date(now.getTime() - IMPORT_CONNECTION_DAILY_MS);
       for (const id of await this.repository.dueForDailyCheck(dueBefore)) {
@@ -123,6 +126,22 @@ export class ImportConnectorWorkerService {
     return started;
   }
 
+  /** A daily scan that finished just as the process stopped still gets its import. */
+  private async resumeDailyImports(): Promise<void> {
+    try {
+      for (const id of await this.repository.dailyRunsAwaitingImport()) {
+        const row = await this.takeout.getById(id);
+        if (row?.phase === 'review') {
+          await this.continueDailyCheck(row);
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Resuming the daily imports of connections failed (${error instanceof Error ? error.name : 'error'})`,
+      );
+    }
+  }
+
   /**
    * List the source for a run and offer it what is new. `listed` is told how many files each batch
    * held, and may stop the scan by throwing. The cursor is stored only when the whole listing is in.
@@ -132,6 +151,7 @@ export class ImportConnectorWorkerService {
     const [stagingSource] = await this.takeout.sources(row.id);
     let cursor = connection.cursor;
     let rejected = 0;
+    let skippedFolders = 0;
     let batches: AsyncIterator<RemoteScanBatch> | undefined;
     // Only the source's own failure is a source failure; a stop from `listed` passes straight through.
     const read = async () => {
@@ -157,6 +177,7 @@ export class ImportConnectorWorkerService {
         if (next.value.cursor !== undefined) {
           cursor = next.value.cursor;
         }
+        skippedFolders += next.value.skippedFolders ?? 0;
         await listed(next.value.items.length);
       }
     } finally {
@@ -166,6 +187,11 @@ export class ImportConnectorWorkerService {
       await this.takeout.markSourceScanned(stagingSource.id, rejected);
     }
     await this.repository.setCursor(connection.id, cursor);
+    if (skippedFolders > 0) {
+      this.logger.warn(
+        `Import connection ${connection.id}: ${skippedFolders} folders could not be read and were skipped`,
+      );
+    }
     this.logger.log(`Import connection ${connection.id}: scan of run ${row.id} finished`);
   }
 
@@ -186,7 +212,8 @@ export class ImportConnectorWorkerService {
       row.ownerId,
       row.id,
       async (tx, current) => {
-        if (current.phase !== 'review') {
+        // One job per connection: a run left waiting here is picked up by the next daily check.
+        if (current.phase !== 'review' || !(await this.repository.lockIdle(tx, connection.id))) {
           return;
         }
         await this.takeout.setPhase(tx, row.id, 'importing');
@@ -222,23 +249,40 @@ export class ImportConnectorWorkerService {
       throw new TakeoutJobError('import_connection_run_invalid', 'This run has lost its record of the source');
     }
     const directory = await this.staging.prepare(row.ownerId, row.id);
+    let handled = 0;
+    // Files already staged are imported before the run stops or moves on, which can also free the space.
+    const canDrain = async () => handled > 0 || (await this.takeout.pendingItems(row.id, 1)).length > 0;
 
     for (const item of items) {
       signal.throwIfAborted();
       const fileId = takeoutStableId(`${stagingSource.id}:${item.id}`);
+      const name = path.posix.basename(item.path);
       // A run that stopped between recording the file and noting it here finds the file again.
       if (!(await this.takeout.hasFile(fileId))) {
-        if ((await this.staging.freeBytes(directory)) < item.size + TAKEOUT_STAGING_RESERVE_BYTES) {
-          throw new TakeoutJobError(
-            'takeout_no_space',
-            'The server ran out of space for staging this import. Free some space, then retry.',
-          );
+        const free = await this.staging.freeBytes(directory);
+        if (free < item.size + TAKEOUT_STAGING_RESERVE_BYTES) {
+          if (await canDrain()) {
+            return handled;
+          }
+          if (free <= TAKEOUT_STAGING_RESERVE_BYTES) {
+            throw new TakeoutJobError('takeout_no_space', NO_SPACE);
+          }
+          // Only this file is too big for what is free: the smaller ones after it still get their turn.
+          this.logger.warn(`Import connection ${connection.id}: ${item.path} does not fit in staging`);
+          await this.repository.itemFailed(item.id, row.id, NO_SPACE);
+          handled++;
+          continue;
         }
         const destination = path.join(directory, fileId);
         let digest: StagedDigest;
         try {
           digest = await this.staging.stageRemote(
-            (start) => source.open(item.remoteId, { start, contentHash: item.contentHash ?? undefined }, signal),
+            (start) =>
+              source.open(
+                item.remoteId,
+                { start, contentHash: item.contentHash ?? undefined, size: item.size },
+                signal,
+              ),
             item.size,
             destination,
             signal,
@@ -247,15 +291,22 @@ export class ImportConnectorWorkerService {
           if (signal.aborted || error instanceof RemoteSourceAuthError) {
             throw await this.sourceFailure(connection, signal, error, 'The source could not be read');
           }
+          if (error instanceof RemoteSourceUnavailableError) {
+            // Not this file's fault: it stays to do, and the job stops once what is staged is imported.
+            if (await canDrain()) {
+              return handled;
+            }
+            throw await this.sourceFailure(connection, signal, error, 'The source could not be read');
+          }
           const reason =
             error instanceof RemoteSourceError || error instanceof TakeoutStagingError
               ? error.message.slice(0, 1000)
               : 'The file could not be downloaded';
           this.logger.warn(`Import connection ${connection.id}: ${item.path} was not downloaded: ${reason}`);
-          await this.repository.itemFailed(item.id, reason);
+          await this.repository.itemFailed(item.id, row.id, reason);
+          handled++;
           continue;
         }
-        const name = path.posix.basename(item.path);
         await this.takeout.recordFile({
           id: fileId,
           importId: row.id,
@@ -272,25 +323,29 @@ export class ImportConnectorWorkerService {
           modifiedAt: item.modifiedAt,
           metadata: null,
         });
-        await this.takeout.recordItem({
-          id: fileId,
-          importId: row.id,
-          state: 'ready',
-          metadata: {
-            title: name,
-            ...(item.caption && { description: item.caption }),
-            ...(item.favourite && { favorite: true }),
-          },
-          sidecarId: null,
-          candidates: [],
-          albums: item.albumHint ? [item.albumHint] : [],
-          warnings: [],
-          locked: false,
-        });
       }
-      await this.repository.itemStaged(item.id, fileId);
+      // Outside the check above, so a stop between the two writes cannot leave a file with no item.
+      await this.takeout.recordItem({
+        id: fileId,
+        importId: row.id,
+        state: 'ready',
+        metadata: {
+          title: name,
+          ...(item.caption && { description: item.caption }),
+          ...(item.favourite && { favorite: true }),
+        },
+        sidecarId: null,
+        candidates: [],
+        albums: item.albumHint ? [item.albumHint] : [],
+        warnings: [],
+        locked: false,
+      });
+      if (!(await this.repository.itemStaged(item.id, row.id, fileId))) {
+        this.logger.warn(`Import connection ${connection.id}: ${item.path} moved to a newer run`);
+      }
+      handled++;
     }
-    return items.length;
+    return handled;
   }
 
   private async open(row: TakeoutImport): Promise<{ connection: ImportConnection; source: RemoteSource }> {

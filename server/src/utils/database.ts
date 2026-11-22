@@ -128,7 +128,7 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams, monitorPoo
       }
       // Credentials, import recovery inputs, inference rows and queued job payloads must never be logged.
       const privateData =
-        /\b(?:connect_[a-z_]+|oauth_(?:client|grant|authorization_code|spent_refresh_token)|asset_upload_(?:resource|part))\b/iu.test(
+        /\b(?:import_connection|connect_[a-z_]+|oauth_(?:client|grant|authorization_code|spent_refresh_token)|asset_upload_(?:resource|part))\b/iu.test(
           event.query.sql,
         ) ||
         /\bframeleaf_library_import(?:_mapping|_archive(?:_record)?)?\b/iu.test(event.query.sql) ||

@@ -5,6 +5,7 @@ import {
   RemoteSourceAuthError,
   RemoteSourceError,
   type RemoteSourceSession,
+  RemoteSourceUnavailableError,
 } from 'src/import-connectors/remote-source.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
@@ -82,6 +83,7 @@ const cloudCode = (error: unknown, status: number, code: string) =>
 const isGrantInvalid = (error: unknown) => cloudCode(error, 400, 'provider-grant-invalid');
 const isNotFound = (error: unknown) => cloudCode(error, 404, 'provider-sign-in-not-found');
 const isUnavailable = (error: unknown) => cloudCode(error, 503, 'provider-sign-in-unavailable');
+const isInstanceRevoked = (error: unknown) => cloudCode(error, 401, 'instance_revoked');
 
 const CLOUD_DOWN = 'Frameleaf Cloud could not be reached. Try again in a few minutes.';
 export const LINK_FIRST = 'Link this server to a Frameleaf account first, then sign in.';
@@ -103,13 +105,13 @@ export class ProviderSignInBroker {
       return await mailBrokerTarget(this.deps);
     } catch (error) {
       if (error instanceof MailSignInUnavailableError) {
-        throw new RemoteSourceError(
+        throw new RemoteSourceUnavailableError(
           error.reason === MailSignInUnavailableReason.NotLinked
             ? LINK_FIRST
             : 'Frameleaf Cloud is not configured on this server.',
         );
       }
-      throw new RemoteSourceError(CLOUD_DOWN);
+      throw new RemoteSourceUnavailableError(CLOUD_DOWN);
     }
   }
 
@@ -253,7 +255,7 @@ export class ProviderSignInBroker {
       if (isGrantInvalid(error)) {
         throw new RemoteSourceAuthError(`${LABELS[service]} no longer accepts this sign-in. Sign in again.`);
       }
-      throw new RemoteSourceError(CLOUD_DOWN);
+      throw new RemoteSourceUnavailableError(isInstanceRevoked(error) ? LINK_FIRST : CLOUD_DOWN);
     }
   }
 
@@ -291,6 +293,11 @@ export class BrokerAccessToken {
 
   /** A usable token. Pass the one that was just refused to get a different one. */
   get(refused?: string): Promise<string> {
+    const shared = this.session.accessToken?.read();
+    if (shared && shared.expiresAt > this.expiresAt) {
+      this.token = shared.token;
+      this.expiresAt = shared.expiresAt;
+    }
     if (this.token && this.token !== refused && this.expiresAt - ACCESS_TOKEN_MARGIN_MS > this.now()) {
       return Promise.resolve(this.token);
     }
@@ -304,21 +311,27 @@ export class BrokerAccessToken {
     // Resolved before the row is locked: it takes the identity lock itself.
     const target = await this.broker.target();
     let accessToken: string | undefined;
-    await this.session.renewCredentials(async (current) => {
-      if (typeof current.refreshToken !== 'string') {
-        throw new RemoteSourceAuthError('The saved sign-in can no longer be read. Sign in again.');
-      }
-      const answer = await this.broker.refresh(this.service, current.refreshToken, target);
-      accessToken = answer.accessToken;
-      this.expiresAt = this.now() + answer.expiresInSec * 1000;
-      return answer.refreshToken && answer.refreshToken !== current.refreshToken
-        ? { ...current, refreshToken: answer.refreshToken }
-        : null;
-    });
+    try {
+      await this.session.renewCredentials(async (current) => {
+        if (typeof current.refreshToken !== 'string') {
+          throw new RemoteSourceAuthError('The saved sign-in can no longer be read. Sign in again.');
+        }
+        const answer = await this.broker.refresh(this.service, current.refreshToken, target);
+        accessToken = answer.accessToken;
+        this.expiresAt = this.now() + answer.expiresInSec * 1000;
+        return answer.refreshToken && answer.refreshToken !== current.refreshToken
+          ? { ...current, refreshToken: answer.refreshToken }
+          : null;
+      });
+    } catch (error) {
+      // A lock or database failure while renewing says nothing about the file being read.
+      throw error instanceof RemoteSourceError ? error : new RemoteSourceUnavailableError(CLOUD_DOWN);
+    }
     if (!accessToken) {
-      throw new RemoteSourceError(CLOUD_DOWN);
+      throw new RemoteSourceUnavailableError(CLOUD_DOWN);
     }
     this.token = accessToken;
+    this.session.accessToken?.write({ token: accessToken, expiresAt: this.expiresAt });
     return accessToken;
   }
 }
