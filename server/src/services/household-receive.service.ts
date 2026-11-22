@@ -1,10 +1,10 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Insertable, Selectable } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { constants, createWriteStream } from 'node:fs';
 import { dirname } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { Insertable, Selectable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { HouseholdInboundShareDto } from 'src/dtos/household-receive.dto.js';
 import type {
@@ -95,6 +95,8 @@ const STALL_MIN_BYTES = 1024 * 1024;
 const DOWNLOAD_DEADLINE_MS = 24 * 60 * 60_000;
 const INVITE_NOTICE_MS = 24 * 60 * 60_000;
 const BOX_OVERLAP = 0.5;
+/** People waiting for local face detection, per account and link: a peer cannot grow this table without end. */
+const MAX_PENDING_PEOPLE = 500;
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 const RUN_ORIGIN = { origin: 'import', label: 'Linked household' } as const;
 
@@ -912,6 +914,13 @@ export class HouseholdReceiveService {
       : undefined;
   }
 
+  private partSize(part: string) {
+    return this.storage
+      .stat(part)
+      .then(({ size }) => size)
+      .catch(() => 0);
+  }
+
   private async removePart(pull: Pull, part: string) {
     await this.storage.unlink(part).catch(() => {});
     if (pull.share.partialPath === part) {
@@ -955,10 +964,7 @@ export class HouseholdReceiveService {
     await this.receive.updateShare(share.id, { partialPath: part });
 
     const limit = asset.size ?? pull.cap;
-    let start = await this.storage.stat(part).then(
-      ({ size }) => size,
-      () => 0,
-    );
+    let start = await this.partSize(part);
     if (start > limit) {
       await this.storage.unlink(part).catch(() => {});
       start = 0;
@@ -1051,10 +1057,7 @@ export class HouseholdReceiveService {
 
     const digest = await this.verify(part, asset, checksum);
     if (!digest) {
-      const size = await this.storage.stat(part).then(
-        (stats) => stats.size,
-        () => 0,
-      );
+      const size = await this.partSize(part);
       // ended early with what it had so far: resumed next time
       if (asset.size !== null && size < asset.size) {
         throw new HouseholdPeerError(502, 'The download ended early');
@@ -1085,6 +1088,10 @@ export class HouseholdReceiveService {
           await this.events.emit('PersonChanged', { ownerId: key.userId, personGroupId: origin.localId });
         }
       }
+    }
+    if ((await this.receive.countPendingPeople(key.linkId, key.userId)) >= MAX_PENDING_PEOPLE) {
+      pull.refusal = 'too-many-people';
+      return;
     }
     await this.receive.savePendingPerson(key.linkId, key.userId, key.remoteId, name, faces);
     await this.resolvePerson(key.linkId, key.userId, key.remoteId, name, faces, pull.share.id);

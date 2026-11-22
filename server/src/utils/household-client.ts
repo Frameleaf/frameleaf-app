@@ -135,21 +135,32 @@ export class HouseholdClient {
         const proof = createDpopProof(this.signer(), { htm: method, htu: url, accessToken: grant.token });
         const requestId = (JSON.parse(Buffer.from(proof.split('.', 2)[1], 'base64url').toString()) as { jti: string })
           .jti;
-        const timeout = AbortSignal.timeout(Math.min(remaining, 30_000));
-        const response = await fetch(`${url}${search}`, {
-          method,
-          headers: { Authorization: `DPoP ${grant.token}`, DPoP: proof, ...headers },
-          redirect: 'error',
-          // a stream outlives the timeout on its headers: the caller's signal governs it from then on
-          signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-        });
-        if (!response.ok) {
-          await response.body?.cancel();
-          throw new HouseholdPeerError(response.status, 'The other household refused the request');
+        // the limit covers a whole JSON reply, but only the headers of a stream, whose reader sets its own limits
+        const limit = new AbortController();
+        const timer = setTimeout(
+          () => limit.abort(new HouseholdPeerError(504, 'The other household did not answer')),
+          Math.min(remaining, 30_000),
+        );
+        try {
+          const response = await fetch(`${url}${search}`, {
+            method,
+            headers: { Authorization: `DPoP ${grant.token}`, DPoP: proof, ...headers },
+            redirect: 'error',
+            signal: signal ? AbortSignal.any([signal, limit.signal]) : limit.signal,
+          });
+          if (signal) {
+            clearTimeout(timer);
+          }
+          if (!response.ok) {
+            await response.body?.cancel();
+            throw new HouseholdPeerError(response.status, 'The other household refused the request');
+          }
+          const result = await read(response, grant, requestId);
+          this.connection = candidate.kind;
+          return result;
+        } finally {
+          clearTimeout(timer);
         }
-        const result = await read(response, grant, requestId);
-        this.connection = candidate.kind;
-        return result;
       } catch (error) {
         // An address is only a candidate: whatever answers there without the peer's signature (another device
         // on this network, a captive portal, a redirect) is not the peer, so the next address is tried.

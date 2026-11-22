@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { type Insertable, Kysely, type Selectable, type Transaction, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { UserStatus } from 'src/enum.js';
-import { DB } from 'src/schema/index.js';
 import type {
   HouseholdFaceBox,
   HouseholdInboundShareTable,
   HouseholdOriginTable,
 } from 'src/schema/tables/household-receive.table.js';
+import { UserStatus } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
 
 export type HouseholdInboundShare = Selectable<HouseholdInboundShareTable>;
 export type HouseholdOrigin = Selectable<HouseholdOriginTable>;
@@ -98,7 +98,7 @@ export class HouseholdReceiveRepository {
       .where('linkId', '=', linkId)
       .where('state', '=', 'accepted')
       .where((eb) => eb.or([eb('nextPullAt', 'is', null), eb('nextPullAt', '<=', sql<Date>`now()`)]))
-      .orderBy('nextPullAt', (ob) => ob.asc().nullsFirst())
+      .orderBy('createdAt', 'asc')
       .execute();
   }
 
@@ -109,6 +109,8 @@ export class HouseholdReceiveRepository {
       .where('linkId', '=', linkId)
       .where('state', '=', 'accepted')
       .where('lastError', 'is distinct from', 'over-quota')
+      // a poke never cuts a failing share's backoff short
+      .where('failures', '=', 0)
       .execute();
   }
 
@@ -143,7 +145,8 @@ export class HouseholdReceiveRepository {
   async createOrigin(origin: Insertable<HouseholdOriginTable>, db: Kysely<DB> = this.db) {
     await db
       .insertInto('household_origin')
-      .values(origin)
+      // the application's clock, as a full read's start is: the two are compared
+      .values({ lastSeenAt: new Date(), ...origin })
       .onConflict((oc) => oc.columns(['linkId', 'remoteId', 'kind', 'userId']).doNothing())
       .execute();
   }
@@ -168,7 +171,7 @@ export class HouseholdReceiveRepository {
   }
 
   async markSeen(key: HouseholdOriginKey) {
-    await originKey(this.db.updateTable('household_origin').set({ lastSeenAt: sql<Date>`now()` }), key).execute();
+    await originKey(this.db.updateTable('household_origin').set({ lastSeenAt: new Date() }), key).execute();
   }
 
   /** Runs `apply` holding the row, re-read, so a recipient's edit cannot interleave with a followed write. */
@@ -213,12 +216,13 @@ export class HouseholdReceiveRepository {
     const live = others.map(({ id }) => id);
     await this.db
       .updateTable('household_origin')
-      .set((eb) => ({
+      .set({
         shareIds: sql<string[]>`array_remove("shareIds", ${share.id}::uuid)`,
-        followUntilEdited: live.length
-          ? eb.and([eb.ref('followUntilEdited'), sql<boolean>`"shareIds" && ${live}::uuid[]`])
-          : false,
-      }))
+        followUntilEdited:
+          live.length > 0
+            ? sql<boolean>`"followUntilEdited" AND (kind = 'person' OR "shareIds" && ${live}::uuid[])`
+            : false,
+      })
       .where('linkId', '=', share.linkId)
       .where('userId', '=', share.userId)
       .where((eb) => eb.or([sql<boolean>`${share.id}::uuid = ANY("shareIds")`, eb('kind', '=', 'person')]))
@@ -292,9 +296,25 @@ export class HouseholdReceiveRepository {
       .execute();
   }
 
-  // ponytail: fifty people per link per poll; the rest wait for the next one
+  // ponytail: fifty people per link per poll, picked at random so entries that never resolve cannot starve the rest
   getPendingPeople(linkId: string) {
-    return this.db.selectFrom('household_person_pending').selectAll().where('linkId', '=', linkId).limit(50).execute();
+    return this.db
+      .selectFrom('household_person_pending')
+      .selectAll()
+      .where('linkId', '=', linkId)
+      .orderBy(sql`random()`)
+      .limit(50)
+      .execute();
+  }
+
+  async countPendingPeople(linkId: string, userId: string) {
+    const { count } = await this.db
+      .selectFrom('household_person_pending')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('linkId', '=', linkId)
+      .where('userId', '=', userId)
+      .executeTakeFirstOrThrow();
+    return Number(count);
   }
 
   /**
@@ -332,7 +352,7 @@ export class HouseholdReceiveRepository {
       .where('origin.isCopy', '=', true)
       .where('origin.remoteId', 'in', remoteAssetIds)
       .where('face.deletedAt', 'is', null)
-      .execute() as Promise<HouseholdLocalFace[]>;
+      .execute() as unknown as Promise<HouseholdLocalFace[]>;
   }
 
   /** Whether face detection has finished on every local copy of these remote items. */

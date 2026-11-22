@@ -96,7 +96,7 @@ const Entry = z.union([
   z.strictObject({
     ...base,
     kind: z.literal('person'),
-    person: z.strictObject({ name: line(100), faces: z.array(HouseholdFace).max(MAX_FACES) }),
+    person: z.strictObject({ name: text(100), faces: z.array(HouseholdFace).max(MAX_FACES) }),
   }),
 ]);
 export type HouseholdManifestEntry = z.infer<typeof Entry>;
@@ -161,7 +161,7 @@ export const HouseholdOffered = z
       id: z.uuid(),
       name: text(4096),
       description: text(100_000),
-      ownerName: line(100),
+      ownerName: text(100),
       members: z
         .array(
           z.strictObject({
@@ -180,7 +180,7 @@ export const HouseholdHandshake = z.object({ maxOriginalBytes: z.number().int().
 /** One line for a space's name, whatever the peer sent. */
 export const cleanHouseholdLine = (value: string, max = 255) =>
   value
-    .replaceAll(CONTROL, ' ')
+    .replaceAll(new RegExp(CONTROL, 'gu'), ' ')
     .replaceAll(/[\u202A-\u202E\u2066-\u2069]/g, '')
     .trim()
     .slice(0, max);
