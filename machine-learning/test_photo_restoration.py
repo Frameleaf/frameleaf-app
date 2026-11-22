@@ -5,12 +5,14 @@ the still pipeline (size and orientation) and the image maths of the two runtime
 cannot show (model quality, GPU memory, speed) is qualification evidence recorded on hardware.
 """
 
+import base64
 import hashlib
 import json
 import runpy
 import shutil
 import subprocess
 import sys
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -433,6 +435,14 @@ class TestWire:
 
         assert parsed.operation is None and parsed.mode == "faithful"
 
+    def test_the_hand_tinted_override_is_optional_and_for_colourise_only(self) -> None:
+        assert request(operation="colourise").allowHandTinted is False
+        assert request(operation="colourise", allowHandTinted=True).allowHandTinted is True
+        with pytest.raises(ValidationError):
+            request(operation="repair", allowHandTinted=True)
+        with pytest.raises(ValidationError):
+            request(operation=None, mode="faithful", scale=2, allowHandTinted=True)
+
 
 def copying_runner(report: dict[str, Any] | str | None = None, *, transform: Any = None) -> Any:
     """A runtime that copies its frame (optionally changed) and leaves a report."""
@@ -508,6 +518,29 @@ class TestAdapters:
 
         assert seen[0].argv[:3] == [str(tmp_path / "runtime" / "python"), "-I", "run.py"]
         assert "--allow-cpu" not in seen[0].argv and seen[0].payload is None
+
+    @pytest.mark.parametrize("allowed", [False, True])
+    def test_the_override_reaches_the_colourise_runtime_only_when_asked(self, tmp_path: Path, allowed: bool) -> None:
+        seen: list[RuntimeInvocation] = []
+
+        def runner(invocation: RuntimeInvocation) -> RuntimeOutcome:
+            seen.append(invocation)
+            return copying_runner()(invocation)
+
+        DdColorAdapter(photo_spec(tmp_path, "ddcolor"), tmp_path, runner).run(job(tmp_path, allow_hand_tinted=allowed))
+
+        assert (seen[0].env.get(COLOURISE["ALLOW_HAND_TINTED_ENV"]) == "1") is allowed
+
+    def test_repair_never_receives_the_override(self, tmp_path: Path) -> None:
+        seen: list[RuntimeInvocation] = []
+
+        def runner(invocation: RuntimeInvocation) -> RuntimeOutcome:
+            seen.append(invocation)
+            return copying_runner()(invocation)
+
+        LamaRepairAdapter(photo_spec(tmp_path), tmp_path, runner).run(job(tmp_path, allow_hand_tinted=True))
+
+        assert COLOURISE["ALLOW_HAND_TINTED_ENV"] not in seen[0].env
 
 
 @pytest.fixture
@@ -853,6 +886,27 @@ class TestColourise:
         toned[:, :24], toned[:, -24:] = (70, 130, 90), (70, 130, 90)
 
         assert not COLOURISE["is_hand_tinted"](toned)
+
+    def test_the_shared_vectors_still_get_the_recorded_answers(self) -> None:
+        path = EXAMPLES / "qualification" / "tint-vectors.json"
+        for vector in json.loads(path.read_text(encoding="utf-8"))["vectors"]:
+            raw = zlib.decompress(base64.b64decode(vector["rgb"]))
+            rgb = np.frombuffer(raw, np.uint8).reshape(vector["height"], vector["width"], 3)
+
+            assert COLOURISE["photo_colour"](rgb) == vector["colour"], vector["name"]
+            assert COLOURISE["off_tone_share"](rgb, 0.15) == pytest.approx(vector["outerShare"], abs=1e-4)
+            assert COLOURISE["off_tone_share"](rgb, 0.25) == pytest.approx(vector["innerShare"], abs=1e-4)
+
+    def test_the_override_lets_a_hand_tinted_print_through_and_never_a_colour_photo(self) -> None:
+        by_name = {}
+        for vector in json.loads((EXAMPLES / "qualification" / "tint-vectors.json").read_text("utf-8"))["vectors"]:
+            raw = zlib.decompress(base64.b64decode(vector["rgb"]))
+            by_name[vector["name"]] = np.frombuffer(raw, np.uint8).reshape(vector["height"], vector["width"], 3)
+
+        assert COLOURISE["refuses"](by_name["light-paint"], False)
+        assert not COLOURISE["refuses"](by_name["light-paint"], True)
+        assert COLOURISE["refuses"](by_name["colour"], True)
+        assert not COLOURISE["refuses"](by_name["sepia"], False)
 
     def test_a_refused_photo_never_loads_the_model_and_gives_the_reason(self, tmp_path: Path) -> None:
         (tmp_path / "in").mkdir()

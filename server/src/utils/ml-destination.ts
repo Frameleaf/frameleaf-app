@@ -858,7 +858,7 @@ export const evaluateAdmission = ({
   if (photoOperation && destination.kind === MlDestinationKind.FrameleafCloud) {
     return refuse(
       MlAdmissionRefusal.WorkloadNotServed,
-      `${destination.name} does not offer ${photoOperation === 'repair' ? 'Repair' : 'Colourise'} yet`,
+      `${destination.name} does not offer ${photoOperation === 'repair' ? 'Repair' : 'Suggested colours'} yet`,
     );
   }
 
@@ -920,7 +920,7 @@ export const evaluateAdmission = ({
       ? { admitted: true }
       : refuse(
           MlAdmissionRefusal.WorkloadNotServed,
-          `${destination.name} has no ready model for ${photoOperation === 'repair' ? 'Repair' : 'Colourise'}`,
+          `${destination.name} has no ready model for ${photoOperation === 'repair' ? 'Repair' : 'Suggested colours'}`,
         );
   }
   if (!probe.workloads.includes(workload)) {

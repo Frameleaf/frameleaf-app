@@ -160,7 +160,7 @@ export const restorationBatchIdOf = (provenance: unknown): string | undefined =>
 };
 
 export const photoOperationLabel = (operation: RestorationPhotoOperation): string =>
-  operation === 'repair' ? 'Repair' : 'Colourise';
+  operation === 'repair' ? 'Repair' : 'Suggested colours';
 
 export const restorationModeLabel = (mode: AssetRestorationMode): string => {
   switch (mode) {
@@ -485,6 +485,8 @@ export const RestorationSnapshotSchema = z.object({
   interpolationFactor: z.union([z.literal(2), z.literal(4), z.literal(8)]).optional(),
   /** FL-955: a photo operation, which the worker runs instead of the mode. Absent for an enhance. */
   operation: z.enum(['repair', 'colourise']).optional(),
+  /** FL-955: the owner chose Suggest colours anyway; a preview's full render keeps the choice. */
+  allowHandTinted: z.boolean().optional(),
 });
 
 export type RestorationSnapshot = z.infer<typeof RestorationSnapshotSchema>;
@@ -743,6 +745,8 @@ export type RestorationInferenceOptions = {
   mode: AssetRestorationMode;
   /** FL-955: sent to the worker instead of the mode; the photo keeps its own size. */
   operation?: RestorationPhotoOperation;
+  /** FL-955: colourise a hand-tinted print because the owner asked to. A colour photo is still refused. */
+  allowHandTinted?: boolean;
   /** FL-423: the worker's model to run, exactly; null or absent, the worker's own model for the mode. */
   modelId?: string | null;
   modelFingerprint?: string;

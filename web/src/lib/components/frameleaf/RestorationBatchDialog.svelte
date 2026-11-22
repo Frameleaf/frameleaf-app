@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * FL-955: "Repair or colourise" for a selection. It asks the server for an estimate, shows every place
+   * FL-955: "Repair or suggest colours" for a selection. It asks the server for an estimate, shows every place
    * in the processing order with its time or cost, and starts only on Start. Each photo becomes its own
    * background job and a new version; the originals are never changed. Frameleaf Cloud shows as not
    * available until it has a price for this work: no figure is ever made up here.
@@ -35,23 +35,42 @@
   let loading = $state(true);
   let starting = $state(false);
   let started = $state<{ count: number; name: string } | null>(null);
+  /** Hand-tinted prints are skipped unless this small option is ticked. */
+  let includeHandTinted = $state(false);
   let request = 0;
 
   const destinations = $derived(estimate?.destinations ?? []);
   const anyAvailable = $derived(destinations.some((row) => row.available));
   const chosen = $derived(destinations.find((row) => row.id === destinationId) ?? null);
   const inColour = $derived(estimate?.skipped.filter(({ reason }) => reason === 'already-in-colour').length ?? 0);
-  const otherSkipped = $derived((estimate?.skipped.length ?? 0) - inColour);
+  const tintedSkipped = $derived(estimate?.skipped.filter(({ reason }) => reason === 'hand-tinted').length ?? 0);
+  const handTinted = $derived(estimate?.handTinted ?? 0);
+  const otherSkipped = $derived((estimate?.skipped.length ?? 0) - inColour - tintedSkipped);
+  const suggesting = $derived(operation === AssetRestorationBatchOperation.Colourise);
+  const skipLine = $derived.by(() => {
+    if (tintedSkipped > 0 && inColour > 0) {
+      return $t('frameleaf_repair_batch_skip_both', { values: { tinted: tintedSkipped, colour: inColour } });
+    }
+    if (tintedSkipped > 0) {
+      return $t('frameleaf_repair_batch_skip_tinted', { values: { count: tintedSkipped } });
+    }
+    return inColour > 0 ? $t('frameleaf_repair_batch_skip_colour', { values: { count: inColour } }) : '';
+  });
   const canStart = $derived(
     !!estimate && !loading && !starting && !!destinationId && estimate.eligible > 0 && anyAvailable,
   );
 
-  const load = async (next: AssetRestorationBatchOperation) => {
+  const load = async (next: AssetRestorationBatchOperation, include: boolean) => {
     const mine = ++request;
     loading = true;
     try {
       const answer = await restoreAssetsBatch({
-        assetRestorationBatchRequestDto: { assetIds, operation: next, confirm: false },
+        assetRestorationBatchRequestDto: {
+          assetIds,
+          operation: next,
+          confirm: false,
+          ...(next === AssetRestorationBatchOperation.Colourise && include && { allowHandTinted: true }),
+        },
       });
       if (mine !== request) {
         return;
@@ -73,7 +92,7 @@
   };
 
   $effect(() => {
-    void load(operation);
+    void load(operation, includeHandTinted);
   });
 
   const start = async () => {
@@ -89,6 +108,7 @@
           confirm: true,
           destinationId,
           batchId: estimate.batchId,
+          ...(suggesting && includeHandTinted && { allowHandTinted: true }),
           ...(chosen?.kind === MlDestinationKind.FrameleafCloud && {
             maxCostUsd: chosen.maxCostUsd ?? undefined,
             consentVersion: chosen.consentVersion ?? undefined,
@@ -171,16 +191,29 @@
           />
           <span>
             <b>{$t('frameleaf_repair_colourise')}</b>
-            <small>
-              {$t('frameleaf_repair_colourise_help')}
-              {#if operation === AssetRestorationBatchOperation.Colourise && inColour > 0}
-                {$t('frameleaf_repair_batch_in_colour', { values: { count: inColour } })}
-              {/if}
-            </small>
+            <small>{$t('frameleaf_repair_colourise_help')}</small>
           </span>
         </label>
       </div>
     </fieldset>
+
+    {#if suggesting && estimate && (skipLine || handTinted > 0)}
+      <div class="summary" data-testid="batch-colour-summary">
+        <p role="status">
+          {skipLine}
+          {$t('frameleaf_repair_batch_will_get', { values: { count: estimate.eligible } })}
+        </p>
+        {#if handTinted > 0}
+          <label class="include">
+            <input type="checkbox" bind:checked={includeHandTinted} />
+            <span>
+              {$t('frameleaf_repair_batch_include', { values: { count: handTinted } })}
+              <small>{$t('frameleaf_repair_batch_include_help')}</small>
+            </span>
+          </label>
+        {/if}
+      </div>
+    {/if}
 
     <fieldset>
       <legend>{$t('frameleaf_repair_batch_where')}</legend>
@@ -218,7 +251,7 @@
     {#if otherSkipped > 0}
       <p class="help">{$t('frameleaf_repair_batch_skipped', { values: { count: otherSkipped } })}</p>
     {/if}
-    <p class="help">{$t('frameleaf_repair_batch_note')}</p>
+    <p class="help">{suggesting ? $t('frameleaf_repair_batch_note_colourise') : $t('frameleaf_repair_batch_note')}</p>
   {/if}
 
   {#snippet actions()}
@@ -291,6 +324,22 @@
     padding: var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
+  }
+  .summary {
+    display: grid;
+    gap: var(--fl-space-2);
+    margin-block-end: var(--fl-space-4);
+    padding: var(--fl-space-3);
+    border-radius: var(--fl-radius-card);
+    border: 1px solid var(--fl-border);
+  }
+  .summary p {
+    margin: 0;
+  }
+  label.include {
+    padding: 0;
+    border: 0;
+    gap: var(--fl-space-2);
   }
   .activity {
     color: var(--fl-accent);

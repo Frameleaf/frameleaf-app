@@ -152,6 +152,11 @@ a toned print has one colour per brightness, and paint adds a second. Against th
 "applied color" wording on the 200-scan set (31 tinted, 169 not), repeated 5-fold cross-validation
 of the two thresholds caught 77.4% of tinted prints and accepted 92.1% of the others (89.8%
 accuracy). It misses faint tints on tintypes, and a gilt case or a mount can cause a false refusal.
+The server judges a photo before queuing it with a port of this rule; both test suites read
+`qualification/tint-vectors.json`. Of the refused photos, more than 25% off-tone picture counts as a
+colour photo, a line set from 43 colour photos and not yet measured on the 31 tinted scans. A request
+with `allowHandTinted: true` (the owner's "Suggest colours anyway") runs a hand-tinted print; a
+colour photo is refused either way.
 
 **Inputs.** 8-bit stills up to 8192 pixels on the long edge (67 megapixels; a 600 dpi scan of
 an 8 x 10 inch print is 4800 x 6000). Greyscale and colour files both arrive at the runtime

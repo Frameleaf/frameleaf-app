@@ -48,6 +48,11 @@ TINT_OUTER_INSET = 0.15
 TINT_OUTER_SHARE = 0.05
 TINT_INNER_INSET = 0.25
 TINT_INNER_SHARE = 0.001
+# FL-955: of the photos above, more off-tone picture than this is a colour photo, which no override
+# can send through. Set from 43 real colour photos; not yet measured on the 31 tinted scans.
+TINT_COLOUR_SHARE = 0.25
+# Set by the worker only when the owner chose "Suggest colours anyway" for a hand-tinted print.
+ALLOW_HAND_TINTED_ENV = "FRAMELEAF_ALLOW_HAND_TINTED"
 
 Predict = Callable[[np.ndarray], np.ndarray]
 
@@ -102,12 +107,25 @@ def off_tone_share(rgb: np.ndarray, inset: float) -> float:
     return float((distance > TINT_DISTANCE).mean())
 
 
+def photo_colour(rgb: np.ndarray) -> str:
+    """``monochrome``, ``hand-tinted`` or ``in-colour``. The second, tighter crop keeps a coloured
+    mount or a gilt case from counting: paint is on the picture itself. The server's port of this
+    rule (``server/src/utils/photo-monochrome.ts``) is held to it by ``qualification/tint-vectors.json``."""
+    outer = off_tone_share(rgb, TINT_OUTER_INSET)
+    if outer <= TINT_OUTER_SHARE or off_tone_share(rgb, TINT_INNER_INSET) <= TINT_INNER_SHARE:
+        return "monochrome"
+    return "in-colour" if outer > TINT_COLOUR_SHARE else "hand-tinted"
+
+
 def is_hand_tinted(rgb: np.ndarray) -> bool:
-    """Whether a photo already carries applied colour (or is a colour photo). The second, tighter
-    crop keeps a coloured mount or a gilt case from counting: paint is on the picture itself."""
-    return off_tone_share(rgb, TINT_OUTER_INSET) > TINT_OUTER_SHARE and off_tone_share(rgb, TINT_INNER_INSET) > (
-        TINT_INNER_SHARE
-    )
+    """Whether a photo already carries applied colour (or is a colour photo)."""
+    return photo_colour(rgb) != "monochrome"
+
+
+def refuses(rgb: np.ndarray, allow_hand_tinted: bool) -> bool:
+    """The override reaches a hand-tinted print only: a colour photo is always refused."""
+    kind = photo_colour(rgb)
+    return kind == "in-colour" or (kind == "hand-tinted" and not allow_hand_tinted)
 
 
 def stub_package(name: str, path: Path) -> None:
@@ -199,7 +217,7 @@ def main() -> None:
         if args.output_dir.is_symlink() or any(args.output_dir.iterdir()):
             raise ValueError("the output directory must be empty")
         source = read_frame(args.input_dir / FRAME)
-        if is_hand_tinted(source):
+        if refuses(source, os.environ.get(ALLOW_HAND_TINTED_ENV) == "1"):
             parser.exit(REFUSED_EXIT, f"{HAND_TINTED_MESSAGE}\n")
         result = colourise(source, load_model(args))
         if result.shape != source.shape:
