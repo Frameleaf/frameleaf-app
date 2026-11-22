@@ -48,7 +48,15 @@ import type { InteractiveAdmissionSource, InteractiveAdmissionView } from 'src/r
 import { AssetRestorationMode, AssetRestorationSourceType } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { StudioRestoredVersionDto, StudioRestoredVersionUnavailable } from 'src/dtos/studio-source.dto.js';
-import { AssetFileType, AssetType, ColorTransfer, DecodeRefusal, JobName, Permission } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetType,
+  AssetVisibility,
+  ColorTransfer,
+  DecodeRefusal,
+  JobName,
+  Permission,
+} from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.js';
@@ -1792,12 +1800,17 @@ export class StudioResourceService extends BaseService {
         : [],
     );
     const notFound: AssetDecision = { ok: false, reason: StudioRefusalReason.NotFound, detail: 'No such asset.' };
+    // FL-967: the back of a print is not media of its own; only a hidden row can be one
+    const hiddenIds = rows.filter((row) => row.visibility === AssetVisibility.Hidden).map((row) => row.id);
+    const printBacks = new Set(hiddenIds.length > 0 ? await this.assetRepository.getPrintBackIds(hiddenIds) : []);
 
     for (const id of ids) {
       const asset = byId.get(id);
       const isOwner = asset?.ownerId === auth.user.id;
       const isLocked = !!asset && isLockedAssetRow(asset);
-      if (!asset || (isLocked && !(isOwner && (backgroundRunner || elevatedOwnerId === auth.user.id)))) {
+      if (printBacks.has(id)) {
+        decisions.set(id, notFound);
+      } else if (!asset || (isLocked && !(isOwner && (backgroundRunner || elevatedOwnerId === auth.user.id)))) {
         // missing, or someone else's Locked asset, or the owner's own in an ordinary session: a Locked
         // asset is indistinguishable from a missing one, whatever the access query answered
         decisions.set(id, notFound);

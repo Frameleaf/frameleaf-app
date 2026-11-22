@@ -5,7 +5,10 @@ import { Kysely, sql } from 'kysely';
  *
  * The restore is a trigger on the pair because a front can leave through many delete paths, including cascades.
  * It runs after the row is gone, so a statement deleting both front and back never updates a row it is about to
- * delete. The asset's own lock row may already be gone by then, so a BEFORE DELETE trigger on the asset notes it.
+ * delete. A Locked back keeps its own `asset_lock` row throughout, so it comes back Locked.
+ *
+ * `asset_print_back_not_shared` is the backstop under every writer of album and shared-link membership (smart
+ * albums, rules, imports, restores): a paired back is skipped, whichever path tried to add it.
  */
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`
@@ -14,7 +17,6 @@ export async function up(db: Kysely<any>): Promise<void> {
       "backAssetId" uuid NOT NULL,
       "backPreviousVisibility" asset_visibility_enum NOT NULL,
       "searchText" text NOT NULL DEFAULT '',
-      "frontLockReason" text,
       "createdAt" timestamp with time zone NOT NULL DEFAULT now(),
       CONSTRAINT "asset_print_back_pkey" PRIMARY KEY ("frontAssetId"),
       CONSTRAINT "asset_print_back_backAssetId_uq" UNIQUE ("backAssetId"),
@@ -31,22 +33,17 @@ export async function up(db: Kysely<any>): Promise<void> {
     BEGIN
       UPDATE asset SET visibility = OLD."backPreviousVisibility"
         WHERE id = OLD."backAssetId" AND visibility = 'hidden';
-      IF OLD."frontLockReason" IS NOT NULL THEN
-        INSERT INTO asset_lock ("assetId", reason)
-          SELECT id, OLD."frontLockReason" FROM asset WHERE id = OLD."backAssetId"
-          ON CONFLICT DO NOTHING;
-      END IF;
       RETURN NULL;
     END;
     $$;
   `.execute(db);
   await sql`
-    CREATE OR REPLACE FUNCTION asset_print_back_front_deleting() RETURNS TRIGGER LANGUAGE PLPGSQL AS $$
+    CREATE OR REPLACE FUNCTION asset_print_back_not_shared() RETURNS TRIGGER LANGUAGE PLPGSQL AS $$
     BEGIN
-      UPDATE asset_print_back pair SET "frontLockReason" = lock.reason
-        FROM asset_lock lock
-        WHERE pair."frontAssetId" = OLD.id AND lock."assetId" = OLD.id;
-      RETURN OLD;
+      IF EXISTS (SELECT 1 FROM asset_print_back WHERE "backAssetId" = NEW."assetId") THEN
+        RETURN NULL;
+      END IF;
+      RETURN NEW;
     END;
     $$;
   `.execute(db);
@@ -55,19 +52,21 @@ export async function up(db: Kysely<any>): Promise<void> {
       FOR EACH ROW EXECUTE FUNCTION asset_print_back_released();
   `.execute(db);
   await sql`
-    CREATE TRIGGER "asset_print_back_front_deleting_trigger" BEFORE DELETE ON "asset"
-      FOR EACH ROW EXECUTE FUNCTION asset_print_back_front_deleting();
+    CREATE TRIGGER "album_asset_print_back_not_shared" BEFORE INSERT ON "album_asset"
+      FOR EACH ROW EXECUTE FUNCTION asset_print_back_not_shared();
+  `.execute(db);
+  await sql`
+    CREATE TRIGGER "shared_link_asset_print_back_not_shared" BEFORE INSERT ON "shared_link_asset"
+      FOR EACH ROW EXECUTE FUNCTION asset_print_back_not_shared();
   `.execute(db);
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
-  await sql`DROP TRIGGER "asset_print_back_front_deleting_trigger" ON "asset";`.execute(db);
-  // dropping the table must not leave backs hidden: restore them first, keeping a Locked front's back private
-  await sql`UPDATE asset_print_back pair SET "frontLockReason" = lock.reason FROM asset_lock lock WHERE lock."assetId" = pair."frontAssetId";`.execute(
-    db,
-  );
+  await sql`DROP TRIGGER "album_asset_print_back_not_shared" ON "album_asset";`.execute(db);
+  await sql`DROP TRIGGER "shared_link_asset_print_back_not_shared" ON "shared_link_asset";`.execute(db);
+  // dropping the table must not leave backs hidden: the release trigger restores each one
   await sql`DELETE FROM "asset_print_back";`.execute(db);
   await sql`DROP TABLE "asset_print_back";`.execute(db);
   await sql`DROP FUNCTION asset_print_back_released();`.execute(db);
-  await sql`DROP FUNCTION asset_print_back_front_deleting();`.execute(db);
+  await sql`DROP FUNCTION asset_print_back_not_shared();`.execute(db);
 }

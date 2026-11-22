@@ -147,26 +147,15 @@ export class PrintBackRepository {
   }
 
   /**
-   * Removes the pair; the `asset_print_back_released` trigger restores the back's visibility. A back leaving a
-   * Locked front stays Locked. Answers the back and what it returned to, or nothing if there was no pair.
+   * Removes the pair; the `asset_print_back_released` trigger restores the back's visibility. A Locked back keeps
+   * its own lock row. Answers the back and what it returned to, or nothing if there was no pair.
    */
+  @GenerateSql({ params: [DummyValue.UUID] })
   unpair(frontAssetId: string) {
-    return this.db.transaction().execute(async (tx) => {
-      await tx
-        .updateTable('asset_print_back')
-        .set((eb) => ({
-          frontLockReason: eb
-            .selectFrom('asset_lock')
-            .select('asset_lock.reason')
-            .where('asset_lock.assetId', '=', asUuid(frontAssetId)),
-        }))
-        .where('frontAssetId', '=', asUuid(frontAssetId))
-        .execute();
-      return tx
-        .deleteFrom('asset_print_back')
-        .where('frontAssetId', '=', asUuid(frontAssetId))
-        .returning(['backAssetId', 'backPreviousVisibility'])
-        .executeTakeFirst();
-    });
+    return this.db
+      .deleteFrom('asset_print_back')
+      .where('frontAssetId', '=', asUuid(frontAssetId))
+      .returning(['backAssetId', 'backPreviousVisibility'])
+      .executeTakeFirst();
   }
 }

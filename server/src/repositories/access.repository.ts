@@ -242,6 +242,20 @@ class AssetAccess {
         .then((assets) => new Set(assets.map((asset) => asset.id)))
     );
   }
+  /** FL-967: which of these are the paired back of a print, which is never shared by any path. */
+  @GenerateSql({ params: [DummyValue.UUID_SET] })
+  @ChunkedSet({ paramIndex: 0 })
+  async checkPrintBacks(assetIds: Set<string>) {
+    if (assetIds.size === 0) {
+      return new Set<string>();
+    }
+    const rows = await this.db
+      .selectFrom('asset_print_back')
+      .select('backAssetId')
+      .where('backAssetId', 'in', [...assetIds])
+      .execute();
+    return new Set(rows.map(({ backAssetId }) => backAssetId));
+  }
   /**
    * FL-83 (AL-30b): items the owner shared with this person (`public.asset_user_share`). A
    * shared item is never reachable while it is Hidden or locked, whoever locked it and whenever, and

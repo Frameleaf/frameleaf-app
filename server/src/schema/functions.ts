@@ -558,25 +558,20 @@ export const asset_print_back_released = registerFunction({
     BEGIN
       UPDATE asset SET visibility = OLD."backPreviousVisibility"
         WHERE id = OLD."backAssetId" AND visibility = 'hidden';
-      IF OLD."frontLockReason" IS NOT NULL THEN
-        INSERT INTO asset_lock ("assetId", reason)
-          SELECT id, OLD."frontLockReason" FROM asset WHERE id = OLD."backAssetId"
-          ON CONFLICT DO NOTHING;
-      END IF;
       RETURN NULL;
     END;
   `,
 });
-export const asset_print_back_front_deleting = registerFunction({
-  name: 'asset_print_back_front_deleting',
+export const asset_print_back_not_shared = registerFunction({
+  name: 'asset_print_back_not_shared',
   returnType: 'TRIGGER',
   language: 'PLPGSQL',
   body: `
     BEGIN
-      UPDATE asset_print_back pair SET "frontLockReason" = lock.reason
-        FROM asset_lock lock
-        WHERE pair."frontAssetId" = OLD.id AND lock."assetId" = OLD.id;
-      RETURN OLD;
+      IF EXISTS (SELECT 1 FROM asset_print_back WHERE "backAssetId" = NEW."assetId") THEN
+        RETURN NULL;
+      END IF;
+      RETURN NEW;
     END;
   `,
 });

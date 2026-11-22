@@ -2467,6 +2467,25 @@ describe(AlbumService.name, () => {
   });
 
   describe('addAssets', () => {
+    it('reports the back of a print as not addable and writes nothing (FL-967)', async () => {
+      const back = AssetFactory.create();
+      const album = AlbumFactory.create();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const auth = AuthFactory.create(owner);
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([back.id]));
+      mocks.access.asset.checkPrintBacks.mockResolvedValue(new Set([back.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValue(new Set());
+
+      await expect(sut.addAssetsToAlbums(auth, { albumIds: [album.id], assetIds: [back.id] })).resolves.toEqual({
+        success: false,
+        error: BulkIdErrorReason.NO_PERMISSION,
+      });
+
+      expect(mocks.album.addAssetIdsToAlbums).not.toHaveBeenCalled();
+    });
+
     it.each(['add', 'remove', 'bulk-add'] as const)(
       'keeps %s membership writes behind origin edit admission',
       async (action) => {
