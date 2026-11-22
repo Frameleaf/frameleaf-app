@@ -98,38 +98,45 @@ export class ImportSignInService {
       if (result.state !== 'ready') {
         return { state: result.state, connectionId: null };
       }
-      const who = await account(result.tokens.accessToken);
-      const credentials = { refreshToken: result.tokens.refreshToken, accountId: who.id, accountName: who.name };
+      // The code is spent, so a grant that does not end up saved is handed back rather than left live.
+      let grant: Record<string, unknown> = { refreshToken: result.tokens.refreshToken };
+      try {
+        const who = await account(result.tokens.accessToken);
+        const credentials = { refreshToken: result.tokens.refreshToken, accountId: who.id, accountName: who.name };
+        grant = credentials;
 
-      if (result.connectionId) {
-        const connection = await this.findOwned(auth, result.connectionId, provider);
-        const current = await readImportCredentials(this.sealDeps, connection);
-        if (current && current.accountId !== who.id) {
-          // Its cursor and file ids belong to the first account. The access just granted is not kept.
-          await this.giveBack(source, credentials);
-          throw new RemoteSourceError(
-            `That is a different ${label} account. Sign in with the one this connection uses.`,
-          );
+        if (result.connectionId) {
+          const connection = await this.findOwned(auth, result.connectionId, provider);
+          const current = await readImportCredentials(this.sealDeps, connection);
+          if (current && current.accountId !== who.id) {
+            // Its cursor and file ids belong to the first account. The access just granted is not kept.
+            throw new RemoteSourceError(
+              `That is a different ${label} account. Sign in with the one this connection uses.`,
+            );
+          }
+          await this.repository.update(connection.id, {
+            sealedCredentials: await sealImportCredentials(this.sealDeps, connection.id, credentials),
+          });
+          this.logger.log(`Import connection ${connection.id} (${provider}) signed in again`);
+          return { state: 'connected', connectionId: connection.id };
         }
-        await this.repository.update(connection.id, {
-          sealedCredentials: await sealImportCredentials(this.sealDeps, connection.id, credentials),
-        });
-        this.logger.log(`Import connection ${connection.id} (${provider}) signed in again`);
-        return { state: 'connected', connectionId: connection.id };
-      }
 
-      const id = this.cryptoRepository.randomUUID();
-      await this.repository.create({
-        id,
-        ownerId: auth.user.id,
-        provider,
-        displayName: dto.displayName ?? `${label} (${who.name})`.slice(0, 200),
-        sealedCredentials: await sealImportCredentials(this.sealDeps, id, credentials),
-        roots: dto.roots,
-        dailyCheck: dto.dailyCheck,
-      });
-      this.logger.log(`Import connection ${id} (${provider}) created by signing in`);
-      return { state: 'connected', connectionId: id };
+        const id = this.cryptoRepository.randomUUID();
+        await this.repository.create({
+          id,
+          ownerId: auth.user.id,
+          provider,
+          displayName: dto.displayName ?? `${label} (${who.name})`.slice(0, 200),
+          sealedCredentials: await sealImportCredentials(this.sealDeps, id, credentials),
+          roots: dto.roots,
+          dailyCheck: dto.dailyCheck,
+        });
+        this.logger.log(`Import connection ${id} (${provider}) created by signing in`);
+        return { state: 'connected', connectionId: id };
+      } catch (error) {
+        await this.giveBack(source, grant);
+        throw error;
+      }
     });
   }
 
@@ -138,6 +145,10 @@ export class ImportSignInService {
   }
 
   private async giveBack(source: RemoteSourceProvider | undefined, credentials: Record<string, unknown>) {
+    // Where revoking ends the whole account's access, it would also end this account's other connections.
+    if (source?.revokeEndsAccountGrant) {
+      return;
+    }
     try {
       await source?.revoke?.(credentials);
     } catch (error) {

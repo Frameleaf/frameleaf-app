@@ -18,6 +18,7 @@ import {
   RemoteSourceError,
   type RemoteSourceProvider,
   type RemoteSourceSession,
+  RemoteSourceUnavailableError,
 } from 'src/import-connectors/remote-source.js';
 import { TakeoutStagingError } from 'src/repositories/takeout-staging.repository.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -43,13 +44,15 @@ const FILE_FIELDS =
   'id,name,mimeType,size,modifiedTime,createdTime,md5Checksum,sha256Checksum,headRevisionId,trashed,parents,' +
   'shortcutDetails(targetId,targetMimeType),capabilities(canDownload)';
 const PAGE_SIZE = 1000;
-const CURSOR_VERSION = 1;
+/** 2: a tree holding a shortcut stores no cursor, so version 1 positions are listed in full once. */
+const CURSOR_VERSION = 2;
 const MAX_DEPTH = 256;
 /** Reasons Google gives on a 403 that mean "slow down". https://developers.google.com/workspace/drive/api/guides/handle-errors */
 const RATE_LIMIT_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded']);
 
 export const NOTHING_VISIBLE =
   'Google Drive showed Frameleaf nothing inside the folders you picked. Open Google’s picker and select the photos and videos themselves.';
+const DAILY_LIMIT = 'Google Drive’s daily limit was reached. Try again tomorrow.';
 const PICKED_GONE = 'Google Drive no longer shows Frameleaf the items you picked. Pick them again.';
 const NOTHING_PICKED = 'Choose what to import in Google’s picker first.';
 
@@ -203,11 +206,16 @@ export class GoogleDriveSource implements RemoteSource {
       throw new RemoteSourceError(PICKED_GONE);
     }
 
+    // The change list cannot place a file reached through a shortcut, so such a tree is always walked.
+    const shortcuts = { found: false };
+    const position = (pageToken: string) =>
+      shortcuts.found ? null : { version: CURSOR_VERSION, pageToken, roots: picked };
+
     const saved = savedCursor(cursor);
     if (saved && picked.every((root) => saved.roots.includes(root))) {
-      const next = yield* this.changes(saved.pageToken, picked, known, signal);
+      const next = yield* this.changes(saved.pageToken, picked, known, shortcuts, signal);
       if (next) {
-        yield { items: [], cursor: { version: CURSOR_VERSION, pageToken: next, roots: picked } };
+        yield { items: [], cursor: position(next) };
         return;
       }
       // Google refused the saved position. Listing again is safe: the framework skips what it has seen.
@@ -222,7 +230,7 @@ export class GoogleDriveSource implements RemoteSource {
       if (root.mimeType === FOLDER || root.shortcutDetails?.targetMimeType === FOLDER) {
         folders++;
       }
-      for await (const batch of this.walkEntry(root, null, seen, 0, signal)) {
+      for await (const batch of this.walkEntry(root, null, seen, 0, shortcuts, signal)) {
         visible += batch.visible;
         yield { items: batch.items };
       }
@@ -231,7 +239,7 @@ export class GoogleDriveSource implements RemoteSource {
     if (folders > 0 && visible === 0) {
       throw new RemoteSourceError(NOTHING_VISIBLE);
     }
-    yield { items: [], cursor: { version: CURSOR_VERSION, pageToken, roots: picked } };
+    yield { items: [], cursor: position(pageToken) };
   }
 
   async open(
@@ -270,11 +278,9 @@ export class GoogleDriveSource implements RemoteSource {
     if (!response.ok || !response.body) {
       const daily = (await reasonOf(response)) === 'dailyLimitExceeded';
       await discard(response);
-      throw new RemoteSourceError(
-        daily
-          ? 'Google Drive’s daily limit was reached. Try again tomorrow.'
-          : 'Google Drive would not hand over this file',
-      );
+      throw daily
+        ? new RemoteSourceUnavailableError(DAILY_LIMIT)
+        : new RemoteSourceError('Google Drive would not hand over this file');
     }
     if (start > 0) {
       const range = /^bytes (\d+)-\d+\/(\d+)$/.exec(response.headers.get('content-range') ?? '');
@@ -296,9 +302,9 @@ export class GoogleDriveSource implements RemoteSource {
   private async refused(response: Response): Promise<never> {
     const daily = (await reasonOf(response)) === 'dailyLimitExceeded';
     await discard(response);
-    throw new RemoteSourceError(
-      daily ? 'Google Drive’s daily limit was reached. Try again tomorrow.' : 'Google Drive would not list this folder',
-    );
+    throw daily
+      ? new RemoteSourceUnavailableError(DAILY_LIMIT)
+      : new RemoteSourceError('Google Drive would not list this folder');
   }
 
   /** One item, or null when the API does not show it to this app. */
@@ -371,10 +377,12 @@ export class GoogleDriveSource implements RemoteSource {
     folder: string | null,
     seen: Set<string>,
     depth: number,
+    shortcuts: { found: boolean },
     signal: AbortSignal,
   ): AsyncGenerator<{ items: RemoteItem[]; visible: number }> {
     let file = entry;
     if (entry.mimeType === SHORTCUT) {
+      shortcuts.found = true;
       const target = entry.shortcutDetails?.targetId;
       const resolved = isDriveId(target) ? await this.file(target, signal) : null;
       if (!resolved || resolved.trashed === true || resolved.mimeType === SHORTCUT) {
@@ -390,7 +398,8 @@ export class GoogleDriveSource implements RemoteSource {
     const here = folder ? `${folder}/${name}` : name;
     if (file.mimeType !== FOLDER) {
       const item = toItem(file, { path: here, albumHint: folder });
-      yield { items: item ? [item] : [], visible: 0 };
+      // A picked file that can be imported is something the API showed; one found in a folder is counted there.
+      yield { items: item ? [item] : [], visible: item && folder === null ? 1 : 0 };
       return;
     }
     for await (const page of this.pages(`'${file.id}' in parents and trashed=false`, signal)) {
@@ -409,7 +418,7 @@ export class GoogleDriveSource implements RemoteSource {
       }
       yield { items, visible: page.length };
       for (const child of below) {
-        yield* this.walkEntry(child, here, seen, depth + 1, signal);
+        yield* this.walkEntry(child, here, seen, depth + 1, shortcuts, signal);
       }
     }
   }
@@ -447,6 +456,7 @@ export class GoogleDriveSource implements RemoteSource {
     from: string,
     roots: string[],
     known: Map<string, Listed>,
+    shortcuts: { found: boolean },
     signal: AbortSignal,
   ): AsyncGenerator<RemoteScanBatch, string | null> {
     const picked = new Set(roots);
@@ -487,7 +497,7 @@ export class GoogleDriveSource implements RemoteSource {
           continue;
         }
         // A folder moved in brings files the change list will not name, so it is read whole.
-        for await (const batch of this.walkEntry(file, place.folder, seen, 0, signal)) {
+        for await (const batch of this.walkEntry(file, place.folder, seen, 0, shortcuts, signal)) {
           items.push(...batch.items);
         }
       }
@@ -544,6 +554,8 @@ export const googleDriveRemoteSourceProvider = (
         return { id, name: typeof name === 'string' && name.trim() ? name.trim() : 'Google Drive' };
       },
     },
+    // Google ends the app's whole grant for the account, whichever of its tokens is revoked.
+    revokeEndsAccountGrant: true,
     async revoke(credentials) {
       if (typeof credentials.refreshToken === 'string') {
         await broker.revoke('google-drive', credentials.refreshToken);

@@ -86,6 +86,7 @@ describe(ImportConnectorService.name, () => {
         { provider: 'webdav', connections: 3, dailyCheck: 3 },
       ]),
       startScan: vi.fn().mockResolvedValue({ importId: runId }),
+      lockIdle: vi.fn().mockResolvedValue(true),
       retryFailed: vi.fn().mockResolvedValue(0),
       counts: vi.fn().mockResolvedValue({ states: { ready: 2, imported: 1, matched: 1, failed: 1 }, hiddenLocked: 1 }),
       albums: vi.fn().mockResolvedValue([{ folder: 'Trips/Italy', count: 2 }]),

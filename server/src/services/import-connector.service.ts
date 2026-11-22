@@ -223,7 +223,7 @@ export class ImportConnectorService {
     }
     try {
       const credentials = await readImportCredentials(this.sealDeps, connection);
-      if (credentials) {
+      if (credentials && !(provider.revokeEndsAccountGrant && (await this.accountInUse(connection, credentials)))) {
         await provider.revoke(credentials);
       }
     } catch (error) {
@@ -231,6 +231,20 @@ export class ImportConnectorService {
         `Import connection ${connection.id}: access was not revoked at the source (${error instanceof Error ? error.name : 'error'})`,
       );
     }
+  }
+
+  /** Whether another connection here reads the same account. One that cannot be read counts, to be safe. */
+  private async accountInUse(removed: ImportConnection, credentials: Record<string, unknown>) {
+    for (const other of await this.repository.listByProvider(removed.provider)) {
+      if (other.id === removed.id) {
+        continue;
+      }
+      const theirs = await readImportCredentials(this.sealDeps, other);
+      if (!theirs || theirs.accountId === credentials.accountId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** The folders inside a folder at the source, for choosing what to import. */
@@ -358,6 +372,9 @@ export class ImportConnectorService {
           const state = takeoutState(row.phase, operation);
           if (row.phase === 'scanning' || !TAKEOUT_REVIEWABLE_STATES.includes(state)) {
             throw new TakeoutConflict('This run is not ready to import yet');
+          }
+          if (!(await this.repository.lockIdle(tx, id))) {
+            throw new TakeoutConflict('A job is already working on this connection');
           }
           await this.takeout.setOptions(tx, runId, options);
           await this.repository.retryFailed(runId, tx);

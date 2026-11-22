@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, type RawBuilder, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { RemoteCursor, RemoteItem } from 'src/import-connectors/remote-source.js';
 import type { MediaOperationCreate } from 'src/repositories/media-operation.repository.js';
 import type { TakeoutItemState, TakeoutOptions } from 'src/utils/takeout.js';
-import { MediaOperationKind } from 'src/enum.js';
+import { MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { TAKEOUT_ACTIVE_STATUSES } from 'src/repositories/takeout.repository.js';
 import { DB } from 'src/schema/index.js';
 
@@ -78,13 +78,13 @@ const mapItem = (row: Record<string, unknown>): ImportConnectionItem => ({
 });
 
 /** A job is queued for, or working on, one of the connection's runs. */
-const busy = (connectionId: string) => sql<boolean>`exists (
+const busy = (connectionId: string | RawBuilder<unknown>) => sql<boolean>`exists (
   select 1 from takeout_import run
   inner join media_operation operation
     on operation."ownerId" = run."ownerId"
     and operation.kind = ${MediaOperationKind.TakeoutImport}
     and operation.snapshot->>'importId' = run.id::text
-  where run."connectionId" = ${connectionId}::uuid
+  where run."connectionId" = ${typeof connectionId === 'string' ? sql`${connectionId}::uuid` : connectionId}
     and operation.status in (${sql.join(TAKEOUT_ACTIVE_STATUSES.map((status) => sql.lit(status)))})
 )`;
 
@@ -184,14 +184,20 @@ export class ImportConnectorRepository {
   }
 
   /**
-   * Change a connection's sealed credentials with its row locked, so two workers renewing a rotating
-   * refresh token take turns. `change` gets the current value and returns the new one, or null to keep
-   * it. The status is left alone: a renewal is not the owner signing in again. False when the row is gone.
+   * Change a connection's sealed credentials, so two workers renewing a rotating refresh token take
+   * turns. `change` gets the current value and returns the new one, or null to keep it. The turn is an
+   * advisory lock, because `change` makes a network call and a row lock would hold up every other write
+   * to the connection meanwhile. A sign-in saved during the call wins over what the call returns. The
+   * status is left alone: a renewal is not the owner signing in again. False when the row is gone.
    */
   async withSealedCredentials(id: string, change: (sealed: Buffer) => Promise<Buffer | null>): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
+      await sql`set local lock_timeout = '30s'`.execute(tx);
+      await sql`select pg_advisory_xact_lock(hashtextextended(${`import-connection-credentials:${id}`}, 0))`.execute(
+        tx,
+      );
       const { rows } = await sql<{ sealedCredentials: Buffer }>`
-        select "sealedCredentials" from import_connection where id = ${id}::uuid for update
+        select "sealedCredentials" from import_connection where id = ${id}::uuid
       `.execute(tx);
       if (!rows[0]) {
         return false;
@@ -199,11 +205,28 @@ export class ImportConnectorRepository {
       const next = await change(rows[0].sealedCredentials);
       if (next) {
         await sql`
-          update import_connection set "sealedCredentials" = ${next}, "updatedAt" = now() where id = ${id}::uuid
+          update import_connection set "sealedCredentials" = ${next}, "updatedAt" = now()
+          where id = ${id}::uuid and "sealedCredentials" = ${rows[0].sealedCredentials}
         `.execute(tx);
       }
       return true;
     });
+  }
+
+  /** Whether the connection's owner is an administrator now. */
+  async isAdmin(ownerId: string): Promise<boolean> {
+    const { rows } = await sql<{ isAdmin: boolean }>`
+      select "isAdmin" from "user" where id = ${ownerId}::uuid and "deletedAt" is null
+    `.execute(this.db);
+    return !!rows[0]?.isAdmin;
+  }
+
+  /** Every connection of a kind on this server, for a question about a whole provider account. */
+  async listByProvider(provider: string): Promise<ImportConnection[]> {
+    const { rows } = await sql<Record<string, unknown>>`
+      select * from import_connection where provider = ${provider}
+    `.execute(this.db);
+    return rows.map((row) => mapConnection(row));
   }
 
   async setStatus(id: string, status: string): Promise<void> {
@@ -278,6 +301,19 @@ export class ImportConnectorRepository {
       if (rows[0].busy === true) {
         return 'busy';
       }
+      // A scan that stopped keeps its files in a run nothing can import. With no job at work on any run,
+      // they go back to being unclaimed so this scan's `offer` takes them. The stopped scan may already
+      // have stored its cursor, so the position is dropped with them and the source is listed in full.
+      const released = await sql`
+        update import_connection_item set "importId" = null
+        where "connectionId" = ${connection.id}::uuid and "fileId" is null
+          and "importId" in (
+            select id from takeout_import where "connectionId" = ${connection.id}::uuid and phase = 'scanning'
+          )
+      `.execute(tx);
+      if (Number(released.numAffectedRows ?? 0) > 0) {
+        await sql`update import_connection set cursor = null where id = ${connection.id}::uuid`.execute(tx);
+      }
       const { rows: runs } = await sql<{ id: string }>`
         insert into takeout_import ("ownerId", name, options, phase, "connectionId")
         values (${connection.ownerId}::uuid, ${connection.displayName}, ${json(options)}, 'scanning',
@@ -304,6 +340,41 @@ export class ImportConnectorRepository {
       where "dailyCheck" and status = ${IMPORT_CONNECTION_ACTIVE}
         and ("lastScanAt" is null or "lastScanAt" <= ${before})
       order by "lastScanAt" nulls first, id
+      limit 100
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
+
+  /**
+   * Hold the connection's row for this transaction. True when no job is queued for or working on any
+   * of its runs, so one more can start.
+   */
+  async lockIdle(tx: Kysely<DB>, connectionId: string): Promise<boolean> {
+    const { rows } = await sql<{ busy: boolean }>`
+      select ${busy(connectionId)} as busy from import_connection where id = ${connectionId}::uuid for update
+    `.execute(tx);
+    return !!rows[0] && !rows[0].busy;
+  }
+
+  /**
+   * Daily-check runs whose scan finished but whose import never started, because the process stopped
+   * in the moment between the two.
+   */
+  async dailyRunsAwaitingImport(): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      select waiting.id from takeout_import waiting
+      where waiting.phase = 'review' and waiting."connectionId" is not null
+        and exists (
+          select 1 from media_operation operation
+          where operation."ownerId" = waiting."ownerId"
+            and operation.kind = ${MediaOperationKind.TakeoutImport}
+            and operation.snapshot->>'importId' = waiting.id::text
+            and operation.snapshot->>'action' = 'scan'
+            and operation.snapshot->>'auto' = 'true'
+            and operation.status = ${MediaOperationStatus.Completed}
+        )
+        and not ${busy(sql`waiting."connectionId"`)}
+      order by waiting.id
       limit 100
     `.execute(this.db);
     return rows.map(({ id }) => id);
@@ -372,14 +443,19 @@ export class ImportConnectorRepository {
     return toNumber(rows[0]?.total);
   }
 
-  async itemStaged(id: string, fileId: string): Promise<void> {
-    await sql`
-      update import_connection_item set "fileId" = ${fileId}::uuid, error = null where id = ${id}::uuid
+  /** False when a newer scan took the file for its own run meanwhile: that run downloads the new version. */
+  async itemStaged(id: string, importId: string, fileId: string): Promise<boolean> {
+    const result = await sql`
+      update import_connection_item set "fileId" = ${fileId}::uuid, error = null
+      where id = ${id}::uuid and "importId" = ${importId}::uuid
     `.execute(this.db);
+    return Number(result.numAffectedRows ?? 0) > 0;
   }
 
-  async itemFailed(id: string, error: string): Promise<void> {
-    await sql`update import_connection_item set error = ${error} where id = ${id}::uuid`.execute(this.db);
+  async itemFailed(id: string, importId: string, error: string): Promise<void> {
+    await sql`
+      update import_connection_item set error = ${error} where id = ${id}::uuid and "importId" = ${importId}::uuid
+    `.execute(this.db);
   }
 
   /** Downloads that failed are tried again by the next pass. */

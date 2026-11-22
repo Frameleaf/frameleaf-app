@@ -196,6 +196,7 @@ describe('the renewed-credentials hook', () => {
     try {
       await openImportConnection({ ...deps, repository } as never, {
         id,
+        ownerId: '0195e2a0-0000-7000-8000-00000000000a',
         provider: 'hook-test',
         sealedCredentials: stored,
       });

@@ -66,6 +66,7 @@ const DOWNLOAD_HOST_SUFFIXES = [
   '.onedrive.live.com',
   '.storage.live.com',
   '.livefilestore.com',
+  '.microsoftpersonalcontent.com',
   '.sharepoint.com',
 ];
 
@@ -130,11 +131,14 @@ type Folder = { name: string; parentId: string | null; isRoot: boolean; cameraRo
 
 const relative = (value: string) => value.replace(/^\/+/, '').replace(/\/+$/, '');
 
-const itemPath = (folder: string) =>
-  relative(folder)
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/');
+const itemPath = (folder: string) => {
+  const segments = relative(folder).split('/');
+  // `..` survives encoding and would climb out of the drive route once the URL is parsed.
+  if (segments.some((segment) => ['', '.', '..'].includes(segment))) {
+    throw new RemoteSourceError('That folder is no longer in OneDrive');
+  }
+  return segments.map((segment) => encodeURIComponent(segment)).join('/');
+};
 
 /** The folders to read: a folder inside another chosen folder is already covered by it. */
 export const onedriveRoots = (roots: string[]) => {
@@ -237,6 +241,7 @@ export class OneDriveSource implements RemoteSource {
     const covered =
       saved && chosen.every((root) => saved.roots.some((known) => known === '' || isSameOrUnder(root, known)));
     let url = covered ? saved.deltaLink : DELTA_START;
+    let incremental = !!covered;
 
     const folders = new Map<string, Folder>();
     const cameraRollId = await this.cameraRollId(signal);
@@ -251,12 +256,21 @@ export class OneDriveSource implements RemoteSource {
           throw new RemoteSourceError('OneDrive would not list this folder');
         }
         restarted = true;
+        incremental = false;
         url = DELTA_START;
         continue;
       }
       const page = await this.page(response);
       for (const item of page.items) {
         this.remember(folders, item);
+      }
+      // Delta names a folder moved in but not the files inside it, and cannot say whether it just
+      // arrived, so a folder under a chosen root means a full listing. What was seen is skipped as usual.
+      if (incremental && (await this.hasFolderUnder(folders, page.items, chosen, cameraRollId, signal))) {
+        restarted = true;
+        incremental = false;
+        url = DELTA_START;
+        continue;
       }
       const items: RemoteItem[] = [];
       for (const item of page.items) {
@@ -344,7 +358,7 @@ export class OneDriveSource implements RemoteSource {
     return { items: body.value as DriveItem[], next: next as string | undefined, delta: delta as string | undefined };
   }
 
-  /** Chosen folders that have all gone would otherwise look like a scan that found nothing new. */
+  /** A chosen folder that has gone (or was renamed) would otherwise look like a scan that found nothing new. */
   private async requireARoot(roots: string[], signal: AbortSignal) {
     if (roots.includes('')) {
       return;
@@ -352,11 +366,29 @@ export class OneDriveSource implements RemoteSource {
     for (const root of roots) {
       const response = await this.get(`${DRIVE}/root:/${itemPath(root)}?$select=id`, signal);
       await discard(response);
-      if (response.status !== 404) {
-        return;
+      if (response.status === 404) {
+        throw new RemoteSourceError('The chosen folders are no longer in OneDrive. Choose them again.');
       }
     }
-    throw new RemoteSourceError('The chosen folders are no longer in OneDrive. Choose them again.');
+  }
+
+  private async hasFolderUnder(
+    folders: Map<string, Folder>,
+    items: DriveItem[],
+    roots: string[],
+    cameraRollId: string | null,
+    signal: AbortSignal,
+  ) {
+    for (const item of items) {
+      if (!item.folder || item.root || item.deleted || item.remoteItem || typeof item.id !== 'string') {
+        continue;
+      }
+      const place = await this.folderPath(folders, item.id, cameraRollId, signal);
+      if (place && roots.some((root) => isUnder(place.path, root))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** The Camera Roll wherever it is and whatever it is called in the account's language. */

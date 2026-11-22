@@ -12,10 +12,18 @@ import {
   FakeRemoteSource,
   fakeRemoteSourceProvider,
 } from 'src/import-connectors/fake.source.js';
-import { type RemoteItem, registerRemoteSource, unregisterRemoteSource } from 'src/import-connectors/remote-source.js';
+import {
+  type RemoteItem,
+  RemoteSourceUnavailableError,
+  registerRemoteSource,
+  unregisterRemoteSource,
+} from 'src/import-connectors/remote-source.js';
 import { IMPORT_CONNECTION_ACTIVE, type ImportConnection } from 'src/repositories/import-connector.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
-import { TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
+import {
+  TAKEOUT_STAGING_RESERVE_BYTES,
+  TakeoutStagingRepository,
+} from 'src/repositories/takeout-staging.repository.js';
 import { TakeoutFile, TakeoutImport, TakeoutItem } from 'src/repositories/takeout.repository.js';
 import {
   IMPORT_CONNECTION_DAILY_MS,
@@ -183,17 +191,22 @@ describe(ImportConnectorWorkerService.name, () => {
     pendingCount: vi.fn((importId: string) =>
       Promise.resolve(seen.filter((row) => row.importId === importId && !row.fileId && !row.error).length),
     ),
-    itemStaged: vi.fn((id: string, fileId: string) => {
-      Object.assign(
-        seen.find((row) => row.id === id)!,
-        { fileId, error: null },
-      );
+    itemStaged: vi.fn((id: string, importId: string, fileId: string) => {
+      const row = seen.find((candidate) => candidate.id === id && candidate.importId === importId);
+      if (row) {
+        Object.assign(row, { fileId, error: null });
+      }
+      return Promise.resolve(!!row);
+    }),
+    itemFailed: vi.fn((id: string, importId: string, error: string) => {
+      const row = seen.find((candidate) => candidate.id === id && candidate.importId === importId);
+      if (row) {
+        row.error = error;
+      }
       return Promise.resolve();
     }),
-    itemFailed: vi.fn((id: string, error: string) => {
-      seen.find((row) => row.id === id)!.error = error;
-      return Promise.resolve();
-    }),
+    lockIdle: vi.fn().mockResolvedValue(true),
+    dailyRunsAwaitingImport: vi.fn().mockResolvedValue([]),
     retryFailed: vi.fn((importId: string) => {
       const failed = seen.filter((row) => row.importId === importId && !row.fileId && row.error);
       for (const row of failed) {
@@ -229,7 +242,10 @@ describe(ImportConnectorWorkerService.name, () => {
       return Promise.resolve();
     }),
     recordItem: vi.fn((item: Pick<StoredItem, 'id' | 'importId' | 'state' | 'metadata' | 'albums'>) => {
-      items.set(item.id, { ...item, assetId: null, resultKind: null, createPath: null, error: null });
+      // The same rule as the SQL upsert: a row that exists keeps what the import made of it.
+      if (!items.has(item.id)) {
+        items.set(item.id, { ...item, assetId: null, resultKind: null, createPath: null, error: null });
+      }
       return Promise.resolve();
     }),
     pendingPhotos: vi.fn((importId: string) => Promise.resolve({ total: pendingOf(importId).length, alreadyIn: [] })),
@@ -593,6 +609,45 @@ describe(ImportConnectorWorkerService.name, () => {
     expect(library[1].checksum).toBe(sha256(bytes('edited at the source')));
   });
 
+  it('stops with every file still to do when the whole connection is unavailable', async () => {
+    source.files = [remote({ path: 'Trips/a.jpg' }), remote({ path: 'Trips/b.jpg', data: bytes('another photo') })];
+    const importId = await startScan();
+    await runQueued();
+    vi.spyOn(source, 'open').mockRejectedValue(new RemoteSourceUnavailableError('Try again in a few minutes.'));
+    startImport(importId);
+    await runQueued();
+
+    expect(connectors.itemFailed).not.toHaveBeenCalled();
+    expect(seen.map(({ fileId, error }) => ({ fileId, error }))).toEqual([
+      { fileId: null, error: null },
+      { fileId: null, error: null },
+    ]);
+    expect(operations.fail).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.anything(),
+      expect.objectContaining({ errorCode: 'import_connection_source_failed' }),
+    );
+  });
+
+  it('imports what fits around a file too big for staging, and reports only that file', async () => {
+    source.files = [
+      remote({ path: 'Trips/a.jpg', data: bytes('small one') }),
+      remote({ path: 'Trips/big.jpg', data: Buffer.alloc(5000, 1).toString('base64') }),
+      remote({ path: 'Trips/c.jpg', data: bytes('small two') }),
+    ];
+    const importId = await startScan();
+    await runQueued();
+    const staging = (sut as unknown as { staging: TakeoutStagingRepository }).staging;
+    vi.spyOn(staging, 'freeBytes').mockResolvedValue(TAKEOUT_STAGING_RESERVE_BYTES + 1000);
+    startImport(importId);
+    await runQueued();
+    // The file that did not fit gets the run's one automatic retry, like any other failed file.
+    await runQueued({ itemRetryUsed: true });
+
+    expect(library.map(({ filename }) => filename).toSorted()).toEqual(['a.jpg', 'c.jpg']);
+    expect(seen.find(({ path }) => path === 'Trips/big.jpg')?.error).toContain('ran out of space');
+  });
+
   it('resumes an interrupted download by range instead of fetching the file again', async () => {
     const data = Buffer.alloc(300_000, 7).toString('base64');
     source.files = [remote({ path: 'Trips/big.jpg', data })];
@@ -604,7 +659,11 @@ describe(ImportConnectorWorkerService.name, () => {
     await runQueued();
 
     // The download stopped part-way: the file is reported, and the run takes its one automatic retry.
-    expect(connectors.itemFailed).toHaveBeenCalledWith(expect.any(String), 'The connection dropped');
+    expect(connectors.itemFailed).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      'The connection dropped',
+    );
     expect(operations.requeue).toHaveBeenCalled();
     expect(library).toHaveLength(0);
 
@@ -617,7 +676,7 @@ describe(ImportConnectorWorkerService.name, () => {
     // FL-944: the source is told which version the scan saw, so it cannot splice a file that changed.
     expect(open).toHaveBeenLastCalledWith(
       'Trips/big.jpg',
-      { start: 100_000, contentHash: expect.any(String) },
+      { start: 100_000, contentHash: expect.any(String), size: 300_000 },
       expect.anything(),
     );
     expect(library).toHaveLength(1);

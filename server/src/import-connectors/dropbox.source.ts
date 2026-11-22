@@ -13,6 +13,7 @@ import {
   RemoteSourceError,
   type RemoteSourceProvider,
   type RemoteSourceSession,
+  RemoteSourceUnavailableError,
 } from 'src/import-connectors/remote-source.js';
 import { TakeoutStagingError } from 'src/repositories/takeout-staging.repository.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -351,7 +352,7 @@ export class DropboxSource implements RemoteSource {
       return;
     }
     if (remaining > MAX_WAIT_MS) {
-      throw new RemoteSourceError('Dropbox asked Frameleaf to slow down. Try again later.');
+      throw new RemoteSourceUnavailableError('Dropbox asked Frameleaf to slow down. Try again later.');
     }
     await this.wait(remaining, signal);
   }
@@ -412,9 +413,9 @@ export class DropboxSource implements RemoteSource {
         }
         await discard(response);
         if (attempt >= MAX_ATTEMPTS) {
-          throw new RemoteSourceError(
-            limited ? 'Dropbox asked Frameleaf to slow down. Try again later.' : 'Dropbox is not answering right now',
-          );
+          throw limited
+            ? new RemoteSourceUnavailableError('Dropbox asked Frameleaf to slow down. Try again later.')
+            : new RemoteSourceError('Dropbox is not answering right now');
         }
         if (!limited) {
           await this.wait(2 ** attempt * 1000, signal);

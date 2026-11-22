@@ -4,6 +4,7 @@ import {
   type RemoteItem,
   type RemoteScanBatch,
   type RemoteSource,
+  RemoteSourceAuthError,
   RemoteSourceError,
   type RemoteSourceProvider,
 } from 'src/import-connectors/remote-source.js';
@@ -109,7 +110,6 @@ const relativeSegments = (relative: string) => {
 };
 
 const changed = () => new TakeoutStagingError('The file changed at the source while it was downloading');
-const plainTag = (etag: string) => etag.replace(/^W\//, '');
 
 /** Drops the first `count` bytes, for a server that answered a range request with the whole file. */
 const skipBytes = (count: number) => {
@@ -129,6 +129,31 @@ const skipBytes = (count: number) => {
       callback(remaining > 0 ? changed() : null);
     },
   });
+};
+
+/** A folder's listing was refused or failed. A folder below a chosen root is skipped for it. */
+class WebDavFolderError extends RemoteSourceError {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+
+  get skippable() {
+    return this.status === 403 || this.status === 404 || this.status >= 500;
+  }
+}
+
+const isSameFolder = (href: string, folder: URL) => {
+  const segments = hrefSegments(href);
+  const wanted = hrefSegments(folder.pathname);
+  return (
+    !!segments &&
+    !!wanted &&
+    segments.length === wanted.length &&
+    wanted.every((segment, index) => segment.normalize('NFC') === segments[index].normalize('NFC'))
+  );
 };
 
 export type WebDavCredentials = { url: string; username: string; password: string; allowPrivateAddress: boolean };
@@ -153,7 +178,7 @@ export class WebDavSource implements RemoteSource {
   }
 
   /** The direct children of a folder, each once, with hrefs that are not direct children ignored. */
-  private async children(folder: string, stop?: AbortSignal) {
+  private async children(folder: string, stop?: AbortSignal, refusalIsSignIn = false) {
     const timeout = AbortSignal.timeout(LISTING_TIMEOUT_MS);
     const { response, url } = await webdavRequest(
       this.urlFor(folder, true),
@@ -170,7 +195,11 @@ export class WebDavSource implements RemoteSource {
     );
     if (response.status !== 207 || !response.body) {
       await response.body?.cancel();
-      throw new RemoteSourceError(
+      if (response.status === 403 && refusalIsSignIn) {
+        throw new RemoteSourceAuthError('The server refused this sign-in. Sign in again.');
+      }
+      throw new WebDavFolderError(
+        response.status,
         response.status === 404
           ? 'This folder is not at the source'
           : `The server did not answer as a WebDAV folder (${response.status})`,
@@ -199,12 +228,17 @@ export class WebDavSource implements RemoteSource {
         children.push({ ...entry, name });
       }
     }
+    // Nothing here is the folder that was asked for, so an empty result would be a false "no files".
+    if (entries.length > 0 && children.length === 0 && entries.every(({ href }) => !isSameFolder(href, url))) {
+      throw new RemoteSourceError('The folder listing could not be read');
+    }
     return children;
   }
 
   async listFolders(path: string): Promise<RemoteFolder[]> {
     const prefix = relativeSegments(path).join('/');
-    const children = await this.children(prefix);
+    // At the very top a refusal is about the account, which is what connecting needs to report.
+    const children = await this.children(prefix, undefined, prefix === '');
     return children
       .filter(({ isCollection, name }) => isCollection && !isSkippedName(name, true))
       .map(({ name }) => ({ path: prefix ? `${prefix}/${name}` : name, name }))
@@ -217,6 +251,7 @@ export class WebDavSource implements RemoteSource {
     const stack = (starts.includes('') ? [''] : [...new Set(starts)]).map((path) => ({ path, depth: 0 }));
     const visited = new Set<string>();
     let entriesSeen = 0;
+    let skippedFolders = 0;
     let batch: RemoteItem[] = [];
 
     while (stack.length > 0) {
@@ -229,7 +264,18 @@ export class WebDavSource implements RemoteSource {
       if (visited.size > WEBDAV_MAX_FOLDERS) {
         throw new RemoteSourceError('This source has too many folders to import at once. Choose fewer folders.');
       }
-      for (const entry of await this.children(folder, signal)) {
+      let entries: Awaited<ReturnType<WebDavSource['children']>>;
+      try {
+        entries = await this.children(folder, signal);
+      } catch (error) {
+        // One unreadable folder does not cost the rest. WebDAV lists in full every time, so it is read again.
+        if (depth > 0 && error instanceof WebDavFolderError && error.skippable) {
+          skippedFolders++;
+          continue;
+        }
+        throw error;
+      }
+      for (const entry of entries) {
         if (++entriesSeen > WEBDAV_MAX_ENTRIES) {
           throw new RemoteSourceError('This source has too many files to import at once. Choose fewer folders.');
         }
@@ -260,20 +306,22 @@ export class WebDavSource implements RemoteSource {
         }
       }
     }
-    yield { items: batch, cursor: { listedAt: new Date().toISOString() } };
+    yield { items: batch, cursor: { listedAt: new Date().toISOString() }, skippedFolders };
   }
 
   async open(
     remoteId: string,
-    { start, contentHash }: { start: number; contentHash?: string },
+    { start, contentHash, size }: { start: number; contentHash?: string; size?: number },
     signal: AbortSignal,
   ): Promise<Readable> {
     const headers: Record<string, string> = { 'accept-encoding': 'identity' };
     if (start > 0) {
-      headers.range = `bytes=${start}-`;
-      if (contentHash && !contentHash.startsWith('W/')) {
-        headers['if-range'] = contentHash;
+      // Only a strong ETag promises identical bytes. Without one the download starts again from the top.
+      if (!contentHash || contentHash.startsWith('W/')) {
+        throw changed();
       }
+      headers.range = `bytes=${start}-`;
+      headers['if-range'] = contentHash;
     }
     const { response } = await webdavRequest(
       this.urlFor(remoteId, false),
@@ -302,16 +350,16 @@ export class WebDavSource implements RemoteSource {
 
     // Resuming: the bytes must continue the same file at exactly this offset, or the download restarts.
     const encoding = response.headers.get('content-encoding');
-    const etag = response.headers.get('etag');
-    if (
-      (encoding && encoding.toLowerCase() !== 'identity') ||
-      (etag && contentHash && plainTag(etag) !== plainTag(contentHash))
-    ) {
+    if ((encoding && encoding.toLowerCase() !== 'identity') || response.headers.get('etag')?.trim() !== contentHash) {
       return refuse(changed());
     }
     if (response.status === 206) {
-      const range = /^bytes (\d+)-\d+\/(?:\d+|\*)$/.exec(response.headers.get('content-range')?.trim() ?? '');
-      if (!range || Number(range[1]) !== start) {
+      const range = /^bytes (\d+)-\d+\/(\d+|\*)$/.exec(response.headers.get('content-range')?.trim() ?? '');
+      if (
+        !range ||
+        Number(range[1]) !== start ||
+        (size !== undefined && range[2] !== '*' && Number(range[2]) !== size)
+      ) {
         return refuse(changed());
       }
       return Readable.fromWeb(response.body as never);

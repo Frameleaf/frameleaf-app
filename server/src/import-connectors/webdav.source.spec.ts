@@ -395,6 +395,30 @@ describe('webdav requests', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('goes past a refused or failing folder below a root and keeps the rest', async () => {
+    for (const status of [403, 404, 503]) {
+      const { fetcher } = seam((url) =>
+        url === `${BASE}Trips/Rome%202024/` ? new Response('', { status }) : listing(...tree[url]),
+      );
+      const { items, cursor } = await collect(new WebDavSource(credentials, fetcher));
+      expect(items.map((item) => item.path)).toEqual(expect.arrayContaining(['top.jpg', 'Trips/a.jpg']));
+      expect(items.map((item) => item.path)).not.toContain('Trips/Rome 2024/b c.jpg');
+      expect(cursor).toBeDefined();
+    }
+  });
+
+  it('fails the scan when a chosen root itself is refused, without calling it a dead sign-in', async () => {
+    const { fetcher } = seam(() => new Response('', { status: 403 }));
+    const error = await collect(new WebDavSource(credentials, fetcher), ['Trips']).catch((error_: unknown) => error_);
+    expect(error).toBeInstanceOf(RemoteSourceError);
+    expect(error).not.toBeInstanceOf(RemoteSourceAuthError);
+  });
+
+  it('refuses a listing that is about another address instead of reading it as empty', async () => {
+    const { fetcher } = seam(() => listing(folder('/somewhere/else/'), file('/somewhere/else/a.jpg')));
+    await expect(new WebDavSource(credentials, fetcher).listFolders('')).rejects.toThrow('The folder listing could not be read');
+  });
+
   it('sends the sign-in to its own origin', async () => {
     const { calls, fetcher } = seam(() => listing(folder(BASE_PATH)));
     await new WebDavSource(credentials, fetcher).listFolders('');
@@ -496,14 +520,36 @@ describe('webdav downloads', () => {
     expect(calls[0].init.headers).toMatchObject({ range: 'bytes=4-', 'if-range': etag });
   });
 
-  it('does not send a weak ETag as If-Range', async () => {
-    const { calls, stream } = open(
-      () => new Response(bytes.slice(4), { status: 206, headers: { 'content-range': 'bytes 4-9/10', etag: 'W/"e1"' } }),
+  it.each([
+    ['a weak ETag', 'W/"e1"'],
+    ['no ETag', undefined],
+  ])('starts again rather than resume on %s', async (_name, hash) => {
+    const { calls, fetcher } = seam(() => new Response(bytes));
+    await expect(
+      new WebDavSource(credentials, fetcher).open('a.jpg', { start: 4, contentHash: hash }, signal),
+    ).rejects.toBeInstanceOf(TakeoutStagingError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a resume whose answer has no ETag, or a different total size', async () => {
+    const noTag = open(
+      () => new Response(bytes.slice(4), { status: 206, headers: { 'content-range': 'bytes 4-9/10' } }),
       4,
-      'W/"e1"',
     );
-    await expect(readText(await stream)).resolves.toBe('efghij');
-    expect(calls[0].init.headers['if-range']).toBeUndefined();
+    await expect(noTag.stream).rejects.toBeInstanceOf(TakeoutStagingError);
+    const { fetcher } = seam(
+      () => new Response(bytes.slice(4), { status: 206, headers: { 'content-range': 'bytes 4-9/99', etag } }),
+    );
+    await expect(
+      new WebDavSource(credentials, fetcher).open('a.jpg', { start: 4, contentHash: etag, size: 10 }, signal),
+    ).rejects.toBeInstanceOf(TakeoutStagingError);
+  });
+
+  it('reports a 403 on one file as that file, not as a dead sign-in', async () => {
+    const { stream } = open(() => new Response('', { status: 403 }), 0);
+    const error = await stream.catch((error_: unknown) => error_);
+    expect(error).toBeInstanceOf(RemoteSourceError);
+    expect(error).not.toBeInstanceOf(RemoteSourceAuthError);
   });
 
   it('drops the bytes it already has when the server ignores Range', async () => {
