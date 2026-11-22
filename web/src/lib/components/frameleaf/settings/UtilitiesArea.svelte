@@ -11,6 +11,7 @@
   import GeolocationUtility from '$lib/components/frameleaf/GeolocationUtility.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import ICloudReview from '$lib/components/frameleaf/ICloudReview.svelte';
   import ICloudSyncPanel from '$lib/components/frameleaf/ICloudSyncPanel.svelte';
   import LibraryCareHealth from '$lib/components/frameleaf/LibraryCareHealth.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -98,6 +99,18 @@
       active = false;
     };
   });
+
+  // The iCloud review is a page of the tool, so Back and a reload stay on it.
+  const reviewConnection = $derived.by(() => {
+    const id = page.url.searchParams.get('review');
+    return data?.tool === 'icloud' && data.initial.connections.some((connection) => connection.id === id) ? id : null;
+  });
+  const closeICloudReview = async () => {
+    const url = new URL(page.url.href);
+    url.searchParams.delete('review');
+    await goto(`${url.pathname}${url.search}`, { reset: false });
+    retry++; // the counts changed
+  };
 
   // FL-519: one cheap call says what each tool has waiting; the directory works without it.
   let summary = $state<UtilitiesSummaryResponseDto | null>(null);
@@ -261,6 +274,7 @@
       'workflowName',
       'from',
       'phone',
+      'review',
     ]) {
       url.searchParams.delete(key);
     }
@@ -366,6 +380,8 @@
         {/key}
       {:else if data.tool === 'downloads'}<MobileApps />
       {:else if data.tool === 'phones'}<Phones />
+      {:else if data.tool === 'icloud' && reviewConnection}
+        <ICloudReview connectionId={reviewConnection} onBack={closeICloudReview} />
       {:else if data.tool === 'icloud'}<ICloudSyncPanel initial={data.initial} />
       {:else if data.tool === 'missing-media' || data.tool === 'corrupt-media'}
         <LibraryCareHealth
