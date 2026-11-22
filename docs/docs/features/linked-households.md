@@ -218,19 +218,21 @@ A person entry is listed only while at least one of their faces is on a visible 
 
 Receiver tables:
 
-- `household_inbound_share` (`id`, `linkId`, `remoteShareId`, `userId` → `user`, `albumId` → `album` null, `spaceName`, `ownerName`, `state` text `invited|accepted|left`, `cursor`, `lastPulledAt`, `lastError`, `createdAt`), unique (`linkId`, `remoteShareId`, `userId`). One row per invited local account.
-- `household_origin` (`localId`, `kind` text `asset|album|person`, `linkId`, `remoteId`, `userId`, `followUntilEdited` bool, `overriddenFields` text[], `remoteUpdatedAt`), primary key (`localId`, `kind`), unique (`linkId`, `remoteId`, `kind`, `userId`).
-- `household_received_file` (`linkId`, `checksum`, `path`, `size`, `receivedAt`): originals this server already downloaded and verified from that link, so a second recipient does not download again.
+- `household_inbound_share` (`id`, `linkId`, `remoteShareId`, `userId` → `user`, `albumId` → `album` null, `spaceName`, `ownerName`, `state` text `invited|accepted|left`, `cursor`, `lastPulledAt`, `lastError`, `failures`, `nextPullAt`, `pullingUntil`, `leaveUnsent`, `partialPath`, `reconcileStartedAt`, `lastReconciledAt`, `createdAt`), unique (`linkId`, `remoteShareId`, `userId`). One row per invited local account.
+- `household_origin` (`linkId`, `remoteId`, `kind` text `asset|album|person`, `userId`, `localId`, `followUntilEdited` bool, `overriddenFields` text[], `isCopy` bool, `shareIds` uuid[], `pairedRemoteId`, `remoteUpdatedAt`, `lastSeenAt`), primary key (`linkId`, `remoteId`, `kind`, `userId`), indexed on (`localId`, `kind`). The key is the remote id because one local item can have come from two households, and a person group can be shared by two accounts. `isCopy` is false when the recipient already held the item or person: what they own is placed in the space and never written to.
+- `household_received_file` (`linkId`, `checksum`, `path`, `size`, `receivedAt`): originals this server already downloaded and verified from that link, so a second recipient does not download again. The stored file is hashed again before it is reused.
+- `household_person_pending` (`linkId`, `userId`, `remoteId`, `name`, `faces` jsonb): a person whose boxes wait for local face detection on the copies, at most 500 per account and link.
+- `household_link.pollRequestedAt`: set by `poke`, which runs on an API worker, and read by the receiving timer.
 
 Flow:
 
-1. `HouseholdSharePoll` (every 15 minutes per active link, and on `poke`) reads `GET shares`, inserts `invited` rows for local accounts that exist, are not deleted and are named as members, and raises the normal in-app space invitation. A named user id this server does not have is ignored.
-2. The account accepts: a local space (`album`, `kind = 'space'`) is created, owned by them, and the sender is told (`accept`). Declining tells the sender (`leave`).
-3. `HouseholdSharePull` (BackgroundTask queue, honours quiet hours, one per inbound share at a time) reads the manifest from the stored cursor and, per entry:
-   - **asset, new**: download the original to a temporary file unless `household_received_file` has that checksum for this link; verify size and SHA-1; refuse a file over the cap or with a type the uploader would refuse; then ingest through the normal upload path as an asset owned by the recipient, linked to the stored original by universal storage, and add it to the space. Thumbnails, metadata extraction and machine learning run locally as for any upload.
+1. The poll (`HouseholdReceiveService`, a timer on the microservices worker as Buddy Backup uses, no queue job: every 15 minutes per active link, on `poke`, and before any pull) reads `GET shares`, inserts `invited` rows for local accounts that exist, are active and are named as members, and raises an in-app notification (type `Custom`, `data.kind = 'household-share-invite'`) with Accept and Decline served by `GET /household-shares`, `POST /household-shares/:id/accept` and `POST /household-shares/:id/decline`. A named user id this server does not have is ignored. A member the sender no longer lists becomes `left` here, per person; if the list cannot be read, nothing is pulled for that link.
+2. The account accepts: the sender is told (`accept`), then a local space (`album`, `kind = 'space'`) is created, owned by them, described as coming from the household's local name. Declining tells the sender (`leave`), again at the next poll if it was unreachable.
+3. The pull (same timer, waits while quiet hours hold a queue, one per inbound share at a time by a lease on the row) reads the manifest from the stored cursor and, per entry:
+   - **asset, new**: download the original to a temporary file unless `household_received_file` has that checksum for this link; verify size and checksum (SHA-1 or SHA-256 by its length); refuse a file over the cap or with a type the uploader would refuse; then ingest through the normal upload path as an asset owned by the recipient, linked to the stored original by universal storage, and add it to the space. Thumbnails, metadata extraction and machine learning run locally as for any upload.
    - **asset, known and following**: apply each changed field that is not in `overriddenFields`.
    - **asset, `stop`**: set `followUntilEdited = false`. Nothing else.
-   - **person**: after local face detection has run on the copies, match the manifest's face boxes to local faces by overlap, then create the recipient's person or merge into their matching person by face similarity (`partner-people.service.ts` rules, with undo in correction history). Only names and boxes cross; embeddings never do.
+   - **person**: after local face detection has run on the copies, match the manifest's face boxes to local faces by overlap. A face recognition already placed is never moved. If recognition placed matched faces on one of the recipient's people, the sender's person is that person, its name is not touched, and a further face joins only if it is within the recipient's own recognition threshold of that person, recorded as a `reassign` in correction history, which undoes it. Otherwise a new person of the recipient's is created, and follows the sender's name until renamed. Only names and boxes cross; embeddings never do.
 4. The cursor is saved after each page. An interrupted download resumes with `Range` from the temporary file.
 5. When the recipient edits a followed field, the field name is added to `overriddenFields` (the hook partner copies use), and later sender changes to it are ignored.
 
@@ -239,7 +241,9 @@ Rules:
 - Each recipient is charged the full size against their quota, as with partner copies. Over quota: the pull pauses with a status the recipient sees; nothing is dropped.
 - A recipient who permanently deletes a received copy does not get it back: the origin row stays as a tombstone, as with partner copies.
 - An account deleted on the receiver leaves the share (`leave`) before its data is removed.
-- Unlinking, the sender removing the member, or the sender deleting the space: the inbound share becomes `left`, every origin row stops following, the local space and every copy stay.
+- Unlinking, the sender removing the member, the sender deleting the space, or the recipient deleting the local space: the inbound share becomes `left`, its origin rows stop following unless another accepted share of the same person still holds the item, the local space and every copy stay.
+- An item refused for good (over the cap, wrong type, checksum mismatch, no longer available) is reported in `lastError` and skipped; a weekly full read tries it again. An interruption keeps the cursor and the temporary file, one per share.
+- Stacks are not rebuilt on the receiver in version 1: stacked items arrive as separate items.
 - The same file reaching one recipient through two shares is one asset in their library (one copy per library, as partner sharing).
 
 ### 7. Comments and likes (FL-1012)

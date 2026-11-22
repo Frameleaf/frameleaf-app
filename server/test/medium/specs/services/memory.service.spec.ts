@@ -11,6 +11,7 @@ import { MemoryExportCreateDto } from 'src/dtos/memory.dto.js';
 import {
   AssetFileType,
   AssetLockReason,
+  AssetVisibility,
   JobStatus,
   MediaOperationDestination,
   MediaOperationKind,
@@ -82,6 +83,60 @@ const create = async (ctx: ReturnType<typeof setup>['ctx']) => {
 };
 
 describe(MemoryService.name, () => {
+  describe("Mother's Day and Father's Day (FL-880)", () => {
+    const recap = (ownerId: string, subjectId: string, occasion: string | null) => ({
+      ownerId,
+      type: MemoryType.PersonRecap,
+      occasion,
+      data: { kind: 'person_recap', year: 2026, subject: 'person', subjectId, name: 'Margaret', assetCount: 3 },
+    });
+
+    it("finds this year's occasion memory, and only for that occasion and person", async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const personId = factory.uuid();
+      await ctx.newMemory(recap(user.id, personId, 'mothers_day'));
+      const memories = ctx.get(MemoryRepository);
+
+      await expect(memories.hasOccasionMemory(user.id, 'mothers_day', personId, 2026)).resolves.toBe(true);
+      await expect(memories.hasOccasionMemory(user.id, 'mothers_day', personId, 2027)).resolves.toBe(false);
+      await expect(memories.hasOccasionMemory(user.id, 'fathers_day', personId, 2026)).resolves.toBe(false);
+      await expect(memories.hasOccasionMemory(user.id, 'mothers_day', factory.uuid(), 2026)).resolves.toBe(false);
+    });
+
+    it("does not let an occasion memory stand in for the person's yearly recap", async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const personId = factory.uuid();
+      await ctx.newMemory(recap(user.id, personId, 'mothers_day'));
+      const memories = ctx.get(MemoryRepository);
+
+      await expect(memories.hasSubjectMemory(user.id, MemoryType.PersonRecap, personId, 2026)).resolves.toBe(false);
+
+      await ctx.newMemory(recap(user.id, personId, null));
+      await expect(memories.hasSubjectMemory(user.id, MemoryType.PersonRecap, personId, 2026)).resolves.toBe(true);
+    });
+
+    it('leaves Locked items out when asked for the open timeline only', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { person } = await ctx.newPerson({ ownerId: user.id });
+      const { asset: open } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+      for (const { id } of [open, locked]) {
+        await ctx.newAssetFace({ assetId: id, personGroupId: person.personGroupId });
+        await ctx.newAssetFile({ assetId: id, type: AssetFileType.Preview, path: `/preview/${id}.jpg` });
+      }
+      const memories = ctx.get(MemoryRepository);
+
+      const all = await memories.getSubjectAssets(user.id, 'person', person.personGroupId);
+      const timeline = await memories.getSubjectAssets(user.id, 'person', person.personGroupId, undefined, true);
+
+      expect(all.map(({ id }) => id).toSorted()).toEqual([open.id, locked.id].toSorted());
+      expect(timeline.map(({ id }) => id)).toEqual([open.id]);
+    });
+  });
+
   describe('get', () => {
     it('should return the memory', async () => {
       const { sut, ctx } = setup();

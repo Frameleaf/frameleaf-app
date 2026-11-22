@@ -271,7 +271,11 @@ export class MemoryRepository implements IBulkAsset {
         qb.where((eb) =>
           eb.not(
             eb.and([
-              eb('memory.type', 'in', [MemoryType.OnThisDay, MemoryType.Birthday]),
+              // FL-880: a Mother's Day or Father's Day memory belongs to its date too
+              eb.or([
+                eb('memory.type', 'in', [MemoryType.OnThisDay, MemoryType.Birthday]),
+                eb('memory.occasion', 'is not', null),
+              ]),
               eb(sql`to_char("memory"."memoryAt" at time zone 'UTC', 'MM-DD')`, 'in', options.excludeDates!),
             ]),
           ),
@@ -904,6 +908,8 @@ export class MemoryRepository implements IBulkAsset {
       from: Date;
       to: Date;
     },
+    /** FL-880: only items on the open timeline, never Locked ones */
+    timelineOnly = false,
   ): Promise<
     {
       id: string;
@@ -915,6 +921,7 @@ export class MemoryRepository implements IBulkAsset {
       .select(['asset.id', 'asset.localDateTime'])
       .where('asset.ownerId', '=', ownerId)
       .where(isOnTimelineWhateverLock('asset'))
+      .$if(timelineOnly, (qb) => qb.where('asset.visibility', '=', AssetVisibility.Timeline))
       .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset.deletedAt', 'is', null)
       .where((eb) =>
@@ -1031,6 +1038,22 @@ export class MemoryRepository implements IBulkAsset {
       .where(sql`"memory"."data"->>'subjectId'`, '=', subjectId)
       .where(sql`("memory"."data"->>'year')::int`, '=', year)
       .where(sql`coalesce(("memory"."data"->>'deathAnniversary')::boolean, false)`, '=', deathAnniversary)
+      // FL-880: a Mother's Day memory is a recap too, and must not stand in for the person's yearly one
+      .where('memory.occasion', 'is', null)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
+  }
+  /** FL-880: whether this owner already has this occasion's memory of this person this year, deleted or not. */
+  async hasOccasionMemory(ownerId: string, occasion: string, subjectId: string, year: number): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('memory')
+      .select('memory.id')
+      .where('ownerId', '=', ownerId)
+      .where('type', '=', MemoryType.PersonRecap)
+      .where('memory.occasion', '=', occasion)
+      .where(sql`"memory"."data"->>'subjectId'`, '=', subjectId)
+      .where(sql`("memory"."data"->>'year')::int`, '=', year)
       .limit(1)
       .executeTakeFirst();
     return !!row;

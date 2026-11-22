@@ -164,6 +164,12 @@ import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { HouseholdLinkTable, HouseholdPeerRequestTable } from 'src/schema/tables/household-link.table.js';
 import {
+  HouseholdInboundShareTable,
+  HouseholdOriginTable,
+  HouseholdPersonPendingTable,
+  HouseholdReceivedFileTable,
+} from 'src/schema/tables/household-receive.table.js';
+import {
   HouseholdShareChangeTable,
   HouseholdShareMemberTable,
   HouseholdShareTable,
@@ -536,6 +542,10 @@ export class ImmichDatabase {
     HouseholdShareTable,
     HouseholdShareMemberTable,
     HouseholdShareChangeTable,
+    HouseholdInboundShareTable,
+    HouseholdOriginTable,
+    HouseholdReceivedFileTable,
+    HouseholdPersonPendingTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
     RenderWorkerTable,
@@ -871,8 +881,12 @@ export interface DB extends QueueDatabase {
   asset_scan_crop: AssetScanCropTable;
   asset_print_back: AssetPrintBackTable;
 
+  household_inbound_share: HouseholdInboundShareTable;
   household_link: HouseholdLinkTable;
+  household_origin: HouseholdOriginTable;
   household_peer_request: HouseholdPeerRequestTable;
+  household_person_pending: HouseholdPersonPendingTable;
+  household_received_file: HouseholdReceivedFileTable;
   household_share: HouseholdShareTable;
   household_share_change: HouseholdShareChangeTable;
   household_share_member: HouseholdShareMemberTable;

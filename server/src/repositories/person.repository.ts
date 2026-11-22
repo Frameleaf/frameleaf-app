@@ -2647,6 +2647,15 @@ export class PersonRepository {
     return Number(result.numDeletedRows ?? 0) > 0;
   }
 
+  /**
+   * FL-880: which of the owner's people is the owner. The one place that answers it.
+   * ponytail: no account-to-person link exists yet, so nobody has a self-person; FL-856 adds `person.linkedUserId`
+   * and fills this in, which is all Mother's Day and Father's Day memories need to start appearing.
+   */
+  getSelfPersonId(_ownerId: string): Promise<string | undefined> {
+    return Promise.resolve(undefined);
+  }
+
   /** FL-842: the owner's own people among these ids, for listing relatives. */
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
   getOwnPeople(ownerId: string, personGroupIds: string[]) {

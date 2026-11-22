@@ -4,6 +4,7 @@ import { HistoryBuilder } from 'src/decorators.js';
 import { AssetOrderSchema, DownloadFormatSchema, UserAvatarColorSchema } from 'src/enum.js';
 import { DUPLICATE_KEEP_RULES } from 'src/utils/duplicate-keep-rules.js';
 import { NotificationLocalePreferencesSchema } from 'src/utils/notification-locale.js';
+import { OCCASION_REGION_SETTINGS } from 'src/utils/occasions.js';
 import {
   type FrameleafUserPreferences,
   getPreferencesRevision,
@@ -40,6 +41,11 @@ const MemoriesUpdateSchema = z
     enabled: z.boolean().optional().describe('Whether memories are enabled'),
     duration: z.int().min(1).optional().describe('Memory duration in seconds'),
     sidebarWeb: z.boolean().optional().describe('Whether memories appear in web sidebar'),
+    occasions: z.boolean().optional().describe("Whether to make Mother's Day and Father's Day memories"),
+    occasionRegion: z
+      .enum(OCCASION_REGION_SETTINGS)
+      .optional()
+      .describe("Whose Mother's Day and Father's Day dates to use; auto follows the account's language and country"),
   })
   .optional()
   .meta({ id: 'MemoriesUpdate' });
@@ -451,6 +457,11 @@ const MemoriesResponseSchema = z
     enabled: z.boolean().describe('Whether memories are enabled'),
     duration: z.int().describe('Memory duration in seconds'),
     sidebarWeb: z.boolean().describe('Whether memories appear in web sidebar'),
+    occasions: z.boolean().describe("Whether to make Mother's Day and Father's Day memories"),
+    // a plain string in the response: a new region must not break a strict decoder
+    occasionRegion: z
+      .string()
+      .describe("Whose Mother's Day and Father's Day dates to use; auto follows the account's language and country"),
   })
   .meta({ id: 'MemoriesResponse' });
 

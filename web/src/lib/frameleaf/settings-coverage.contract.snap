@@ -1368,6 +1368,23 @@
   "preferences.memories.enabled": {
     "type": "boolean"
   },
+  "preferences.memories.occasionRegion": {
+    "type": "string",
+    "enum": [
+      "auto",
+      "us-ca",
+      "uk-ie",
+      "au-nz",
+      "de",
+      "fr",
+      "es-pt",
+      "mx",
+      "se"
+    ]
+  },
+  "preferences.memories.occasions": {
+    "type": "boolean"
+  },
   "preferences.memories.sidebarWeb": {
     "type": "boolean"
   },
