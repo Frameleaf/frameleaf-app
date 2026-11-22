@@ -794,6 +794,10 @@ export type JobItem =
   | { name: JobName.DateDoctorScanQueueAll; data?: IBaseJob }
   // FL-925: `id` is the location history source
   | { name: JobName.LocationHistoryImport; data: IEntityJob }
+  // FL-964: `id` is the location fill run
+  | { name: JobName.LocationFillPropose; data: IEntityJob }
+  | { name: JobName.LocationFillApply; data: IEntityJob }
+  | { name: JobName.LocationFillUndo; data: IEntityJob }
   | { name: JobName.AlbumCleanupApply; data: { id: string } }
   | { name: JobName.MemoryExport; data: IEntityJob }
 

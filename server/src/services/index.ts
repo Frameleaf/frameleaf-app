@@ -61,6 +61,7 @@ import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
 import { LocationHistoryService } from 'src/services/location-history.service.js';
+import { LocationFillService } from 'src/services/location-fill.service.js';
 import { DescriptionTagCleanupService } from 'src/services/description-tag-cleanup.service.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
@@ -436,6 +437,7 @@ export const services = [
   AlbumCleanupService,
   DateDoctorService,
   LocationHistoryService,
+  LocationFillService,
   AssetLedgerService,
   FoundFilesService,
   AlbumMergeService,

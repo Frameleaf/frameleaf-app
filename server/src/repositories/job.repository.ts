@@ -117,6 +117,10 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.DateDoctorScanQueueAll,
   // FL-925: an import clears its file's places and reads the file again from its start
   JobName.LocationHistoryImport,
+  // FL-964: a run's proposals are made afresh, and apply and undo take up only the photos still to do
+  JobName.LocationFillPropose,
+  JobName.LocationFillApply,
+  JobName.LocationFillUndo,
   JobName.DuplicateResolutionLifecycle,
   JobName.DatabaseBackup,
   JobName.AssetGenerateThumbnails,

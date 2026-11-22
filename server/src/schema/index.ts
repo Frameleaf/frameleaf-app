@@ -142,6 +142,7 @@ import {
   ConnectRenditionTicketTable,
 } from 'src/schema/tables/connect-media.table.js';
 import { DateFixBatchTable, DateFixItemTable } from 'src/schema/tables/date-fix.table.js';
+import { LocationFillProposalTable, LocationFillRunTable } from 'src/schema/tables/location-fill.table.js';
 import { LocationHistorySourceTable, LocationPointTable } from 'src/schema/tables/location-history.table.js';
 import { DesktopClipIndexTable, DesktopClipProducerTable } from 'src/schema/tables/desktop-clip-index.table.js';
 import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
@@ -445,6 +446,8 @@ export class ImmichDatabase {
     DateFixItemTable,
     LocationHistorySourceTable,
     LocationPointTable,
+    LocationFillRunTable,
+    LocationFillProposalTable,
     AssetLedgerTable,
     FoundFileTable,
     BookmarkTagTable,
@@ -821,6 +824,8 @@ export interface DB extends QueueDatabase {
   date_fix_item: DateFixItemTable;
   location_history_source: LocationHistorySourceTable;
   location_point: LocationPointTable;
+  location_fill_run: LocationFillRunTable;
+  location_fill_proposal: LocationFillProposalTable;
   asset_ledger: AssetLedgerTable;
   found_file: FoundFileTable;
   import_connection: ImportConnectionTable;

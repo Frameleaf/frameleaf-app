@@ -51,6 +51,7 @@ import { ConnectController } from 'src/controllers/connect.controller.js';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
 import { DateDoctorController } from 'src/controllers/date-doctor.controller.js';
 import { LocationHistoryController } from 'src/controllers/location-history.controller.js';
+import { LocationFillController } from 'src/controllers/location-fill.controller.js';
 import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { DesktopOfflineAlbumController } from 'src/controllers/desktop-offline-album.controller.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
@@ -337,6 +338,7 @@ export const controllers = [
   AlbumCleanupController,
   DateDoctorController,
   LocationHistoryController,
+  LocationFillController,
   AssetLedgerController,
   AssetLedgerAdminController,
   AlbumMergeController,
