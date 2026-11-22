@@ -12,6 +12,7 @@ import {
   UpdateDateColumn,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { DateAccuracy } from 'src/utils/date.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, LibraryScope } from 'src/enum.js';
 import {
@@ -31,7 +32,6 @@ import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { StackTable } from 'src/schema/tables/stack.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
-import type { DateAccuracy } from 'src/utils/date.js';
 
 @Table('asset')
 @Check({

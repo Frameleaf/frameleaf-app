@@ -92,7 +92,9 @@ export const getPeriodStartYear = (year: number, accuracy: DateAccuracy) =>
 
 /** A year or decade can be chosen from 1800 up to the one that has begun. */
 export const isApproximateYear = (year: number, accuracy: DateAccuracy, now = new Date()) =>
-  Number.isInteger(year) && year >= MIN_APPROXIMATE_YEAR && getPeriodStartYear(year, accuracy) <= now.getUTCFullYear();
+  Number.isSafeInteger(year) &&
+  year >= MIN_APPROXIMATE_YEAR &&
+  getPeriodStartYear(year, accuracy) <= now.getUTCFullYear();
 
 /**
  * FL-936: the capture date a year or a decade is stored as: its first day at midnight, in UTC, so the local date
