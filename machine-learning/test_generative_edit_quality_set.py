@@ -47,6 +47,11 @@ def test_quality_set_is_complete() -> None:
             extend = edit["extend"]
             assert extend and set(extend) <= {"aspect", *SIDES}, edit["id"]
             assert ("aspect" in extend) != any(side in extend for side in SIDES), edit["id"]
+            if "aspect" in extend:
+                assert all(int(part) > 0 for part in extend["aspect"].split(":")), edit["id"]
+                assert extend["aspect"].count(":") == 1, edit["id"]
+            else:
+                assert all(0 < fraction <= 1 for fraction in extend.values()), edit["id"]
         else:
             assert "extend" not in edit, edit["id"]
         if edit["mode"] == "transfer":

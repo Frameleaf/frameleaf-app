@@ -62,7 +62,7 @@ Published figures at 1 megapixel (1024 × 1024). "Resident" means the whole mode
 | -------------------- | ------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------- |
 | Qwen-Image-2.1       | 33 GB at 16-bit, 17 GB at 8-bit | 34 GB resident at 16-bit; 28 GB with an 8-bit encoder | 7.1 s on an RTX 5090 (8-bit model, encoder offloaded, 40 steps) |
 | FLUX 3 Image Klein   | 20 GB at 16-bit, 11 GB at 8-bit | "As little as 8 GB" at 8-bit (maker's claim)          | 4.1 s on an RTX 5090, 8.9 s on an RTX 4070 (8-bit, 16 steps)    |
-| FLUX.2 [klein] 4B    | Not recorded                    | 13 GB (maker), 8.4 GB (third party, offloaded)        | About 1.2 s on an RTX 5090 (4 steps)                            |
+| FLUX.2 [klein] 4B    | Not recorded                    | 13 GB (maker), 8.4 GB (ComfyUI, offloaded)            | About 1.2 s on an RTX 5090 (4 steps)                            |
 | Qwen-Image-Edit-2509 | 41 GB at 16-bit, 20 GB at 8-bit | More than 24 GB without offload                       | No figure on the same card; the model is three times the size   |
 | FLUX.1 Kontext [dev] | 24 GB at 16-bit, 12 GB at 8-bit | 16 GB minimum (8-bit)                                 | About 10 s on an RTX 5090 (8-bit, 28 steps)                     |
 
@@ -120,12 +120,25 @@ For FL-840. Rates are the current `gpu48pro` rates; seconds are estimates scaled
 | 1 megapixel, Turbo (8 steps)  | 3                  | $0.0015  | $0.006                       |
 | 4 megapixels, Turbo (8 steps) | 12                 | $0.0058  | $0.023                       |
 
-- Customer rate: $0.00195052 per second. Our rate: $0.00048611 per second.
-- A job also pays one start fee per worker start, however many edits it holds. The nearest existing size class on a 48 GB card charges $0.20. Loading the model is covered by the start fee and is not metered.
-- The settled charge is never less than one start fee, so a single 1 megapixel edit costs the customer about $0.23 and ten in one job about $0.45.
+- Customer rate: $0.00195052 per second, the Frameleaf Cloud tariff for `gpu48pro` (asserted in `apps/api/test/unit/ml-model-ladder.test.ts` in the Cloud repository). Provider rate: $0.00048611 per second.
+- A job also pays one start fee per worker start, however many edits it holds. The nearest existing size class on a 48 GB card (`vlm-7b`) charges $0.37 on the same tariff. Loading the model is covered by the start fee and is not metered.
+- The settled charge is never less than one start fee, so a single 1 megapixel edit costs the customer about $0.40 and ten in one job about $0.62.
+- **The app's own catalogue disagrees with the tariff.** `web/src/lib/frameleaf/gpu-model-catalog.ts` gives `gpu48pro` as $0.00130035 per second and `vlm-7b` as $0.20, which would make the GPU charges in the table a third lower ($0.017 and $0.078 at 40 steps). Cloud is what bills, so this page uses the tariff. FL-840 should settle which is right and bring the other into line.
 - Turbo is a separate 8-step checkpoint of the same model. It is five times cheaper; whether it passes the quality set is for the owner's scoring to decide.
 
 Cloud has no workload for this yet. FL-871 adds one (`generative-edit`) to the workload list, the model manifest schema, the estimate maths and the worker runtime.
+
+## Sources
+
+Read in November 2026. Links were not kept; each figure can be found on the page named.
+
+- Model size, steps, licence, file sizes and maker's VRAM and speed figures: each model's own card and release notes (Qwen-Image-2.1 and Qwen-Image-Edit from Qwen; FLUX 3 Image Klein, FLUX.2 [klein] and FLUX.1 Kontext [dev] from Black Forest Labs; Fibo 2.0 from Bria; H3-Image from MiniMax).
+- Edit rank: the Artificial Analysis image editing leaderboard, open-weights filter. Second leaderboard: arena.ai image edit, 16 November 2026.
+- RTX 5090 timing for Qwen-Image-2.1 (7.1 s): the LightX2V benchmark notes for that model.
+- FLUX.2 [klein] 4B at 8.4 GB: ComfyUI's model notes.
+- FLUX.1 Kontext [dev] per-step time and 16 GB minimum: NVIDIA's notes for its packaged version of the model.
+- Mac figures other than our own run: the mflux project's notes for each model.
+- Cloud rates and fees: the Frameleaf Cloud tariff, as above.
 
 ## What the next issues take from this
 
