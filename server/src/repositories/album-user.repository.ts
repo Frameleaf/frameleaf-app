@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, SharedSpaceEventType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumUserTable } from 'src/schema/tables/album-user.table.js';
 import { SharedSpaceAlbumTable } from 'src/schema/tables/shared-space-album.table.js';
@@ -10,8 +10,14 @@ import { SharedSpaceCommentThreadTable } from 'src/schema/tables/shared-space-co
 import { SharedSpaceEventTable } from 'src/schema/tables/shared-space-event.table.js';
 import { SharedSpaceInviteTable } from 'src/schema/tables/shared-space-invite.table.js';
 import { SharedSpacePersonTable } from 'src/schema/tables/shared-space-person.table.js';
-import { withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import {
+  asUuid,
+  hiddenContentOrOthersRules,
+  withDefaultVisibility,
+  withHiddenContentFilter,
+} from 'src/utils/database.js';
 import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
+import { isDefaultVisible } from 'src/utils/locked.js';
 
 export type AlbumPermissionId = {
   albumId: string;
@@ -723,6 +729,64 @@ export class AlbumUserRepository {
       .limit(args.take)
       .execute();
     return rows.map(({ id }) => id);
+  }
+  /**
+   * FL-1748: across every space this person belongs to, what `spaceNewAssetsQuery` counts plus the
+   * comments and replies the feed would call new, in one statement. `album_user` holds accepted
+   * members only (an invitation lives in `shared_space_invite`). A comment's time is its feed event's,
+   * as the feed reads it: a comment pulled from another household is new when it arrives here. A null
+   * `actorId` is a remote author or a deleted account, and is somebody else.
+   */
+  async getUnseenCount(viewerId: string, options: HiddenContentQueryOptions): Promise<number> {
+    const assets = this.db
+      .selectFrom('asset')
+      .$call(withDefaultVisibility)
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+      .innerJoin('album_user', (join) =>
+        join.onRef('album_user.albumId', '=', 'album_asset.albumId').on('album_user.userId', '=', viewerId),
+      )
+      .innerJoin('album', 'album.id', 'album_asset.albumId')
+      .leftJoin('shared_space_visit as visit', (join) =>
+        join.onRef('visit.albumId', '=', 'album_asset.albumId').on('visit.userId', '=', viewerId),
+      )
+      .where('album.kind', '=', AlbumKind.Space)
+      .where('album.deletedAt', 'is', null)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.ownerId', '!=', viewerId)
+      .where(sql<boolean>`(visit."lastSeenAt" is null or album_asset."createdAt" > visit."lastSeenAt")`)
+      .select(sql<number>`count(*)`.as('count'));
+
+    const hidden = hiddenContentOrOthersRules(options, 'asset');
+    const comments = this.db
+      .selectFrom('shared_space_event as event')
+      .innerJoin('activity', 'activity.id', 'event.activityId')
+      .innerJoin('album_user', (join) =>
+        join.onRef('album_user.albumId', '=', 'event.albumId').on('album_user.userId', '=', viewerId),
+      )
+      .innerJoin('album', 'album.id', 'event.albumId')
+      .leftJoin('shared_space_visit as visit', (join) =>
+        join.onRef('visit.albumId', '=', 'event.albumId').on('visit.userId', '=', viewerId),
+      )
+      .leftJoin('asset', 'asset.id', 'activity.assetId')
+      .where('album.kind', '=', AlbumKind.Space)
+      .where('album.deletedAt', 'is', null)
+      .where('event.type', 'in', [SharedSpaceEventType.Comment, SharedSpaceEventType.Reply])
+      .where(sql<boolean>`event."actorId" is distinct from ${asUuid(viewerId)}`)
+      .where(sql<boolean>`(visit."lastSeenAt" is null or event."createdAt" > visit."lastSeenAt")`)
+      .where(
+        sql<boolean>`(activity."assetId" is null or (
+          asset."deletedAt" is null
+          and ${isDefaultVisible('asset')}
+          ${hidden ? sql`and not ${hidden}` : sql``}
+        ))`,
+      )
+      .select(sql<number>`count(*)`.as('count'));
+
+    const { rows } = await sql<{ count: number }>`select (${assets})::int + (${comments})::int as count`.execute(
+      this.db,
+    );
+    return rows[0]?.count ?? 0;
   }
   /* ------------------------------------------------------------------ */
   /* Activity feed and mentions (FL-55)                                  */

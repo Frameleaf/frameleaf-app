@@ -39,7 +39,13 @@ import {
   UserPreferencesUpdateDto,
 } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
-import { UserAdminResponseDto, UserMeResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos/user.dto.js';
+import {
+  UnseenCountResponseDto,
+  UserAdminResponseDto,
+  UserMeResponseDto,
+  UserResponseDto,
+  UserUpdateMeDto,
+} from 'src/dtos/user.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
@@ -111,6 +117,18 @@ export class UserController {
   })
   getMyUser(@Auth() auth: AuthDto): Promise<UserMeResponseDto> {
     return this.service.getMe(auth);
+  }
+
+  @Get('me/unseen-count')
+  @Authenticated({ permission: Permission.UserRead })
+  @Endpoint({
+    summary: 'Get my unseen count',
+    description:
+      'How many photos, videos and comments other people added to the shared spaces you belong to since you last marked each one visited (`POST /shared-spaces/{id}/visit`). Your own additions, pending invitations, and Locked, rule-hidden or trashed items are never counted.',
+    history: new HistoryBuilder().added('v3.2.0'),
+  })
+  getMyUnseenCount(@Auth() auth: AuthDto): Promise<UnseenCountResponseDto> {
+    return this.service.getUnseenCount(auth);
   }
 
   @Get('me/calendar-heatmap')

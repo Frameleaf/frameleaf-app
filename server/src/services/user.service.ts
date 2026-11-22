@@ -29,6 +29,7 @@ import {
 } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import {
+  UnseenCountResponseDto,
   UserAdminResponseDto,
   UserMeResponseDto,
   UserResponseDto,
@@ -55,6 +56,7 @@ import { CONFIG_HISTORY_LIMITS, describeObjectChanges } from 'src/utils/config-h
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { emptyHiddenContentFilter, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedAsset } from 'src/utils/locked-state.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -121,6 +123,19 @@ export class UserService extends BaseService {
     }
 
     return users.map((user) => mapUser(user));
+  }
+
+  /**
+   * FL-1748: what is new for this account across its shared spaces, for a badge in a phone's account
+   * switcher. Always answered as a locked session (`suppressedContent` is set whether or not this one
+   * is unlocked), so unlocking, or opening a Locked item, never moves the number.
+   */
+  async getUnseenCount(auth: AuthDto): Promise<UnseenCountResponseDto> {
+    const count = await this.albumUserRepository.getUnseenCount(auth.user.id, {
+      hiddenContent: { ...(auth.suppressedContent ?? emptyHiddenContentFilter(auth.user.id)), includeNsfw: true },
+      ...getOthersRulesQueryOptions(auth),
+    });
+    return { count };
   }
 
   async getMe(auth: AuthDto): Promise<UserMeResponseDto> {
