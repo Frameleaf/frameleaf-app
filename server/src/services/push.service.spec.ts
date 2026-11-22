@@ -1354,6 +1354,7 @@ describe(PushService.name, () => {
           if (jobs.queue.mock.calls.length === 0) {
             break;
           }
+          expect(jobs.queue).toHaveBeenCalledTimes(1);
           const next = jobs.queue.mock.calls[0][0].data as { notice: PushNotice };
           attempts.push(next.notice.retry!.attempt);
           // the first retry waits for Retry-After (2 min) rather than the 30 s backoff
@@ -1452,12 +1453,37 @@ describe(PushService.name, () => {
         plan: { kind: 'plan', claims: { exp: Math.floor(Date.now() / 1000) + 86_400, lic_exp: null, ent: ['CLOUD'] } },
       });
 
-      it('leaves Cloud push alone when off, with or without a plan', async () => {
-        const { sut, devices, gateway } = newHarness();
+      it.each([false, true])('leaves Cloud push alone when off, never reading the licence (plan: %s)', async (plan) => {
+        const { sut, devices, gateway, metadata } = newHarness();
+        if (plan) {
+          metadata.set(SystemMetadataKey.FrameleafLicense, cloudPlan());
+        }
+        const read = vi.spyOn(metadata, 'get');
         devices.getDeliveryTargets.mockResolvedValue([device(newDeviceKey())]);
         await expect(sut.getStatus(factory.auth({ session: {} }))).resolves.toMatchObject({ available: true });
         await sut.handleDeliver({ notice: notice() });
         expect(gateway.send).toHaveBeenCalledTimes(1);
+        expect(read).not.toHaveBeenCalledWith(SystemMetadataKey.FrameleafLicense);
+      });
+
+      it('asks only for devices it can reach when waking stale backups', async () => {
+        const { sut, devices } = newHarness({ linked: false });
+        devices.hasUnifiedPushDevices.mockResolvedValue(true);
+        await sut.handleBackupStaleCheck();
+        expect(devices.getStaleBackupWakeTargets).toHaveBeenCalledWith(expect.any(Date), expect.any(Date), {
+          cloud: false,
+          unifiedPush: true,
+        });
+      });
+
+      it('refuses an endpoint clear when the conditional write finds no token left', async () => {
+        const { sut, devices } = newHarness();
+        const stored = device(newDeviceKey());
+        devices.getBySession.mockResolvedValue(stored);
+        devices.update.mockResolvedValue(undefined);
+        await expect(
+          sut.update(factory.auth({ session: { id: stored.sessionId } }), { unifiedPushEndpoint: null }),
+        ).rejects.toThrow(BadRequestException);
       });
 
       it('holds Cloud push without a plan when on, and never UnifiedPush', async () => {

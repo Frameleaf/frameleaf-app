@@ -199,6 +199,14 @@ describe('push device registry (FL-228)', () => {
       unifiedPushPublicKey: null,
       unifiedPushAuth: null,
     });
+
+    // a refused FCM token leaves the UnifiedPush route, and clearing that route never strands the device
+    const { session: fifth } = await ctx.newSession({ userId: user.id });
+    const dual = await sut.upsert(registration(user.id, fifth.id, { ...unifiedPush, pushToken: 'fcm-dual' }));
+    await sut.deleteByIds([{ id: dual.id, token: 'fcm-dual', platform: 'fcm' }]);
+    expect(await sut.getById(dual.id)).toMatchObject({ pushToken: null, unifiedPushEndpoint: endpoint });
+    await expect(sut.update(fifth.id, { unifiedPushEndpoint: null })).resolves.toBeUndefined();
+    expect(await sut.getById(dual.id)).toMatchObject({ unifiedPushEndpoint: endpoint });
   });
 
   it('removes the registration and its Live Activity tokens when the session is deleted (logout, revoke)', async () => {

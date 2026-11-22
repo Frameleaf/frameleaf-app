@@ -374,7 +374,7 @@ export const readAutomationAnswer = async (response: { body: AsyncIterable<Uint8
 export const sendWebhook = async (
   address: string,
   { method = 'POST', headers, body = '' }: { method?: string; headers: Headers; body?: string | Uint8Array },
-  { allowHomeNetwork }: { allowHomeNetwork: boolean },
+  { allowHomeNetwork, discardBody = false }: { allowHomeNetwork: boolean; discardBody?: boolean },
 ): Promise<WebhookResponse> => {
   const url = checkWebhookUrl(address, allowHomeNetwork);
   if (!['POST', 'PUT'].includes(method.toUpperCase())) {
@@ -397,6 +397,11 @@ export const sendWebhook = async (
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel();
     return { ok: false, status: response.status, body: '', headers: response.headers as unknown as Headers };
+  }
+  if (discardBody) {
+    // the status is the answer (UnifiedPush): a body that fails to arrive must not turn it into a failure
+    await response.body?.cancel().catch(() => {});
+    return { ok: response.ok, status: response.status, body: '', headers: response.headers as unknown as Headers };
   }
   const chunks: Buffer[] = [];
   if (response.body) {

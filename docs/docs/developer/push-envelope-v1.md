@@ -159,7 +159,7 @@ An Android device can register a UnifiedPush endpoint instead of, or as well as,
 
 - **Body.** The same data as the FCM message above, `{"e":"<envelope>","t":"alert"}` (or `"background"`), encrypted as a Web Push message (RFC 8291) in the `aes128gcm` content coding (RFC 8188): one record, record size 4096, no padding, a fresh salt and sender P-256 key for every message. The distributor sees only that opaque body.
 - **Headers.** `Content-Encoding: aes128gcm`, `TTL` (seconds), `Urgency` (`high` for alerts, `normal` for background pushes) and `Topic` (the collapse id, or its SHA-256 hex shortened to 32 characters). No VAPID header is sent.
-- **Gone.** A 404 or 410 from the endpoint unregisters the device; register again with a new endpoint. A 429 is retried after its `Retry-After`, for a bounded number of attempts.
+- **Gone.** A 404 or 410 from the endpoint forgets it. A device with an FCM token stays registered and falls back to Frameleaf Cloud; a device without one is removed and must register again with a new endpoint. A 429 is retried after its `Retry-After`, for a bounded number of attempts.
 - **Test vector.** The encryption is checked byte for byte against RFC 8291 section 5 (`server/src/utils/web-push.spec.ts`).
 
 ### Live Activity content state

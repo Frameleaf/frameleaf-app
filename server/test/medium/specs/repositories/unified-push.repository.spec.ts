@@ -1,4 +1,5 @@
 import { createECDH, generateKeyPairSync, randomBytes } from 'node:crypto';
+import { networkInterfaces } from 'node:os';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
 import { UnifiedPushRepository } from 'src/repositories/unified-push.repository.js';
 import { type UnifiedPushPlaintext, unifiedPushPlaintextOf } from 'src/utils/frameleaf-push.js';
@@ -48,7 +49,16 @@ beforeAll(async () => {
     .withExposedPorts(80)
     .withWaitStrategy(Wait.forHttp('/v1/health', 80))
     .start();
-  base = `http://${ntfy.getIpAddress(ntfy.getNetworkNames()[0])}:80`;
+  // Docker Desktop does not route to the bridge: use the published port on this machine's private address
+  const lan = Object.values(networkInterfaces())
+    .flat()
+    .find(
+      (nic) => nic?.family === 'IPv4' && !nic.internal && /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(nic.address),
+    );
+  base =
+    process.platform !== 'linux' && lan
+      ? `http://${lan.address}:${ntfy.getMappedPort(80)}`
+      : `http://${ntfy.getIpAddress(ntfy.getNetworkNames()[0])}:80`;
 }, 180_000);
 
 afterAll(async () => {

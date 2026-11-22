@@ -128,6 +128,15 @@ describe('sendWebhook', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it('keeps the status when the caller discards a body that fails to arrive', async () => {
+    const cancel = vi.fn().mockRejectedValue(new Error('connection reset'));
+    fetchMock.mockResolvedValue({ ok: true, status: 201, headers: new Headers(), body: { cancel } });
+    await expect(
+      sendWebhook('https://example.com/hook', message, { allowHomeNetwork: false, discardBody: true }),
+    ).resolves.toMatchObject({ ok: true, status: 201, body: '' });
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses methods other than POST and PUT, and oversized messages', async () => {
     await expect(
       sendWebhook('https://example.com/hook', { ...message, method: 'GET' }, { allowHomeNetwork: false }),

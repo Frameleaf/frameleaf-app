@@ -109,7 +109,7 @@ export class UnifiedPushRepository {
       response = await sendWebhook(
         subscription.endpoint,
         { method: 'POST', headers, body },
-        { allowHomeNetwork: allowLocalTargets },
+        { allowHomeNetwork: allowLocalTargets, discardBody: true },
       );
     } catch (error) {
       if (error instanceof PublicFetchError) {

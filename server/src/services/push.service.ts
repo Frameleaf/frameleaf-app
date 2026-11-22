@@ -299,7 +299,11 @@ export class PushService {
     const touchesUnifiedPush = [dto.unifiedPushEndpoint, dto.unifiedPushPublicKey, dto.unifiedPushAuth].some(
       (value) => value !== undefined,
     );
-    let unifiedPushChanges = {};
+    let unifiedPushChanges: {
+      unifiedPushEndpoint?: string | null;
+      unifiedPushPublicKey?: string | null;
+      unifiedPushAuth?: string | null;
+    } = {};
     if (touchesUnifiedPush) {
       const unifiedPush = dto.unifiedPushEndpoint === null ? null : await this.parseUnifiedPush(dto, current.platform);
       if (!unifiedPush && !(dto.pushToken ?? current.pushToken)) {
@@ -324,11 +328,22 @@ export class PushService {
       }),
       ...unifiedPushChanges,
     };
+    // read before the write, so a failed lookup leaves nothing half saved
+    const unifiedPushState = await this.unifiedPushStateOf({
+      unifiedPushEndpoint:
+        unifiedPushChanges.unifiedPushEndpoint === undefined
+          ? current.unifiedPushEndpoint
+          : unifiedPushChanges.unifiedPushEndpoint,
+    });
     const device = await this.devices.update(sessionId, changes);
     if (!device) {
+      // the conditional write kept the endpoint: the token it relied on has gone since it was read
+      if (unifiedPushChanges.unifiedPushEndpoint === null && (await this.devices.getBySession(sessionId))) {
+        throw new BadRequestException('Without a UnifiedPush endpoint this device needs a push token');
+      }
       throw new NotFoundException('This device is not registered for push notifications');
     }
-    return mapDevice({ ...device, activities: current.activities }, sessionId, await this.unifiedPushStateOf(device));
+    return mapDevice({ ...device, activities: current.activities }, sessionId, unifiedPushState);
   }
 
   async unregisterCurrent(auth: AuthDto): Promise<void> {
@@ -805,9 +820,14 @@ export class PushService {
       return JobStatus.Skipped;
     }
     const now = Date.now();
+    const routes = {
+      cloud: await this.isLinked(),
+      unifiedPush: (await this.devices.hasUnifiedPushDevices()) && (await this.unifiedPushAccess()).available,
+    };
     const targets = await this.devices.getStaleBackupWakeTargets(
       new Date(now - PUSH_BACKUP_STALE_AFTER_MS),
       new Date(now - PUSH_BACKUP_WAKE_INTERVAL_MS),
+      routes,
     );
     for (const target of targets) {
       const days = Math.max(1, Math.floor((now - new Date(target.lastSuccessfulBackupAt).getTime()) / 86_400_000));

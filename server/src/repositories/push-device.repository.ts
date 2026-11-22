@@ -157,12 +157,18 @@ export class PushDeviceRepository {
             .execute();
         }
       }
-      return tx
-        .updateTable('push_device')
-        .set({ ...changes, updatedAt: sql`now()` })
-        .where('sessionId', '=', sessionId)
-        .returningAll()
-        .executeTakeFirst();
+      return (
+        tx
+          .updateTable('push_device')
+          .set({ ...changes, updatedAt: sql`now()` })
+          .where('sessionId', '=', sessionId)
+          // FL-926: clearing the endpoint never leaves a device without a route, whatever was read earlier
+          .$if(changes.unifiedPushEndpoint === null && typeof changes.pushToken !== 'string', (qb) =>
+            qb.where('pushToken', 'is not', null),
+          )
+          .returningAll()
+          .executeTakeFirst()
+      );
     });
   }
   /** FL-926: one registration by id, for the test push (its owner or an administrator). */
@@ -199,6 +205,7 @@ export class PushDeviceRepository {
       await tx
         .updateTable('push_device')
         .set({ unifiedPushEndpoint: null, unifiedPushPublicKey: null, unifiedPushAuth: null })
+        .where('pushToken', 'is not', null)
         .where((eb) =>
           eb.or(refs.map(({ id, endpoint }) => eb.and([eb('id', '=', id), eb('unifiedPushEndpoint', '=', endpoint)]))),
         )
@@ -249,14 +256,18 @@ export class PushDeviceRepository {
       .execute((tx) => tx.deleteFrom('push_device').where('userId', '=', userId).executeTakeFirst());
     return Number(result.numDeletedRows);
   }
-  /** A late gateway refusal must not remove a replacement token or a changed delivery platform. */
+  /**
+   * A late gateway refusal must not remove a replacement token or a changed delivery platform.
+   * FL-926: a device with a UnifiedPush endpoint loses only the refused token and keeps that route.
+   */
   async deleteByIds(tokens: PushTokenRef[]): Promise<void> {
     if (tokens.length === 0) {
       return;
     }
-    await this.db.transaction().execute((tx) =>
-      tx
+    await this.db.transaction().execute(async (tx) => {
+      await tx
         .deleteFrom('push_device')
+        .where('unifiedPushEndpoint', 'is', null)
         .where((eb) =>
           eb.or(
             tokens.map(({ id, token, platform }) =>
@@ -264,8 +275,20 @@ export class PushDeviceRepository {
             ),
           ),
         )
-        .execute(),
-    );
+        .execute();
+      await tx
+        .updateTable('push_device')
+        .set({ pushToken: null })
+        .where('unifiedPushEndpoint', 'is not', null)
+        .where((eb) =>
+          eb.or(
+            tokens.map(({ id, token, platform }) =>
+              eb.and([eb('id', '=', id), eb('pushToken', '=', token), matchesPushPlatform(platform)]),
+            ),
+          ),
+        )
+        .execute();
+    });
   }
   /** Forget a push-to-start token the gateway reported gone, keeping the registration. */
   async clearPushToStartTokens(tokens: PushTokenRef[]): Promise<void> {
@@ -413,29 +436,42 @@ export class PushDeviceRepository {
    * Push devices linked to a phone backup device whose last reported success is older than `cutoff`
    * (never-reported devices have nothing to be stale against), not woken since `wakeCutoff`.
    */
-  getStaleBackupWakeTargets(cutoff: Date, wakeCutoff: Date): Promise<StaleBackupWakeTarget[]> {
-    return this.db
-      .selectFrom('push_device')
-      .innerJoin('backup_device', (join) =>
-        join
-          .onRef('backup_device.ownerId', '=', 'push_device.userId')
-          .onRef('backup_device.deviceKey', '=', 'push_device.backupDeviceKey'),
-      )
-      .select([
-        'push_device.id as deviceId',
-        'push_device.userId',
-        'backup_device.deviceKey as backupDeviceKey',
-        'backup_device.displayName',
-        'backup_device.pendingCount',
-      ])
-      .select((eb) => eb.ref('backup_device.lastSuccessfulBackupAt').$notNull().as('lastSuccessfulBackupAt'))
-      .where('backup_device.deletedAt', 'is', null)
-      .where('backup_device.lastSuccessfulBackupAt', '<', cutoff)
-      .where((eb) =>
-        eb.or([eb('push_device.lastStaleWakeAt', 'is', null), eb('push_device.lastStaleWakeAt', '<', wakeCutoff)]),
-      )
-      .orderBy('push_device.id')
-      .execute() as Promise<StaleBackupWakeTarget[]>;
+  getStaleBackupWakeTargets(
+    cutoff: Date,
+    wakeCutoff: Date,
+    routes?: { cloud: boolean; unifiedPush: boolean },
+  ): Promise<StaleBackupWakeTarget[]> {
+    return (
+      this.db
+        .selectFrom('push_device')
+        .innerJoin('backup_device', (join) =>
+          join
+            .onRef('backup_device.ownerId', '=', 'push_device.userId')
+            .onRef('backup_device.deviceKey', '=', 'push_device.backupDeviceKey'),
+        )
+        .select([
+          'push_device.id as deviceId',
+          'push_device.userId',
+          'backup_device.deviceKey as backupDeviceKey',
+          'backup_device.displayName',
+          'backup_device.pendingCount',
+        ])
+        .select((eb) => eb.ref('backup_device.lastSuccessfulBackupAt').$notNull().as('lastSuccessfulBackupAt'))
+        .where('backup_device.deletedAt', 'is', null)
+        .where('backup_device.lastSuccessfulBackupAt', '<', cutoff)
+        .where((eb) =>
+          eb.or([eb('push_device.lastStaleWakeAt', 'is', null), eb('push_device.lastStaleWakeAt', '<', wakeCutoff)]),
+        )
+        // FL-926: only devices this server can reach now, so an unreachable one keeps its wake-up
+        .where((eb) =>
+          eb.or([
+            ...((routes?.cloud ?? true) ? [eb('push_device.pushToken', 'is not', null)] : []),
+            ...((routes?.unifiedPush ?? true) ? [eb('push_device.unifiedPushEndpoint', 'is not', null)] : []),
+          ]),
+        )
+        .orderBy('push_device.id')
+        .execute() as Promise<StaleBackupWakeTarget[]>
+    );
   }
   async markStaleWake(ids: string[]): Promise<void> {
     if (ids.length === 0) {
