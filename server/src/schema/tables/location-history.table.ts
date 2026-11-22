@@ -6,7 +6,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 /**
  * FL-925: one location history file a person imported. Its places are theirs alone: no partner, administrator or
  * shared link reads them. `importedAt` is set when the file has been read to its end; `error` when it could not be.
- * Mirrors migration 1794871000000-LocationHistory.
+ * Mirrors migration 1794911000000-LocationHistory.
  */
 @Index({ columns: ['ownerId', 'createdAt'] })
 @Table('location_history_source')

@@ -11,7 +11,7 @@ export type LocationFillStatus = 'proposing' | 'ready' | 'applying' | 'applied' 
 /**
  * FL-964: one pass over a person's photos without a location, proposing a place for each from their location
  * history. Nothing changes until its owner applies proposals; what was applied can be undone as a whole.
- * Mirrors migration 1794900000000-LocationFill.
+ * Mirrors migration 1794913000000-LocationFill.
  */
 @Index({ columns: ['ownerId', 'createdAt'] })
 @Table('location_fill_run')

@@ -14,7 +14,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 /**
  * FL-949: a place a person named, such as "Home": a centre and how far it reaches. The name is theirs alone; no
  * partner, administrator or shared link reads it. A name is used once per person, whatever its capitals.
- * Mirrors migration 1794880000000-UserPlace.
+ * Mirrors migration 1794912000000-UserPlace.
  */
 @Table('user_place')
 @Index({ name: 'user_place_ownerId_name_uq', expression: '"ownerId", lower(name)', unique: true })
