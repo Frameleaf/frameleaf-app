@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatApproximateDate, groupDayAccuracy } from '$lib/frameleaf/approximate-date';
   /**
    * One day group inside a month bucket: a sticky header with a select-all checkbox, and the
    * justified rows beneath it.
@@ -125,18 +126,25 @@
    * date, e.g. "Wednesday, December 11, 2024". Only this header uses it; the manager's shorter
    * `groupTitle` stays as it is for everything else. It follows the person's date format (FL-783).
    */
+  const approximate = $derived(groupDayAccuracy(timelineDay.day));
   const dayTitle = $derived(
     toCheck
       ? $t('frameleaf_library_dates_to_check')
-      : formatLuxon(
-          fromTimelinePlainDate({
-            year: timelineDay.timelineMonth.yearMonth.year,
-            month: timelineDay.timelineMonth.yearMonth.month,
-            day: timelineDay.day,
-          }),
-          { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' },
-          $locale ?? undefined,
-        ),
+      : approximate
+        ? // FL-936: "1975" or "Circa 1970s", the group's period and no day
+          (formatApproximateDate(timelineDay.timelineMonth.yearMonth.year, approximate, $locale ?? undefined, {
+            heading: true,
+            $t,
+          }) ?? '')
+        : formatLuxon(
+            fromTimelinePlainDate({
+              year: timelineDay.timelineMonth.yearMonth.year,
+              month: timelineDay.timelineMonth.yearMonth.month,
+              day: timelineDay.day,
+            }),
+            { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' },
+            $locale ?? undefined,
+          ),
   );
   /** FL-1392 (B3): where the day was spent, beside its date; under it on phones (`headerExtra`). */
   const places = $derived(showHeader && !grouped && !toCheck ? groupPlaces(timelineDay.cities, $t) : '');

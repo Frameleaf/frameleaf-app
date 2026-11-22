@@ -15,6 +15,10 @@ import {
   ICloudIdentityReuseAuthorityDto,
   ICloudIdentityReuseAuthorityStatusDto,
   ICloudInventoryResponseDto,
+  ICloudReviewAcceptDto,
+  ICloudReviewAcceptResponseDto,
+  ICloudReviewPageResponseDto,
+  ICloudReviewQueryDto,
   ICloudSyncActivityResponseDto,
 } from 'src/dtos/icloud-sync.dto.js';
 import {
@@ -60,7 +64,7 @@ import { ICloudRelationsService } from 'src/services/icloud-relations.service.js
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
 import { LocalEffectsPendingError, MediaRecoveryService } from 'src/services/media-recovery.service.js';
-import { checkAccess, requireElevatedPermission } from 'src/utils/access.js';
+import { checkAccess } from 'src/utils/access.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { maskAppleAccount } from 'src/utils/icloud-identity.js';
 import { hasWeeklyAuthorityInput, isPrivateICloudOperation } from 'src/utils/icloud-weekly.js';
@@ -300,9 +304,6 @@ export class ICloudSyncService {
     }
     await this.staging.root();
     this.checkLimits(dto.config);
-    if (dto.config.includeHidden) {
-      requireElevatedPermission(auth);
-    }
     const created = await this.repository.create(auth.user.id, dto.label, dto.config, ICLOUD_MAX_CONNECTIONS);
     if (!created) {
       throw new BadRequestException('icloud_connection_limit');
@@ -328,9 +329,6 @@ export class ICloudSyncService {
     const merged = dto.config ? { ...connection.config, ...dto.config } : undefined;
     const config = merged && canonicalJson(merged) !== canonicalJson(connection.config) ? merged : undefined;
     if (config) {
-      if (config.includeHidden) {
-        requireElevatedPermission(auth);
-      }
       this.checkLimits(config);
     }
     await this.repository.update(id, auth.user.id, { ...dto, config });
@@ -558,6 +556,30 @@ export class ICloudSyncService {
       review,
       complete: !!(await this.repository.checkpoint(id, 'inventory-complete').then((result) => result?.complete)),
     };
+  }
+
+  /** One page of the photos waiting for review. Private ones only for an unlocked session. */
+  async reviewPage(auth: AuthDto, id: string, dto: ICloudReviewQueryDto): Promise<ICloudReviewPageResponseDto> {
+    await this.owned(auth, id);
+    return this.repository.reviewPage(id, auth.user.id, auth.session?.hasElevatedPermission === true, dto);
+  }
+
+  /** Settle chosen photos, or every one in view. Never deletes; a photo that needs its file again rejoins a run. */
+  async acceptReview(auth: AuthDto, id: string, dto: ICloudReviewAcceptDto): Promise<ICloudReviewAcceptResponseDto> {
+    const connection = await this.owned(auth, id);
+    const result = await this.repository.acceptReview(
+      id,
+      auth.user.id,
+      auth.session?.hasElevatedPermission === true,
+      dto,
+    );
+    if (result.requeued > 0) {
+      // A run already going picks them up; otherwise the next one does.
+      await this.queue(connection, 'manual').catch((error) =>
+        this.logger.warn(`iCloud connection ${id}: no run queued after review: ${message(error)}`),
+      );
+    }
+    return result;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1148,7 +1170,8 @@ export class ICloudSyncService {
           resourceId: resource.id,
           leaseToken: resource.leaseToken!,
           ownerId: connection.ownerId,
-          includeHidden: connection.config.includeHidden,
+          // Owner 2026-11-22: a hidden iCloud photo is never held back; it imports Locked.
+          includeHidden: true,
         };
         const reused = await this.recovery.verifyMapped(authority);
         if (reused && reused.outcome !== 'reused') {

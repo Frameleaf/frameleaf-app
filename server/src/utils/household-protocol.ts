@@ -49,6 +49,46 @@ export const verifyHouseholdProof = (
   now = Date.now(),
 ) => verifyBuddyProof(proof, token, grant, method, uri, now);
 
+const HOUSEHOLD_DOWNLOAD_TYPE = 'household-download+jwt';
+/** Design section 5. */
+export const HOUSEHOLD_DOWNLOAD_SECONDS = 15 * 60;
+const DownloadClaims = z.strictObject({
+  linkId: z.uuid(),
+  shareId: z.uuid(),
+  assetId: z.uuid(),
+  checksum: z.string().regex(/^[a-f\d]{40,64}$/),
+  exp: z.number().int(),
+});
+export type HouseholdDownloadClaims = z.infer<typeof DownloadClaims>;
+
+/** FL-979: permission to fetch one original of one share over one link, signed by this server's instance key. */
+export const signHouseholdDownload = (signer: FrameleafKeySigner, claims: HouseholdDownloadClaims) =>
+  signer.sign({ typ: HOUSEHOLD_DOWNLOAD_TYPE, alg: 'EdDSA' }, claims);
+
+/** True only for this server's unexpired signature over exactly this link, share, item and checksum. */
+export const isHouseholdDownloadValid = (
+  token: string,
+  publicKeyX: string,
+  expected: Omit<HouseholdDownloadClaims, 'exp'>,
+  now = Date.now(),
+) => {
+  try {
+    const jwt = decode(token);
+    z.strictObject({ typ: z.literal(HOUSEHOLD_DOWNLOAD_TYPE), alg: z.literal('EdDSA') }).parse(jwt.header);
+    const claims = DownloadClaims.parse(jwt.payload);
+    return (
+      verify(null, jwt.input, ed25519(publicKeyX), jwt.signature) &&
+      claims.exp * 1000 > now &&
+      claims.linkId === expected.linkId &&
+      claims.shareId === expected.shareId &&
+      claims.assetId === expected.assetId &&
+      claims.checksum === expected.checksum
+    );
+  } catch {
+    return false;
+  }
+};
+
 type ReplyGrant = Pick<HouseholdGrantClaims, 'linkId' | 'jti' | 'exp'>;
 
 export const signHouseholdResponse = (

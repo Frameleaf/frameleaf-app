@@ -260,7 +260,7 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     const bob = await newUser(admin, 'bob');
     const aliceLibrary = await fixture.library(ACCOUNTS.alice.appleId);
     const bobLibrary = await fixture.library(ACCOUNTS.bob.appleId);
-    // Hidden photos are not included by default: neither account's hidden item may arrive.
+    // Each account's hidden item arrives Locked, so it is counted but not listed.
     const aliceItems = aliceLibrary.filter(({ hidden }) => !hidden);
     const bobItems = bobLibrary.filter(({ hidden }) => !hidden);
     const aliceContext = await browser.newContext();
@@ -281,13 +281,13 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
       await expect(badge(bobPage)).toHaveText('Completed', { timeout: RUN_TIMEOUT });
 
       // Each page lists only its own connection and imports, and its timeline only its own photos.
-      for (const [page, own, foreign] of [
-        [alicePage, aliceItems, [...bobLibrary, ...aliceLibrary.filter(({ hidden }) => hidden)]],
-        [bobPage, bobItems, [...aliceLibrary, ...bobLibrary.filter(({ hidden }) => hidden)]],
+      for (const [page, own, foreign, imported] of [
+        [alicePage, aliceItems, [...bobLibrary, ...aliceLibrary.filter(({ hidden }) => hidden)], aliceLibrary.length],
+        [bobPage, bobItems, [...aliceLibrary, ...bobLibrary.filter(({ hidden }) => hidden)], bobLibrary.length],
       ] as const) {
         await page.reload();
         await expect(page.locator('.ic-toolbar select option')).toHaveCount(1);
-        await expect(results(page)).toContainText(`Imported ${own.length}`);
+        await expect(results(page)).toContainText(`Imported ${imported}`);
         for (const item of own) {
           await expect(results(page).getByText(item.name, { exact: true })).toBeVisible();
         }
@@ -328,10 +328,7 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     }
   });
 
-  test('a hidden iCloud item imported after relocking stays out of the timeline, in Locked', async ({
-    context,
-    page,
-  }) => {
+  test('a hidden iCloud item always comes in, out of the timeline, in Locked', async ({ context, page }) => {
     const user = await newUser(admin, 'hidden');
     const items = await fixture.library(ACCOUNTS.dana.appleId);
     const visible = items.filter(({ hidden }) => !hidden);
@@ -341,40 +338,9 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     await utils.setAuthCookies(context, user.accessToken);
     await openICloud(page);
 
-    // First sync with hidden photos not included (the default): only the visible items arrive.
+    // Hidden photos always come in, with no switch, consent or PIN, and the session stays locked.
+    await expect(page.getByRole('switch', { name: 'Hidden photos' })).toHaveCount(0);
     await connect(page, ACCOUNTS.dana);
-    await expect(badge(page)).toHaveText('Completed', { timeout: RUN_TIMEOUT });
-    expectExactly(await assetsOf(user), visible);
-
-    // Include hidden photos: the consent dialog, then the PIN, because they arrive Locked.
-    await page.getByRole('switch', { name: 'Hidden photos' }).click();
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await page.getByRole('button', { name: 'Allow and save' }).click();
-    await page.waitForURL(/\/auth\/pin-prompt/);
-    await page.locator('.pin-input').first().focus();
-    await page.keyboard.type(PIN);
-    await expect.poll(() => isElevated(user)).toBe(true);
-    // FL-290: the prompt returns to the iCloud Photos section itself, query string included.
-    await page.waitForURL((url) => url.pathname === '/user-settings' && url.searchParams.get('section') === 'icloud');
-    // Back on the connection, the preferences come back and are saved.
-    await expect(notice(page)).toContainText('Unlocked. Your sync preferences are back; save them to finish.');
-    await expect(page.getByRole('switch', { name: 'Hidden photos' })).toHaveAttribute('aria-checked', 'true');
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(notice(page)).toContainText('Connection updated.');
-    const saved = await onlyConnection(user);
-    expect(saved.config.includeHidden).toBe(true);
-
-    // Relock before the hidden item is imported.
-    await page.getByRole('button', { name: 'Hide Locked content' }).first().click();
-    await expect.poll(() => isElevated(user)).toBe(false);
-    await expect(page.getByRole('button', { name: 'Unlock Locked content' }).first()).toBeVisible();
-    // Locking always reloads the whole document onto Photos; the owner goes back to the connection.
-    await page.waitForURL((url) => url.pathname === '/photos');
-    await openICloud(page);
-    await expect(page.getByRole('switch', { name: 'Hidden photos' })).toHaveAttribute('aria-checked', 'true');
-
-    await control(page, 'Sync now').click();
-    await expect(notice(page)).toContainText('Sync started.');
     await expect(badge(page)).toHaveText('Completed', { timeout: RUN_TIMEOUT });
     const run = await runOf(user);
     expect(run?.status).toBe(MediaOperationStatus.Completed);

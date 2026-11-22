@@ -75,10 +75,12 @@ import { HardwareCheckController } from 'src/controllers/hardware-check.controll
 import { HelpController } from 'src/controllers/help.controller.js';
 import { HouseholdLinkController } from 'src/controllers/household-link.controller.js';
 import { HouseholdPeerController } from 'src/controllers/household-peer.controller.js';
+import { HouseholdShareController } from 'src/controllers/household-share.controller.js';
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IdenticalFilesController } from 'src/controllers/identical-files.controller.js';
 import { ImportConnectorController } from 'src/controllers/import-connector.controller.js';
+import { ImportSignInController } from 'src/controllers/import-sign-in.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
@@ -255,6 +257,7 @@ export const controllers = [
   BuddyBackupPeerController,
   HouseholdLinkController,
   HouseholdPeerController,
+  HouseholdShareController,
   CastController,
   CloudBackupOwnerController,
   HardwareCheckController,
@@ -369,6 +372,7 @@ export const controllers = [
   EagleImportController,
   TakeoutController,
   ImportConnectorController,
+  ImportSignInController,
   TidyUpController,
   TimelineController,
   TrashController,

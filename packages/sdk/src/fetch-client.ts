@@ -11099,6 +11099,52 @@ export type ICloudInventoryResponseDto = {
         role: string;
     }[];
 };
+export type ICloudReviewPageResponseDto = {
+    effects: {
+        keepCurrent: number;
+        tryAgain: number;
+        useExisting: number;
+    };
+    groups: {
+        count: number;
+        group: ICloudReviewGroup;
+    }[];
+    /** Photos hidden in iCloud that are Locked here */
+    hiddenLocked: number;
+    items: {
+        effect: ICloudReviewEffect;
+        fileName: string | null;
+        group: ICloudReviewGroup;
+        /** The library photo to show; null when there is none yet */
+        previewAssetId: string | null;
+        reason: string;
+        resourceId: string;
+        takenAt: string | null;
+    }[];
+    page: number;
+    pages: number;
+    /** Locked or hidden photos in review that need an unlocked session */
+    privateWaiting: number;
+    size: number;
+    /** Photos in view, each counted once */
+    total: number;
+};
+export type ICloudReviewAcceptDto = {
+    /** Accept every photo in view instead of a list */
+    all?: true;
+    /** With all: photos left for later */
+    exceptResourceIds?: string[];
+    /** With all: only this reason */
+    group?: ICloudReviewGroup;
+    /** The photos to accept */
+    resourceIds?: string[];
+};
+export type ICloudReviewAcceptResponseDto = {
+    /** Photos settled */
+    accepted: number;
+    /** Of those, photos going back through a sync */
+    requeued: number;
+};
 export type ICloudCoverageSampleDto = {
     /** PHCloudIdentifier.stringValue, as the device reports it */
     cloudIdentifier: string;
@@ -33820,6 +33866,36 @@ export function removeICloudConnection({ id }: {
         method: "POST"
     }));
 }
+export function getICloudReview({ id, group, page, size }: {
+    id: string;
+    group?: ICloudReviewGroup;
+    page?: number;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudReviewPageResponseDto;
+    }>(`/icloud-sync/connections/${encodeURIComponent(id)}/review${QS.query(QS.explode({
+        group,
+        page,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+export function acceptICloudReview({ id, iCloudReviewAcceptDto }: {
+    id: string;
+    iCloudReviewAcceptDto: ICloudReviewAcceptDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudReviewAcceptResponseDto;
+    }>(`/icloud-sync/connections/${encodeURIComponent(id)}/review/accept`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudReviewAcceptDto
+    })));
+}
 /**
  * Does a sync connection cover this device library?
  */
@@ -47477,6 +47553,20 @@ export enum ICloudReviewKind {
     Unsupported = "unsupported",
     KeptTrashed = "kept-trashed",
     SourceRemoved = "source-removed"
+}
+export enum ICloudReviewGroup {
+    Match = "match",
+    LivePhoto = "live-photo",
+    Stack = "stack",
+    Details = "details",
+    Edits = "edits",
+    Storage = "storage",
+    Other = "other"
+}
+export enum ICloudReviewEffect {
+    UseExisting = "use-existing",
+    KeepCurrent = "keep-current",
+    TryAgain = "try-again"
 }
 export enum ICloudCoverageScopeKind {
     Libraries = "libraries",

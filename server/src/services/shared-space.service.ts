@@ -75,7 +75,7 @@ import { getSupporters } from 'src/utils/supporter.js';
  * panel in the first place. FL-446: likewise an item matching its owner's Locked rules (people, pets
  * and tags marked Locked) is left out of every panel, for every member; such items reach partners only.
  */
-const SPACE_CONTENT_OPTIONS: HiddenContentQueryOptions = { excludeNsfw: true, ...everyOwnersRules };
+export const SPACE_CONTENT_OPTIONS: HiddenContentQueryOptions = { excludeNsfw: true, ...everyOwnersRules };
 
 /** How many "new since your last visit" ids the client is given to filter a timeline with. */
 const NEW_ASSET_LIMIT = 500;
@@ -583,13 +583,14 @@ export class SharedSpaceService extends BaseService {
     );
 
     const name = dto.name?.trim() || person.name;
-    await this.albumUserRepository.createLinkedPerson({
+    const personLink = await this.albumUserRepository.createLinkedPerson({
       albumId: id,
       personOwnerId: auth.user.id,
       personGroupId: dto.personId,
       name,
       coverAssetId,
     });
+    await this.eventRepository.emit('HouseholdFeedPerson', { albumId: id, personLinkId: personLink.id });
     // The feed carries the space's own name for them, never the person's id or private name.
     await this.albumUserRepository.createSpaceEvent({
       albumId: id,
@@ -618,6 +619,7 @@ export class SharedSpaceService extends BaseService {
     requireUnlinkRights(space, auth.user.id, link.personOwnerId);
 
     await this.albumUserRepository.deleteLinkedPerson(linkId);
+    await this.eventRepository.emit('HouseholdFeedPerson', { albumId: id, personLinkId: linkId });
     await this.albumUserRepository.createSpaceEvent({
       albumId: id,
       actorId: auth.user.id,

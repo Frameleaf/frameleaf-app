@@ -94,6 +94,7 @@ import { HelpService } from 'src/services/help.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { HouseholdLinkService } from 'src/services/household-link.service.js';
 import { HouseholdPeerService } from 'src/services/household-peer.service.js';
+import { HouseholdShareService } from 'src/services/household-share.service.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
 import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
 import { ICloudIdentityAdoptionService } from 'src/services/icloud-identity-adoption.service.js';
@@ -109,6 +110,7 @@ import { IdenticalFilesService } from 'src/services/identical-files.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { ImportConnectorWorkerService } from 'src/services/import-connector-worker.service.js';
 import { ImportConnectorService } from 'src/services/import-connector.service.js';
+import { ImportSignInService } from 'src/services/import-sign-in.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
 import { JobService } from 'src/services/job.service.js';
@@ -152,6 +154,7 @@ import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { PasskeyService } from 'src/services/passkey.service.js';
 import { PersonCategoryService } from 'src/services/person-category.service.js';
+import { PersonRelationshipService } from 'src/services/person-relationship.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
@@ -320,6 +323,7 @@ export const services = [
   BuddyBackupRecoveryService,
   HouseholdLinkService,
   HouseholdPeerService,
+  HouseholdShareService,
   CloudMlBatchService,
   CloudLibraryBatchService,
   CloudMlJobService,
@@ -414,6 +418,7 @@ export const services = [
   PasskeyService,
   PartnerCopyService,
   PersonCategoryService,
+  PersonRelationshipService,
   PersonService,
   PinnedCollectionService,
   PetRecognitionService,
@@ -481,6 +486,7 @@ export const services = [
   TakeoutWorkerService,
   ImportConnectorService,
   ImportConnectorWorkerService,
+  ImportSignInService,
   TidyUpService,
   TimelineService,
   TranscodingService,

@@ -10,6 +10,7 @@ export const ICloudConfigSchema = z
     libraries: z.array(z.string().min(1).max(1024)).max(100).default([]),
     albums: z.array(z.string().min(1).max(1024)).max(10_000).default([]),
     includeEdits: z.boolean().default(true),
+    /** Kept so saved connections and older clients stay valid. Hidden photos always import, as Locked. */
     includeHidden: z.boolean().default(false),
     recoverExternalAsManaged: z.boolean().default(false),
     intervalHours: z.number().int().min(1).max(8760).default(24),
@@ -117,6 +118,76 @@ const ICloudLibraryAreaSchema = z.enum(['private', 'shared']).meta({ id: 'ICloud
 const ICloudReviewKindSchema = z
   .enum(['review', 'failed', 'unsupported', 'kept-trashed', 'source-removed'])
   .meta({ id: 'ICloudReviewKind' });
+
+const ICloudReviewGroupSchema = z
+  .enum(['match', 'live-photo', 'stack', 'details', 'edits', 'storage', 'other'])
+  .meta({ id: 'ICloudReviewGroup' });
+const ICloudReviewEffectSchema = z
+  .enum(['use-existing', 'keep-current', 'try-again'])
+  .describe('What accepting this photo does')
+  .meta({ id: 'ICloudReviewEffect' });
+
+export class ICloudReviewQueryDto extends createZodDto(
+  z
+    .object({
+      group: ICloudReviewGroupSchema.optional(),
+      page: z.coerce.number().int().min(1).default(1),
+      size: z.coerce.number().int().min(1).max(200).default(48),
+    })
+    .strict()
+    .meta({ id: 'ICloudReviewQueryDto' }),
+) {}
+
+export class ICloudReviewPageResponseDto extends createZodDto(
+  z
+    .object({
+      total: z.int().min(0).describe('Photos in view, each counted once'),
+      page: z.int().min(1),
+      pages: z.int().min(1),
+      size: z.int().min(1),
+      groups: z.array(z.object({ group: ICloudReviewGroupSchema, count: z.int().min(0) })),
+      effects: z.object({ useExisting: z.int().min(0), keepCurrent: z.int().min(0), tryAgain: z.int().min(0) }),
+      privateWaiting: z.int().min(0).describe('Locked or hidden photos in review that need an unlocked session'),
+      hiddenLocked: z.int().min(0).describe('Photos hidden in iCloud that are Locked here'),
+      items: z.array(
+        z.object({
+          resourceId: z.uuid(),
+          group: ICloudReviewGroupSchema,
+          effect: ICloudReviewEffectSchema,
+          reason: z.string(),
+          fileName: z.string().nullable(),
+          takenAt: z.string().nullable(),
+          previewAssetId: z.uuid().nullable().describe('The library photo to show; null when there is none yet'),
+        }),
+      ),
+    })
+    .meta({ id: 'ICloudReviewPageResponseDto' }),
+) {}
+
+export class ICloudReviewAcceptDto extends createZodDto(
+  z
+    .object({
+      resourceIds: z.array(z.uuid()).min(1).max(200).optional().describe('The photos to accept'),
+      all: z.literal(true).optional().describe('Accept every photo in view instead of a list'),
+      group: ICloudReviewGroupSchema.optional().describe('With all: only this reason'),
+      exceptResourceIds: z.array(z.uuid()).max(10_000).optional().describe('With all: photos left for later'),
+    })
+    .strict()
+    .refine((value) => !!value.resourceIds !== !!value.all, { message: 'Send resourceIds or all, not both' })
+    .refine((value) => !!value.all || (!value.group && !value.exceptResourceIds), {
+      message: 'group and exceptResourceIds go with all',
+    })
+    .meta({ id: 'ICloudReviewAcceptDto' }),
+) {}
+
+export class ICloudReviewAcceptResponseDto extends createZodDto(
+  z
+    .object({
+      accepted: z.int().min(0).describe('Photos settled'),
+      requeued: z.int().min(0).describe('Of those, photos going back through a sync'),
+    })
+    .meta({ id: 'ICloudReviewAcceptResponseDto' }),
+) {}
 
 /**
  * The connection's current or most recent run (FL-68): a durable media operation, the same row
