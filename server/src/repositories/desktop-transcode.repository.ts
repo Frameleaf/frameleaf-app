@@ -9,9 +9,13 @@ import {
   readDesktopAssistancePolicy,
 } from 'src/repositories/desktop-worker.repository.js';
 import { DB } from 'src/schema/index.js';
-import { desktopMayTranscode, desktopTranscodesEveryone } from 'src/utils/desktop-transcode.js';
+import {
+  DESKTOP_TRANSCODE_VALIDATION_MS,
+  desktopMayTranscode,
+  desktopTranscodesEveryone,
+} from 'src/utils/desktop-transcode.js';
 import { lockedAssetIdExists } from 'src/utils/locked.js';
-import { CLAIMED_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
+import { CLAIMED_MEDIA_OPERATION_STATUSES, TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 
 /** Names the authorization epoch too: a claim never survives the computer's authorization changing. */
 const claimant = ({ deviceId, authorizationEpoch }: DesktopWorkerGrant) => `desktop:${deviceId}:${authorizationEpoch}`;
@@ -145,6 +149,28 @@ export class DesktopTranscodeRepository {
       .executeTakeFirst();
   }
 
+  /** Finished conversions that still name a staged file, such as one whose job was cancelled. */
+  listFinishedStaged(limit: number) {
+    return this.db
+      .selectFrom('media_operation')
+      .select(['id', 'ownerId'])
+      .where('kind', '=', kind)
+      .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .where(sql<boolean>`"result"->>'outputPath' is not null`)
+      .limit(limit)
+      .execute();
+  }
+
+  async clearStaged(id: string) {
+    await this.db
+      .updateTable('media_operation')
+      .set({ result: null })
+      .where('id', '=', id)
+      .where('kind', '=', kind)
+      .where('status', 'in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .execute();
+  }
+
   /** Records the uploaded file for validation. An identical repeat of a lost answer is `duplicate`. */
   async stageResult(
     id: string,
@@ -159,6 +185,7 @@ export class DesktopTranscodeRepository {
         result: sql`${JSON.stringify(staged)}::jsonb`,
         outputBytes: staged.sizeInBytes,
         heartbeatAt: sql<Date>`now()`,
+        claimExpiresAt: sql<Date>`now() + ${sql.lit(DESKTOP_TRANSCODE_VALIDATION_MS)} * interval '1 millisecond'`,
       })
       .where('id', '=', id)
       .where('kind', '=', kind)

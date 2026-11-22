@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import type { VideoInfo } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { DesktopAssistancePolicyRegistry, householdDevices } from 'src/utils/desktop-assistance-policy.js';
@@ -11,6 +12,8 @@ export const DESKTOP_TRANSCODE_PRESENCE_MS = DESKTOP_TRANSCODE_LEASE_MS + 30_000
 /** After a desktop attempt ends, the job that follows encodes here instead of offering the video again. */
 export const DESKTOP_TRANSCODE_FALLBACK_MS = 60 * 60 * 1000;
 export const DESKTOP_TRANSCODE_MIN_OUTPUT_BYTES = 1024 ** 3;
+/** An uploaded file waits this long for its job to validate it; the desktop has stopped renewing the lease. */
+export const DESKTOP_TRANSCODE_VALIDATION_MS = 60 * 60 * 1000;
 
 /** Written one device at a time with `setEntry`, so desktops never overwrite each other. */
 export type DesktopTranscodePresence = { devices?: Record<string, { ownerId: string; at: string }> };
@@ -58,6 +61,34 @@ export const hasDesktopForTranscode = (
       now - new Date(at).getTime() < DESKTOP_TRANSCODE_PRESENCE_MS &&
       desktopMayTranscode(policy, { id, ownerId }, videoOwnerId),
   );
+
+/** What the server planned, frozen when the video is offered, so a later settings change cannot refuse the file. */
+export type DesktopTranscodeExpectation = {
+  durationSeconds: number;
+  /** Null when the plan keeps the stream's own codec and the source named none. */
+  videoCodec: string | null;
+  shortSide: number;
+  aspect: number;
+  hasAudio: boolean;
+  audioCodec: string | null;
+};
+
+/** A desktop's file is untrusted: why it is not the planned playback copy, or undefined when it is. */
+export const desktopTranscodeOutputProblem = (info: VideoInfo, expected: DesktopTranscodeExpectation) => {
+  const [video] = info.videoStreams;
+  if (!video) return 'no-video';
+  if (expected.videoCodec && video.codecName !== expected.videoCodec) return 'video-codec';
+  const short = Math.min(video.width, video.height);
+  const long = Math.max(video.width, video.height);
+  // Encoders round to even sizes.
+  if (short <= 0 || Math.abs(short - expected.shortSide) > 2) return 'dimensions';
+  if (Math.abs(long / short - expected.aspect) > expected.aspect * 0.02) return 'aspect';
+  const allowance = Math.max(1, expected.durationSeconds * 0.02);
+  if (Math.abs(info.format.duration - expected.durationSeconds) > allowance) return 'duration';
+  const [audio] = info.audioStreams;
+  if (expected.hasAudio && !audio) return 'audio-missing';
+  if (expected.hasAudio && expected.audioCodec && audio.codecName !== expected.audioCodec) return 'audio-codec';
+};
 
 /** The most a desktop may upload: a bad result cannot fill the disk. */
 export const desktopTranscodeMaxOutputBytes = (sourceBytes: number) =>

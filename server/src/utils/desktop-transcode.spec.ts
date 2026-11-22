@@ -4,6 +4,7 @@ import {
   DESKTOP_TRANSCODE_PRESENCE_MS,
   desktopMayTranscode,
   desktopTranscodeMaxOutputBytes,
+  desktopTranscodeOutputProblem,
   desktopTranscodeRefusal,
   hasDesktopForTranscode,
 } from 'src/utils/desktop-transcode.js';
@@ -84,5 +85,47 @@ describe('desktopTranscodeMaxOutputBytes', () => {
   it('allows twice the source, with a floor for short clips', () => {
     expect(desktopTranscodeMaxOutputBytes(10)).toBe(DESKTOP_TRANSCODE_MIN_OUTPUT_BYTES);
     expect(desktopTranscodeMaxOutputBytes(4 * 1024 ** 3)).toBe(8 * 1024 ** 3);
+  });
+});
+
+describe('desktopTranscodeOutputProblem', () => {
+  const expected = {
+    durationSeconds: 100,
+    videoCodec: 'h264',
+    shortSide: 720,
+    aspect: 16 / 9,
+    hasAudio: true,
+    audioCodec: 'aac',
+  };
+  const info = (video: object = {}, duration = 100, audio: object[] = [{ codecName: 'aac' }]) =>
+    ({
+      format: { duration, bitrate: 1 },
+      videoStreams: [{ width: 1280, height: 720, codecName: 'h264', ...video }],
+      audioStreams: audio,
+    }) as never;
+
+  it('accepts the planned file, also when rotated', () => {
+    expect(desktopTranscodeOutputProblem(info(), expected)).toBeUndefined();
+    expect(desktopTranscodeOutputProblem(info({ width: 720, height: 1280 }), expected)).toBeUndefined();
+  });
+
+  it.each([
+    ['video-codec', info({ codecName: 'hevc' })],
+    ['dimensions', info({ width: 1920, height: 1080 })],
+    ['aspect', info({ width: 960, height: 720 })],
+    ['duration', info({}, 90)],
+    ['audio-missing', info({}, 100, [])],
+    ['audio-codec', info({}, 100, [{ codecName: 'mp3' }])],
+  ])('refuses %s', (problem, output) => {
+    expect(desktopTranscodeOutputProblem(output, expected)).toBe(problem);
+  });
+
+  it('refuses a file with no picture', () => {
+    expect(
+      desktopTranscodeOutputProblem(
+        { format: { duration: 100, bitrate: 1 }, videoStreams: [], audioStreams: [] },
+        expected,
+      ),
+    ).toBe('no-video');
   });
 });

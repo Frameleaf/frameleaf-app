@@ -36,6 +36,7 @@ describe(DesktopTranscodeService.name, () => {
   const operations = { heartbeat: vi.fn(), fail: vi.fn() };
   const assets = { getById: vi.fn() };
   const metadata = { setEntry: vi.fn() };
+  const storage = { unlinkDir: vi.fn() };
   let sut: DesktopTranscodeService;
 
   beforeEach(() => {
@@ -47,6 +48,7 @@ describe(DesktopTranscodeService.name, () => {
       operations as never,
       assets as never,
       metadata as never,
+      storage as never,
     );
   });
 
@@ -121,11 +123,16 @@ describe('waitForDesktopTranscode', () => {
     dolbyVision: false,
     logConversion: false,
   };
-  const command = () => ({
-    inputOptions: [],
-    outputOptions: [],
-    twoPass: false,
-    progress: { frameCount: 1, percentInterval: 5 },
+  const plan = () => ({
+    command: { inputOptions: [], outputOptions: [], twoPass: false, progress: { frameCount: 1, percentInterval: 5 } },
+    expected: {
+      durationSeconds: 10,
+      videoCodec: 'h264',
+      shortSide: 720,
+      aspect: 16 / 9,
+      hasAudio: true,
+      audioCodec: 'aac',
+    },
   });
   const mediaOperationRepository = {
     getLatestBySubject: vi.fn(),
@@ -140,7 +147,8 @@ describe('waitForDesktopTranscode', () => {
       (MediaService.prototype as any).waitForDesktopTranscode.call(
         { mediaOperationRepository, storageRepository, systemMetadataRepository },
         asset,
-        command,
+        '/encoded/video.mp4',
+        plan,
         input,
       ),
     );
@@ -157,7 +165,7 @@ describe('waitForDesktopTranscode', () => {
 
   it('encodes here when no desktop is present', async () => {
     withPresence(null);
-    await expect(run()).resolves.toBeUndefined();
+    await expect(run()).resolves.toBe(false);
     expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
   });
 
@@ -172,7 +180,7 @@ describe('waitForDesktopTranscode', () => {
 
   it('never offers a Locked video', async () => {
     withPresence(present);
-    await expect(run({ ...source, locked: true })).resolves.toBeUndefined();
+    await expect(run({ ...source, locked: true })).resolves.toBe(false);
     expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
   });
 
@@ -186,7 +194,7 @@ describe('waitForDesktopTranscode', () => {
     withPresence(null);
     mediaOperationRepository.getLatestBySubject.mockResolvedValue([{ id, status: MediaOperationStatus.Queued }]);
     mediaOperationRepository.failUnclaimedDesktopTranscode.mockResolvedValue(true);
-    await expect(run()).resolves.toBeUndefined();
+    await expect(run()).resolves.toBe(false);
   });
 
   it('encodes here right after a failed attempt and removes its staged file', async () => {
@@ -195,8 +203,69 @@ describe('waitForDesktopTranscode', () => {
     mediaOperationRepository.getLatestBySubject.mockResolvedValue([
       { id, status: MediaOperationStatus.Failed, finishedAt: new Date() },
     ]);
-    await expect(run()).resolves.toBeUndefined();
+    await expect(run()).resolves.toBe(false);
     expect(storageRepository.unlinkDir).toHaveBeenCalled();
     expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
+  });
+
+  describe('a desktop upload', () => {
+    const outputPath = '/data/exports/owner/desktop-transcodes/op/file.artifact';
+    const validating = {
+      id,
+      status: MediaOperationStatus.Validating,
+      claimToken,
+      result: { outputPath, checksum: 'ab'.repeat(32), sizeInBytes: 10 },
+      snapshot: {
+        checksum: 'abcd',
+        expected: {
+          durationSeconds: 10,
+          videoCodec: 'h264',
+          shortSide: 720,
+          aspect: 16 / 9,
+          hasAudio: false,
+          audioCodec: null,
+        },
+      },
+    };
+    const self = () => ({
+      mediaOperationRepository: { ...mediaOperationRepository, fail: vi.fn(), complete: vi.fn() },
+      storageRepository: { ...storageRepository, copyFile: vi.fn() },
+      mediaRepository: { probe: vi.fn() },
+      storageCore: { ensureFolders: vi.fn() },
+      logger: { warn: vi.fn() },
+    });
+    const adopt = (service: ReturnType<typeof self>, operation: unknown, target = asset) =>
+      queueExecution.run({ claim: { data: {} }, signal: new AbortController().signal, adoptions: [] } as never, () =>
+        (MediaService.prototype as any).adoptDesktopTranscode.call(service, target, operation, '/encoded/video.mp4'),
+      );
+
+    beforeEach(() => {
+      vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue('/data');
+    });
+
+    it('refuses a file made from an original that changed since', async () => {
+      const service = self();
+      await expect(adopt(service, validating, { ...asset, checksum: Buffer.from('ffff', 'hex') })).resolves.toBe(false);
+      expect(service.mediaOperationRepository.fail).toHaveBeenCalledWith(
+        id,
+        claimToken,
+        expect.objectContaining({ errorCode: 'desktop_transcode_source-changed' }),
+        { retry: false, requireActiveClaim: true },
+      );
+      expect(service.storageRepository.copyFile).not.toHaveBeenCalled();
+      expect(service.storageRepository.unlinkDir).toHaveBeenCalled();
+    });
+
+    it('refuses a file that is not intact without publishing it', async () => {
+      const service = self();
+      await expect(adopt(service, validating)).resolves.toBe(false);
+      expect(service.mediaOperationRepository.fail).toHaveBeenCalledWith(
+        id,
+        claimToken,
+        expect.objectContaining({ errorCode: 'desktop_transcode_unreadable' }),
+        expect.anything(),
+      );
+      expect(service.storageRepository.copyFile).not.toHaveBeenCalled();
+    });
   });
 });
