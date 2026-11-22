@@ -17,6 +17,7 @@ import {
   type HistoryReport,
   parseHistoryFile,
 } from 'src/location-history/parse.js';
+import { reportJobProgress } from 'src/queue/context.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import {
   LocationHistoryRepository,
@@ -135,6 +136,8 @@ export class LocationHistoryService {
         if (batch.length === LOCATION_HISTORY_BATCH) {
           count += batch.length;
           await this.repository.insertPoints(source, batch, count);
+          // a long file is not a stuck job: each stored batch says the import is still moving
+          reportJobProgress(count);
           batch = [];
         }
       }
