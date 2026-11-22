@@ -144,10 +144,11 @@ describe(ImportConnectorService.name, () => {
       unregisterRemoteSource(FAKE_PROVIDER);
       sut.onBootstrap();
       expect(remoteSourceProviders()).not.toContain(FAKE_PROVIDER);
+      expect(remoteSourceProviders()).toContain('webdav');
 
       environment = FrameleafEnvironment.Testing;
       sut.onBootstrap();
-      expect(sut.providers()).toEqual({ providers: [FAKE_PROVIDER] });
+      expect(sut.providers()).toEqual({ providers: [FAKE_PROVIDER, 'webdav'] });
     });
   });
 

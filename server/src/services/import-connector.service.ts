@@ -27,6 +27,7 @@ import {
   remoteSourceProvider,
   remoteSourceProviders,
 } from 'src/import-connectors/remote-source.js';
+import { webdavRemoteSourceProvider } from 'src/import-connectors/webdav.source.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -122,9 +123,10 @@ export class ImportConnectorService {
     this.logger.setContext(ImportConnectorService.name);
   }
 
-  /** The in-memory test source exists only on a server started for tests (the e2e stack). */
+  /** Real sources are registered here. The in-memory test source exists only on a server started for tests. */
   @OnEvent({ name: 'AppBootstrap' })
   onBootstrap() {
+    registerRemoteSource(webdavRemoteSourceProvider);
     if (this.config.getEnv().environment === FrameleafEnvironment.Testing) {
       registerRemoteSource(fakeRemoteSourceProvider);
     }
