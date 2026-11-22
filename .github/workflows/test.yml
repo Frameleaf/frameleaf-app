@@ -1085,9 +1085,12 @@ jobs:
           if [ -n "${BUDDY_ROOT:-}" ]; then
             case "$BUDDY_ROOT" in "$RUNNER_TEMP"/fl310-buddy.*) ;; *) exit 1 ;; esac
             test -f "$BUDDY_ROOT/.fl310-buddy-fixture"
-            docker compose -f docker-compose.buddy.yml down --volumes --remove-orphans
+            # A failed teardown must still release the 16 GB tmpfs on this shared runner, then fail the step.
+            down_status=0
+            docker compose -f docker-compose.buddy.yml down --volumes --remove-orphans || down_status=$?
             if mountpoint -q "$BUDDY_ROOT"; then sudo umount "$BUDDY_ROOT"; fi
             rm -rf -- "$BUDDY_ROOT"
+            exit "$down_status"
           fi
       # FL-201: the same image, now pointed at the fake Frameleaf Cloud (vendored contract fixtures), for the
       # processing-consent specs, isolated from the main suite and its default cloud address.
