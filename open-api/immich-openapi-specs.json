@@ -115138,6 +115138,16 @@
             "nullable": true,
             "type": "string"
           },
+          "placeNamesLocalized": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlaceNamesLocalizedDto"
+              }
+            ],
+            "default": null,
+            "description": "City, state and country in the language of the signed-in account, when it is not English and at least one of the three has a translation. Null otherwise: show `city`, `state` and `country`",
+            "nullable": true
+          },
           "profileDescription": {
             "default": null,
             "description": "Color profile description",
@@ -130462,6 +130472,10 @@
             "format": "double",
             "type": "number"
           },
+          "placeNamesLocalized": {
+            "$ref": "#/components/schemas/PlaceNamesLocalizedDto",
+            "description": "FL-987: city, state and country of the preview item in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise"
+          },
           "south": {
             "description": "Southernmost latitude of the items",
             "format": "double",
@@ -130635,6 +130649,10 @@
           "originalFileName": {
             "description": "Original file name",
             "type": "string"
+          },
+          "placeNamesLocalized": {
+            "$ref": "#/components/schemas/PlaceNamesLocalizedDto",
+            "description": "FL-987: city, state and country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `city`, `state` and `country`"
           },
           "state": {
             "description": "State/Province name",
@@ -161427,6 +161445,37 @@
         ],
         "type": "object"
       },
+      "PlaceNamesLocalizedDto": {
+        "description": "Place names in the viewer’s language",
+        "properties": {
+          "city": {
+            "description": "City name in `lang`, or the English `city` where it has no translation",
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "description": "Country name in `lang`, or the English `country` where it has no translation",
+            "nullable": true,
+            "type": "string"
+          },
+          "lang": {
+            "description": "Language of the translated names: fr, es, de, it, pt, nl, pl, sv, da or nb (Norwegian Bokmål)",
+            "type": "string"
+          },
+          "state": {
+            "description": "State/province name in `lang`, or the English `state` where it has no translation",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "city",
+          "country",
+          "lang",
+          "state"
+        ],
+        "type": "object"
+      },
       "PlacesResponseDto": {
         "properties": {
           "admin1name": {
@@ -161450,6 +161499,10 @@
           "name": {
             "description": "Place name",
             "type": "string"
+          },
+          "placeNamesLocalized": {
+            "$ref": "#/components/schemas/PlaceNamesLocalizedDto",
+            "description": "FL-987: the place (as `city`), its state/province and its country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `name` and `admin1name`"
           }
         },
         "required": [
