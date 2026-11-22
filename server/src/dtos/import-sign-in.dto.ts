@@ -38,6 +38,15 @@ export class ImportSignInAvailabilityResponseDto extends createZodDto(
         .string()
         .nullable()
         .describe('Why not: `not-linked`, `not-configured`, `not-offered` or `cloud-unreachable`'),
+      picker: z
+        .object({
+          apiKey: z.string().describe("The browser API key for the provider's file picker"),
+          appId: z.string().describe('The app id the picker grants access to (for Google, the Cloud project number)'),
+        })
+        .nullable()
+        .describe(
+          "What a browser needs to open the provider's own file picker; null when it has none or it is not set up",
+        ),
     })
     .meta({ id: 'ImportSignInAvailabilityResponseDto' }),
 ) {}

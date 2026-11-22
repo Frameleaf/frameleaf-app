@@ -133,6 +133,7 @@ describe(ImportConnectorService.name, () => {
       {
         dropbox: { ...fakeRemoteSourceProvider, provider: 'dropbox' },
         onedrive: { ...fakeRemoteSourceProvider, provider: 'onedrive' },
+        googleDrive: { ...fakeRemoteSourceProvider, provider: 'google-drive' },
       } as never,
     );
   });
@@ -141,6 +142,7 @@ describe(ImportConnectorService.name, () => {
     unregisterRemoteSource(FAKE_PROVIDER);
     unregisterRemoteSource('dropbox');
     unregisterRemoteSource('onedrive');
+    unregisterRemoteSource('google-drive');
   });
 
   const everythingSaid = (...answers: unknown[]) =>
@@ -185,7 +187,7 @@ describe(ImportConnectorService.name, () => {
 
       environment = FrameleafEnvironment.Testing;
       sut.onBootstrap();
-      expect(sut.providers()).toEqual({ providers: ['dropbox', FAKE_PROVIDER, 'onedrive', 'webdav'] });
+      expect(sut.providers()).toEqual({ providers: ['dropbox', FAKE_PROVIDER, 'google-drive', 'onedrive', 'webdav'] });
     });
   });
 
