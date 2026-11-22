@@ -13,6 +13,12 @@
 #           and hashed lock files at video-restoration/runtimes/realbasicvsr.lock and
 #           video-restoration/runtimes/seedvr2.lock (pip format, --require-hashes). None of
 #           these are committed because none has been qualified yet.
+#   photo   The worker plus the photo repair and colourise runtimes (FL-933): CodeFormer and
+#           DDColor checkouts sharing one environment. Needs explicit pins:
+#             --build-arg CODEFORMER_REVISION=<40-char commit>
+#             --build-arg DDCOLOR_REVISION=<40-char commit>
+#             --build-arg PHOTO_PYTHON=<python version the lock was made for>
+#           and a hashed lock file at video-restoration/runtimes/photo.lock.
 #
 # Weights are never baked into the image. Mount them read-only (default /restoration/weights,
 # and SeedVR2's ckpts/ inside its checkout) and mount the manifest and qualification files
@@ -51,6 +57,8 @@ FROM worker-base AS worker
 
 WORKDIR /usr/src
 COPY frameleaf_ml frameleaf_ml
+# The photo runtimes' entry points (FL-933); they run with a model runtime's own interpreter.
+COPY video-restoration/runtimes/photo_repair.py video-restoration/runtimes/colourise.py video-restoration/runtimes/
 
 ARG BUILD_SOURCE_COMMIT
 ARG FRAMELEAF_RESTORATION_IMAGE_REVISION=${BUILD_SOURCE_COMMIT}
@@ -131,6 +139,44 @@ RUN --mount=type=bind,source=video-restoration/runtimes,target=/runtimes \
     uv python install "$SEEDVR2_PYTHON" && \
     uv venv --python "$SEEDVR2_PYTHON" /opt/restoration/seedvr/.venv && \
     VIRTUAL_ENV=/opt/restoration/seedvr/.venv uv pip install --require-hashes --no-deps -r /runtimes/seedvr2.lock
+
+# ---------------------------------------------------------------------------------------
+# Photo repair and colourise (FL-933): CodeFormer and DDColor at exact commits. Both are plain
+# PyTorch (no compiled extensions), so they share one environment; LaMa runs in ONNX Runtime
+# inside it. The entry points are the worker's own video-restoration/runtimes/*.py.
+# ---------------------------------------------------------------------------------------
+FROM worker-base AS photo-runtime
+
+ARG CODEFORMER_REVISION
+ARG DDCOLOR_REVISION
+ARG PHOTO_PYTHON
+RUN test -n "$CODEFORMER_REVISION" && test -n "$DDCOLOR_REVISION" && test -n "$PHOTO_PYTHON" || \
+    { echo "CODEFORMER_REVISION, DDCOLOR_REVISION and PHOTO_PYTHON must pin the qualified runtime" >&2; exit 1; }
+
+RUN git init -q /opt/restoration/codeformer && \
+    git -C /opt/restoration/codeformer remote add origin https://github.com/sczhou/CodeFormer.git && \
+    git -C /opt/restoration/codeformer fetch -q --depth 1 origin "$CODEFORMER_REVISION" && \
+    git -C /opt/restoration/codeformer checkout -q --detach FETCH_HEAD && \
+    test "$(git -C /opt/restoration/codeformer rev-parse HEAD)" = "$CODEFORMER_REVISION"
+
+RUN git init -q /opt/restoration/ddcolor && \
+    git -C /opt/restoration/ddcolor remote add origin https://github.com/piddnad/DDColor.git && \
+    git -C /opt/restoration/ddcolor fetch -q --depth 1 origin "$DDCOLOR_REVISION" && \
+    git -C /opt/restoration/ddcolor checkout -q --detach FETCH_HEAD && \
+    test "$(git -C /opt/restoration/ddcolor rev-parse HEAD)" = "$DDCOLOR_REVISION"
+
+RUN --mount=type=bind,source=video-restoration/runtimes,target=/runtimes \
+    test -f /runtimes/photo.lock || { echo "video-restoration/runtimes/photo.lock is required" >&2; exit 1; } && \
+    uv python install "$PHOTO_PYTHON" && \
+    uv venv --python "$PHOTO_PYTHON" /opt/restoration/photo/.venv && \
+    VIRTUAL_ENV=/opt/restoration/photo/.venv uv pip install --require-hashes --no-deps -r /runtimes/photo.lock
+
+FROM worker AS photo
+
+COPY --from=photo-runtime /opt/python /opt/python
+COPY --from=photo-runtime /opt/restoration/codeformer /opt/restoration/codeformer
+COPY --from=photo-runtime /opt/restoration/ddcolor /opt/restoration/ddcolor
+COPY --from=photo-runtime /opt/restoration/photo /opt/restoration/photo
 
 # ---------------------------------------------------------------------------------------
 # Worker with both runtimes. Still serves nothing until the manifest, weights and a

@@ -31,6 +31,50 @@ describe(OcrService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  describe('the back of a print (FL-967)', () => {
+    const back = { visibility: AssetVisibility.Hidden, previewFile: '/uploads/back.jpg', isPrintBack: true };
+
+    it('reads a hidden back, keeps its text out of its own search row and files it for the front', async () => {
+      mocks.assetJob.getForOcr.mockResolvedValue(back);
+      mocks.ocr.getDocumentEdits.mockResolvedValue([]);
+      mockOcrResult('Bonfire night');
+
+      await expect(sut.handleOcr({ id: 'back' })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.ocr.upsert).toHaveBeenCalledWith('back', expect.any(Array), '');
+      expect(mocks.ocr.setPrintBackSearchText).toHaveBeenCalledWith('back', 'Bonfire night');
+    });
+
+    it("keeps the owner's correction when the back is read again", async () => {
+      mocks.assetJob.getForOcr.mockResolvedValue(back);
+      const region = { x1: 0, y1: 1, x2: 2, y2: 3, x3: 4, y3: 5, x4: 6, y4: 7 };
+      mocks.ocr.getDocumentEdits.mockResolvedValue([
+        {
+          id: 'e',
+          key: 'line:gone',
+          action: 'correct',
+          value: 'Bonfire',
+          sourceText: 'Bonfrie',
+          revision: 1,
+          ...region,
+        },
+      ] as never);
+      mockOcrResult('Bonfrie');
+
+      await sut.handleOcr({ id: 'back' });
+
+      expect(mocks.ocr.setPrintBackSearchText).toHaveBeenCalledWith('back', 'Bonfire');
+    });
+
+    it('still skips a Live Photo motion part', async () => {
+      mocks.assetJob.getForOcr.mockResolvedValue({ ...back, isPrintBack: false });
+
+      await expect(sut.handleOcr({ id: 'motion' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.machineLearning.ocr).not.toHaveBeenCalled();
+    });
+  });
+
   describe('handleQueueOcr', () => {
     it('should do nothing if machine learning is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);

@@ -171,6 +171,132 @@
       "dynamicRanges": ["sdr"],
       "requiresGpu": true,
       "notes": "Smooth motion (FL-162). The weights come from the Frameleaf model source (frameleaf/rife-4.25); `python -m frameleaf_ml.video_restoration fetch-weights rife-4-25` downloads them once the sha256 is pinned. frameleaf_interpolate.py is the runtime's frame-folder entry point and must be confirmed against the pinned commit. requiresGpu false is only for a record qualified on the processor. Every REPLACE value and every limit must come from the qualification run."
+    },
+    {
+      "id": "codeformer-photo-repair",
+      "family": "codeformer",
+      "operation": "repair",
+      "displayName": "Photo repair (CodeFormer and LaMa)",
+      "repository": "https://github.com/sczhou/CodeFormer",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "license": {
+        "code": "NTU S-Lab License 1.0",
+        "weights": "NTU S-Lab License 1.0 (CodeFormer); MIT (RetinaFace detection, ParseNet parsing); Apache-2.0 (LaMa)",
+        "url": "https://github.com/sczhou/CodeFormer/blob/master/LICENSE"
+      },
+      "nativeScale": null,
+      "runtime": {
+        "root": "/opt/restoration/codeformer",
+        "python": "/opt/restoration/photo/.venv/bin/python",
+        "argv": [
+          "{python}",
+          "-I",
+          "/usr/src/video-restoration/runtimes/photo_repair.py",
+          "--input-dir",
+          "{input_dir}",
+          "--output-dir",
+          "{output_dir}",
+          "--runtime-root",
+          "{runtime_root}",
+          "--codeformer",
+          "{weight:codeformer}",
+          "--detection",
+          "{weight:detection}",
+          "--parsing",
+          "{weight:parsing}",
+          "--lama",
+          "{weight:lama}",
+          "--fidelity",
+          "0.7"
+        ],
+        "env": {},
+        "timeoutSeconds": 900
+      },
+      "weights": [
+        {
+          "role": "codeformer",
+          "path": "codeformer/codeformer.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification",
+          "source": { "repo": "codeformer", "file": "codeformer.pth" }
+        },
+        {
+          "role": "detection",
+          "path": "codeformer/detection_Resnet50_Final.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification",
+          "source": { "repo": "retinaface-resnet50", "file": "detection_Resnet50_Final.pth" }
+        },
+        {
+          "role": "parsing",
+          "path": "codeformer/parsing_parsenet.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification",
+          "source": { "repo": "parsenet", "file": "parsing_parsenet.pth" }
+        },
+        {
+          "role": "lama",
+          "path": "lama/model.onnx",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification",
+          "source": { "repo": "frameleaf-inpaint", "file": "visual/model.onnx" }
+        }
+      ],
+      "limits": {
+        "maxInputLongEdge": 8192,
+        "maxFrames": 1,
+        "maxFramesPerChunk": 1,
+        "minVramBytes": 0
+      },
+      "dynamicRanges": ["sdr"],
+      "requiresGpu": true,
+      "notes": "Photo repair (FL-933), stills only. An 8-bit photo up to 8192 px on its long edge (67 megapixels; a 600 dpi scan of an 8 x 10 inch print is 4800 x 6000) comes back at exactly its own size. Faces are found on a copy of at most 1536 px and restored at 512 x 512 with fidelity 0.7; a face wider than about 2048 px, or with eyes under 10 px apart, is left as it is. Scratches and dust are filled in 512 px windows, never inside a face, and the pass is skipped when the marks cover more than 3% of the photo. The weights come from the Frameleaf model source (frameleaf/codeformer, frameleaf/retinaface-resnet50, frameleaf/parsenet, frameleaf/frameleaf-inpaint); `python -m frameleaf_ml.video_restoration fetch-weights codeformer-photo-repair` downloads them once each sha256 is pinned. A qualified NVIDIA GPU is required; requiresGpu false is refused. Every REPLACE value and minVramBytes must come from the qualification run."
+    },
+    {
+      "id": "ddcolor-colourise",
+      "family": "ddcolor",
+      "operation": "colourise",
+      "displayName": "Colourise (DDColor)",
+      "repository": "https://github.com/piddnad/DDColor",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "license": {
+        "code": "Apache-2.0",
+        "weights": "Apache-2.0",
+        "url": "https://github.com/piddnad/DDColor/blob/master/LICENSE"
+      },
+      "nativeScale": null,
+      "runtime": {
+        "root": "/opt/restoration/ddcolor",
+        "python": "/opt/restoration/photo/.venv/bin/python",
+        "argv": [
+          "{python}",
+          "-I",
+          "/usr/src/video-restoration/runtimes/colourise.py",
+          "--input-dir",
+          "{input_dir}",
+          "--output-dir",
+          "{output_dir}",
+          "--runtime-root",
+          "{runtime_root}",
+          "--checkpoint",
+          "{weight:ddcolor}"
+        ],
+        "env": {},
+        "timeoutSeconds": 900
+      },
+      "weights": [
+        {
+          "role": "ddcolor",
+          "path": "ddcolor/ddcolor_modelscope.pth",
+          "sha256": "REPLACE-with-the-sha256-measured-during-qualification",
+          "source": { "repo": "ddcolor", "file": "ddcolor_modelscope.pth" }
+        }
+      ],
+      "limits": {
+        "maxInputLongEdge": 8192,
+        "maxFrames": 1,
+        "maxFramesPerChunk": 1,
+        "minVramBytes": 0
+      },
+      "dynamicRanges": ["sdr"],
+      "requiresGpu": true,
+      "notes": "Colourise (FL-933), stills only: the DDColor large (ConvNeXt-L) model trained with the ModelScope data cleaning. An 8-bit photo up to 8192 px on its long edge comes back at exactly its own size: the model sees a 512 x 512 copy and its two colour channels are enlarged and joined to the photo's own full-size lightness, so GPU memory does not grow with the scan. The weights come from the Frameleaf model source (frameleaf/ddcolor); `python -m frameleaf_ml.video_restoration fetch-weights ddcolor-colourise` downloads them once the sha256 is pinned. A qualified NVIDIA GPU is required; requiresGpu false is refused. Every REPLACE value and minVramBytes must come from the qualification run."
     }
   ]
 }

@@ -1,4 +1,5 @@
 import { offerScanSplit } from '@frameleaf/sdk';
+import { alternatingPairs, type PrintPair, type PrintScan } from '$lib/frameleaf/print-pairs';
 
 export type ScanOffer = { assetId: string; name: string; count: number };
 
@@ -8,6 +9,9 @@ export type ScanOffer = { assetId: string; name: string; count: number };
  */
 class ScanOffers {
   offers = $state<ScanOffer[]>([]);
+  /** FL-967: single-print scans of this batch, read as front, back, front, back. */
+  pairs = $state<PrintPair[]>([]);
+  #singles: PrintScan[] = [];
   #seen = new Set<string>();
   #queue: { assetId: string; name: string }[] = [];
   #running = false;
@@ -35,9 +39,11 @@ class ScanOffers {
     while (generation === this.#generation && this.#queue.length > 0) {
       const { assetId, name } = this.#queue.shift()!;
       try {
-        const { printCount } = await offerScanSplit({ id: assetId });
+        const { printCount, inScanAlbum } = await offerScanSplit({ id: assetId });
         if (generation === this.#generation && printCount > 1) {
           this.offers.push({ assetId, name, count: printCount });
+        } else if (generation === this.#generation && inScanAlbum) {
+          this.#singles.push({ assetId, name });
         }
       } catch {
         // an offer is optional: the photo is safely uploaded and can be split from the viewer
@@ -45,7 +51,13 @@ class ScanOffers {
     }
     if (generation === this.#generation) {
       this.#running = false;
+      this.pairs = alternatingPairs(this.#singles);
     }
+  }
+
+  dismissPairs() {
+    this.pairs = [];
+    this.#singles = [];
   }
 
   dismiss(assetId: string) {
@@ -58,6 +70,8 @@ class ScanOffers {
     this.#queue = [];
     this.#seen.clear();
     this.offers = [];
+    this.pairs = [];
+    this.#singles = [];
   }
 }
 
