@@ -251,6 +251,8 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
   albumIds: { any: list(idValue), all: list(idValue), none: list(idValue) },
   // FL-353: taken at any of (or none of) these landmarks; a photo is at several, so there is no `all`
   landmarkIds: { any: list(idValue), none: list(idValue) },
+  // FL-949: the person's own named places
+  namedPlaceIds: { any: list(idValue), all: list(idValue), none: list(idValue) },
   // FL-1284: capture kinds (slow motion, panoramas, bursts …)
   mediaKinds: {
     any: list(enumOf(MEDIA_KIND_VALUES)),
@@ -989,7 +991,7 @@ const SECTION_FIELDS: Record<Exclude<DiscoveryFilterSection, 'all'>, readonly st
   // FL-58: the owner's own pets, matched on confirmed observations only
   pets: ['petIds'],
   date: ['takenAt', 'localDateTime', 'takenDecade', 'createdAt', 'updatedAt', 'trashedAt'],
-  places: ['city', 'state', 'country', 'landmarkIds'],
+  places: ['city', 'state', 'country', 'landmarkIds', 'namedPlaceIds'],
   media: [
     'color',
     'hasTransparency',

@@ -5,6 +5,7 @@ import { get } from 'svelte/store';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import MapScreen from '$lib/components/frameleaf/MapScreen.svelte';
 import { BUBBLE_NAME_LAYER, CLUSTER_OBSTACLE_LAYER, clusterObstacleLayer } from '$lib/frameleaf/map-clusters';
+import { namedPlaces } from '$lib/frameleaf/named-places.svelte';
 import { mapSettings } from '$lib/stores/preferences.store';
 import { getMapLibreStubProps, resetMapLibreStub, setMapLibreStubMap } from '@test-data/frameleaf/map-libre-stub';
 import en from '../../../../../i18n/en.json';
@@ -59,6 +60,8 @@ beforeEach(() => {
   });
   sdkMock.getMapStatistics.mockResolvedValue({ archived: 0, partner: 0, unlocated: 0 });
   sdkMock.getVisitedLandmarks.mockResolvedValue([]);
+  sdkMock.getUserPlaces.mockResolvedValue([]);
+  namedPlaces.reset();
 });
 
 describe('MapScreen (FL-193)', () => {
@@ -697,5 +700,103 @@ describe('MapScreen (FL-193)', () => {
       await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_map_settings }));
       expect(screen.getByRole('switch', { name: en.frameleaf_map_load_all })).toHaveAttribute('aria-checked', 'true');
     });
+  });
+});
+
+describe('MapScreen named places (FL-1019)', () => {
+  const place = {
+    id: 'b0000000-0000-4000-8000-000000000001',
+    name: 'Home',
+    latitude: 51,
+    longitude: -115,
+    radiusMeters: 250,
+    createdAt: '2026-11-22T00:00:00.000Z',
+    updatedAt: '2026-11-22T00:00:00.000Z',
+  };
+  const stubMap = () => {
+    const handlers: Record<string, (event: unknown) => void> = {};
+    setMapLibreStubMap({
+      getBounds: () => ({ getWest: () => -180, getEast: () => 180, getSouth: () => -90, getNorth: () => 90 }),
+      getCenter: () => ({ lat: 51.5, lng: -116 }),
+      getZoom: () => 12,
+      fitBounds: vi.fn(),
+      setStyle: vi.fn(),
+      on: (name: string, handler: (event: unknown) => void) => (handlers[name] = handler),
+      off: vi.fn(),
+    });
+    return handlers;
+  };
+
+  it('names a place at the centre of the map from the toolbar, with the privacy note', async () => {
+    stubMap();
+    sdkMock.createUserPlace.mockResolvedValue({ ...place, name: 'Cabin' });
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Name this place' }));
+    const panel = screen.getByRole('dialog', { name: 'Name this place' });
+    expect(within(panel).getByText('Only you see these names.')).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: 'Save place' })).toBeDisabled();
+
+    await fireEvent.input(within(panel).getByLabelText('Name'), { target: { value: ' Cabin ' } });
+    await fireEvent.input(within(panel).getByLabelText('How far it reaches'), { target: { value: '9' } });
+    await fireEvent.click(within(panel).getByRole('button', { name: 'Save place' }));
+
+    await waitFor(() =>
+      expect(sdkMock.createUserPlace).toHaveBeenCalledWith({
+        userPlaceCreateDto: { name: 'Cabin', radiusMeters: 500, latitude: 51.5, longitude: -116 },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Name this place' })).toBeNull());
+    expect(namedPlaces.places.map(({ name }) => name)).toEqual(['Cabin']);
+  });
+
+  it('opens the panel where the map was right-clicked, and Escape closes it', async () => {
+    const handlers = stubMap();
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    await screen.findByRole('button', { name: 'Name this place' });
+
+    handlers.contextmenu({ lngLat: { lat: 10, lng: 20 } });
+    const panel = await screen.findByRole('dialog', { name: 'Name this place' });
+    await fireEvent.keyDown(panel, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Name this place' })).toBeNull());
+  });
+
+  it('says a name is taken, ignoring capitals, without asking the server', async () => {
+    stubMap();
+    sdkMock.getUserPlaces.mockResolvedValue([place]);
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    await waitFor(() => expect(namedPlaces.loaded).toBe(true));
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Name this place' }));
+    const panel = screen.getByRole('dialog', { name: 'Name this place' });
+    await fireEvent.input(within(panel).getByLabelText('Name'), { target: { value: 'HOME' } });
+    await fireEvent.click(within(panel).getByRole('button', { name: 'Save place' }));
+
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('You already have a place with this name.');
+    expect(sdkMock.createUserPlace).not.toHaveBeenCalled();
+  });
+
+  it('opens Change this place for a click inside a circle', async () => {
+    const handlers = stubMap();
+    sdkMock.getUserPlaces.mockResolvedValue([place]);
+    render(MapScreen, { title: 'Map', onOpenAsset: vi.fn() });
+    await waitFor(() => expect(namedPlaces.loaded).toBe(true));
+    const target = document.createElement('canvas');
+    target.classList.add('maplibregl-canvas');
+
+    handlers.click({ lngLat: { lat: 51, lng: -115 }, originalEvent: { target } });
+
+    const panel = await screen.findByRole('dialog', { name: 'Change this place' });
+    expect(within(panel).getByLabelText('Name')).toHaveValue('Home');
+  });
+
+  it('keeps the names off an album map', async () => {
+    stubMap();
+    sdkMock.getAlbumMapMarkers.mockResolvedValue([]);
+    render(MapScreen, { title: 'Album', albumId: 'album-1', onOpenAsset: vi.fn() });
+
+    await screen.findByRole('toolbar');
+    expect(screen.queryByRole('button', { name: 'Name this place' })).toBeNull();
+    expect(sdkMock.getUserPlaces).not.toHaveBeenCalled();
   });
 });

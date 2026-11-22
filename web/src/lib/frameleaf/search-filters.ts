@@ -257,6 +257,7 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
   tagIds: 'tags',
   albumIds: 'albums',
   landmarkIds: 'frameleaf_landmarks_title',
+  namedPlaceIds: 'frameleaf_named_places_yours',
   type: 'media_type',
   mediaKinds: 'frameleaf_media_kinds_filter',
   takenAt: 'frameleaf_search_field_taken_at',
@@ -311,7 +312,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
 const DATE_FIELDS = new Set(['takenAt', 'localDateTime', 'createdAt', 'updatedAt', 'trashedAt']);
-const SET_FIELDS = new Set(['personIds', 'petIds', 'tagIds', 'albumIds', 'landmarkIds']);
+const SET_FIELDS = new Set(['personIds', 'petIds', 'tagIds', 'albumIds', 'landmarkIds', 'namedPlaceIds']);
 
 const formatDay = (value: unknown, locale: string) => {
   const day = typeof value === 'string' ? value : '';

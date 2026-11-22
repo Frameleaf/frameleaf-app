@@ -14,6 +14,7 @@
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
+  import NamedPlaceFields from '$lib/components/frameleaf/NamedPlaceFields.svelte';
   import {
     landmarksWithItems,
     layoutLandmarkPins,
@@ -57,6 +58,16 @@
     widenMapArea,
     type MapArea,
   } from '$lib/frameleaf/map-settings';
+  import {
+    circleBasePx,
+    distanceMeters,
+    isPlaceNameTaken,
+    MIN_CIRCLE_RADIUS_PX,
+    PLACE_RADIUS_DEFAULT,
+    placeAtPoint,
+    PLACES_MAX,
+  } from '$lib/frameleaf/named-places';
+  import { namedPlaces } from '$lib/frameleaf/named-places.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { mapSettings, type MapSettings, locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -83,6 +94,7 @@
     mdiMapMarkerOffOutline,
     mdiMagnify,
     mdiMapMarkerMultipleOutline,
+    mdiMapMarkerPlusOutline,
     mdiMapOutline,
     mdiMapSearchOutline,
     mdiMinus,
@@ -91,7 +103,7 @@
   } from '@mdi/js';
   import type { Feature, Point } from 'geojson';
   import { LngLatBounds, type GeoJSONSource, type Map } from 'maplibre-gl';
-  import { onDestroy, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import { MediaQuery } from 'svelte/reactivity';
   import { AttributionControl, GeoJSON, MapLibre, Marker, MarkerLayer } from 'svelte-maplibre';
@@ -499,6 +511,190 @@
     layoutPins();
   });
 
+  /* ------------------------------------------------------------------ */
+  /* Named places (FL-1019)                                              */
+  /* ------------------------------------------------------------------ */
+  // The library's map only: an album can be someone else's, and these names are the viewer's own.
+  type PlaceDraft = { id?: string; name: string; radius: number; latitude: number; longitude: number };
+  let draft = $state<PlaceDraft>();
+  let draftError = $state<string>();
+  let draftSaving = $state(false);
+  let stage = $state<HTMLElement>();
+  let nameButton = $state<HTMLElement>();
+  let draftPanel = $state<HTMLElement>();
+  const yourPlaces = $derived(scoped ? [] : namedPlaces.places.filter((place) => place.id !== draft?.id));
+  /** What the panel says the circle holds: only when every item is on the map to count. */
+  const draftInside = $derived.by(() => {
+    if (!draft || !complete) {
+      return;
+    }
+    const { latitude, longitude, radius } = draft;
+    return points
+      .filter(
+        (point) => distanceMeters({ latitude, longitude }, { latitude: point.lat, longitude: point.lon }) <= radius,
+      )
+      .reduce((sum, point) => sum + point.count, 0);
+  });
+
+  /** The map multiplies each circle's size at zoom 0 in CSS, so following a zoom redraws nothing. */
+  const followZoom = () => stage?.style.setProperty('--np-zoom-scale', String(2 ** (map?.getZoom() ?? zoom)));
+
+  const openDraft = async (next: PlaceDraft) => {
+    settingsOpen = false;
+    draftError = undefined;
+    draft = next;
+    await tick();
+    // A phone keeps its keyboard down until the name is tapped: the sheet would cover the pin.
+    if (!phone.current) {
+      draftPanel?.querySelector<HTMLInputElement>('input[type="text"]')?.focus();
+    }
+  };
+  const nameHere = (latitude: number, longitude: number) => {
+    if (scoped) {
+      return;
+    }
+    void openDraft({ name: '', radius: PLACE_RADIUS_DEFAULT, latitude, longitude });
+  };
+  const nameAtCentre = () => {
+    if (draft) {
+      closeDraft();
+    } else if (map) {
+      const { lat, lng } = map.getCenter();
+      nameHere(lat, lng);
+    }
+  };
+  const changePlace = (place: (typeof namedPlaces.places)[number]) =>
+    void openDraft({
+      id: place.id,
+      name: place.name,
+      radius: place.radiusMeters,
+      latitude: place.latitude,
+      longitude: place.longitude,
+    });
+  const closeDraft = () => {
+    draft = undefined;
+    draftError = undefined;
+    nameButton?.querySelector('button')?.focus();
+  };
+  const saveDraft = async (event: SubmitEvent) => {
+    event.preventDefault();
+    if (!draft || draftSaving) {
+      return;
+    }
+    const { id, radius, latitude, longitude } = draft;
+    const name = draft.name.trim();
+    if (!name) {
+      return;
+    }
+    if (isPlaceNameTaken(namedPlaces.places, name, id)) {
+      draftError = $t('frameleaf_named_places_error_duplicate');
+      return;
+    }
+    if (!id && namedPlaces.places.length >= PLACES_MAX) {
+      draftError = $t('frameleaf_named_places_error_limit', { values: { count: PLACES_MAX } });
+      return;
+    }
+    draftSaving = true;
+    draftError = undefined;
+    try {
+      const dto = { name, radiusMeters: radius, latitude, longitude };
+      await (id ? namedPlaces.update(id, dto) : namedPlaces.create(dto));
+      status = $t('frameleaf_named_places_saved', { values: { name } });
+      closeDraft();
+    } catch {
+      draftError = $t('frameleaf_named_places_error_save');
+    } finally {
+      draftSaving = false;
+    }
+  };
+  /** The arrow keys move the pin by about 10 map pixels, or 50 with Shift. */
+  const nudgePin = (event: KeyboardEvent) => {
+    const moves: Record<string, [number, number]> = {
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+    };
+    const move = moves[event.key];
+    if (!move || !draft || !map) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const step = event.shiftKey ? 50 : 10;
+    const at = map.project([draft.longitude, draft.latitude]);
+    const { lat, lng } = map.unproject([at.x + move[0] * step, at.y + move[1] * step]);
+    draft.latitude = lat;
+    draft.longitude = lng;
+  };
+
+  // Right-click, a long press, a click to place the pin, or a click on a circle to change it.
+  const LONG_PRESS_MS = 550;
+  $effect(() => {
+    const instance = map;
+    if (!instance || scoped || typeof instance.on !== 'function') {
+      return;
+    }
+    type MapPointer = { lngLat: { lat: number; lng: number }; originalEvent?: Event };
+    let press: ReturnType<typeof setTimeout> | undefined;
+    const cancelPress = () => clearTimeout(press);
+    const onContext = ({ lngLat }: MapPointer) => nameHere(lngLat.lat, lngLat.lng);
+    const onTouchStart = (event: MapPointer) => {
+      cancelPress();
+      if ((event.originalEvent as TouchEvent | undefined)?.touches?.length === 1) {
+        press = setTimeout(() => onContext(event), LONG_PRESS_MS);
+      }
+    };
+    const onClick = ({ lngLat, originalEvent }: MapPointer) => {
+      if (!(originalEvent?.target as HTMLElement | null)?.classList?.contains('maplibregl-canvas')) {
+        return;
+      }
+      if (draft) {
+        draft.latitude = lngLat.lat;
+        draft.longitude = lngLat.lng;
+        return;
+      }
+      const hit = placeAtPoint(namedPlaces.places, { latitude: lngLat.lat, longitude: lngLat.lng }, instance.getZoom());
+      if (hit) {
+        changePlace(hit);
+      }
+    };
+    instance.on('contextmenu', onContext);
+    instance.on('touchstart', onTouchStart);
+    instance.on('touchend', cancelPress);
+    instance.on('touchcancel', cancelPress);
+    instance.on('touchmove', cancelPress);
+    instance.on('movestart', cancelPress);
+    instance.on('click', onClick);
+    instance.on('zoom', followZoom);
+    followZoom();
+    return () => {
+      cancelPress();
+      instance.off('contextmenu', onContext);
+      instance.off('touchstart', onTouchStart);
+      instance.off('touchend', cancelPress);
+      instance.off('touchcancel', cancelPress);
+      instance.off('touchmove', cancelPress);
+      instance.off('movestart', cancelPress);
+      instance.off('click', onClick);
+      instance.off('zoom', followZoom);
+    };
+  });
+  onMount(() => {
+    if (scoped) {
+      return;
+    }
+    void namedPlaces.load();
+  });
+  // Places' "Name a place" opens the map with the panel up, once there is a map to centre it on.
+  let namingAsked = typeof location !== 'undefined' && new URLSearchParams(location.search).has('naming');
+  $effect(() => {
+    if (namingAsked && map && loaded) {
+      namingAsked = false;
+      untrack(nameAtCentre);
+    }
+  });
+
   const retryMarkers = () => {
     loadFailed = false;
     attempt += 1;
@@ -764,6 +960,12 @@
   };
 
   const onKeydown = (event: KeyboardEvent) => {
+    if (draft && event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDraft();
+      return;
+    }
     if (settingsOpen && event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
@@ -803,8 +1005,9 @@
 />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="fl-map" class:with-list={listOpen} onkeydown={onKeydown}>
+<div class="fl-map" class:with-list={listOpen} class:naming={!!draft} onkeydown={onKeydown}>
   <div
+    bind:this={stage}
     class="stage"
     role="region"
     aria-label={$t('frameleaf_map_region', { values: { title, count: inViewCount } })}
@@ -967,6 +1170,62 @@
           </span>
         </Marker>
       {/each}
+      <!-- FL-1019: the person's places, soft circles with their names. Only the name takes the pointer, so
+           photos under a circle stay clickable; a click on the circle itself is read by the map. -->
+      {#each yourPlaces as place (place.id)}
+        <Marker lngLat={[place.longitude, place.latitude]} anchor="center" zIndex={1}>
+          <span
+            class="np-anchor"
+            style:--np-base="{circleBasePx(place.latitude, place.radiusMeters)}px"
+            style:--np-min="{MIN_CIRCLE_RADIUS_PX}px"
+          >
+            <span class="np-circle" aria-hidden="true"></span>
+            <button
+              type="button"
+              class="np-name"
+              aria-label={$t('frameleaf_named_places_change_named', { values: { name: place.name } })}
+              onclick={(event) => {
+                event.stopPropagation();
+                changePlace(place);
+              }}
+            >
+              {place.name}
+            </button>
+          </span>
+        </Marker>
+      {/each}
+      {#if draft}
+        <Marker
+          lngLat={[draft.longitude, draft.latitude]}
+          anchor="center"
+          zIndex={3}
+          draggable
+          ondragend={({ lngLat }) => {
+            if (draft) {
+              const [longitude, latitude] = lngLat as [number, number];
+              draft.latitude = latitude;
+              draft.longitude = longitude;
+            }
+          }}
+        >
+          <span
+            class="np-anchor"
+            style:--np-base="{circleBasePx(draft.latitude, draft.radius)}px"
+            style:--np-min="{MIN_CIRCLE_RADIUS_PX}px"
+          >
+            <span class="np-circle draft" aria-hidden="true"></span>
+            <button type="button" class="np-pin" aria-label={$t('frameleaf_named_places_pin')} onkeydown={nudgePin}>
+              <svg viewBox="0 0 28 36" width="28" height="36" aria-hidden="true">
+                <path
+                  d="M14 1C7 1 1.500 6.500 1.500 13.500 1.500 23 14 35 14 35s12.500-12 12.500-21.500C26.500 6.500 21 1 14 1Z"
+                />
+                <circle cx="14" cy="13.500" r="4.500" />
+              </svg>
+            </button>
+            {#if draft.name.trim()}<span class="np-name draft">{draft.name.trim()}</span>{/if}
+          </span>
+        </Marker>
+      {/if}
     </MapLibre>
 
     <p id="fl-map-help" class="sr-only">{$t('frameleaf_map_help')}</p>
@@ -1013,6 +1272,17 @@
       >
         <Icon icon={mdiViewListOutline} size="20" />
       </IconButton>
+      {#if !scoped}
+        <span bind:this={nameButton} class="gear">
+          <IconButton
+            label={$t('frameleaf_named_places_name_this')}
+            pressed={!!draft && !draft.id}
+            onclick={nameAtCentre}
+          >
+            <Icon icon={mdiMapMarkerPlusOutline} size="20" />
+          </IconButton>
+        </span>
+      {/if}
       <span bind:this={gear} class="gear">
         <IconButton label={$t('frameleaf_map_settings')} pressed={settingsOpen} onclick={() => void toggleSettings()}>
           <Icon icon={mdiCogOutline} size="20" />
@@ -1147,6 +1417,34 @@
             </div>
           {/if}
         </dl>
+      </div>
+    {/if}
+
+    {#if draft}
+      <div
+        bind:this={draftPanel}
+        class="np-panel"
+        role="dialog"
+        aria-label={draft.id ? $t('frameleaf_named_places_change_title') : $t('frameleaf_named_places_name_this')}
+      >
+        <header>
+          <strong>
+            {draft.id ? $t('frameleaf_named_places_change_title') : $t('frameleaf_named_places_name_this')}
+          </strong>
+          <IconButton label={$t('close')} onclick={closeDraft}>
+            <Icon icon={mdiClose} size="18" />
+          </IconButton>
+        </header>
+        <p class="np-lead">{$t('frameleaf_named_places_map_lead')}</p>
+        <form onsubmit={(event) => void saveDraft(event)}>
+          <NamedPlaceFields bind:name={draft.name} bind:radius={draft.radius} inside={draftInside} error={draftError} />
+          <div class="np-actions">
+            <Button onclick={closeDraft}>{$t('cancel')}</Button>
+            <Button type="submit" variant="primary" disabled={!draft.name.trim() || draftSaving}>
+              {draft.id ? $t('frameleaf_named_places_save_changes') : $t('frameleaf_named_places_save')}
+            </Button>
+          </div>
+        </form>
       </div>
     {/if}
 
@@ -1570,6 +1868,144 @@
   }
 
   /* Settings sheet */
+  /* FL-1019, named-places.css: a circle is its size at zoom 0 times 2^zoom, never under --np-min. */
+  .np-anchor {
+    --np-r: max(var(--np-min), calc(var(--np-base) * var(--np-zoom-scale, 1)));
+    position: relative;
+    display: block;
+    width: 0;
+    height: 0;
+  }
+  .np-circle {
+    position: absolute;
+    top: calc(var(--np-r) * -1);
+    left: calc(var(--np-r) * -1);
+    width: calc(var(--np-r) * 2);
+    height: calc(var(--np-r) * 2);
+    border: 1.5px solid color-mix(in srgb, var(--fl-accent) 55%, transparent);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--fl-accent) 10%, transparent);
+    pointer-events: none;
+  }
+  .np-circle.draft {
+    border: 2px dashed var(--fl-accent);
+    background: color-mix(in srgb, var(--fl-accent) 18%, transparent);
+  }
+  .np-name {
+    position: absolute;
+    /* Under the circle, but in view when a large one fills the map. */
+    top: calc(min(var(--np-r), 120px) + var(--fl-space-1));
+    left: 0;
+    max-width: 180px;
+    overflow: hidden;
+    transform: translateX(-50%);
+    color: var(--fl-text);
+    font-size: var(--fl-font-small);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    text-shadow:
+      0 0 3px var(--fl-canvas),
+      0 0 3px var(--fl-canvas),
+      0 0 2px var(--fl-canvas);
+    white-space: nowrap;
+  }
+  button.np-name {
+    padding: 2px var(--fl-space-1);
+    border-radius: var(--fl-radius-control);
+    cursor: pointer;
+  }
+  button.np-name:hover {
+    text-decoration: underline;
+  }
+  button.np-name:focus-visible,
+  .np-pin:focus-visible {
+    outline: 2px solid var(--fl-accent);
+    outline-offset: 1px;
+  }
+  .np-name.draft {
+    pointer-events: none;
+  }
+  .np-pin {
+    position: absolute;
+    top: -36px;
+    left: -14px;
+    width: 28px;
+    height: 36px;
+    padding: 0;
+    border-radius: var(--fl-radius-control);
+    cursor: grab;
+  }
+  .np-pin path {
+    fill: var(--fl-accent);
+    stroke: var(--fl-panel);
+    stroke-width: 2;
+  }
+  .np-pin circle {
+    fill: var(--fl-panel);
+  }
+  .np-panel {
+    position: absolute;
+    top: 12px;
+    right: 80px;
+    z-index: 4;
+    display: grid;
+    gap: var(--fl-space-3);
+    width: 300px;
+    max-width: calc(100% - 92px);
+    max-height: calc(100% - 24px);
+    overflow: auto;
+    padding: var(--fl-space-3) var(--fl-space-4) var(--fl-space-4);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    box-shadow: var(--fl-shadow-2);
+    animation: map-sheet-in var(--fl-motion-slow) var(--fl-ease) both;
+  }
+  .np-panel header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .np-panel header strong {
+    font-weight: 600;
+  }
+  .np-lead {
+    color: var(--fl-muted);
+    font-size: var(--fl-font-callout);
+    line-height: 1.5;
+  }
+  .np-panel form {
+    display: grid;
+    gap: var(--fl-space-4);
+  }
+  .np-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--fl-space-2);
+    padding-top: var(--fl-space-4);
+    border-top: 1px solid var(--fl-border);
+  }
+  /* The phone sheet covers the lower map, so the tools and legend step aside (named-places.css). */
+  @media (max-width: 640px) {
+    .np-panel {
+      top: auto;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      width: auto;
+      max-width: none;
+      max-height: 70%;
+      padding: var(--fl-space-4) var(--fl-space-4) calc(var(--fl-space-8) + var(--fl-space-8));
+      border-radius: var(--fl-radius-card) var(--fl-radius-card) 0 0;
+    }
+    .np-lead {
+      display: none;
+    }
+    .naming .tools,
+    .naming .legend,
+    .naming .top-left {
+      display: none;
+    }
+  }
   .settings {
     position: absolute;
     top: 12px;

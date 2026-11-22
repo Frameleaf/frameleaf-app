@@ -105,6 +105,7 @@
     mdiImageSearchOutline,
     mdiMagnify,
     mdiMapMarker,
+    mdiMapMarkerRadiusOutline,
     mdiPlayCircleOutline,
     mdiPoundBox,
     mdiTagOutline,
@@ -1419,9 +1420,19 @@
                       size={20}
                     />
                   {:else}
-                    <Icon icon={SUGGESTION_ICONS[entry.item.kind]} size="16" aria-hidden={true} />
+                    <Icon
+                      icon={entry.item.yourPlace ? mdiMapMarkerRadiusOutline : SUGGESTION_ICONS[entry.item.kind]}
+                      size="16"
+                      aria-hidden={true}
+                    />
                   {/if}
-                  <span>{entry.item.labelKey ? $t(entry.item.labelKey) : entry.item.label}</span>
+                  <span
+                    >{entry.item.labelKey ? $t(entry.item.labelKey) : entry.item.label}{#if entry.item.yourPlace}<small
+                        class="sp-yours"
+                      >
+                        · {$t('frameleaf_named_places_your_place')}</small
+                      >{/if}</span
+                  >
                   <code>{entry.item.detail}</code>
                   {#if entry.item.count !== undefined}
                     <small>{entry.item.count.toLocaleString($locale)}</small>
@@ -1648,6 +1659,7 @@
         {typing}
         {facets}
         people={options.people}
+        namedPlaces={options.namedPlaces}
         {selectedPeople}
         {tokens}
         enrichment={base.imageEnrichment}

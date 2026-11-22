@@ -1,4 +1,4 @@
-import { getAlbumInfo, getPerson, getPet, getTagById, getVisitedLandmarks } from '@frameleaf/sdk';
+import { getAlbumInfo, getPerson, getPet, getTagById, getUserPlaces, getVisitedLandmarks } from '@frameleaf/sdk';
 import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 
 /**
@@ -19,7 +19,7 @@ import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
  * name set: the owner decision this ships under is explicit that a hidden identity's name must
  * never leak into a filename, and an empty name is not a name.
  */
-export type FilterEntityKind = 'person' | 'pet' | 'tag' | 'album' | 'landmark';
+export type FilterEntityKind = 'person' | 'pet' | 'tag' | 'album' | 'landmark' | 'namedPlace';
 
 const nameCache = new Map<string, Promise<string | null>>();
 let watchesAccess = false;
@@ -44,6 +44,15 @@ const fetchEntityName = async (kind: FilterEntityKind, id: string): Promise<stri
     // FL-353: a landmark has no read of its own; the visited list names every one a search can match
     const landmarks = await getVisitedLandmarks();
     return landmarks.find((landmark) => landmark.id === id)?.name ?? null;
+  }
+  if (kind === 'namedPlace') {
+    // FL-1019: the signed-in person's own list; a shared link has no filter of this kind to name
+    const { authManager } = await import('$lib/managers/auth-manager.svelte');
+    if (authManager.isSharedLink) {
+      return null;
+    }
+    const places = await getUserPlaces();
+    return places.find((place) => place.id === id)?.name ?? null;
   }
   const tag = await getTagById({ id });
   // The full nested path ("Trips/Rockies"), not just the leaf name: it is what the existing
