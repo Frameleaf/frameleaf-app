@@ -24,7 +24,7 @@ import {
   SharedSpacePersonResponseDto,
   SharedSpacePreviewResponseDto,
 } from 'src/dtos/shared-space.dto.js';
-import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
+import { UserResponseDto, mapMember, mapUser } from 'src/dtos/user.dto.js';
 import { AlbumUserRole, AssetFileType, CacheControl, Permission, SharedSpaceEventType } from 'src/enum.js';
 import { RecipientGroup, SharedSpaceEvent, SharedSpaceInvite } from 'src/repositories/album-user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -339,7 +339,7 @@ export class SharedSpaceService extends BaseService {
     requireSharedSpace(album);
 
     const members: SharedSpaceMemberResponseDto[] = album.albumUsers.map(({ user, role }) => ({
-      user: mapUser(user),
+      user: mapMember(user),
       role,
       pending: false,
     }));
@@ -351,7 +351,7 @@ export class SharedSpaceService extends BaseService {
         continue;
       }
       members.push({
-        user: mapUser(user),
+        user: mapMember(user),
         role: invite.role,
         pending: true,
         invitedAt: asDateTimeString(invite.createdAt),
@@ -1071,7 +1071,7 @@ export class SharedSpaceService extends BaseService {
       id: row.id,
       createdAt: asDateTimeString(row.createdAt),
       updatedAt: asDateTimeString(row.updatedAt),
-      user: mapUser(row.user),
+      user: mapMember(row.user),
       assetId: row.assetId,
       comment: row.comment ?? '',
       mentions: await this.mapMentions(mentionIds, users),
@@ -1092,7 +1092,7 @@ export class SharedSpaceService extends BaseService {
         if (!cache.has(userId)) {
           cache.set(
             userId,
-            this.userRepository.get(userId, {}).then((user) => (user ? mapUser(user) : null)),
+            this.userRepository.get(userId, {}).then((user) => (user ? mapMember(user) : null)),
           );
         }
         return cache.get(userId)!;
@@ -1146,8 +1146,8 @@ export class SharedSpaceService extends BaseService {
       albumName: album.albumName,
       description: album.description ?? '',
       icon: album.icon,
-      owner: mapUser(owner),
-      invitedBy: invitedBy ? mapUser(invitedBy) : null,
+      owner: mapMember(owner),
+      invitedBy: invitedBy ? mapMember(invitedBy) : null,
       role: invite?.role ?? AlbumUserRole.Viewer,
       invitedAt: asDateTimeString(invite?.createdAt ?? album.createdAt),
       accepted,
