@@ -72,6 +72,7 @@ export class HouseholdShareMemberTable {
 @Table('household_share_change')
 @Unique({ columns: ['shareId', 'kind', 'entityId'] })
 @Index({ name: 'household_share_change_shareId_seq_idx', columns: ['shareId', 'seq'] })
+@Index({ name: 'household_share_change_comment_asset_idx', columns: ['assetId'], where: `(kind = 'comment')` })
 @Check({
   name: 'household_share_change_kind_check',
   expression: `kind = ANY (ARRAY['asset'::text, 'person'::text, 'comment'::text, 'space'::text])`,
@@ -90,6 +91,10 @@ export class HouseholdShareChangeTable {
 
   @Column({ type: 'uuid' })
   entityId!: string;
+
+  /** FL-1012: the item a comment row is about. It outlives the comment, so removing the item still re-reads the row. */
+  @Column({ type: 'uuid', nullable: true })
+  assetId!: Generated<string | null>;
 
   @CreateDateColumn()
   changedAt!: Generated<Timestamp>;

@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus, Next, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Put, Query, Req, Res } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import { Authenticated } from 'src/middleware/auth.guard.js';
@@ -10,7 +10,8 @@ import { sendFile } from 'src/utils/file.js';
 /**
  * Linked Households (FL-952, FL-979): the routes another household's server calls. They are public to the session
  * guard because the caller is a server, not a signed-in person: `HouseholdPeerService.authorize` admits it, first,
- * on every route. No route reads a request body. Files are refused before `sendFile`, which would answer 404.
+ * on every route. Only the comment routes read a body, after that. Files are refused before `sendFile`, which would
+ * answer 404.
  */
 @ApiExcludeController()
 @Controller('household/v1/links/:linkId')
@@ -110,6 +111,49 @@ export class HouseholdPeerController {
     @Res({ passthrough: true }) response: Response,
   ) {
     return this.reply(linkId, request, response, (access) => this.shares.manifest(access, shareId, { cursor, limit }));
+  }
+
+  @Post('shares/:shareId/comments')
+  @Authenticated({ public: true })
+  @HttpCode(HttpStatus.OK)
+  postComment(
+    @Param('linkId') linkId: string,
+    @Param('shareId') shareId: string,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.reply(linkId, request, response, async (access) =>
+      this.shares.postComment(access, shareId, await this.peer.readBody(request, access)),
+    );
+  }
+
+  @Put('shares/:shareId/comments/:commentId')
+  @Authenticated({ public: true })
+  putComment(
+    @Param('linkId') linkId: string,
+    @Param('shareId') shareId: string,
+    @Param('commentId') commentId: string,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.reply(linkId, request, response, async (access) =>
+      this.shares.putComment(access, shareId, commentId, await this.peer.readBody(request, access)),
+    );
+  }
+
+  @Delete('shares/:shareId/comments/:commentId')
+  @Authenticated({ public: true })
+  @HttpCode(HttpStatus.OK)
+  deleteComment(
+    @Param('linkId') linkId: string,
+    @Param('shareId') shareId: string,
+    @Param('commentId') commentId: string,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.reply(linkId, request, response, async (access) =>
+      this.shares.deleteComment(access, shareId, commentId, await this.peer.readBody(request, access)),
+    );
   }
 
   @Get('shares/:shareId/originals/:assetId')

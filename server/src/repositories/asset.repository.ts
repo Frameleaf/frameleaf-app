@@ -1576,7 +1576,7 @@ export class AssetRepository {
   }
   /**
    * The ids a lock or unlock of `ids` covers: the assets themselves, the stills whose video part they
-   * are, every member of their stacks, and the video parts of all of those.
+   * are, every member of their stacks, the video parts of all of those, and (FL-967) both sides of a print.
    */
   private async getLockGroupIds(db: Kysely<DB>, ids: string[]): Promise<string[]> {
     const { rows } = await sql<{
@@ -1586,6 +1586,10 @@ export class AssetRepository {
         select asset.id, asset."stackId" from asset where asset.id = ${anyUuid(ids)}
         union
         select still.id, still."stackId" from asset as still where still."livePhotoVideoId" = ${anyUuid(ids)}
+        union
+        select front.id, front."stackId" from asset_print_back as pair
+        inner join asset as front on front.id = pair."frontAssetId"
+        where pair."backAssetId" = ${anyUuid(ids)}
       ),
       grouped as (
         select direct.id from direct
@@ -1598,6 +1602,10 @@ export class AssetRepository {
       from asset
       inner join grouped on grouped.id = asset.id
       where asset."livePhotoVideoId" is not null
+      union
+      select pair."backAssetId" as id
+      from asset_print_back as pair
+      inner join grouped on grouped.id = pair."frontAssetId"
     `.execute(db);
     return rows.map(({ id }) => id);
   }
@@ -1739,6 +1747,20 @@ export class AssetRepository {
       .execute();
     return count;
   }
+  /** FL-967: which of these are the paired back of a print. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getPrintBackIds(ids: string[]): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom('asset_print_back')
+      .select('backAssetId')
+      .where('backAssetId', 'in', ids)
+      .execute();
+    return rows.map(({ backAssetId }) => backAssetId);
+  }
+
   @GenerateSql()
   getFileSamples() {
     return this.db.selectFrom('asset_file').select(['assetId', 'path']).limit(sql.lit(3)).execute();

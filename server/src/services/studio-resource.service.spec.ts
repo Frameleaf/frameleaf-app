@@ -484,6 +484,17 @@ describe(StudioResourceService.name, () => {
       ]);
     });
 
+    it('refuses the back of a print like a missing asset, even for its owner (FL-967)', async () => {
+      const back = ownedVideo({ type: AssetType.Image, visibility: AssetVisibility.Hidden });
+      mocks.asset.getByIds.mockResolvedValue([back]);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([back.id]));
+      mocks.asset.getPrintBackIds.mockResolvedValue([back.id]);
+
+      const { refused } = await sut.resolveProjectResources(auth, context(sequenceWith({ assetId: back.id })));
+
+      expect(refused.map(({ id, reason }) => [id, reason])).toEqual([[back.id, StudioRefusalReason.NotFound]]);
+    });
+
     it("tells hidden content apart and refuses someone else's unreadable asset like a missing one", async () => {
       const mine = ownedVideo();
       const theirs = AssetFactory.create({ ownerId: newUuid(), type: AssetType.Video });

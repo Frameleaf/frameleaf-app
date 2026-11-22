@@ -550,6 +550,31 @@ export const media_import_asset_removed = registerFunction({
     END;
   `,
 });
+export const asset_print_back_released = registerFunction({
+  name: 'asset_print_back_released',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      UPDATE asset SET visibility = OLD."backPreviousVisibility"
+        WHERE id = OLD."backAssetId" AND visibility = 'hidden';
+      RETURN NULL;
+    END;
+  `,
+});
+export const asset_print_back_not_shared = registerFunction({
+  name: 'asset_print_back_not_shared',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      IF EXISTS (SELECT 1 FROM asset_print_back WHERE "backAssetId" = NEW."assetId") THEN
+        RETURN NULL;
+      END IF;
+      RETURN NEW;
+    END;
+  `,
+});
 export const media_import_collection_removed = registerFunction({
   name: 'media_import_collection_removed',
   returnType: 'TRIGGER',

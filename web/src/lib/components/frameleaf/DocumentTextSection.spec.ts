@@ -40,6 +40,34 @@ const document = (): DocumentResponseDto => ({
   recognizedAt: '2026-09-20T10:00:00.000Z',
 });
 
+describe('DocumentTextSection on the back of a print (FL-967)', () => {
+  beforeAll(() => addMessages('dev', en));
+  beforeEach(() => {
+    vi.resetAllMocks();
+    ocrManager.clear();
+    sdkMock.getDocument.mockResolvedValue({ ...document(), canEdit: true });
+  });
+
+  it('opens the line review without the heading or the region controls', async () => {
+    render(DocumentTextSection, { asset, reviewOnly: true });
+
+    await screen.findByTestId('frameleaf-document-lines');
+    expect(screen.queryByText(en.frameleaf_documents_text_in_photo)).toBeNull();
+    expect(screen.queryByText(en.frameleaf_documents_show_regions)).toBeNull();
+    expect(screen.getByTestId('frameleaf-document-lines').hasAttribute('open')).toBe(true);
+  });
+
+  it("leaves the front photo's overlay alone", async () => {
+    const setDocumentText = vi.spyOn(ocrManager, 'setDocumentText');
+    const { unmount } = render(DocumentTextSection, { asset, reviewOnly: true });
+    await screen.findByTestId('frameleaf-document-lines');
+
+    unmount();
+
+    expect(setDocumentText).not.toHaveBeenCalled();
+  });
+});
+
 describe('DocumentTextSection', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {

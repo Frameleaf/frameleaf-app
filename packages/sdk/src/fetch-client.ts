@@ -2909,6 +2909,43 @@ export type HardwareCheckResponseDto = {
     /** Render and restoration workers, from their reported evidence */
     workers: HardwareWorkerCheckDto[];
 };
+export type HouseholdLinkDto = {
+    active: boolean;
+    /** The kind of address that last answered: local, wan, ipv6, relay */
+    connectionPath: string | null;
+    createdAt: string;
+    ended: boolean;
+    endedAt: string | null;
+    /** What this server’s administrator calls the other household */
+    householdName: string;
+    id: string;
+    lastSeenAt: string | null;
+    paused: boolean;
+    /** The other household’s server name */
+    peerName: string;
+    /** Why a link is paused (licence, unlinked, peer-unlinked, key, cloud) or why an active link was not reached (home-network, unreachable) */
+    reason: string | null;
+    /** active, paused or ended */
+    state: string;
+};
+export type HouseholdInvitationDto = {
+    /** The short form of the invitation, easier to read out or type */
+    code: string;
+    expiresAt: string;
+    invitationId: string;
+    token: string;
+};
+export type HouseholdInvitationAcceptDto = {
+    code: string;
+    householdName?: string;
+};
+export type HouseholdInvitationPreviewDto = {
+    /** The inviting household’s server name */
+    name: string;
+};
+export type HouseholdLinkUpdateDto = {
+    householdName: string;
+};
 export type IdenticalFilesCountsDto = {
     /** Bytes moved to Unused files */
     bytesMovedToUnused: number;
@@ -4550,6 +4587,10 @@ export type MemoriesResponse = {
     duration: number;
     /** Whether memories are enabled */
     enabled: boolean;
+    /** Whose Mother's Day and Father's Day dates to use; auto follows the account's language and country */
+    occasionRegion: string;
+    /** Whether to make Mother's Day and Father's Day memories */
+    occasions: boolean;
     /** Whether memories appear in web sidebar */
     sidebarWeb: boolean;
 };
@@ -4775,6 +4816,10 @@ export type MemoriesUpdate = {
     duration?: number;
     /** Whether memories are enabled */
     enabled?: boolean;
+    /** Whose Mother's Day and Father's Day dates to use; auto follows the account's language and country */
+    occasionRegion?: OccasionRegion;
+    /** Whether to make Mother's Day and Father's Day memories */
+    occasions?: boolean;
     /** Whether memories appear in web sidebar */
     sidebarWeb?: boolean;
 };
@@ -5193,6 +5238,8 @@ export type AlbumResponseDto = {
     folderAlbum?: AlbumFolderSourceDto;
     /** Has shared link */
     hasSharedLink: boolean;
+    /** Uploads into this album are checked for several photos on one scan */
+    holdsScans?: boolean;
     /** Icon: a Material Design Icons name or legacy key (null = default icon) */
     icon: string | null;
     /** Album ID */
@@ -5576,6 +5623,8 @@ export type UpdateAlbumDto = {
     coverFollowsNewest?: boolean;
     /** Album description */
     description?: string | null;
+    /** Check uploads into this album for several photos on one scan and offer to split them. Nothing is split without the owner confirming. */
+    holdsScans?: boolean;
     /** Icon: any Material Design Icons name (null = clear / use default icon) */
     icon?: string | null;
     /** Enable activity feed */
@@ -5762,6 +5811,37 @@ export type AssetNamedPlaceDto = {
     /** The name you gave the place */
     name: string;
 };
+export type PersonRelativeDto = {
+    /** Person date of birth */
+    birthDate: string | null;
+    /** Person ID */
+    id: string;
+    /** Is hidden */
+    isHidden: boolean;
+    /** Person name */
+    name: string;
+    /** Thumbnail path */
+    thumbnailPath: string;
+    /** Last update date */
+    updatedAt?: string;
+};
+export type PersonParentRelativeDto = {
+    /** Which parent the parent is to the child: mother, father or parent. Unknown values may be added */
+    parentRole: string;
+    person: PersonRelativeDto;
+};
+export type PersonRelationshipsResponseDto = {
+    /** The person's children; `parentRole` is which parent the person is to that child */
+    children: PersonParentRelativeDto[];
+    /** The siblings listed only because they share a parent. There is no recorded relationship with them to remove */
+    inferredSiblingIds: string[];
+    /** The person's parents, each with which parent they are */
+    parents: PersonParentRelativeDto[];
+    /** The person's partners */
+    partners: PersonRelativeDto[];
+    /** The person's siblings: the ones recorded, and everyone who shares a parent with them */
+    siblings: PersonRelativeDto[];
+};
 export type PersonResponseDto = {
     /** Person date of birth */
     birthDate: string | null;
@@ -5783,6 +5863,8 @@ export type PersonResponseDto = {
     name: string;
     /** The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner */
     notes?: string | null;
+    /** The person's family (FL-842). Returned only to the person's owner, and only by GET /people/:id; never in a list */
+    relationships?: PersonRelationshipsResponseDto;
     /** Thumbnail path */
     thumbnailPath: string;
     /** Last update date */
@@ -5817,6 +5899,8 @@ export type AssetResponseDto = {
     checksum: string;
     /** The UTC timestamp when the asset was originally uploaded to Frameleaf. */
     createdAt: string;
+    /** Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate. */
+    dateAccuracy?: string | null;
     /** Duplicate group ID */
     duplicateId?: string | null;
     /** Video/gif duration in milliseconds (null for static images) */
@@ -5895,6 +5979,8 @@ export type AssetResponseDto = {
     width: number | null;
 };
 export type SanitizedAssetResponseDto = {
+    /** Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate. */
+    dateAccuracy?: string | null;
     /** Video/gif duration in milliseconds (null for static images) */
     duration: number | null;
     /** Whether asset has metadata */
@@ -6715,6 +6801,8 @@ export type AssetBulkUpdateDto = {
     artist?: string | null;
     /** Copyright notice */
     copyright?: string | null;
+    /** With dateTimeOriginal: only its year (`year`) or its decade (`decade`) is known. The date is then stored as the start of that period, 1 January at midnight, and no time zone is applied. A dateTimeOriginal sent without it, or with null, is an exact date. Null on its own keeps the date and makes it exact. */
+    dateAccuracy?: DateAccuracy | null;
     /** Original date and time */
     dateTimeOriginal?: string;
     /** Relative time offset in minutes */
@@ -6984,6 +7072,8 @@ export type UpdateAssetDto = {
     copyright?: string | null;
     /** Country name; kept over reverse geocoding until the item is moved again */
     country?: string | null;
+    /** With dateTimeOriginal: only its year (`year`) or its decade (`decade`) is known. The date is then stored as the start of that period, 1 January at midnight, and no time zone is applied. A dateTimeOriginal sent without it, or with null, is an exact date. Null on its own keeps the date and makes it exact. */
+    dateAccuracy?: DateAccuracy | null;
     /** Original date and time */
     dateTimeOriginal?: string;
     /** Asset description */
@@ -7700,6 +7790,20 @@ export type AssetPaletteDto = {
     swatches: PaletteSwatch[];
     version: PaletteAlgorithmVersion;
 };
+export type PrintBackResponseDto = {
+    /** The back's asset. Only its owner is told; null for anyone else */
+    backAssetId: string | null;
+    /** Whether this viewer can pair, unpair and correct the text */
+    canEdit: boolean;
+    /** The photo of the front */
+    frontAssetId: string;
+    /** The back's text with the owner's corrections, or null when there is none */
+    text: string | null;
+};
+export type PrintBackUpdateDto = {
+    /** The scan of the back of this print, or null to remove the back */
+    backAssetId: string | null;
+};
 export type AssetRestorationEstimateDto = {
     /** Measured upload throughput for this destination and workload, or null with no samples */
     bytesPerSecond: number | null;
@@ -7858,6 +7962,72 @@ export type AssetRestorationOptionsDto = {
     sourceWidth: number;
     upscale: number;
     workload: MlWorkload;
+};
+export type ScanSplitPointDto = {
+    /** Pixels from the left edge of the scan as it is displayed */
+    x: number;
+    /** Pixels from the top edge of the scan as it is displayed */
+    y: number;
+};
+export type ScanSplitExistingCropDto = {
+    /** The photo cut from this scan */
+    assetId: string;
+    /** When the photo was cut out */
+    createdAt: string;
+    /** The owner has worked on this photo, so splitting again keeps it */
+    edited: boolean;
+    /** The print's corners on the scan: top-left, top-right, bottom-right, bottom-left */
+    quad: ScanSplitPointDto[];
+    /** Degrees to turn the straightened print clockwise so it is upright: 0, 90, 180 or 270 */
+    rotation: number;
+};
+export type ScanSplitInfoResponseDto = {
+    /** All photos cut from this scan and not in the trash, shown here or not */
+    cropCount: number;
+    /** Photos cut from this scan that can be shown here */
+    crops: ScanSplitExistingCropDto[];
+    /** How many of cropCount are kept if the scan is split again */
+    editedCount: number;
+    /** Height of the scan as it is displayed, when its metadata has been read */
+    height: number | null;
+    /** The scan this photo was cut from, when it can be shown */
+    sourceAssetId: string | null;
+    /** The file name of that scan */
+    sourceFileName: string | null;
+    /** Width of the scan as it is displayed, when its metadata has been read */
+    width: number | null;
+};
+export type ScanSplitCropDto = {
+    /** The print's corners on the scan: top-left, top-right, bottom-right, bottom-left */
+    quad: ScanSplitPointDto[];
+    /** Degrees to turn the straightened print clockwise so it is upright: 0, 90, 180 or 270 */
+    rotation?: number;
+};
+export type ScanSplitDto = {
+    /** The prints to cut out, as confirmed by the owner */
+    crops: ScanSplitCropDto[];
+};
+export type ScanSplitPrintDto = {
+    /** How sure the detection is that this is one whole print, from 0 to 1 */
+    confidence: number;
+    /** The print's corners on the scan: top-left, top-right, bottom-right, bottom-left */
+    quad: ScanSplitPointDto[];
+    /** Degrees to turn the straightened print clockwise so it is upright: 0, 90, 180 or 270 */
+    rotation: number;
+};
+export type ScanSplitDetectResponseDto = {
+    /** Height of the scan as it is displayed, in pixels */
+    height: number;
+    /** The prints found, in reading order. Nothing is saved. */
+    prints: ScanSplitPrintDto[];
+    /** Width of the scan as it is displayed, in pixels: the space the corners are in */
+    width: number;
+};
+export type ScanSplitOfferResponseDto = {
+    /** Whether this photo is in an album marked as holding scans */
+    inScanAlbum: boolean;
+    /** Prints found on an upload to an album that holds scans; 0 means no offer */
+    printCount: number;
 };
 export type AssetSourceResponseDto = {
     assetId: string;
@@ -8375,6 +8545,8 @@ export type BestPhotoAssetResponseDto = {
     checksum: string;
     /** The UTC timestamp when the asset was originally uploaded to Frameleaf. */
     createdAt: string;
+    /** Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate. */
+    dateAccuracy?: string | null;
     /** Duplicate group ID */
     duplicateId?: string | null;
     /** Video/gif duration in milliseconds (null for static images) */
@@ -8737,6 +8909,10 @@ export type StringSimilarityFilter = {
 export type SourceFilter = {
     contains: string;
 };
+export type DecadeFilter = {
+    /** The first year of the decade */
+    eq: number;
+};
 export type LibraryTextFilter = {
     contains: string;
 };
@@ -8812,6 +8988,8 @@ export type SearchFilterBranch = {
     state?: StringFilterNullable;
     tagIds?: IdsFilter;
     takenAt?: DateFilter;
+    /** Taken in this decade, whether dated to a day, a year or the decade */
+    takenDecade?: DecadeFilter;
     /** Technical quality from the best-photo check (0 to 1); null when the photo has not been scored */
     technicalScore?: NumberFilterNullable;
     text?: LibraryTextFilter;
@@ -8877,6 +9055,8 @@ export type SearchFilter = {
     state?: StringFilterNullable;
     tagIds?: IdsFilter;
     takenAt?: DateFilter;
+    /** Taken in this decade, whether dated to a day, a year or the decade */
+    takenDecade?: DecadeFilter;
     /** Technical quality from the best-photo check (0 to 1); null when the photo has not been scored */
     technicalScore?: NumberFilterNullable;
     text?: LibraryTextFilter;
@@ -9571,6 +9751,8 @@ export type ConnectUploadCommitDto = {
 export type DateDoctorFixDto = {
     /** The photos to fix */
     assetIds: string[];
+    /** Date them to a year (`year`) or a decade (`decade`): only that much is known. Sent with `year` alone */
+    dateAccuracy?: DateAccuracy;
     /** With timeZone: keep the clock time shown and read it in the new zone; otherwise the moment stays */
     keepWallTime?: boolean;
     /** Move their dates this many minutes (a camera clock that was off) */
@@ -9579,6 +9761,8 @@ export type DateDoctorFixDto = {
     timeZone?: string;
     /** Give each photo the date and zone the Doctor proposes for it; photos without a proposal are left alone */
     useProposal?: boolean;
+    /** With dateAccuracy: the year, or any year of the decade; not after this year */
+    year?: number;
 };
 export type DateDoctorBatchDto = {
     /** The cause of the proposals applied, when they all had one; null for a zone or shift chosen by hand */
@@ -9587,10 +9771,14 @@ export type DateDoctorBatchDto = {
     count: number;
     /** When the fix was applied */
     createdAt: string;
+    /** `year` or `decade` when the fix dated the photos to one; other values may be added */
+    dateAccuracy?: string | null;
     /** Undo is possible until then */
     expiresAt: string;
     /** Batch ID, for undo */
     id: string;
+    /** With dateAccuracy: the year that year or decade starts in */
+    periodStart?: number | null;
     /** After undo: photos put back. A photo dated again since keeps that date */
     restored?: number;
     /** The shift chosen, in minutes */
@@ -10892,6 +11080,20 @@ export type HelpIndexResponseDto = {
     /** When this server last fetched it; null for the copy in the image */
     updatedAt: string | null;
 };
+export type HouseholdInboundShareDto = {
+    /** The local space, once accepted */
+    albumId: string | null;
+    /** What this server calls the other household */
+    householdName: string;
+    id: string;
+    /** A short machine word, such as over-quota, bad-page, file-too-large or unreachable */
+    lastError: string | null;
+    lastPulledAt: string | null;
+    ownerName: string;
+    spaceName: string;
+    /** invited, accepted or left */
+    state: string;
+};
 export type ICloudClaimItemDto = {
     /** PHCloudIdentifier.stringValue, as the device reports it */
     cloudIdentifier: string;
@@ -11370,6 +11572,274 @@ export type ICloudVerifyResponseDto = {
         state: State3;
     }[];
     operationId: string;
+};
+export type ImportConnectionResponseDto = {
+    createdAt: string;
+    dailyCheck: boolean;
+    displayName: string;
+    id: string;
+    /** Photos and videos this connection brought in or found already in the library */
+    importedItems: number;
+    /** When the latest scan started (ISO 8601) */
+    lastScanAt: string | null;
+    /** The kind of source */
+    provider: string;
+    roots: string[];
+    /** `active`, or `sign_in_required` once the source refused the saved sign-in */
+    status: string;
+    updatedAt: string;
+};
+export type ImportConnectionCreateDto = {
+    /** What the source needs to sign in. Sealed on the server and never returned */
+    credentials: {
+        [key: string]: any;
+    };
+    /** Look for new photos once a day and import them */
+    dailyCheck?: boolean;
+    /** What the owner calls this connection */
+    displayName: string;
+    /** The kind of source, one of the providers this server lists */
+    provider: string;
+    /** The folders to import from, as the source names them; empty means everything it offers */
+    roots?: string[];
+};
+export type ImportConnectionProvidersResponseDto = {
+    /** The kinds of source this server can connect to */
+    providers: string[];
+};
+export type ImportConnectionProviderStatisticsDto = {
+    connections: number;
+    /** Of those, how many check daily */
+    dailyCheck: number;
+    provider: string;
+};
+export type ImportConnectionStatisticsResponseDto = {
+    providers: ImportConnectionProviderStatisticsDto[];
+    /** Connections on this server, across every account */
+    total: number;
+};
+export type ImportConnectionUpdateDto = {
+    /** New sign-in details; a connection waiting for a new sign-in becomes usable again */
+    credentials?: {
+        [key: string]: any;
+    };
+    dailyCheck?: boolean;
+    displayName?: string;
+};
+export type ImportConnectionFolderDto = {
+    name: string;
+    /** Passed back to list inside it, or kept as a root */
+    path: string;
+};
+export type ImportConnectionFoldersResponseDto = {
+    folders: ImportConnectionFolderDto[];
+};
+export type ImportConnectionRootsDto = {
+    /** The folders to import from, as the source names them; empty means everything it offers */
+    roots: string[];
+};
+export type TakeoutAlbumDto = {
+    /** Items in the folder */
+    count: number;
+    /** The export folder */
+    folder: string;
+    /** The album name it becomes */
+    name: string;
+    /** Recreated by the next import */
+    selected: boolean;
+    /** One of Google’s automatic year folders */
+    year: boolean;
+};
+export type TakeoutCountsDto = {
+    failed: number;
+    /** Files found in the sources */
+    files: number;
+    /** Items going into Locked, not listed until Locked is unlocked */
+    hiddenLocked: number;
+    imported: number;
+    importing: number;
+    /** Photos and videos */
+    items: number;
+    matched: number;
+    /** Items already in the library, whose album memberships are restored */
+    matchedOriginals: number;
+    /** Items still to import that are not in the library yet */
+    newAssets: number;
+    ready: number;
+    /** Archive entries refused */
+    rejected: number;
+    review: number;
+    skipped: number;
+    /** Possible Live Photo pairs awaiting a decision */
+    suggestedPairs: number;
+    /** Live Photo pairs that could not be linked */
+    unresolvedPairs: number;
+};
+export type TakeoutOptionsResponseDto = {
+    albums: boolean;
+    archive: boolean;
+    dates: boolean;
+    descriptions: boolean;
+    favorites: boolean;
+    includeTrashed: boolean;
+    locations: boolean;
+    selectedAlbums?: string[];
+    sidecarReview: boolean;
+    updateMatchedMetadata: boolean;
+};
+export type TakeoutSourceResponseDto = {
+    id: string;
+    kind: TakeoutSourceKind;
+    /** The archive’s file name, or the directory’s name */
+    name: string;
+    /** Bytes staged so far; an upload resumes here */
+    received: number;
+    /** Entries refused: unsafe names, links or encryption */
+    rejected: number;
+    /** Every entry has been read */
+    scanned: boolean;
+    /** Declared archive size in bytes; zero for a directory */
+    size: number;
+};
+export type TakeoutResponseDto = {
+    /** What the latest job did or is doing */
+    action: (TakeoutAction) | null;
+    albums: TakeoutAlbumDto[];
+    counts: TakeoutCountsDto;
+    createdAt: string;
+    error: string | null;
+    errorCode: string | null;
+    id: string;
+    name: string;
+    /** The latest job, as Activity lists it */
+    operationId: string | null;
+    options: TakeoutOptionsResponseDto;
+    phase: TakeoutPhase;
+    /** Units the latest job has finished */
+    processed: number;
+    sources: TakeoutSourceResponseDto[];
+    state: TakeoutState;
+    /** Units the latest job knows of so far; grows while a scan reads its sources */
+    total: number | null;
+    updatedAt: string;
+};
+export type TakeoutControlDto = {
+    action: TakeoutControlAction;
+};
+export type TakeoutOptionsDto = {
+    /** Recreate album memberships, including for photos already in the library */
+    albums?: boolean;
+    /** Bring over archived photos as archived */
+    archive?: boolean;
+    /** Bring over the dates photos were taken */
+    dates?: boolean;
+    /** Bring over descriptions */
+    descriptions?: boolean;
+    /** Bring over favorites */
+    favorites?: boolean;
+    /** Bring in photos that were in the Google Photos trash; otherwise they are skipped */
+    includeTrashed?: boolean;
+    /** Bring over locations */
+    locations?: boolean;
+    /** Album folders to recreate; omitted means every folder that is not a year folder */
+    selectedAlbums?: string[];
+    /** Let the owner choose for items whose metadata sidecars disagree; they wait while everything else imports. Off imports them with the most likely sidecar */
+    sidecarReview?: boolean;
+    /** Fill metadata missing from photos already in the library; values already there are never replaced */
+    updateMatchedMetadata?: boolean;
+};
+export type TakeoutMetadataDto = {
+    /** Archived in Google Photos */
+    archived?: boolean;
+    /** When Google Photos received the photo (ISO 8601) */
+    createdAt?: string;
+    /** Description */
+    description?: string;
+    /** Favorite in Google Photos */
+    favorite?: boolean;
+    /** Latitude */
+    latitude?: number;
+    /** In the Google Photos Locked Folder; imported into Locked */
+    locked?: boolean;
+    /** Longitude */
+    longitude?: number;
+    /** When the photo was taken (ISO 8601) */
+    takenAt?: string;
+    /** File name Google Photos recorded */
+    title: string;
+    /** In the Google Photos trash; not imported */
+    trashed?: boolean;
+};
+export type TakeoutSidecarCandidateDto = {
+    id: string;
+    metadata: TakeoutMetadataDto;
+    path: string;
+};
+export type TakeoutItemResponseDto = {
+    albums: string[];
+    /** The library item it became or matched, when this session may open it */
+    assetId: string | null;
+    candidates: TakeoutSidecarCandidateDto[];
+    error: string | null;
+    folder: string;
+    id: string;
+    kind: TakeoutItemKind;
+    locked: boolean;
+    metadata: TakeoutMetadataDto;
+    /** Path inside the export */
+    path: string;
+    sidecarId: string | null;
+    size: number;
+    /** The archive or directory the file came from */
+    source: string;
+    state: TakeoutItemState;
+    warnings: TakeoutWarning[];
+};
+export type TakeoutItemsResponseDto = {
+    hiddenLocked: number;
+    items: TakeoutItemResponseDto[];
+    total: number;
+};
+export type ImportSignInAvailabilityResponseDto = {
+    /** Whether signing in can be started from this server now */
+    available: boolean;
+    /** What a browser needs to open the provider's own file picker; null when it has none or it is not set up */
+    picker: {
+        /** The browser API key for the provider's file picker */
+        apiKey: string;
+        /** The app id the picker grants access to (for Google, the Cloud project number) */
+        appId: string;
+    } | null;
+    /** Why not: `not-linked`, `not-configured`, `not-offered` or `cloud-unreachable` */
+    reason: string | null;
+};
+export type ImportSignInStartDto = {
+    /** The connection to sign in to again; leave out for a new one */
+    connectionId?: string;
+};
+export type ImportSignInStartResponseDto = {
+    /** The provider's sign-in page, to open in the browser */
+    authorizationUrl: string;
+    /** When this sign-in stops working (ISO 8601) */
+    expiresAt: string;
+    /** Send this back to finish the sign-in */
+    signInToken: string;
+};
+export type ImportSignInCompleteDto = {
+    /** Look for new photos once a day, for a new connection */
+    dailyCheck?: boolean;
+    /** What to call a new connection */
+    displayName?: string;
+    /** Folders for a new connection */
+    roots?: string[];
+    /** The value the start of this sign-in returned */
+    signInToken: string;
+};
+export type ImportSignInCompleteResponseDto = {
+    /** The connection, once `connected` */
+    connectionId: string | null;
+    /** `pending` (ask again), `connected`, `denied` or `expired` */
+    state: string;
 };
 export type ItemShareChangeDto = {
     /** The items (your own) to share or stop sharing */
@@ -12767,6 +13237,8 @@ export type MediaOperationBulkPayloadDto = {
     albumId?: string;
     /** For `apply-classification-rule`: the rule to apply to the items (FL-60) */
     classificationRuleId?: string;
+    /** With `dateTimeOriginal`: `year` or `decade` when only that much of the date is known */
+    dateAccuracy?: string;
     dateMode?: DateMode;
     dateTimeOriginal?: string;
     description?: string;
@@ -13091,6 +13563,12 @@ export type OnThisDayDto = {
     year: number;
 };
 export type MemoryData = EventStoryDto | YearInReviewDto | PetStoryDto | BirthdayMemoryDto | PersonRecapDto | OnThisDayDto;
+export type MemoryOccasionDto = {
+    /** The occasion, for example 'mothers_day' or 'fathers_day' */
+    kind: string;
+    /** The person the memory is about */
+    personId: string;
+};
 export type MemoryResponseDto = {
     assets: AssetResponseDto[];
     /** Creation date */
@@ -13108,6 +13586,8 @@ export type MemoryResponseDto = {
     isSaved: boolean;
     /** Memory date */
     memoryAt: string;
+    /** The occasion this memory was made for, such as Mother's Day */
+    occasion?: MemoryOccasionDto;
     /** Owner user ID */
     ownerId: string;
     /** Date when memory was seen */
@@ -13135,6 +13615,10 @@ export type MemoryCreateDto = {
     /** Date when memory should be shown */
     showAt?: string;
     "type": MemoryType;
+};
+export type MemoryOccasionsStatusDto = {
+    /** Whether anyone has been added as a mother or father */
+    hasParent: boolean;
 };
 export type MemoryShowLessDto = {
     kind: MemoryShowLessKind;
@@ -13819,6 +14303,8 @@ export type PeopleListItemDto = {
     name: string;
     /** The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner */
     notes?: string | null;
+    /** The person's family (FL-842). Returned only to the person's owner, and only by GET /people/:id; never in a list */
+    relationships?: PersonRelationshipsResponseDto;
     /** Thumbnail path */
     thumbnailPath: string;
     /** Last update date */
@@ -14062,6 +14548,11 @@ export type AssetFaceUpdateItem = {
 export type AssetFaceUpdateDto = {
     /** Face update items */
     data: AssetFaceUpdateItem[];
+};
+export type PersonRelationshipCreateDto = {
+    /** The other person; one of the caller's own people */
+    relatedPersonId: string;
+    relation: PersonRelationshipRelation;
 };
 export type PersonStatisticsResponseDto = {
     /** Number of assets */
@@ -19659,6 +20150,36 @@ export type SharedSpaceCommentUpdateDto = {
     /** The text. Mention a member with @{userId}; every mention must name a current member. */
     comment: string;
 };
+export type HouseholdDirectoryEntryDto = {
+    hasAvatar: boolean;
+    id: string;
+    name: string;
+};
+export type HouseholdShareMemberDto = {
+    displayName: string;
+    remoteUserId: string;
+    /** viewer or contributor */
+    role: string;
+    shareId: string;
+    /** invited, accepted or left */
+    state: string;
+};
+export type HouseholdShareLinkDto = {
+    directory: HouseholdDirectoryEntryDto[];
+    householdName: string;
+    linkId: string;
+    members: HouseholdShareMemberDto[];
+    /** Whether the other household answered with its directory */
+    reachable: boolean;
+};
+export type HouseholdShareInviteDto = {
+    linkId: string;
+    remoteUserId: string;
+    role: string;
+};
+export type HouseholdShareRoleDto = {
+    role: string;
+};
 export type SharedSpaceMemberResponseDto = {
     /** When a pending invitation was sent */
     invitedAt?: string;
@@ -21577,91 +22098,6 @@ export type TagMergeDto = {
     /** The tag to merge into. It keeps its name, colour and place and gains every item and nested tag of the merged tag */
     targetId: string;
 };
-export type TakeoutAlbumDto = {
-    /** Items in the folder */
-    count: number;
-    /** The export folder */
-    folder: string;
-    /** The album name it becomes */
-    name: string;
-    /** Recreated by the next import */
-    selected: boolean;
-    /** One of Google’s automatic year folders */
-    year: boolean;
-};
-export type TakeoutCountsDto = {
-    failed: number;
-    /** Files found in the sources */
-    files: number;
-    /** Items going into Locked, not listed until Locked is unlocked */
-    hiddenLocked: number;
-    imported: number;
-    importing: number;
-    /** Photos and videos */
-    items: number;
-    matched: number;
-    /** Items already in the library, whose album memberships are restored */
-    matchedOriginals: number;
-    /** Items still to import that are not in the library yet */
-    newAssets: number;
-    ready: number;
-    /** Archive entries refused */
-    rejected: number;
-    review: number;
-    skipped: number;
-    /** Possible Live Photo pairs awaiting a decision */
-    suggestedPairs: number;
-    /** Live Photo pairs that could not be linked */
-    unresolvedPairs: number;
-};
-export type TakeoutOptionsResponseDto = {
-    albums: boolean;
-    archive: boolean;
-    dates: boolean;
-    descriptions: boolean;
-    favorites: boolean;
-    includeTrashed: boolean;
-    locations: boolean;
-    selectedAlbums?: string[];
-    sidecarReview: boolean;
-    updateMatchedMetadata: boolean;
-};
-export type TakeoutSourceResponseDto = {
-    id: string;
-    kind: TakeoutSourceKind;
-    /** The archive’s file name, or the directory’s name */
-    name: string;
-    /** Bytes staged so far; an upload resumes here */
-    received: number;
-    /** Entries refused: unsafe names, links or encryption */
-    rejected: number;
-    /** Every entry has been read */
-    scanned: boolean;
-    /** Declared archive size in bytes; zero for a directory */
-    size: number;
-};
-export type TakeoutResponseDto = {
-    /** What the latest job did or is doing */
-    action: (TakeoutAction) | null;
-    albums: TakeoutAlbumDto[];
-    counts: TakeoutCountsDto;
-    createdAt: string;
-    error: string | null;
-    errorCode: string | null;
-    id: string;
-    name: string;
-    /** The latest job, as Activity lists it */
-    operationId: string | null;
-    options: TakeoutOptionsResponseDto;
-    phase: TakeoutPhase;
-    /** Units the latest job has finished */
-    processed: number;
-    sources: TakeoutSourceResponseDto[];
-    state: TakeoutState;
-    /** Units the latest job knows of so far; grows while a scan reads its sources */
-    total: number | null;
-    updatedAt: string;
-};
 export type TakeoutCreateDto = {
     /** Administrators only: the directory inside the root, relative to it; empty for the root itself */
     directory?: string;
@@ -21724,83 +22160,6 @@ export type TakeoutVerifyChunkDto = {
     sha256: string;
     /** Length of the range */
     size: number;
-};
-export type TakeoutControlDto = {
-    action: TakeoutControlAction;
-};
-export type TakeoutOptionsDto = {
-    /** Recreate album memberships, including for photos already in the library */
-    albums?: boolean;
-    /** Bring over archived photos as archived */
-    archive?: boolean;
-    /** Bring over the dates photos were taken */
-    dates?: boolean;
-    /** Bring over descriptions */
-    descriptions?: boolean;
-    /** Bring over favorites */
-    favorites?: boolean;
-    /** Bring in photos that were in the Google Photos trash; otherwise they are skipped */
-    includeTrashed?: boolean;
-    /** Bring over locations */
-    locations?: boolean;
-    /** Album folders to recreate; omitted means every folder that is not a year folder */
-    selectedAlbums?: string[];
-    /** Let the owner choose for items whose metadata sidecars disagree; they wait while everything else imports. Off imports them with the most likely sidecar */
-    sidecarReview?: boolean;
-    /** Fill metadata missing from photos already in the library; values already there are never replaced */
-    updateMatchedMetadata?: boolean;
-};
-export type TakeoutMetadataDto = {
-    /** Archived in Google Photos */
-    archived?: boolean;
-    /** When Google Photos received the photo (ISO 8601) */
-    createdAt?: string;
-    /** Description */
-    description?: string;
-    /** Favorite in Google Photos */
-    favorite?: boolean;
-    /** Latitude */
-    latitude?: number;
-    /** In the Google Photos Locked Folder; imported into Locked */
-    locked?: boolean;
-    /** Longitude */
-    longitude?: number;
-    /** When the photo was taken (ISO 8601) */
-    takenAt?: string;
-    /** File name Google Photos recorded */
-    title: string;
-    /** In the Google Photos trash; not imported */
-    trashed?: boolean;
-};
-export type TakeoutSidecarCandidateDto = {
-    id: string;
-    metadata: TakeoutMetadataDto;
-    path: string;
-};
-export type TakeoutItemResponseDto = {
-    albums: string[];
-    /** The library item it became or matched, when this session may open it */
-    assetId: string | null;
-    candidates: TakeoutSidecarCandidateDto[];
-    error: string | null;
-    folder: string;
-    id: string;
-    kind: TakeoutItemKind;
-    locked: boolean;
-    metadata: TakeoutMetadataDto;
-    /** Path inside the export */
-    path: string;
-    sidecarId: string | null;
-    size: number;
-    /** The archive or directory the file came from */
-    source: string;
-    state: TakeoutItemState;
-    warnings: TakeoutWarning[];
-};
-export type TakeoutItemsResponseDto = {
-    hiddenLocked: number;
-    items: TakeoutItemResponseDto[];
-    total: number;
 };
 export type TakeoutResolveDto = {
     /** The sidecar to use; null imports without one */
@@ -21889,6 +22248,8 @@ export type TimeBucketAssetResponseDto = {
     country?: (string | null)[];
     /** Array of UTC timestamps when each asset was originally uploaded to Frameleaf */
     createdAt: string[];
+    /** For each asset, `year` or `decade` when only that much of its capture date is known, else null. The whole array is null or absent when no asset here has one */
+    dateAccuracy?: (string | null)[] | null;
     /** Array of video/gif durations in milliseconds (null for static images) */
     duration: (number | null)[];
     /** Last page cursor; a calendar asset ID or an ordered cursor */
@@ -23717,6 +24078,11 @@ export type HdrAssetDevelopRecipeV6 = {
 };
 export type ICloudEditEvidenceQueryDto = {
     assetId: string;
+};
+export type ICloudReviewQueryDto = {
+    group?: ICloudReviewGroup;
+    page?: number;
+    size?: number;
 };
 export type IdenticalFilesRecentChangesQueryDto = {
     /** How many to list */
@@ -27109,6 +27475,98 @@ export function runHardwareCheck(opts?: Oazapfts.RequestOpts) {
         status: 200;
         data: HardwareCheckResponseDto;
     }>("/admin/hardware/check", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * List the households this server is linked with
+ */
+export function getHouseholdLinks(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HouseholdLinkDto[];
+    }>("/admin/household-links", {
+        ...opts
+    }));
+}
+/**
+ * Create an invitation for another household to link its server
+ */
+export function createHouseholdInvitation(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: HouseholdInvitationDto;
+    }>("/admin/household-links/invitations", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Accept a household invitation and link the two servers
+ */
+export function acceptHouseholdInvitation({ householdInvitationAcceptDto }: {
+    householdInvitationAcceptDto: HouseholdInvitationAcceptDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: HouseholdLinkDto;
+    }>("/admin/household-links/invitations/accept", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: householdInvitationAcceptDto
+    })));
+}
+/**
+ * Show which server sent a household invitation
+ */
+export function previewHouseholdInvitation({ code }: {
+    code: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HouseholdInvitationPreviewDto;
+    }>(`/admin/household-links/invitations/${encodeURIComponent(code)}`, {
+        ...opts
+    }));
+}
+/**
+ * End a household link. Nothing already received is deleted
+ */
+export function endHouseholdLink({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/household-links/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Rename the other household. The name stays on this server
+ */
+export function updateHouseholdLink({ id, householdLinkUpdateDto }: {
+    id: string;
+    householdLinkUpdateDto: HouseholdLinkUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HouseholdLinkDto;
+    }>(`/admin/household-links/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: householdLinkUpdateDto
+    })));
+}
+/**
+ * Check a household link with Frameleaf Cloud and the other server now
+ */
+export function refreshHouseholdLink({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: HouseholdLinkDto;
+    }>(`/admin/household-links/${encodeURIComponent(id)}/refresh`, {
         ...opts,
         method: "POST"
     }));
@@ -30614,6 +31072,35 @@ export function retryAssetPalette({ id }: {
     }));
 }
 /**
+ * Read the back of a print
+ */
+export function getPrintBack({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PrintBackResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/print-back`, {
+        ...opts
+    }));
+}
+/**
+ * Pair or unpair the back of a print
+ */
+export function updatePrintBack({ id, printBackUpdateDto }: {
+    id: string;
+    printBackUpdateDto: PrintBackUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PrintBackResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/print-back`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: printBackUpdateDto
+    })));
+}
+/**
  * List restorations of an asset
  */
 export function getAssetRestorations({ id }: {
@@ -30731,6 +31218,60 @@ export function rejectAssetRestoration({ id, restorationId }: {
         status: 200;
         data: AssetRestorationResponseDto;
     }>(`/assets/${encodeURIComponent(id)}/restorations/${encodeURIComponent(restorationId)}/reject`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Read how a photo relates to a split scan
+ */
+export function getScanSplit({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ScanSplitInfoResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/scan-split`, {
+        ...opts
+    }));
+}
+/**
+ * Split a flatbed scan into separate photos
+ */
+export function splitScan({ id, scanSplitDto }: {
+    id: string;
+    scanSplitDto: ScanSplitDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/assets/${encodeURIComponent(id)}/scan-split`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: scanSplitDto
+    })));
+}
+/**
+ * Find the separate prints on a flatbed scan
+ */
+export function detectScanPrints({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ScanSplitDetectResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/scan-split/detect`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Check an upload to an album that holds scans
+ */
+export function offerScanSplit({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ScanSplitOfferResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/scan-split/offer`, {
         ...opts,
         method: "POST"
     }));
@@ -33668,6 +34209,42 @@ export function getHelpIndex(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List spaces offered by linked households, with their state
+ */
+export function getHouseholdShares(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HouseholdInboundShareDto[];
+    }>("/household-shares", {
+        ...opts
+    }));
+}
+/**
+ * Accept a space from a linked household
+ */
+export function acceptHouseholdShare({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HouseholdInboundShareDto;
+    }>(`/household-shares/${encodeURIComponent(id)}/accept`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Decline or leave a space from a linked household; what was received stays
+ */
+export function declineHouseholdShare({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/household-shares/${encodeURIComponent(id)}/decline`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Claim iCloud items for this device to fetch and upload
  */
 export function claimICloudItems({ iCloudClaimDto }: {
@@ -33818,9 +34395,9 @@ export function removeICloudConnection({ id }: {
         method: "POST"
     }));
 }
-export function getICloudReview({ id, group, page, size }: {
-    id: string;
+export function getICloudReview({ group, id, page, size }: {
     group?: ICloudReviewGroup;
+    id: string;
     page?: number;
     size?: number;
 }, opts?: Oazapfts.RequestOpts) {
@@ -33951,6 +34528,267 @@ export function verifyICloudIdentities({ iCloudVerifyDto }: {
         ...opts,
         method: "POST",
         body: iCloudVerifyDto
+    })));
+}
+/**
+ * List import connections
+ */
+export function getImportConnections(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ImportConnectionResponseDto[];
+    }>("/import-connections", {
+        ...opts
+    }));
+}
+/**
+ * Connect a remote source
+ */
+export function createImportConnection({ importConnectionCreateDto }: {
+    importConnectionCreateDto: ImportConnectionCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ImportConnectionResponseDto;
+    }>("/import-connections", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: importConnectionCreateDto
+    })));
+}
+/**
+ * List the kinds of source this server can connect to
+ */
+export function getImportConnectionProviders(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ImportConnectionProvidersResponseDto;
+    }>("/import-connections/providers", {
+        ...opts
+    }));
+}
+/**
+ * Count import connections
+ */
+export function getImportConnectionStatistics(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ImportConnectionStatisticsResponseDto;
+    }>("/import-connections/statistics", {
+        ...opts
+    }));
+}
+/**
+ * Remove an import connection
+ */
+export function deleteImportConnection({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/import-connections/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get an import connection
+ */
+export function getImportConnection({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ImportConnectionResponseDto;
+    }>(`/import-connections/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Rename an import connection, change its daily check, or sign in again
+ */
+export function updateImportConnection({ id, importConnectionUpdateDto }: {
+    id: string;
+    importConnectionUpdateDto: ImportConnectionUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ImportConnectionResponseDto;
+    }>(`/import-connections/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: importConnectionUpdateDto
+    })));
+}
+/**
+ * List the folders inside a folder at the source
+ */
+export function getImportConnectionFolders({ id, path }: {
+    id: string;
+    path?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ImportConnectionFoldersResponseDto;
+    }>(`/import-connections/${encodeURIComponent(id)}/folders${QS.query(QS.explode({
+        path
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Choose the folders an import connection reads
+ */
+export function setImportConnectionRoots({ id, importConnectionRootsDto }: {
+    id: string;
+    importConnectionRootsDto: ImportConnectionRootsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ImportConnectionResponseDto;
+    }>(`/import-connections/${encodeURIComponent(id)}/roots`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: importConnectionRootsDto
+    })));
+}
+/**
+ * List the runs of an import connection
+ */
+export function getImportConnectionRuns({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto[];
+    }>(`/import-connections/${encodeURIComponent(id)}/runs`, {
+        ...opts
+    }));
+}
+/**
+ * Get a run of an import connection
+ */
+export function getImportConnectionRun({ id, runId }: {
+    id: string;
+    runId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/import-connections/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}`, {
+        ...opts
+    }));
+}
+/**
+ * Pause, resume or cancel the job working on a run
+ */
+export function controlImportConnectionRun({ id, runId, takeoutControlDto }: {
+    id: string;
+    runId: string;
+    takeoutControlDto: TakeoutControlDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/import-connections/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/control`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutControlDto
+    })));
+}
+/**
+ * Import what a run found
+ */
+export function startImportConnectionRun({ id, runId, takeoutOptionsDto }: {
+    id: string;
+    runId: string;
+    takeoutOptionsDto: TakeoutOptionsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/import-connections/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/import`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: takeoutOptionsDto
+    })));
+}
+/**
+ * List what a run found
+ */
+export function getImportConnectionRunItems({ id, limit, offset, runId, state }: {
+    id: string;
+    limit?: number;
+    offset?: number;
+    runId: string;
+    state?: TakeoutItemState;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutItemsResponseDto;
+    }>(`/import-connections/${encodeURIComponent(id)}/runs/${encodeURIComponent(runId)}/items${QS.query(QS.explode({
+        limit,
+        offset,
+        state
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Scan the source for what is new
+ */
+export function scanImportConnection({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: TakeoutResponseDto;
+    }>(`/import-connections/${encodeURIComponent(id)}/scan`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Check whether signing in to a provider is possible
+ */
+export function getImportSignIn({ provider }: {
+    provider: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ImportSignInAvailabilityResponseDto;
+    }>(`/import-connections/${encodeURIComponent(provider)}/sign-in`, {
+        ...opts
+    }));
+}
+/**
+ * Start signing in to a provider
+ */
+export function startImportSignIn({ provider, importSignInStartDto }: {
+    provider: string;
+    importSignInStartDto: ImportSignInStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: ImportSignInStartResponseDto;
+    }>(`/import-connections/${encodeURIComponent(provider)}/sign-in`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: importSignInStartDto
+    })));
+}
+/**
+ * Finish signing in to a provider
+ */
+export function completeImportSignIn({ provider, importSignInCompleteDto }: {
+    provider: string;
+    importSignInCompleteDto: ImportSignInCompleteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ImportSignInCompleteResponseDto;
+    }>(`/import-connections/${encodeURIComponent(provider)}/sign-in/complete`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: importSignInCompleteDto
     })));
 }
 /**
@@ -35504,6 +36342,17 @@ export function saveMemoryExportToLibrary({ id }: {
     }));
 }
 /**
+ * Check whether Mother's Day and Father's Day memories can be made
+ */
+export function getMemoryOccasions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: MemoryOccasionsStatusDto;
+    }>("/memories/occasions", {
+        ...opts
+    }));
+}
+/**
  * Remove a memories show-less rule
  */
 export function removeMemoryShowLess({ memoryShowLessDto }: {
@@ -36740,6 +37589,47 @@ export function reassignFaces({ id, assetFaceUpdateDto }: {
         method: "PUT",
         body: assetFaceUpdateDto
     })));
+}
+/**
+ * Get a person's family
+ */
+export function getPersonRelationships({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PersonRelationshipsResponseDto;
+    }>(`/people/${encodeURIComponent(id)}/relationships`, {
+        ...opts
+    }));
+}
+/**
+ * Add a relationship
+ */
+export function createPersonRelationship({ id, personRelationshipCreateDto }: {
+    id: string;
+    personRelationshipCreateDto: PersonRelationshipCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PersonRelationshipsResponseDto;
+    }>(`/people/${encodeURIComponent(id)}/relationships`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: personRelationshipCreateDto
+    })));
+}
+/**
+ * Remove a relationship
+ */
+export function deletePersonRelationship({ id, relatedPersonId }: {
+    id: string;
+    relatedPersonId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/people/${encodeURIComponent(id)}/relationships/${encodeURIComponent(relatedPersonId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
 }
 /**
  * Get person statistics
@@ -40721,6 +41611,63 @@ export function updateSharedSpaceComment({ commentId, id, sharedSpaceCommentUpda
         ...opts,
         method: "PUT",
         body: sharedSpaceCommentUpdateDto
+    })));
+}
+/**
+ * List linked households and who can be invited from each
+ */
+export function getSharedSpaceHouseholds({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: HouseholdShareLinkDto[];
+    }>(`/shared-spaces/${encodeURIComponent(id)}/households`, {
+        ...opts
+    }));
+}
+/**
+ * Invite an account of a linked household
+ */
+export function inviteSharedSpaceHouseholdMember({ id, householdShareInviteDto }: {
+    id: string;
+    householdShareInviteDto: HouseholdShareInviteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: HouseholdShareMemberDto;
+    }>(`/shared-spaces/${encodeURIComponent(id)}/households/members`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: householdShareInviteDto
+    })));
+}
+/**
+ * Remove a household member; removing the last one ends the share
+ */
+export function removeSharedSpaceHouseholdMember({ id, remoteUserId, shareId }: {
+    id: string;
+    remoteUserId: string;
+    shareId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/households/${encodeURIComponent(shareId)}/members/${encodeURIComponent(remoteUserId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Change a household member’s role
+ */
+export function updateSharedSpaceHouseholdMember({ id, remoteUserId, shareId, householdShareRoleDto }: {
+    id: string;
+    remoteUserId: string;
+    shareId: string;
+    householdShareRoleDto: HouseholdShareRoleDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/shared-spaces/${encodeURIComponent(id)}/households/${encodeURIComponent(shareId)}/members/${encodeURIComponent(remoteUserId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: householdShareRoleDto
     })));
 }
 /**
@@ -46118,6 +47065,17 @@ export enum DuplicateKeepRule {
     Favorite = "favorite",
     MostMetadata = "mostMetadata"
 }
+export enum OccasionRegion {
+    Auto = "auto",
+    UsCa = "us-ca",
+    UkIe = "uk-ie",
+    AuNz = "au-nz",
+    De = "de",
+    Fr = "fr",
+    EsPt = "es-pt",
+    Mx = "mx",
+    Se = "se"
+}
 export enum LibraryViewScope {
     Personal = "personal",
     Design = "design"
@@ -46820,6 +47778,10 @@ export enum AssetFileType {
 export enum AssetMediaStatus {
     Created = "created",
     Duplicate = "duplicate"
+}
+export enum DateAccuracy {
+    Year = "year",
+    Decade = "decade"
 }
 export enum AssetUploadAction {
     Accept = "accept",
@@ -47577,6 +48539,58 @@ export enum State3 {
     Queued = "queued",
     Unavailable = "unavailable"
 }
+export enum TakeoutAction {
+    Scan = "scan",
+    Import = "import"
+}
+export enum TakeoutPhase {
+    Sources = "sources",
+    Scanning = "scanning",
+    Review = "review",
+    Importing = "importing",
+    Completed = "completed"
+}
+export enum TakeoutSourceKind {
+    Zip = "zip",
+    Directory = "directory"
+}
+export enum TakeoutState {
+    Sources = "sources",
+    Queued = "queued",
+    Scanning = "scanning",
+    Review = "review",
+    Importing = "importing",
+    Paused = "paused",
+    Cancelling = "cancelling",
+    Cancelled = "cancelled",
+    Failed = "failed",
+    Completed = "completed"
+}
+export enum TakeoutControlAction {
+    Pause = "pause",
+    Resume = "resume",
+    Cancel = "cancel"
+}
+export enum TakeoutItemState {
+    Ready = "ready",
+    Review = "review",
+    Importing = "importing",
+    Imported = "imported",
+    Matched = "matched",
+    Skipped = "skipped",
+    Failed = "failed"
+}
+export enum TakeoutItemKind {
+    Image = "image",
+    Video = "video"
+}
+export enum TakeoutWarning {
+    AmbiguousSidecar = "ambiguous_sidecar",
+    NoSidecar = "no_sidecar",
+    InvalidSidecar = "invalid_sidecar",
+    Trashed = "trashed",
+    Locked = "locked"
+}
 export enum ManualJobName {
     PersonCleanup = "person-cleanup",
     TagCleanup = "tag-cleanup",
@@ -48108,6 +49122,14 @@ export enum PersonSplitVerdict {
     Split = "split",
     Same = "same",
     Later = "later"
+}
+export enum PersonRelationshipRelation {
+    Mother = "mother",
+    Father = "father",
+    Parent = "parent",
+    Child = "child",
+    Partner = "partner",
+    Sibling = "sibling"
 }
 export enum PetSpecies {
     Cat = "cat",
@@ -49838,58 +50860,6 @@ export enum FrameleafSetupSignIn {
 export enum FrameleafSetupTheme {
     Dark = "dark",
     Light = "light"
-}
-export enum TakeoutAction {
-    Scan = "scan",
-    Import = "import"
-}
-export enum TakeoutPhase {
-    Sources = "sources",
-    Scanning = "scanning",
-    Review = "review",
-    Importing = "importing",
-    Completed = "completed"
-}
-export enum TakeoutSourceKind {
-    Zip = "zip",
-    Directory = "directory"
-}
-export enum TakeoutState {
-    Sources = "sources",
-    Queued = "queued",
-    Scanning = "scanning",
-    Review = "review",
-    Importing = "importing",
-    Paused = "paused",
-    Cancelling = "cancelling",
-    Cancelled = "cancelled",
-    Failed = "failed",
-    Completed = "completed"
-}
-export enum TakeoutControlAction {
-    Pause = "pause",
-    Resume = "resume",
-    Cancel = "cancel"
-}
-export enum TakeoutItemState {
-    Ready = "ready",
-    Review = "review",
-    Importing = "importing",
-    Imported = "imported",
-    Matched = "matched",
-    Skipped = "skipped",
-    Failed = "failed"
-}
-export enum TakeoutItemKind {
-    Image = "image",
-    Video = "video"
-}
-export enum TakeoutWarning {
-    AmbiguousSidecar = "ambiguous_sidecar",
-    NoSidecar = "no_sidecar",
-    InvalidSidecar = "invalid_sidecar",
-    Trashed = "trashed",
-    Locked = "locked"
 }
 export enum TakeoutPairState {
     Suggested = "suggested",

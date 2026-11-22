@@ -263,6 +263,44 @@ export class HouseholdShareRepository {
       where hs."albumId" = ${albumId}::uuid
       on conflict ("shareId", kind, "entityId") do nothing
     `.execute(trx);
+    // after the items, so a first read meets an item before the comments on it
+    await sql`
+      insert into household_share_change ("shareId", kind, "entityId", "assetId")
+      select hs.id, 'comment', activity.id, activity."assetId"
+      from household_share hs
+      inner join activity on activity."albumId" = hs."albumId"
+      where hs."albumId" = ${albumId}::uuid
+      on conflict ("shareId", kind, "entityId") do nothing
+    `.execute(trx);
+  }
+
+  /** The comment rows of these items move after them: an item is always read before the comments on it. */
+  private async touchCommentsOn(trx: Kysely<DB>, assetIds: string[]) {
+    await sql`
+      insert into household_share_change ("shareId", kind, "entityId", "assetId")
+      select change."shareId", change.kind, change."entityId", change."assetId"
+      from household_share_change change
+      where change.kind = 'comment' and change."assetId" = any(${uuidArray(assetIds)})
+      ${moveRow}
+    `.execute(trx);
+  }
+
+  /** Comments written, edited or removed in this space. A removed one keeps its row and reads as `stop`. */
+  async touchComments(albumId: string, ids: string[]) {
+    if (ids.length === 0) {
+      return;
+    }
+    await this.inFeed(async (trx) => {
+      await sql`
+        insert into household_share_change ("shareId", kind, "entityId", "assetId")
+        select hs.id, 'comment', target.id, activity."assetId"
+        from household_share hs
+        cross join unnest(${uuidArray(ids)}) as target(id)
+        left join activity on activity.id = target.id
+        where hs."albumId" = ${albumId}::uuid
+        ${moveRow}
+      `.execute(trx);
+    });
   }
 
   /** New items of a space, for album writes that name no items. */
@@ -316,6 +354,7 @@ export class HouseholdShareRepository {
         where face."assetId" = any(${uuidArray(ids)})
         ${moveRow}
       `.execute(trx);
+      await this.touchCommentsOn(trx, ids);
     });
   }
 
@@ -348,6 +387,14 @@ export class HouseholdShareRepository {
         select people."shareId", people.kind, people."entityId"
         from household_share_change people
         where people.kind = 'person' and people."shareId" in (select "shareId" from owned)
+        ${moveRow}
+      `.execute(trx);
+      await sql`
+        insert into household_share_change ("shareId", kind, "entityId", "assetId")
+        select change."shareId", change.kind, change."entityId", change."assetId"
+        from household_share_change change
+        inner join asset on asset.id = change."assetId"
+        where change.kind = 'comment' and asset."ownerId" = ${ownerId}::uuid
         ${moveRow}
       `.execute(trx);
     });

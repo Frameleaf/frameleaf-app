@@ -514,7 +514,8 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
-    if (asset.visibility === AssetVisibility.Hidden) {
+    // FL-967: the back of a print is hidden but is shown under its front and read for text
+    if (asset.visibility === AssetVisibility.Hidden && !asset.isPrintBack) {
       this.logger.verbose(`Thumbnail generation skipped for asset ${id}: not visible`);
       return JobStatus.Skipped;
     }

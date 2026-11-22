@@ -49,6 +49,9 @@ vi.mock('$lib/components/frameleaf/ViewerDetailRows.svelte', async () => ({
 vi.mock('$lib/components/asset-viewer/DetailPanelScanSplit.svelte', async () => ({
   default: (await import('@test-data/components/MockText.svelte')).default,
 }));
+vi.mock('$lib/components/asset-viewer/DetailPanelPrintBack.svelte', async () => ({
+  default: (await import('@test-data/components/MockText.svelte')).default,
+}));
 vi.mock('$lib/components/asset-viewer/DetailPanelPeople.svelte', async () => ({
   default: (await import('@test-data/components/DetailPanelBoundaryFixture.svelte')).default,
 }));

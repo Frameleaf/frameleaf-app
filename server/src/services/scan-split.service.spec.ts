@@ -184,7 +184,7 @@ describe(ScanSplitService.name, () => {
     it('never looks at a normal upload', async () => {
       const { sut, machineLearning, media, jobs } = setup();
 
-      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 0 });
+      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 0, inScanAlbum: false });
 
       expect(media.renderDownloadJpeg).not.toHaveBeenCalled();
       expect(machineLearning.scanSplitLocal).not.toHaveBeenCalled();
@@ -196,7 +196,7 @@ describe(ScanSplitService.name, () => {
       repository.isInScanAlbum.mockResolvedValue(true);
       machineLearning.scanSplitLocal.mockResolvedValue(twoPrints);
 
-      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 2 });
+      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 2, inScanAlbum: true });
 
       expect(jobs.queue).not.toHaveBeenCalled();
       expect(repository.publish).not.toHaveBeenCalled();
@@ -207,7 +207,7 @@ describe(ScanSplitService.name, () => {
       repository.isInScanAlbum.mockResolvedValue(true);
       repository.getCrops.mockResolvedValue([{ assetId: 'a', trashed: false, edited: false }]);
 
-      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 0 });
+      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 0, inScanAlbum: true });
       expect(machineLearning.scanSplitLocal).not.toHaveBeenCalled();
     });
 
@@ -216,7 +216,7 @@ describe(ScanSplitService.name, () => {
       repository.isInScanAlbum.mockResolvedValue(true);
       machineLearning.scanSplitLocal.mockRejectedValue(new ScanSplitUnavailableError('none'));
 
-      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 0 });
+      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 0, inScanAlbum: true });
     });
   });
 

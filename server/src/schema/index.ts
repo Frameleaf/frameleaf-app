@@ -18,6 +18,8 @@ import {
   asset_library_scope_refresh,
   asset_metadata_audit,
   asset_ocr_delete_audit,
+  asset_print_back_not_shared,
+  asset_print_back_released,
   desktop_clip_producer_guard,
   f_concat_ws,
   f_unaccent,
@@ -95,6 +97,7 @@ import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { AssetOriginalTable } from 'src/schema/tables/asset-original.table.js';
 import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
+import { AssetPrintBackTable } from 'src/schema/tables/asset-print-back.table.js';
 import { AssetProcessingFailureTable } from 'src/schema/tables/asset-processing-failure.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
 import { AssetScanCropTable } from 'src/schema/tables/asset-scan-crop.table.js';
@@ -159,6 +162,7 @@ import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
+import { HouseholdCommentTable, HouseholdRemoteAuthorTable } from 'src/schema/tables/household-comment.table.js';
 import { HouseholdLinkTable, HouseholdPeerRequestTable } from 'src/schema/tables/household-link.table.js';
 import {
   HouseholdInboundShareTable,
@@ -533,6 +537,7 @@ export class ImmichDatabase {
     LibraryFolderAlbumTable,
     LibraryFolderAlbumAssetTable,
     AssetScanCropTable,
+    AssetPrintBackTable,
     HouseholdLinkTable,
     HouseholdPeerRequestTable,
     HouseholdShareTable,
@@ -542,6 +547,8 @@ export class ImmichDatabase {
     HouseholdOriginTable,
     HouseholdReceivedFileTable,
     HouseholdPersonPendingTable,
+    HouseholdRemoteAuthorTable,
+    HouseholdCommentTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
     RenderWorkerTable,
@@ -701,6 +708,8 @@ export class ImmichDatabase {
     user_delete_audit,
     partner_delete_audit,
     asset_delete_audit,
+    asset_print_back_not_shared,
+    asset_print_back_released,
     media_import_asset_removed,
     media_import_collection_removed,
     asset_library_scope_refresh,
@@ -873,13 +882,16 @@ export interface DB extends QueueDatabase {
   library_folder_album: LibraryFolderAlbumTable;
   library_folder_album_asset: LibraryFolderAlbumAssetTable;
   asset_scan_crop: AssetScanCropTable;
+  asset_print_back: AssetPrintBackTable;
 
+  household_comment: HouseholdCommentTable;
   household_inbound_share: HouseholdInboundShareTable;
   household_link: HouseholdLinkTable;
   household_origin: HouseholdOriginTable;
   household_peer_request: HouseholdPeerRequestTable;
   household_person_pending: HouseholdPersonPendingTable;
   household_received_file: HouseholdReceivedFileTable;
+  household_remote_author: HouseholdRemoteAuthorTable;
   household_share: HouseholdShareTable;
   household_share_change: HouseholdShareChangeTable;
   household_share_member: HouseholdShareMemberTable;

@@ -92,6 +92,39 @@ const HouseholdFace = z.strictObject({
   height: z.number().int().min(0).max(MAX_COORDINATE),
 });
 
+/** Design section 7. Stored and shown as plain text, as a local comment is. */
+export const HOUSEHOLD_COMMENT_CHARS = 4000;
+const commentText = text(HOUSEHOLD_COMMENT_CHARS).refine((value) => value.trim().length > 0, 'Empty comment');
+const lowerUuid = z.uuid().transform((value) => value.toLowerCase());
+/** A like has no text and a comment has text, as the `activity` table requires. */
+const likeOrText = (body: { isLiked: boolean; comment: string | null }) => body.isLiked === (body.comment === null);
+
+const HouseholdComment = z
+  .strictObject({
+    assetId: lowerUuid.nullable(),
+    isLiked: z.boolean(),
+    comment: commentText.nullable(),
+    createdAt: date,
+    updatedAt: date,
+    author: z.strictObject({ household: z.enum(['local', 'remote']), id: lowerUuid, name: text(100) }),
+  })
+  .refine(likeOrText, 'A like has no text and a comment has text');
+export type HouseholdManifestComment = z.infer<typeof HouseholdComment>;
+
+/** What a receiver may send. The id is the receiver's own, so a retry after a lost reply cannot post twice. */
+export const HouseholdCommentPost = z
+  .strictObject({
+    id: z.uuidv4().transform((value) => value.toLowerCase()),
+    userId: lowerUuid,
+    assetId: lowerUuid.nullable(),
+    isLiked: z.boolean(),
+    comment: commentText.nullable(),
+  })
+  .refine(likeOrText, 'A like has no text and a comment has text');
+export const HouseholdCommentPut = z.strictObject({ userId: lowerUuid, comment: commentText });
+export const HouseholdCommentDelete = z.strictObject({ userId: lowerUuid });
+export const HouseholdCommentReply = z.strictObject({ id: z.uuid() });
+
 const base = { seq: z.number().int().positive().max(MAX_SEQ), id: z.uuid() };
 const Entry = z.union([
   z.strictObject({ ...base, kind: z.enum(['asset', 'person', 'comment', 'space']), stop: z.literal(true) }),
@@ -101,6 +134,7 @@ const Entry = z.union([
     kind: z.literal('person'),
     person: z.strictObject({ name: text(100), faces: z.array(HouseholdFace).max(MAX_FACES) }),
   }),
+  z.strictObject({ ...base, kind: z.literal('comment'), comment: HouseholdComment }),
 ]);
 export type HouseholdManifestEntry = z.infer<typeof Entry>;
 

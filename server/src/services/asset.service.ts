@@ -312,6 +312,9 @@ export class AssetService extends BaseService {
       return data as AssetResponseDto;
     }
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
+    if (dto.visibility) {
+      await this.assertNoPrintBack([id]);
+    }
 
     // FL-936: a year or a decade is stored as the day it starts; `dateAccuracy` goes to the asset row with `rest`
     const { libraryScope, ...editDto } = withApproximateDate(dto);
@@ -737,6 +740,9 @@ export class AssetService extends BaseService {
       return owned.length === 0 ? undefined : this.updateAll(auth, { ids: owned, isFavorite }, true);
     }
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
+    if (visibility) {
+      await this.assertNoPrintBack(ids);
+    }
 
     const originIds = visibility === AssetVisibility.Locked ? await this.assetRepository.findLockGroupIds(ids) : ids;
     const admitted = new Set(originIds);
@@ -1444,9 +1450,19 @@ export class AssetService extends BaseService {
     }
   }
 
+  /** FL-967: a back leaves through its front's Remove back, which puts it back where it was. */
+  private async assertNoPrintBack(ids: string[]) {
+    if ((await this.assetRepository.getPrintBackIds(ids)).length > 0) {
+      throw new BadRequestException('This scan is the back of a print. Remove it from the print first');
+    }
+  }
+
   private async isOrphanedMotionPart(asset: { id: string; visibility: AssetVisibility }) {
+    // FL-967: the back of a print is hidden too, and is nobody's leftover
     return (
-      asset.visibility === AssetVisibility.Hidden && (await this.assetRepository.getLivePhotoCount(asset.id)) === 0
+      asset.visibility === AssetVisibility.Hidden &&
+      (await this.assetRepository.getLivePhotoCount(asset.id)) === 0 &&
+      (await this.assetRepository.getPrintBackIds([asset.id])).length === 0
     );
   }
 
@@ -1454,6 +1470,7 @@ export class AssetService extends BaseService {
     const { ids, force } = dto;
 
     await this.requireAccess({ auth, permission: Permission.AssetDelete, ids });
+    await this.assertNoPrintBack(ids);
     if (force) {
       await this.assetRepository.updateAll(ids, { deletedAt: new Date(), status: AssetStatus.Deleted });
       await this.eventRepository.emit('AssetDeleteAll', { assetIds: ids, userId: auth.user.id });

@@ -936,6 +936,34 @@ describe(SharedSpaceService.name, () => {
       ...overrides,
     });
 
+    it('FL-1012: names a remote author in the shape of a member, with no email or picture', async () => {
+      const { space, editor } = spaceWithEditor();
+      asEditor(space);
+      const remoteAuthorId = newUuid();
+      mocks.albumUser.getSpaceVisit.mockResolvedValue(void 0);
+      mocks.albumUser.getSpaceEvents
+        .mockResolvedValueOnce([
+          event({
+            albumId: space.id,
+            type: SharedSpaceEventType.Comment,
+            activityId: newUuid(),
+            activityComment: 'From the other household',
+            remoteAuthorId,
+            remoteAuthorName: 'Ben',
+          }),
+        ])
+        .mockResolvedValueOnce([]);
+      mocks.albumUser.filterVisibleSpaceAssetIds.mockResolvedValue(new Set());
+      mocks.albumUser.getMentions.mockResolvedValue([]);
+
+      const result = await sut.getActivity(AuthFactory.create(editor), space.id, {});
+
+      expect(result.events[0].actor).toEqual(
+        expect.objectContaining({ id: remoteAuthorId, name: 'Ben', email: '', profileImagePath: '' }),
+      );
+      expect(mocks.user.get).not.toHaveBeenCalledWith(remoteAuthorId, expect.anything());
+    });
+
     it('names only the items the member may see, and drops an event with none left', async () => {
       const { space, owner, editor } = spaceWithEditor();
       asEditor(space);
@@ -1167,7 +1195,7 @@ describe(SharedSpaceService.name, () => {
       expect(mocks.albumUser.deleteMentions).toHaveBeenCalledWith(existing.id);
       expect(mocks.albumUser.createMentions).toHaveBeenCalledWith(existing.id, [owner.id]);
       // The owner was already mentioned, so they are not told twice.
-      expect(mocks.event.emit).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('SharedSpaceMention', expect.anything());
     });
   });
 
@@ -1273,7 +1301,7 @@ describe(SharedSpaceService.name, () => {
         activityId: created.id,
         targetUserId: owner.id,
       });
-      expect(mocks.event.emit).toHaveBeenCalledTimes(1);
+      expect(mocks.event.emit.mock.calls.filter(([name]) => name === 'SharedSpaceReply')).toHaveLength(1);
       expect(mocks.event.emit).toHaveBeenCalledWith('SharedSpaceReply', {
         id: space.id,
         assetId: null,
@@ -1312,7 +1340,7 @@ describe(SharedSpaceService.name, () => {
         albumId: space.id,
       });
       // The owner wrote the top-level comment, so no reply notice; the editor is told by the mention.
-      expect(mocks.event.emit).toHaveBeenCalledTimes(1);
+      expect(mocks.event.emit.mock.calls.filter(([name]) => name === 'SharedSpaceMention')).toHaveLength(1);
       expect(mocks.event.emit).toHaveBeenCalledWith(
         'SharedSpaceMention',
         expect.objectContaining({ userIds: [editor.id] }),

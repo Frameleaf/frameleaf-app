@@ -72,6 +72,7 @@ import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repos
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
+import { HouseholdCommentRepository } from 'src/repositories/household-comment.repository.js';
 import { HouseholdLinkRepository } from 'src/repositories/household-link.repository.js';
 import { HouseholdReceiveRepository } from 'src/repositories/household-receive.repository.js';
 import { HouseholdShareRepository } from 'src/repositories/household-share.repository.js';
@@ -137,6 +138,7 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
+import { PrintBackRepository } from 'src/repositories/print-back.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { PushDeviceRepository } from 'src/repositories/push-device.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
@@ -192,6 +194,7 @@ export const repositories = [
   SpeechRepository,
   AssetAnnotationRepository,
   AssetPaletteRepository,
+  PrintBackRepository,
   ScanSplitRepository,
   CaptureRepository,
   BrowserExtensionSignInRepository,
@@ -285,6 +288,7 @@ export const repositories = [
   CloudBackupSelectionRepository,
   BuddyBackupRepository,
   HouseholdLinkRepository,
+  HouseholdCommentRepository,
   HouseholdReceiveRepository,
   HouseholdShareRepository,
   CloudBackupKeyRepository,
