@@ -36,6 +36,8 @@ const REQUESTS_PER_MINUTE = 120;
 const REFUSALS_PER_MINUTE = 30;
 /** Cloud serves its grant keys with `max-age=300`. */
 const KEYS_MAX_AGE_MS = 300_000;
+/** How long a grant Cloud confirmed is trusted before Cloud is asked again. */
+const VERIFIED_FOR_MS = 60_000;
 const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/;
 
 /**
@@ -48,6 +50,7 @@ export class HouseholdPeerService {
   // refused until Cloud answers, and a grant Cloud refused is asked about again by another API worker.
   private keys?: { issuer: string; jwks: z.infer<typeof HouseholdJwks>; at: number };
   private revoked = new Map<string, number>();
+  private verified = new Map<string, number>();
   private blocked = new Map<string, number>();
 
   constructor(
@@ -157,11 +160,7 @@ export class HouseholdPeerService {
     if (!link || link.state !== 'active' || !(await this.linked()))
       throw new ForbiddenException('Household access is unavailable');
 
-    // 2. The link's request budget.
-    if ((await this.rates.hit(`household:${link.id}`, 60)).count > REQUESTS_PER_MINUTE)
-      throw new HttpException('Household request rate limit reached', 429);
-
-    // 3. The grant, signed by Cloud.
+    // 2. The grant, signed by Cloud.
     const authorization = request.headers.authorization;
     const proof = request.headers.dpop;
     if (!authorization?.startsWith('DPoP ') || typeof proof !== 'string')
@@ -175,7 +174,7 @@ export class HouseholdPeerService {
       throw new UnauthorizedException('Household grant rejected');
     }
 
-    // 4. The grant is for this link, this server and the key stored for the peer at pairing.
+    // 3. The grant is for this link, this server and the key stored for the peer at pairing.
     const identity = await this.identity();
     if (
       grant.linkId !== link.cloudLinkId ||
@@ -188,7 +187,7 @@ export class HouseholdPeerService {
       throw new ForbiddenException('Household grant does not authorize this link');
     }
 
-    // 5. The request itself, signed with that key for this method and address.
+    // 4. The request itself, signed with that key for this method and address.
     const forwarded = (request as FrameleafRequest).frameleafForwarded;
     const uri = `${forwarded?.proto ?? request.protocol}://${forwarded?.host ?? request.get('host')}${request.originalUrl}`;
     let requestId: string;
@@ -199,12 +198,24 @@ export class HouseholdPeerService {
       throw new UnauthorizedException('Household request proof rejected');
     }
 
+    // 5. The link's request budget. Counted only for a request the peer's own key signed, so someone who
+    // merely learns a link id cannot spend it; unsigned attempts are held by the per-address refusal limit.
+    if ((await this.rates.hit(`household:${link.id}`, 60)).count > REQUESTS_PER_MINUTE)
+      throw new HttpException('Household request rate limit reached', 429);
+
     // 6. Cloud still honours the grant. A refusal is remembered until the grant would have expired.
-    for (const [jti, until] of this.revoked) if (until <= Date.now()) this.revoked.delete(jti);
+    // ponytail: a yes is remembered for a minute, so Cloud is asked about a grant at most five times, not
+    // once a request (its per-server limit is 300 a minute). A revoked grant is honoured at most that long.
+    const now = Date.now();
+    for (const [jti, until] of this.revoked) if (until <= now) this.revoked.delete(jti);
+    for (const [jti, until] of this.verified) if (until <= now) this.verified.delete(jti);
     if (this.revoked.has(grant.jti)) throw new ForbiddenException('Household grant was revoked');
     try {
-      const verified = await this.cloud(HouseholdVerifyResponse, 'grants/verify', { version: 1, token });
-      if (verified.claims.jti !== grant.jti) throw new Error('Frameleaf Cloud verified another grant');
+      if (!this.verified.has(grant.jti)) {
+        const verified = await this.cloud(HouseholdVerifyResponse, 'grants/verify', { version: 1, token });
+        if (verified.claims.jti !== grant.jti) throw new Error('Frameleaf Cloud verified another grant');
+        this.verified.set(grant.jti, Math.min(now + VERIFIED_FOR_MS, grant.exp * 1000));
+      }
     } catch (error) {
       if (!this.outage(error)) {
         this.revoked.set(grant.jti, grant.exp * 1000);

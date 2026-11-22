@@ -23,7 +23,8 @@ import { HOUSEHOLD_PROTOCOL_VERSION } from 'src/utils/household-protocol.js';
 type Link = Selectable<HouseholdLinkTable>;
 
 const CHECK_EVERY_MS = 5 * 60_000;
-const RECONCILE_EVERY_MS = 60 * 60_000;
+// The inviting server only learns its invitation was accepted from this list, so it is read at every check.
+const RECONCILE_EVERY_MS = CHECK_EVERY_MS;
 const Handshake = z.strictObject({
   version: z.literal(HOUSEHOLD_PROTOCOL_VERSION),
   name: z.string().max(100),

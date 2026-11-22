@@ -280,22 +280,24 @@ describe(HouseholdPeerService.name, () => {
     await expect(status(send(ben, link.ben, { token }))).resolves.toBe(403);
   });
 
-  it('T4: asks Cloud about every request, and remembers a refusal until the grant expires', async () => {
+  it('T4: asks Cloud about a grant once a minute, and remembers a refusal until the grant expires', async () => {
     const { token } = await grantFor(ben, link.ben);
+    const later = await grantFor(ben, link.ben);
+    await expect(status(send(ben, link.ben, { token }))).resolves.toBe(200);
     await expect(status(send(ben, link.ben, { token }))).resolves.toBe(200);
     expect(cloudCalls('/v1/households/grants/verify')).toBe(1);
 
-    // the link ends at Cloud; Anna has not heard yet
+    // the link ends at Cloud; Anna has not heard yet. A grant she has not asked about is refused at once.
     fixture.households.end(fixture.households.links.get(link.ben)!, ben.identity.instanceId);
-    await expect(status(send(ben, link.ben, { token }))).resolves.toBe(403);
+    await expect(status(send(ben, link.ben, { token: later.token }))).resolves.toBe(403);
     expect(cloudCalls('/v1/households/grants/verify')).toBe(2);
     expect(warnings().at(-1)).toContain(annaLinkId(link.ben));
 
     // refused again without asking, even if Cloud would now answer yes
     fixture.households.links.get(link.ben)!.endedAt = null;
-    await expect(status(send(ben, link.ben, { token }))).resolves.toBe(403);
+    await expect(status(send(ben, link.ben, { token: later.token }))).resolves.toBe(403);
     expect(cloudCalls('/v1/households/grants/verify')).toBe(2);
-    expect(anna.links.admitted.size).toBe(1);
+    expect(anna.links.admitted.size).toBe(2);
   });
 
   it('refuses a grant Cloud verifies as a different grant', async () => {
