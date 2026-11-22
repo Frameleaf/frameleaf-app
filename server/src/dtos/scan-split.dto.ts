@@ -52,5 +52,39 @@ export const ScanSplitSchema = z
   })
   .meta({ id: 'ScanSplitDto' });
 
+export const ScanSplitExistingCropSchema = z
+  .object({
+    assetId: z.uuidv4().describe('The photo cut from this scan'),
+    quad,
+    rotation,
+    createdAt: z.string().meta({ format: 'date-time' }).describe('When the photo was cut out'),
+    edited: z.boolean().describe('The owner has worked on this photo, so splitting again keeps it'),
+  })
+  .meta({ id: 'ScanSplitExistingCropDto' });
+
+export const ScanSplitInfoResponseSchema = z
+  .object({
+    width: z.int().min(1).nullable().describe('Width of the scan as it is displayed, when its metadata has been read'),
+    height: z
+      .int()
+      .min(1)
+      .nullable()
+      .describe('Height of the scan as it is displayed, when its metadata has been read'),
+    crops: z.array(ScanSplitExistingCropSchema).describe('Photos cut from this scan that can be shown here'),
+    cropCount: z.int().min(0).describe('All photos cut from this scan and not in the trash, shown here or not'),
+    editedCount: z.int().min(0).describe('How many of cropCount are kept if the scan is split again'),
+    sourceAssetId: z.uuidv4().nullable().describe('The scan this photo was cut from, when it can be shown'),
+    sourceFileName: z.string().nullable().describe('The file name of that scan'),
+  })
+  .meta({ id: 'ScanSplitInfoResponseDto' });
+
+export const ScanSplitOfferResponseSchema = z
+  .object({
+    printCount: z.int().min(0).describe('Prints found on an upload to an album that holds scans; 0 means no offer'),
+  })
+  .meta({ id: 'ScanSplitOfferResponseDto' });
+
 export class ScanSplitDetectResponseDto extends createZodDto(ScanSplitDetectResponseSchema) {}
 export class ScanSplitDto extends createZodDto(ScanSplitSchema) {}
+export class ScanSplitInfoResponseDto extends createZodDto(ScanSplitInfoResponseSchema) {}
+export class ScanSplitOfferResponseDto extends createZodDto(ScanSplitOfferResponseSchema) {}

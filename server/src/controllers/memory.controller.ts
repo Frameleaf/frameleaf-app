@@ -21,6 +21,7 @@ import {
   MemoryExportCreateDto,
   MemoryExportResponseDto,
   MemoryExportSearchDto,
+  MemoryOccasionsStatusDto,
   MemoryResponseDto,
   MemorySearchDto,
   MemoryShowLessDto,
@@ -72,6 +73,17 @@ export class MemoryController {
   })
   memoriesStatistics(@Auth() auth: AuthDto, @Query() dto: MemorySearchDto): Promise<MemoryStatisticsResponseDto> {
     return this.service.statistics(auth, dto);
+  }
+
+  @Get('occasions')
+  @Authenticated({ permission: Permission.MemoryRead })
+  @Endpoint({
+    summary: "Check whether Mother's Day and Father's Day memories can be made",
+    description: 'Say whether the caller has added anyone as a mother or father, which these memories need.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getMemoryOccasions(@Auth() auth: AuthDto): Promise<MemoryOccasionsStatusDto> {
+    return this.service.getOccasionsStatus(auth);
   }
 
   // "Show less" on memories (FL-62), declared before `:id` like the exports below.

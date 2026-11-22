@@ -42,7 +42,9 @@
     groupMemories,
     isEventStory,
     localToday,
+    memoryOccasion,
     memoryStoryKind,
+    occasionOverlineKey,
     showLessOptions,
     showLessRuleLabel,
     type MemoryEntry,
@@ -73,6 +75,7 @@
     mdiCogOutline,
     mdiDotsVertical,
     mdiEyeOffOutline,
+    mdiFlowerTulipOutline,
     mdiHeart,
     mdiHeartOutline,
     mdiHistory,
@@ -326,6 +329,7 @@
   {@const count = $t('frameleaf_memories_item_count', { values: { count: memory.assets.length } })}
   {@const kind = memoryStoryKind(memory)}
   {@const landmark = eventStoryLandmark(memory)}
+  {@const occasion = memoryOccasion(memory)}
   <article class="fm-card {size}" class:favorite={memory.isSaved}>
     <a
       class="fm-card-main"
@@ -341,9 +345,9 @@
           {#if landmark}
             <LandmarkBadge {landmark} size={20} />
           {:else}
-            <Icon icon={KIND_ICON[kind]} size="14" aria-hidden="true" />
+            <Icon icon={occasion ? mdiFlowerTulipOutline : KIND_ICON[kind]} size="14" aria-hidden="true" />
           {/if}
-          {badge(entry) ?? $t(memoryOverlineKey(kind))}
+          {badge(entry) ?? $t(occasion ? occasionOverlineKey(occasion) : memoryOverlineKey(kind))}
         </span>
         <strong>{headline.title}</strong>
         {#if headline.subtitle}

@@ -121,6 +121,10 @@ export class AlbumTable {
   @Column({ type: 'boolean', default: false })
   isCustomOrder!: Generated<boolean>;
 
+  /** FL-923: uploads into this album are checked for several prints on one scan, and the uploader is offered a split. */
+  @Column({ type: 'boolean', default: false })
+  holdsScans!: Generated<boolean>;
+
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;
 }
