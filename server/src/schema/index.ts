@@ -97,6 +97,7 @@ import { AssetOriginalTable } from 'src/schema/tables/asset-original.table.js';
 import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
 import { AssetProcessingFailureTable } from 'src/schema/tables/asset-processing-failure.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
+import { AssetScanCropTable } from 'src/schema/tables/asset-scan-crop.table.js';
 import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { AssetUploadSkipExceptionTable } from 'src/schema/tables/asset-upload-skip-exception.table.js';
@@ -511,6 +512,7 @@ export class ImmichDatabase {
     LibraryTable,
     LibraryFolderAlbumTable,
     LibraryFolderAlbumAssetTable,
+    AssetScanCropTable,
     HouseholdLinkTable,
     HouseholdPeerRequestTable,
     MediaOperationTable,
@@ -837,6 +839,7 @@ export interface DB extends QueueDatabase {
   library: LibraryTable;
   library_folder_album: LibraryFolderAlbumTable;
   library_folder_album_asset: LibraryFolderAlbumAssetTable;
+  asset_scan_crop: AssetScanCropTable;
 
   household_link: HouseholdLinkTable;
   household_peer_request: HouseholdPeerRequestTable;
