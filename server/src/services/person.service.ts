@@ -1702,6 +1702,7 @@ export class PersonService extends BaseService {
 
       if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
+        await this.eventRepository.emit('HouseholdFeedAssets', { assetIds: [id] });
       }
       for (const { id: faceId, ...box } of facesToMove) {
         // a person's main photo is cut from this box, so it is made again from the new one
@@ -2024,6 +2025,7 @@ export class PersonService extends BaseService {
           this.logger.debug(`Face ${id} was decided meanwhile, keeping that decision`);
           throw new Error('Face decision changed before recognition publication');
         }
+        await this.eventRepository.emit('HouseholdFeedAssets', { assetIds: [face.assetId] });
         // partner copies show the source's people, so they take its faces again now one has a person
         await this.propagateFaces([face.assetId]);
         // FL-774: a face given its person can bring the photo into a partner's scope

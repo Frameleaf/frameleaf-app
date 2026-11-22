@@ -834,6 +834,7 @@ export class BaseService {
    * queues their unseals, which remove the locks once the files are plain.
    */
   protected async afterAssetsUnlocked(assetIds: string[]): Promise<void> {
+    await this.eventRepository.emit('HouseholdFeedAssets', { assetIds });
     const owners = new Set(
       (await this.assetRepository.getLockedEncryptionItems(assetIds))
         .filter(({ pending }) => pending)

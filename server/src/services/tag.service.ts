@@ -212,6 +212,7 @@ export class TagService extends BaseService {
     if (rulesChanged) {
       // FL-218: the Locked rules filter the whole sync stream, so every session reads it again
       await this.sessionRepository.requestSyncResetForUser(userId);
+      await this.eventRepository.emit('LockedRulesChanged', { userId });
     }
 
     const tagged = new Set(result.taggedAssetIds);
