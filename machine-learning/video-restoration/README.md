@@ -202,6 +202,18 @@ The gate still refuses both models because no worker image has run them: `contai
 is empty. The records are in `qualification/qualification.photo.json` and
 `qualification/models.qualified.photo.json`.
 
+**Image revision.** The `photo` image's revision is a hash of what can change a model's output:
+the two runtimes, the worker's still input and output code, `runtimes/photo.lock`, the Python
+version, the pinned checkouts, the base image digest and the pinned weight hashes
+(`frameleaf_ml/video_restoration/image_revision.py`). It survives unrelated releases and changes
+when any of those change, which then needs a new qualification run. The worker re-measures it at
+startup and reports no revision on any mismatch, so the gate refuses.
+
+**Running it in the image.** `.github/workflows/restoration-image.yml` (Forgejo, started by hand)
+builds and checks the image on a Linux runner and pushes it nowhere.
+`qualification/qualify_in_image.sh` then runs 8 scans and all 200 inside that image on any Linux
+NVIDIA host, prints the driver branch and revision, and writes the evidence.
+
 ## When a model is available
 
 `GET /restoration/models` lists every configured model with a `state` and every reason it
@@ -327,6 +339,7 @@ upload, so a remote worker never receives more of the original than the job need
 | `FRAMELEAF_RESTORATION_MODELS`         | `/restoration/config/models.json`        | Model manifest                                           |
 | `FRAMELEAF_RESTORATION_QUALIFICATION`  | `/restoration/config/qualification.json` | Qualification evidence                                   |
 | `FRAMELEAF_RESTORATION_WORKDIR`        | system temporary directory               | Per-request working directories                          |
+| `FRAMELEAF_RESTORATION_IMAGE_REVISION_FILE` | set by the `photo` image build      | Content-hashed revision record, re-measured at startup; when set, it is the only source |
 | `FRAMELEAF_RESTORATION_IMAGE_REVISION` | set by the image build                   | Revision the qualification record must list              |
 | `FRAMELEAF_RESTORATION_HOST` / `_PORT` | `0.0.0.0` / `3004`                       | Listen address                                           |
 | `FRAMELEAF_RESTORATION_REFRESH_S`      | `300`                                    | How often the capability report is rebuilt; 0 for never  |

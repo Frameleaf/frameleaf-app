@@ -20,8 +20,8 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
-from frameleaf_ml.video_restoration import media
-from frameleaf_ml.video_restoration.app import upload_limit
+from frameleaf_ml.video_restoration import image_revision, media
+from frameleaf_ml.video_restoration.app import image_revision_from_env, upload_limit
 from frameleaf_ml.video_restoration.models import (
     PHOTO_REPORT,
     REQUIRED_EVIDENCE,
@@ -329,6 +329,179 @@ class TestGate:
             with pytest.raises(RestorationFailure):
                 registry.select(mode, None, None, kind="image")
         assert upload_limit(registry) >= 8192 * 8192 * 3
+
+
+class TestImageRevision:
+    BASE = "nvidia/cuda:12.8.1@sha256:" + "a" * 64
+
+    @staticmethod
+    def tree(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+        root = tmp_path / "image"
+        for name in image_revision.OUTPUT_FILES:
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(f"content of {name}")
+        checkouts = {"facexlib": "1" * 40, "ddcolor": "2" * 40}
+        manifest = {
+            "models": [
+                {
+                    "id": "lama-photo-repair",
+                    "revision": checkouts["facexlib"],
+                    "notes": "first",
+                    "weights": [{"role": "lama", "sha256": "3" * 64}],
+                },
+                {
+                    "id": "ddcolor-colourise",
+                    "revision": checkouts["ddcolor"],
+                    "notes": "first",
+                    "weights": [{"role": "ddcolor", "sha256": "4" * 64}],
+                },
+            ]
+        }
+        (root / image_revision.MANIFEST).parent.mkdir(parents=True, exist_ok=True)
+        (root / image_revision.MANIFEST).write_text(json.dumps(manifest))
+        return root, checkouts
+
+    def revision(self, root: Path, checkouts: dict[str, str], **overrides: Any) -> str:
+        values: dict[str, Any] = {"base_image": self.BASE, "python_version": "3.12.11", "checkouts": checkouts}
+        return image_revision.compute_revision(root, **(values | overrides))
+
+    @pytest.mark.parametrize("name", image_revision.OUTPUT_FILES)
+    def test_changes_when_any_output_file_changes(self, tmp_path: Path, name: str) -> None:
+        root, checkouts = self.tree(tmp_path)
+        before = self.revision(root, checkouts)
+
+        (root / name).write_text("changed")
+
+        assert self.revision(root, checkouts) != before
+
+    def test_changes_with_the_base_image_python_checkout_and_weights(self, tmp_path: Path) -> None:
+        root, checkouts = self.tree(tmp_path)
+        before = self.revision(root, checkouts)
+
+        assert self.revision(root, checkouts, base_image="nvidia/cuda@sha256:" + "b" * 64) != before
+        assert self.revision(root, checkouts, python_version="3.12.12") != before
+        assert self.revision(root, checkouts | {"extra": "5" * 40}) != before
+        manifest = json.loads((root / image_revision.MANIFEST).read_text())
+        manifest["models"][0]["weights"][0]["sha256"] = "6" * 64
+        (root / image_revision.MANIFEST).write_text(json.dumps(manifest))
+        assert self.revision(root, checkouts) != before
+
+    def test_stays_the_same_across_an_unrelated_release(self, tmp_path: Path) -> None:
+        root, checkouts = self.tree(tmp_path)
+        before = self.revision(root, checkouts)
+
+        manifest = json.loads((root / image_revision.MANIFEST).read_text())
+        manifest["models"][0]["notes"] = "reworded"
+        manifest["models"].reverse()
+        (root / image_revision.MANIFEST).write_text(json.dumps(manifest))
+        (root / "frameleaf_ml/video_restoration/app.py").write_text("an unrelated server change")
+        (root / "README.md").write_text("new release notes")
+
+        assert self.revision(root, checkouts) == before
+        assert self.revision(root, checkouts, base_image="other/tag@sha256:" + "a" * 64) == before
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"base_image": "nvidia/cuda:12.8.1"},
+            {"python_version": ""},
+            {"checkouts": {"facexlib": "main", "ddcolor": "2" * 40}},
+            {"checkouts": {"facexlib": "9" * 40, "ddcolor": "2" * 40}},
+            {"checkouts": {}},
+        ],
+    )
+    def test_refuses_inputs_it_cannot_pin(self, tmp_path: Path, overrides: dict[str, Any]) -> None:
+        root, checkouts = self.tree(tmp_path)
+
+        values = {"base_image": self.BASE, "python_version": "3.12.11", "checkouts": checkouts} | overrides
+        with pytest.raises(ValueError):
+            image_revision.compute_revision(root, **values)
+
+    def test_refuses_a_missing_file_or_unpinned_weight(self, tmp_path: Path) -> None:
+        root, checkouts = self.tree(tmp_path)
+        (root / image_revision.OUTPUT_FILES[0]).unlink()
+        with pytest.raises(ValueError, match="missing"):
+            self.revision(root, checkouts)
+
+        root, checkouts = self.tree(tmp_path / "second")
+        manifest = json.loads((root / image_revision.MANIFEST).read_text())
+        manifest["models"][0]["weights"][0]["sha256"] = "REPLACE"
+        (root / image_revision.MANIFEST).write_text(json.dumps(manifest))
+        with pytest.raises(ValueError, match="no pinned sha256"):
+            self.revision(root, checkouts)
+
+    @staticmethod
+    def real_checkouts(tmp_path: Path, root: Path) -> dict[str, Path]:
+        paths: dict[str, Path] = {}
+        manifest = json.loads((root / image_revision.MANIFEST).read_text())
+        for model in manifest["models"]:
+            path = tmp_path / "checkouts" / model["id"]
+            path.mkdir(parents=True)
+            git = ["git", "-C", str(path), "-c", "user.name=test", "-c", "user.email=test@example.invalid"]
+            subprocess.run([*git, "init", "-q"], check=True)
+            subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", model["id"]], check=True)
+            model["revision"] = subprocess.run(
+                [*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+            ).stdout.strip()
+            paths[model["id"]] = path
+        (root / image_revision.MANIFEST).write_text(json.dumps(manifest))
+        return paths
+
+    def test_the_worker_trusts_only_a_revision_the_container_still_measures(self, tmp_path: Path) -> None:
+        root, _ = self.tree(tmp_path)
+        checkouts = self.real_checkouts(tmp_path, root)
+        record = tmp_path / "image-revision.json"
+        written = image_revision.write_revision(root, record, self.BASE, Path(sys.executable), checkouts)
+        env = {"FRAMELEAF_RESTORATION_IMAGE_REVISION_FILE": str(record), "FRAMELEAF_RESTORATION_IMAGE_ROOT": str(root)}
+
+        assert written.startswith("photo-sha256:") and image_revision_from_env(env) == written
+
+        # An environment value cannot stand in for the record.
+        assert image_revision_from_env(env | {"FRAMELEAF_RESTORATION_IMAGE_REVISION": "forged"}) == written
+
+        (root / image_revision.OUTPUT_FILES[0]).write_text("changed after the build")
+        assert image_revision_from_env(env) is None
+
+    @pytest.mark.parametrize("content", [None, "not json", json.dumps({"revision": "photo-sha256:" + "0" * 64})])
+    def test_a_missing_or_broken_record_gives_no_revision(self, tmp_path: Path, content: str | None) -> None:
+        root, _ = self.tree(tmp_path)
+        record = tmp_path / "image-revision.json"
+        if content is not None:
+            record.write_text(content)
+
+        assert image_revision.verified_revision(record, root) is None
+
+    def test_a_forged_revision_in_the_record_gives_no_revision(self, tmp_path: Path) -> None:
+        root, _ = self.tree(tmp_path)
+        checkouts = self.real_checkouts(tmp_path, root)
+        record = tmp_path / "image-revision.json"
+        image_revision.write_revision(root, record, self.BASE, Path(sys.executable), checkouts)
+        forged = json.loads(record.read_text()) | {"revision": "photo-sha256:" + "0" * 64}
+        record.write_text(json.dumps(forged))
+
+        assert image_revision.verified_revision(record, root) is None
+
+    def test_no_revision_keeps_the_gate_closed(self, tmp_path: Path) -> None:
+        spec = photo_spec(tmp_path)
+
+        capability = evaluate_model(
+            spec,
+            runtime=CLEAN,
+            weights=WeightStatus(),
+            records=[passing_record(spec)],
+            gpus=[GPU],
+            container_revision=None,
+        )
+
+        assert capability.state == ModelState.UNQUALIFIED
+        assert "this worker image has no FRAMELEAF_RESTORATION_IMAGE_REVISION to match" in capability.reasons
+
+    def test_the_real_tree_has_every_input(self) -> None:
+        assert image_revision.file_digests(HERE).keys() == set(image_revision.OUTPUT_FILES)
+        pins, commits = image_revision.weight_pins(HERE)
+        upstream = json.loads((EXAMPLES / "qualification" / "upstream.json").read_text())
+        assert commits == {entry["revision"] for entry in upstream["checkouts"].values()}
+        assert {sha for _, _, sha in pins} == {entry["sha256"] for entry in upstream["weights"].values()}
 
 
 class TestSignedOffRecords:
