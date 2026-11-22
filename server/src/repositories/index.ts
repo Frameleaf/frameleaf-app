@@ -47,6 +47,7 @@ import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DateDoctorRepository } from 'src/repositories/date-doctor.repository.js';
+import { LocationHistoryRepository } from 'src/repositories/location-history.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
@@ -328,6 +329,7 @@ export const repositories = [
   AlbumChangeRunRepository,
   AlbumCleanupRepository,
   DateDoctorRepository,
+  LocationHistoryRepository,
   AssetLedgerRepository,
   FoundFileRepository,
   AlbumMergeRepository,

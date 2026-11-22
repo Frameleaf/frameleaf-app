@@ -792,6 +792,8 @@ export type JobItem =
   | { name: JobName.AlbumCleanupScan; data: { userId: string } }
   | { name: JobName.DateDoctorScan; data: { userId: string } }
   | { name: JobName.DateDoctorScanQueueAll; data?: IBaseJob }
+  // FL-925: `id` is the location history source
+  | { name: JobName.LocationHistoryImport; data: IEntityJob }
   | { name: JobName.AlbumCleanupApply; data: { id: string } }
   | { name: JobName.MemoryExport; data: IEntityJob }
 

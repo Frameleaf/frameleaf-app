@@ -1,0 +1,9 @@
+{
+  "count": 3,
+  "data": [
+    { "_type": "location", "acc": 8, "lat": 48.1374, "lon": 11.5755, "tid": "sy", "tst": 1653141600, "isotst": "2022-05-21T14:00:00Z", "disptst": "2022-05-21 14:00:00", "ghash": "u281z7j" },
+    { "_type": "location", "acc": 10, "lat": 48.1402, "lon": 11.5781, "tid": "sy", "tst": 1653141900 },
+    { "_type": "location", "acc": 12, "lat": 0, "lon": 0, "tid": "sy", "tst": 1653142200 }
+  ],
+  "status": 200
+}

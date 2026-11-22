@@ -44,6 +44,7 @@ describe('public queue job compatibility (FL-283)', () => {
       JobName.AlbumCleanupApply,
       JobName.DateDoctorScan,
       JobName.DateDoctorScanQueueAll,
+      JobName.LocationHistoryImport,
       JobName.LockedSeal,
       JobName.LockedUnseal,
       JobName.LockedRewrap,

@@ -115,6 +115,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   // FL-912: a scan rewrites its owner's findings
   JobName.DateDoctorScan,
   JobName.DateDoctorScanQueueAll,
+  // FL-925: an import clears its file's places and reads the file again from its start
+  JobName.LocationHistoryImport,
   JobName.DuplicateResolutionLifecycle,
   JobName.DatabaseBackup,
   JobName.AssetGenerateThumbnails,
