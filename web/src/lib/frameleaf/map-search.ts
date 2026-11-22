@@ -103,6 +103,9 @@ export const landmarkRows = (landmarks: readonly SearchLandmarkResponseDto[], qu
 export const cityRows = (places: readonly PlacesResponseDto[]) => {
   const rows = new Map<string, MapSearchRow>();
   for (const place of places) {
+    if (rows.size === MAP_SEARCH_GROUP_ROWS) {
+      break;
+    }
     const localized = place.placeNamesLocalized;
     const name = localized?.city || place.name;
     const where = [localized?.state || place.admin1name, localized?.country].filter(Boolean).join(', ') || undefined;
@@ -120,7 +123,7 @@ export const cityRows = (places: readonly PlacesResponseDto[]) => {
       });
     }
   }
-  return [...rows.values()].slice(0, MAP_SEARCH_GROUP_ROWS);
+  return [...rows.values()];
 };
 
 /** The language the server named these towns in, when it translated any. */

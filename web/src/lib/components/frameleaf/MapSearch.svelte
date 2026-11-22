@@ -61,6 +61,7 @@
   let failed = $state(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let request: AbortController | undefined;
+  let refocusing = false;
 
   const typed = $derived(query.trim());
   const groups = $derived.by(() => {
@@ -84,10 +85,11 @@
   const quick = $derived(typed ? [] : allYourPlaceRows(places));
   const options = $derived(typed ? groups.flatMap(({ rows }) => rows) : quick);
   const activeIndex = $derived(Math.min(active, options.length - 1));
+  const activeOption = $derived(options.at(activeIndex));
   const nothingFound = $derived(!!typed && !searching && !failed && options.length === 0);
   // A place deleted while its card is up is gone from the card too.
   const card = $derived(
-    picked?.group === 'yours' && !places.some(({ id }) => `yours:${id}` === picked?.id) ? undefined : picked,
+    picked?.group === 'yours' && places.every(({ id }) => `yours:${id}` !== picked?.id) ? undefined : picked,
   );
   const cardCount = $derived(card ? rowCount(card) : undefined);
 
@@ -181,7 +183,7 @@
   const moveActive = async (step: number) => {
     active = (activeIndex + step + options.length) % options.length;
     await tick();
-    document.getElementById(optionId(active))?.scrollIntoView?.({ block: 'nearest' });
+    root?.querySelector('[role="option"][aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' });
   };
 
   const onKeydown = (event: KeyboardEvent) => {
@@ -190,7 +192,10 @@
       if (open) {
         event.stopPropagation();
         open = false;
+        // Back in the box without the focus reopening the list just closed.
+        refocusing = true;
         input?.focus();
+        refocusing = false;
       } else if (query) {
         event.stopPropagation();
         setQuery('');
@@ -207,9 +212,9 @@
       } else if (options.length > 0) {
         void moveActive(event.key === 'ArrowDown' ? 1 : -1);
       }
-    } else if (event.key === 'Enter' && open && options[activeIndex]) {
+    } else if (event.key === 'Enter' && open && activeOption) {
       event.preventDefault();
-      pick(options[activeIndex]);
+      pick(activeOption);
     }
   };
 
@@ -278,7 +283,7 @@
       aria-expanded={open}
       aria-controls={listId}
       aria-autocomplete="list"
-      aria-activedescendant={open && options[activeIndex] ? optionId(activeIndex) : undefined}
+      aria-activedescendant={open && activeOption ? optionId(activeIndex) : undefined}
       placeholder={$t('frameleaf_map_search_label')}
       value={query}
       oninput={(event) => {
@@ -286,7 +291,7 @@
         setQuery(event.currentTarget.value);
       }}
       onfocus={() => {
-        if (!picked) {
+        if (!picked && !refocusing) {
           open = true;
         }
       }}
