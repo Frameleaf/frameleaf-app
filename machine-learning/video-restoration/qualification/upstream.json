@@ -1,9 +1,9 @@
 {
   "comment": "Where a qualification run takes the photo runtimes and weights from, before the Frameleaf model source carries them. Qualification tooling only: a worker never reads this file and never downloads from these hosts.",
   "checkouts": {
-    "codeformer": {
-      "repository": "https://github.com/sczhou/CodeFormer.git",
-      "revision": "b33cc7d639d6545bfcccc7e0bc6ae51f24e79c2b"
+    "facexlib": {
+      "repository": "https://github.com/xinntao/facexlib.git",
+      "revision": "260620ae93990a300f4b16448df9bb459f1caba9"
     },
     "ddcolor": {
       "repository": "https://github.com/piddnad/DDColor.git",
@@ -11,23 +11,11 @@
     }
   },
   "weights": {
-    "codeformer": {
-      "file": "codeformer.pth",
-      "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth",
-      "bytes": 376637898,
-      "sha256": "1009e537e0c2a07d4cabce6355f53cb66767cd4b4297ec7a4a64ca4b8a5684b7"
-    },
     "detection": {
       "file": "detection_Resnet50_Final.pth",
-      "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/detection_Resnet50_Final.pth",
+      "url": "https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth",
       "bytes": 109497761,
       "sha256": "6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d"
-    },
-    "parsing": {
-      "file": "parsing_parsenet.pth",
-      "url": "https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/parsing_parsenet.pth",
-      "bytes": 85331193,
-      "sha256": "3d558d8d0e42c20224f13cf5a29c79eba2d59913419f945545d8cf7b72920de2"
     },
     "lama": {
       "file": "lama_fp32.onnx",

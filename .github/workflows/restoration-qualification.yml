@@ -88,7 +88,7 @@ jobs:
           $q = Join-Path $env:GITHUB_WORKSPACE 'q'
           $env:TEMP = "$q\tmp"; $env:TMP = "$q\tmp"
           $pins = Get-Content machine-learning\video-restoration\qualification\upstream.json -Raw | ConvertFrom-Json
-          foreach ($name in 'codeformer', 'ddcolor') {
+          foreach ($name in 'facexlib', 'ddcolor') {
             $pin = $pins.checkouts.$name
             git init -q "$q\$name"
             git -C "$q\$name" remote add origin $pin.repository
@@ -117,7 +117,7 @@ jobs:
           $q = Join-Path $env:GITHUB_WORKSPACE 'q'
           $env:TEMP = "$q\tmp"; $env:TMP = "$q\tmp"; $env:TORCH_HOME = "$q\tmp"
           $d = 'machine-learning\video-restoration\qualification'
-          & "$q\v\Scripts\python.exe" -I "$d\qualify_photo.py" --workload photo-repair --runtime-root "$q\codeformer" --weights "$q\w" --upstream "$d\upstream.json" --scan-set "$d\scan-set.json" --scans "$q\s" --out "$q\o" --vram-cap-gib 8 --limit $env:LIMIT
+          & "$q\v\Scripts\python.exe" -I "$d\qualify_photo.py" --workload photo-repair --runtime-root "$q\facexlib" --weights "$q\w" --upstream "$d\upstream.json" --scan-set "$d\scan-set.json" --scans "$q\s" --out "$q\o" --vram-cap-gib 8 --limit $env:LIMIT
           exit $LASTEXITCODE
 
       - name: Colourise under an 8 GB cap

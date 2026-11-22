@@ -3,20 +3,20 @@
   "weightsRoot": "/restoration/weights",
   "models": [
     {
-      "id": "codeformer-photo-repair",
-      "family": "codeformer",
+      "id": "lama-photo-repair",
+      "family": "lama-repair",
       "operation": "repair",
-      "displayName": "Photo repair (CodeFormer and LaMa)",
-      "repository": "https://github.com/sczhou/CodeFormer",
-      "revision": "b33cc7d639d6545bfcccc7e0bc6ae51f24e79c2b",
+      "displayName": "Photo repair (scratches and dust)",
+      "repository": "https://github.com/xinntao/facexlib",
+      "revision": "260620ae93990a300f4b16448df9bb459f1caba9",
       "license": {
-        "code": "NTU S-Lab License 1.0",
-        "weights": "NTU S-Lab License 1.0 (CodeFormer); MIT (RetinaFace detection, ParseNet parsing); Apache-2.0 (LaMa)",
-        "url": "https://github.com/sczhou/CodeFormer/blob/master/LICENSE"
+        "code": "MIT (facexlib)",
+        "weights": "MIT (RetinaFace detection); Apache-2.0 (LaMa)",
+        "url": "https://github.com/xinntao/facexlib/blob/master/LICENSE"
       },
       "nativeScale": null,
       "runtime": {
-        "root": "/opt/restoration/codeformer",
+        "root": "/opt/restoration/facexlib",
         "python": "/opt/restoration/photo/.venv/bin/python",
         "argv": [
           "{python}",
@@ -28,46 +28,22 @@
           "{output_dir}",
           "--runtime-root",
           "{runtime_root}",
-          "--codeformer",
-          "{weight:codeformer}",
           "--detection",
           "{weight:detection}",
-          "--parsing",
-          "{weight:parsing}",
           "--lama",
-          "{weight:lama}",
-          "--fidelity",
-          "0.7"
+          "{weight:lama}"
         ],
         "env": {},
         "timeoutSeconds": 900
       },
       "weights": [
         {
-          "role": "codeformer",
-          "path": "codeformer/codeformer.pth",
-          "sha256": "1009e537e0c2a07d4cabce6355f53cb66767cd4b4297ec7a4a64ca4b8a5684b7",
-          "source": {
-            "repo": "codeformer",
-            "file": "codeformer.pth"
-          }
-        },
-        {
           "role": "detection",
-          "path": "codeformer/detection_Resnet50_Final.pth",
+          "path": "retinaface/detection_Resnet50_Final.pth",
           "sha256": "6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d",
           "source": {
             "repo": "retinaface-resnet50",
             "file": "detection_Resnet50_Final.pth"
-          }
-        },
-        {
-          "role": "parsing",
-          "path": "codeformer/parsing_parsenet.pth",
-          "sha256": "3d558d8d0e42c20224f13cf5a29c79eba2d59913419f945545d8cf7b72920de2",
-          "source": {
-            "repo": "parsenet",
-            "file": "parsing_parsenet.pth"
           }
         },
         {
@@ -90,7 +66,7 @@
         "sdr"
       ],
       "requiresGpu": true,
-      "notes": "NOT QUALIFIED (run 1293). Revision and sha256 values are those measured; minVramBytes is the cap the run was held to. The weights came from their upstream pins and are not on the Frameleaf model source."
+      "notes": "NOT QUALIFIED (run 1296). Revision and sha256 values are those measured; minVramBytes is the cap the run was held to. The weights came from their upstream pins and are not on the Frameleaf model source."
     },
     {
       "id": "ddcolor-colourise",
@@ -145,7 +121,7 @@
         "sdr"
       ],
       "requiresGpu": true,
-      "notes": "NOT QUALIFIED (run 1293). Revision and sha256 values are those measured; minVramBytes is the cap the run was held to. The weights came from their upstream pins and are not on the Frameleaf model source."
+      "notes": "NOT QUALIFIED (run 1296). Revision and sha256 values are those measured; minVramBytes is the cap the run was held to. The weights came from their upstream pins and are not on the Frameleaf model source."
     }
   ]
 }

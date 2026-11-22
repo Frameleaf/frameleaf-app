@@ -5,6 +5,7 @@ the still pipeline (size and orientation) and the image maths of the two runtime
 cannot show (model quality, GPU memory, speed) is qualification evidence recorded on hardware.
 """
 
+import hashlib
 import json
 import runpy
 import shutil
@@ -24,8 +25,9 @@ from frameleaf_ml.video_restoration.app import upload_limit
 from frameleaf_ml.video_restoration.models import (
     PHOTO_REPORT,
     REQUIRED_EVIDENCE,
-    CodeFormerAdapter,
+    RUNTIME_REFUSED_INPUT_EXIT,
     DdColorAdapter,
+    LamaRepairAdapter,
     Manifest,
     ModelSpec,
     QualificationFile,
@@ -38,7 +40,10 @@ from frameleaf_ml.video_restoration.models import (
     RuntimeStatus,
     SelectedModel,
     WeightStatus,
+    WeightVerifier,
+    classify_runtime_failure,
     evaluate_model,
+    inspect_runtime,
 )
 from frameleaf_ml.video_restoration.pipeline import restore
 from frameleaf_ml.video_restoration.schemas import (
@@ -59,14 +64,14 @@ IMAGE_REVISION = "image-rev-1"
 GPU = GpuDescription(name="Qualified GPU", memoryTotalBytes=12 * 1024**3, driverVersion="550.0")
 CLEAN = RuntimeStatus(present=True, clean=True)
 FRAME = "00000001.png"
-ROLES = {"codeformer": ["codeformer", "detection", "parsing", "lama"], "ddcolor": ["ddcolor"]}
-OPERATIONS = {"codeformer": "repair", "ddcolor": "colourise"}
+ROLES = {"lama-repair": ["detection", "lama"], "ddcolor": ["ddcolor"]}
+OPERATIONS = {"lama-repair": "repair", "ddcolor": "colourise"}
 needs_ffmpeg = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="ffmpeg is not installed"
 )
 
 
-def photo_spec(tmp_path: Path, family: str = "codeformer", **overrides: Any) -> ModelSpec:
+def photo_spec(tmp_path: Path, family: str = "lama-repair", **overrides: Any) -> ModelSpec:
     payload: dict[str, Any] = {
         "id": f"{family}-test",
         "family": family,
@@ -168,7 +173,7 @@ class TestManifest:
 
         assert report.configurationProblems == []
         assert {model.id: model.operation for model in report.photoModels} == {
-            "codeformer-photo-repair": PhotoOperation.REPAIR,
+            "lama-photo-repair": PhotoOperation.REPAIR,
             "ddcolor-colourise": PhotoOperation.COLOURISE,
         }
         assert all(model.state == ModelState.NOT_PINNED for model in report.photoModels)
@@ -191,7 +196,7 @@ class TestManifest:
 
     def test_weights_come_from_the_frameleaf_model_source_only(self) -> None:
         text = (EXAMPLES / "models.example.json").read_text()
-        photo = text[text.index('"codeformer-photo-repair"') :]
+        photo = text[text.index('"lama-photo-repair"') :]
 
         assert "huggingface" not in photo and "modelscope.cn" not in photo and "releases/download" not in photo
 
@@ -204,7 +209,7 @@ class TestManifest:
             {"operation": None, "mode": "faithful"},
             {"nativeScale": 2},
             {"limits": {"maxInputLongEdge": 8192, "maxFrames": 2, "maxFramesPerChunk": 1, "minVramBytes": 0}},
-            {"weights": [{"role": "codeformer", "path": "codeformer.bin", "sha256": "1" * 64}]},
+            {"weights": [{"role": "lama", "path": "lama.bin", "sha256": "1" * 64}]},
         ],
     )
     def test_refuses_a_photo_model_that_is_not_gpu_only_stills(self, tmp_path: Path, overrides: dict[str, Any]) -> None:
@@ -223,7 +228,7 @@ class TestManifest:
 
 
 class TestGate:
-    @pytest.mark.parametrize(("family", "workload"), [("codeformer", "photo-repair"), ("ddcolor", "colourise")])
+    @pytest.mark.parametrize(("family", "workload"), [("lama-repair", "photo-repair"), ("ddcolor", "colourise")])
     def test_lists_the_workload_only_with_a_passing_record(self, tmp_path: Path, family: str, workload: str) -> None:
         spec = photo_spec(tmp_path, family)
 
@@ -278,6 +283,40 @@ class TestGate:
                 container_revision=IMAGE_REVISION,
             )
             assert capability.state == state
+
+    @pytest.mark.parametrize("family", ["lama-repair", "ddcolor"])
+    def test_a_changed_weight_is_found_by_its_hash(self, tmp_path: Path, family: str) -> None:
+        contents = {role: f"weight {role}".encode() for role in ROLES[family]}
+        weights = [
+            {"role": role, "path": f"{role}.bin", "sha256": hashlib.sha256(data).hexdigest()}
+            for role, data in contents.items()
+        ]
+        spec = photo_spec(tmp_path, family, weights=weights)
+        for role, data in contents.items():
+            (tmp_path / f"{role}.bin").write_bytes(data)
+        assert WeightVerifier().verify(spec, tmp_path).verified
+
+        (tmp_path / f"{ROLES[family][0]}.bin").write_bytes(b"changed")
+
+        status = WeightVerifier().verify(spec, tmp_path)
+        assert not status.verified and ROLES[family][0] in status.mismatched[0]
+
+    def test_a_modified_checkout_is_not_clean(self, tmp_path: Path) -> None:
+        root = tmp_path / "runtime"
+        root.mkdir()
+        (root / "python").write_text("interpreter")
+        git = ["git", "-C", str(root), "-c", "user.name=test", "-c", "user.email=test@example.invalid"]
+        subprocess.run([*git, "init", "-q"], check=True)
+        subprocess.run([*git, "add", "python"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "pinned"], check=True)
+        head = subprocess.run([*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+        spec = photo_spec(tmp_path, revision=head)
+        assert inspect_runtime(spec).clean
+
+        (root / "python").write_text("modified")
+
+        status = inspect_runtime(spec)
+        assert not status.clean and "modified tracked files" in status.problems[0]
 
     def test_modes_and_operations_never_answer_for_each_other(self, tmp_path: Path) -> None:
         repair, colour = photo_spec(tmp_path), photo_spec(tmp_path, "ddcolor")
@@ -355,7 +394,7 @@ def job(tmp_path: Path, **overrides: Any) -> RuntimeJob:
 
 
 class TestAdapters:
-    @pytest.mark.parametrize(("adapter", "family"), [(CodeFormerAdapter, "codeformer"), (DdColorAdapter, "ddcolor")])
+    @pytest.mark.parametrize(("adapter", "family"), [(LamaRepairAdapter, "lama-repair"), (DdColorAdapter, "ddcolor")])
     def test_expects_the_source_size_and_passes_the_runtime_warnings_on(
         self, tmp_path: Path, adapter: Any, family: str
     ) -> None:
@@ -370,7 +409,7 @@ class TestAdapters:
 
     @pytest.mark.parametrize("report", ["not json", "[]", json.dumps({"warnings": "none"}), "x" * 20000])
     def test_ignores_a_report_it_does_not_understand(self, tmp_path: Path, report: str) -> None:
-        run = CodeFormerAdapter(photo_spec(tmp_path), tmp_path, copying_runner(report)).run(job(tmp_path))
+        run = LamaRepairAdapter(photo_spec(tmp_path), tmp_path, copying_runner(report)).run(job(tmp_path))
 
         assert run.warnings == []
 
@@ -390,7 +429,7 @@ class TestAdapters:
             seen.append(invocation)
             return copying_runner()(invocation)
 
-        CodeFormerAdapter(photo_spec(tmp_path), tmp_path, runner).run(job(tmp_path))
+        LamaRepairAdapter(photo_spec(tmp_path), tmp_path, runner).run(job(tmp_path))
 
         assert seen[0].argv[:3] == [str(tmp_path / "runtime" / "python"), "-I", "run.py"]
         assert "--allow-cpu" not in seen[0].argv and seen[0].payload is None
@@ -408,7 +447,7 @@ def ffmpeg_timing(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.usefixtures("ffmpeg_timing")
 class TestPipeline:
     def run(
-        self, tmp_path: Path, upload: Path, size: tuple[int, int], family: str = "codeformer", transform: Any = None
+        self, tmp_path: Path, upload: Path, size: tuple[int, int], family: str = "lama-repair", transform: Any = None
     ) -> Any:
         spec = photo_spec(tmp_path, family)
         registry = make_registry(tmp_path, [spec], [passing_record(spec)])
@@ -416,7 +455,7 @@ class TestPipeline:
         work.mkdir()
 
         def factory(selected: SelectedModel) -> Any:
-            adapter = CodeFormerAdapter if family == "codeformer" else DdColorAdapter
+            adapter = LamaRepairAdapter if family == "lama-repair" else DdColorAdapter
             return adapter(selected.spec, selected.weights_root, copying_runner({"warnings": []}, transform=transform))
 
         parsed = request(operation=OPERATIONS[family], source={"width": size[0], "height": size[1]})
@@ -584,95 +623,83 @@ class TestInpaintTiles:
             REPAIR["inpaint_tiled"](old_print(200, 300), mask, lambda window, _: window[:100])
 
 
-def face_row(centre: tuple[float, float], eye_distance: float) -> np.ndarray:
-    """A detection whose landmarks are the trained layout, scaled and moved."""
-    template = REPAIR["FACE_TEMPLATE"]
-    scale = eye_distance / float(np.linalg.norm(template[0] - template[1]))
-    landmarks = (template - 256.0) * scale + np.array(centre, dtype=np.float32)
-    box = [centre[0] - 100 * scale, centre[1] - 130 * scale, centre[0] + 100 * scale, centre[1] + 130 * scale, 0.99]
-    return np.concatenate((np.array(box, dtype=np.float32), landmarks.reshape(-1)))
+def face_row(box: tuple[float, float, float, float]) -> np.ndarray:
+    """A detection row: box, score and five landmarks the runtime no longer uses."""
+    return np.array([*box, 0.99, *([0.0] * 10)], dtype=np.float32)
 
 
 def fake_models(faces: list[np.ndarray], *, fill: Any = box_fill) -> Any:
-    def parse(face: np.ndarray) -> np.ndarray:
-        classes = np.zeros((512, 512), dtype=np.int64)
-        classes[96:416, 96:416] = 1
-        return REPAIR["face_blend_mask"](classes)
-
     return REPAIR["Models"](
         detect=lambda bgr: np.stack(faces) if faces else np.zeros((0, 15), np.float32),
-        restore=lambda face: np.full_like(face, 200),
-        parse=parse,
         fill=fill,
     )
 
 
+def scratched_print() -> np.ndarray:
+    photo = old_print(600, 800)
+    cv2.line(photo, (40, 40), (300, 90), (250, 250, 250), 2)
+    cv2.line(photo, (540, 280), (660, 320), (250, 250, 250), 2)  # across the face
+    cv2.circle(photo, (600, 500), 2, (5, 5, 5), -1)
+    return photo
+
+
 class TestRepair:
-    def test_restores_the_face_and_leaves_the_rest_untouched(self) -> None:
-        photo = old_print(701, 933)
+    def test_a_face_comes_back_byte_identical_even_with_a_scratch_across_it(self) -> None:
+        photo = scratched_print()
+        box = (560.0, 260.0, 640.0, 340.0)
 
-        output, report = REPAIR["repair"](photo, fake_models([face_row((460.0, 350.0), 60.0)]))
+        output, report = REPAIR["repair"](photo, fake_models([face_row(box)]))
 
-        assert output.shape == photo.shape and output.dtype == np.uint8
-        assert (report.facesFound, report.facesRestored) == (1, 1)
-        assert abs(int(output[350, 460, 0]) - 200) <= 2
-        changed = np.argwhere(np.abs(output.astype(np.int16) - photo).max(axis=2) > 0)
-        reach = 256 * 60.0 / 125.92 + 2  # half the 512 px crop, in source pixels
-        assert np.abs(changed - np.array([350, 460])).max() <= reach
-        assert not np.array_equal(output, photo) and np.array_equal(photo, old_print(701, 933))
+        margin = 80 * REPAIR["FACE_MARGIN"]
+        left, top, right, bottom = int(560 - margin), int(260 - margin), int(640 + margin), int(340 + margin)
+        assert report.facesProtected == 1 and report.scratchPass == "applied"
+        assert np.array_equal(output[top:bottom, left:right], photo[top:bottom, left:right])
+        assert not np.array_equal(output, photo)
 
-    def test_leaves_tiny_and_oversized_faces_alone_and_says_so(self) -> None:
-        photo = old_print(600, 800)
-        faces = [face_row((200.0, 200.0), 6.0), face_row((400.0, 300.0), 600.0)]
+    def test_every_pixel_outside_the_mask_is_identical(self) -> None:
+        photo = scratched_print()
+        models = fake_models([face_row((560.0, 260.0, 640.0, 340.0))])
 
-        output, report = REPAIR["repair"](photo, fake_models(faces))
+        faces, mask = REPAIR["find_marks"](photo, models)
+        output, _ = REPAIR["fill_marks"](photo, faces, mask, models)
 
-        assert np.array_equal(output, photo)
-        assert (report.facesRestored, report.facesSkippedSmall, report.facesSkippedLarge) == (0, 1, 1)
-        assert len(report.warnings) == 2
+        assert mask.any() and np.array_equal(output[mask == 0], photo[mask == 0])
+        assert output[65, 170, 0] < 200  # the scratch outside the face is gone
+
+    def test_a_photo_without_marks_comes_back_identical_without_running_the_model(self) -> None:
+        def refuse(window: np.ndarray, window_mask: np.ndarray) -> np.ndarray:
+            raise AssertionError("the inpainting model must not run")
+
+        photo = old_print(400, 500)
+
+        output, report = REPAIR["repair"](photo, fake_models([], fill=refuse))
+
+        assert report.scratchPass == "none" and np.array_equal(output, photo) and output is not photo
 
     def test_skips_the_scratch_pass_over_the_mask_limit(self) -> None:
         photo = old_print(400, 400)
-        for offset in range(0, 400, 12):  # scratched all over
-            cv2.line(photo, (offset, 0), (offset, 399), (250, 250, 250), 1)
+        mask = np.zeros((400, 400), np.uint8)
+        mask[:40, :] = 255  # 10% of the photo
 
         def refuse(window: np.ndarray, window_mask: np.ndarray) -> np.ndarray:
             raise AssertionError("the inpainting model must not run")
 
-        output, report = REPAIR["repair"](photo, fake_models([], fill=refuse))
+        output, report = REPAIR["fill_marks"](photo, [], mask, fake_models([], fill=refuse))
 
         assert report.scratchPass == "skipped-over-cap" and report.scratchMaskFraction > REPAIR["MASK_CAP"]
         assert "skipped" in report.warnings[0] and np.array_equal(output, photo)
 
-    def test_fills_scratches_outside_the_face_only(self) -> None:
-        photo = old_print(600, 800)
-        cv2.line(photo, (40, 40), (300, 90), (250, 250, 250), 2)
-        cv2.line(photo, (540, 280), (660, 320), (250, 250, 250), 2)  # across the face
-
-        seen: list[np.ndarray] = []
-
-        def fill(window: np.ndarray, window_mask: np.ndarray) -> np.ndarray:
-            seen.append(window_mask)
-            return box_fill(window, window_mask)
-
-        output, report = REPAIR["repair"](photo, fake_models([face_row((600.0, 300.0), 50.0)], fill=fill))
-
-        assert report.scratchPass == "applied" and report.scratchTiles == len(seen) >= 1
-        assert output[65, 170, 0] < 200  # the scratch outside the face is gone
-        assert 0 < report.scratchMaskFraction <= REPAIR["MASK_CAP"]
-
-    def test_detection_runs_on_a_bounded_copy_and_maps_back(self) -> None:
+    def test_detection_runs_on_a_bounded_copy_and_maps_back_outwards(self) -> None:
         sizes: list[tuple[int, ...]] = []
 
         def detect(bgr: np.ndarray) -> np.ndarray:
             sizes.append(bgr.shape)
-            return face_row((100.0, 100.0), 20.0)[None]
+            return face_row((100.2, 50.2, 120.7, 80.7))[None]
 
         faces = REPAIR["detect_faces"](np.zeros((3000, 6144, 3), np.uint8), detect)
 
         assert sizes == [(750, 1536, 3)]
-        assert np.allclose(faces[0, :2] * 0.25, face_row((100.0, 100.0), 20.0)[:2])
-        assert faces[0, 4] == pytest.approx(0.99)
+        assert faces == [(400, 200, 483, 323)]
 
 
 class TestColourise:
@@ -732,20 +759,93 @@ class TestColourise:
             with pytest.raises(ValueError, match="invalid output"):
                 COLOURISE["colourise"](photo, lambda grey, answer=answer: answer)
 
-    def test_tells_a_toned_scan_from_a_colour_photo(self) -> None:
-        sepia = old_print(128, 128).astype(np.float32) * np.array([1.0, 0.99, 0.985])
-        colour = old_print(128, 128)
-        colour[..., 2] //= 2
+    @pytest.mark.parametrize("tone", [(1.0, 1.0, 1.0), (1.0, 0.82, 0.6), (0.92, 0.84, 0.9), (1.0, 0.7, 0.4)])
+    def test_accepts_true_and_toned_monochrome(self, tone: tuple[float, float, float]) -> None:
+        toned = np.clip(old_print(400, 300).astype(np.float32) * np.array(tone), 0, 255).astype(np.uint8)
 
-        assert COLOURISE["is_greyscale"](old_print(128, 128))
-        assert COLOURISE["is_greyscale"](sepia.astype(np.uint8))
-        assert not COLOURISE["is_greyscale"](colour)
+        assert not COLOURISE["is_hand_tinted"](toned)
+
+    def test_refuses_a_toned_print_with_paint_on_it(self) -> None:
+        tinted = np.clip(old_print(400, 300).astype(np.float32) * np.array((1.0, 0.82, 0.6)), 0, 255).astype(np.uint8)
+        tinted[120:220, 90:170] = (tinted[120:220, 90:170] * np.array((1.0, 0.55, 0.55))).astype(np.uint8)  # rouge
+        tinted[240:320, 120:200] = (tinted[240:320, 120:200] * np.array((0.6, 0.8, 1.6))).clip(0, 255).astype(np.uint8)
+
+        assert COLOURISE["is_hand_tinted"](tinted)
+
+    def test_a_coloured_mount_alone_is_not_paint(self) -> None:
+        toned = np.clip(old_print(400, 300).astype(np.float32) * np.array((1.0, 0.82, 0.6)), 0, 255).astype(np.uint8)
+        toned[:30], toned[-30:] = (70, 130, 90), (70, 130, 90)
+        toned[:, :24], toned[:, -24:] = (70, 130, 90), (70, 130, 90)
+
+        assert not COLOURISE["is_hand_tinted"](toned)
+
+    def test_a_refused_photo_never_loads_the_model_and_gives_the_reason(self, tmp_path: Path) -> None:
+        (tmp_path / "in").mkdir()
+        (tmp_path / "out").mkdir()
+        colour = old_print(200, 200)
+        colour[:100, ..., 0] = 220
+        colour[100:, ..., 2] = 220
+        Image.fromarray(colour).save(tmp_path / "in" / FRAME)
+        arguments = [sys.executable, "-I", str(EXAMPLES / "runtimes" / "colourise.py")]
+        arguments += ["--input-dir", str(tmp_path / "in"), "--output-dir", str(tmp_path / "out")]
+        arguments += ["--runtime-root", str(tmp_path), "--checkpoint", str(tmp_path / "missing.bin")]
+
+        completed = subprocess.run(arguments, capture_output=True, text=True, timeout=120, check=False)
+
+        assert completed.returncode == RUNTIME_REFUSED_INPUT_EXIT == COLOURISE["REFUSED_EXIT"]
+        failure = classify_runtime_failure(completed.returncode, completed.stderr)
+        assert failure.code == RestorationErrorCode.UNSUPPORTED_INPUT
+        assert failure.message == COLOURISE["HAND_TINTED_MESSAGE"]
+        assert list((tmp_path / "out").iterdir()) == []
+
+    def test_the_suggestion_marker_survives_the_worker(self, tmp_path: Path) -> None:
+        marker = COLOURISE["SUGGESTED_COLOURS"]
+
+        run = DdColorAdapter(photo_spec(tmp_path, "ddcolor"), tmp_path, copying_runner({"warnings": [marker]})).run(
+            job(tmp_path)
+        )
+
+        assert run.warnings == [marker] and marker.startswith("suggested-colours:") and len(marker) <= 300
+
+
+class TestScratchDetail:
+    """Real detail the detector must leave alone: a missed scratch is better than a removed detail."""
+
+    def test_leaves_a_row_of_beads_alone(self) -> None:
+        photo = old_print()
+        for x in range(200, 600, 12):
+            cv2.circle(photo, (x, 300), 2, (250, 250, 250), -1)
+
+        assert not REPAIR["scratch_mask"](photo, [])[290:310, 200:600].any()
+
+    def test_leaves_handwriting_alone(self) -> None:
+        photo = old_print()
+        cv2.putText(photo, "Harry 1858", (180, 320), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 2.0, (20, 20, 20), 2, cv2.LINE_AA)
+
+        assert np.count_nonzero(REPAIR["scratch_mask"](photo, [])[250:345, 170:640]) == 0
+
+    def test_leaves_a_ruled_mount_line_alone(self) -> None:
+        photo = old_print()
+        cv2.line(photo, (40, 200), (760, 200), (20, 20, 20), 1)
+        cv2.line(photo, (300, 20), (300, 580), (20, 20, 20), 1)
+
+        mask = REPAIR["scratch_mask"](photo, [])
+
+        assert not mask[198:203, 40:760].any() and not mask[20:580, 298:303].any()
+
+    def test_leaves_the_edge_of_a_card_alone(self) -> None:
+        photo = old_print()
+        photo[:, 400:] = 235
+        for y in range(40, 560, 40):  # small nicks along the edge
+            photo[y : y + 2, 399:402] = 20
+
+        assert not REPAIR["scratch_mask"](photo, [])[:, 392:408].any()
 
 
 @pytest.mark.parametrize(
     ("script", "weights", "reason"),
     [
-        ("photo_repair.py", ["--codeformer", "--detection", "--parsing", "--lama"], "photo repair needs an NVIDIA GPU"),
+        ("photo_repair.py", ["--detection", "--lama"], "photo repair needs an NVIDIA GPU"),
         ("colourise.py", ["--checkpoint"], "colourise needs an NVIDIA GPU"),
     ],
 )

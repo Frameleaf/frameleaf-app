@@ -135,13 +135,11 @@
       "notes": "Not qualified. No weights have been run for this record."
     },
     {
-      "id": "codeformer-photo-repair-unqualified",
-      "modelId": "codeformer-photo-repair",
+      "id": "lama-photo-repair-unqualified",
+      "modelId": "lama-photo-repair",
       "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
       "weights": [
-        { "role": "codeformer", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" },
         { "role": "detection", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" },
-        { "role": "parsing", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" },
         { "role": "lama", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" }
       ],
       "containerRevisions": [],
@@ -165,11 +163,11 @@
         { "item": "tile-seams", "result": "pending" }
       ],
       "license": {
-        "approved": true,
-        "code": "NTU S-Lab License 1.0",
-        "weights": "NTU S-Lab License 1.0 (CodeFormer); MIT (RetinaFace detection, ParseNet parsing); Apache-2.0 (LaMa)",
-        "reviewedBy": "Frameleaf legal review",
-        "reviewedAt": "2026-10-17"
+        "approved": false,
+        "code": "MIT (facexlib)",
+        "weights": "MIT (RetinaFace detection); Apache-2.0 (LaMa)",
+        "reviewedBy": null,
+        "reviewedAt": null
       },
       "hdrQualified": false,
       "reviewedBy": null,

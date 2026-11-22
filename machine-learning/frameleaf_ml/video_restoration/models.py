@@ -15,9 +15,10 @@ Three families back the three modes:
 
 Two more families serve stills only, as photo operations rather than modes (FL-933):
 
-* **Photo repair** — CodeFormer (https://github.com/sczhou/CodeFormer) restores the faces of an old
-  print and LaMa fills its scratches and dust.
-* **Colourise** — DDColor (https://github.com/piddnad/DDColor) gives a black-and-white photo colour.
+* **Photo repair** — LaMa fills the scratches and dust of an old print. RetinaFace (facexlib,
+  https://github.com/xinntao/facexlib) only finds the faces, which stay byte-identical to the scan.
+* **Colourise** — DDColor (https://github.com/piddnad/DDColor) suggests colours for a black-and-white
+  or toned photo, and refuses one that already has colour.
 
 Both return a still of exactly the source's size and need a qualified NVIDIA GPU.
 
@@ -111,16 +112,18 @@ RUNTIME_PLACEHOLDERS = frozenset(
     }
 )
 
-ModelFamily = Literal["realbasicvsr", "seedvr2", "rife", "realesrgan", "codeformer", "ddcolor"]
+ModelFamily = Literal["realbasicvsr", "seedvr2", "rife", "realesrgan", "lama-repair", "ddcolor"]
 # The photo families (FL-933), the operation each serves and the weights its runtime loads.
 PHOTO_OPERATIONS: dict[str, PhotoOperation] = {
-    "codeformer": PhotoOperation.REPAIR,
+    "lama-repair": PhotoOperation.REPAIR,
     "ddcolor": PhotoOperation.COLOURISE,
 }
 PHOTO_WEIGHT_ROLES: dict[str, frozenset[str]] = {
-    "codeformer": frozenset({"codeformer", "detection", "parsing", "lama"}),
+    "lama-repair": frozenset({"detection", "lama"}),
     "ddcolor": frozenset({"ddcolor"}),
 }
+# A runtime exits with this when it refuses its input for a reason the person should read.
+RUNTIME_REFUSED_INPUT_EXIT = 65
 # What a photo runtime may leave beside its frame: counts and plain-language warnings.
 PHOTO_REPORT = "report.json"
 PHOTO_REPORT_MAX_BYTES = 16 * 1024
@@ -407,7 +410,7 @@ class EvidenceItem(StrEnum):
     # orientation tag comes back with the same stored pixels and the same tag.
     OUTPUT_SIZE = "output-size"
     ORIENTATION = "orientation"
-    # Photo repair: restored faces still look like the same people, judged against the source; and
+    # Photo repair: faces come back byte-identical to the source (compare-faces and this item); and
     # the scratch mask stays off faces and under its area limit across the scan set.
     FACE_IDENTITY_DRIFT = "face-identity-drift"
     SCRATCH_MASK = "scratch-mask"
@@ -469,7 +472,7 @@ REQUIRED_EVIDENCE: dict[str, frozenset[EvidenceItem]] = {
         EvidenceItem.TEMPORAL_STABILITY,
     }
     | {EvidenceItem.X4_TO_REQUESTED_2X, EvidenceItem.TILE_SEAMS},
-    "codeformer": PHOTO_EVIDENCE
+    "lama-repair": PHOTO_EVIDENCE
     | {
         EvidenceItem.COMPARE_FACES,
         EvidenceItem.FACE_IDENTITY_DRIFT,
@@ -912,6 +915,8 @@ def classify_runtime_failure(returncode: int, stderr: str) -> RestorationFailure
     lowered = tail.lower()
     if any(marker in lowered for marker in OOM_MARKERS):
         return RestorationFailure(RestorationErrorCode.OUT_OF_MEMORY, f"the runtime ran out of GPU memory: {tail}")
+    if returncode == RUNTIME_REFUSED_INPUT_EXIT:
+        return RestorationFailure(RestorationErrorCode.UNSUPPORTED_INPUT, tail)
     return RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, f"the runtime exited with {returncode}: {tail}")
 
 
@@ -1200,11 +1205,11 @@ class PhotoAdapter(RestorationAdapter):
         )
 
 
-class CodeFormerAdapter(PhotoAdapter):
-    """Photo repair: CodeFormer on the faces, LaMa on scratches and dust
+class LamaRepairAdapter(PhotoAdapter):
+    """Photo repair: LaMa on scratches and dust, faces left exactly as scanned
     (``video-restoration/runtimes/photo_repair.py``)."""
 
-    family = "codeformer"
+    family = "lama-repair"
     label = "photo repair"
 
 
@@ -1217,7 +1222,7 @@ class DdColorAdapter(PhotoAdapter):
 
 
 ADAPTERS: dict[str, type[RestorationAdapter]] = {
-    CodeFormerAdapter.family: CodeFormerAdapter,
+    LamaRepairAdapter.family: LamaRepairAdapter,
     DdColorAdapter.family: DdColorAdapter,
     RealBasicVsrAdapter.family: RealBasicVsrAdapter,
     RealEsrganStillAdapter.family: RealEsrganStillAdapter,
