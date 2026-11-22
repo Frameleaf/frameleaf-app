@@ -158,6 +158,7 @@ import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
+import { HouseholdLinkTable, HouseholdPeerRequestTable } from 'src/schema/tables/household-link.table.js';
 import {
   ICloudEditAliasTable,
   ICloudEditAuthorityTable,
@@ -167,7 +168,6 @@ import {
 import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-change.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
-import { HouseholdLinkTable, HouseholdPeerRequestTable } from 'src/schema/tables/household-link.table.js';
 import { LibraryFolderAlbumAssetTable } from 'src/schema/tables/library-folder-album-asset.table.js';
 import { LibraryFolderAlbumTable } from 'src/schema/tables/library-folder-album.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';

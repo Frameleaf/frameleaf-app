@@ -2,8 +2,8 @@ import { HttpException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { SystemMetadataKey } from 'src/enum.js';
 import { HouseholdPeerService } from 'src/services/household-peer.service.js';
-import { createDpopProof } from 'src/utils/frameleaf-dpop.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import { createDpopProof } from 'src/utils/frameleaf-dpop.js';
 import { HouseholdGrantResponse } from 'src/utils/frameleaf-household.js';
 import { verifyHouseholdResponse } from 'src/utils/household-protocol.js';
 import {
@@ -36,13 +36,12 @@ describe(HouseholdPeerService.name, () => {
   let link: { ben: string; cara: string };
 
   const status = (promise: Promise<unknown>) =>
-    promise.then(
-      () => 200,
-      (error: unknown) => {
+    promise
+      .then(() => 200)
+      .catch((error: unknown) => {
         if (error instanceof HttpException) return error.getStatus();
         throw error;
-      },
-    );
+      });
   const url = (linkId: string, route = 'handshake') => `https://${anna.host}/api/household/v1/links/${linkId}/${route}`;
   const grantFor = (server: HouseholdServer, linkId: string) =>
     server.peer.cloud(HouseholdGrantResponse, 'grants', { version: 1, linkId });
@@ -110,7 +109,7 @@ describe(HouseholdPeerService.name, () => {
     expect(access.link).toMatchObject({ cloudLinkId: link.ben, peerInstanceId: ben.identity.instanceId });
     expect(access.grant.jti).toBe(granted.claims.jti);
     expect(anna.counts.get(`household:${access.link.id}`)).toBe(1);
-    expect([...anna.links.admitted.values()]).toEqual([
+    expect(anna.links.admitted.values().toArray()).toEqual([
       { linkId: access.link.id, expiresAt: new Date(granted.claims.exp * 1000) },
     ]);
 
@@ -131,7 +130,12 @@ describe(HouseholdPeerService.name, () => {
     // no Cloud call, no key loaded, no budget spent, no proof admitted
     expect(cloudCalls()).toBe(before);
     expect(identity).not.toHaveBeenCalled();
-    expect([...anna.counts.keys()].filter((key) => !key.startsWith('household:refused:'))).toEqual([]);
+    expect(
+      anna.counts
+        .keys()
+        .filter((key) => !key.startsWith('household:refused:'))
+        .toArray(),
+    ).toEqual([]);
     expect(anna.links.admitted.size).toBe(0);
   });
 
@@ -176,7 +180,7 @@ describe(HouseholdPeerService.name, () => {
     ).resolves.toBe(403);
 
     const { households } = fixture;
-    const [benLink] = [...households.links.values()].filter(({ id }) => id === link.ben);
+    const benLink = households.links.get(link.ben)!;
     const claims = households.grantClaims(benLink, ben.registered, anna.registered);
     const crafted = (change: Record<string, unknown>, signer = ben.peer.signer()) => {
       const token = households.signGrant({ ...claims, jti: randomUUID(), ...change });
@@ -207,7 +211,7 @@ describe(HouseholdPeerService.name, () => {
 
   it('refuses a grant Cloud did not sign, of another type, for another audience or longer than 300 seconds', async () => {
     const { households } = fixture;
-    const [benLink] = [...households.links.values()].filter(({ id }) => id === link.ben);
+    const benLink = households.links.get(link.ben)!;
     const claims = households.grantClaims(benLink, ben.registered, anna.registered);
     const forged = householdSigner().sign(
       { alg: 'EdDSA', typ: 'household-grant+jwt', kid: 'household-fixture' },

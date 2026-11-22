@@ -52,12 +52,12 @@ const fixture = (uris: Array<[string, string?]> = [['https://peer.example']]) =>
   const issue = vi.fn(() => Promise.resolve(grant()));
   const client = new HouseholdClient(link, issue as never, () => self);
   /** Answers as the peer does: verifies nothing, signs the reply for the request it was sent. */
-  const answer = (signer = peer, data: unknown = { version: 1 }) =>
+  const answer = (signer = peer) =>
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const headers = init!.headers as Record<string, string>;
-      const requestId = JSON.parse(Buffer.from(headers.DPoP.split('.')[1], 'base64url').toString()).jti;
+      const requestId = JSON.parse(Buffer.from(headers.DPoP.split('.', 2)[1], 'base64url').toString()).jti;
       const claims = (await issue.mock.results.at(-1)!.value).claims;
-      return Response.json(signHouseholdResponse(signer, claims, requestId, data));
+      return Response.json(signHouseholdResponse(signer, claims, requestId, { version: 1 }));
     });
   return { self, peer, link, grant, issue, client, answer };
 };
@@ -100,7 +100,7 @@ describe(HouseholdClient.name, () => {
       if (url.startsWith('https://192.168.1.20:2283')) throw new TypeError('fetch failed');
       if (url.startsWith('https://direct.peer.example')) return new Response('busy', { status: 503 });
       const requestId = JSON.parse(
-        Buffer.from((init!.headers as Record<string, string>).DPoP.split('.')[1], 'base64url').toString(),
+        Buffer.from((init!.headers as Record<string, string>).DPoP.split('.', 2)[1], 'base64url').toString(),
       ).jti;
       return Response.json(
         signHouseholdResponse(peer, (await issue.mock.results[0].value).claims, requestId, { ok: true }),
@@ -149,7 +149,7 @@ describe(HouseholdClient.name, () => {
     vi.restoreAllMocks();
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
       const requestId = JSON.parse(
-        Buffer.from((init!.headers as Record<string, string>).DPoP.split('.')[1], 'base64url').toString(),
+        Buffer.from((init!.headers as Record<string, string>).DPoP.split('.', 2)[1], 'base64url').toString(),
       ).jti;
       const signed = signHouseholdResponse(peer, (await issue.mock.results.at(-1)!.value).claims, requestId, {
         name: 'Anna',

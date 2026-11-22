@@ -214,7 +214,7 @@ export const householdRequest = (
  */
 export const connectHouseholds = (hosts: Record<string, HouseholdServer>) => {
   // `hosts` is read at each call, so a spec changes who answers by changing the object
-  const real = globalThis.fetch;
+  const real = fetch;
   const calls: Array<{ url: string; status: number | null; redirect: unknown }> = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));

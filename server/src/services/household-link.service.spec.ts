@@ -146,7 +146,7 @@ describe(HouseholdLinkService.name, () => {
       { code: 'FERN-7Q4K/M2XD' },
       { code: '../links/x/end-now' },
       { code: 'a'.repeat(44) },
-      { code, householdName: '   ' },
+      { code, householdName: ' '.repeat(3) },
       { code, householdName: 'x'.repeat(81) },
       { code, token: code },
     ])
@@ -283,7 +283,7 @@ describe(HouseholdLinkService.name, () => {
     await anna.service.end(annaLink);
     expect(anna.links.rows[0]).toMatchObject({ state: 'ended', pausedReason: null });
     expect(anna.links.rows[0].endedAt).toBeInstanceOf(Date);
-    expect([...fixture.households.links.values()][0].endedBy).toBe(anna.identity.instanceId);
+    expect(fixture.households.links.values().next().value!.endedBy).toBe(anna.identity.instanceId);
     // ending twice is not an error
     await expect(anna.service.end(annaLink)).resolves.toBeUndefined();
 
@@ -308,7 +308,7 @@ describe(HouseholdLinkService.name, () => {
 
   it('ends the link as soon as Cloud says it was ended, even between hourly checks', async () => {
     const { benLink } = await pair();
-    fixture.households.end([...fixture.households.links.values()][0], anna.identity.instanceId);
+    fixture.households.end(fixture.households.links.values().next().value!, anna.identity.instanceId);
     await expect(ben.service.refresh(benLink)).resolves.toMatchObject({ state: 'ended', ended: true });
   });
 

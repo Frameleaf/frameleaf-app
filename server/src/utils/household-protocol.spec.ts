@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { createDpopProof } from 'src/utils/frameleaf-dpop.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
+import { createDpopProof } from 'src/utils/frameleaf-dpop.js';
 import {
   signHouseholdResponse,
   verifyHouseholdGrant,
@@ -69,7 +69,7 @@ describe('household grant', () => {
   it('refuses a grant signed by any key but Cloud’s, and one whose claims were changed after signing', () => {
     const { grant, jwks, source } = fixture();
     expect(() => verifyHouseholdGrant(grant({}, {}, source), jwks, issuer)).toThrow('Household grant rejected');
-    const [header, , signature] = grant().split('.');
+    const [header, , signature] = grant().split('.', 3);
     const forged = Buffer.from(JSON.stringify({ ...fixture().claims })).toString('base64url');
     expect(() => verifyHouseholdGrant(`${header}.${forged}.${signature}`, jwks, issuer)).toThrow(
       'Household grant rejected',
@@ -166,7 +166,7 @@ describe('household signed reply', () => {
       { typ: 'buddy-response+jwt', alg: 'EdDSA' },
       JSON.parse(
         Buffer.from(
-          signHouseholdResponse(destination, claims, requestId, data).proof.split('.')[1],
+          signHouseholdResponse(destination, claims, requestId, data).proof.split('.', 2)[1],
           'base64url',
         ).toString(),
       ),

@@ -377,7 +377,7 @@ export const addHouseholdRoutes = (cloud: FakeCloud) => {
     refuse(403, 'entitlement-missing', 'Both servers need a Server licence to link households.', {
       data: { instanceId },
     });
-  const byId = (instanceId: string) => [...servers.values()].find((server) => server.instanceId === instanceId);
+  const byId = (instanceId: string) => servers.values().find((server) => server.instanceId === instanceId);
   const view = (link: FakeHouseholdLink, self: FakeHouseholdServer) => {
     const peerId = link.a === self.instanceId ? link.b : link.a;
     const peer = byId(peerId);
@@ -520,9 +520,11 @@ export const addHouseholdRoutes = (cloud: FakeCloud) => {
     status: 200,
     body: {
       version: 1,
-      links: [...links.values()]
+      links: links
+        .values()
         .filter((link) => [link.a, link.b].includes(server.instanceId))
-        .map((link) => view(link, server)),
+        .map((link) => view(link, server))
+        .toArray(),
     },
   }));
   guarded('POST /v1/households/grants', (request, server) => {

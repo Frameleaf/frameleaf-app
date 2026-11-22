@@ -3,9 +3,9 @@ import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   HouseholdInvitationAcceptDto,
+  HouseholdInvitationCodeParamDto,
   HouseholdInvitationDto,
   HouseholdInvitationPreviewDto,
-  HouseholdInvitationCodeParamDto,
   HouseholdLinkDto,
   HouseholdLinkUpdateDto,
 } from 'src/dtos/household-link.dto.js';
