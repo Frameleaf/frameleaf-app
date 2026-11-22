@@ -1,5 +1,5 @@
 import { Reflector } from '@nestjs/core';
-import { ICloudConfigSchema, ICloudConnectionUpdateDto } from 'src/dtos/icloud-sync.dto.js';
+import { ICloudConfigSchema, ICloudConnectionUpdateDto, ICloudReviewAcceptDto } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetType,
   FrameleafWorker,
@@ -93,6 +93,8 @@ describe(ICloudSyncService.name, () => {
     notify: vi.fn(),
     disconnect: vi.fn(),
     reviewItems: vi.fn(),
+    reviewPage: vi.fn(),
+    acceptReview: vi.fn(),
     receipts: vi.fn(),
     initializeCheckpoint: vi.fn(),
     saveMembershipPage: vi.fn(),
@@ -437,6 +439,36 @@ describe(ICloudSyncService.name, () => {
     });
   });
 
+  it('accepts review items with the session privacy and starts a run only for items that go back in line', async () => {
+    const auth = { user: { id: 'owner' }, session: { hasElevatedPermission: false } } as never;
+    repository.get.mockResolvedValue(connection);
+    repository.ownerUploadsPaused.mockResolvedValue(false);
+    repository.queueOperation.mockResolvedValue({ outcome: 'created', operation: {} });
+    const dto = ICloudReviewAcceptDto.schema.parse({ all: true, group: 'match' });
+
+    repository.acceptReview.mockResolvedValue({ accepted: 2, requeued: 0 });
+    await expect(sut.acceptReview(auth, connection.id, dto)).resolves.toEqual({ accepted: 2, requeued: 0 });
+    expect(repository.acceptReview).toHaveBeenCalledWith(connection.id, 'owner', false, dto);
+    expect(repository.queueOperation).not.toHaveBeenCalled();
+
+    repository.acceptReview.mockResolvedValue({ accepted: 2, requeued: 1 });
+    await sut.acceptReview(auth, connection.id, dto);
+    expect(repository.queueOperation).toHaveBeenCalledOnce();
+
+    // A run that cannot start now does not undo the answers already saved.
+    repository.queueOperation.mockResolvedValue({ outcome: 'not-ready' });
+    await expect(sut.acceptReview(auth, connection.id, dto)).resolves.toEqual({ accepted: 2, requeued: 1 });
+  });
+
+  it('takes either a list of review items or all of them, never both', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    expect(ICloudReviewAcceptDto.schema.safeParse({ resourceIds: [id] }).success).toBe(true);
+    expect(ICloudReviewAcceptDto.schema.safeParse({ all: true, exceptResourceIds: [id] }).success).toBe(true);
+    expect(ICloudReviewAcceptDto.schema.safeParse({}).success).toBe(false);
+    expect(ICloudReviewAcceptDto.schema.safeParse({ all: true, resourceIds: [id] }).success).toBe(false);
+    expect(ICloudReviewAcceptDto.schema.safeParse({ resourceIds: [id], group: 'match' }).success).toBe(false);
+  });
+
   it('patches only supplied config fields and validates the merged settings', async () => {
     const auth = { user: { id: 'owner' }, session: { hasElevatedPermission: true } } as never;
     const config = ICloudConfigSchema.parse({
@@ -466,11 +498,9 @@ describe(ICloudSyncService.name, () => {
     });
     expect(ICloudConnectionUpdateDto.schema.safeParse({ config: { typo: true } }).success).toBe(false);
 
+    // Hidden photos always import as Locked, so saving no longer needs an unlocked session.
+    await sut.update({ user: { id: 'owner' }, session: {} } as never, connection.id, dto);
     repository.update.mockClear();
-    await expect(sut.update({ user: { id: 'owner' }, session: {} } as never, connection.id, dto)).rejects.toThrow(
-      'Elevated permission is required',
-    );
-    expect(repository.update).not.toHaveBeenCalled();
     vi.stubEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY', '2');
     try {
       await expect(sut.update(auth, connection.id, dto)).rejects.toThrow('icloud_admin_limit_exceeded');

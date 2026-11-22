@@ -85,6 +85,95 @@ describe(ICloudSyncRepository.name, () => {
     },
   );
 
+  describe('photo review', () => {
+    const held = async (reason: string) => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+      await repository.materialize(connection, 'library', library);
+      const resource = (await repository.claim(connection.id, 1000))!;
+      await repository.finish(resource, 'needs-review', reason);
+      return resource.id;
+    };
+    const page = (includePrivate = true) =>
+      repository.reviewPage(connection.id, connection.ownerId, includePrivate, { page: 1, size: 48 });
+
+    it('keeps what is here on accept, and the photo stays settled across a new listing', async () => {
+      const id = await held('retained_edit_limit');
+      expect(await page()).toMatchObject({
+        total: 1,
+        groups: [{ group: 'edits', count: 1 }],
+        effects: { keepCurrent: 1 },
+        items: [{ resourceId: id, group: 'edits', effect: 'keep-current', reason: 'retained_edit_limit' }],
+      });
+      expect((await repository.counts(connection.id))['needs-review']).toBe(1);
+
+      await expect(
+        repository.acceptReview(connection.id, connection.ownerId, true, { resourceIds: [id] }),
+      ).resolves.toEqual({ accepted: 1, requeued: 0 });
+
+      await repository.materialize(connection, 'library', library);
+      expect((await repository.resource(id))!.status).toBe('needs-review');
+      expect((await page()).total).toBe(0);
+      expect((await repository.counts(connection.id))['needs-review']).toBe(0);
+    });
+
+    it('puts an accepted match back in line and remembers the answer', async () => {
+      const id = await held('multiple_content_matches');
+      await expect(repository.acceptReview(connection.id, connection.ownerId, true, { all: true })).resolves.toEqual({
+        accepted: 1,
+        requeued: 1,
+      });
+      const resource = (await repository.resource(id))!;
+      expect(resource.status).toBe('pending');
+      expect((resource.source as { _sync: { acceptedReasons: string[] } })._sync.acceptedReasons).toEqual([
+        'multiple_content_matches',
+      ]);
+    });
+
+    it('tries storage again without recording an answer, so it can come back', async () => {
+      const id = await held('quota_exceeded');
+      await repository.acceptReview(connection.id, connection.ownerId, true, { all: true, group: 'storage' });
+      const resource = (await repository.resource(id))!;
+      expect(resource.status).toBe('pending');
+      expect((resource.source as { _sync?: unknown })._sync).toBeUndefined();
+    });
+
+    it('leaves a photo marked for later out of accept all', async () => {
+      const id = await held('retained_edit_limit');
+      await expect(
+        repository.acceptReview(connection.id, connection.ownerId, true, { all: true, exceptResourceIds: [id] }),
+      ).resolves.toEqual({ accepted: 0, requeued: 0 });
+      expect((await page()).total).toBe(1);
+    });
+
+    it('keeps a hidden photo out of an unlocked-only view and out of accept all', async () => {
+      const id = await held('retained_edit_limit');
+      await sql`UPDATE public.icloud_resource SET source = source || '{"isHidden":true}'::jsonb WHERE id = ${id}::uuid`.execute(
+        db,
+      );
+      expect(await page(false)).toMatchObject({ total: 0, privateWaiting: 1, items: [] });
+      await expect(repository.acceptReview(connection.id, connection.ownerId, false, { all: true })).resolves.toEqual({
+        accepted: 0,
+        requeued: 0,
+      });
+      expect((await page()).total).toBe(1);
+    });
+
+    it('never holds a photo for being hidden: the next run imports it', async () => {
+      const id = await held('source_hidden_requires_consent');
+      expect((await page()).total).toBe(0);
+      await repository.startRun(connection);
+      expect(await repository.resource(id)).toMatchObject({ status: 'pending', lastError: null });
+    });
+
+    it('lists a hidden source for import whatever the saved setting says', async () => {
+      const hiddenAsset = { ...asset, fields: { ...asset.fields, isHidden: field(1) } };
+      await repository.savePage(connection.id, 'assets:library', 'library', [hiddenAsset, master], null, true);
+      await repository.materialize(connection, 'library', library);
+      const resource = (await repository.claim(connection.id, 1000))!;
+      expect(resource.source.isHidden).toBe(true);
+    });
+  });
+
   describe('a photo Library care asks iCloud for (FL-1472)', () => {
     /** The item mapped to a library photo with an open problem, finished as `status`. */
     const mappedItem = async (status: string) => {
