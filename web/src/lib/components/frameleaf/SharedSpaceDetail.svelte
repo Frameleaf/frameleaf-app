@@ -15,6 +15,7 @@
   import SharedSpaceAddMatching from '$lib/components/frameleaf/SharedSpaceAddMatching.svelte';
   import SharedSpaceLinkedAlbums from '$lib/components/frameleaf/SharedSpaceLinkedAlbums.svelte';
   import SharedSpaceMap from '$lib/components/frameleaf/SharedSpaceMap.svelte';
+  import HouseholdSpaceStatus from '$lib/components/frameleaf/households/HouseholdSpaceStatus.svelte';
   import SharedSpaceMembers from '$lib/components/frameleaf/SharedSpaceMembers.svelte';
   import SharedSpaceNewSince from '$lib/components/frameleaf/SharedSpaceNewSince.svelte';
   import SharedSpacePeople from '$lib/components/frameleaf/SharedSpacePeople.svelte';
@@ -53,9 +54,12 @@
   import {
     AlbumKind,
     getAllSharedLinks,
+    getHouseholdShares,
+    getSharedSpaceHouseholds,
     SharedLinkType,
     type AlbumResponseDto,
     type AssetResponseDto,
+    type HouseholdInboundShareDto,
     type SharedSpaceActivityResponseDto,
     type SharedSpaceAlbumResponseDto,
     type SharedSpaceMemberResponseDto,
@@ -73,6 +77,7 @@
     mdiDotsHorizontal,
     mdiDownloadOutline,
     mdiFolderOpenOutline,
+    mdiHomeGroup,
     mdiImageMultipleOutline,
     mdiLinkVariant,
     mdiLogoutVariant,
@@ -140,6 +145,44 @@
   /** Invitations nobody has answered yet: the space is not private while one is waiting. */
   const pendingCount = $derived(members.filter((member) => member.pending).length);
   const name = $derived(space.albumName || $t('unnamed_album'));
+
+  // FL-998: people from linked households are not album members, so a space shared only with them
+  // would read "Private". Asked only in that case, because the answer comes from the other server.
+  let remoteMembers = $state(0);
+  $effect(() => {
+    const id = space.id;
+    if (!owner || others.length > 0 || pendingCount > 0) {
+      remoteMembers = 0;
+      return;
+    }
+    void members;
+    void untrack(async () => {
+      try {
+        const links = (await getSharedSpaceHouseholds({ id })) ?? [];
+        if (id === untrack(() => space.id)) {
+          remoteMembers = links.flatMap((link) => link.members).filter((member) => member.state !== 'left').length;
+        }
+      } catch {
+        remoteMembers = 0;
+      }
+    });
+  });
+
+  // FL-998: a space received from a linked household says where it came from and how its copies are doing.
+  let received = $state<HouseholdInboundShareDto>();
+  $effect(() => {
+    const id = space.id;
+    void untrack(async () => {
+      try {
+        const shares = (await getHouseholdShares()) ?? [];
+        if (id === untrack(() => space.id)) {
+          received = shares.find((share) => share.albumId === id && share.state !== 'invited');
+        }
+      } catch {
+        received = undefined;
+      }
+    });
+  });
   /** SHARING-P4, as on the album header: on phones the secondary actions move into "…". */
   const phone = new MediaQuery('max-width: 700px');
   const compact = $derived(phone.current);
@@ -469,6 +512,12 @@
             onSave={(albumName) => save({ albumName }, $t('frameleaf_album_title_saved'))}
           />
           <span class="badge-pill">{$t('frameleaf_album_kind_space')}</span>
+          {#if received}
+            <span class="badge-pill origin">
+              <Icon icon={mdiHomeGroup} size="14" aria-hidden />
+              {$t('frameleaf_households_from', { values: { name: received.householdName } })}
+            </span>
+          {/if}
           {#if !owner && ownerUser}
             <span class="shared-by">{$t('frameleaf_spaces_owned_by', { values: { name: ownerUser.name } })}</span>
           {/if}
@@ -508,15 +557,35 @@
               <span aria-hidden="true"><Icon icon={mdiAccountClockOutline} size="16" /></span>
               <span>{$t('frameleaf_spaces_invited_count', { values: { count: pendingCount } })}</span>
             </button>
-          {:else if owner}
+          {:else if remoteMembers > 0}
+            <button type="button" class="members" onclick={() => choosePanel('members')}>
+              <span aria-hidden="true"><Icon icon={mdiHomeGroup} size="16" /></span>
+              <span>{$t('frameleaf_album_shared_with_count', { values: { count: remoteMembers } })}</span>
+            </button>
+          {:else if owner && !received}
             <button type="button" class="members" onclick={() => choosePanel('members')}>
               <span aria-hidden="true"><Icon icon={mdiAccountPlusOutline} size="16" /></span>
               <span>{$t('frameleaf_album_private_share_it')}</span>
             </button>
-          {:else}
+          {:else if !received}
             <span>{$t('frameleaf_album_private')}</span>
           {/if}
+          {#if received}
+            <!-- A received space is not "private": it says whose it was. The dot before the first part is the one above. -->
+            {#if received.ownerName}
+              {#if others.length > 0 || pendingCount > 0 || remoteMembers > 0}<span class="dot" aria-hidden="true"
+                ></span>{/if}
+              <span>{$t('frameleaf_households_shared_by', { values: { name: received.ownerName } })}</span>
+            {/if}
+            {#if received.ownerName || others.length > 0 || pendingCount > 0 || remoteMembers > 0}
+              <span class="dot" aria-hidden="true"></span>
+            {/if}
+            <span>{$t('frameleaf_households_own_copies')}</span>
+          {/if}
         </div>
+        {#if received}
+          <HouseholdSpaceStatus share={received} />
+        {/if}
       </div>
     </div>
 
@@ -924,6 +993,11 @@
     color: var(--fl-muted);
     background: var(--fl-raised);
     border-radius: var(--fl-radius-pill);
+  }
+  .badge-pill.origin {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .badge-pill::first-letter {
     text-transform: uppercase;
