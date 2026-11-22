@@ -46,6 +46,10 @@ export class HouseholdLinkTable {
   @Column({ type: 'text', nullable: true })
   pausedReason!: string | null;
 
+  /** FL-994: the other household poked; the receiving worker polls this link at its next tick. */
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  pollRequestedAt!: Timestamp | null;
+
   /** The kind of address that last answered (`local`, `wan`, `ipv6`, `relay`). */
   @Column({ type: 'text', nullable: true })
   connectionPath!: string | null;
