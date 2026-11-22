@@ -130,15 +130,15 @@ Cloud has no workload for this yet. FL-871 adds one (`generative-edit`) to the w
 
 ## Sources
 
-Read in November 2026. Links were not kept; each figure can be found on the page named.
+Read in November 2026. These are the pages the spike read; the figures were not re-checked against them when the links were added.
 
-- Model size, steps, licence, file sizes and maker's VRAM and speed figures: each model's own card and release notes (Qwen-Image-2.1 and Qwen-Image-Edit from Qwen; FLUX 3 Image Klein, FLUX.2 [klein] and FLUX.1 Kontext [dev] from Black Forest Labs; Fibo 2.0 from Bria; H3-Image from MiniMax).
-- Edit rank: the Artificial Analysis image editing leaderboard, open-weights filter. Second leaderboard: arena.ai image edit, 16 November 2026.
-- RTX 5090 timing for Qwen-Image-2.1 (7.1 s): the LightX2V benchmark notes for that model.
-- FLUX.2 [klein] 4B at 8.4 GB: ComfyUI's model notes.
-- FLUX.1 Kontext [dev] per-step time and 16 GB minimum: NVIDIA's notes for its packaged version of the model.
-- Mac figures other than our own run: the mflux project's notes for each model.
-- Cloud rates and fees: the Frameleaf Cloud tariff, as above.
+- Model cards, for size, steps, licence, file sizes and the maker's VRAM and speed figures: [Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1), [Qwen-Image-Edit-2509](https://huggingface.co/Qwen/Qwen-Image-Edit-2509), [FLUX 3 Image Klein](https://huggingface.co/black-forest-labs/FLUX.3-Image-klein) and its [release post](https://bfl.ai/blog/flux-3-image-klein), [FLUX.2 [klein] 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B), [Fibo 2.0](https://huggingface.co/briaai/FIBO-2.0), [H3-Image](https://huggingface.co/MiniMaxAI/H3-Image).
+- Edit rank: the [Artificial Analysis image editing leaderboard, open weights](https://artificialanalysis.ai/image/leaderboard/editing/open-weights). Second leaderboard: [arena.ai image edit](https://arena.ai/leaderboard/image-edit), 16 November 2026.
+- Qwen-Image-2.1 on consumer cards, including the 7.1 s RTX 5090 timing (a LightX2V benchmark quoted in these write-ups): [ai.rs](https://ai.rs/ai-for-business/qwen-image-2-1-open-weights-licence-vram), [lu-labs.ai](https://lu-labs.ai/blog/run-qwen-image-2-1-locally), [codersera.com](https://codersera.com/blog/how-to-run-qwen-image-2-1-locally-2026/).
+- FLUX.2 [klein] 4B at 8.4 GB: the [ComfyUI release post](https://blog.comfy.org/p/flux2-klein-4b-fast-local-image-editing).
+- FLUX.1 Kontext [dev] per-step times and the 16 GB minimum: [NVIDIA's quantisation write-up](https://developer.nvidia.com/blog/optimizing-flux-1-kontext-for-image-editing-with-low-precision-quantization) and its [support matrix](https://docs.nvidia.com/nim/visual-genai/1.2.0/support-matrix.html).
+- Mac figures other than our own run: the [mflux project](https://github.com/filipstrand/mflux).
+- Cloud rates and fees: the Frameleaf Cloud tariff, as above. The Cloud repository is private, so reviewers of this repository cannot see that test; FL-840 verifies it.
 
 ## What the next issues take from this
 
