@@ -51,9 +51,9 @@ class PhotoOperation(StrEnum):
     """What a photo workload does to a still (FL-933). These are not restoration modes: a mode is
     a value people's apps decode, so the photo workloads are named by their own field instead."""
 
-    # Faces (CodeFormer) plus scratches and dust (LaMa) on an old print.
+    # Scratches and dust (LaMa) on an old print; faces are left exactly as scanned.
     REPAIR = "repair"
-    # Colour for a black-and-white photo (DDColor).
+    # Suggested colour for a black-and-white or toned photo (DDColor).
     COLOURISE = "colourise"
 
 

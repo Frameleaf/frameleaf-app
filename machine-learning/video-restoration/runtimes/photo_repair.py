@@ -1,15 +1,16 @@
-"""Photo repair for old prints (FL-933): scratches and dust, then faces.
+"""Photo repair for old prints (FL-933): scratches and dust only. No pixel of a face is generated.
 
 One decoded RGB frame in, one RGB frame of exactly the same size out.
 
-1. Faces are found with RetinaFace on a copy of at most ``DETECT_LONG_EDGE`` pixels.
-2. Thin bright and dark defects outside the faces are masked and filled with LaMa in 512-pixel
-   windows. Only masked pixels change. A mask over ``MASK_CAP`` of the photo skips the pass.
-3. Each face is aligned to 512 x 512, restored with CodeFormer and blended back through its
-   parsing mask. Pixels outside a face's mask are never touched by CodeFormer.
+1. Faces are found with RetinaFace on a copy of at most ``DETECT_LONG_EDGE`` pixels, at a low
+   confidence on purpose: a false face only leaves a mark unrepaired.
+2. Thin, isolated marks on flat areas are masked. The boxes around faces are then cleared from
+   the mask, so those pixels are byte-identical to the scan.
+3. LaMa fills the masked pixels in 512-pixel windows. Every other pixel is copied from the source,
+   so the result cannot drift in tone or sharpness. A mask over ``MASK_CAP`` skips the pass.
 
-The network classes come from the pinned CodeFormer checkout (``--runtime-root``); the weights
-are local files the worker has already hashed. Nothing here reaches the network.
+The detector network comes from the pinned facexlib checkout (``--runtime-root``); the weights are
+local files the worker has already hashed. Nothing here reaches the network.
 """
 
 import argparse
@@ -31,7 +32,7 @@ FRAME = "00000001.png"
 REPORT = "report.json"
 MAX_INPUT_EDGE = 8192
 
-# --- scratch and dust ---------------------------------------------------------------------
+# --- scratch and dust: a missed scratch is better than a removed detail -------------------
 TILE = 512  # LaMa's fixed input
 HALO = 64  # context kept around the part of a window that is written back
 CORE = TILE - 2 * HALO
@@ -39,47 +40,34 @@ MASK_WORK_EDGE = 2048  # the detector runs on a copy this long at most
 MASK_KERNEL = 9  # defects wider than this (at the working size) are not found
 MASK_THRESHOLD = 48  # top-hat / black-hat response, of 255
 SPECK_AREA = 40  # dust: a compact component up to this many working pixels
-LINE_MIN_LENGTH = 20  # a scratch: at least this long ...
-LINE_MAX_THICKNESS = 5.0  # ... and on average no thicker than this
-TEXTURE_WINDOW = 65
-TEXTURE_DENSITY = 0.12  # more candidates than this around a component: texture, not damage
+LINE_MIN_LENGTH = 30  # a scratch: at least this long ...
+LINE_MAX_THICKNESS = 3.5  # ... no thicker than this on average ...
+LINE_MIN_ELONGATION = 6.0  # ... much longer than wide ...
+LINE_MIN_FILL = 0.4  # ... and filling its rotated box, which a curved pen stroke does not
+AXIS_TOLERANCE_DEGREES = 2.0  # a line this close to level or plumb is a mount rule or a print edge
+NEIGHBOUR_WINDOW = 65
+MAX_NEIGHBOURS = 3  # more marks than this around one: lace, beads, hair, grass or writing
+FLAT_WINDOW = 21
+FLAT_MAX_DEVIATION = 7.0  # a mark is only damage when the picture around it is smooth
+EDGE_WINDOW = 15
+EDGE_MAX = 40.0  # Sobel magnitude of the smoothed picture near the mark
+NOISE_WINDOW = 31
+MIN_CONTRAST_TO_NOISE = 6.0  # the mark's peak against the grain around it
 MASK_CAP = 0.03  # never fill more than this fraction of a photo
-FACE_MARGIN = 0.3  # the scratch mask stays this far (of the face box) outside every face
+FACE_MARGIN = 0.3  # faces are protected this far (of the face box) beyond their detected box
 
-# --- faces --------------------------------------------------------------------------------
-FACE_SIZE = 512
+# --- faces: found only to be left alone ----------------------------------------------------
 DETECT_LONG_EDGE = 1536
-DETECT_CONFIDENCE = 0.97
-MIN_EYE_DISTANCE = 10.0  # source pixels; smaller faces carry too little to restore
-MAX_FACE_SCALE = 4.0  # source pixels per restored pixel; larger faces would come back softer
-DEFAULT_FIDELITY = 0.7
-# The five-point layout CodeFormer was trained on (eyes, nose, mouth corners), at 512 x 512.
-FACE_TEMPLATE = np.array(
-    [
-        [192.98138, 239.94708],
-        [318.90277, 240.1936],
-        [256.63416, 314.01935],
-        [201.26117, 371.41043],
-        [313.08905, 371.15118],
-    ],
-    dtype=np.float32,
-)
-FACE_BORDER = (135, 133, 132)
-# Parsing classes that belong to the face (skin, brows, eyes, nose, mouth, hair, ...), as upstream pastes them.
-PARSE_FACE = np.array([0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0], dtype=np.float32)
+DETECT_CONFIDENCE = 0.5
 
 Fill = Callable[[np.ndarray, np.ndarray], np.ndarray]
-Restore = Callable[[np.ndarray], np.ndarray]
-Parse = Callable[[np.ndarray], np.ndarray]
 Detect = Callable[[np.ndarray], np.ndarray]
+Box = tuple[int, int, int, int]
 
 
 @dataclass
 class Report:
-    facesFound: int = 0
-    facesRestored: int = 0
-    facesSkippedSmall: int = 0
-    facesSkippedLarge: int = 0
+    facesProtected: int = 0
     scratchPass: str = "none"  # none | applied | skipped-over-cap
     scratchMaskFraction: float = 0.0
     scratchTiles: int = 0
@@ -90,16 +78,48 @@ class Report:
 # Scratch and dust mask.
 # ---------------------------------------------------------------------------------------
 
-# ponytail: a classical detector — morphological top-hat and black-hat, a threshold and a
-# thin-structure filter. Its ceiling: it finds only thin, high-contrast defects (hairline
-# scratches, dust specks). It misses wide tears, creases, stains and low-contrast scratches,
-# and it can take a thin real line on a plain background (a wire, a flagpole) for a scratch.
+# ponytail: a classical detector — morphological top-hat and black-hat, a threshold, then rules
+# that keep only isolated specks and straight hairlines on smooth areas. Its ceiling: it misses
+# wide tears, creases, stains, low-contrast scratches and any mark over busy detail, by design.
 # The upgrade is the learned scratch-detection UNet from "Bringing Old Photos Back to Life"
 # (MIT): same mask contract, so only this function changes.
 
 
-def scratch_mask(rgb: np.ndarray, faces: list[tuple[int, int, int, int]]) -> np.ndarray:
-    """A uint8 mask (255 where a defect is filled) at the photo's size."""
+def protected_boxes(faces: list[Box], height: int, width: int) -> list[Box]:
+    """The detected face boxes grown by ``FACE_MARGIN``, clipped to the photo."""
+    boxes = []
+    for left, top, right, bottom in faces:
+        margin_x, margin_y = (right - left) * FACE_MARGIN, (bottom - top) * FACE_MARGIN
+        boxes.append(
+            (
+                max(0, int(left - margin_x)),
+                max(0, int(top - margin_y)),
+                min(width, int(right + margin_x) + 1),
+                min(height, int(bottom + margin_y) + 1),
+            )
+        )
+    return boxes
+
+
+def straight_lines(labels: np.ndarray, stats: np.ndarray, candidates: np.ndarray) -> np.ndarray:
+    """Which of the candidate components are straight, thin and not a level or plumb rule."""
+    keep = np.zeros(len(stats), dtype=bool)
+    for index in np.flatnonzero(candidates):
+        left, top, width, height = stats[index, :4]
+        points = np.argwhere(labels[top : top + height, left : left + width] == index)[:, ::-1]
+        (_, (side_a, side_b), angle) = cv2.minAreaRect(points.astype(np.float32))
+        long_side, short_side = max(side_a, side_b) + 1.0, min(side_a, side_b) + 1.0
+        if long_side / short_side < LINE_MIN_ELONGATION or len(points) / (long_side * short_side) < LINE_MIN_FILL:
+            continue
+        off_axis = min(angle % 90.0, 90.0 - angle % 90.0)
+        if off_axis <= AXIS_TOLERANCE_DEGREES:
+            continue
+        keep[index] = True
+    return keep
+
+
+def scratch_mask(rgb: np.ndarray, faces: list[Box]) -> np.ndarray:
+    """A uint8 mask (255 where a defect is filled) at the photo's size. Never set inside a face."""
     height, width = rgb.shape[:2]
     scale = min(1.0, MASK_WORK_EDGE / max(height, width))
     small = rgb
@@ -112,31 +132,61 @@ def scratch_mask(rgb: np.ndarray, faces: list[tuple[int, int, int, int]]) -> np.
     )
     candidates = (response >= MASK_THRESHOLD).astype(np.uint8)
 
-    count, labels, stats, _ = cv2.connectedComponentsWithStats(candidates, connectivity=8)
+    count, labels, stats, centroids = cv2.connectedComponentsWithStats(candidates, connectivity=8)
     keep = np.zeros(count, dtype=bool)
     if count > 1:
         area = stats[:, cv2.CC_STAT_AREA].astype(np.float32)
         length = np.hypot(stats[:, cv2.CC_STAT_WIDTH], stats[:, cv2.CC_STAT_HEIGHT]).astype(np.float32)
-        speck = area <= SPECK_AREA
-        line = (length >= LINE_MIN_LENGTH) & (area / np.maximum(length, 1.0) <= LINE_MAX_THICKNESS)
-        # Grass, fabric, hair and print are full of thin bright and dark marks; real damage is sparse.
-        density = cv2.blur(candidates.astype(np.float32), (TEXTURE_WINDOW, TEXTURE_WINDOW))
-        mean_density = np.bincount(labels.ravel(), weights=density.ravel(), minlength=count) / np.maximum(area, 1.0)
-        keep = (speck | line) & (mean_density <= TEXTURE_DENSITY)
-        keep[0] = False
+
+        def component_mean(values: np.ndarray) -> np.ndarray:
+            return np.bincount(labels.ravel(), weights=values.ravel(), minlength=count) / np.maximum(area, 1.0)
+
+        # Lace, hair, grass, writing and jewellery are many marks close together. Counted by
+        # component, so one long scratch is not its own crowd.
+        centres = np.nan_to_num(centroids).round().astype(int)
+        rows, columns = centres[:, 1], centres[:, 0]
+        seeds = np.zeros(gray.shape, np.float32)
+        np.add.at(seeds, (rows[1:], columns[1:]), 1.0)
+        window = (NEIGHBOUR_WINDOW, NEIGHBOUR_WINDOW)
+        crowded = cv2.boxFilter(seeds, -1, window, normalize=False)[rows, columns] - 1.0 > MAX_NEIGHBOURS
+        crowded[0] = False
+        # The ends of a row of beads have few neighbours of their own but sit beside a crowd.
+        crowd_seeds = np.zeros(gray.shape, np.float32)
+        crowd_seeds[rows[crowded], columns[crowded]] = 1.0
+        beside_crowd = cv2.boxFilter(crowd_seeds, -1, window, normalize=False)[rows, columns] > 0
+        # The median removes thin marks, so what still varies around one is the picture itself.
+        base = cv2.medianBlur(gray, MASK_KERNEL + 2).astype(np.float32)
+        mean = cv2.blur(base, (FLAT_WINDOW, FLAT_WINDOW))
+        deviation = np.sqrt(np.maximum(cv2.blur(base * base, (FLAT_WINDOW, FLAT_WINDOW)) - mean * mean, 0))
+        # A card edge, a fold in cloth or a watch chain has a real edge beside it; dust does not.
+        smooth = cv2.GaussianBlur(base, (0, 0), 1.5)
+        edges = cv2.magnitude(cv2.Sobel(smooth, cv2.CV_32F, 1, 0), cv2.Sobel(smooth, cv2.CV_32F, 0, 1))
+        near_edge = cv2.dilate(edges, np.ones((EDGE_WINDOW, EDGE_WINDOW), np.uint8))
+        # Paper grain is many weak marks: a real one stands well clear of the noise around it.
+        residual = (gray.astype(np.float32) - base) * (candidates == 0)  # the marks themselves are not noise
+        noise = np.sqrt(cv2.blur(residual * residual, (NOISE_WINDOW, NOISE_WINDOW)))
+        peak = np.zeros(count, np.float32)
+        np.maximum.at(peak, labels.ravel(), response.ravel().astype(np.float32))
+        plausible = (
+            ~beside_crowd
+            & (component_mean(deviation) <= FLAT_MAX_DEVIATION)
+            & (component_mean(near_edge) <= EDGE_MAX)
+            & (peak / (component_mean(noise) + 1.0) >= MIN_CONTRAST_TO_NOISE)
+        )
+        plausible[0] = False
+
+        speck = plausible & (area <= SPECK_AREA)
+        thin = plausible & (length >= LINE_MIN_LENGTH) & (area / np.maximum(length, 1.0) <= LINE_MAX_THICKNESS)
+        keep = speck | straight_lines(labels, stats, thin & ~speck)
     mask = keep[labels].astype(np.uint8) * 255
     mask = cv2.dilate(mask, np.ones((3, 3), np.uint8))
     if scale < 1.0:
         mask = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST)
         grow = int(np.ceil(1.0 / scale))
         mask = cv2.dilate(mask, np.ones((grow, grow), np.uint8))
-    # Eyes, catchlights and teeth are thin bright marks too: nothing inside a face is ever filled.
-    for left, top, right, bottom in faces:
-        margin_x, margin_y = (right - left) * FACE_MARGIN, (bottom - top) * FACE_MARGIN
-        mask[
-            max(0, int(top - margin_y)) : min(height, int(bottom + margin_y) + 1),
-            max(0, int(left - margin_x)) : min(width, int(right + margin_x) + 1),
-        ] = 0
+    # Last, after every dilation: nothing inside a protected box is ever filled.
+    for left, top, right, bottom in protected_boxes(faces, height, width):
+        mask[top:bottom, left:right] = 0
     return mask
 
 
@@ -169,115 +219,62 @@ def inpaint_tiled(rgb: np.ndarray, mask: np.ndarray, fill: Fill) -> tuple[np.nda
 
 
 # ---------------------------------------------------------------------------------------
-# Faces.
+# Faces, found only to be protected.
 # ---------------------------------------------------------------------------------------
 
 
-def detect_faces(rgb: np.ndarray, detect: Detect) -> np.ndarray:
-    """Rows of box (4), score, and five landmarks (10) in the photo's own pixels."""
+def detect_faces(rgb: np.ndarray, detect: Detect) -> list[Box]:
+    """Face boxes in the photo's own pixels, rounded outwards."""
     height, width = rgb.shape[:2]
     scale = min(1.0, DETECT_LONG_EDGE / max(height, width))
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     if scale < 1.0:
         bgr = cv2.resize(bgr, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
     found = np.asarray(detect(bgr), dtype=np.float32).reshape(-1, 15)
-    found[:, :4] /= scale
-    found[:, 5:] /= scale
-    return found
-
-
-def restore_faces(rgb: np.ndarray, faces: np.ndarray, restore: Restore, parse: Parse, report: Report) -> np.ndarray:
-    """Restore every usable face and blend it back through its parsing mask, in place."""
-    height, width = rgb.shape[:2]
-    square = np.array([[0, 0], [FACE_SIZE, 0], [FACE_SIZE, FACE_SIZE], [0, FACE_SIZE]], dtype=np.float32)
-    for face in faces:
-        landmarks = face[5:15].reshape(5, 2)
-        if float(np.linalg.norm(landmarks[0] - landmarks[1])) < MIN_EYE_DISTANCE:
-            report.facesSkippedSmall += 1
-            continue
-        affine = cv2.estimateAffinePartial2D(landmarks, FACE_TEMPLATE, method=cv2.LMEDS)[0]
-        if affine is None:
-            report.facesSkippedSmall += 1
-            continue
-        inverse = cv2.invertAffineTransform(affine)
-        if float(np.hypot(inverse[0, 0], inverse[0, 1])) > MAX_FACE_SCALE:
-            report.facesSkippedLarge += 1
-            continue
-        aligned = cv2.warpAffine(
-            rgb, affine, (FACE_SIZE, FACE_SIZE), borderMode=cv2.BORDER_CONSTANT, borderValue=FACE_BORDER[::-1]
+    return [
+        (
+            int(np.floor(left / scale)),
+            int(np.floor(top / scale)),
+            int(np.ceil(right / scale)),
+            int(np.ceil(bottom / scale)),
         )
-        restored = restore(aligned)
-        blend = parse(restored)
-        if restored.shape != (FACE_SIZE, FACE_SIZE, 3) or blend.shape != (FACE_SIZE, FACE_SIZE):
-            raise ValueError("the face models returned invalid dimensions")
-
-        # Warp only into the face's own box: a full-size warp per face does not scale to large scans.
-        corners = cv2.transform(square[None], inverse)[0]
-        x0, y0 = np.floor(corners.min(axis=0)).astype(int)
-        x1, y1 = np.ceil(corners.max(axis=0)).astype(int)
-        x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, width), min(y1, height)
-        if x1 <= x0 or y1 <= y0:
-            continue
-        local = inverse.copy()
-        local[:, 2] -= (x0, y0)
-        size = (x1 - x0, y1 - y0)
-        face_pixels = cv2.warpAffine(restored, local, size, flags=cv2.INTER_CUBIC).astype(np.float32)
-        weight = cv2.warpAffine(blend.astype(np.float32), local, size, flags=cv2.INTER_LINEAR)[..., None]
-        region = rgb[y0:y1, x0:x1]
-        region[:] = np.clip(weight * face_pixels + (1.0 - weight) * region, 0, 255).round().astype(np.uint8)
-        report.facesRestored += 1
-    return rgb
-
-
-def face_blend_mask(classes: np.ndarray) -> np.ndarray:
-    """Soft 0..1 mask over the restored face from its parsing classes, zero at the crop's edge."""
-    mask = PARSE_FACE[classes] * 255.0
-    mask = cv2.GaussianBlur(mask, (101, 101), 11)
-    mask = cv2.GaussianBlur(mask, (101, 101), 11)
-    edge = 10
-    mask[:edge, :] = mask[-edge:, :] = 0
-    mask[:, :edge] = mask[:, -edge:] = 0
-    return mask / 255.0
+        for left, top, right, bottom in found[:, :4]
+    ]
 
 
 @dataclass(frozen=True)
 class Models:
     detect: Detect
-    restore: Restore
-    parse: Parse
     fill: Fill
 
 
-def repair(rgb: np.ndarray, models: Models) -> tuple[np.ndarray, Report]:
-    report = Report()
+def find_marks(rgb: np.ndarray, models: Models) -> tuple[list[Box], np.ndarray]:
+    """The faces to protect and the mask of marks to fill."""
     faces = detect_faces(rgb, models.detect)
-    report.facesFound = len(faces)
-    boxes = [(int(face[0]), int(face[1]), int(face[2]), int(face[3])) for face in faces]
+    return faces, scratch_mask(rgb, faces)
 
-    mask = scratch_mask(rgb, boxes)
+
+def fill_marks(rgb: np.ndarray, faces: list[Box], mask: np.ndarray, models: Models) -> tuple[np.ndarray, Report]:
+    report = Report(facesProtected=len(faces))
     fraction = float(np.count_nonzero(mask)) / mask.size
     report.scratchMaskFraction = round(fraction, 6)
-    output = rgb
     if fraction > MASK_CAP:
         report.scratchPass = "skipped-over-cap"
         report.warnings.append(
             f"scratch and dust removal was skipped: the marks cover {fraction:.1%} of the photo, over the "
             f"{MASK_CAP:.0%} limit"
         )
-    elif fraction > 0:
-        output, report.scratchTiles = inpaint_tiled(rgb, mask, models.fill)
-        report.scratchPass = "applied"
-    if output is rgb:
-        output = rgb.copy()
-
-    restore_faces(output, faces, models.restore, models.parse, report)
-    if report.facesSkippedLarge:
-        report.warnings.append(
-            f"{report.facesSkippedLarge} face(s) larger than {int(FACE_SIZE * MAX_FACE_SCALE)} px were left as they are"
-        )
-    if report.facesSkippedSmall:
-        report.warnings.append(f"{report.facesSkippedSmall} face(s) were too small to restore")
+        return rgb.copy(), report
+    if fraction == 0:
+        return rgb.copy(), report
+    output, report.scratchTiles = inpaint_tiled(rgb, mask, models.fill)
+    report.scratchPass = "applied"
     return output, report
+
+
+def repair(rgb: np.ndarray, models: Models) -> tuple[np.ndarray, Report]:
+    faces, mask = find_marks(rgb, models)
+    return fill_marks(rgb, faces, mask, models)
 
 
 # ---------------------------------------------------------------------------------------
@@ -287,7 +284,7 @@ def repair(rgb: np.ndarray, models: Models) -> tuple[np.ndarray, Report]:
 
 def stub_package(name: str, path: Path) -> None:
     """Make ``name`` importable from the checkout without running its ``__init__``, which pulls in
-    training code and download helpers this runtime never uses."""
+    tracking, recognition and download code this runtime never uses."""
     module = types.ModuleType(name)
     module.__path__ = [str(path)]
     sys.modules[name] = module
@@ -303,35 +300,14 @@ def load_models(args: argparse.Namespace, *, vram_bytes_for_fill: int = 2 << 30)
 
     root = args.runtime_root.resolve()
     sys.path.insert(0, str(root))
-    stub_package("basicsr", root / "basicsr")
-    stub_package("basicsr.archs", root / "basicsr" / "archs")
-    stub_package("facelib", root / "facelib")
-    stub_package("facelib.detection", root / "facelib" / "detection")
-    stub_package("facelib.parsing", root / "facelib" / "parsing")
-    from basicsr.archs.codeformer_arch import CodeFormer
-    from facelib.detection.retinaface import retinaface as retinaface_module
-    from facelib.parsing.parsenet import ParseNet
+    stub_package("facexlib", root / "facexlib")
+    stub_package("facexlib.detection", root / "facexlib" / "detection")
+    from facexlib.detection.retinaface import RetinaFace
 
-    def state(path: Path) -> Any:
-        return torch.load(path, map_location="cpu", weights_only=True)
-
-    # Upstream picks its own device at import time; this runtime decides.
-    retinaface_module.device = device
-    detector = retinaface_module.RetinaFace(network_name="resnet50", half=False)
-    detector.load_state_dict(
-        {key.removeprefix("module."): value for key, value in state(args.detection).items()}, strict=True
-    )
+    detector = RetinaFace(network_name="resnet50", half=False, device=device)
+    state = torch.load(args.detection, map_location="cpu", weights_only=True)
+    detector.load_state_dict({key.removeprefix("module."): value for key, value in state.items()}, strict=True)
     detector.eval().to(device)
-
-    parser = ParseNet(in_size=512, out_size=512, parsing_ch=19)
-    parser.load_state_dict(state(args.parsing), strict=True)
-    parser.eval().to(device)
-
-    codeformer = CodeFormer(
-        dim_embd=512, codebook_size=1024, n_head=8, n_layers=9, connect_list=["32", "64", "128", "256"]
-    )
-    codeformer.load_state_dict(state(args.codeformer)["params_ema"], strict=True)
-    codeformer.eval().to(device)
 
     import onnxruntime
 
@@ -352,26 +328,9 @@ def load_models(args: argparse.Namespace, *, vram_bytes_for_fill: int = 2 << 30)
     mask_name = next((name for name in names if "mask" in name.lower()), names[-1])
     image_name = next(name for name in names if name != mask_name)
 
-    def to_tensor(face: np.ndarray) -> Any:
-        tensor = torch.from_numpy(face).permute(2, 0, 1).float().div(255.0).sub(0.5).div(0.5)
-        return tensor.unsqueeze(0).to(device)
-
     @torch.inference_mode()
     def detect(bgr: np.ndarray) -> np.ndarray:
         return np.asarray(detector.detect_faces(bgr, DETECT_CONFIDENCE))
-
-    @torch.inference_mode()
-    def restore(face: np.ndarray) -> np.ndarray:
-        output = codeformer(to_tensor(face), w=args.fidelity, adain=True)[0]
-        if not torch.isfinite(output).all():
-            raise ValueError("the face model returned nonfinite pixels")
-        pixels = output[0].clamp(-1, 1).add(1).mul(127.5).round().to(torch.uint8)
-        return np.ascontiguousarray(pixels.permute(1, 2, 0).cpu().numpy())
-
-    @torch.inference_mode()
-    def parse(face: np.ndarray) -> np.ndarray:
-        classes = parser(to_tensor(face))[0].argmax(dim=1)[0].cpu().numpy()
-        return face_blend_mask(classes)
 
     def fill(window: np.ndarray, window_mask: np.ndarray) -> np.ndarray:
         feed = {
@@ -385,7 +344,7 @@ def load_models(args: argparse.Namespace, *, vram_bytes_for_fill: int = 2 << 30)
             output = output * 255.0
         return np.clip(output.transpose(1, 2, 0), 0, 255).round().astype(np.uint8)
 
-    return Models(detect=detect, restore=restore, parse=parse, fill=fill)
+    return Models(detect=detect, fill=fill)
 
 
 def read_frame(path: Path) -> np.ndarray:
@@ -413,17 +372,12 @@ def main() -> None:
     parser.add_argument("--input-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--runtime-root", required=True, type=Path)
-    parser.add_argument("--codeformer", required=True, type=Path)
     parser.add_argument("--detection", required=True, type=Path)
-    parser.add_argument("--parsing", required=True, type=Path)
     parser.add_argument("--lama", required=True, type=Path)
-    parser.add_argument("--fidelity", type=float, default=DEFAULT_FIDELITY)
     # For adapter checks on a machine without a GPU. The worker's manifest can never pass it.
     parser.add_argument("--allow-cpu", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
-        if not 0.0 <= args.fidelity <= 1.0:
-            raise ValueError("fidelity must be between 0 and 1")
         if args.input_dir.is_symlink() or [path.name for path in args.input_dir.iterdir()] != [FRAME]:
             raise ValueError("the input directory must contain exactly one decoded frame")
         if args.output_dir.is_symlink() or any(args.output_dir.iterdir()):

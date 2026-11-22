@@ -128,26 +128,30 @@ same pixel size**; neither enlarges.
 
 | Workload       | Operation   | Family       | What runs                                                                                                   |
 | -------------- | ----------- | ------------ | ----------------------------------------------------------------------------------------------------------- |
-| `photo-repair` | `repair`    | `codeformer` | `runtimes/photo_repair.py`: RetinaFace finds faces, LaMa fills scratches and dust, CodeFormer restores faces |
-| `colourise`    | `colourise` | `ddcolor`    | `runtimes/colourise.py`: DDColor (large) predicts colour, joined to the photo's own lightness               |
+| `photo-repair` | `repair`    | `lama-repair` | `runtimes/photo_repair.py`: LaMa fills scratches and dust; RetinaFace only finds faces to leave them untouched |
+| `colourise`    | `colourise` | `ddcolor`     | `runtimes/colourise.py`: DDColor (large) suggests colour, joined to the photo's own lightness                  |
 
-**Photo repair.** Faces are found on a copy of at most 1536 pixels, aligned to 512 x 512,
-restored with CodeFormer at fidelity 0.7 (`--fidelity` in the manifest's argv) and blended
-back through the face's parsing mask, so nothing outside a face is touched by CodeFormer. A
-face with eyes under 10 pixels apart, or wider than about 2048 pixels, is left as it is and
-the result says so. Scratches and dust are found by a classical detector (top-hat and
-black-hat for thin bright and dark marks, a threshold, then a filter that keeps only specks
-and thin lines away from textured areas) and filled by LaMa in 512-pixel windows; only masked
-pixels change. The mask never covers a face (eyes, catchlights and teeth look like dust to
-it), and when it covers more than 3% of the photo the pass is skipped with a warning rather
-than repainting the picture. The detector's ceiling and its upgrade path (a learned scratch
-detector) are written beside it in the code. LaMa is the same ONNX file the machine-learning
-service uses for Clean Up (`frameleaf/frameleaf-inpaint`).
+**Photo repair.** Scratches and dust only: no face, hair, skin or eye pixel is generated.
+RetinaFace (from the pinned facexlib checkout) finds faces on a copy of at most 1536 pixels, at
+a low confidence on purpose, and each box grown by 30% is removed from the mask last, so those
+pixels are byte-identical to the scan. Every pixel outside the mask is copied from the source,
+so the result cannot drift in tone or sharpness. A classical detector marks only isolated specks
+and straight hairlines on smooth areas: it refuses marks that are crowded (lace, hair, grass,
+writing), beside a real edge (a card edge, a fold, a watch chain), not clear of the local grain,
+or a long level or plumb line (a mount rule). It therefore misses many real scratches, wide
+tears, creases and stains; a missed scratch is better than a removed detail. LaMa fills the
+marks in 512-pixel windows, and over 3% of the photo the pass is skipped with a warning. LaMa is
+the same ONNX file the machine-learning service uses for Clean Up (`frameleaf/frameleaf-inpaint`).
 
-**Colourise.** The model always sees a 512 x 512 copy and answers with two colour channels
-(Lab a and b). They are enlarged and joined to the lightness of the full-size photo, so a
-large scan keeps its detail and GPU memory does not grow with the scan. A photo that already
-has colour gets a warning in the result; refusing it is the server's decision.
+**Colourise.** An opt-in suggestion. The model always sees a 512 x 512 copy and answers with two
+colour channels (Lab a and b), enlarged and joined to the lightness of the full-size photo, so a
+large scan keeps its detail and GPU memory does not grow with the scan. Every result carries a
+warning starting `suggested-colours:`. True and toned monochrome (sepia, albumen, selenium) are
+accepted. A hand-tinted print or a colour photo is refused as `unsupported-input`, with the reason:
+a toned print has one colour per brightness, and paint adds a second. Against the museum's own
+"applied color" wording on the 200-scan set (31 tinted, 169 not), repeated 5-fold cross-validation
+of the two thresholds caught 77.4% of tinted prints and accepted 92.1% of the others (89.8%
+accuracy). It misses faint tints on tintypes, and a gilt case or a mount can cause a false refusal.
 
 **Inputs.** 8-bit stills up to 8192 pixels on the long edge (67 megapixels; a 600 dpi scan of
 an 8 x 10 inch print is 4800 x 6000). Greyscale and colour files both arrive at the runtime
