@@ -199,6 +199,25 @@ describe('canonical system configuration storage', () => {
     );
   });
 
+  it('keeps registration on for a file approved while that was the default (FL-1632)', async () => {
+    const approved = cloneDeep(defaults);
+    approved.connectedApps.allowRegistration = true;
+    const epoch = (value: typeof defaults) => ({
+      format: 1 as const,
+      epoch: 1,
+      sourceKind: 'file' as const,
+      digest: createHash('sha256').update(canonicalJson(value)).digest('hex'),
+      trashEnabled: value.trash.enabled,
+    });
+    mocks.config.getEnv.mockReturnValue({ ...mockEnvData({}), configFile: 'settings.json' });
+    mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify({ trash: { days: defaults.trash.days } }));
+    mocks.systemMetadata.getEffectiveConfigEpoch.mockResolvedValue(epoch(approved));
+
+    expect((await readConfig(repos())).connectedApps.allowRegistration).toBe(true);
+    expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
+    expect(defaults.connectedApps.allowRegistration).toBe(false);
+  });
+
   it.each([false, true])('keeps a file approved before MCP, with Assistant present: %s', async (withAssistant) => {
     const approved = cloneDeep(defaults) as Partial<typeof defaults> & typeof defaults;
     delete approved.connectedApps.allowMcp;
