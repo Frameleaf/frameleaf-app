@@ -14,6 +14,7 @@ import { InstanceIdentityRepository } from 'src/repositories/instance-identity.r
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { HouseholdLinkService } from 'src/services/household-link.service.js';
 import { HouseholdPeerService } from 'src/services/household-peer.service.js';
+import { HouseholdShareService } from 'src/services/household-share.service.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import {
   type FakeCloud,
@@ -21,6 +22,7 @@ import {
   addHouseholdRoutes,
   startFakeCloud,
 } from 'test/fake-frameleaf-cloud.js';
+import { ShareWorld } from 'test/fixtures/household-shares.js';
 
 /** A real Ed25519 signer, as `InstanceIdentityRepository.currentSigner()` returns. */
 export const householdSigner = (
@@ -129,12 +131,26 @@ export const startHouseholdServer = async (
   const directory = await mkdtemp(join(tmpdir(), 'household-identity-'));
   const metadata = new Map<string, unknown>();
   const counts = new Map<string, number>();
+  const leases = new Map<string, string>();
   const links = new MemoryHouseholdLinks();
   const logger = { setContext: vi.fn(), warn: vi.fn(), log: vi.fn(), debug: vi.fn(), error: vi.fn() };
   const rates = {
     hit: vi.fn((key: string) => {
       counts.set(key, (counts.get(key) ?? 0) + 1);
       return Promise.resolve({ count: counts.get(key)!, resetSeconds: 60 });
+    }),
+    claimUploadStream: vi.fn((key: string, token: string) => {
+      if (leases.has(key)) {
+        return Promise.resolve(false);
+      }
+      leases.set(key, token);
+      return Promise.resolve(true);
+    }),
+    releaseUploadStream: vi.fn((key: string, token: string) => {
+      if (leases.get(key) === token) {
+        leases.delete(key);
+      }
+      return Promise.resolve();
     }),
   };
   const peer = new HouseholdPeerService(
@@ -170,6 +186,21 @@ export const startHouseholdServer = async (
     ...registration,
   };
   households.servers.set(ed25519Thumbprint(identity.publicJwk), registered);
+  const service = new HouseholdLinkService(links as never, peer, logger as never);
+  const world = new ShareWorld();
+  const shares = new HouseholdShareService(
+    world as never,
+    links as never,
+    service,
+    peer,
+    world.albumUsers as never,
+    world.albums as never,
+    world.access as never,
+    world.users as never,
+    world.storage as never,
+    rates as never,
+    logger as never,
+  );
   return {
     name,
     host,
@@ -182,8 +213,11 @@ export const startHouseholdServer = async (
     rates,
     counts,
     peer,
-    service: new HouseholdLinkService(links as never, peer, logger as never),
-    controller: new HouseholdPeerController(peer),
+    service,
+    world,
+    shares,
+    leases,
+    controller: new HouseholdPeerController(peer, shares, logger as never),
     close: () => rm(directory, { recursive: true, force: true }),
   };
 };
@@ -222,14 +256,16 @@ export const connectHouseholds = (hosts: Record<string, HouseholdServer>) => {
       return real(input, init);
     }
     const server = hosts[url.host];
-    const linkId = /^\/api\/household\/v1\/links\/([^/]+)\/handshake$/.exec(url.pathname)?.[1];
+    const [, linkId, route] = /^\/api\/household\/v1\/links\/([^/]+)\/(handshake|directory)$/.exec(url.pathname) ?? [];
     if (!server || !linkId) {
       calls.push({ url: url.href, status: null, redirect: init?.redirect });
       throw new TypeError('fetch failed');
     }
     const request = householdRequest(url.href, init?.headers as Record<string, string>, { method: init?.method });
     try {
-      const body = await server.controller.handshake(linkId, request, { setHeader: vi.fn() } as never);
+      const body = await server.controller[route as 'handshake' | 'directory'](linkId, request, {
+        setHeader: vi.fn(),
+      } as never);
       calls.push({ url: url.href, status: 200, redirect: init?.redirect });
       return Response.json(body);
     } catch (error) {
