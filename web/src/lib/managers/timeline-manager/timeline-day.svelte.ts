@@ -3,7 +3,7 @@ import { SvelteSet } from 'svelte/reactivity';
 import { cellGrid } from '$lib/frameleaf/library-grid';
 import type { CommonLayoutOptions, CommonPosition } from '$lib/utils/layout-utils';
 import { getJustifiedLayoutFromAssets } from '$lib/utils/layout-utils';
-import { getOrderingDate, plainDateTimeCompare } from '$lib/utils/timeline-util';
+import { getOrderingDate, getTimelineGroupDay, plainDateTimeCompare } from '$lib/utils/timeline-util';
 import { TUNABLES } from '$lib/utils/tunables';
 import type { TimelineMonth } from './timeline-month.svelte';
 import type { Direction, MoveAsset, TimelineAsset } from './types';
@@ -148,13 +148,22 @@ export class TimelineDay {
       }
 
       const oldTime = { ...getOrderingDate(asset, this.dateType) };
+      const oldGroupDay = getTimelineGroupDay(asset, this.dateType);
       const callbackResult = callback(asset);
       let remove = (callbackResult as { remove?: boolean } | undefined)?.remove ?? false;
       const newTime = getOrderingDate(asset, this.dateType);
       // A flat order (S-15) is not grouped by date: a new date moves nothing. Nor are the dates to
       // check (FL-1410): only the server knows whether a new date is right, and the refresh reads it.
       const dated = !this.timelineMonth.timelineManager.ordered && !this.timelineMonth.toCheck;
-      if (dated && (oldTime.year !== newTime.year || oldTime.month !== newTime.month || oldTime.day !== newTime.day)) {
+      // FL-936: 1 January 1970, the year 1970 and the 1970s are one instant but three groups
+      const newGroupDay = getTimelineGroupDay(asset, this.dateType);
+      if (
+        dated &&
+        (oldTime.year !== newTime.year ||
+          oldTime.month !== newTime.month ||
+          oldTime.day !== newTime.day ||
+          oldGroupDay !== newGroupDay)
+      ) {
         const { year, month, day } = newTime;
         remove = true;
         moveAssets.push({ asset, date: { year, month, day } });

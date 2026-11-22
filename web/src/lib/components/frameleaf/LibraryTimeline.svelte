@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { groupDayAccuracy } from '$lib/frameleaf/approximate-date';
   /**
    * The Frameleaf timeline: justified rows that respect each item's aspect, sticky day headers with
    * a day select-all, and a draggable year and month scrubber.
@@ -846,7 +847,9 @@
         (page) =>
           page.yearMonth.year === year &&
           page.yearMonth.month === month &&
-          (!page.calendarPage?.days || page.calendarPage.days.some((entry) => entry.day === day.day)),
+          (!page.calendarPage?.days ||
+            // FL-936: the server counts a year or a decade under the day it is stored on, the 1st
+            page.calendarPage.days.some((entry) => entry.day === (groupDayAccuracy(day.day) ? 1 : day.day))),
       ),
     };
   };
@@ -1734,7 +1737,9 @@
                   {onToggleSelect}
                   groupCount={month.toCheck
                     ? timelineManager.datesToCheck?.count
-                    : month.calendarPage?.days?.find((entry) => entry.day === timelineDay.day)?.count}
+                    : groupDayAccuracy(timelineDay.day)
+                      ? undefined
+                      : month.calendarPage?.days?.find((entry) => entry.day === timelineDay.day)?.count}
                   groupState={displayGroupState(dayGroup(timelineDay))}
                   onSelectGroup={(_ids, checked) => selectDisplayGroup(dayGroup(timelineDay), checked)}
                   onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}

@@ -261,6 +261,7 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
   mediaKinds: 'frameleaf_media_kinds_filter',
   takenAt: 'frameleaf_search_field_taken_at',
   localDateTime: 'frameleaf_search_field_taken_at',
+  takenDecade: 'frameleaf_date_precision_decade',
   createdAt: 'frameleaf_search_field_created_at',
   updatedAt: 'frameleaf_search_field_updated_at',
   trashedAt: 'frameleaf_search_field_trashed_at',
@@ -351,6 +352,9 @@ const valueLabel = ($t: MessageFormatter, field: string, value: unknown, options
     }
     case 'rating': {
       return value === null ? $t('frameleaf_search_unrated') : String(value);
+    }
+    case 'takenDecade': {
+      return $t('frameleaf_date_decade_option', { values: { decade: String(value) } });
     }
     case 'mediaKinds': {
       const kind = typeof value === 'string' ? mediaKindInfo(value) : undefined;
