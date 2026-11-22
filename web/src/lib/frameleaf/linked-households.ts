@@ -18,7 +18,7 @@ export const invitationCode = (input: string) => {
   if (/^https?:\/\//i.test(text)) {
     try {
       const url = new URL(text);
-      const last = url.pathname.split('/').filter(Boolean).at(-1);
+      const last = url.pathname.split('/').findLast(Boolean);
       return decodeURIComponent(last ?? '').replaceAll(/\s/g, '');
     } catch {
       return text.replaceAll(/\s/g, '');

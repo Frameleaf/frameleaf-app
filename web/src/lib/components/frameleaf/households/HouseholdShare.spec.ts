@@ -62,8 +62,9 @@ describe('Other households in the Share sheet', () => {
     const { container } = render(HouseholdShareHarness);
     expect(await screen.findByRole('option', { name: /Rosa Rivera/ })).toHaveTextContent('Rivera household');
     expect(await screen.findByText('Ana Rivera')).toBeInTheDocument();
-    expect(container.innerHTML).not.toContain('@');
-    expect(container.innerHTML).not.toContain('rivera.example');
+    const markup = new XMLSerializer().serializeToString(container);
+    expect(markup).not.toContain('@');
+    expect(markup).not.toContain('rivera.example');
   });
 
   it('invites with the chosen role and says what happens next', async () => {

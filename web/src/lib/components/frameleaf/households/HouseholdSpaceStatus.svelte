@@ -95,7 +95,7 @@
   });
 </script>
 
-<div class="sync is-{line.tone}" role="status">
+<div class="sync" class:is-warn={line.tone === 'warn'} class:is-off={line.tone === 'off'} role="status">
   <Icon icon={line.icon} size="18" aria-hidden />
   <strong>{line.title}</strong>
   {#if line.detail}<span>{line.detail}</span>{/if}

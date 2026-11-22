@@ -43,7 +43,7 @@ export class HouseholdShareState {
   candidates = $derived<HouseholdCandidate[]>(
     this.links.flatMap(({ linkId, householdName, directory, members }) =>
       directory
-        .filter(({ id }) => !members.some((member) => member.remoteUserId === id && member.state !== 'left'))
+        .filter(({ id }) => members.every((member) => member.remoteUserId !== id || member.state === 'left'))
         .map((entry) => ({ ...entry, linkId, householdName })),
     ),
   );

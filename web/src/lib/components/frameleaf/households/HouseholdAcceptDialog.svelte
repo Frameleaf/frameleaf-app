@@ -61,7 +61,7 @@
     try {
       const householdName = name.trim();
       const linked = await acceptHouseholdInvitation({
-        householdInvitationAcceptDto: { code, ...(householdName ? { householdName } : {}) },
+        householdInvitationAcceptDto: { code, householdName: householdName || undefined },
       });
       open = false;
       onLinked(linked);
